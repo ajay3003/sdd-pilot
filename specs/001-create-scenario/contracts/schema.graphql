@@ -1,0 +1,87 @@
+"""
+Represents a scenario used for specification and QA.
+"""
+type Scenario {
+  id: ID!
+  title: String!
+  description: String
+  kind: ScenarioKind!
+  projectId: String!
+  createdAt: DateTime!
+}
+
+"""
+Enum describing the type of scenario.
+"""
+enum ScenarioKind {
+  REQUIREMENT
+  TEST
+  NEEDS_CLARIFICATION
+}
+
+"""
+Query root.
+"""
+type Query {
+  """
+  Returns all scenarios for a given project.
+
+  - Always scoped by projectId
+  - Ordered by createdAt descending (latest first)
+  """
+  scenarios(projectId: String!): [Scenario!]!
+}
+
+"""
+Mutation root.
+"""
+type Mutation {
+  """
+  Creates a new scenario.
+
+  Returns:
+  - scenario on success
+  - errors on validation/business failure
+  - correlationId for tracing/logging
+  """
+  createScenario(input: CreateScenarioInput!): CreateScenarioPayload!
+}
+
+"""
+Input for creating a scenario.
+"""
+input CreateScenarioInput {
+  title: String!          # 1–500 characters
+  description: String     # optional
+  kind: ScenarioKind!
+  projectId: String!
+}
+
+"""
+Payload returned after attempting to create a scenario.
+
+Contract:
+- scenario is present on success
+- scenario is null on failure
+- errors is always a list (never null)
+- correlationId is always present for tracing
+"""
+type CreateScenarioPayload {
+  scenario: Scenario
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+"""
+Represents a user-facing error.
+"""
+type UserError {
+  field: String
+  message: String!
+  code: String!
+}
+
+"""
+Custom scalar for date/time.
+"""
+scalar DateTime
