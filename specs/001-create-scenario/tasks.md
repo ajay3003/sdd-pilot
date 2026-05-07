@@ -64,18 +64,19 @@
 - [ ] T016 [P] [US1] Write failing unit tests for `ScenarioService.CreateAsync`: title required, kind required, valid input inserts row and returns scenario in `backend/BirkNext.Api.Tests/Unit/ScenarioServiceTests.cs`
 - [ ] T017 [P] [US1] Write failing integration test: `createScenario` mutation with valid input returns `scenario.id`; with missing title returns `errors[0].code == "TITLE_REQUIRED"` in `backend/BirkNext.Api.Tests/Integration/ScenariosMutationTests.cs`
 - [ ] T018 [P] [US1] Write failing bUnit tests for `ScenarioForm.razor`: title input, description input, kind dropdown, and submit button render; submit button is disabled while mutation is in flight in `frontend/BirkNext.Web.Tests/Components/ScenarioFormTests.cs`
+- [ ] T019 [P] [US1] Write failing contract/integration test: `createScenario` mutation returns non-empty `correlationId` in `CreateScenarioPayload` for both success and validation-error responses in `backend/BirkNext.Api.Tests/Integration/ScenariosMutationTests.cs`
 
 ### Implementation
 
-- [ ] T019 [US1] Implement `ScenarioService.CreateAsync` (validate title/kind, EF Core insert, log `ScenarioCreated` and `ScenarioCreationFailed` events with correlationId and projectId) in `backend/BirkNext.Api/Services/ScenarioService.cs`
-- [ ] T020 [P] [US1] Define `ScenarioObjectType` (HotChocolate object type mapping all Scenario fields) in `backend/BirkNext.Api/GraphQL/ScenarioObjectType.cs`; define `CreateScenarioInput` and `CreateScenarioPayload` (with `UserError` type) in `backend/BirkNext.Api/GraphQL/CreateScenarioInput.cs`
-- [ ] T021 [US1] Implement `Mutation.CreateScenario` resolver (calls `ScenarioService`, maps result to `CreateScenarioPayload`) in `backend/BirkNext.Api/GraphQL/Mutation.cs`; register `MutationType` in schema in `backend/BirkNext.Api/Program.cs`
-- [ ] T022 [P] [US1] Write `CreateScenario.graphql` operation document (mutation with `CreateScenarioInput`, returns `scenario { id title kind createdAt }` and `errors { code message field }` and `correlationId`) in `frontend/BirkNext.Web/GraphQL/CreateScenario.graphql`
-- [ ] T023 [US1] Implement `ScenarioForm.razor` (Blazor `EditForm`, title input, description textarea, kind `InputSelect`, submit handler via Strawberry Shake `ICreateScenarioMutation`, `_isSubmitting` guard, error display from `payload.Errors`) in `frontend/BirkNext.Web/Components/ScenarioForm.razor`
-- [ ] T024 [US1] Wire `ScenarioForm` into `Scenarios.razor` page; invoke `OnScenarioCreated` callback to trigger list refresh in `frontend/BirkNext.Web/Pages/Scenarios.razor`
-- [ ] T025 [US1] Write HotChocolate schema snapshot test asserting `createScenario` mutation shape does not regress in `backend/BirkNext.Api.Tests/Contract/ScenariosSchemaTests.cs`
+- [ ] T020 [US1] Implement `ScenarioService.CreateAsync` (validate title/kind, EF Core insert, log `ScenarioCreated` and `ScenarioCreationFailed` events with correlationId and projectId) in `backend/BirkNext.Api/Services/ScenarioService.cs` — **starts only after T016 is RED**
+- [ ] T021 [P] [US1] Define `ScenarioObjectType` (HotChocolate object type mapping all Scenario fields) in `backend/BirkNext.Api/GraphQL/ScenarioObjectType.cs`; define `CreateScenarioInput` and `CreateScenarioPayload` (with `UserError` type and `correlationId`) in `backend/BirkNext.Api/GraphQL/CreateScenarioInput.cs` — **starts only after T017 and T019 are RED**
+- [ ] T022 [US1] Implement `Mutation.CreateScenario` resolver (calls `ScenarioService`, maps result to `CreateScenarioPayload`, populates `correlationId` from request correlation context) in `backend/BirkNext.Api/GraphQL/Mutation.cs`; register `MutationType` in schema in `backend/BirkNext.Api/Program.cs` — **starts only after T017 and T019 are RED**
+- [ ] T023 [P] [US1] Write `CreateScenario.graphql` operation document (mutation with `CreateScenarioInput`, returns `scenario { id title kind createdAt }`, `errors { code message field }`, and `correlationId`) in `frontend/BirkNext.Web/GraphQL/CreateScenario.graphql`
+- [ ] T024 [US1] Implement `ScenarioForm.razor` (Blazor `EditForm`, title input, description textarea, kind `InputSelect`, submit handler via Strawberry Shake `ICreateScenarioMutation`, `_isSubmitting` guard, error display from `payload.Errors`, optional technical support display using `correlationId`) in `frontend/BirkNext.Web/Components/ScenarioForm.razor` — **starts only after T018 is RED**
+- [ ] T025 [US1] Wire `ScenarioForm` into `Scenarios.razor` page; invoke `OnScenarioCreated` callback to trigger list refresh in `frontend/BirkNext.Web/Pages/Scenarios.razor` — **starts only after T018 is RED**
+- [ ] T026 [US1] Write HotChocolate schema snapshot test asserting `createScenario` mutation shape, `CreateScenarioPayload.scenario`, `CreateScenarioPayload.errors`, and `CreateScenarioPayload.correlationId` do not regress in `backend/BirkNext.Api.Tests/Contract/ScenariosSchemaTests.cs`
 
-**Checkpoint**: `createScenario` mutation works end-to-end. T016, T017, T018 tests all pass. US1 acceptance scenarios 1, 2, and 5 verified.
+**Checkpoint**: `createScenario` mutation works end-to-end. T016, T017, T018, and T019 tests all pass. US1 acceptance scenarios 1, 2, and 5 verified.
 
 ---
 
@@ -87,20 +88,21 @@
 
 ### ⚠️ Tests FIRST — confirm each test FAILS before writing any implementation
 
-- [ ] T026 [P] [US2] Write failing unit tests for `ScenarioService.GetAllAsync`: returns list ordered by `createdAt DESC` for given `projectId`; returns empty list when none exist in `backend/BirkNext.Api.Tests/Unit/ScenarioServiceTests.cs`
-- [ ] T027 [P] [US2] Write failing integration test: `scenarios` query returns all scenarios for `projectId`; query on empty project returns `[]` in `backend/BirkNext.Api.Tests/Integration/ScenariosQueryTests.cs`
-- [ ] T028 [P] [US2] Write failing bUnit tests for `ScenarioList.razor`: renders one row per scenario showing title, kind, description; renders empty-state message when list is empty in `frontend/BirkNext.Web.Tests/Components/ScenarioListTests.cs`
+- [ ] T027 [P] [US2] Write failing unit tests for `ScenarioService.GetAllAsync`: returns list ordered by `createdAt DESC` for given `projectId`; returns empty list when none exist in `backend/BirkNext.Api.Tests/Unit/ScenarioServiceTests.cs`
+- [ ] T028 [P] [US2] Write failing integration test: `scenarios` query returns all scenarios for `projectId`; query on empty project returns `[]`; query with unknown `projectId` returns `[]` and does not leak scenarios from other projects in `backend/BirkNext.Api.Tests/Integration/ScenariosQueryTests.cs`
+- [ ] T029 [P] [US2] Write failing integration test: `scenarios` query without required `projectId` is rejected by GraphQL validation before resolver execution in `backend/BirkNext.Api.Tests/Integration/ScenariosQueryTests.cs`
+- [ ] T030 [P] [US2] Write failing bUnit tests for `ScenarioList.razor`: renders one row per scenario showing title, kind, description; renders empty-state message when list is empty in `frontend/BirkNext.Web.Tests/Components/ScenarioListTests.cs`
 
 ### Implementation
 
-- [ ] T029 [US2] Implement `ScenarioService.GetAllAsync` (query by `projectId`, order by `createdAt DESC`) in `backend/BirkNext.Api/Services/ScenarioService.cs`
-- [ ] T030 [US2] Implement `Query.Scenarios` resolver (calls `ScenarioService.GetAllAsync`) in `backend/BirkNext.Api/GraphQL/Query.cs`; register `QueryType` in schema in `backend/BirkNext.Api/Program.cs`
-- [ ] T031 [P] [US2] Write `GetScenarios.graphql` operation document (query returning `id title description kind createdAt`) in `frontend/BirkNext.Web/GraphQL/GetScenarios.graphql`
-- [ ] T032 [US2] Implement `ScenarioList.razor` (iterate scenarios into table/list rows; show empty-state `<p>` when list is empty) in `frontend/BirkNext.Web/Components/ScenarioList.razor`
-- [ ] T033 [US2] Wire `ScenarioList` into `Scenarios.razor` (execute `GetScenarios` query on load; re-execute after `ScenarioForm.OnScenarioCreated` fires, without full page refresh) in `frontend/BirkNext.Web/Pages/Scenarios.razor`
-- [ ] T034 [US2] Add schema snapshot assertion for `scenarios` query to contract test in `backend/BirkNext.Api.Tests/Contract/ScenariosSchemaTests.cs`
+- [ ] T031 [US2] Implement `ScenarioService.GetAllAsync` (query by `projectId`, order by `CreatedAt DESC`, prevent cross-project leakage) in `backend/BirkNext.Api/Services/ScenarioService.cs` — **starts only after T027, T028, and T029 are RED**
+- [ ] T032 [US2] Implement `Query.Scenarios` resolver (calls `ScenarioService.GetAllAsync`) in `backend/BirkNext.Api/GraphQL/Query.cs`; register `QueryType` in schema in `backend/BirkNext.Api/Program.cs` — **starts only after T027, T028, and T029 are RED**
+- [ ] T033 [P] [US2] Write `GetScenarios.graphql` operation document (query returning `id title description kind createdAt`) in `frontend/BirkNext.Web/GraphQL/GetScenarios.graphql`
+- [ ] T034 [US2] Implement `ScenarioList.razor` (iterate scenarios into table/list rows; show empty-state `<p>` when list is empty) in `frontend/BirkNext.Web/Components/ScenarioList.razor` — **starts only after T030 is RED**
+- [ ] T035 [US2] Wire `ScenarioList` into `Scenarios.razor` (execute `GetScenarios` query on load; re-execute after `ScenarioForm.OnScenarioCreated` fires, without full page refresh) in `frontend/BirkNext.Web/Pages/Scenarios.razor` — **starts only after T030 is RED**
+- [ ] T036 [US2] Add schema snapshot assertion for `scenarios` query to contract test in `backend/BirkNext.Api.Tests/Contract/ScenariosSchemaTests.cs`
 
-**Checkpoint**: `scenarios` query returns correct data. T026, T027, T028 tests all pass. US2 acceptance scenarios 1, 2, and 3 verified (including no-refresh update).
+**Checkpoint**: `scenarios` query returns correct data. T027, T028, T029, and T030 tests all pass. US2 acceptance scenarios 1, 2, and 3 verified (including no-refresh update).
 
 ---
 
@@ -112,30 +114,34 @@
 
 ### ⚠️ Tests FIRST — confirm each test FAILS before writing any implementation
 
-- [ ] T035 [P] [US3] Write failing bUnit tests for `ScenarioForm.razor` client-side validation: empty title submit shows "Title is required" near title field; no kind submit shows "A valid type must be selected" near kind field in `frontend/BirkNext.Web.Tests/Components/ScenarioFormTests.cs`
-- [ ] T036 [P] [US3] Write failing bUnit test: correcting all validation errors and resubmitting calls the mutation and resets the form in `frontend/BirkNext.Web.Tests/Components/ScenarioFormTests.cs`
-- [ ] T037 [P] [US3] Write failing integration test: `createScenario` with empty title returns `errors[0] = { code: "TITLE_REQUIRED", field: "title", message: "Title is required" }` in `backend/BirkNext.Api.Tests/Integration/ScenariosMutationTests.cs`
+- [ ] T037 [P] [US3] Write failing bUnit tests for `ScenarioForm.razor` client-side validation: empty title submit shows "Title is required" near title field; no kind submit shows "A valid type must be selected" near kind field in `frontend/BirkNext.Web.Tests/Components/ScenarioFormTests.cs`
+- [ ] T038 [P] [US3] Write failing bUnit test: correcting all validation errors and resubmitting calls the mutation and resets the form in `frontend/BirkNext.Web.Tests/Components/ScenarioFormTests.cs`
+- [ ] T039 [P] [US3] Write failing integration test: `createScenario` with empty title returns `errors[0] = { code: "TITLE_REQUIRED", field: "title", message: "Title is required" }` in `backend/BirkNext.Api.Tests/Integration/ScenariosMutationTests.cs`
+- [ ] T040 [P] [US3] Write failing integration test: `createScenario` with title longer than 500 characters returns `errors[0].code == "TITLE_TOO_LONG"` and does not insert a row in `backend/BirkNext.Api.Tests/Integration/ScenariosMutationTests.cs`
 
 ### Implementation
 
-- [ ] T038 [US3] Add `DataAnnotations` (`[Required]`, `[MaxLength(500)]`) to `ScenarioForm` model and enable `<DataAnnotationsValidator>` and `<ValidationSummary>` inside `EditForm` in `frontend/BirkNext.Web/Components/ScenarioForm.razor`
-- [ ] T039 [US3] Add `<ValidationMessage For="...">` components next to title input and kind select to display per-field inline errors in `frontend/BirkNext.Web/Components/ScenarioForm.razor`
-- [ ] T040 [US3] Implement server-side input validation in `ScenarioService.CreateAsync` returning `UserError` list with codes `TITLE_REQUIRED` and `INVALID_KIND` and correct `field` paths; log `ScenarioValidationFailed` event in `backend/BirkNext.Api/Services/ScenarioService.cs`
-- [ ] T041 [US3] Map server-returned `payload.Errors` to per-field error messages in `ScenarioForm.razor` (display inline under the relevant field, not just in a summary banner) in `frontend/BirkNext.Web/Components/ScenarioForm.razor`
+- [ ] T041 [US3] Add `DataAnnotations` (`[Required]`, `[MaxLength(500)]`) to `ScenarioForm` model and enable `<DataAnnotationsValidator>` and `<ValidationSummary>` inside `EditForm` in `frontend/BirkNext.Web/Components/ScenarioForm.razor` — **starts only after T037 and T038 are RED**
+- [ ] T042 [US3] Add `<ValidationMessage For="...">` components next to title input and kind select to display per-field inline errors in `frontend/BirkNext.Web/Components/ScenarioForm.razor` — **starts only after T037 and T038 are RED**
+- [ ] T043 [US3] Implement server-side input validation in `ScenarioService.CreateAsync` returning `UserError` list with codes `TITLE_REQUIRED`, `TITLE_TOO_LONG`, and `INVALID_KIND` and correct `field` paths; log `ScenarioValidationFailed` event in `backend/BirkNext.Api/Services/ScenarioService.cs` — **starts only after T039 and T040 are RED**
+- [ ] T044 [US3] Map server-returned `payload.Errors` to per-field error messages in `ScenarioForm.razor` (display inline under the relevant field, not just in a summary banner) in `frontend/BirkNext.Web/Components/ScenarioForm.razor` — **starts only after T037, T038, T039, and T040 are RED**
 
-**Checkpoint**: T035, T036, T037 tests all pass. US3 acceptance scenarios 1, 2, and 3 verified. All US1 acceptance scenarios still pass (no regression).
+**Checkpoint**: T037, T038, T039, and T040 tests all pass. US3 acceptance scenarios 1, 2, and 3 verified. All US1 acceptance scenarios still pass (no regression).
 
 ---
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-**Purpose**: Observability verification, formatting, and end-to-end validation across all stories.
+**Purpose**: Observability verification, formatting, performance sanity checks, and end-to-end validation across all stories.
 
-- [ ] T042 [P] Verify all three Serilog events (`ScenarioCreated`, `ScenarioValidationFailed`, `ScenarioCreationFailed`) include `correlationId`, `projectId`, `level`, and `timestamp` fields by reviewing log output in `backend/BirkNext.Api/Services/ScenarioService.cs`
-- [ ] T043 [P] Run `dotnet format` on `backend/BirkNext.sln` and `frontend/BirkNext.sln`; fix all formatting errors to reach zero warnings
-- [ ] T044 [P] Add XML doc comments to all public HotChocolate types in `backend/BirkNext.Api/GraphQL/` to enable schema field descriptions (matches `schema.graphql` doc strings)
-- [ ] T045 [P] Write bUnit integration test covering US1 acceptance scenario 5: `ScenarioForm` shows a user-friendly error message when the Strawberry Shake client throws a network exception in `frontend/BirkNext.Web.Tests/Pages/ScenariosPageTests.cs`
-- [ ] T046 Validate `quickstart.md` end-to-end: `docker compose up -d postgres`, `dotnet ef database update`, `dotnet run` both tiers, `dotnet test` both solutions — all pass with zero failures
+- [ ] T045 [P] Verify all three Serilog events (`ScenarioCreated`, `ScenarioValidationFailed`, `ScenarioCreationFailed`) include `correlationId`, `projectId`, `level`, and `timestamp` fields by reviewing log output in `backend/BirkNext.Api/Services/ScenarioService.cs`
+- [ ] T046 [P] Write integration test or structured log assertion verifying `correlationId` appears both in `createScenario` GraphQL payload and backend logs for the same request in `backend/BirkNext.Api.Tests/Integration/ScenariosMutationTests.cs`
+- [ ] T047 [P] Add GraphQL operation duration logging for `createScenario` and `scenarios` operations (operation name, durationMs, correlationId, projectId, result status) via HotChocolate instrumentation or middleware in `backend/BirkNext.Api/Program.cs` or `backend/BirkNext.Api/GraphQL/`
+- [ ] T048 [P] Verify `scenarios` query performance with multiple records (at least 100 scenarios in one project) and confirm ordering by `CreatedAt DESC` remains correct in `backend/BirkNext.Api.Tests/Integration/ScenariosQueryTests.cs`
+- [ ] T049 [P] Run `dotnet format` on `backend/BirkNext.sln` and `frontend/BirkNext.sln`; fix all formatting errors to reach zero warnings
+- [ ] T050 [P] Add XML doc comments to all public HotChocolate types in `backend/BirkNext.Api/GraphQL/` to enable schema field descriptions (matches `schema.graphql` doc strings)
+- [ ] T051 [P] Write bUnit integration test covering US1 acceptance scenario 5: `ScenarioForm` shows a user-friendly error message when the Strawberry Shake client throws a network exception in `frontend/BirkNext.Web.Tests/Pages/ScenariosPageTests.cs`
+- [ ] T052 Validate `quickstart.md` end-to-end: `docker compose up -d postgres`, `dotnet ef database update`, `dotnet run` both tiers, `dotnet test` both solutions — all pass with zero failures
 
 ---
 
@@ -158,7 +164,8 @@
 
 ### Within Each Phase
 
-- Test tasks MUST be written and confirmed **failing** before implementation tasks begin
+- Test tasks MUST be written and confirmed **RED** before the matching implementation task starts
+- Each implementation task MUST explicitly depend on its corresponding RED test task where applicable
 - Models/entities before services
 - Services before resolvers
 - Resolvers before frontend integration
@@ -174,31 +181,36 @@
 T016 — ScenarioServiceTests.cs (unit)
 T017 — ScenariosMutationTests.cs (integration)
 T018 — ScenarioFormTests.cs (bUnit)
+T019 — ScenariosMutationTests.cs (correlationId payload)
 
-# Then in parallel once T016/T017 are red:
-T019 — ScenarioService.cs
-T020 — GraphQL types (ScenarioObjectType, CreateScenarioInput)
-T022 — CreateScenario.graphql operation document
+# Then in parallel once tests are RED:
+T020 — ScenarioService.cs (after T016 RED)
+T021 — GraphQL types and payload (after T017/T019 RED)
+T022 — Mutation resolver (after T017/T019 RED)
+T023 — CreateScenario.graphql operation document
+T024 — ScenarioForm.razor (after T018 RED)
 ```
 
 ### Phase 4 (US2)
 ```
 # Run in parallel (different files):
-T026 — ScenarioServiceTests.cs (unit, GetAllAsync)
-T027 — ScenariosQueryTests.cs (integration)
-T028 — ScenarioListTests.cs (bUnit)
+T027 — ScenarioServiceTests.cs (unit, GetAllAsync)
+T028 — ScenariosQueryTests.cs (valid/empty/unknown project)
+T029 — ScenariosQueryTests.cs (missing projectId validation)
+T030 — ScenarioListTests.cs (bUnit)
 
 # Then in parallel:
-T029 — ScenarioService.cs (GetAllAsync)
-T031 — GetScenarios.graphql operation document
+T031 — ScenarioService.cs (GetAllAsync)
+T033 — GetScenarios.graphql operation document
 ```
 
 ### Phase 5 (US3)
 ```
 # Run in parallel:
-T035 — ScenarioFormTests.cs (client-side validation)
-T036 — ScenarioFormTests.cs (fix-and-resubmit)
-T037 — ScenariosMutationTests.cs (server UserError)
+T037 — ScenarioFormTests.cs (client-side validation)
+T038 — ScenarioFormTests.cs (fix-and-resubmit)
+T039 — ScenariosMutationTests.cs (server UserError TITLE_REQUIRED)
+T040 — ScenariosMutationTests.cs (server UserError TITLE_TOO_LONG)
 ```
 
 ---
@@ -210,7 +222,7 @@ T037 — ScenariosMutationTests.cs (server UserError)
 1. Complete Phase 1: Setup
 2. Complete Phase 2: Foundational (**CRITICAL — blocks all stories**)
 3. Complete Phase 3: US1 — Create a New Scenario
-4. **STOP and VALIDATE**: `createScenario` mutation works, form submits, scenario confirmed
+4. **STOP and VALIDATE**: `createScenario` mutation works, form submits, scenario confirmed, `correlationId` returned
 5. Demo / deploy
 
 ### Incremental Delivery
@@ -219,7 +231,7 @@ T037 — ScenariosMutationTests.cs (server UserError)
 2. US1 complete → create scenario end-to-end (**MVP**)
 3. US2 complete → scenario list visible
 4. US3 complete → refined inline validation
-5. Polish → observability verified, all tests green
+5. Polish → observability verified, performance sanity checked, all tests green
 
 ### Parallel Team Strategy
 
@@ -235,5 +247,6 @@ With two developers after Phase 2 completes:
 - `[P]` tasks operate on different files with no cross-task dependencies within the same phase
 - Each user story phase is independently completable and testable
 - Test tasks must be confirmed **RED** before the matching implementation task starts (constitution §I)
+- Each implementation task should clearly follow from a RED test task
 - Commit after each task or logical group; branch stays shippable at every checkpoint
-- Total tasks: **46** | Setup: 7 | Foundational: 8 | US1: 10 | US2: 9 | US3: 7 | Polish: 5
+- Total tasks: **52** | Setup: 7 | Foundational: 8 | US1: 11 | US2: 10 | US3: 8 | Polish: 8
