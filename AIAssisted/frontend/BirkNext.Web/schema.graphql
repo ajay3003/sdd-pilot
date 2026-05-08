@@ -1,0 +1,43 @@
+type Query {
+  ping: String
+}
+
+type Mutation {
+  createScenario(input: CreateScenarioInput!): CreateScenarioPayload!
+}
+
+type Scenario {
+  id: ID!
+  title: String!
+  description: String
+  kind: ScenarioKind!
+  projectId: String!
+  createdAt: DateTime!
+}
+
+enum ScenarioKind {
+  REQUIREMENT
+  TEST
+  NEEDS_CLARIFICATION
+}
+
+input CreateScenarioInput {
+  title: String!
+  description: String
+  kind: ScenarioKind!
+  projectId: String!
+}
+
+type CreateScenarioPayload {
+  scenario: Scenario
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type UserError {
+  field: String
+  message: String!
+  code: String!
+}
+
+scalar DateTime

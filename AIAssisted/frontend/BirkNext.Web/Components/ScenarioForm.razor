@@ -1,0 +1,92 @@
+@using BirkNext.Web.GraphQL
+@inject IBirkNextClient Client
+
+<EditForm Model="_model" OnSubmit="HandleSubmit">
+    <div>
+        <label for="title">Title</label>
+        <InputText id="title" @bind-Value="_model.Title" />
+    </div>
+    <div>
+        <label for="description">Description</label>
+        <InputTextArea id="description" @bind-Value="_model.Description" />
+    </div>
+    <div>
+        <label for="kind">Type</label>
+        <InputSelect id="kind" TValue="ScenarioKind" @bind-Value="_model.Kind">
+            <option value="Requirement">Requirement</option>
+            <option value="Test">Test</option>
+            <option value="NeedsClarification">Needs Clarification</option>
+        </InputSelect>
+    </div>
+
+    @if (_errors.Count > 0)
+    {
+        <ul role="alert">
+            @foreach (var error in _errors)
+            {
+                <li>@error.Message</li>
+            }
+        </ul>
+    }
+
+    @if (_correlationId is not null)
+    {
+        <p>Support reference: @_correlationId</p>
+    }
+
+    <button type="submit" disabled="@_isSubmitting">Create Scenario</button>
+</EditForm>
+
+@code {
+    [Parameter] public EventCallback OnScenarioCreated { get; set; }
+
+    private readonly ScenarioFormModel _model = new();
+    private bool _isSubmitting;
+    private IReadOnlyList<ICreateScenario_CreateScenario_Errors> _errors = [];
+    private string? _correlationId;
+
+    private async Task HandleSubmit()
+    {
+        _isSubmitting = true;
+        _errors = [];
+        _correlationId = null;
+        StateHasChanged();
+
+        try
+        {
+            var input = new CreateScenarioInput
+            {
+                Title = _model.Title,
+                Description = string.IsNullOrEmpty(_model.Description) ? null : _model.Description,
+                Kind = _model.Kind,
+                ProjectId = "00000000-0000-0000-0000-000000000001"
+            };
+
+            var result = await Client.CreateScenario.ExecuteAsync(input);
+
+            if (result.Data?.CreateScenario is { } payload)
+            {
+                _errors = payload.Errors;
+                if (payload.Errors.Count > 0)
+                {
+                    _correlationId = payload.CorrelationId;
+                }
+                else if (payload.Scenario is not null)
+                {
+                    await OnScenarioCreated.InvokeAsync();
+                }
+            }
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private class ScenarioFormModel
+    {
+        public string Title { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public ScenarioKind Kind { get; set; } = ScenarioKind.Requirement;
+    }
+}

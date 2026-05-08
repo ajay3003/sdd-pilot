@@ -1,0 +1,15 @@
+@page "/scenarios"
+@using BirkNext.Web.Components
+
+<PageTitle>Scenarios</PageTitle>
+
+<h1>Scenarios</h1>
+
+<ScenarioForm OnScenarioCreated="RefreshList" />
+
+@code {
+    private void RefreshList()
+    {
+        StateHasChanged();
+    }
+}

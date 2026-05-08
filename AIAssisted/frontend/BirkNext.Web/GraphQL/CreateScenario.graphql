@@ -1,0 +1,16 @@
+mutation CreateScenario($input: CreateScenarioInput!) {
+  createScenario(input: $input) {
+    scenario {
+      id
+      title
+      kind
+      createdAt
+    }
+    errors {
+      code
+      message
+      field
+    }
+    correlationId
+  }
+}

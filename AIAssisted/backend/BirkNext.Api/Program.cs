@@ -1,5 +1,7 @@
 using BirkNext.Api.Data;
+using BirkNext.Api.GraphQL;
 using BirkNext.Api.Middleware;
+using BirkNext.Api.Services;
 using HotChocolate.AspNetCore;
 using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
@@ -23,9 +25,14 @@ builder.Services.AddCors(options =>
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ScenarioService>();
+
 builder.Services
     .AddGraphQLServer()
-    .AddQueryType(d => d.Name("Query").Field("ping").Type<StringType>().Resolve("pong"));
+    .AddQueryType(d => d.Name("Query").Field("ping").Type<StringType>().Resolve("pong"))
+    .AddMutationType<Mutation>()
+    .AddType<ScenarioObjectType>();
 
 var app = builder.Build();
 
@@ -39,3 +46,5 @@ app.MapGraphQL()
    });
 
 app.Run();
+
+public partial class Program { }

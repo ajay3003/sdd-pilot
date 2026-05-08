@@ -1,0 +1,56 @@
+﻿schema {
+  query: Query
+  mutation: Mutation
+}
+
+type CreateScenarioPayload {
+  scenario: Scenario
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type Mutation {
+  createScenario(input: CreateScenarioInput!): CreateScenarioPayload! @cost(weight: "10")
+}
+
+type Query {
+  ping: String @cost(weight: "10")
+}
+
+"Represents a scenario used for specification and QA."
+type Scenario {
+  id: ID!
+  title: String!
+  description: String
+  kind: ScenarioKind!
+  projectId: String!
+  createdAt: DateTime!
+}
+
+type UserError {
+  code: String!
+  message: String!
+  field: String
+}
+
+input CreateScenarioInput {
+  title: String!
+  description: String
+  kind: ScenarioKind!
+  projectId: String!
+}
+
+enum ScenarioKind {
+  REQUIREMENT
+  TEST
+  NEEDS_CLARIFICATION
+}
+
+"The purpose of the `cost` directive is to define a `weight` for GraphQL types, fields, and arguments. Static analysis can use these weights when calculating the overall cost of a query or response."
+directive @cost("The `weight` argument defines what value to add to the overall cost for every appearance, or possible appearance, of a type, field, argument, etc." weight: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM | INPUT_FIELD_DEFINITION
+
+"The `@specifiedBy` directive is used within the type system definition language to provide a URL for specifying the behavior of custom scalar definitions."
+directive @specifiedBy("The specifiedBy URL points to a human-readable specification. This field will only read a result for scalar types." url: String!) on SCALAR
+
+"The `DateTime` scalar represents an ISO-8601 compliant date time type."
+scalar DateTime @specifiedBy(url: "https:\/\/www.graphql-scalars.com\/date-time")
