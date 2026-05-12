@@ -31,7 +31,8 @@ builder.Services
     .AddGraphQLServer()
     .AddQueryType<Query>()
     .AddMutationType<Mutation>()
-    .AddType<ScenarioObjectType>();
+    .AddType<ScenarioObjectType>()
+    .AddDiagnosticEventListener<OperationDiagnosticEventListener>();
 
 var app = builder.Build();
 
