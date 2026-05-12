@@ -1,7 +1,11 @@
 @using BirkNext.Web.GraphQL
+@using System.ComponentModel.DataAnnotations
 @inject IBirkNextClient Client
 
-<EditForm Model="_model" OnSubmit="HandleSubmit">
+<EditForm Model="_model" OnValidSubmit="HandleSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
     <div>
         <label for="title">Title</label>
         <InputText id="title" @bind-Value="_model.Title" />
@@ -12,7 +16,8 @@
     </div>
     <div>
         <label for="kind">Type</label>
-        <InputSelect id="kind" TValue="ScenarioKind" @bind-Value="_model.Kind">
+        <InputSelect id="kind" TValue="ScenarioKind?" @bind-Value="_model.Kind">
+            <option value="">-- select a type --</option>
             <option value="Requirement">Requirement</option>
             <option value="Test">Test</option>
             <option value="NeedsClarification">Needs Clarification</option>
@@ -40,7 +45,7 @@
 @code {
     [Parameter] public EventCallback OnScenarioCreated { get; set; }
 
-    private readonly ScenarioFormModel _model = new();
+    private ScenarioFormModel _model = new();
     private bool _isSubmitting;
     private IReadOnlyList<ICreateScenario_CreateScenario_Errors> _errors = [];
     private string? _correlationId;
@@ -58,7 +63,7 @@
             {
                 Title = _model.Title,
                 Description = string.IsNullOrEmpty(_model.Description) ? null : _model.Description,
-                Kind = _model.Kind,
+                Kind = _model.Kind!.Value,
                 ProjectId = "00000000-0000-0000-0000-000000000001"
             };
 
@@ -73,6 +78,7 @@
                 }
                 else if (payload.Scenario is not null)
                 {
+                    _model = new ScenarioFormModel();
                     await OnScenarioCreated.InvokeAsync();
                 }
             }
@@ -85,8 +91,11 @@
 
     private class ScenarioFormModel
     {
+        [Required(ErrorMessage = "Title is required")]
+        [MaxLength(500, ErrorMessage = "Title must be 500 characters or fewer")]
         public string Title { get; set; } = string.Empty;
         public string? Description { get; set; }
-        public ScenarioKind Kind { get; set; } = ScenarioKind.Requirement;
+        [Required(ErrorMessage = "A valid type must be selected")]
+        public ScenarioKind? Kind { get; set; }
     }
 }
