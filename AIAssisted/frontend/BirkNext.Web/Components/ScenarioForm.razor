@@ -38,6 +38,11 @@
         </ul>
     }
 
+    @if (_networkError is not null)
+    {
+        <p role="alert">@_networkError</p>
+    }
+
     @if (_correlationId is not null)
     {
         <p>Support reference: @_correlationId</p>
@@ -53,6 +58,7 @@
     private bool _isSubmitting;
     private IReadOnlyList<ICreateScenario_CreateScenario_Errors> _errors = [];
     private string? _correlationId;
+    private string? _networkError;
 
     private string? FieldError(string field) =>
         _errors.FirstOrDefault(e => e.Field == field)?.Message;
@@ -62,6 +68,7 @@
         _isSubmitting = true;
         _errors = [];
         _correlationId = null;
+        _networkError = null;
         StateHasChanged();
 
         try
@@ -89,6 +96,10 @@
                     await OnScenarioCreated.InvokeAsync();
                 }
             }
+        }
+        catch (Exception)
+        {
+            _networkError = "Something went wrong. Please try again.";
         }
         finally
         {
