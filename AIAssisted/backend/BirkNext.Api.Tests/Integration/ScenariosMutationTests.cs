@@ -181,6 +181,44 @@ public class ScenariosMutationTests : IAsyncLifetime
         firstError.GetProperty("message").GetString().Should().Be("Title is required");
     }
 
+    // ── T040 ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateScenario_TitleTooLong_ReturnsTitleTooLongErrorAndNoRow()
+    {
+        const string mutation = """
+            mutation CreateScenario($input: CreateScenarioInput!) {
+              createScenario(input: $input) {
+                scenario { id }
+                errors { code message field }
+              }
+            }
+            """;
+
+        var longTitle = new string('x', 501);
+
+        var response = await _client.PostAsync("/graphql", GqlRequest(mutation, new
+        {
+            input = new { title = longTitle, kind = "REQUIREMENT", projectId = "proj-t040" }
+        }));
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        var payload = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("createScenario");
+
+        payload.GetProperty("errors")[0]
+            .GetProperty("code").GetString().Should().Be("TITLE_TOO_LONG");
+
+        payload.GetProperty("scenario").ValueKind.Should().Be(JsonValueKind.Null);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.Scenarios.Any(s => s.ProjectId == "proj-t040").Should().BeFalse();
+    }
+
     [Fact]
     public async Task CreateScenario_ValidationError_ReturnsNonEmptyCorrelationId()
     {
