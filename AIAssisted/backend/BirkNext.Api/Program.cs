@@ -5,13 +5,13 @@ using BirkNext.Api.Services;
 using HotChocolate.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
-using Serilog.Formatting.Compact;
+using Serilog.Formatting.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((ctx, lc) => lc
     .Enrich.FromLogContext()
-    .WriteTo.Console(new CompactJsonFormatter()));
+    .WriteTo.Console(new JsonFormatter()));
 
 var frontendOrigin = builder.Configuration["FRONTEND_ORIGIN"] ?? "http://localhost:5173";
 
