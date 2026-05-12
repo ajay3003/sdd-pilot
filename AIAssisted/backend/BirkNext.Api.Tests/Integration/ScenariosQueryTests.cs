@@ -75,9 +75,9 @@ public class ScenariosQueryTests : IAsyncLifetime
     public async Task Scenarios_ReturnsAllScenariosForProjectId()
     {
         await SeedAsync(
-            new Scenario { Title = "First",  Kind = ScenarioKind.Requirement, ProjectId = "proj-q01", CreatedAt = DateTimeOffset.UtcNow.AddDays(-2) },
-            new Scenario { Title = "Second", Kind = ScenarioKind.Test,        ProjectId = "proj-q01", CreatedAt = DateTimeOffset.UtcNow.AddDays(-1) },
-            new Scenario { Title = "Third",  Kind = ScenarioKind.Test,        ProjectId = "proj-q01", CreatedAt = DateTimeOffset.UtcNow }
+            new Scenario { Title = "First", Kind = ScenarioKind.Requirement, ProjectId = "proj-q01", CreatedAt = DateTimeOffset.UtcNow.AddDays(-2) },
+            new Scenario { Title = "Second", Kind = ScenarioKind.Test, ProjectId = "proj-q01", CreatedAt = DateTimeOffset.UtcNow.AddDays(-1) },
+            new Scenario { Title = "Third", Kind = ScenarioKind.Test, ProjectId = "proj-q01", CreatedAt = DateTimeOffset.UtcNow }
         );
 
         const string query = """
