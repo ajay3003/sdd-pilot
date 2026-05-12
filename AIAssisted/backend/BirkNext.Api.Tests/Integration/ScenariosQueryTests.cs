@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Testcontainers.PostgreSql;
@@ -149,6 +150,57 @@ public class ScenariosQueryTests : IAsyncLifetime
             .GetProperty("scenarios");
 
         scenarios.GetArrayLength().Should().Be(0);
+    }
+
+    // ── T048 ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Scenarios_With100Records_ReturnsAllOrderedDescAndCompletesWithinTwoSeconds()
+    {
+        const string projectId = "proj-perf-100";
+        const int count = 100;
+
+        var baseTime = DateTimeOffset.UtcNow.AddDays(-count);
+        var scenarios = Enumerable.Range(0, count)
+            .Select(i => new Scenario
+            {
+                Title = $"Scenario {i:D3}",
+                Kind = i % 2 == 0 ? ScenarioKind.Requirement : ScenarioKind.Test,
+                ProjectId = projectId,
+                CreatedAt = baseTime.AddMinutes(i)
+            })
+            .ToArray();
+
+        await SeedAsync(scenarios);
+
+        const string query = """
+            query GetScenarios($projectId: String!) {
+              scenarios(projectId: $projectId) {
+                id title createdAt
+              }
+            }
+            """;
+
+        var sw = Stopwatch.StartNew();
+        var response = await _client.PostAsync("/graphql", GqlRequest(query, new { projectId }));
+        sw.Stop();
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        var items = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("scenarios");
+
+        items.GetArrayLength().Should().Be(count);
+
+        var timestamps = items.EnumerateArray()
+            .Select(s => DateTimeOffset.Parse(s.GetProperty("createdAt").GetString()!))
+            .ToList();
+
+        timestamps.Should().BeInDescendingOrder();
+
+        sw.ElapsedMilliseconds.Should().BeLessThan(2000);
     }
 
     [Fact]
