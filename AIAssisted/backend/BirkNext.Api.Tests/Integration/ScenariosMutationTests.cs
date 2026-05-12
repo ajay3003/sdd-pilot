@@ -149,6 +149,38 @@ public class ScenariosMutationTests : IAsyncLifetime
         correlationId.Should().NotBeNullOrEmpty();
     }
 
+    // ── T039 ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateScenario_EmptyTitle_ReturnsFullTitleRequiredError()
+    {
+        const string mutation = """
+            mutation CreateScenario($input: CreateScenarioInput!) {
+              createScenario(input: $input) {
+                scenario { id }
+                errors { code message field }
+              }
+            }
+            """;
+
+        var response = await _client.PostAsync("/graphql", GqlRequest(mutation, new
+        {
+            input = new { title = "", kind = "REQUIREMENT", projectId = "proj-001" }
+        }));
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        var firstError = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("createScenario")
+            .GetProperty("errors")[0];
+
+        firstError.GetProperty("code").GetString().Should().Be("TITLE_REQUIRED");
+        firstError.GetProperty("field").GetString().Should().Be("title");
+        firstError.GetProperty("message").GetString().Should().Be("Title is required");
+    }
+
     [Fact]
     public async Task CreateScenario_ValidationError_ReturnsNonEmptyCorrelationId()
     {
