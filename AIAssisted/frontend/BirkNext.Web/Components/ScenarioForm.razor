@@ -4,12 +4,12 @@
 
 <EditForm Model="_model" OnValidSubmit="HandleSubmit">
     <DataAnnotationsValidator />
-    <ValidationSummary />
 
     <div>
         <label for="title">Title</label>
         <InputText id="title" @bind-Value="_model.Title" />
         <ValidationMessage For="() => _model.Title" />
+        @if (FieldError("title") is { } titleErr) { <span class="validation-message">@titleErr</span> }
     </div>
     <div>
         <label for="description">Description</label>
@@ -24,12 +24,14 @@
             <option value="NeedsClarification">Needs Clarification</option>
         </InputSelect>
         <ValidationMessage For="() => _model.Kind" />
+        @if (FieldError("kind") is { } kindErr) { <span class="validation-message">@kindErr</span> }
     </div>
 
-    @if (_errors.Count > 0)
+    @{ var unrouted = _errors.Where(e => e.Field is not ("title" or "kind")).ToList(); }
+    @if (unrouted.Count > 0)
     {
         <ul role="alert">
-            @foreach (var error in _errors)
+            @foreach (var error in unrouted)
             {
                 <li>@error.Message</li>
             }
@@ -51,6 +53,9 @@
     private bool _isSubmitting;
     private IReadOnlyList<ICreateScenario_CreateScenario_Errors> _errors = [];
     private string? _correlationId;
+
+    private string? FieldError(string field) =>
+        _errors.FirstOrDefault(e => e.Field == field)?.Message;
 
     private async Task HandleSubmit()
     {
