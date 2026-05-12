@@ -2,7 +2,9 @@ using BirkNext.Api.Data;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System.Text;
 using System.Text.Json;
 using Testcontainers.PostgreSql;
@@ -59,6 +61,25 @@ public class ScenariosMutationTests : IAsyncLifetime
     {
         var body = JsonSerializer.Serialize(new { query, variables });
         return new StringContent(body, Encoding.UTF8, "application/json");
+    }
+
+    private sealed class CapturingLoggerFactory : ILoggerFactory
+    {
+        private readonly List<string> _messages = [];
+        public IReadOnlyList<string> Messages => _messages;
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(_messages);
+        public void AddProvider(ILoggerProvider provider) { }
+        public void Dispose() { }
+
+        private sealed class CapturingLogger(List<string> messages) : ILogger
+        {
+            public bool IsEnabled(LogLevel logLevel) => true;
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+                Exception? exception, Func<TState, Exception?, string> formatter)
+                => messages.Add(formatter(state, exception));
+        }
     }
 
     [Fact]
@@ -217,6 +238,59 @@ public class ScenariosMutationTests : IAsyncLifetime
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         db.Scenarios.Any(s => s.ProjectId == "proj-t040").Should().BeFalse();
+    }
+
+    // ── T046 ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateScenario_CorrelationId_AppearsBothInPayloadAndLogs()
+    {
+        var logFactory = new CapturingLoggerFactory();
+
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    var descriptor = services.SingleOrDefault(
+                        d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
+                    if (descriptor is not null)
+                        services.Remove(descriptor);
+                    services.AddDbContext<AppDbContext>(options =>
+                        options.UseNpgsql(_postgres.GetConnectionString()));
+                });
+                builder.ConfigureTestServices(services =>
+                    services.AddSingleton<ILoggerFactory>(logFactory));
+            });
+
+        var client = factory.CreateClient();
+
+        const string mutation = """
+            mutation CreateScenario($input: CreateScenarioInput!) {
+              createScenario(input: $input) {
+                scenario { id }
+                errors { code }
+                correlationId
+              }
+            }
+            """;
+
+        var response = await client.PostAsync("/graphql", GqlRequest(mutation, new
+        {
+            input = new { title = "Correlation log test", kind = "REQUIREMENT", projectId = "proj-t046" }
+        }));
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        var correlationId = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("createScenario")
+            .GetProperty("correlationId")
+            .GetString();
+
+        correlationId.Should().NotBeNullOrEmpty();
+        logFactory.Messages.Should().Contain(m => m.Contains(correlationId!));
     }
 
     [Fact]
