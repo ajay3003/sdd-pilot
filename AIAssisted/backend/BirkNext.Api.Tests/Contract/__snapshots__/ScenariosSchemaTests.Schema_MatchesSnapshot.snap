@@ -14,7 +14,8 @@ type Mutation {
 }
 
 type Query {
-  ping: String @cost(weight: "10")
+  ping: String
+  scenarios(projectId: String!): [Scenario!]! @cost(weight: "10")
 }
 
 "Represents a scenario used for specification and QA."

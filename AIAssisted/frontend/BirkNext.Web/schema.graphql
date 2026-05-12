@@ -1,5 +1,6 @@
 type Query {
   ping: String
+  scenarios(projectId: String!): [Scenario!]!
 }
 
 type Mutation {

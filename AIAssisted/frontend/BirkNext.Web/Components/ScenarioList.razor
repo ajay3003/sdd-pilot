@@ -1,0 +1,24 @@
+@if (Scenarios.Count == 0)
+{
+    <p data-testid="empty-state">No scenarios yet.</p>
+}
+else
+{
+    <ul>
+        @foreach (var scenario in Scenarios)
+        {
+            <li data-testid="scenario-row">
+                <strong>@scenario.Title</strong>
+                <span>@scenario.Kind</span>
+                @if (scenario.Description is not null)
+                {
+                    <span>@scenario.Description</span>
+                }
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<ScenarioListItem> Scenarios { get; set; } = [];
+}

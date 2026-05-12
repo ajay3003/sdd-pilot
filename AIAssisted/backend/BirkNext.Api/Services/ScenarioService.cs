@@ -1,5 +1,6 @@
 using BirkNext.Api.Data;
 using BirkNext.Api.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace BirkNext.Api.Services;
 
@@ -67,6 +68,16 @@ public class ScenarioService
                 correlationId, projectId);
             throw;
         }
+    }
+
+    public async Task<IReadOnlyList<Scenario>> GetAllAsync(
+        string projectId,
+        CancellationToken ct = default)
+    {
+        return await _dbContext.Scenarios
+            .Where(s => s.ProjectId == projectId)
+            .OrderByDescending(s => s.CreatedAt)
+            .ToListAsync(ct);
     }
 
     private static List<UserError> Validate(string title, ScenarioKind kind)

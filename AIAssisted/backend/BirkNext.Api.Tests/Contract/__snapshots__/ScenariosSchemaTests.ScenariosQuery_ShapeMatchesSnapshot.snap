@@ -1,0 +1,1 @@
+﻿scenarios(projectId: String!): [Scenario!]! @cost(weight: "10")

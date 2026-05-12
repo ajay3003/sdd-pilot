@@ -30,4 +30,30 @@ public class ScenariosSchemaTests
 
         executor.Schema.ToString().MatchSnapshot();
     }
+
+    [Fact]
+    public async Task ScenariosQuery_ShapeMatchesSnapshot()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+                builder.ConfigureServices(services =>
+                {
+                    var descriptor = services.SingleOrDefault(
+                        d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
+                    if (descriptor is not null)
+                        services.Remove(descriptor);
+
+                    services.AddDbContext<AppDbContext>(options =>
+                        options.UseInMemoryDatabase("schema-test-scenarios-query"));
+                }));
+
+        var resolver = factory.Services.GetRequiredService<IRequestExecutorResolver>();
+        var executor = await resolver.GetRequestExecutorAsync();
+
+        executor.Schema.ToString()
+            .Split('\n')
+            .First(l => l.TrimStart().StartsWith("scenarios("))
+            .Trim()
+            .MatchSnapshot();
+    }
 }

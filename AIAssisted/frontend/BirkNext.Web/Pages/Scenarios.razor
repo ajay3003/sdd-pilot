@@ -1,15 +1,38 @@
 @page "/scenarios"
 @using BirkNext.Web.Components
+@using BirkNext.Web.GraphQL
+@inject IBirkNextClient Client
 
 <PageTitle>Scenarios</PageTitle>
 
 <h1>Scenarios</h1>
 
-<ScenarioForm OnScenarioCreated="RefreshList" />
+<ScenarioForm OnScenarioCreated="RefreshListAsync" />
+
+<ScenarioList Scenarios="_scenarios" />
 
 @code {
-    private void RefreshList()
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+    private IReadOnlyList<ScenarioListItem> _scenarios = [];
+
+    protected override async Task OnInitializedAsync()
     {
-        StateHasChanged();
+        await LoadScenariosAsync();
+    }
+
+    private async Task LoadScenariosAsync()
+    {
+        var result = await Client.GetScenarios.ExecuteAsync(ProjectId);
+        if (result.Data is { } data)
+        {
+            _scenarios = data.Scenarios
+                .Select(s => new ScenarioListItem(s.Id, s.Title, s.Description, s.Kind.ToString()))
+                .ToList();
+        }
+    }
+
+    private async Task RefreshListAsync()
+    {
+        await LoadScenariosAsync();
     }
 }

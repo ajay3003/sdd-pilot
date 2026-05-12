@@ -3,7 +3,6 @@ using BirkNext.Api.GraphQL;
 using BirkNext.Api.Middleware;
 using BirkNext.Api.Services;
 using HotChocolate.AspNetCore;
-using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Formatting.Compact;
@@ -30,7 +29,7 @@ builder.Services.AddScoped<ScenarioService>();
 
 builder.Services
     .AddGraphQLServer()
-    .AddQueryType(d => d.Name("Query").Field("ping").Type<StringType>().Resolve("pong"))
+    .AddQueryType<Query>()
     .AddMutationType<Mutation>()
     .AddType<ScenarioObjectType>();
 
