@@ -9,6 +9,7 @@
     <div>
         <label for="title">Title</label>
         <InputText id="title" @bind-Value="_model.Title" />
+        <ValidationMessage For="() => _model.Title" />
     </div>
     <div>
         <label for="description">Description</label>
@@ -22,6 +23,7 @@
             <option value="Test">Test</option>
             <option value="NeedsClarification">Needs Clarification</option>
         </InputSelect>
+        <ValidationMessage For="() => _model.Kind" />
     </div>
 
     @if (_errors.Count > 0)
