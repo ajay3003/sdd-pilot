@@ -32,7 +32,8 @@ builder.Services
     .AddQueryType<Query>()
     .AddMutationType<Mutation>()
     .AddType<ScenarioObjectType>()
-    .AddDiagnosticEventListener<OperationDiagnosticEventListener>();
+    .AddDiagnosticEventListener<OperationDiagnosticEventListener>()
+    .ConfigureSchema(b => b.ModifyOptions(o => o.UseXmlDocumentation = true));
 
 var app = builder.Build();
 

@@ -3,18 +3,27 @@
   mutation: Mutation
 }
 
+"Payload returned by the createScenario mutation."
 type CreateScenarioPayload {
+  "The created scenario, or null if validation failed."
   scenario: Scenario
+  "Validation errors that prevented creation."
   errors: [UserError!]!
+  "Correlation ID for tracing this request in logs."
   correlationId: String!
 }
 
+"Root mutation type."
 type Mutation {
+  "Creates a new scenario in the given project."
   createScenario(input: CreateScenarioInput!): CreateScenarioPayload! @cost(weight: "10")
 }
 
+"Root query type."
 type Query {
+  "Health-check; returns \"pong\"."
   ping: String
+  "Returns all scenarios for the given project, newest first."
   scenarios(projectId: String!): [Scenario!]! @cost(weight: "10")
 }
 
@@ -34,6 +43,7 @@ type UserError {
   field: String
 }
 
+"Input for the createScenario mutation."
 input CreateScenarioInput {
   title: String!
   description: String

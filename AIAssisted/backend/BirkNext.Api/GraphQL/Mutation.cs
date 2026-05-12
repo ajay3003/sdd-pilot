@@ -4,8 +4,10 @@ using Microsoft.AspNetCore.Http;
 
 namespace BirkNext.Api.GraphQL;
 
+/// <summary>Root mutation type.</summary>
 public class Mutation
 {
+    /// <summary>Creates a new scenario in the given project.</summary>
     public async Task<CreateScenarioPayload> CreateScenarioAsync(
         CreateScenarioInput input,
         [Service] ScenarioService scenarioService,
