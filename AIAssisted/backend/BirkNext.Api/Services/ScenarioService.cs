@@ -85,10 +85,12 @@ public class ScenarioService
         var errors = new List<UserError>();
 
         if (string.IsNullOrWhiteSpace(title))
-            errors.Add(new UserError("TITLE_REQUIRED", "Title is required.", "title"));
+            errors.Add(new UserError("TITLE_REQUIRED", "Title is required", "title"));
+        else if (title.Length > 500)
+            errors.Add(new UserError("TITLE_TOO_LONG", "Title must be 500 characters or fewer", "title"));
 
         if (!Enum.IsDefined(typeof(ScenarioKind), kind))
-            errors.Add(new UserError("INVALID_KIND", "A valid type must be selected.", "kind"));
+            errors.Add(new UserError("INVALID_KIND", "A valid type must be selected", "kind"));
 
         return errors;
     }
