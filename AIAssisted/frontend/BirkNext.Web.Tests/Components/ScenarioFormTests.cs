@@ -121,4 +121,52 @@ public class ScenarioFormTests : BunitContext
         cut.Find("select[id='kind']").ParentElement!
             .TextContent.Should().Contain("A valid type must be selected");
     }
+
+    // ── T038 ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ScenarioForm_AfterCorrectingErrors_CallsMutationOnceAndResetsForm()
+    {
+        var mockPayload = new Mock<ICreateScenario_CreateScenario>();
+        mockPayload.Setup(p => p.Scenario).Returns(new Mock<ICreateScenario_CreateScenario_Scenario>().Object);
+        mockPayload.Setup(p => p.Errors).Returns(new List<ICreateScenario_CreateScenario_Errors>());
+        mockPayload.Setup(p => p.CorrelationId).Returns("corr-001");
+
+        var mockData = new Mock<ICreateScenarioResult>();
+        mockData.Setup(d => d.CreateScenario).Returns(mockPayload.Object);
+
+        var mockResult = new Mock<IOperationResult<ICreateScenarioResult>>();
+        mockResult.Setup(r => r.Data).Returns(mockData.Object);
+
+        var mockMutation = new Mock<ICreateScenarioMutation>();
+        mockMutation
+            .Setup(m => m.ExecuteAsync(It.IsAny<CreateScenarioInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResult.Object);
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.CreateScenario).Returns(mockMutation.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<ScenarioForm>();
+
+        // Step 1: submit with empty title to trigger validation errors
+        cut.Find("button[type='submit']").Click();
+
+        // Step 2: correct all validation errors
+        cut.Find("input[id='title']").Change("My scenario");
+        cut.Find("select[id='kind']").Change("Test");
+
+        // Step 3: resubmit with valid data
+        cut.Find("button[type='submit']").Click();
+
+        // Mutation called exactly once (first submit was blocked by validation),
+        // and the form resets after success (title cleared).
+        cut.WaitForAssertion(() =>
+        {
+            mockMutation.Verify(
+                m => m.ExecuteAsync(It.IsAny<CreateScenarioInput>(), It.IsAny<CancellationToken>()),
+                Times.Once);
+            cut.Find("input[id='title']").GetAttribute("value").Should().BeNullOrEmpty();
+        }, timeout: TimeSpan.FromSeconds(1));
+    }
 }
