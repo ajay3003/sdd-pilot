@@ -127,3 +127,106 @@ A user submits an incomplete or invalid scenario form and receives clear, inline
 - No pagination is required for the initial version; all scenarios are displayed in a single list.
 - The three scenario types (Requirement, Test, NeedsClarification) are fixed and not user-configurable.
 - This feature will be implemented using the application's backend API and persistent data storage.
+
+---
+
+## Feature US2 — Deterministic Scenario Extraction
+
+**Status**: Draft  
+**Created**: 2026-05-13
+
+---
+
+### Summary
+
+US2 enables users to paste specification text directly into BirkNext and have the system extract candidate scenarios using deterministic, rule-based logic — no AI or machine learning is involved in this version. Extracted candidates are classified into three categories (REQUIREMENT, TEST, NEEDS_CLARIFICATION) and presented to the user for review. No data is persisted automatically; the user decides what to keep before initiating any save action.
+
+---
+
+### User Story
+
+A user pastes the text of a specification document (such as a spec.md file) into the extraction interface. The system applies deterministic rules to the pasted text, identifies bullet points and relevant lines, and presents a list of extracted candidates. Each candidate is labelled with a classification. The user reviews the full list, makes decisions about which candidates to retain, and explicitly confirms a save action. Nothing is persisted until the user acts.
+
+---
+
+### User Workflow
+
+1. User navigates to the extraction view within BirkNext.
+2. User pastes spec text into the provided text area.
+3. User triggers the extraction action.
+4. System processes the pasted text using deterministic rules and displays a list of extracted candidate scenarios.
+5. Each candidate is shown with its assigned classification: REQUIREMENT, TEST, or NEEDS_CLARIFICATION.
+6. User reviews the extracted candidates.
+7. User selects which candidates to retain.
+8. User explicitly confirms the save action.
+9. Only the user-selected candidates are persisted; all others are discarded.
+
+---
+
+### Functional Requirements
+
+- **FR-US2-001**: System MUST accept pasted text as the sole input method; file upload is not supported in this version.
+- **FR-US2-002**: System MUST extract candidate scenarios from pasted text using deterministic rules only; no AI or machine learning may be involved.
+- **FR-US2-003**: System MUST extract bullet points and relevant lines from the pasted text as candidate scenarios.
+- **FR-US2-004**: System MUST classify each extracted candidate as exactly one of: REQUIREMENT, TEST, or NEEDS_CLARIFICATION.
+- **FR-US2-005**: System MUST display all extracted candidates to the user before any persistence occurs.
+- **FR-US2-006**: System MUST NOT automatically persist any extracted candidate; persistence requires an explicit user action.
+- **FR-US2-007**: System MUST allow the user to select which candidates to save before committing.
+- **FR-US2-008**: System MUST show an appropriate message when no candidates can be extracted from the pasted text.
+- **FR-US2-009**: System MUST show a validation message and not attempt extraction when the pasted text area is empty.
+
+---
+
+### Acceptance Criteria
+
+1. **Given** a user pastes spec text containing bullet points, **When** extraction is triggered, **Then** all bullet points are extracted and displayed as candidate scenarios.
+2. **Given** extracted candidates are displayed, **When** the user views the list, **Then** each candidate shows its classification label (REQUIREMENT, TEST, or NEEDS_CLARIFICATION).
+3. **Given** extracted candidates are displayed, **When** the user has not performed a save action, **Then** no candidates are persisted to the data store.
+4. **Given** a user pastes text that contains no extractable candidates, **When** extraction is triggered, **Then** the system displays a message indicating no candidates were found.
+5. **Given** a user selects a subset of extracted candidates and confirms save, **When** the save action is processed, **Then** only the selected candidates are persisted; unselected candidates are discarded.
+6. **Given** a user triggers extraction on an empty text area, **When** the input is evaluated, **Then** the system shows a validation message and does not attempt extraction.
+
+---
+
+### Non-Goals
+
+- AI or machine learning classification is explicitly excluded from this version.
+- File upload is not supported; text must be pasted directly.
+- Automatic persistence of extracted candidates is excluded.
+- Editing or reclassifying individual extracted candidates before save is deferred to a future version.
+- Batch processing of multiple documents in a single extraction session is out of scope.
+- Export of extracted candidates to external formats is out of scope for this version.
+
+---
+
+### Observability Requirements
+
+- The number of candidates extracted per extraction event MUST be measurable.
+- Each extraction trigger event MUST be logged with sufficient context to identify the session.
+- User save actions (candidates selected and confirmed) MUST be logged.
+- Extraction processing time MUST be measurable per event.
+
+---
+
+### Security Requirements
+
+- Pasted text MUST be treated as untrusted user input and sanitized before being rendered in the interface.
+- No extracted candidate data may be persisted without an explicit, affirmative user action.
+- This feature introduces no new authentication or authorization surface beyond what US1 establishes.
+
+---
+
+### Performance Expectations
+
+- Extraction MUST complete and results MUST be displayed within 2 seconds for pasted text up to 10,000 characters.
+- The extraction interface MUST remain responsive during processing; blocking the user from interacting with the page is not acceptable.
+
+---
+
+### Future Evolution
+
+- AI-assisted or ML-based classification may be introduced in a subsequent version to improve accuracy beyond deterministic rules.
+- File upload support (e.g., uploading a spec.md file directly) is a candidate for the next iteration.
+- In-line editing and reclassification of extracted candidates prior to save is a planned enhancement.
+- Bulk selection and deselection of extracted candidates is a candidate for improved review UX.
+- Integration with the scenario list from US1, so that saved candidates become first-class Scenarios, is the intended long-term connection between these two features.

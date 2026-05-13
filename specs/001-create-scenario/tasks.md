@@ -250,3 +250,264 @@ With two developers after Phase 2 completes:
 - Each implementation task should clearly follow from a RED test task
 - Commit after each task or logical group; branch stays shippable at every checkpoint
 - Total tasks: **52** | Setup: 7 | Foundational: 8 | US1: 11 | US2: 10 | US3: 8 | Polish: 8
+
+---
+---
+
+# Tasks: Feature US2 — Deterministic Scenario Extraction
+
+**Input**: Design documents from `/specs/001-create-scenario/`
+**Prerequisites**: plan.md §US2 ✅ | spec.md §US2 ✅ | research.md §R-US2 ✅ | data-model.md §US2 ✅ | contracts/schema.graphql ✅
+**Depends on**: Phases 1–2 complete (project infrastructure, ASP.NET Core + Blazor WASM scaffolding, EF Core + PostgreSQL, Serilog, HotChocolate)
+
+**Stack**: same as US1 — ASP.NET Core + HotChocolate 14 (backend) | Blazor WebAssembly + Strawberry Shake 14 (frontend)
+
+**Architecture boundary**: extraction pipeline runs client-side (Blazor WASM) only. The server is contacted exclusively at the batch save step. Raw pasted specification text never crosses the wire.
+
+**Organization**: Tasks are grouped by architectural layer to enable the backend GraphQL extension and the frontend extraction pipeline to proceed in parallel after Phase 7.
+
+---
+
+## Format: `[ID] [P?] Description with file path`
+
+- **[P]**: Can run in parallel with other `[P]` tasks in the same phase (different files, no mutual dependencies)
+
+---
+
+## Phase 7: Domain and Service Foundation
+
+**Purpose**: Define all client-side model types and service interfaces before any pipeline or component work begins. All tasks in this phase target different files and can run in parallel.
+
+**Prerequisite**: Phases 1–2 complete.
+
+- [ ] T053 [P] Create `BlockType` enum (13 values: `Heading`, `UnorderedListItem`, `OrderedListItem`, `FencedCodeBlock`, `Blockquote`, `TableBodyRow`, `TableHeaderRow`, `TableSeparatorRow`, `HorizontalRule`, `ParagraphLine`, `YamlFrontMatter`, `HtmlComment`, `Empty`) per data-model.md §BlockType in `frontend/BirkNext.Web/Models/BlockType.cs`
+- [ ] T054 [P] Create `ClassificationSignal` enum (7 values: `BddPattern`, `Rfc2119Uppercase`, `Rfc2119Lowercase`, `FrPrefix`, `QuestionTerminator`, `DeferralMarker`, `Default`) per data-model.md §ClassificationSignal in `frontend/BirkNext.Web/Models/ClassificationSignal.cs`
+- [ ] T055 [P] Create `PipelineStatus` enum (4 values: `Success`, `EmptyInput`, `InputTooLarge`, `NoResults`) per data-model.md §PipelineStatus in `frontend/BirkNext.Web/Models/PipelineStatus.cs`
+- [ ] T056 [P] Create `CandidateSaveState` enum (5 values: `Pending`, `Saving`, `Saved`, `Failed`, `Retrying`) per data-model.md §CandidateSaveState in `frontend/BirkNext.Web/Models/CandidateSaveState.cs`
+- [ ] T057 [P] Create `ReviewSavePhase` enum (5 values: `Idle`, `Saving`, `PartialSuccess`, `Complete`, `Failed`) per data-model.md §ReviewSavePhase in `frontend/BirkNext.Web/Models/ReviewSavePhase.cs`
+- [ ] T058 [P] Create `TextBlock` record (fields: `RawText string`, `BlockType BlockType`, `IndentationLevel int`, `PrecedingHeading string?`) per data-model.md §TextBlock in `frontend/BirkNext.Web/Models/TextBlock.cs`; pipeline-internal only — no public access from components
+- [ ] T059 [P] Create `ExtractionCandidate` record (10 fields: `CandidateId Guid`, `Title string`, `Classification ScenarioKind`, `ClassificationSignal ClassificationSignal`, `ContextHeading string?`, `SourceBlockType BlockType`, `IsSelected bool` default `false`, `SaveState CandidateSaveState` default `Pending`, `SaveError string?` default `null`, `SavedScenarioId Guid?` default `null`; reserve `Confidence float?` as null — AI extensibility seam per data-model.md §Extensibility) in `frontend/BirkNext.Web/Models/ExtractionCandidate.cs`
+- [ ] T060 [P] Create `ExtractionPipelineResult` record (fields: `Status PipelineStatus`, `Candidates IReadOnlyList<ExtractionCandidate>`, `InputLengthChars int`, `InputLineCount int`, `DurationMs long`, `RequirementCount int`, `TestCount int`, `NeedsClarificationCount int`) per data-model.md §ExtractionPipelineResult; enforce via constructor or factory that `RequirementCount + TestCount + NeedsClarificationCount == Candidates.Count` and that `Candidates` is never null (use `Array.Empty<ExtractionCandidate>()` for non-Success status) in `frontend/BirkNext.Web/Models/ExtractionPipelineResult.cs`
+- [ ] T061 [P] Create `IExtractionConfiguration` interface (properties: `MaxInputLengthChars int`, `MinCandidateLengthChars int`, `MaxLineLengthForPatternMatching int`) and `ExtractionConfiguration` default implementation (`MaxInputLengthChars = 50_000`, `MinCandidateLengthChars = 3`, `MaxLineLengthForPatternMatching = 2_000`); register as singleton in `frontend/BirkNext.Web/Program.cs` in `frontend/BirkNext.Web/Services/ExtractionConfiguration.cs`
+- [ ] T062 [P] Create `IScenarioExtractionService` interface (single method `Extract(string rawInput): ExtractionPipelineResult`) in `frontend/BirkNext.Web/Services/IScenarioExtractionService.cs`; create empty `ScenarioExtractionService : IScenarioExtractionService` stub that throws `NotImplementedException`; register as scoped in `frontend/BirkNext.Web/Program.cs`
+
+**Checkpoint**: `dotnet build frontend/BirkNext.sln` passes with all new types. No runtime dependency on the backend.
+
+---
+
+## Phase 8: Extraction Pipeline
+
+**Purpose**: Implement all 8 pipeline stages inside `ScenarioExtractionService`. Each stage task extends the same file incrementally; each must leave the project in a buildable state. Tests are written after all stages are complete and can be written in parallel with the later stages.
+
+**Prerequisite**: Phase 7 complete (model types and interface must exist).
+
+- [ ] T063 Implement Stage 1 (Input Validation Gate) and Stage 2 (Normalization) in `frontend/BirkNext.Web/Services/ScenarioExtractionService.cs` — Stage 1: return `PipelineStatus.EmptyInput` when `rawInput` is null, empty, or whitespace only; return `PipelineStatus.InputTooLarge` when `rawInput.Length > IExtractionConfiguration.MaxInputLengthChars`; Stage 2: replace `\r\n` with `\n`, strip UTF-8 BOM (`﻿`) if present; record `InputLengthChars` and `InputLineCount` from the raw input before normalization
+- [ ] T064 Implement Stage 3 (Block Partitioning) in `frontend/BirkNext.Web/Services/ScenarioExtractionService.cs` — iterate normalized lines sequentially with look-ahead; detect and group fenced code block ranges (` ``` ` open/close pairs) so their interior lines are tagged `FencedCodeBlock`; detect YAML front matter (leading `---` block before any non-empty line); classify each line as one of the 13 `BlockType` values; set `IndentationLevel` for list items (count leading spaces / 2); track `PrecedingHeading` as the text of the most recent `Heading` line seen; output ordered `IReadOnlyList<TextBlock>`
+- [ ] T065 Implement Stage 4 (Structure Filter) in `frontend/BirkNext.Web/Services/ScenarioExtractionService.cs` — discard `TextBlock` instances with `BlockType` in: `Heading`, `FencedCodeBlock`, `Blockquote`, `HorizontalRule`, `HtmlComment`, `YamlFrontMatter`, `Empty`, `TableHeaderRow`, `TableSeparatorRow`; retain: `UnorderedListItem`, `OrderedListItem`, `TableBodyRow`, `ParagraphLine`; output filtered sequence preserving order
+- [ ] T066 Implement Stage 5 (Content Extraction) in `frontend/BirkNext.Web/Services/ScenarioExtractionService.cs` — for each retained block: strip list markers (`-`/`*`/`+`/`N.` prefix), strip inline code backticks preserving inner text, strip link syntax `[text](url)` retaining display text, strip image syntax `![alt](url)` entirely, strip leading table pipe characters for `TableBodyRow`; trim result; discard if result length < `IExtractionConfiguration.MinCandidateLengthChars`; carry `TextBlock.PrecedingHeading` forward as `ContextHeading`; output ordered sequence of `(PlainText: string, ContextHeading: string?, SourceBlockType: BlockType)`
+- [ ] T067 Implement Stage 6 (Classification) in `frontend/BirkNext.Web/Services/ScenarioExtractionService.cs` — for each content item: if `PlainText.Length > IExtractionConfiguration.MaxLineLengthForPatternMatching` assign `ClassificationSignal.Default` (NeedsClarification) without pattern matching; otherwise apply heuristics in priority order: (1) `BddPattern` — line contains Given/When/Then triple or starts with "Given "/"When "/"Then "; (2) `Rfc2119Uppercase` — line contains MUST/SHALL/SHOULD/MAY/MUST NOT/SHALL NOT (case-sensitive uppercase); (3) `Rfc2119Lowercase` — line contains must/shall/required/is required to (case-insensitive, word-boundary matched); (4) `FrPrefix` — line matches `FR-\d+` pattern; (5) `QuestionTerminator` — trimmed line ends with `?`; (6) `DeferralMarker` — line contains TBD/TODO/TBC/open question/to be defined (case-insensitive); (7) `Default` — NeedsClarification fallback; first matching signal wins; record `ClassificationSignal` and derive `Classification` (`ScenarioKind`) from it
+- [ ] T068 Implement Stage 7 (Deduplication) and Stage 8 (Result Assembly) in `frontend/BirkNext.Web/Services/ScenarioExtractionService.cs` — Stage 7: deduplicate by case-folded, trimmed `PlainText`; keep first occurrence, discard subsequent exact matches; Stage 8: assemble `ExtractionCandidate` records (new `CandidateId = Guid.NewGuid()`, `IsSelected = false`, `SaveState = CandidateSaveState.Pending`); compute `RequirementCount`, `TestCount`, `NeedsClarificationCount`; if deduplicated list is empty return `PipelineStatus.NoResults`; otherwise return `PipelineStatus.Success` with fully populated `ExtractionPipelineResult`; record `DurationMs` from a `Stopwatch` started at the top of `Extract()`
+- [ ] T069 [P] Write unit tests for `ScenarioExtractionService` covering all pipeline stages in `frontend/BirkNext.Web.Tests/Services/ScenarioExtractionServiceTests.cs` — required coverage: empty string → `EmptyInput`; whitespace-only → `EmptyInput`; input at exactly `MaxInputLengthChars` → `Success`; input at `MaxInputLengthChars + 1` → `InputTooLarge`; input with no extractable bullets → `NoResults`; unordered bullet extraction; ordered bullet extraction; BDD triple classification → `Test`; MUST keyword classification → `Requirement`; question mark classification → `NeedsClarification`; TBD marker classification → `NeedsClarification`; default fallback → `NeedsClarification`; duplicate bullets → single candidate after deduplication; blank bullet (`- ` with no text) → discarded; Windows line endings normalized; heading text propagated as `ContextHeading`; fenced code block content not extracted; `RequirementCount + TestCount + NeedsClarificationCount == Candidates.Count` invariant holds; `DurationMs > 0` on Success
+
+**Checkpoint**: `dotnet test frontend/BirkNext.Web.Tests --filter "ScenarioExtractionService"` passes. `ScenarioExtractionService.Extract()` has no Blazor, network, or DI dependency beyond `IExtractionConfiguration`.
+
+---
+
+## Phase 9: Backend GraphQL Extension
+
+**Purpose**: Extend the HotChocolate schema with the `createScenarios` batch mutation and all supporting types. Can proceed fully in parallel with Phases 8 and 10 once Phase 7 is complete, as this work is in a different project.
+
+**Prerequisite**: Phase 2 complete (HotChocolate server running). No dependency on client-side extraction pipeline.
+
+- [ ] T070 [P] Add `CreateScenariosInput` and `ExtractionMetadataInput` HotChocolate input types in `backend/BirkNext.Api/GraphQL/CreateScenariosInput.cs` per data-model.md §Wire Models and schema.graphql — `CreateScenariosInput`: `items: [CreateScenarioInput!]!` (reuses existing US1 input type), `extractionMetadata: ExtractionMetadataInput?`; `ExtractionMetadataInput`: `totalExtracted int`, `selectedCount int`, `extractionDurationMs int`, `sessionId string` — all non-nullable; add HotChocolate `[GraphQLDescription]` attributes matching schema.graphql doc strings
+- [ ] T071 [P] Add `CreateScenariosPayload`, `CreateScenarioSuccess`, `CreateScenarioError`, and `CreateScenarioResult` union HotChocolate types in `backend/BirkNext.Api/GraphQL/CreateScenariosPayload.cs` per data-model.md §Wire Models — `CreateScenariosPayload`: `results IReadOnlyList<CreateScenarioResult>`, `successCount int`, `failureCount int`, `correlationId string`; `CreateScenarioSuccess`: `scenario Scenario`; `CreateScenarioError`: `code string`, `message string`, `field string?`; register the `CreateScenarioResult` union type with HotChocolate
+- [ ] T072 Add `CreateBatchAsync` method to `ScenarioService` in `backend/BirkNext.Api/Services/ScenarioService.cs` — accepts `IEnumerable<CreateScenarioInput>` and `string correlationId`; processes each item independently using the same validation rules as `CreateAsync` (title non-empty, max 500 chars, kind valid enum value, projectId non-empty); successful items are inserted; failed items produce a `CreateScenarioError` with the appropriate error code (`TITLE_REQUIRED`, `TITLE_TOO_LONG`, `KIND_INVALID`, `PROJECT_ID_REQUIRED`); returns ordered `IReadOnlyList<CreateScenarioResult>` preserving input order; does not throw on per-item validation failure — failures are captured as `CreateScenarioError` results
+- [ ] T073 Implement `Mutation.CreateScenarios` resolver in `backend/BirkNext.Api/GraphQL/Mutation.cs` — call `ScenarioService.CreateBatchAsync`; compute `successCount` and `failureCount` from results; emit `CandidateReviewSaved` Serilog structured event with fields: `selectedCount` (from `input.items.Count`), `totalExtracted` (from `input.extractionMetadata.TotalExtracted` when present, else -1 to indicate not provided), `scenariosCreated` (`successCount`), `failedCount` (`failureCount`), `durationMs` (Stopwatch from resolver entry), `projectId` (from first item's `projectId`), `correlationId`; no field in the log event may carry text content from the pasted specification — only the counts and identifiers listed above; register the mutation field in the HotChocolate schema
+- [ ] T074 Write integration tests for `createScenarios` mutation in `backend/BirkNext.Api.Tests/Integration/ScenariosBatchMutationTests.cs` — test cases: (a) all items valid → `successCount == items.Count`, each result is `CreateScenarioSuccess` with a non-null `scenario.id`, all scenarios visible in `scenarios` query; (b) one item has empty title → that result is `CreateScenarioError` with `code == "TITLE_REQUIRED"` and `field == "title"`, all other items succeed, `successCount + failureCount == items.Count`; (c) title exceeding 500 characters → `TITLE_TOO_LONG`; (d) empty `items` array → mutation rejected before resolver; (e) `extractionMetadata` omitted → mutation succeeds (field is optional); (f) `extractionMetadata` present → `CandidateReviewSaved` log event contains `totalExtracted` from metadata
+- [ ] T075 [P] Extend schema snapshot test in `backend/BirkNext.Api.Tests/Contract/ScenariosSchemaTests.cs` — add assertions verifying `createScenarios` mutation, `CreateScenariosInput`, `ExtractionMetadataInput`, `CreateScenariosPayload`, `CreateScenarioResult` union, `CreateScenarioSuccess`, and `CreateScenarioError` are all present in the HotChocolate-generated schema; verify snapshot matches `contracts/schema.graphql`; verify no existing US1 types (`Scenario`, `ScenarioKind`, `createScenario`, `scenarios`, `CreateScenarioPayload`, `UserError`) have changed shape
+
+**Checkpoint**: `createScenarios` mutation works end-to-end against Testcontainers PostgreSQL. Partial success verified. Schema snapshot test passes. `contracts/schema.graphql` matches the generated schema.
+
+---
+
+## Phase 10: Frontend Strawberry Shake Integration
+
+**Purpose**: Generate a typed batch mutation client from the operation document. Requires the backend schema to be available for code generation.
+
+**Prerequisite**: Phase 9 complete (backend schema must include `createScenarios`).
+
+- [ ] T076 Write `CreateScenarios.graphql` operation document in `frontend/BirkNext.Web/GraphQL/CreateScenarios.graphql` — mutation accepting `$input: CreateScenariosInput!`; return `results { ... on CreateScenarioSuccess { scenario { id title kind createdAt } } ... on CreateScenarioError { code message field } }`, `successCount`, `failureCount`, `correlationId`; run Strawberry Shake code generation (`dotnet build`) to confirm typed client `ICreateScenariosMutation` is generated without errors
+- [ ] T077 Register the generated `ICreateScenariosMutation` Strawberry Shake client in `frontend/BirkNext.Web/Program.cs` DI container; confirm `dotnet build frontend/BirkNext.sln` produces zero errors and the generated client is injectable into Blazor components
+
+**Checkpoint**: `ICreateScenariosMutation` is available for injection. `dotnet build` passes.
+
+---
+
+## Phase 11: Frontend Component Tree
+
+**Purpose**: Implement the four components that form the extraction view UI. `ExtractionCandidateRow` and `ExtractionInput` are independent. `ExtractionReviewList` depends on `ExtractionCandidateRow`. `ScenarioExtraction` page depends on both `ExtractionInput` and `ExtractionReviewList`. Tests for each component can run in parallel with each other.
+
+**Prerequisite**: Phase 7 (models), Phase 8 (extraction service), Phase 10 (Strawberry Shake batch client).
+
+- [ ] T078 Implement `ExtractionCandidateRow.razor` in `frontend/BirkNext.Web/Components/ExtractionCandidateRow.razor` — parameters: `[Parameter] ExtractionCandidate Candidate` and `[Parameter] EventCallback<Guid> OnSelectionToggled`; render: classification badge using `Candidate.Classification` display name; `Candidate.ContextHeading` in muted text when non-null; `Candidate.Title` as plain text using `@Candidate.Title` within an element (never `@((MarkupString)...)` — XSS constraint from plan.md §Security and schema.graphql boundary rule); checkbox bound to `Candidate.IsSelected` that invokes `OnSelectionToggled` with `Candidate.CandidateId` on change; `SaveState` indicator: show "Saved" badge when `Candidate.SaveState == Saved`; show `Candidate.SaveError` error text when `Candidate.SaveState == Failed`; show spinner when `Candidate.SaveState == Saving`
+- [ ] T079 Implement `ExtractionReviewList.razor` in `frontend/BirkNext.Web/Components/ExtractionReviewList.razor` — parameter: `[Parameter] ExtractionPipelineResult? PipelineResult`; inject `ICreateScenariosMutation` and active project context; render nothing when `PipelineResult` is null; render empty-state message when `PipelineResult.Status == NoResults`; render count summary header: "N candidates extracted — X REQUIREMENT, Y TEST, Z NEEDS_CLARIFICATION"; render three candidate groups (Requirement / Test / NeedsClarification) each via `ExtractionCandidateRow`; maintain `HashSet<Guid> _selectedIds` — default empty (opt-in selection, FR-US2-006); confirm-save button disabled when `_selectedIds` is empty; on save confirm: set `ReviewSavePhase = Saving`, set `SaveState = Saving` on all selected candidates, call `ICreateScenariosMutation.ExecuteAsync(input)` with selected candidates mapped to `CreateScenariosInput` per data-model.md §Persistence Boundary field mapping; on response: update per-candidate `SaveState` to `Saved` (with `SavedScenarioId`) or `Failed` (with `SaveError`) using `results[i]` → `items[i]` positional mapping; update `ReviewSavePhase` to `Complete`, `PartialSuccess`, or `Failed`; implement `IDisposable` to emit `CandidateReviewAbandoned` log event when disposed with a non-null `PipelineResult` that has candidates not all in `Saved` state; include `ExtractionMetadataInput` in the mutation input when `PipelineResult` metadata is available
+- [ ] T080 Implement `ExtractionInput.razor` in `frontend/BirkNext.Web/Components/ExtractionInput.razor` — inject `IScenarioExtractionService`; render: multi-line text area bound to `_rawInput string`; extract trigger button; on trigger: validate input before calling `Extract()` — show inline message "Paste some text to extract candidates from" when text area empty (FR-US2-009); show "Input is too large (max 50,000 characters)" when input exceeds cap; call `IScenarioExtractionService.Extract(_rawInput)` otherwise; emit `ExtractionTriggered` log event before calling `Extract()` (inputLengthChars, inputLineCount, generated sessionId stored in component state); emit `ExtractionCompleted` log event after `Extract()` returns with `Status == Success` (candidateCount, requirementCount, testCount, needsClarificationCount, durationMs); emit `ExtractionEmpty` log event after `Extract()` returns with `Status != Success` (inputLengthChars, reason derived from PipelineStatus); raise `EventCallback<ExtractionPipelineResult> OnExtractionCompleted` with the result; disable extract button while extraction is running
+- [ ] T081 Implement `ScenarioExtraction.razor` page in `frontend/BirkNext.Web/Pages/ScenarioExtraction.razor` — route `@page "/extract"`; host `ExtractionInput` and `ExtractionReviewList`; declare `ExtractionPipelineResult? _pipelineResult` field; wire `ExtractionInput.OnExtractionCompleted` to set `_pipelineResult` and pass it to `ExtractionReviewList.PipelineResult`; no business logic in the page — orchestration only; add nav link entry for "Extract" pointing to `/extract` in `frontend/BirkNext.Web/Shared/NavMenu.razor`
+- [ ] T082 [P] Write bUnit tests for `ExtractionCandidateRow.razor` in `frontend/BirkNext.Web.Tests/Components/ExtractionCandidateRowTests.cs` — test cases: classification badge text matches `ScenarioKind` display name; `ContextHeading` appears when non-null and is absent when null; candidate title is rendered as text content not as HTML markup (assert `InnerHtml` does not contain unescaped `<` or `>` when title contains HTML characters); checkbox is unchecked by default; toggling checkbox raises `OnSelectionToggled` with correct `CandidateId`; `SaveState.Saved` shows saved indicator; `SaveState.Failed` shows `SaveError` text; `SaveState.Saving` shows spinner
+- [ ] T083 [P] Write bUnit tests for `ExtractionReviewList.razor` in `frontend/BirkNext.Web.Tests/Components/ExtractionReviewListTests.cs` — test cases: null `PipelineResult` renders nothing; `PipelineStatus.NoResults` shows empty-state message; count summary header shows correct totals; candidates are rendered in three groups by classification; no candidate checkbox is checked by default; confirm-save button is disabled when no candidates selected; confirm-save button enabled when at least one candidate selected; on successful save response, candidate row shows Saved indicator; on error response, candidate row shows error message; after complete save `ReviewSavePhase.Complete` state is reached
+- [ ] T084 [P] Write bUnit tests for `ExtractionInput.razor` in `frontend/BirkNext.Web.Tests/Components/ExtractionInputTests.cs` — test cases: empty text area submission shows validation message and does not call `IScenarioExtractionService.Extract()`; input above `MaxInputLengthChars` shows length error and does not call `Extract()`; valid input calls `Extract()` with the raw string; successful extraction raises `OnExtractionCompleted` with the pipeline result; extract button is disabled during extraction and re-enabled after
+
+**Checkpoint**: Navigate to `/extract`. `dotnet build` passes. Paste a spec.md fragment containing bullet points. Candidates appear grouped by classification. Selecting candidates and clicking confirm-save calls `createScenarios`. Saved candidates appear in the US1 `/scenarios` list on navigation.
+
+---
+
+## Phase 12: Observability
+
+**Purpose**: Verify that all five structured log events from plan.md §Observability Integration are emitted with correct fields and without text content from pasted input. Client-side events use console logging in v1 (plan.md §Observability Option B) pending a telemetry endpoint decision.
+
+**Prerequisite**: Phase 11 complete (components must be implemented to instrument them).
+
+- [ ] T085 Verify `ExtractionTriggered`, `ExtractionCompleted`, and `ExtractionEmpty` log events in `frontend/BirkNext.Web/Components/ExtractionInput.razor` — confirm each event contains only the fields specified in data-model.md §Observability Model Fields; confirm no field carries text from `_rawInput` (only `inputLengthChars` and `inputLineCount` numeric values); confirm `sessionId` is a consistent identifier across the three events for the same extraction session; use `ILogger<ExtractionInput>` injected via DI; add an inline comment at each log call noting the "no raw text" constraint for code review awareness
+- [ ] T086 Verify `CandidateReviewAbandoned` log event in `frontend/BirkNext.Web/Components/ExtractionReviewList.razor` — confirm the event is emitted in `Dispose()` when `PipelineResult` is non-null and at least one candidate is not in `Saved` state; confirm it logs only `totalExtracted` and `selectedCount` (counts from `_selectedIds`) — no candidate title text; verify event is not emitted when all selected candidates have been successfully saved
+- [ ] T087 Verify `CandidateReviewSaved` Serilog event in `backend/BirkNext.Api/GraphQL/Mutation.cs` — manually inspect the structured log output for a `createScenarios` call with `extractionMetadata` present: confirm `selectedCount`, `totalExtracted`, `scenariosCreated`, `failedCount`, `durationMs`, `projectId`, and `correlationId` all appear; confirm no field contains text from any candidate title; add an integration test assertion in `backend/BirkNext.Api.Tests/Integration/ScenariosBatchMutationTests.cs` verifying `CandidateReviewSaved` is emitted with a non-zero `durationMs`
+
+**Checkpoint**: All five log events are emitted. `CandidateReviewSaved` appears in backend structured JSON output. No pasted text appears in any log field.
+
+---
+
+## Phase 13: Validation and Security
+
+**Purpose**: Verify input sanitization, XSS rendering constraints, and server-side batch validation rules — each as an independent verification step.
+
+**Prerequisite**: Phases 11 and 9 complete.
+
+- [ ] T088 Verify XSS rendering constraint across the component tree — inspect `ExtractionCandidateRow.razor` and confirm candidate `Title` is bound with `@Candidate.Title` inside element text content (not `@((MarkupString)Candidate.Title)` or `innerHTML`); verify `ContextHeading` is similarly plain-text bound; add a bUnit test in `frontend/BirkNext.Web.Tests/Components/ExtractionCandidateRowTests.cs` that passes a title containing `<script>alert(1)</script>` and asserts the rendered output contains the literal string `&lt;script&gt;` (escaped) not an executable script element
+- [ ] T089 Extend batch mutation integration tests in `backend/BirkNext.Api.Tests/Integration/ScenariosBatchMutationTests.cs` — add test cases for server-side batch validation: (a) item with title exceeding 500 chars → `CreateScenarioError.code == "TITLE_TOO_LONG"`, `field == "title"`; (b) item with empty `projectId` → `CreateScenarioError.code == "PROJECT_ID_REQUIRED"`; (c) a batch where all items fail validation → `successCount == 0`, `failureCount == items.Count`, no rows inserted; (d) mixed batch (some valid, some invalid) → correct partial success counts, valid items committed to DB, invalid items rejected without rolling back committed items
+- [ ] T090 Verify `ExtractionMetadataInput` carries no text content — add a schema-level assertion in the contract test (`backend/BirkNext.Api.Tests/Contract/ScenariosSchemaTests.cs`) confirming `ExtractionMetadataInput` has exactly 4 fields (`totalExtracted`, `selectedCount`, `extractionDurationMs`, `sessionId`) with types `Int!`, `Int!`, `Int!`, `String!` and no additional fields; verify the resolver does not log the `sessionId` value if it resembles user content (document the constraint that `sessionId` must be an opaque client-generated identifier, not derived from pasted text)
+
+**Checkpoint**: Pasting `<script>alert(1)</script>` as a bullet renders as literal escaped text in the review list. All batch validation error codes match those documented in schema.graphql. Schema structure of `ExtractionMetadataInput` is locked by snapshot test.
+
+---
+
+## Phase 14: Integration and Verification
+
+**Purpose**: End-to-end acceptance scenario verification, US1 regression, performance measurement, and final build health. All `[P]` tasks are independent and can run concurrently.
+
+**Prerequisite**: Phases 7–13 complete.
+
+- [ ] T091 Verify all 6 US2 acceptance scenarios from spec.md §US2 against the running application — AC1: paste spec text with bullet points → all bullets extracted and displayed as candidates; AC2: each candidate shows classification label (REQUIREMENT/TEST/NEEDS_CLARIFICATION); AC3: no candidates auto-persisted before user confirm action (inspect `scenarios` query before and after extraction but before save); AC4: paste text with no extractable candidates → empty-state message displayed; AC5: select subset of candidates → only selected candidates appear in `scenarios` query after save, unselected do not; AC6: click extract with empty text area → validation message shown, no extraction attempted
+- [ ] T092 [P] Run full regression to verify US1 is unaffected — execute `dotnet test backend/BirkNext.Api.Tests` and `dotnet test frontend/BirkNext.Web.Tests`; confirm all T016–T051 tests pass; verify `createScenario` (single) mutation still returns correct payload shape; verify `scenarios` query still returns results in `createdAt DESC` order; verify scenarios created via batch save appear in the `scenarios` query identically to manually created scenarios
+- [ ] T093 [P] Measure extraction performance — paste a representative 10,000-character spec document (a copy of `spec.md` is suitable); confirm `ExtractionCompleted.durationMs < 200` in the log output; confirm time from extraction trigger to first candidate visible on screen is under 2 seconds; if extracted candidate count exceeds 100, confirm the large-extraction count notice is displayed; document measured durationMs and candidate count in a comment on this task
+- [ ] T094 [P] Verify schema compatibility — run schema snapshot test (T075); confirm `contracts/schema.graphql` matches the HotChocolate-generated schema byte-for-byte (or diff is only whitespace/comment); confirm `createScenarios`, `CreateScenariosPayload`, the `CreateScenarioResult` union, `CreateScenarioSuccess`, `CreateScenarioError`, and `ExtractionMetadataInput` are all present in the generated output; confirm no US1 type has changed
+- [ ] T095 [P] Run `dotnet format` on `backend/BirkNext.sln` and `frontend/BirkNext.sln`; fix all formatting violations; confirm `dotnet build` on both solutions produces zero errors and zero warnings; commit all changes
+
+**Checkpoint**: All 6 US2 acceptance scenarios pass. All US1 tests continue to pass. Extraction completes in under 200 ms for a 10,000-character input. Schema snapshot is clean. Both solutions build with zero errors.
+
+---
+
+## Dependencies & Execution Order (US2)
+
+### Phase Dependencies
+
+- **Phase 7 (Domain Models)**: Requires Phases 1–2 complete — start immediately after foundation is ready
+- **Phase 8 (Pipeline)**: Requires Phase 7
+- **Phase 9 (Backend GraphQL)**: Requires Phase 2 only — **can run fully in parallel with Phases 7 and 8**
+- **Phase 10 (Strawberry Shake)**: Requires Phase 9 (schema must exist for codegen)
+- **Phase 11 (Components)**: Requires Phases 7, 8, and 10
+- **Phase 12 (Observability)**: Requires Phase 11
+- **Phase 13 (Validation/Security)**: Requires Phases 9 and 11
+- **Phase 14 (Verification)**: Requires all prior phases
+
+### Key Parallel Opportunity
+
+Phases 8 and 9 can proceed concurrently after Phase 7:
+- **Stream A**: Phase 8 (T063–T069) — client-side extraction pipeline in `frontend/`
+- **Stream B**: Phase 9 (T070–T075) — backend batch mutation in `backend/`
+
+They converge at Phase 10 (Strawberry Shake codegen requires the backend schema) and Phase 11 (components require both the pipeline service and the generated client).
+
+### Within Each Phase
+
+- All `[P]` tasks within a phase operate on different files with no mutual dependencies
+- Non-`[P]` pipeline tasks (T063–T068) must complete in order: each stage extends the same file
+- Component tasks within Phase 11 have a dependency chain: T078 (Row) → T079 (List, uses Row) → T081 (Page, uses both T079 and T080); T080 (Input) is independent
+
+---
+
+## Parallel Opportunities (US2)
+
+### Phase 7 (all parallel — different files)
+```
+T053 BlockType enum
+T054 ClassificationSignal enum
+T055 PipelineStatus enum
+T056 CandidateSaveState enum
+T057 ReviewSavePhase enum
+T058 TextBlock record
+T059 ExtractionCandidate record
+T060 ExtractionPipelineResult record
+T061 IExtractionConfiguration + default implementation
+T062 IScenarioExtractionService interface + stub
+```
+
+### Phase 9 (partial parallel)
+```
+T070 CreateScenariosInput + ExtractionMetadataInput types  ─┐
+T071 CreateScenariosPayload + union types                   ─┤ parallel
+T075 Schema snapshot test extension                         ─┘
+T072 ScenarioService.CreateBatchAsync  (needs T070)
+T073 Mutation.CreateScenarios resolver (needs T071 + T072)
+T074 Integration tests                 (needs T073)
+```
+
+### Phase 11 (partial parallel)
+```
+T078 ExtractionCandidateRow.razor  ─┐
+T080 ExtractionInput.razor          ─┤ parallel (different files)
+T082 ExtractionCandidateRow tests   ─┤
+T083 ExtractionReviewList tests     ─┤
+T084 ExtractionInput tests          ─┘
+T079 ExtractionReviewList.razor    (needs T078)
+T081 ScenarioExtraction page       (needs T079 + T080)
+```
+
+### Phase 14 (all parallel)
+```
+T092 US1 regression
+T093 Performance measurement
+T094 Schema compatibility
+T095 Format + build
+```
+
+---
+
+## Implementation Strategy (US2)
+
+### Recommended Sequence with Two Developers
+
+After Phases 1–2 are complete:
+- **Dev A**: Phase 7 → Phase 8 (client models + extraction pipeline)
+- **Dev B**: Phase 9 (backend batch mutation + integration tests)
+
+After Phase 8 and Phase 9 are both complete:
+- **Dev A**: Phase 10 → Phase 11 (Strawberry Shake + component tree)
+- **Dev B**: Phase 12 + Phase 13 (observability + validation/security)
+
+Both converge on Phase 14 (verification).
+
+### US2 Standalone Delivery
+
+US2 can be delivered independently of US3 (inline validation polish). The extraction feature depends only on the backend infrastructure from Phases 1–2 and the batch mutation from Phase 9. US1 (manual scenario creation) and US2 (extraction) are complementary paths to the same scenario list.
+
+---
+
+## Notes (US2)
+
+- `[P]` tasks operate on different files with no cross-task dependencies within the same phase
+- Pipeline tasks T063–T068 are sequential additions to a single file; each must leave `ScenarioExtractionService` in a buildable state
+- The XSS rendering constraint (T088) must be checked at code review for every candidate display component — it cannot be enforced by the type system
+- `ExtractionMetadataInput` fields are numeric and identifier only — any PR adding a text field to this type must be rejected
+- Raw pasted specification text must never appear in any log field, any GraphQL input, or any server-side payload
+- Commit after each task or logical group; branch stays shippable at every checkpoint
+- Total US2 tasks: **43** (T053–T095) | Phase 7: 10 | Phase 8: 7 | Phase 9: 6 | Phase 10: 2 | Phase 11: 7 | Phase 12: 3 | Phase 13: 3 | Phase 14: 5
+- **Combined total**: **95 tasks** (T001–T095)

@@ -1,5 +1,47 @@
+# =============================================================================
+# BirkNext GraphQL Schema
+# =============================================================================
+#
+# US1 — Scenario Management          (types: Scenario, ScenarioKind,
+#                                     CreateScenarioInput, CreateScenarioPayload,
+#                                     UserError)
+#
+# US2 — Deterministic Scenario       (types: CreateScenariosInput,
+#        Extraction (batch save)       ExtractionMetadataInput,
+#                                     CreateScenariosPayload,
+#                                     CreateScenarioResult,
+#                                     CreateScenarioSuccess,
+#                                     CreateScenarioError)
+#
+# Boundary rule: raw pasted specification text must never appear in any
+# field of this schema. Only reviewed, user-selected candidate titles and
+# classifications travel over the wire.
+#
+# Pipeline-internal models (TextBlock, BlockType, ClassificationSignal,
+# ExtractionCandidate, ExtractionPipelineResult, etc.) are client-only and
+# have no GraphQL representation.
+# =============================================================================
+
+
+# =============================================================================
+# Scalars
+# =============================================================================
+
+"""
+ISO 8601 date-time scalar.
+"""
+scalar DateTime
+
+
+# =============================================================================
+# Shared domain types
+# =============================================================================
+
 """
 Represents a scenario used for specification and QA.
+Scenarios are created either manually (US1 form) or via the extraction
+review save path (US2 batch mutation). The two creation paths produce
+identical Scenario records — no provenance field distinguishes them in v1.
 """
 type Scenario {
   id: ID!
@@ -11,7 +53,16 @@ type Scenario {
 }
 
 """
-Enum describing the type of scenario.
+Classification type of a Scenario.
+
+These three values are the canonical classification labels across the system:
+  REQUIREMENT        — a functional or non-functional requirement statement
+  TEST               — an acceptance scenario, BDD case, or test condition
+  NEEDS_CLARIFICATION — an ambiguous statement requiring human review
+
+In US2, the extraction pipeline's Stage 6 assigns one of these values to each
+ExtractionCandidate using deterministic heuristics. The user may confirm or
+(in a future version) override the assigned classification before saving.
 """
 enum ScenarioKind {
   REQUIREMENT
@@ -20,51 +71,116 @@ enum ScenarioKind {
 }
 
 """
+Represents a user-facing validation or business error.
+Used by the single-scenario creation payload (US1).
+For per-item batch errors, see CreateScenarioError.
+"""
+type UserError {
+  """
+  The input field responsible for the error, if attributable to a specific field.
+  Null for general business or server errors.
+  """
+  field: String
+
+  """
+  Human-readable description of the error, suitable for display near the
+  relevant form field or as a general error message.
+  """
+  message: String!
+
+  """
+  Machine-readable code for client-side error handling.
+  Known values: VALIDATION_FAILED, TITLE_REQUIRED, TITLE_TOO_LONG,
+  KIND_INVALID, PROJECT_ID_REQUIRED, SERVER_ERROR.
+  """
+  code: String!
+}
+
+
+# =============================================================================
+# Query root
+# =============================================================================
+
+"""
 Query root.
 """
 type Query {
   """
-  Returns all scenarios for a given project.
-
-  - Always scoped by projectId
-  - Ordered by createdAt descending (latest first)
+  Returns all scenarios for a given project, ordered by createdAt descending
+  (most recent first). Scoped to the supplied projectId (FR-010).
   """
   scenarios(projectId: String!): [Scenario!]!
 }
+
+
+# =============================================================================
+# Mutation root
+# =============================================================================
 
 """
 Mutation root.
 """
 type Mutation {
+
+  # ---------------------------------------------------------------------------
+  # US1 — Single scenario creation
+  # ---------------------------------------------------------------------------
+
   """
-  Creates a new scenario.
+  Creates a single scenario from the manual creation form.
 
   Returns:
-  - scenario on success
-  - errors on validation/business failure
-  - correlationId for tracing/logging
+    scenario      — the created Scenario on success; null on failure
+    errors        — always a list; non-empty on validation or business failure
+    correlationId — always present; use for log correlation and support
   """
   createScenario(input: CreateScenarioInput!): CreateScenarioPayload!
+
+  # ---------------------------------------------------------------------------
+  # US2 — Batch scenario creation (extraction review save path)
+  # ---------------------------------------------------------------------------
+
+  """
+  Creates multiple scenarios from a completed extraction review session.
+
+  Each item in CreateScenariosInput.items maps to one user-selected
+  ExtractionCandidate. Items are processed independently: some may succeed
+  while others fail (partial success). Results are returned in the same order
+  as the input items array so the client can correlate results[i] with items[i].
+
+  The optional extractionMetadata field carries client-side pipeline context
+  for server-side observability. It must not contain any text from the original
+  pasted specification — only numeric and identifier fields are accepted.
+
+  Raw pasted specification text must never appear in this mutation's input.
+  """
+  createScenarios(input: CreateScenariosInput!): CreateScenariosPayload!
 }
 
+
+# =============================================================================
+# US1 — Single scenario creation: input and payload
+# =============================================================================
+
 """
-Input for creating a scenario.
+Input for creating a single scenario.
+Reused as the per-item element type in the US2 batch mutation input.
 """
 input CreateScenarioInput {
-  title: String!          # 1–500 characters
-  description: String     # optional
-  kind: ScenarioKind!
-  projectId: String!
+  title: String!       # Required. 1–500 characters.
+  description: String  # Optional. No maximum enforced in v1.
+  kind: ScenarioKind!  # Required. Must be a valid ScenarioKind value.
+  projectId: String!   # Required. Scopes the scenario to a project workspace.
 }
 
 """
-Payload returned after attempting to create a scenario.
+Payload returned after a single scenario creation attempt.
 
 Contract:
-- scenario is present on success
-- scenario is null on failure
-- errors is always a list (never null)
-- correlationId is always present for tracing
+  - scenario is non-null on success
+  - scenario is null on any failure
+  - errors is always returned as a list (never null); empty on success
+  - correlationId is always present for log tracing
 """
 type CreateScenarioPayload {
   scenario: Scenario
@@ -72,16 +188,192 @@ type CreateScenarioPayload {
   correlationId: String!
 }
 
+
+# =============================================================================
+# US2 — Batch scenario creation: input types
+# =============================================================================
+
 """
-Represents a user-facing error.
+Input for creating multiple scenarios from a completed extraction review session.
+
+The items array holds one CreateScenarioInput per user-selected
+ExtractionCandidate. The order of items is preserved in the response:
+results[i] in CreateScenariosPayload corresponds to items[i] here.
+
+Security constraint: items may only contain reviewed candidate titles and
+classifications. Raw pasted specification text must not appear in any field.
 """
-type UserError {
-  field: String
-  message: String!
-  code: String!
+input CreateScenariosInput {
+  """
+  Ordered array of scenario inputs to create. Must contain at least one item.
+  Each element maps from one user-selected ExtractionCandidate:
+    ExtractionCandidate.Title          → title
+    ExtractionCandidate.Classification → kind
+    (empty string)                     → description  (candidates carry no description)
+    (active project context)           → projectId
+  """
+  items: [CreateScenarioInput!]!
+
+  """
+  Optional observability context from the client-side extraction session.
+  When present, allows the server to emit a complete CandidateReviewSaved
+  log event without a separate telemetry endpoint.
+
+  Must not contain any text content from the original pasted specification.
+  All fields are numeric or opaque identifiers only.
+  """
+  extractionMetadata: ExtractionMetadataInput
 }
 
 """
-Custom scalar for date/time.
+Observability metadata forwarded from the Blazor WASM extraction pipeline
+to the server alongside the batch save request.
+
+Purpose: enables the server to emit a fully contextual CandidateReviewSaved
+structured log event — correlating the client-side ExtractionTriggered /
+ExtractionCompleted events with this server-side mutation.
+
+Privacy constraint: this type carries no text content. Every field is a
+count, duration, or opaque identifier. Any field derived from the pasted
+specification text is prohibited. This constraint must be verified at code review.
 """
-scalar DateTime
+input ExtractionMetadataInput {
+  """
+  Total number of ExtractionCandidates produced by the extraction pipeline,
+  including those the user did not select for saving.
+  Must be >= 0.
+  """
+  totalExtracted: Int!
+
+  """
+  Number of ExtractionCandidates the user selected before confirming save.
+  Must equal the length of CreateScenariosInput.items.
+  """
+  selectedCount: Int!
+
+  """
+  Duration of the client-side extraction pipeline execution in milliseconds
+  (ExtractionPipelineResult.DurationMs). Used in the CandidateReviewSaved log event.
+  Must be >= 0.
+  """
+  extractionDurationMs: Int!
+
+  """
+  Client-generated opaque session identifier. Used to correlate client-side
+  extraction events (ExtractionTriggered, ExtractionCompleted) with this
+  server-side CandidateReviewSaved event in the structured log.
+  """
+  sessionId: String!
+}
+
+
+# =============================================================================
+# US2 — Batch scenario creation: payload and result types
+# =============================================================================
+
+"""
+Payload returned after a batch scenario creation attempt.
+
+Contract:
+  - results contains exactly one entry per item in CreateScenariosInput.items
+  - results[i] corresponds to items[i] in the input (order preserved)
+  - successCount + failureCount always equals results length
+  - correlationId is always present for log tracing
+  - Partial success is valid: successCount and failureCount may both be non-zero
+
+The client uses this payload to update per-candidate SaveState in the
+extraction review list:
+  - CreateScenarioSuccess → CandidateSaveState.Saved  (SavedScenarioId populated)
+  - CreateScenarioError   → CandidateSaveState.Failed (SaveError populated)
+"""
+type CreateScenariosPayload {
+  """
+  Per-item results in the same order as the input items array.
+  Length always equals CreateScenariosInput.items length.
+  Each result is either a successful Scenario creation or a structured error.
+  """
+  results: [CreateScenarioResult!]!
+
+  """
+  Count of items in results that are CreateScenarioSuccess.
+  Provided for client convenience and server-side log emission.
+  """
+  successCount: Int!
+
+  """
+  Count of items in results that are CreateScenarioError.
+  A non-zero value indicates at least one candidate failed to save.
+  """
+  failureCount: Int!
+
+  """
+  Correlation identifier for tracing this mutation across log events.
+  Consistent with the correlationId convention in CreateScenarioPayload.
+  """
+  correlationId: String!
+}
+
+"""
+A discriminated result for a single item in a batch scenario creation.
+
+Each result is one of:
+  CreateScenarioSuccess — the item was persisted successfully
+  CreateScenarioError   — the item failed validation or encountered a server error
+
+Failure of one item does not affect the processing of other items in the batch.
+The position of this result in CreateScenariosPayload.results identifies which
+input item it corresponds to.
+"""
+union CreateScenarioResult = CreateScenarioSuccess | CreateScenarioError
+
+"""
+Indicates that a single batch item was successfully created.
+
+The client reads scenario.id and stores it as ExtractionCandidate.SavedScenarioId,
+marking the candidate as saved in the review list. The created Scenario is
+immediately queryable via the scenarios query (US1) without a separate fetch.
+"""
+type CreateScenarioSuccess {
+  """
+  The newly created Scenario. Identical in structure to Scenarios created via
+  the single createScenario mutation — no provenance field distinguishes them.
+  """
+  scenario: Scenario!
+}
+
+"""
+Indicates that creation of a single batch item failed.
+
+The client stores message as ExtractionCandidate.SaveError and sets
+ExtractionCandidate.SaveState to Failed. The candidate remains in the review
+list and may be retried by the user.
+
+Failure of this item does not affect other items in the same batch.
+"""
+type CreateScenarioError {
+  """
+  Machine-readable error code for client-side handling.
+  Known values:
+    VALIDATION_FAILED    — one or more input fields failed validation
+    TITLE_REQUIRED       — title is empty or missing
+    TITLE_TOO_LONG       — title exceeds 500 characters
+    KIND_INVALID         — kind is not a valid ScenarioKind value
+    PROJECT_ID_REQUIRED  — projectId is empty or missing
+    SERVER_ERROR         — unexpected server-side failure not attributable to input
+  """
+  code: String!
+
+  """
+  Human-readable description of the failure. Displayed in the extraction review
+  list alongside the failing candidate row to help the user understand why
+  the candidate could not be saved.
+  """
+  message: String!
+
+  """
+  The input field responsible for the failure, if attributable to a specific field.
+  Null for server errors not attributable to a specific input field.
+  Examples: "title", "kind", "projectId".
+  """
+  field: String
+}
