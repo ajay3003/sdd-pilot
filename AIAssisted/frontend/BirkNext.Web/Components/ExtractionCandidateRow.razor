@@ -1,0 +1,56 @@
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+
+<div class="extraction-candidate-row" data-testid="candidate-row">
+    <div class="candidate-header">
+        <input
+            type="checkbox"
+            checked="@Candidate.IsSelected"
+            @onchange="HandleCheckboxChange"
+            data-testid="candidate-checkbox"
+            aria-label="Select candidate: @Candidate.Title" />
+
+        <span class="candidate-badge badge-@Candidate.Classification.ToString().ToLowerInvariant()" data-testid="classification-badge">
+            @ClassificationLabel
+        </span>
+
+        @if (Candidate.ContextHeading is not null)
+        {
+            <span class="candidate-context-heading text-muted" data-testid="context-heading">@Candidate.ContextHeading</span>
+        }
+    </div>
+
+    <div class="candidate-title" data-testid="candidate-title">@Candidate.Title</div>
+
+    @if (Candidate.SaveState == CandidateSaveState.Saving || Candidate.SaveState == CandidateSaveState.Retrying)
+    {
+        <span class="save-spinner" data-testid="save-spinner" aria-label="Saving…">…</span>
+    }
+    else if (Candidate.SaveState == CandidateSaveState.Saved)
+    {
+        <span class="save-badge-saved" data-testid="save-saved">Saved</span>
+    }
+    else if (Candidate.SaveState == CandidateSaveState.Failed)
+    {
+        <span class="save-error" data-testid="save-error">@Candidate.SaveError</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ExtractionCandidate Candidate { get; set; } = default!;
+    [Parameter] public EventCallback<Guid> OnSelectionToggled { get; set; }
+
+    private string ClassificationLabel => Candidate.Classification switch
+    {
+        ScenarioKind.Requirement => "REQUIREMENT",
+        ScenarioKind.Test => "TEST",
+        ScenarioKind.NeedsClarification => "NEEDS_CLARIFICATION",
+        _ => Candidate.Classification.ToString().ToUpperInvariant(),
+    };
+
+    private async Task HandleCheckboxChange(ChangeEventArgs e)
+    {
+        Candidate.IsSelected = e.Value is true;
+        await OnSelectionToggled.InvokeAsync(Candidate.CandidateId);
+    }
+}

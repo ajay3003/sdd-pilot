@@ -5,6 +5,7 @@ type Query {
 
 type Mutation {
   createScenario(input: CreateScenarioInput!): CreateScenarioPayload!
+  createScenarios(input: CreateScenariosInput!): CreateScenariosPayload!
 }
 
 type Scenario {
@@ -39,6 +40,37 @@ type UserError {
   field: String
   message: String!
   code: String!
+}
+
+input CreateScenariosInput {
+  items: [CreateScenarioInput!]!
+  extractionMetadata: ExtractionMetadataInput
+}
+
+input ExtractionMetadataInput {
+  totalExtracted: Int!
+  selectedCount: Int!
+  extractionDurationMs: Int!
+  sessionId: String!
+}
+
+type CreateScenariosPayload {
+  results: [CreateScenarioResult!]!
+  successCount: Int!
+  failureCount: Int!
+  correlationId: String!
+}
+
+union CreateScenarioResult = CreateScenarioSuccess | CreateScenarioError
+
+type CreateScenarioSuccess {
+  scenario: Scenario!
+}
+
+type CreateScenarioError {
+  code: String!
+  message: String!
+  field: String
 }
 
 scalar DateTime

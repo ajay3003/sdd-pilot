@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Text.RegularExpressions;
 using BirkNext.Web.GraphQL;
 using BirkNext.Web.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace BirkNext.Web.Services;
 
@@ -15,10 +17,27 @@ public interface IScenarioExtractionService
 public sealed class ScenarioExtractionService : IScenarioExtractionService
 {
     private readonly IExtractionConfiguration _config;
+    private readonly IExtractionRuleEngine _ruleEngine;
+    private readonly ILogger<ScenarioExtractionService> _logger;
 
-    public ScenarioExtractionService(IExtractionConfiguration config)
+    // Internal constructor used by the DI factory in Program.cs.
+    // IExtractionRuleEngine is internal; a public constructor cannot accept it (CS0051).
+    internal ScenarioExtractionService(
+        IExtractionConfiguration config,
+        IExtractionRuleEngine ruleEngine,
+        ILogger<ScenarioExtractionService> logger)
     {
         _config = config;
+        _ruleEngine = ruleEngine;
+        _logger = logger;
+    }
+
+    // Public convenience constructor for direct instantiation (tests and backward compatibility).
+    // Builds the default rule engine from ExtractionRuleSet.Default(); logging is a no-op.
+    public ScenarioExtractionService(IExtractionConfiguration config)
+        : this(config, new ExtractionRuleEngine(ExtractionRuleSet.Default(), config),
+               NullLogger<ScenarioExtractionService>.Instance)
+    {
     }
 
     public Task<ExtractionPipelineResult> ExtractAsync(
@@ -29,6 +48,7 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
     private ExtractionPipelineResult RunPipeline(string rawInput)
     {
         var sw = Stopwatch.StartNew();
+        var summary = new RuleExecutionSummary();
 
         // -------------------------------------------------------------------------
         // Stage 1: Input Validation Gate
@@ -37,11 +57,21 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
         var inputLengthChars = rawInput?.Length ?? 0;
 
         if (string.IsNullOrWhiteSpace(rawInput))
+        {
+            // no raw text — counts only
+            _logger.LogInformation(
+                "ExtractionEmpty: inputLengthChars={InputLengthChars}, reason={Reason}",
+                inputLengthChars, "empty_input");
             return ExtractionPipelineResult.NonSuccess(PipelineStatus.EmptyInput, inputLengthChars, 0, 0);
+        }
 
         if (inputLengthChars > _config.MaxInputLengthChars)
         {
             sw.Stop();
+            // no raw text — counts only
+            _logger.LogInformation(
+                "ExtractionEmpty: inputLengthChars={InputLengthChars}, reason={Reason}",
+                inputLengthChars, "input_too_large");
             return ExtractionPipelineResult.NonSuccess(
                 PipelineStatus.InputTooLarge, inputLengthChars, CountLines(rawInput), sw.ElapsedMilliseconds);
         }
@@ -59,11 +89,11 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
         // -------------------------------------------------------------------------
         // Stages 3–7
         // -------------------------------------------------------------------------
-        var blocks    = PartitionBlocks(lines);           // Stage 3
-        var filtered  = FilterBlocks(blocks);             // Stage 4
-        var contents  = ExtractContent(filtered);         // Stage 5
-        var classified = ClassifyContent(contents);       // Stage 6
-        var deduplicated = Deduplicate(classified);       // Stage 7
+        var blocks = PartitionBlocks(lines);                    // Stage 3
+        var filtered = FilterBlocksWithEngine(blocks, summary); // Stage 4
+        var contents = ExtractContent(filtered);                 // Stage 5
+        var classified = ClassifyContent(contents, summary);     // Stage 6
+        var deduplicated = Deduplicate(classified);              // Stage 7
 
         sw.Stop();
         var durationMs = sw.ElapsedMilliseconds;
@@ -72,30 +102,40 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
         // Stage 8: Result Assembly
         // -------------------------------------------------------------------------
         if (deduplicated.Count == 0)
+        {
+            // no raw text — counts only
+            _logger.LogInformation(
+                "ExtractionEmpty: inputLengthChars={InputLengthChars}, reason={Reason}",
+                inputLengthChars, "no_candidates_found");
             return ExtractionPipelineResult.NonSuccess(
                 PipelineStatus.NoResults, inputLengthChars, inputLineCount, durationMs);
+        }
 
         var candidates = new List<ExtractionCandidate>(deduplicated.Count);
         int reqCount = 0, testCount = 0, ncCount = 0;
 
         foreach (var item in deduplicated)
         {
-            var kind = SignalToKind(item.Signal);
             candidates.Add(new ExtractionCandidate
             {
                 Title = item.PlainText,
-                Classification = kind,
+                Classification = item.Kind,
                 ClassificationSignal = item.Signal,
                 ContextHeading = item.ContextHeading,
                 SourceBlockType = item.SourceBlockType,
             });
-            switch (kind)
+            switch (item.Kind)
             {
-                case ScenarioKind.Requirement:        reqCount++;  break;
-                case ScenarioKind.Test:               testCount++; break;
-                default:                              ncCount++;   break;
+                case ScenarioKind.Requirement: reqCount++; break;
+                case ScenarioKind.Test: testCount++; break;
+                default: ncCount++; break;
             }
         }
+
+        // no raw text — counts only
+        _logger.LogInformation(
+            "ExtractionCompleted: candidateCount={CandidateCount}, requirementCount={RequirementCount}, testCount={TestCount}, needsClarificationCount={NeedsClarificationCount}, durationMs={DurationMs}, rulesEvaluatedCount={RulesEvaluatedCount}",
+            candidates.Count, reqCount, testCount, ncCount, durationMs, summary.TotalRulesEvaluated);
 
         return ExtractionPipelineResult.Success(
             candidates, inputLengthChars, inputLineCount, durationMs,
@@ -267,21 +307,24 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
     // Stage 4: Structure Filter
     // =============================================================================
 
-    private static readonly HashSet<BlockType> FilteredBlockTypes =
-    [
-        BlockType.Heading,
-        BlockType.FencedCodeBlock,
-        BlockType.Blockquote,
-        BlockType.HorizontalRule,
-        BlockType.HtmlComment,
-        BlockType.YamlFrontMatter,
-        BlockType.Empty,
-        BlockType.TableHeaderRow,
-        BlockType.TableSeparatorRow,
-    ];
-
-    private static List<TextBlock> FilterBlocks(IReadOnlyList<TextBlock> blocks)
-        => blocks.Where(b => !FilteredBlockTypes.Contains(b.BlockType)).ToList();
+    private List<TextBlock> FilterBlocksWithEngine(IReadOnlyList<TextBlock> blocks, RuleExecutionSummary summary)
+    {
+        var result = new List<TextBlock>(blocks.Count);
+        foreach (var block in blocks)
+        {
+            var evalResult = _ruleEngine.Evaluate(block, string.Empty);
+            if (evalResult.IsFiltered)
+            {
+                summary.FilteredBlockCount++;
+                summary.TotalRulesEvaluated += evalResult.EvaluatedRuleCount;
+            }
+            else
+            {
+                result.Add(block);
+            }
+        }
+        return result;
+    }
 
     // =============================================================================
     // Stage 5: Content Extraction
@@ -357,90 +400,24 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
         string PlainText,
         string? ContextHeading,
         BlockType SourceBlockType,
-        ClassificationSignal Signal);
-
-    private List<ClassifiedItem> ClassifyContent(List<ContentItem> items)
+        ClassificationSignal Signal,
+        ScenarioKind Kind);
+    private List<ClassifiedItem> ClassifyContent(List<ContentItem> items, RuleExecutionSummary summary)
     {
         var result = new List<ClassifiedItem>(items.Count);
         foreach (var item in items)
+        {
+            var block = new TextBlock(item.PlainText, item.SourceBlockType, 0, item.ContextHeading);
+            var evalResult = _ruleEngine.Evaluate(block, item.PlainText);
+            summary.TotalRulesEvaluated += evalResult.EvaluatedRuleCount;
+            if (evalResult.Signal == ClassificationSignal.Default)
+                summary.DefaultFallbackCount++;
             result.Add(new ClassifiedItem(
                 item.PlainText, item.ContextHeading, item.SourceBlockType,
-                ClassifyText(item.PlainText)));
+                evalResult.Signal!.Value, evalResult.Classification!.Value));
+        }
         return result;
     }
-
-    private ClassificationSignal ClassifyText(string text)
-    {
-        // Lines exceeding the per-line cap skip pattern matching (ReDoS prevention)
-        if (text.Length > _config.MaxLineLengthForPatternMatching)
-            return ClassificationSignal.Default;
-
-        // Priority 1: BDD pattern (near-zero false-positive)
-        if (IsBddPattern(text))    return ClassificationSignal.BddPattern;
-
-        // Priority 2: RFC 2119 uppercase modal verbs
-        if (Rfc2119UpperPattern.IsMatch(text)) return ClassificationSignal.Rfc2119Uppercase;
-
-        // Priority 3: RFC 2119 lowercase modal verbs / phrases
-        if (Rfc2119LowerPattern.IsMatch(text)) return ClassificationSignal.Rfc2119Lowercase;
-
-        // Priority 4: Functional requirement prefix (FR-NNN)
-        if (FrPrefixPattern.IsMatch(text)) return ClassificationSignal.FrPrefix;
-
-        // Priority 5: Question terminator
-        if (text.TrimEnd().EndsWith('?')) return ClassificationSignal.QuestionTerminator;
-
-        // Priority 6: Deferral marker
-        if (DeferralPattern.IsMatch(text)) return ClassificationSignal.DeferralMarker;
-
-        // Default fallback
-        return ClassificationSignal.Default;
-    }
-
-    private static bool IsBddPattern(string text)
-    {
-        // Triple: Given ... When ... Then in document order on the same line
-        int gi = text.IndexOf("Given ", StringComparison.OrdinalIgnoreCase);
-        int wi = text.IndexOf("When ",  StringComparison.OrdinalIgnoreCase);
-        int ti = text.IndexOf("Then ",  StringComparison.OrdinalIgnoreCase);
-        if (gi >= 0 && wi > gi && ti > wi) return true;
-
-        // Single BDD section opener at the start of the line
-        return text.StartsWith("Given ", StringComparison.OrdinalIgnoreCase)
-            || text.StartsWith("When ",  StringComparison.OrdinalIgnoreCase)
-            || text.StartsWith("Then ",  StringComparison.OrdinalIgnoreCase);
-    }
-
-    // Case-sensitive: MUST NOT / SHALL NOT must precede MUST / SHALL in alternation
-    private static readonly Regex Rfc2119UpperPattern = new(
-        @"\b(MUST NOT|SHALL NOT|MUST|SHALL|SHOULD|MAY)\b",
-        RegexOptions.None,
-        TimeSpan.FromMilliseconds(100));
-
-    // Case-insensitive; longer phrases precede their component words
-    private static readonly Regex Rfc2119LowerPattern = new(
-        @"\b(must not|shall not|is required to|must|shall|required)\b",
-        RegexOptions.IgnoreCase,
-        TimeSpan.FromMilliseconds(100));
-
-    private static readonly Regex FrPrefixPattern = new(
-        @"\bFR-\d+\b",
-        RegexOptions.None,
-        TimeSpan.FromMilliseconds(100));
-
-    private static readonly Regex DeferralPattern = new(
-        @"\b(TBD|TODO|TBC|open question|to be defined|to be decided)\b",
-        RegexOptions.IgnoreCase,
-        TimeSpan.FromMilliseconds(100));
-
-    private static ScenarioKind SignalToKind(ClassificationSignal signal) => signal switch
-    {
-        ClassificationSignal.BddPattern       => ScenarioKind.Test,
-        ClassificationSignal.Rfc2119Uppercase => ScenarioKind.Requirement,
-        ClassificationSignal.Rfc2119Lowercase => ScenarioKind.Requirement,
-        ClassificationSignal.FrPrefix         => ScenarioKind.Requirement,
-        _                                     => ScenarioKind.NeedsClarification,
-    };
 
     // =============================================================================
     // Stage 7: Deduplication

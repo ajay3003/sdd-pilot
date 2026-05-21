@@ -1,0 +1,20 @@
+@page "/extract"
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models
+
+<PageTitle>Extract Scenarios</PageTitle>
+
+<h1>Extract Scenarios</h1>
+
+<ExtractionInput OnExtractionCompleted="HandleExtractionCompleted" />
+
+<ExtractionReviewList PipelineResult="_pipelineResult" />
+
+@code {
+    private ExtractionPipelineResult? _pipelineResult;
+
+    private void HandleExtractionCompleted(ExtractionPipelineResult result)
+    {
+        _pipelineResult = result;
+    }
+}

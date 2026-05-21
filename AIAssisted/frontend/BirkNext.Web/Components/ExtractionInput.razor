@@ -1,0 +1,100 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using Microsoft.Extensions.Logging
+@inject IScenarioExtractionService ExtractionService
+@inject IExtractionConfiguration ExtractionConfig
+@inject ILogger<ExtractionInput> Logger
+
+<div class="extraction-input">
+    <label for="spec-input">Paste specification text</label>
+    <textarea
+        id="spec-input"
+        rows="10"
+        @bind="_rawInput"
+        @bind:event="oninput"
+        data-testid="spec-textarea"
+        disabled="@_isExtracting" />
+
+    @if (_validationMessage is not null)
+    {
+        <p class="validation-message" data-testid="validation-message" role="alert">@_validationMessage</p>
+    }
+
+    <button
+        type="button"
+        @onclick="HandleExtract"
+        disabled="@_isExtracting"
+        data-testid="extract-button">
+        Extract Candidates
+    </button>
+</div>
+
+@code {
+    [Parameter] public EventCallback<ExtractionPipelineResult> OnExtractionCompleted { get; set; }
+
+    private string _rawInput = string.Empty;
+    private bool _isExtracting;
+    private string? _validationMessage;
+
+    private async Task HandleExtract()
+    {
+        _validationMessage = null;
+
+        if (string.IsNullOrWhiteSpace(_rawInput))
+        {
+            _validationMessage = "Paste some text to extract candidates from";
+            return;
+        }
+
+        if (_rawInput.Length > ExtractionConfig.MaxInputLengthChars)
+        {
+            _validationMessage = $"Input is too large (max {ExtractionConfig.MaxInputLengthChars:N0} characters)";
+            return;
+        }
+
+        _isExtracting = true;
+        StateHasChanged();
+
+        var inputLengthChars = _rawInput.Length;
+        var inputLineCount = _rawInput.Split('\n').Length;
+        var sessionId = Guid.NewGuid().ToString();
+
+        // no raw text: only numeric metrics and opaque session identifier
+        Logger.LogInformation(
+            "ExtractionTriggered: inputLengthChars={InputLengthChars}, inputLineCount={InputLineCount}, sessionId={SessionId}",
+            inputLengthChars, inputLineCount, sessionId);
+
+        try
+        {
+            var result = await ExtractionService.ExtractAsync(_rawInput);
+
+            if (result.Status == PipelineStatus.Success)
+            {
+                // no raw text: only aggregate counts and duration
+                Logger.LogInformation(
+                    "ExtractionCompleted: candidateCount={CandidateCount}, requirementCount={RequirementCount}, testCount={TestCount}, needsClarificationCount={NeedsClarificationCount}, durationMs={DurationMs}, sessionId={SessionId}",
+                    result.Candidates.Count, result.RequirementCount, result.TestCount, result.NeedsClarificationCount, result.DurationMs, sessionId);
+            }
+            else
+            {
+                var reason = result.Status switch
+                {
+                    PipelineStatus.EmptyInput => "empty_input",
+                    PipelineStatus.InputTooLarge => "input_too_large",
+                    PipelineStatus.NoResults => "no_candidates_found",
+                    _ => result.Status.ToString().ToLowerInvariant(),
+                };
+                // no raw text: only input length, snake_case reason code, and session identifier
+                Logger.LogInformation(
+                    "ExtractionEmpty: inputLengthChars={InputLengthChars}, reason={Reason}, sessionId={SessionId}",
+                    result.InputLengthChars, reason, sessionId);
+            }
+
+            await OnExtractionCompleted.InvokeAsync(result);
+        }
+        finally
+        {
+            _isExtracting = false;
+        }
+    }
+}

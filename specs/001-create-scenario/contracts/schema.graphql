@@ -13,13 +13,42 @@
 #                                     CreateScenarioSuccess,
 #                                     CreateScenarioError)
 #
+# US3 — Deterministic Rule Engine    No schema changes.
+#        for Scenario Extraction      US3 replaces hardcoded extraction
+#                                     heuristics in the Blazor WASM pipeline
+#                                     (Stages 4 and 6 of ScenarioExtractionService)
+#                                     with a structured rule engine. This is
+#                                     entirely client-side: the rule engine
+#                                     models (FilterRule, ClassificationRule,
+#                                     ExtractionRuleSet, RuleEvaluationResult)
+#                                     are pipeline-internal and have no GraphQL
+#                                     representation. The createScenarios batch
+#                                     mutation, ExtractionMetadataInput, and all
+#                                     US1/US2 types are reused unchanged.
+#
+# US4 — Level 1 Configurable         No schema changes.
+#        Extraction Rules             US4 adds a bounded configuration layer
+#                                     over the US3 rule engine. Configuration
+#                                     is loaded from wwwroot/appsettings.json
+#                                     and compiled into an ExtractionRuleSet
+#                                     at Blazor WASM startup. All features —
+#                                     keyword additions, prefix rules, ignore
+#                                     prefixes, rule group toggles, priority
+#                                     overrides — are entirely client-side.
+#                                     No new mutations, types, or server
+#                                     endpoints are required. The createScenarios
+#                                     mutation and ExtractionMetadataInput
+#                                     are reused unchanged.
+#
 # Boundary rule: raw pasted specification text must never appear in any
 # field of this schema. Only reviewed, user-selected candidate titles and
 # classifications travel over the wire.
 #
 # Pipeline-internal models (TextBlock, BlockType, ClassificationSignal,
-# ExtractionCandidate, ExtractionPipelineResult, etc.) are client-only and
-# have no GraphQL representation.
+# ExtractionCandidate, ExtractionPipelineResult, FilterRule, ClassificationRule,
+# ExtractionRuleSet, RuleEvaluationResult, ExtractionRuleConfiguration,
+# PrefixRuleEntry, PrefixMatchCondition, ExtractionRuleSetCompiler, etc.)
+# are client-only and have no GraphQL representation.
 # =============================================================================
 
 

@@ -1,0 +1,22 @@
+mutation CreateScenarios($input: CreateScenariosInput!) {
+  createScenarios(input: $input) {
+    results {
+      ... on CreateScenarioSuccess {
+        scenario {
+          id
+          title
+          kind
+          createdAt
+        }
+      }
+      ... on CreateScenarioError {
+        code
+        message
+        field
+      }
+    }
+    successCount
+    failureCount
+    correlationId
+  }
+}

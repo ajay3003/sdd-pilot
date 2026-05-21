@@ -1,0 +1,229 @@
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using Microsoft.Extensions.Logging
+@implements IDisposable
+@inject ICreateScenariosMutation CreateScenariosMutation
+@inject ILogger<ExtractionReviewList> Logger
+
+@if (PipelineResult is null)
+{
+    return;
+}
+
+@if (PipelineResult.Status == PipelineStatus.NoResults)
+{
+    <p data-testid="empty-state">No extractable candidates were found in the pasted text.</p>
+}
+else
+{
+    <div class="extraction-review-list">
+        <p class="candidate-summary" data-testid="candidate-summary">
+            @PipelineResult.Candidates.Count candidates extracted —
+            @PipelineResult.RequirementCount REQUIREMENT,
+            @PipelineResult.TestCount TEST,
+            @PipelineResult.NeedsClarificationCount NEEDS_CLARIFICATION
+        </p>
+
+        @if (_savePhase == ReviewSavePhase.PartialSuccess)
+        {
+            <p class="save-partial" data-testid="save-partial" role="status">Some candidates were saved successfully; others encountered errors. Review the items below.</p>
+        }
+        else if (_savePhase == ReviewSavePhase.Complete)
+        {
+            <p class="save-complete" data-testid="save-complete" role="status">All selected candidates saved successfully.</p>
+        }
+        else if (_savePhase == ReviewSavePhase.Failed)
+        {
+            <p class="save-failed" data-testid="save-failed" role="alert">Save failed. Please try again.</p>
+        }
+
+        @{ var requirements = PipelineResult.Candidates.Where(c => c.Classification == ScenarioKind.Requirement).ToList(); }
+        @if (requirements.Count > 0)
+        {
+            <section aria-label="Requirements" data-testid="group-requirement">
+                <h3>Requirements</h3>
+                @foreach (var candidate in requirements)
+                {
+                    <ExtractionCandidateRow Candidate="candidate" OnSelectionToggled="HandleSelectionToggled" />
+                }
+            </section>
+        }
+
+        @{ var tests = PipelineResult.Candidates.Where(c => c.Classification == ScenarioKind.Test).ToList(); }
+        @if (tests.Count > 0)
+        {
+            <section aria-label="Tests" data-testid="group-test">
+                <h3>Tests</h3>
+                @foreach (var candidate in tests)
+                {
+                    <ExtractionCandidateRow Candidate="candidate" OnSelectionToggled="HandleSelectionToggled" />
+                }
+            </section>
+        }
+
+        @{ var needsClarification = PipelineResult.Candidates.Where(c => c.Classification == ScenarioKind.NeedsClarification).ToList(); }
+        @if (needsClarification.Count > 0)
+        {
+            <section aria-label="Needs Clarification" data-testid="group-needs-clarification">
+                <h3>Needs Clarification</h3>
+                @foreach (var candidate in needsClarification)
+                {
+                    <ExtractionCandidateRow Candidate="candidate" OnSelectionToggled="HandleSelectionToggled" />
+                }
+            </section>
+        }
+
+        <button
+            type="button"
+            disabled="@(_selectedIds.Count == 0 || _savePhase == ReviewSavePhase.Saving)"
+            @onclick="HandleSaveConfirm"
+            data-testid="confirm-save-button">
+            Save @_selectedIds.Count selected
+        </button>
+    </div>
+}
+
+@code {
+    [Parameter] public ExtractionPipelineResult? PipelineResult { get; set; }
+
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+
+    private readonly HashSet<Guid> _selectedIds = new();
+    private ReviewSavePhase _savePhase = ReviewSavePhase.Idle;
+    private string _sessionId = Guid.NewGuid().ToString();
+    private ExtractionPipelineResult? _previousPipelineResult;
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(PipelineResult, _previousPipelineResult))
+        {
+            _selectedIds.Clear();
+            _savePhase = ReviewSavePhase.Idle;
+            _sessionId = Guid.NewGuid().ToString();
+            _previousPipelineResult = PipelineResult;
+        }
+    }
+
+    private void HandleSelectionToggled(Guid candidateId)
+    {
+        var candidate = PipelineResult?.Candidates.FirstOrDefault(c => c.CandidateId == candidateId);
+        if (candidate is null)
+            return;
+
+        if (candidate.IsSelected)
+            _selectedIds.Add(candidateId);
+        else
+            _selectedIds.Remove(candidateId);
+    }
+
+    private async Task HandleSaveConfirm()
+    {
+        if (PipelineResult is null || _selectedIds.Count == 0)
+            return;
+
+        _savePhase = ReviewSavePhase.Saving;
+
+        var selectedCandidates = PipelineResult.Candidates
+            .Where(c => _selectedIds.Contains(c.CandidateId))
+            .ToList();
+
+        foreach (var c in selectedCandidates)
+            c.SaveState = CandidateSaveState.Saving;
+
+        StateHasChanged();
+
+        try
+        {
+            var items = selectedCandidates
+                .Select(c => new CreateScenarioInput
+                {
+                    Title = c.Title,
+                    Description = null,
+                    Kind = c.Classification,
+                    ProjectId = ProjectId,
+                })
+                .ToList();
+
+            var metadata = new ExtractionMetadataInput
+            {
+                TotalExtracted = PipelineResult.Candidates.Count,
+                SelectedCount = selectedCandidates.Count,
+                ExtractionDurationMs = (int)PipelineResult.DurationMs,
+                SessionId = _sessionId,
+            };
+
+            var input = new CreateScenariosInput
+            {
+                Items = items,
+                ExtractionMetadata = metadata,
+            };
+
+            var result = await CreateScenariosMutation.ExecuteAsync(input);
+
+            if (result.Data?.CreateScenarios is { } payload)
+            {
+                var results = payload.Results;
+                for (var i = 0; i < selectedCandidates.Count && i < results.Count; i++)
+                {
+                    var candidate = selectedCandidates[i];
+                    var itemResult = results[i];
+
+                    if (itemResult is ICreateScenarios_CreateScenarios_Results_CreateScenarioSuccess success)
+                    {
+                        candidate.SaveState = CandidateSaveState.Saved;
+                        candidate.SavedScenarioId = success.Scenario.Id;
+                    }
+                    else if (itemResult is ICreateScenarios_CreateScenarios_Results_CreateScenarioError error)
+                    {
+                        candidate.SaveState = CandidateSaveState.Failed;
+                        candidate.SaveError = error.Message;
+                    }
+                }
+
+                _savePhase = payload.FailureCount == 0
+                    ? ReviewSavePhase.Complete
+                    : payload.SuccessCount == 0
+                        ? ReviewSavePhase.Failed
+                        : ReviewSavePhase.PartialSuccess;
+            }
+            else
+            {
+                foreach (var c in selectedCandidates)
+                {
+                    c.SaveState = CandidateSaveState.Failed;
+                    c.SaveError = "No response data received.";
+                }
+                _savePhase = ReviewSavePhase.Failed;
+            }
+        }
+        catch (Exception)
+        {
+            foreach (var c in selectedCandidates)
+            {
+                if (c.SaveState == CandidateSaveState.Saving)
+                {
+                    c.SaveState = CandidateSaveState.Failed;
+                    c.SaveError = "Something went wrong. Please try again.";
+                }
+            }
+            _savePhase = ReviewSavePhase.Failed;
+        }
+    }
+
+    public void Dispose()
+    {
+        // Not emitted when save phase is Complete: all selected candidates were successfully saved.
+        if (PipelineResult is null || _savePhase == ReviewSavePhase.Complete)
+            return;
+
+        var hasUnsaved = PipelineResult.Candidates.Any(c => c.SaveState != CandidateSaveState.Saved);
+        if (hasUnsaved)
+        {
+            // no raw text: only aggregate counts, no candidate titles or content
+            Logger.LogInformation(
+                "CandidateReviewAbandoned: totalExtracted={TotalExtracted}, selectedCount={SelectedCount}",
+                PipelineResult.Candidates.Count,
+                _selectedIds.Count);
+        }
+    }
+}

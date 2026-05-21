@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(dotnet *)"
+      "Bash(dotnet *)",
+      "Bash(dir C:\\\\Users\\\\ajaan\\\\source\\\\sdd-repos\\\\BirkNext *)"
     ]
   }
 }

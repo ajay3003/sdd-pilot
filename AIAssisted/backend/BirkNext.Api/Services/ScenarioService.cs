@@ -6,6 +6,15 @@ namespace BirkNext.Api.Services;
 
 public record UserError(string Code, string Message, string? Field = null);
 
+public record CreateScenarioItemInput(string Title, string? Description, ScenarioKind Kind, string ProjectId);
+
+public sealed class BatchScenarioResult
+{
+    public Scenario? Scenario { get; init; }
+    public UserError? Error { get; init; }
+    public bool IsSuccess => Scenario is not null;
+}
+
 public class ScenarioResult
 {
     public Scenario? Scenario { get; init; }
@@ -68,6 +77,65 @@ public class ScenarioService
                 correlationId, projectId);
             throw;
         }
+    }
+
+    public async Task<IReadOnlyList<BatchScenarioResult>> CreateBatchAsync(
+        IEnumerable<CreateScenarioItemInput> items,
+        string correlationId,
+        CancellationToken ct = default)
+    {
+        var itemsList = items.ToList();
+        var results = new BatchScenarioResult[itemsList.Count];
+        var validScenarios = new List<(int Index, Scenario Scenario)>(itemsList.Count);
+
+        for (int i = 0; i < itemsList.Count; i++)
+        {
+            var item = itemsList[i];
+
+            if (string.IsNullOrWhiteSpace(item.ProjectId))
+            {
+                results[i] = new BatchScenarioResult
+                {
+                    Error = new UserError("PROJECT_ID_REQUIRED", "Project ID is required", "projectId")
+                };
+                continue;
+            }
+
+            var errors = Validate(item.Title, item.Kind);
+            if (errors.Count > 0)
+            {
+                results[i] = new BatchScenarioResult { Error = errors[0] };
+                continue;
+            }
+
+            var scenario = new Scenario
+            {
+                Title = item.Title,
+                Description = item.Description,
+                Kind = item.Kind,
+                ProjectId = item.ProjectId,
+            };
+
+            _dbContext.Scenarios.Add(scenario);
+            validScenarios.Add((i, scenario));
+        }
+
+        if (validScenarios.Count > 0)
+        {
+            try
+            {
+                await _dbContext.SaveChangesAsync(ct);
+                foreach (var (index, scenario) in validScenarios)
+                    results[index] = new BatchScenarioResult { Scenario = scenario };
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "BatchScenarioCreationFailed {CorrelationId}", correlationId);
+                throw;
+            }
+        }
+
+        return results;
     }
 
     public async Task<IReadOnlyList<Scenario>> GetAllAsync(

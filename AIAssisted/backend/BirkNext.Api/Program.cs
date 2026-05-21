@@ -32,6 +32,7 @@ builder.Services
     .AddQueryType<Query>()
     .AddMutationType<Mutation>()
     .AddType<ScenarioObjectType>()
+    .AddType<CreateScenarioResultType>()
     .AddDiagnosticEventListener<OperationDiagnosticEventListener>()
     .ConfigureSchema(b => b.ModifyOptions(o => o.UseXmlDocumentation = true));
 

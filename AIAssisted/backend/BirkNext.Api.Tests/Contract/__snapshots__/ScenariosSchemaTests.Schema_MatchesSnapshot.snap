@@ -3,6 +3,13 @@
   mutation: Mutation
 }
 
+"Indicates that creation of a single batch item failed."
+type CreateScenarioError {
+  code: String!
+  message: String!
+  field: String
+}
+
 "Payload returned by the createScenario mutation."
 type CreateScenarioPayload {
   "The created scenario, or null if validation failed."
@@ -13,10 +20,25 @@ type CreateScenarioPayload {
   correlationId: String!
 }
 
+"Indicates that a single batch item was successfully created."
+type CreateScenarioSuccess {
+  scenario: Scenario!
+}
+
+"Payload returned after a batch scenario creation attempt."
+type CreateScenariosPayload {
+  results: [CreateScenarioResult!]!
+  successCount: Int!
+  failureCount: Int!
+  correlationId: String!
+}
+
 "Root mutation type."
 type Mutation {
   "Creates a new scenario in the given project."
   createScenario(input: CreateScenarioInput!): CreateScenarioPayload! @cost(weight: "10")
+  "Creates multiple scenarios from a completed extraction review session."
+  createScenarios(input: CreateScenariosInput!): CreateScenariosPayload! @cost(weight: "10")
 }
 
 "Root query type."
@@ -43,12 +65,37 @@ type UserError {
   field: String
 }
 
+"A discriminated result for a single item in a batch scenario creation."
+union CreateScenarioResult = CreateScenarioSuccess | CreateScenarioError
+
 "Input for the createScenario mutation."
 input CreateScenarioInput {
   title: String!
   description: String
   kind: ScenarioKind!
   projectId: String!
+}
+
+"""
+Input for creating multiple scenarios from a completed extraction review session.
+Raw pasted specification text must not appear in any field of this input.
+"""
+input CreateScenariosInput {
+  items: [CreateScenarioInput!]!
+  extractionMetadata: ExtractionMetadataInput
+}
+
+"""
+Observability metadata forwarded from the Blazor WASM extraction pipeline to the server.
+Privacy constraint: carries no text content — only numeric counts or opaque identifiers.
+SessionId is a client-generated GUID that correlates events within one extraction session;
+it must never be derived from pasted text and is intentionally omitted from server-side logs.
+"""
+input ExtractionMetadataInput {
+  totalExtracted: Int!
+  selectedCount: Int!
+  extractionDurationMs: Int!
+  sessionId: String!
 }
 
 enum ScenarioKind {
