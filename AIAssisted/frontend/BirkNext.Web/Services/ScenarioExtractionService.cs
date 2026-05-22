@@ -92,6 +92,16 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
         var blocks = PartitionBlocks(lines);                    // Stage 3
         var filtered = FilterBlocksWithEngine(blocks, summary); // Stage 4
         var contents = ExtractContent(filtered);                 // Stage 5
+
+        // Stage 5.5 — IgnorePrefixes filter (US4)
+        // No-op when IgnorePrefixes is empty (default configuration).
+        var ignorePrefixes = _ruleEngine.IgnorePrefixes;
+        if (ignorePrefixes.Count > 0)
+            contents = contents
+                .Where(item => !ignorePrefixes.Any(p =>
+                    item.PlainText.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
         var classified = ClassifyContent(contents, summary);     // Stage 6
         var deduplicated = Deduplicate(classified);              // Stage 7
 

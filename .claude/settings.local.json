@@ -4,7 +4,14 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(dotnet *)",
-      "Bash(dir C:\\\\Users\\\\ajaan\\\\source\\\\sdd-repos\\\\BirkNext *)"
+      "Bash(dir C:\\\\Users\\\\ajaan\\\\source\\\\sdd-repos\\\\BirkNext *)",
+      "Bash(Get-ChildItem -Recurse -Filter \"appsettings*.json\" \"C:\\\\Users\\\\ajaan\\\\source\\\\sdd-repos\\\\BirkNext\\\\AIAssisted\\\\frontend\")",
+      "Bash(Select-Object FullName)",
+      "Bash(grep -r \"FakeLogger\\\\|ITestOutputHelper\\\\|LogEntry\\\\|ILogger\\\\|TestLogger\" frontend/BirkNext.Web.Tests/ --include=\"*.csproj\")",
+      "Bash(grep -r \"FakeLogger\\\\|TestLogger\\\\|LogCapture\" frontend/BirkNext.Web.Tests/ --include=\"*.cs\" -l)",
+      "Bash(xargs grep -l \"ScenarioExtractionService\\\\|ExtractionPipeline\")",
+      "Bash(echo \"---FORMAT EXIT: $?\")",
+      "Bash(echo \"FORMAT_EXIT:$?\")"
     ]
   }
 }

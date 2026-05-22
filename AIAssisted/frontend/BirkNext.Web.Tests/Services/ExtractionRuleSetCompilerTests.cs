@@ -2,6 +2,7 @@ using BirkNext.Web.GraphQL;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace BirkNext.Web.Tests.Services;
@@ -58,7 +59,7 @@ public sealed class ExtractionRuleSetCompilerTests
     {
         // "Scenario the user logs in" does NOT match the original BDD pattern
         // (no Given/When/Then opener) but DOES match after "Scenario" is added.
-        var config   = new ExtractionRuleConfiguration { BddKeywordAdditions = ["Scenario"] };
+        var config = new ExtractionRuleConfiguration { BddKeywordAdditions = ["Scenario"] };
         var compiled = Compiler().Compile(ExtractionRuleSet.Default(), config);
         const string input = "Scenario the user logs in";
 
@@ -76,7 +77,7 @@ public sealed class ExtractionRuleSetCompilerTests
     public void Rfc2119UppercaseAddition_new_keyword_classifies_as_Requirement()
     {
         // "PERMITTED" does not appear in the original RFC 2119 uppercase set.
-        var config   = new ExtractionRuleConfiguration { Rfc2119UppercaseAdditions = ["PERMITTED"] };
+        var config = new ExtractionRuleConfiguration { Rfc2119UppercaseAdditions = ["PERMITTED"] };
         var compiled = Compiler().Compile(ExtractionRuleSet.Default(), config);
         const string input = "Users PERMITTED to access the report";
 
@@ -91,7 +92,7 @@ public sealed class ExtractionRuleSetCompilerTests
     public void DeferralMarkerAddition_new_keyword_classifies_as_NeedsClarification()
     {
         // "PENDING" does not appear in the original deferral marker set.
-        var config   = new ExtractionRuleConfiguration { DeferralMarkerAdditions = ["PENDING"] };
+        var config = new ExtractionRuleConfiguration { DeferralMarkerAdditions = ["PENDING"] };
         var compiled = Compiler().Compile(ExtractionRuleSet.Default(), config);
         const string input = "PENDING implementation of the login feature";
 
@@ -305,15 +306,15 @@ public sealed class ExtractionRuleSetCompilerTests
     [Fact]
     public void BaseSet_is_unchanged_after_successful_compilation()
     {
-        var baseSet                     = ExtractionRuleSet.Default();
+        var baseSet = ExtractionRuleSet.Default();
         int originalClassificationCount = baseSet.ClassificationRules.Count;
-        int originalFilterCount         = baseSet.FilterRules.Count;
+        int originalFilterCount = baseSet.FilterRules.Count;
 
         var config = new ExtractionRuleConfiguration
         {
             BddKeywordAdditions = ["Scenario"],
-            PrefixRules         = [new PrefixRuleEntry { Prefix = "AC-", Classification = ScenarioKind.Test }],
-            DisabledRuleNames   = ["Classify:DeferralMarker"],
+            PrefixRules = [new PrefixRuleEntry { Prefix = "AC-", Classification = ScenarioKind.Test }],
+            DisabledRuleNames = ["Classify:DeferralMarker"],
         };
         Compiler().Compile(baseSet, config);
 
@@ -328,8 +329,8 @@ public sealed class ExtractionRuleSetCompilerTests
 
         var config = new ExtractionRuleConfiguration
         {
-            PrefixRules         = [new PrefixRuleEntry { Prefix = "AC-", Classification = ScenarioKind.Test }],
-            DisabledRuleNames   = ["Classify:DeferralMarker"],
+            PrefixRules = [new PrefixRuleEntry { Prefix = "AC-", Classification = ScenarioKind.Test }],
+            DisabledRuleNames = ["Classify:DeferralMarker"],
         };
         Compiler().Compile(ExtractionRuleSet.Default(), config);
 
@@ -350,7 +351,7 @@ public sealed class ExtractionRuleSetCompilerTests
 
         // Input 1: Requirement (RFC 2119 uppercase)
         const string req = "The system MUST validate user input before processing.";
-        var defaultReq  = Eval(ExtractionRuleSet.Default(), req);
+        var defaultReq = Eval(ExtractionRuleSet.Default(), req);
         var compiledReq = Eval(emptyCompiled, req);
         compiledReq.Classification.Should().Be(defaultReq.Classification);
         compiledReq.Signal.Should().Be(defaultReq.Signal);
@@ -358,7 +359,7 @@ public sealed class ExtractionRuleSetCompilerTests
 
         // Input 2: Test (BDD opener)
         const string bdd = "Given a user is logged in";
-        var defaultBdd  = Eval(ExtractionRuleSet.Default(), bdd);
+        var defaultBdd = Eval(ExtractionRuleSet.Default(), bdd);
         var compiledBdd = Eval(emptyCompiled, bdd);
         compiledBdd.Classification.Should().Be(defaultBdd.Classification);
         compiledBdd.Signal.Should().Be(defaultBdd.Signal);
@@ -366,7 +367,7 @@ public sealed class ExtractionRuleSetCompilerTests
 
         // Input 3: NeedsClarification (question terminator)
         const string nc = "What should happen when the session expires?";
-        var defaultNc  = Eval(ExtractionRuleSet.Default(), nc);
+        var defaultNc = Eval(ExtractionRuleSet.Default(), nc);
         var compiledNc = Eval(emptyCompiled, nc);
         compiledNc.Classification.Should().Be(defaultNc.Classification);
         compiledNc.Signal.Should().Be(defaultNc.Signal);
@@ -388,14 +389,103 @@ public sealed class ExtractionRuleSetCompilerTests
                 new PrefixRuleEntry { Prefix = "AC-",  Classification = ScenarioKind.Test,        Priority = 15 },
                 new PrefixRuleEntry { Prefix = "SEC-", Classification = ScenarioKind.Requirement, Priority = 25 },
             ],
-            IgnorePrefixes      = ["SKIP-"],
-            DisabledRuleNames   = ["Classify:DeferralMarker"],
-            PriorityOverrides   = { ["Classify:FrPrefix"] = 55 },
+            IgnorePrefixes = ["SKIP-"],
+            DisabledRuleNames = ["Classify:DeferralMarker"],
+            PriorityOverrides = { ["Classify:FrPrefix"] = 55 },
         };
 
         var compiled = Compiler().Compile(ExtractionRuleSet.Default(), config);
-        var act      = () => EngineFor(compiled);
+        var act = () => EngineFor(compiled);
 
         act.Should().NotThrow("the compiler must produce a rule set that satisfies ExtractionRuleEngine startup validation");
+    }
+
+    // =========================================================================
+    // Observability — OBS-US4-005 log event compliance (T127)
+    // =========================================================================
+
+    [Fact]
+    public void Valid_config_logs_ExtractionRuleConfigurationLoaded_with_correct_counts()
+    {
+        var logger = new CapturingLogger<ExtractionRuleSetCompiler>();
+        var compiler = new ExtractionRuleSetCompiler(logger);
+        var config = new ExtractionRuleConfiguration
+        {
+            BddKeywordAdditions = ["Scenario"],
+            PrefixRules = [new PrefixRuleEntry { Prefix = "AC-", Classification = ScenarioKind.Test }],
+        };
+
+        compiler.Compile(ExtractionRuleSet.Default(), config);
+
+        var loaded = logger.Entries
+            .Should().ContainSingle(e =>
+                e.Level == LogLevel.Information && e.Message.Contains("ExtractionRuleConfigurationLoaded"))
+            .Which;
+        loaded.Message.Should().Contain("bddKeywordAdditionCount=1");
+        loaded.Message.Should().Contain("prefixRuleCount=1");
+        logger.Entries.Should().NotContain(e => e.Message.Contains("ExtractionRuleConfigurationFailed"));
+    }
+
+    [Fact]
+    public void Invalid_config_logs_ExtractionRuleConfigurationFailed_without_value_content()
+    {
+        var logger = new CapturingLogger<ExtractionRuleSetCompiler>();
+        var compiler = new ExtractionRuleSetCompiler(logger);
+        const string invalidKeyword = "Given+"; // regex metacharacter — must NOT appear in log
+        var config = new ExtractionRuleConfiguration { BddKeywordAdditions = [invalidKeyword] };
+
+        compiler.Compile(ExtractionRuleSet.Default(), config);
+
+        var failed = logger.Entries
+            .Should().ContainSingle(e =>
+                e.Level == LogLevel.Warning && e.Message.Contains("ExtractionRuleConfigurationFailed"))
+            .Which;
+        failed.Message.Should().Contain("fieldName=BddKeywordAdditions");
+        failed.Message.Should().Contain("violationType=regex_metacharacter");
+        failed.Message.Should().Contain("fallbackApplied=True");
+        failed.Message.Should().NotContain(invalidKeyword); // OBS-US4-005: no field value content
+
+        logger.Entries.Should().Contain(e =>
+            e.Level == LogLevel.Information &&
+            e.Message.Contains("ExtractionRuleConfigurationFallback") &&
+            e.Message.Contains("reason=validation_failure"));
+    }
+
+    [Fact]
+    public void Empty_config_logs_ExtractionRuleConfigurationLoaded_zeros_and_no_configuration_fallback()
+    {
+        var logger = new CapturingLogger<ExtractionRuleSetCompiler>();
+        var compiler = new ExtractionRuleSetCompiler(logger);
+
+        compiler.Compile(ExtractionRuleSet.Default(), new ExtractionRuleConfiguration());
+
+        var loaded = logger.Entries
+            .Should().ContainSingle(e =>
+                e.Level == LogLevel.Information && e.Message.Contains("ExtractionRuleConfigurationLoaded"))
+            .Which;
+        loaded.Message.Should().Contain("bddKeywordAdditionCount=0");
+        loaded.Message.Should().Contain("prefixRuleCount=0");
+
+        logger.Entries.Should().Contain(e =>
+            e.Level == LogLevel.Information &&
+            e.Message.Contains("ExtractionRuleConfigurationFallback") &&
+            e.Message.Contains("reason=no_configuration"));
+    }
+
+    // =========================================================================
+    // Helpers — private
+    // =========================================================================
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, formatter(state, exception)));
     }
 }

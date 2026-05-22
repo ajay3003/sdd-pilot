@@ -49,7 +49,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void Valid_single_bdd_addition_returns_new_set_not_baseSet()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration { BddKeywordAdditions = ["Scenario"] };
+        var config = new ExtractionRuleConfiguration { BddKeywordAdditions = ["Scenario"] };
 
         var result = Compiler().Compile(baseSet, config);
 
@@ -66,7 +66,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void BddKeywordAdditions_51_entries_returns_baseSet_too_many_entries()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration
+        var config = new ExtractionRuleConfiguration
         {
             BddKeywordAdditions = [.. Enumerable.Range(0, 51).Select(i => $"Word{i}")]
         };
@@ -82,7 +82,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void Empty_string_in_keyword_array_returns_baseSet_empty_value()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration { DeferralMarkerAdditions = [""] };
+        var config = new ExtractionRuleConfiguration { DeferralMarkerAdditions = [""] };
 
         Compiler().Compile(baseSet, config).Should().BeSameAs(baseSet);
     }
@@ -91,7 +91,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void Whitespace_only_string_in_keyword_array_returns_baseSet_empty_value()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration { Rfc2119LowercaseAdditions = ["   "] };
+        var config = new ExtractionRuleConfiguration { Rfc2119LowercaseAdditions = ["   "] };
 
         Compiler().Compile(baseSet, config).Should().BeSameAs(baseSet);
     }
@@ -100,7 +100,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void String_exceeding_200_chars_returns_baseSet_value_too_long()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration
+        var config = new ExtractionRuleConfiguration
         {
             BddKeywordAdditions = [new string('A', 201)]
         };
@@ -112,7 +112,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void Non_ASCII_character_in_keyword_returns_baseSet_non_ascii_characters()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration { BddKeywordAdditions = ["Scén"] };
+        var config = new ExtractionRuleConfiguration { BddKeywordAdditions = ["Scén"] };
 
         Compiler().Compile(baseSet, config).Should().BeSameAs(baseSet);
     }
@@ -121,7 +121,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void Regex_metacharacter_in_keyword_returns_baseSet_regex_metacharacter()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration { BddKeywordAdditions = ["Given+"] };
+        var config = new ExtractionRuleConfiguration { BddKeywordAdditions = ["Given+"] };
 
         Compiler().Compile(baseSet, config).Should().BeSameAs(baseSet);
     }
@@ -134,7 +134,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void Regex_metacharacter_in_prefix_returns_baseSet_regex_metacharacter()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration
+        var config = new ExtractionRuleConfiguration
         {
             PrefixRules = [new PrefixRuleEntry { Prefix = "FR-[0-9]", Classification = ScenarioKind.Requirement }]
         };
@@ -146,7 +146,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void Invalid_classification_in_prefix_rule_returns_baseSet_invalid_classification()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration
+        var config = new ExtractionRuleConfiguration
         {
             PrefixRules = [new PrefixRuleEntry { Prefix = "TEST-", Classification = (ScenarioKind)999 }]
         };
@@ -158,7 +158,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void PrefixRuleEntry_priority_zero_returns_baseSet_priority_out_of_range()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration
+        var config = new ExtractionRuleConfiguration
         {
             PrefixRules = [new PrefixRuleEntry { Prefix = "AC-", Classification = ScenarioKind.Test, Priority = 0 }]
         };
@@ -170,7 +170,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void PrefixRuleEntry_priority_100_returns_baseSet_priority_out_of_range()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration
+        var config = new ExtractionRuleConfiguration
         {
             PrefixRules = [new PrefixRuleEntry { Prefix = "AC-", Classification = ScenarioKind.Test, Priority = 100 }]
         };
@@ -186,7 +186,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void Unknown_rule_name_in_DisabledRuleNames_returns_baseSet_unknown_rule_name()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration
+        var config = new ExtractionRuleConfiguration
         {
             DisabledRuleNames = ["Classify:DoesNotExist"]
         };
@@ -198,7 +198,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void ClassifyDefault_in_DisabledRuleNames_returns_baseSet_default_rule_disabled()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration
+        var config = new ExtractionRuleConfiguration
         {
             DisabledRuleNames = ["Classify:Default"]
         };
@@ -214,7 +214,7 @@ public sealed class ExtractionRuleConfigurationTests
     public void ClassifyDefault_in_PriorityOverrides_returns_baseSet_default_priority_override()
     {
         var baseSet = ExtractionRuleSet.Default();
-        var config  = new ExtractionRuleConfiguration
+        var config = new ExtractionRuleConfiguration
         {
             PriorityOverrides = { ["Classify:Default"] = 5 }
         };
@@ -231,7 +231,7 @@ public sealed class ExtractionRuleConfigurationTests
     {
         var baseSet = ExtractionRuleSet.Default();
         int originalClassificationCount = baseSet.ClassificationRules.Count;
-        int originalFilterCount         = baseSet.FilterRules.Count;
+        int originalFilterCount = baseSet.FilterRules.Count;
 
         // Trigger a validation_failure fallback
         var config = new ExtractionRuleConfiguration
@@ -255,7 +255,7 @@ public sealed class ExtractionRuleConfigurationTests
         var config = new ExtractionRuleConfiguration
         {
             BddKeywordAdditions = ["Scenario"],
-            PrefixRules         = [new PrefixRuleEntry { Prefix = "AC-", Classification = ScenarioKind.Test }]
+            PrefixRules = [new PrefixRuleEntry { Prefix = "AC-", Classification = ScenarioKind.Test }]
         };
 
         var result1 = Compiler().Compile(ExtractionRuleSet.Default(), config);
