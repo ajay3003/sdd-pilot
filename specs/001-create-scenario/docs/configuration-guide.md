@@ -19,13 +19,6 @@ wwwroot/appsettings.json
 }
 ```
 
-## Supported Configuration
-- Prefixes
-- Keywords
-- Ignore rules
-- Rule enable/disable
-- Limited priority overrides
-
 ## Unsupported Configuration
 - Arbitrary scripting
 - AI rules

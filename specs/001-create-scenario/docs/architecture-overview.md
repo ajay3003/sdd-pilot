@@ -1,7 +1,6 @@
 # BirkNext Architecture Overview
 
 ## High-Level Architecture
-
 BirkNext consists of:
 
 - Blazor WebAssembly frontend
@@ -22,14 +21,7 @@ Paste Text
 → Save Selected Items
 ```
 
-## Core Principles
-- Deterministic extraction
-- Review-before-save
-- Client-side extraction ownership
-- Safe observability
-- Stable GraphQL contracts
-
-## Evolution
+## Feature Evolution
 US1:
 - Manual scenario management
 

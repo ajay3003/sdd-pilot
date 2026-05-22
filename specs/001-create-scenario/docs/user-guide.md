@@ -20,9 +20,3 @@ BirkNext helps teams transform specifications into structured scenarios using de
 - Extraction is deterministic
 - Raw specification text is not logged
 - Users stay in control
-
-## Typical Use Cases
-- Requirement workshops
-- QA preparation
-- Acceptance criteria extraction
-- Scenario brainstorming

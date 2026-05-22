@@ -6,11 +6,6 @@ Possible causes:
 - No recognizable patterns
 - Ignore prefixes suppress extraction
 
-Recommended actions:
-- Use bullet lists
-- Use explicit wording
-- Verify extraction configuration
-
 ## Unexpected Classification
 Check:
 - Configured prefixes
@@ -23,8 +18,5 @@ Possible causes:
 - Application restart required
 - Startup validation fallback
 
-## Performance Issues
-Check:
-- Excessive configuration size
-- Invalid prefix patterns
-- Browser responsiveness
+## Local Startup Problems
+See `getting-started-local.md`.
