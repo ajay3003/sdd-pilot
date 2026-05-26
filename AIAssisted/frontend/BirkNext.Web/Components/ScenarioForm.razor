@@ -107,6 +107,10 @@
                     await OnScenarioCreated.InvokeAsync();
                 }
             }
+            else
+            {
+                _networkError = "Something went wrong. Please try again.";
+            }
         }
         catch (Exception)
         {
