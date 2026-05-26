@@ -1,22 +1,24 @@
 @if (Scenarios.Count == 0)
 {
-    <p data-testid="empty-state">No scenarios yet.</p>
+    <div class="empty-state empty-state-dashed">
+        <p data-testid="empty-state">No scenarios yet. Use <a href="/extract">Extract</a> to identify and save scenarios from your specification text.</p>
+    </div>
 }
 else
 {
-    <ul>
-        @foreach (var scenario in Scenarios)
-        {
-            <li data-testid="scenario-row">
-                <strong>@scenario.Title</strong>
-                <span>@scenario.Kind</span>
-                @if (scenario.Description is not null)
-                {
-                    <span>@scenario.Description</span>
-                }
-            </li>
-        }
-    </ul>
+    @foreach (var scenario in Scenarios)
+    {
+        <div class="scenario-card" data-testid="scenario-row">
+            <div class="scenario-card-header">
+                <span class="badge badge-@scenario.Kind.ToLowerInvariant()">@scenario.Kind</span>
+            </div>
+            <div class="scenario-card-title">@scenario.Title</div>
+            @if (scenario.Description is not null)
+            {
+                <div class="scenario-card-description">@scenario.Description</div>
+            }
+        </div>
+    }
 }
 
 @code {

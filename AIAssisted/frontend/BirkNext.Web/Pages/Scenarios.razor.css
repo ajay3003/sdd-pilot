@@ -1,0 +1,67 @@
+/* .page-lead, .loading-state, .toolbar, .toolbar-meta are in global components.css */
+
+/* Create section */
+.create-section {
+    background: white;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-lg, 8px);
+    padding: 1.25rem 1.5rem 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.create-section h2 {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--clr-text-muted, #475569);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin: 0 0 1rem 0;
+}
+
+/* Scenarios section */
+.scenarios-section {
+    margin-bottom: 1.5rem;
+}
+
+/* Filter bar */
+.filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.filter-search {
+    width: 220px;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.875rem;
+    font-family: inherit;
+    border: 1px solid var(--clr-border-input, #d1d5db);
+    border-radius: var(--radius-md, 6px);
+    color: var(--clr-text-body, #1e293b);
+    background: #fff;
+    transition: border-color var(--transition, 0.15s ease), box-shadow var(--transition, 0.15s ease);
+}
+
+.filter-search:focus {
+    outline: none;
+    border-color: var(--clr-primary-focus, #3b82f6);
+    box-shadow: 0 0 0 3px var(--clr-primary-ring, rgba(59, 130, 246, 0.1));
+}
+
+.filter-kind {
+    padding: 0.45rem 0.625rem;
+    font-size: 0.875rem;
+    font-family: inherit;
+    border: 1px solid var(--clr-border-input, #d1d5db);
+    border-radius: var(--radius-md, 6px);
+    color: var(--clr-text-body, #1e293b);
+    background: #fff;
+    cursor: pointer;
+    transition: border-color var(--transition, 0.15s ease), box-shadow var(--transition, 0.15s ease);
+}
+
+.filter-kind:focus {
+    outline: none;
+    border-color: var(--clr-primary-focus, #3b82f6);
+    box-shadow: 0 0 0 3px var(--clr-primary-ring, rgba(59, 130, 246, 0.1));
+}

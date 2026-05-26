@@ -12,7 +12,9 @@
 
 @if (PipelineResult.Status == PipelineStatus.NoResults)
 {
-    <p data-testid="empty-state">No extractable candidates were found in the pasted text.</p>
+    <div class="empty-state-container">
+        <p data-testid="empty-state">No extractable candidates were found in the pasted text.</p>
+    </div>
 }
 else
 {
@@ -26,22 +28,25 @@ else
 
         @if (_savePhase == ReviewSavePhase.PartialSuccess)
         {
-            <p class="save-partial" data-testid="save-partial" role="status">Some candidates were saved successfully; others encountered errors. Review the items below.</p>
+            <p class="notification notification-warning" data-testid="save-partial" role="status">Some candidates were saved successfully; others encountered errors. Review the items below.</p>
         }
         else if (_savePhase == ReviewSavePhase.Complete)
         {
-            <p class="save-complete" data-testid="save-complete" role="status">All selected candidates saved successfully.</p>
+            <p class="notification notification-success" data-testid="save-complete" role="status">All selected candidates saved successfully.</p>
         }
         else if (_savePhase == ReviewSavePhase.Failed)
         {
-            <p class="save-failed" data-testid="save-failed" role="alert">Save failed. Please try again.</p>
+            <p class="notification notification-error" data-testid="save-failed" role="alert">Save failed. Please try again.</p>
         }
 
         @{ var requirements = PipelineResult.Candidates.Where(c => c.Classification == ScenarioKind.Requirement).ToList(); }
         @if (requirements.Count > 0)
         {
             <section aria-label="Requirements" data-testid="group-requirement">
-                <h3>Requirements</h3>
+                <div class="group-header">
+                    <h3 class="section-heading">Requirements</h3>
+                    <span class="count-badge">@requirements.Count</span>
+                </div>
                 @foreach (var candidate in requirements)
                 {
                     <ExtractionCandidateRow Candidate="candidate" OnSelectionToggled="HandleSelectionToggled" />
@@ -53,7 +58,10 @@ else
         @if (tests.Count > 0)
         {
             <section aria-label="Tests" data-testid="group-test">
-                <h3>Tests</h3>
+                <div class="group-header">
+                    <h3 class="section-heading">Tests</h3>
+                    <span class="count-badge">@tests.Count</span>
+                </div>
                 @foreach (var candidate in tests)
                 {
                     <ExtractionCandidateRow Candidate="candidate" OnSelectionToggled="HandleSelectionToggled" />
@@ -65,7 +73,10 @@ else
         @if (needsClarification.Count > 0)
         {
             <section aria-label="Needs Clarification" data-testid="group-needs-clarification">
-                <h3>Needs Clarification</h3>
+                <div class="group-header">
+                    <h3 class="section-heading">Needs Clarification</h3>
+                    <span class="count-badge">@needsClarification.Count</span>
+                </div>
                 @foreach (var candidate in needsClarification)
                 {
                     <ExtractionCandidateRow Candidate="candidate" OnSelectionToggled="HandleSelectionToggled" />
@@ -73,13 +84,29 @@ else
             </section>
         }
 
-        <button
-            type="button"
-            disabled="@(_selectedIds.Count == 0 || _savePhase == ReviewSavePhase.Saving)"
-            @onclick="HandleSaveConfirm"
-            data-testid="confirm-save-button">
-            Save @_selectedIds.Count selected
-        </button>
+        <div class="review-action-bar">
+            @if (_selectedIds.Count > 0 && _savePhase != ReviewSavePhase.Saving)
+            {
+                <button type="button" class="btn-secondary" @onclick="ClearSelection">
+                    Clear selection
+                </button>
+            }
+            <button
+                type="button"
+                disabled="@(_selectedIds.Count == 0 || _savePhase == ReviewSavePhase.Saving)"
+                @onclick="HandleSaveConfirm"
+                data-testid="confirm-save-button"
+                class="btn-primary">
+                @if (_savePhase == ReviewSavePhase.Saving)
+                {
+                    <span>Saving…</span>
+                }
+                else
+                {
+                    <span>Save @_selectedIds.Count selected</span>
+                }
+            </button>
+        </div>
     </div>
 }
 
@@ -114,6 +141,13 @@ else
             _selectedIds.Add(candidateId);
         else
             _selectedIds.Remove(candidateId);
+    }
+
+    private void ClearSelection()
+    {
+        foreach (var candidate in PipelineResult!.Candidates)
+            candidate.IsSelected = false;
+        _selectedIds.Clear();
     }
 
     private async Task HandleSaveConfirm()

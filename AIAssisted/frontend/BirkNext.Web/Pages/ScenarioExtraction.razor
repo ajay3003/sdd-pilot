@@ -5,10 +5,20 @@
 <PageTitle>Extract Scenarios</PageTitle>
 
 <h1>Extract Scenarios</h1>
+<p class="page-lead">Paste a specification document and extract requirements, test cases, and items needing clarification.</p>
 
 <ExtractionInput OnExtractionCompleted="HandleExtractionCompleted" />
 
-<ExtractionReviewList PipelineResult="_pipelineResult" />
+@if (_pipelineResult is null)
+{
+    <div class="extract-pre-state" data-testid="extract-pre-state">
+        <p>Extracted candidates will appear here for review.</p>
+    </div>
+}
+else
+{
+    <ExtractionReviewList PipelineResult="_pipelineResult" />
+}
 
 @code {
     private ExtractionPipelineResult? _pipelineResult;

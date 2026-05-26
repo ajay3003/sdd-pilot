@@ -23,6 +23,7 @@ public class ExtractionInputTests : BunitContext
         Services.AddSingleton(_mockExtractionService.Object);
         Services.AddSingleton(_mockConfig.Object);
         Services.AddLogging();
+        JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
     }
 
     private static ExtractionPipelineResult MakeSuccessResult() =>
@@ -126,6 +127,44 @@ public class ExtractionInputTests : BunitContext
     }
 
     [Fact]
+    public async Task FileImport_DoesNotCallExtractService()
+    {
+        var cut = Render<ExtractionInput>();
+        var importChild = cut.FindComponent<SpecificationImport>();
+        await cut.InvokeAsync(() =>
+            importChild.Instance.OnFileDrop("spec.md", 512,
+                "The system shall allow users to authenticate."));
+
+        _mockExtractionService.Verify(
+            s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task FileImport_ThenExtract_UsesImportedContent()
+    {
+        const string content = "The system shall allow users to authenticate.";
+        _mockExtractionService
+            .Setup(s => s.ExtractAsync(content, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeSuccessResult());
+
+        var cut = Render<ExtractionInput>();
+        var importChild = cut.FindComponent<SpecificationImport>();
+        await cut.InvokeAsync(() => importChild.Instance.OnFileDrop("spec.md", 512, content));
+
+        cut.Find("[data-testid='extract-button']").Click();
+
+        await cut.WaitForStateAsync(
+            () => !cut.Find("[data-testid='extract-button']").HasAttribute("disabled") ||
+                  cut.Find("[data-testid='extract-button']").HasAttribute("disabled"),
+            timeout: TimeSpan.FromSeconds(2));
+
+        _mockExtractionService.Verify(
+            s => s.ExtractAsync(content, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task ExtractButton_DisabledDuringExtractionAndReenabledAfter()
     {
         const string specText = "The system shall allow login.";
@@ -190,6 +229,7 @@ public class ExtractionInputObservabilityTests : BunitContext
         Services.AddSingleton(_mockService.Object);
         Services.AddSingleton<IExtractionConfiguration>(mockConfig.Object);
         Services.AddSingleton<ILogger<ExtractionInput>>(_logger);
+        JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
     }
 
     private static ExtractionPipelineResult MakeSuccessResult(string title = "The system shall do something") =>
@@ -318,5 +358,18 @@ public class ExtractionInputObservabilityTests : BunitContext
         // no raw text: verify the raw input value is absent from every log message
         _logger.Messages.Should().NotContain(m => m.Contains(rawText),
             "log events must never carry raw pasted text content");
+    }
+
+    [Fact]
+    public async Task FileImport_NoLogEvent_ContainsImportedContent()
+    {
+        const string importedText = "unique-sentinel-imported-content-98765";
+
+        var cut = Render<ExtractionInput>();
+        var importChild = cut.FindComponent<SpecificationImport>();
+        await cut.InvokeAsync(() => importChild.Instance.OnFileDrop("spec.md", 512, importedText));
+
+        _logger.Messages.Should().NotContain(m => m.Contains(importedText),
+            "file content must never appear in log messages");
     }
 }

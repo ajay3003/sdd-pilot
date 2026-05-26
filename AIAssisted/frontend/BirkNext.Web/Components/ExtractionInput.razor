@@ -6,27 +6,47 @@
 @inject ILogger<ExtractionInput> Logger
 
 <div class="extraction-input">
-    <label for="spec-input">Paste specification text</label>
-    <textarea
-        id="spec-input"
-        rows="10"
-        @bind="_rawInput"
-        @bind:event="oninput"
-        data-testid="spec-textarea"
-        disabled="@_isExtracting" />
+    <SpecificationImport
+        OnFileImported="HandleFileImported"
+        OnFileRemoved="HandleFileRemoved"
+        IsDisabled="_isExtracting" />
 
-    @if (_validationMessage is not null)
-    {
-        <p class="validation-message" data-testid="validation-message" role="alert">@_validationMessage</p>
-    }
+    <div class="import-separator">or type / paste below</div>
 
-    <button
-        type="button"
-        @onclick="HandleExtract"
-        disabled="@_isExtracting"
-        data-testid="extract-button">
-        Extract Candidates
-    </button>
+    <div class="input-field">
+        <label for="spec-input">Specification text</label>
+        <textarea
+            id="spec-input"
+            rows="12"
+            placeholder="Paste your specification document here — requirements, test cases, or any structured text…"
+            @bind="_rawInput"
+            @bind:event="oninput"
+            data-testid="spec-textarea"
+            disabled="@_isExtracting" />
+
+        @if (_validationMessage is not null)
+        {
+            <p class="validation-message" data-testid="validation-message" role="alert">@_validationMessage</p>
+        }
+    </div>
+
+    <div class="input-actions">
+        <button
+            type="button"
+            @onclick="HandleExtract"
+            disabled="@_isExtracting"
+            data-testid="extract-button"
+            class="btn-primary">
+            @if (_isExtracting)
+            {
+                <span>Extracting…</span>
+            }
+            else
+            {
+                <span>Extract Scenarios</span>
+            }
+        </button>
+    </div>
 </div>
 
 @code {
@@ -35,6 +55,18 @@
     private string _rawInput = string.Empty;
     private bool _isExtracting;
     private string? _validationMessage;
+
+    private void HandleFileImported(string content)
+    {
+        _rawInput = content;
+        _validationMessage = null;
+    }
+
+    private void HandleFileRemoved()
+    {
+        _rawInput = string.Empty;
+        _validationMessage = null;
+    }
 
     private async Task HandleExtract()
     {

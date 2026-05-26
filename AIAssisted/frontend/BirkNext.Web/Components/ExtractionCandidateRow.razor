@@ -1,39 +1,41 @@
 @using BirkNext.Web.GraphQL
 @using BirkNext.Web.Models
 
-<div class="extraction-candidate-row" data-testid="candidate-row">
-    <div class="candidate-header">
-        <input
-            type="checkbox"
-            checked="@Candidate.IsSelected"
-            @onchange="HandleCheckboxChange"
-            data-testid="candidate-checkbox"
-            aria-label="Select candidate: @Candidate.Title" />
+<div class="extraction-candidate-row @(Candidate.IsSelected ? "is-selected" : "")" data-testid="candidate-row">
+    <input
+        type="checkbox"
+        checked="@Candidate.IsSelected"
+        @onchange="HandleCheckboxChange"
+        data-testid="candidate-checkbox"
+        aria-label="Select candidate: @Candidate.Title" />
 
-        <span class="candidate-badge badge-@Candidate.Classification.ToString().ToLowerInvariant()" data-testid="classification-badge">
-            @ClassificationLabel
-        </span>
+    <div class="candidate-body">
+        <div class="candidate-header">
+            <span class="badge badge-@Candidate.Classification.ToString().ToLowerInvariant()" data-testid="classification-badge">
+                @ClassificationLabel
+            </span>
 
-        @if (Candidate.ContextHeading is not null)
+            @if (Candidate.ContextHeading is not null)
+            {
+                <span class="candidate-context-heading" data-testid="context-heading">@Candidate.ContextHeading</span>
+            }
+        </div>
+
+        <div class="candidate-title" data-testid="candidate-title">@Candidate.Title</div>
+
+        @if (Candidate.SaveState == CandidateSaveState.Saving || Candidate.SaveState == CandidateSaveState.Retrying)
         {
-            <span class="candidate-context-heading text-muted" data-testid="context-heading">@Candidate.ContextHeading</span>
+            <span class="save-spinner" data-testid="save-spinner" aria-label="Saving…">Saving…</span>
+        }
+        else if (Candidate.SaveState == CandidateSaveState.Saved)
+        {
+            <span class="save-badge-saved" data-testid="save-saved">Saved</span>
+        }
+        else if (Candidate.SaveState == CandidateSaveState.Failed)
+        {
+            <span class="save-error" data-testid="save-error">@Candidate.SaveError</span>
         }
     </div>
-
-    <div class="candidate-title" data-testid="candidate-title">@Candidate.Title</div>
-
-    @if (Candidate.SaveState == CandidateSaveState.Saving || Candidate.SaveState == CandidateSaveState.Retrying)
-    {
-        <span class="save-spinner" data-testid="save-spinner" aria-label="Saving…">…</span>
-    }
-    else if (Candidate.SaveState == CandidateSaveState.Saved)
-    {
-        <span class="save-badge-saved" data-testid="save-saved">Saved</span>
-    }
-    else if (Candidate.SaveState == CandidateSaveState.Failed)
-    {
-        <span class="save-error" data-testid="save-error">@Candidate.SaveError</span>
-    }
 </div>
 
 @code {

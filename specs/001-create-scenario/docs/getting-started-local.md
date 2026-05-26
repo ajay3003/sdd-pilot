@@ -2,36 +2,96 @@
 
 ## Purpose
 
-This guide explains different ways to start BirkNext locally for:
+This guide explains how to start BirkNext locally for development, testing, demos, and troubleshooting.
 
-- development
-- testing
-- demos
-- troubleshooting
-- SDD workflow verification
+## Recommended Startup Method
 
----
+Use the local startup scripts:
 
-# Supported Local Setup Variants
+```text
+scripts/start-local.bat
+scripts/start-local.ps1
+```
 
-BirkNext can typically be started using:
+Recommended for Windows users:
 
-| Option | Recommended | Notes |
-|---|---|---|
-| Podman | YES | Preferred container runtime |
-| Docker Desktop | YES | Common Windows setup |
-| Visual Studio | YES | Simplest debugging experience |
-| VS Code + terminal | YES | Lightweight workflow |
-| CLI only | YES | Fastest advanced workflow |
+```text
+Double-click scripts/start-local.bat
+```
 
----
+The batch file runs the PowerShell script with execution-policy bypass.
 
-# Prerequisites
+## What the Startup Script Does
+
+The script:
+
+1. Starts container services using Podman by default
+2. Waits for containers/database to initialize
+3. Starts backend in a separate PowerShell window
+4. Waits before starting frontend
+5. Starts frontend in a separate PowerShell window
+6. Prints guidance for accessing frontend URLs
+
+## Default Runtime
+
+Podman is the default container runtime.
+
+```powershell
+.\scripts\start-local.ps1
+```
+
+Docker can be used instead:
+
+```powershell
+.\scripts\start-local.ps1 -ContainerRuntime docker
+```
+
+## Common Script Options
+
+### Default startup
+
+```powershell
+.\scripts\start-local.ps1
+```
+
+### Fast mode
+
+Use only after successful build:
+
+```powershell
+.\scripts\start-local.ps1 -Fast
+```
+
+### Skip containers
+
+```powershell
+.\scripts\start-local.ps1 -SkipContainers
+```
+
+### Longer delays
+
+```powershell
+.\scripts\start-local.ps1 -ContainerDelaySeconds 20 -BackendDelaySeconds 30
+```
+
+### Backend only
+
+```powershell
+.\scripts\start-local.ps1 -BackendOnly
+```
+
+### Frontend only
+
+```powershell
+.\scripts\start-local.ps1 -FrontendOnly -SkipContainers
+```
+
+## Prerequisites
 
 Install:
 
 - .NET SDK 8
-- Podman or Docker
+- Podman Desktop or Docker Desktop
 - Git
 
 Optional:
@@ -39,113 +99,35 @@ Optional:
 - Visual Studio 2022
 - VS Code
 
----
-
-# Typical Repository Structure
+## Typical Repository Structure
 
 ```text
 BirkNext/
 ├── AIAssisted/
 │   ├── frontend/
 │   └── backend/
+├── scripts/
+│   ├── start-local.bat
+│   └── start-local.ps1
 ├── specs/
 ├── CLAUDE.md
 └── .gitignore
 ```
 
----
-
-# Option 1 — Podman (Recommended)
-
-## Start PostgreSQL
-
-From repository root:
+## Manual Startup with Podman
 
 ```bash
 podman compose up -d
-```
-
-Alternative:
-
-```bash
-podman-compose up -d
-```
-
-Verify containers:
-
-```bash
 podman ps
-```
-
-View logs:
-
-```bash
-podman logs <container-name>
-```
-
-Stop containers:
-
-```bash
-podman compose down
-```
-
----
-
-# Start Backend
-
-Open terminal:
-
-```bash
-cd AIAssisted/backend
-dotnet restore
-dotnet build
-dotnet run
-```
-
----
-
-# Start Frontend
-
-Open second terminal:
-
-```bash
-cd AIAssisted/frontend
-dotnet restore
-dotnet build
-dotnet run
-```
-
----
-
-# Option 2 — Docker Desktop
-
-## Start Database
-
-```bash
-docker compose up -d
-```
-
-Verify:
-
-```bash
-docker ps
-```
-
-Logs:
-
-```bash
-docker logs <container-name>
 ```
 
 Stop:
 
 ```bash
-docker compose down
+podman compose down
 ```
 
----
-
-# Start Backend
+## Start Backend Manually
 
 ```bash
 cd AIAssisted/backend
@@ -154,9 +136,13 @@ dotnet build
 dotnet run
 ```
 
----
+If needed:
 
-# Start Frontend
+```bash
+dotnet run --project path/to/backend-project.csproj
+```
+
+## Start Frontend Manually
 
 ```bash
 cd AIAssisted/frontend
@@ -165,129 +151,30 @@ dotnet build
 dotnet run
 ```
 
----
-
-# Option 3 — Visual Studio
-
-## Backend
-
-Open:
-
-```text
-AIAssisted/backend/BirkNext.sln
-```
-
-Press:
-
-```text
-F5
-```
-
-or:
-
-```text
-Ctrl + F5
-```
-
----
-
-## Frontend
-
-Open:
-
-```text
-AIAssisted/frontend/BirkNext.sln
-```
-
-Press:
-
-```text
-F5
-```
-
----
-
-# Option 4 — VS Code
-
-Open repository:
+If needed:
 
 ```bash
-code .
+dotnet run --project path/to/frontend-project.csproj
 ```
 
-Use integrated terminals.
+## Access the Frontend
 
-Backend terminal:
-
-```bash
-cd AIAssisted/backend
-dotnet run
-```
-
-Frontend terminal:
-
-```bash
-cd AIAssisted/frontend
-dotnet run
-```
-
----
-
-# Option 5 — CLI Only Workflow
-
-## Backend
-
-```bash
-cd AIAssisted/backend
-dotnet restore
-dotnet build
-dotnet run
-```
-
----
-
-## Frontend
-
-```bash
-cd AIAssisted/frontend
-dotnet restore
-dotnet build
-dotnet run
-```
-
----
-
-# Verify Backend
-
-GraphQL should normally be available at:
+Look in the frontend PowerShell window for:
 
 ```text
-/graphql
+Now listening on: https://localhost:xxxx
 ```
 
-Example:
+Open that URL in the browser.
+
+Useful paths:
 
 ```text
-https://localhost:xxxx/graphql
+/extract
+/scenarios
 ```
 
----
-
-# Verify Frontend
-
-Frontend should open in browser automatically.
-
-If not, open URL from terminal output manually.
-
-Example:
-
-```text
-https://localhost:xxxx
-```
-
----
-
-# Verify Scenario Extraction
+## Verify Scenario Extraction
 
 Open:
 
@@ -303,72 +190,66 @@ Paste:
 - Clarify archive retention policy
 ```
 
-Click:
-
-```text
-Extract
-```
-
 Expected:
 
 - REQUIREMENT candidate
 - TEST candidate
 - NEEDS_CLARIFICATION candidate
 
----
+## Verify File Import
 
-# Run Tests
+On the Extract page:
 
-## Frontend Tests
+1. Import a `.md` file
+2. Verify text appears in the input area
+3. Click Extract
+4. Review candidates
+5. Save selected candidates
 
-```bash
-cd AIAssisted/frontend
-dotnet test BirkNext.sln
-```
+Repeat with a `.txt` file.
 
----
+## Run Tests
 
-## Backend Tests
+Backend:
 
 ```bash
 cd AIAssisted/backend
-dotnet test BirkNext.sln
+dotnet test
 ```
 
----
-
-# Useful Development Commands
-
-## Clean Build
+Frontend:
 
 ```bash
-dotnet clean
-dotnet build
+cd AIAssisted/frontend
+dotnet test
 ```
 
----
-
-## Verify Formatting
-
-```bash
-dotnet format --verify-no-changes
-```
-
----
-
-## Restore Dependencies
+## Useful Development Commands
 
 ```bash
 dotnet restore
+dotnet build
+dotnet test
+dotnet format --verify-no-changes
 ```
 
----
+## Common Problems
 
-# Common Problems
+### PowerShell blocks script execution
 
-## Database Not Running
+Run through the batch file:
 
-Verify:
+```text
+scripts/start-local.bat
+```
+
+Or run:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
+```
+
+### Database not running
 
 ```bash
 podman ps
@@ -380,68 +261,10 @@ or:
 docker ps
 ```
 
-Restart database containers if needed.
+### Frontend URL unknown
 
----
-
-## Frontend Cannot Reach Backend
-
-Check:
-
-- backend running
-- correct ports
-- HTTPS certificates
-- CORS configuration
-
----
-
-## GraphQL Errors
-
-Verify:
-
-- backend started successfully
-- schema generated correctly
-- Strawberry Shake client regenerated if schema changed
-
----
-
-## Configuration Changes Not Applied
-
-Restart frontend application.
-
-Extraction configuration is loaded at startup.
-
----
-
-# Useful Local URLs
-
-Adjust ports based on terminal output.
+Check the frontend terminal for:
 
 ```text
-Frontend:  https://localhost:<frontend-port>
-Backend:   https://localhost:<backend-port>
-GraphQL:   https://localhost:<backend-port>/graphql
-Extract:   /extract
-Scenarios: /scenarios
+Now listening on: https://localhost:xxxx
 ```
-
----
-
-# Recommended Workflow
-
-Recommended daily workflow:
-
-1. Start Podman
-2. Start PostgreSQL container
-3. Start backend
-4. Start frontend
-5. Verify extraction
-6. Run tests before commit
-
----
-
-# Notes
-
-- Exact ports depend on launch settings
-- Podman is fully supported
-- Docker and Podman commands are intentionally both documented

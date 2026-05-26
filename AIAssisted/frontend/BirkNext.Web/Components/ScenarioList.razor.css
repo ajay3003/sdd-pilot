@@ -1,0 +1,31 @@
+.scenario-card {
+    background: white;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-lg, 8px);
+    padding: 0.875rem 1rem;
+    margin-bottom: 0.5rem;
+    transition: border-color var(--transition, 0.15s ease), background-color var(--transition, 0.15s ease);
+}
+
+.scenario-card:hover {
+    border-color: var(--clr-border-hover, #cbd5e1);
+    background-color: var(--clr-surface, #f8fafc);
+}
+
+.scenario-card-header {
+    margin-bottom: 0.35rem;
+}
+
+.scenario-card-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--clr-text-body, #1e293b);
+    line-height: 1.5;
+}
+
+.scenario-card-description {
+    font-size: 0.825rem;
+    color: var(--clr-text-subtle, #64748b);
+    margin-top: 0.35rem;
+    line-height: 1.5;
+}

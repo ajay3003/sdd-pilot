@@ -1,0 +1,67 @@
+/* ======================================================
+   FORM FIELD WRAPPER
+   ====================================================== */
+
+.form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+
+/* ======================================================
+   FORM CONTROL (input, textarea, select base)
+   ====================================================== */
+
+.form-control {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.9rem;
+    font-family: inherit;
+    border: 1px solid var(--clr-border-input);
+    border-radius: var(--radius-md);
+    color: var(--clr-text-body);
+    background: var(--clr-surface-white);
+    box-sizing: border-box;
+    line-height: 1.65;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--clr-primary-focus);
+    box-shadow: 0 0 0 3px var(--clr-primary-ring);
+}
+
+.form-control:disabled {
+    background: var(--clr-surface-disabled);
+    color: var(--clr-text-disabled);
+    cursor: not-allowed;
+}
+
+
+/* ======================================================
+   FORM HELPERS
+   ====================================================== */
+
+.form-optional {
+    font-weight: 400;
+    color: var(--clr-text-placeholder);
+    font-size: 0.825rem;
+}
+
+.form-support-ref {
+    font-size: 0.8rem;
+    color: var(--clr-text-placeholder);
+    margin: 0;
+}
+
+
+/* ======================================================
+   FORM ACTIONS
+   ====================================================== */
+
+.form-actions {
+    display: flex;
+    align-items: center;
+}

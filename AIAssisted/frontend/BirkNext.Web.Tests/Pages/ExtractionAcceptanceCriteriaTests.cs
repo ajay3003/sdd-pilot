@@ -37,6 +37,7 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         Services.AddSingleton(mockConfig.Object);
         Services.AddSingleton(_mockMutation.Object);
         Services.AddLogging();
+        JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────
@@ -299,5 +300,36 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
             s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never,
             "extraction service must not be called when input is empty");
+    }
+
+    /// <summary>
+    /// AC7 — Given a specification file is imported via the import zone,
+    /// When the user clicks Extract, Then candidates are displayed from the imported content.
+    /// </summary>
+    [Fact]
+    public async Task AC7_ImportedFile_ExtractsAndDisplaysCandidates()
+    {
+        const string importedText = "The system shall allow imported users to log in.";
+        var candidates = new[] { MakeCandidate("The system shall allow imported users to log in.") };
+        _mockExtraction
+            .Setup(s => s.ExtractAsync(importedText, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeSuccessResult(candidates));
+
+        var cut = Render<ScenarioExtraction>();
+
+        var importChild = cut.FindComponent<SpecificationImport>();
+        await cut.InvokeAsync(() => importChild.Instance.OnFileDrop("spec.md", 512, importedText));
+
+        cut.Find("[data-testid='extract-button']").Click();
+
+        await cut.WaitForStateAsync(
+            () => cut.FindAll("[data-testid='candidate-row']").Count > 0,
+            timeout: TimeSpan.FromSeconds(2));
+
+        _mockExtraction.Verify(
+            s => s.ExtractAsync(importedText, It.IsAny<CancellationToken>()),
+            Times.Once,
+            "extraction service must be called with the imported file content");
+        cut.FindAll("[data-testid='candidate-row']").Should().HaveCount(1);
     }
 }

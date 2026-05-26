@@ -2,22 +2,22 @@
 @using System.ComponentModel.DataAnnotations
 @inject IBirkNextClient Client
 
-<EditForm Model="_model" OnValidSubmit="HandleSubmit">
+<EditForm Model="_model" OnValidSubmit="HandleSubmit" class="scenario-form">
     <DataAnnotationsValidator />
 
-    <div>
+    <div class="form-field">
         <label for="title">Title</label>
-        <InputText id="title" @bind-Value="_model.Title" />
+        <InputText id="title" @bind-Value="_model.Title" class="form-control" placeholder="Enter scenario title" />
         <ValidationMessage For="() => _model.Title" />
         @if (FieldError("title") is { } titleErr) { <span class="validation-message">@titleErr</span> }
     </div>
-    <div>
-        <label for="description">Description</label>
-        <InputTextArea id="description" @bind-Value="_model.Description" />
+    <div class="form-field">
+        <label for="description">Description <span class="form-optional">(optional)</span></label>
+        <InputTextArea id="description" @bind-Value="_model.Description" class="form-control form-textarea" placeholder="Provide additional context or details" rows="3" />
     </div>
-    <div>
+    <div class="form-field">
         <label for="kind">Type</label>
-        <InputSelect id="kind" TValue="ScenarioKind?" @bind-Value="_model.Kind">
+        <InputSelect id="kind" TValue="ScenarioKind?" @bind-Value="_model.Kind" class="form-control form-select">
             <option value="">-- select a type --</option>
             <option value="Requirement">Requirement</option>
             <option value="Test">Test</option>
@@ -30,7 +30,7 @@
     @{ var unrouted = _errors.Where(e => e.Field is not ("title" or "kind")).ToList(); }
     @if (unrouted.Count > 0)
     {
-        <ul role="alert">
+        <ul role="alert" class="form-errors">
             @foreach (var error in unrouted)
             {
                 <li>@error.Message</li>
@@ -40,15 +40,26 @@
 
     @if (_networkError is not null)
     {
-        <p role="alert">@_networkError</p>
+        <p role="alert" class="form-network-error">@_networkError</p>
     }
 
     @if (_correlationId is not null)
     {
-        <p>Support reference: @_correlationId</p>
+        <p class="form-support-ref">Support reference: @_correlationId</p>
     }
 
-    <button type="submit" disabled="@_isSubmitting">Create Scenario</button>
+    <div class="form-actions">
+        <button type="submit" disabled="@_isSubmitting" class="btn-primary">
+            @if (_isSubmitting)
+            {
+                <span>Creating…</span>
+            }
+            else
+            {
+                <span>Create Scenario</span>
+            }
+        </button>
+    </div>
 </EditForm>
 
 @code {

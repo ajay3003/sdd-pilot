@@ -6,14 +6,75 @@
 <PageTitle>Scenarios</PageTitle>
 
 <h1>Scenarios</h1>
+<p class="page-lead">Browse and manage all saved scenarios for this project.</p>
 
-<ScenarioForm OnScenarioCreated="RefreshListAsync" />
+<section class="create-section">
+    <h2>Create Scenario</h2>
+    <ScenarioForm OnScenarioCreated="RefreshListAsync" />
+</section>
 
-<ScenarioList Scenarios="_scenarios" />
+<section class="scenarios-section">
+    <div class="toolbar">
+        <span class="toolbar-meta">
+            @if (_isLoading)
+            {
+                <span>Loading…</span>
+            }
+            else if (string.IsNullOrEmpty(_searchQuery) && string.IsNullOrEmpty(_filterKind))
+            {
+                <span>@_scenarios.Count scenario@(_scenarios.Count == 1 ? "" : "s")</span>
+            }
+            else
+            {
+                <span>@FilteredScenarios.Count shown of @_scenarios.Count</span>
+            }
+        </span>
+        <div class="filter-bar">
+            <input
+                type="search"
+                class="filter-search"
+                placeholder="Search scenarios…"
+                value="@_searchQuery"
+                @oninput="e => _searchQuery = e.Value?.ToString() ?? string.Empty"
+                aria-label="Search scenarios" />
+            <select
+                class="filter-kind"
+                value="@_filterKind"
+                @onchange="e => _filterKind = e.Value?.ToString() ?? string.Empty"
+                aria-label="Filter by type">
+                <option value="">All types</option>
+                <option value="Requirement">Requirement</option>
+                <option value="Test">Test</option>
+                <option value="NeedsClarification">Needs Clarification</option>
+            </select>
+        </div>
+    </div>
+
+    @if (_isLoading)
+    {
+        <p class="loading-state">Loading scenarios…</p>
+    }
+    else
+    {
+        <ScenarioList Scenarios="FilteredScenarios" />
+    }
+</section>
 
 @code {
     private const string ProjectId = "00000000-0000-0000-0000-000000000001";
     private IReadOnlyList<ScenarioListItem> _scenarios = [];
+    private bool _isLoading;
+    private string _searchQuery = string.Empty;
+    private string _filterKind = string.Empty;
+
+    private IReadOnlyList<ScenarioListItem> FilteredScenarios =>
+        _scenarios
+            .Where(s =>
+                (string.IsNullOrEmpty(_filterKind) || s.Kind == _filterKind) &&
+                (string.IsNullOrEmpty(_searchQuery) ||
+                 s.Title.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                 (s.Description?.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ?? false)))
+            .ToList();
 
     protected override async Task OnInitializedAsync()
     {
@@ -22,6 +83,9 @@
 
     private async Task LoadScenariosAsync()
     {
+        _isLoading = true;
+        StateHasChanged();
+
         var result = await Client.GetScenarios.ExecuteAsync(ProjectId);
         if (result.Data is { } data)
         {
@@ -29,6 +93,8 @@
                 .Select(s => new ScenarioListItem(s.Id, s.Title, s.Description, s.Kind.ToString()))
                 .ToList();
         }
+
+        _isLoading = false;
     }
 
     private async Task RefreshListAsync()
