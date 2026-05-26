@@ -103,7 +103,7 @@
     public async Task OnFileDropError()
     {
         _dragCounter = 0;
-        _errorMessage = "Could not read the file. Make sure it is a plain-text .md or .txt file and try again.";
+        _errorMessage = "Could not read the dropped file. It may be binary or use an encoding your browser cannot decode — try re-saving the file as UTF-8.";
         _state = ImportState.Error;
         await InvokeAsync(StateHasChanged);
     }
@@ -111,8 +111,6 @@
     private async Task HandleFileSelected(InputFileChangeEventArgs e)
     {
         _dragCounter = 0;
-        _state = ImportState.Reading;
-        StateHasChanged();
         var file = e.File;
         try
         {
@@ -127,15 +125,34 @@
                 ShowError($"File is too large ({FormatFileSize(file.Size)}). Please choose a file under 1 MB.");
                 return;
             }
-            using var stream = file.OpenReadStream(maxAllowedSize: 1_048_576);
-            using var reader = new StreamReader(stream, System.Text.Encoding.UTF8,
+
+            // Buffer all bytes into memory before calling StateHasChanged().
+            // Blazor WASM resets the JS file-tracking dictionary (_blazorFilesById) when
+            // the InputFile element leaves the DOM during a re-render.  Any OpenReadStream
+            // chunk read that spans an await after StateHasChanged() fires will throw a
+            // JSException.  Reading into MemoryStream first breaks this dependency.
+            byte[] fileBytes;
+            using (var fileStream = file.OpenReadStream(maxAllowedSize: 1_048_576))
+            {
+                using var ms = new MemoryStream((int)file.Size);
+                await fileStream.CopyToAsync(ms);
+                fileBytes = ms.ToArray();
+            }
+
+            _state = ImportState.Reading;
+            StateHasChanged();
+
+            using var reader = new StreamReader(
+                new MemoryStream(fileBytes),
+                System.Text.Encoding.UTF8,
                 detectEncodingFromByteOrderMarks: true);
             var content = await reader.ReadToEndAsync();
             await HandleFileContent(file.Name, file.Size, content);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            ShowError("Could not read the file. Make sure it is a plain-text .md or .txt file and try again.");
+            Console.Error.WriteLine($"[SpecificationImport] {ex.GetType().FullName}: {ex.Message}");
+            ShowError("Could not read the file. Ensure it is a plain-text .md or .txt file saved as UTF-8 or UTF-16 and try again.");
         }
     }
 
@@ -153,10 +170,10 @@
             return;
         }
 
-        var content = TrimBom(rawContent);
+        var content = NormalizeLineEndings(TrimBom(rawContent));
         if (content.Contains('\0'))
         {
-            ShowError("Binary content detected. Only plain-text .md or .txt files can be imported.");
+            ShowError("Binary content or encoding error detected — only plain-text .md and .txt files can be imported. Try re-saving the file as UTF-8.");
             return;
         }
         if (string.IsNullOrWhiteSpace(content))
@@ -194,6 +211,8 @@
     }
 
     private static string TrimBom(string s) => s.Length > 0 && s[0] == '﻿' ? s[1..] : s;
+
+    private static string NormalizeLineEndings(string s) => s.Replace("\r\n", "\n").Replace('\r', '\n');
 
     private static string FormatFileSize(long bytes) =>
         bytes >= 1024

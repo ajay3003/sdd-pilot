@@ -177,4 +177,39 @@ public class SpecificationImportTests : BunitContext
         cut.Find("[data-testid='import-error']").TextContent
             .Should().Contain("Could not read");
     }
+
+    [Fact]
+    public async Task CrlfLineEndings_AreNormalized()
+    {
+        string? receivedContent = null;
+        var cut = Render<SpecificationImport>(p =>
+            p.Add(c => c.OnFileImported, (string content) => { receivedContent = content; }));
+
+        await cut.Instance.OnFileDrop("spec.md", 512, "line one\r\nline two\r\nline three");
+
+        receivedContent.Should().Be("line one\nline two\nline three");
+    }
+
+    [Fact]
+    public async Task CrOnlyLineEndings_AreNormalized()
+    {
+        string? receivedContent = null;
+        var cut = Render<SpecificationImport>(p =>
+            p.Add(c => c.OnFileImported, (string content) => { receivedContent = content; }));
+
+        await cut.Instance.OnFileDrop("spec.md", 512, "line one\rline two\rline three");
+
+        receivedContent.Should().Be("line one\nline two\nline three");
+    }
+
+    [Fact]
+    public async Task BinaryContent_ShowsEncodingHint()
+    {
+        var cut = Render<SpecificationImport>();
+
+        await cut.Instance.OnFileDrop("binary.txt", 128, "Some text\0with null byte");
+
+        cut.Find("[data-testid='import-error']").TextContent
+            .Should().ContainAll("Binary", "encoding");
+    }
 }
