@@ -1,11 +1,15 @@
 type Query {
   ping: String
   scenarios(projectId: String!): [Scenario!]!
+  reviewedCandidates(projectId: String!, sessionId: String): [ReviewedCandidate!]!
+  candidateLinks(projectId: String!, sessionId: String): [CandidateLink!]!
 }
 
 type Mutation {
   createScenario(input: CreateScenarioInput!): CreateScenarioPayload!
   createScenarios(input: CreateScenariosInput!): CreateScenariosPayload!
+  saveReviewedCandidates(input: SaveReviewedCandidatesInput!): SaveReviewedCandidatesPayload!
+  saveCandidateLinks(input: SaveCandidateLinksInput!): SaveCandidateLinksPayload!
 }
 
 type Scenario {
@@ -71,6 +75,80 @@ type CreateScenarioError {
   code: String!
   message: String!
   field: String
+}
+
+enum CandidateReviewStatus {
+  NEW
+  ACCEPTED
+  REJECTED
+  NEEDS_REVIEW
+}
+
+type ReviewedCandidate {
+  id: ID!
+  title: String!
+  classification: ScenarioKind!
+  reviewStatus: CandidateReviewStatus!
+  sourceDocument: String
+  sourceSection: String
+  projectId: String!
+  reviewedBy: String!
+  sessionId: String!
+  createdAt: DateTime!
+  reviewedAt: DateTime
+}
+
+input SaveReviewedCandidateItemInput {
+  title: String!
+  classification: ScenarioKind!
+  reviewStatus: CandidateReviewStatus!
+  sourceDocument: String
+  sourceSection: String
+  projectId: String!
+  reviewedBy: String
+  reviewedAt: DateTime
+}
+
+input SaveReviewedCandidatesInput {
+  items: [SaveReviewedCandidateItemInput!]!
+  sessionId: String
+}
+
+type SaveReviewedCandidatesPayload {
+  savedCount: Int!
+  correlationId: String!
+}
+
+enum CandidateLinkType {
+  REQUIREMENT_TEST
+  REQUIREMENT_CLARIFICATION
+}
+
+type CandidateLink {
+  id: ID!
+  sourceCandidateRef: String!
+  targetCandidateRef: String!
+  linkType: CandidateLinkType!
+  projectId: String!
+  sessionId: String!
+  createdAt: DateTime!
+}
+
+input SaveCandidateLinkItemInput {
+  sourceCandidateRef: String!
+  targetCandidateRef: String!
+  linkType: CandidateLinkType!
+}
+
+input SaveCandidateLinksInput {
+  projectId: String!
+  sessionId: String!
+  links: [SaveCandidateLinkItemInput!]!
+}
+
+type SaveCandidateLinksPayload {
+  savedCount: Int!
+  correlationId: String!
 }
 
 scalar DateTime

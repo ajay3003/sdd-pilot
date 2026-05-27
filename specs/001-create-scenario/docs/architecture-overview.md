@@ -11,20 +11,21 @@ BirkNext consists of:
 - deterministic extraction engine
 - configurable rule engine
 - local file import workflow
+- review workflow
+- reviewed candidate persistence
+- scenario persistence
 - shared frontend design system
 
-## Core Architecture Principle
+## Core Principle
 
-Client owns extraction.
-
-Server owns persistence.
+Client owns extraction. Server owns persistence.
 
 ```text
 Client-side import/paste
 → Client-side deterministic extraction
 → User review
-→ Save selected candidates
-→ Backend persistence
+→ Save review state
+→ Save selected candidates as scenarios
 ```
 
 Raw pasted/imported specification content is not sent to the backend during extraction.
@@ -37,104 +38,56 @@ Paste or Import Text
 → Filter
 → Apply Rule Engine
 → Classify
+→ Group by ContextHeading
 → Review
-→ Save Selected Items
+→ Save Review or Save Selected
 ```
 
-## File Import Flow
+## Review Workflow
+
+Candidates receive a review status:
+
+- New
+- Accepted
+- Rejected
+- Needs Review
 
 ```text
-Local .md/.txt file
-→ Browser reads file content
-→ Text area populated
-→ User may edit text
-→ Extraction pipeline runs
-→ User reviews candidates
-→ Selected scenarios are saved
+Extracted Candidate
+→ Reviewed Candidate
+→ Optional Final Scenario
 ```
-
-The file itself is not persisted automatically.
 
 ## Persistence Boundary
 
-Persisted:
+| Concept | Table/Area | Purpose |
+|---|---|---|
+| Reviewed Candidate | reviewed_candidates | QA review workspace and audit trail |
+| Scenario | scenarios | finalized scenario registry |
 
-- selected scenarios
-- scenario type
-- scenario metadata required by backend
+Reviewed candidates and finalized scenarios are intentionally separate.
 
-Not persisted automatically:
+## Context Grouping
 
-- uploaded file
-- raw imported text
-- raw pasted text
-- temporary extraction candidates
-- unselected candidates
+BirkNext preserves source context using `ContextHeading`.
 
-## Rule Engine Evolution
+```text
+REQUIREMENT
+  Functional Requirements
+  Observability
 
-US2 introduced deterministic extraction.
+TEST
+  User Story 1
+  Acceptance Criteria
 
-US3 introduced an internal deterministic rule engine.
-
-US4 introduced Level 1 configurable deterministic rules.
-
-Current supported configuration includes:
-
-- prefixes
-- keywords
-- ignore prefixes
-- safe rule toggles
-- bounded priority behavior, if enabled
-
-Unsupported:
-
-- scripting
-- arbitrary regex
-- AI-based rules
-- runtime code execution
+NEEDS_CLARIFICATION
+  Edge Cases
+  Open Questions
+```
 
 ## GraphQL Boundary
 
-GraphQL is used for saving selected scenarios.
-
-The existing create-scenarios mutation remains the persistence boundary.
-
-The extraction engine and file import flow should not require GraphQL schema changes.
-
-## Frontend UX Architecture
-
-The frontend now includes:
-
-- clean application shell
-- Extract workflow page
-- Scenario management page
-- shared design-system CSS
-- card-based review layout
-- visual badges
-- loading states
-- notification styles
-- import area
-
-## Feature Evolution
-
-US1:
-- Manual scenario management
-
-US2:
-- Deterministic extraction workflow
-
-US3:
-- Internal deterministic rule engine
-
-US4:
-- Configurable deterministic extraction rules
-
-Product phase:
-- Modern UX
-- Shared design system
-- Local `.md` / `.txt` import
-- Startup scripts and local onboarding documentation
+GraphQL supports saving/loading reviewed candidates and saving finalized scenarios. Extraction and file import remain client-side.
 
 ## Key Quality Attributes
 
@@ -142,6 +95,6 @@ Product phase:
 - review-before-save workflow
 - client-side extraction privacy
 - stable GraphQL contracts
+- grouped review usability
 - safe observability
-- lightweight frontend design system
-- local developer friendliness
+- lightweight design system

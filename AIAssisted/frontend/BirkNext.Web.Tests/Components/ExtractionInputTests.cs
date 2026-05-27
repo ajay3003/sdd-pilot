@@ -56,7 +56,7 @@ public class ExtractionInputTests : BunitContext
             .Should().Contain("Paste some text");
 
         _mockExtractionService.Verify(
-            s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -74,7 +74,7 @@ public class ExtractionInputTests : BunitContext
             .Should().Contain("too large");
 
         _mockExtractionService.Verify(
-            s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -83,7 +83,7 @@ public class ExtractionInputTests : BunitContext
     {
         const string specText = "The system shall allow users to log in.";
         _mockExtractionService
-            .Setup(s => s.ExtractAsync(specText, It.IsAny<CancellationToken>()))
+            .Setup(s => s.ExtractAsync(specText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeSuccessResult());
 
         var cut = Render<ExtractionInput>();
@@ -97,7 +97,7 @@ public class ExtractionInputTests : BunitContext
             timeout: TimeSpan.FromSeconds(2));
 
         _mockExtractionService.Verify(
-            s => s.ExtractAsync(specText, It.IsAny<CancellationToken>()),
+            s => s.ExtractAsync(specText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -108,7 +108,7 @@ public class ExtractionInputTests : BunitContext
         var pipelineResult = MakeSuccessResult();
 
         _mockExtractionService
-            .Setup(s => s.ExtractAsync(specText, It.IsAny<CancellationToken>()))
+            .Setup(s => s.ExtractAsync(specText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(pipelineResult);
 
         ExtractionPipelineResult? receivedResult = null;
@@ -136,7 +136,7 @@ public class ExtractionInputTests : BunitContext
                 "The system shall allow users to authenticate."));
 
         _mockExtractionService.Verify(
-            s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -145,7 +145,7 @@ public class ExtractionInputTests : BunitContext
     {
         const string content = "The system shall allow users to authenticate.";
         _mockExtractionService
-            .Setup(s => s.ExtractAsync(content, It.IsAny<CancellationToken>()))
+            .Setup(s => s.ExtractAsync(content, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeSuccessResult());
 
         var cut = Render<ExtractionInput>();
@@ -160,7 +160,7 @@ public class ExtractionInputTests : BunitContext
             timeout: TimeSpan.FromSeconds(2));
 
         _mockExtractionService.Verify(
-            s => s.ExtractAsync(content, It.IsAny<CancellationToken>()),
+            s => s.ExtractAsync(content, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -171,7 +171,7 @@ public class ExtractionInputTests : BunitContext
         var tcs = new TaskCompletionSource<ExtractionPipelineResult>();
 
         _mockExtractionService
-            .Setup(s => s.ExtractAsync(specText, It.IsAny<CancellationToken>()))
+            .Setup(s => s.ExtractAsync(specText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .Returns(tcs.Task);
 
         var cut = Render<ExtractionInput>();
@@ -258,7 +258,7 @@ public class ExtractionInputObservabilityTests : BunitContext
     public async Task ValidInput_ExtractionTriggered_IsLogged()
     {
         const string specText = "The system shall allow login.";
-        _mockService.Setup(s => s.ExtractAsync(specText, It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.ExtractAsync(specText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeSuccessResult());
 
         var cut = Render<ExtractionInput>();
@@ -276,7 +276,7 @@ public class ExtractionInputObservabilityTests : BunitContext
     public async Task ValidInput_ExtractionCompleted_IsLogged()
     {
         const string specText = "The system shall allow login.";
-        _mockService.Setup(s => s.ExtractAsync(specText, It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.ExtractAsync(specText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeSuccessResult());
 
         var cut = Render<ExtractionInput>();
@@ -294,7 +294,7 @@ public class ExtractionInputObservabilityTests : BunitContext
     public async Task NoResultsInput_ExtractionEmpty_IsLoggedWithSnakeCaseReason()
     {
         const string specText = "Some headings but no bullet points.";
-        _mockService.Setup(s => s.ExtractAsync(specText, It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.ExtractAsync(specText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeNoResultsResult());
 
         var cut = Render<ExtractionInput>();
@@ -313,7 +313,7 @@ public class ExtractionInputObservabilityTests : BunitContext
     public async Task AllLogEvents_ShareSameSessionId()
     {
         const string specText = "The system shall allow login.";
-        _mockService.Setup(s => s.ExtractAsync(specText, It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.ExtractAsync(specText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeSuccessResult());
 
         var cut = Render<ExtractionInput>();
@@ -344,7 +344,7 @@ public class ExtractionInputObservabilityTests : BunitContext
     public async Task NoLogEvent_ContainsRawInputText()
     {
         const string rawText = "unique-sentinel-raw-input-text-12345";
-        _mockService.Setup(s => s.ExtractAsync(rawText, It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.ExtractAsync(rawText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeSuccessResult());
 
         var cut = Render<ExtractionInput>();
@@ -373,3 +373,105 @@ public class ExtractionInputObservabilityTests : BunitContext
             "file content must never appear in log messages");
     }
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Profile selector UI tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+public class ExtractionInputProfileSelectorTests : BunitContext
+{
+    private readonly Mock<IScenarioExtractionService> _mockService = new();
+
+    public ExtractionInputProfileSelectorTests()
+    {
+        var mockConfig = new Mock<IExtractionConfiguration>();
+        mockConfig.Setup(c => c.MaxInputLengthChars).Returns(50_000);
+        mockConfig.Setup(c => c.MinCandidateLengthChars).Returns(3);
+        mockConfig.Setup(c => c.MaxLineLengthForPatternMatching).Returns(2_000);
+
+        Services.AddSingleton(_mockService.Object);
+        Services.AddSingleton(mockConfig.Object);
+        Services.AddLogging();
+        JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
+    }
+
+    private static ExtractionPipelineResult MakeSuccessResult()
+        => ExtractionPipelineResult.Success([], 10, 1, 5, 0, 0, 0);
+
+    [Fact]
+    public void ProfileSelector_IsRendered()
+    {
+        var cut = Render<ExtractionInput>();
+        cut.Find("[data-testid='profile-selector']").Should().NotBeNull();
+        cut.Find("[data-testid='profile-radio-default']").Should().NotBeNull();
+        cut.Find("[data-testid='profile-radio-speckit']").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ProfileSelector_DefaultIsSelectedByDefault()
+    {
+        var cut = Render<ExtractionInput>();
+        cut.Find("[data-testid='profile-radio-default']").HasAttribute("checked").Should().BeTrue(
+            "Default radio must be checked initially");
+        cut.Find("[data-testid='profile-radio-speckit']").HasAttribute("checked").Should().BeFalse(
+            "Speckit radio must be unchecked initially");
+    }
+
+    [Fact]
+    public async Task SelectingSpeckitProfile_PassesSpeckitToService()
+    {
+        _mockService
+            .Setup(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeSuccessResult());
+
+        var cut = Render<ExtractionInput>();
+        cut.Find("[data-testid='profile-radio-speckit']").Change(true);
+        cut.Find("[data-testid='spec-textarea']").Input("some spec text");
+        cut.Find("[data-testid='extract-button']").Click();
+
+        await cut.WaitForStateAsync(
+            () => _mockService.Invocations.Any(i => i.Method.Name == "ExtractAsync"),
+            timeout: TimeSpan.FromSeconds(2));
+
+        _mockService.Verify(
+            s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()),
+            Times.Once,
+            "service must be called with Speckit profile when Speckit radio is selected");
+    }
+
+    [Fact]
+    public async Task SelectingDefaultProfile_PassesDefaultToService()
+    {
+        _mockService
+            .Setup(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Default, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeSuccessResult());
+
+        var cut = Render<ExtractionInput>();
+        // Explicitly click Default (it starts selected, but confirm it passes Default)
+        cut.Find("[data-testid='profile-radio-default']").Change(true);
+        cut.Find("[data-testid='spec-textarea']").Input("some spec text");
+        cut.Find("[data-testid='extract-button']").Click();
+
+        await cut.WaitForStateAsync(
+            () => _mockService.Invocations.Any(i => i.Method.Name == "ExtractAsync"),
+            timeout: TimeSpan.FromSeconds(2));
+
+        _mockService.Verify(
+            s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Default, It.IsAny<CancellationToken>()),
+            Times.Once,
+            "service must be called with Default profile when Default radio is selected");
+    }
+
+    [Fact]
+    public void ChangingProfile_DoesNotClearInputText()
+    {
+        var cut = Render<ExtractionInput>();
+        cut.Find("[data-testid='spec-textarea']").Input("preserved text");
+        cut.Find("[data-testid='profile-radio-speckit']").Change(true);
+
+        // Input should not have been erased by profile change
+        cut.FindAll("[data-testid='validation-message']").Should().BeEmpty(
+            "changing profile must not trigger validation or clear the input field");
+    }
+}
+

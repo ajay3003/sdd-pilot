@@ -4,7 +4,7 @@
 
 BirkNext supports Level 1 configurable deterministic extraction rules.
 
-The goal is to adapt extraction behavior safely without introducing AI, scripting, or unrestricted regex.
+The goal is to adapt extraction safely without AI, scripting, or unrestricted regex.
 
 ## Configuration Location
 
@@ -14,9 +14,7 @@ Typical location:
 wwwroot/appsettings.json
 ```
 
-Configuration is loaded at startup and compiled into an immutable deterministic rule set.
-
-Restart the frontend application after changing configuration.
+Configuration is loaded at startup. Restart the frontend application after changing configuration.
 
 ## Example Configuration
 
@@ -33,18 +31,14 @@ Restart the frontend application after changing configuration.
 
 ## Supported Level 1 Configuration
 
-Supported:
-
 - requirement keywords
 - test prefixes
 - clarification prefixes
 - ignore prefixes
 - rule group enable/disable
-- bounded priority overrides, if enabled by implementation
+- bounded priority overrides, if enabled
 
 ## Unsupported Configuration
-
-Not supported:
 
 - arbitrary scripting
 - runtime code execution
@@ -56,32 +50,22 @@ Not supported:
 
 ## Deterministic Behavior
 
-Same input plus same configuration should produce the same extraction result.
-
 ```text
 same text + same config = same result
 ```
 
-## Fallback Behavior
+## Context Heading Behavior
 
-If configuration is missing or invalid:
+Source headings are used for review grouping. They should not become candidate text unless they contain actionable content.
 
-- system should fall back to default rules
-- extraction should continue working
-- logs should indicate fallback
-- logs should not expose raw configured values
+## Classification vs Review Status
 
-## File Import Configuration
+Classification answers: “What kind of candidate is this?”
 
-Current supported import types:
+Review status answers: “What did QA decide about this candidate?”
 
-- `.md`
-- `.txt`
-
-Current import principles:
-
-- file content is read client-side
-- file content is placed into the existing extraction text area
-- file content is not uploaded during import
-- file content is not logged
-- only selected extracted scenarios are persisted
+| Classification | Review Status |
+|---|---|
+| REQUIREMENT | Accepted |
+| TEST | Needs Review |
+| NEEDS_CLARIFICATION | Rejected |

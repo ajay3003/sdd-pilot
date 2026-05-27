@@ -49,4 +49,5 @@ public sealed class RuleExecutionSummary
     public int TotalRulesEvaluated { get; set; }
     public int FilteredBlockCount { get; set; }
     public int DefaultFallbackCount { get; set; }
+    public int DuplicatesDropped { get; set; }
 }

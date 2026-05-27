@@ -12,6 +12,7 @@ public sealed class ExtractionCandidate
     public required BlockType SourceBlockType { get; init; }
 
     public bool IsSelected { get; set; } = false;
+    public CandidateReviewStatus ReviewStatus { get; set; } = CandidateReviewStatus.New;
     public CandidateSaveState SaveState { get; set; } = CandidateSaveState.Pending;
     public string? SaveError { get; set; }
     public string? SavedScenarioId { get; set; }

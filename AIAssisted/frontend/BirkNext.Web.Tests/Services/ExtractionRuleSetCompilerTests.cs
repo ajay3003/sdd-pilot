@@ -47,7 +47,8 @@ public sealed class ExtractionRuleSetCompilerTests
         compiled.Should().BeSameAs(baseSet);
         compiled.ClassificationRules.Should().HaveCount(baseSet.ClassificationRules.Count);
         compiled.FilterRules.Should().HaveCount(baseSet.FilterRules.Count);
-        compiled.IgnorePrefixes.Should().BeEmpty();
+        // IgnorePrefixes reflect Default()'s built-in metadata/section-heading prefixes.
+        compiled.IgnorePrefixes.Should().BeEquivalentTo(baseSet.IgnorePrefixes);
     }
 
     // =========================================================================
@@ -185,7 +186,8 @@ public sealed class ExtractionRuleSetCompilerTests
 
         var compiled = Compiler().Compile(ExtractionRuleSet.Default(), config);
 
-        compiled.IgnorePrefixes.Should().BeEquivalentTo(["IGNORE:", "SKIP-"]);
+        // User-configured prefixes are merged with Default()'s built-in prefixes.
+        compiled.IgnorePrefixes.Should().Contain("IGNORE:").And.Contain("SKIP-");
     }
 
     // =========================================================================

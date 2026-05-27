@@ -1,0 +1,85 @@
+@using BirkNext.Web.Models
+
+<section class="section-group section-group-@Accent"
+         data-testid="@DataTestId">
+    <button type="button"
+            class="section-toggle @(IsExpanded ? "is-open" : "")"
+            aria-expanded="@IsExpanded"
+            aria-controls="section-body-@Accent"
+            @onclick="Toggle">
+        <span class="section-chevron @(IsExpanded ? "is-open" : "")" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </span>
+
+        <div class="section-toggle-content">
+            <div class="section-toggle-main">
+                <h3 class="section-heading">@Title</h3>
+                <span class="section-count-badge section-count-badge-@Accent">
+                    @if (VisibleCount != TotalCount)
+                    {
+                        @VisibleCount<span class="section-count-of"> of @TotalCount</span>
+                    }
+                    else
+                    {
+                        @TotalCount
+                    }
+                </span>
+            </div>
+
+            @if (StatusCounts.HasValue)
+            {
+                var sc = StatusCounts.Value;
+                var hasBreakdown = sc.Accepted > 0 || sc.Rejected > 0 || sc.NeedsReview > 0;
+                @if (hasBreakdown)
+                {
+                    <div class="section-status-line" aria-label="Review status breakdown">
+                        @if (sc.Accepted > 0)
+                        {
+                            <span class="section-status-micro section-status-micro-accepted">@sc.Accepted accepted</span>
+                        }
+                        @if (sc.Rejected > 0)
+                        {
+                            <span class="section-status-micro section-status-micro-rejected">@sc.Rejected rejected</span>
+                        }
+                        @if (sc.NeedsReview > 0)
+                        {
+                            <span class="section-status-micro section-status-micro-needsreview">@sc.NeedsReview needs review</span>
+                        }
+                        @if (sc.New > 0)
+                        {
+                            <span class="section-status-micro section-status-micro-new">@sc.New pending</span>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </button>
+
+    <div id="section-body-@Accent"
+         class="section-body @(IsExpanded ? "is-expanded" : "is-collapsed")"
+         aria-hidden="@(!IsExpanded ? "true" : null)">
+        <div class="section-body-inner">
+            @ChildContent
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public string Accent { get; set; } = "";
+    [Parameter, EditorRequired] public string DataTestId { get; set; } = "";
+    [Parameter, EditorRequired] public int TotalCount { get; set; }
+    [Parameter, EditorRequired] public int VisibleCount { get; set; }
+    [Parameter] public ReviewStatusCounts? StatusCounts { get; set; }
+    [Parameter] public bool IsExpanded { get; set; } = true;
+    [Parameter] public EventCallback<bool> IsExpandedChanged { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private async Task Toggle()
+    {
+        IsExpanded = !IsExpanded;
+        await IsExpandedChanged.InvokeAsync(IsExpanded);
+    }
+}

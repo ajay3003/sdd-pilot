@@ -15,10 +15,14 @@ builder.Services
     .ConfigureHttpClient(client =>
         client.BaseAddress = new Uri("http://localhost:5000/graphql"));
 
-// Strawberry Shake registers the concrete mutation class in the root DI container but omits the
-// interface mapping. Components that @inject ICreateScenariosMutation need it in the root container.
+// Strawberry Shake registers concrete mutation classes but omits interface mappings.
+// Components that @inject these interfaces need explicit registrations in the root container.
 builder.Services.AddSingleton<ICreateScenariosMutation>(sp =>
     sp.GetRequiredService<CreateScenariosMutation>());
+builder.Services.AddSingleton<ISaveReviewedCandidatesMutation>(sp =>
+    sp.GetRequiredService<SaveReviewedCandidatesMutation>());
+builder.Services.AddSingleton<ISaveCandidateLinksMutation>(sp =>
+    sp.GetRequiredService<SaveCandidateLinksMutation>());
 
 builder.Services.AddSingleton<IExtractionConfiguration, ExtractionConfiguration>();
 builder.Services.Configure<ExtractionRuleConfiguration>(

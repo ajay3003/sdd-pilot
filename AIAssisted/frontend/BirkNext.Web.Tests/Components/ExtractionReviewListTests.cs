@@ -17,6 +17,19 @@ public class ExtractionReviewListTests : BunitContext
     public ExtractionReviewListTests()
     {
         Services.AddSingleton(_mockMutation.Object);
+
+        var mockSaveReview = new Mock<ISaveReviewedCandidatesMutation>();
+        mockSaveReview
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveReviewedCandidatesInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveReviewedCandidatesResult>>());
+        Services.AddSingleton(mockSaveReview.Object);
+
+        var mockSaveLinks = new Mock<ISaveCandidateLinksMutation>();
+        mockSaveLinks
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
+        Services.AddSingleton(mockSaveLinks.Object);
+
         Services.AddLogging();
     }
 
@@ -304,6 +317,18 @@ public class ExtractionReviewListObservabilityTests : BunitContext
     {
         Services.AddSingleton(_mockMutation.Object);
         Services.AddSingleton<ILogger<ExtractionReviewList>>(_logger);
+
+        var mockSaveReview = new Mock<ISaveReviewedCandidatesMutation>();
+        mockSaveReview
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveReviewedCandidatesInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveReviewedCandidatesResult>>());
+        Services.AddSingleton(mockSaveReview.Object);
+
+        var mockSaveLinks = new Mock<ISaveCandidateLinksMutation>();
+        mockSaveLinks
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
+        Services.AddSingleton(mockSaveLinks.Object);
     }
 
     private static ExtractionCandidate MakeCandidate(string title = "sentinel-candidate-title") => new()
@@ -410,5 +435,562 @@ public class ExtractionReviewListObservabilityTests : BunitContext
         cut.Instance.Dispose();
 
         _logger.Messages.Should().NotContain(m => m.Contains("CandidateReviewAbandoned"));
+    }
+}
+
+// ── T090 ─────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Tests that TEST candidates are grouped by ContextHeading into collapsible subsections,
+/// while REQUIREMENT and NEEDS_CLARIFICATION sections remain flat.
+/// </summary>
+public class TestSubsectionGroupingTests : BunitContext
+{
+    private readonly Mock<ICreateScenariosMutation> _mockCreateMutation = new();
+
+    public TestSubsectionGroupingTests()
+    {
+        Services.AddSingleton(_mockCreateMutation.Object);
+
+        var mockSaveReview = new Mock<ISaveReviewedCandidatesMutation>();
+        mockSaveReview
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveReviewedCandidatesInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveReviewedCandidatesResult>>());
+        Services.AddSingleton(mockSaveReview.Object);
+
+        var mockSaveLinks = new Mock<ISaveCandidateLinksMutation>();
+        mockSaveLinks
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
+        Services.AddSingleton(mockSaveLinks.Object);
+
+        Services.AddLogging();
+    }
+
+    private static ExtractionCandidate MakeTest(string title, string? heading = null) => new()
+    {
+        Title = title,
+        Classification = ScenarioKind.Test,
+        ClassificationSignal = ClassificationSignal.BddPattern,
+        SourceBlockType = BlockType.UnorderedListItem,
+        ContextHeading = heading,
+    };
+
+    private static ExtractionPipelineResult MakeResult(IReadOnlyList<ExtractionCandidate> candidates)
+    {
+        var req  = candidates.Count(c => c.Classification == ScenarioKind.Requirement);
+        var test = candidates.Count(c => c.Classification == ScenarioKind.Test);
+        var nc   = candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification);
+        return ExtractionPipelineResult.Success(candidates, 100, 5, 10, req, test, nc);
+    }
+
+    [Fact]
+    public void SameContextHeading_RenderedInSameSubsection()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeTest("Given user logs in when credentials are valid", "User Story 1"),
+            MakeTest("Given admin views the dashboard", "User Story 2"),
+            MakeTest("Then user sees the home screen", "User Story 1"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
+        subsections.Should().HaveCount(2, "two unique headings → two subsection groups");
+
+        var us1 = subsections.First(s => s.TextContent.Contains("User Story 1"));
+        us1.QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(2);
+
+        var us2 = subsections.First(s => s.TextContent.Contains("User Story 2"));
+        us2.QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void NullContextHeading_GroupedUnderOtherTests()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeTest("Given user logs in", null),
+            MakeTest("Then system validates token", null),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
+        subsections.Should().HaveCount(1);
+        subsections[0].TextContent.Should().Contain("Other Tests");
+        subsections[0].QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void RequirementSection_HasOwnSubgroups_WhenContextHeadingsPresent()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            new()
+            {
+                Title = "System must validate input",
+                Classification = ScenarioKind.Requirement,
+                ClassificationSignal = ClassificationSignal.Rfc2119Uppercase,
+                SourceBlockType = BlockType.UnorderedListItem,
+                ContextHeading = "User Story 1",
+            },
+            new()
+            {
+                Title = "System must log errors",
+                Classification = ScenarioKind.Requirement,
+                ClassificationSignal = ClassificationSignal.Rfc2119Uppercase,
+                SourceBlockType = BlockType.UnorderedListItem,
+                ContextHeading = "User Story 2",
+            },
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find("[data-testid='group-requirement']").Should().NotBeNull();
+        cut.FindAll("[data-testid='test-subsection-group']").Should().HaveCount(2,
+            "requirement candidates with context headings are grouped into subsections");
+    }
+
+    [Fact]
+    public void SearchFilter_AppliesWithinSubgroups()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeTest("Given user logs in with valid credentials", "User Story 1"),
+            MakeTest("Given admin resets the password", "User Story 1"),
+            MakeTest("Then system shows confirmation dialog", "User Story 2"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find(".search-input").Input("admin");
+
+        var rows = cut.FindAll("[data-testid='candidate-row']");
+        rows.Should().HaveCount(1);
+        rows[0].TextContent.Should().Contain("admin");
+    }
+
+    [Fact]
+    public void CheckboxSelection_WorksInSubgroups()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeTest("Given user opens the app", "User Story 1"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find("[data-testid='candidate-checkbox']").Change(true);
+
+        cut.Find("[data-testid='confirm-save-button']").HasAttribute("disabled").Should().BeFalse();
+    }
+
+    [Fact]
+    public void EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeTest("Given user logs in", "User Story 1"),
+            MakeTest("Given admin configures system", "User Story 2"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find(".search-input").Input("admin");
+
+        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
+        subsections.Should().HaveCount(1, "group with zero visible results should not be rendered");
+        subsections[0].TextContent.Should().Contain("User Story 2");
+    }
+}
+
+// ── T092 ─────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Tests that NEEDS_CLARIFICATION candidates are grouped by ContextHeading into collapsible
+/// subsections, while REQUIREMENT and TEST sections remain unaffected.
+/// </summary>
+public class ClarificationSubsectionGroupingTests : BunitContext
+{
+    private readonly Mock<ICreateScenariosMutation> _mockCreateMutation = new();
+
+    public ClarificationSubsectionGroupingTests()
+    {
+        Services.AddSingleton(_mockCreateMutation.Object);
+
+        var mockSaveReview = new Mock<ISaveReviewedCandidatesMutation>();
+        mockSaveReview
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveReviewedCandidatesInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveReviewedCandidatesResult>>());
+        Services.AddSingleton(mockSaveReview.Object);
+
+        var mockSaveLinks = new Mock<ISaveCandidateLinksMutation>();
+        mockSaveLinks
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
+        Services.AddSingleton(mockSaveLinks.Object);
+
+        Services.AddLogging();
+    }
+
+    private static ExtractionCandidate MakeClarification(string title, string? heading = null) => new()
+    {
+        Title = title,
+        Classification = ScenarioKind.NeedsClarification,
+        ClassificationSignal = ClassificationSignal.ClarificationSignal,
+        SourceBlockType = BlockType.UnorderedListItem,
+        ContextHeading = heading,
+    };
+
+    private static ExtractionPipelineResult MakeResult(IReadOnlyList<ExtractionCandidate> candidates)
+    {
+        var req  = candidates.Count(c => c.Classification == ScenarioKind.Requirement);
+        var test = candidates.Count(c => c.Classification == ScenarioKind.Test);
+        var nc   = candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification);
+        return ExtractionPipelineResult.Success(candidates, 100, 5, 10, req, test, nc);
+    }
+
+    [Fact]
+    public void SameContextHeading_RenderedInSameSubsection()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeClarification("What happens when the token expires?", "Open Questions"),
+            MakeClarification("Who owns the retry logic?", "Business Rules"),
+            MakeClarification("Is this behaviour required for guest users?", "Open Questions"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
+        subsections.Should().HaveCount(2, "two unique headings → two subsection groups");
+
+        var oq = subsections.First(s => s.TextContent.Contains("Open Questions"));
+        oq.QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(2);
+
+        var br = subsections.First(s => s.TextContent.Contains("Business Rules"));
+        br.QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void NullContextHeading_GroupedUnderOtherClarifications()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeClarification("TBD: confirm error message wording", null),
+            MakeClarification("TBD: confirm timeout value", null),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
+        subsections.Should().HaveCount(1);
+        subsections[0].TextContent.Should().Contain("Other Clarifications");
+        subsections[0].QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void TestSection_NotAffectedByClarificationGrouping()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            new()
+            {
+                Title = "Given user submits form when all fields are valid",
+                Classification = ScenarioKind.Test,
+                ClassificationSignal = ClassificationSignal.BddPattern,
+                SourceBlockType = BlockType.UnorderedListItem,
+                ContextHeading = "User Story 1",
+            },
+            MakeClarification("What validation rules apply?", "Edge Cases"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        // Both TEST and NEEDS_CLARIFICATION have one subsection each
+        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
+        subsections.Should().HaveCount(2);
+        subsections.Select(s => s.TextContent).Should().Contain(t => t.Contains("User Story 1"));
+        subsections.Select(s => s.TextContent).Should().Contain(t => t.Contains("Edge Cases"));
+    }
+
+    [Fact]
+    public void RequirementSection_HasOwnSubgroups_WhenContextHeadingPresent()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            new()
+            {
+                Title = "System must validate all required fields",
+                Classification = ScenarioKind.Requirement,
+                ClassificationSignal = ClassificationSignal.Rfc2119Uppercase,
+                SourceBlockType = BlockType.UnorderedListItem,
+                ContextHeading = "Open Questions",
+            },
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find("[data-testid='group-requirement']").Should().NotBeNull();
+        cut.FindAll("[data-testid='test-subsection-group']").Should().HaveCount(1,
+            "requirement candidates with context headings are grouped into subsections");
+    }
+
+    [Fact]
+    public void SearchFilter_AppliesWithinClarificationSubgroups()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeClarification("What is the retry timeout?", "Edge Cases"),
+            MakeClarification("Who approves the workflow?", "Business Rules"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find(".search-input").Input("retry");
+
+        cut.FindAll("[data-testid='candidate-row']").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void CheckboxSelection_WorksInClarificationSubgroups()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeClarification("TBD: define error recovery strategy", "Edge Cases"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find("[data-testid='candidate-checkbox']").Change(true);
+
+        cut.Find("[data-testid='confirm-save-button']").HasAttribute("disabled").Should().BeFalse();
+    }
+
+    [Fact]
+    public void EmptyGroup_NotRendered_WhenSearchFiltersAllCandidates()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeClarification("What is the timeout?", "Edge Cases"),
+            MakeClarification("Who owns the business rule?", "Business Rules"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find(".search-input").Input("timeout");
+
+        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
+        subsections.Should().HaveCount(1, "the Business Rules group has no visible candidates");
+        subsections[0].TextContent.Should().Contain("Edge Cases");
+    }
+}
+
+// ── T093 ─────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Tests that REQUIREMENT candidates are grouped by ContextHeading into collapsible subsections,
+/// while TEST and NEEDS_CLARIFICATION sections remain unaffected.
+/// </summary>
+public class RequirementSubsectionGroupingTests : BunitContext
+{
+    private readonly Mock<ICreateScenariosMutation> _mockCreateMutation = new();
+
+    public RequirementSubsectionGroupingTests()
+    {
+        Services.AddSingleton(_mockCreateMutation.Object);
+
+        var mockSaveReview = new Mock<ISaveReviewedCandidatesMutation>();
+        mockSaveReview
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveReviewedCandidatesInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveReviewedCandidatesResult>>());
+        Services.AddSingleton(mockSaveReview.Object);
+
+        var mockSaveLinks = new Mock<ISaveCandidateLinksMutation>();
+        mockSaveLinks
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
+        Services.AddSingleton(mockSaveLinks.Object);
+
+        Services.AddLogging();
+    }
+
+    private static ExtractionCandidate MakeRequirement(string title, string? heading = null) => new()
+    {
+        Title = title,
+        Classification = ScenarioKind.Requirement,
+        ClassificationSignal = ClassificationSignal.Rfc2119Uppercase,
+        SourceBlockType = BlockType.UnorderedListItem,
+        ContextHeading = heading,
+    };
+
+    private static ExtractionPipelineResult MakeResult(IReadOnlyList<ExtractionCandidate> candidates)
+    {
+        var req  = candidates.Count(c => c.Classification == ScenarioKind.Requirement);
+        var test = candidates.Count(c => c.Classification == ScenarioKind.Test);
+        var nc   = candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification);
+        return ExtractionPipelineResult.Success(candidates, 100, 5, 10, req, test, nc);
+    }
+
+    [Fact]
+    public void SameContextHeading_RenderedInSameSubsection()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeRequirement("The system MUST validate credentials", "Functional Requirements"),
+            MakeRequirement("The system MUST enforce rate limits", "Non-Functional Requirements"),
+            MakeRequirement("The system SHALL store hashed passwords", "Functional Requirements"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
+        subsections.Should().HaveCount(2, "two unique headings → two subsection groups");
+
+        var func = subsections.First(s => s.TextContent.Contains("Functional Requirements"));
+        func.QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(2);
+
+        var nonfunc = subsections.First(s => s.TextContent.Contains("Non-Functional Requirements"));
+        nonfunc.QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void NullContextHeading_GroupedUnderOtherRequirements()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeRequirement("The system MUST respond within 200ms", null),
+            MakeRequirement("The system SHALL support 1000 concurrent users", null),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
+        subsections.Should().HaveCount(1);
+        subsections[0].TextContent.Should().Contain("Other Requirements");
+        subsections[0].QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void TestSection_NotAffectedByRequirementGrouping()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeRequirement("The system MUST validate input", "Functional Requirements"),
+            new()
+            {
+                Title = "Given user submits form when all fields are valid",
+                Classification = ScenarioKind.Test,
+                ClassificationSignal = ClassificationSignal.BddPattern,
+                SourceBlockType = BlockType.UnorderedListItem,
+                ContextHeading = "User Story 1",
+            },
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        // Both REQUIREMENT and TEST have one subsection each — grouping is independent
+        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
+        subsections.Should().HaveCount(2);
+        subsections.Select(s => s.TextContent).Should().Contain(t => t.Contains("Functional Requirements"));
+        subsections.Select(s => s.TextContent).Should().Contain(t => t.Contains("User Story 1"));
+    }
+
+    [Fact]
+    public void NeedsClarificationSection_NotAffectedByRequirementGrouping()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeRequirement("The system MUST log all errors", "Observability"),
+            new()
+            {
+                Title = "TBD: confirm retry policy",
+                Classification = ScenarioKind.NeedsClarification,
+                ClassificationSignal = ClassificationSignal.ClarificationSignal,
+                SourceBlockType = BlockType.UnorderedListItem,
+                ContextHeading = "Open Questions",
+            },
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
+        subsections.Should().HaveCount(2);
+        subsections.Select(s => s.TextContent).Should().Contain(t => t.Contains("Observability"));
+        subsections.Select(s => s.TextContent).Should().Contain(t => t.Contains("Open Questions"));
+    }
+
+    [Fact]
+    public void SearchFilter_AppliesWithinRequirementSubgroups()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeRequirement("The system MUST validate credentials", "Functional Requirements"),
+            MakeRequirement("The system MUST enforce rate limits", "Functional Requirements"),
+            MakeRequirement("The system SHALL respond within 200ms", "Performance"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find(".search-input").Input("rate");
+
+        var rows = cut.FindAll("[data-testid='candidate-row']");
+        rows.Should().HaveCount(1);
+        rows[0].TextContent.Should().Contain("rate");
+    }
+
+    [Fact]
+    public void CheckboxSelection_WorksInRequirementSubgroups()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeRequirement("The system MUST validate input", "Functional Requirements"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find("[data-testid='candidate-checkbox']").Change(true);
+
+        cut.Find("[data-testid='confirm-save-button']").HasAttribute("disabled").Should().BeFalse();
+    }
+
+    [Fact]
+    public void EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeRequirement("The system MUST validate credentials", "Functional Requirements"),
+            MakeRequirement("The system SHALL respond within 200ms", "Performance"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find(".search-input").Input("200ms");
+
+        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
+        subsections.Should().HaveCount(1, "Functional Requirements group has no visible candidates");
+        subsections[0].TextContent.Should().Contain("Performance");
     }
 }

@@ -54,6 +54,20 @@
     --clr-badge-clr-bg:   #fef3c7;
     --clr-badge-clr-text: #92400e;
 
+    /* ── Review status palette ── */
+    --clr-review-new-bg:              #f1f5f9;
+    --clr-review-new-text:            #64748b;
+    --clr-review-accepted-bg:         var(--clr-success-bg);
+    --clr-review-accepted-text:       var(--clr-success);
+    --clr-review-accepted-border:     var(--clr-success-border);
+    --clr-review-accepted-bg-light:   var(--clr-success-bg-light);
+    --clr-review-rejected-bg:         var(--clr-surface);
+    --clr-review-rejected-text:       var(--clr-text-placeholder);
+    --clr-review-needsreview-bg:      var(--clr-warning-bg);
+    --clr-review-needsreview-text:    var(--clr-warning);
+    --clr-review-needsreview-border:  var(--clr-warning-border);
+    --clr-review-needsreview-bg-light: var(--clr-warning-bg-light);
+
     /* ── Geometry ── */
     --radius-sm:   4px;
     --radius-md:   6px;

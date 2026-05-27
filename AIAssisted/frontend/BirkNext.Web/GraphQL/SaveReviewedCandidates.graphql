@@ -1,0 +1,6 @@
+mutation SaveReviewedCandidates($input: SaveReviewedCandidatesInput!) {
+  saveReviewedCandidates(input: $input) {
+    savedCount
+    correlationId
+  }
+}

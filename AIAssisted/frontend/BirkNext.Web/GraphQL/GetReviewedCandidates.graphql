@@ -1,0 +1,15 @@
+query GetReviewedCandidates($projectId: String!, $sessionId: String) {
+  reviewedCandidates(projectId: $projectId, sessionId: $sessionId) {
+    id
+    title
+    classification
+    reviewStatus
+    sourceDocument
+    sourceSection
+    projectId
+    reviewedBy
+    sessionId
+    createdAt
+    reviewedAt
+  }
+}

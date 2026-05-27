@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using BirkNext.Api.Services;
 using HotChocolate;
+using HotChocolate.Types;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -104,6 +105,83 @@ public class Mutation
             Results = results,
             SuccessCount = successCount,
             FailureCount = failureCount,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Persists the QA review decisions for all candidates in an extraction session.</summary>
+    public async Task<SaveReviewedCandidatesPayload> SaveReviewedCandidatesAsync(
+        SaveReviewedCandidatesInput input,
+        [Service] ReviewedCandidateService reviewedCandidateService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        [Service] ILogger<Mutation> logger,
+        CancellationToken cancellationToken)
+    {
+        if (input.Items.Count == 0)
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("ITEMS_EMPTY")
+                .SetMessage("At least one item is required.")
+                .Build());
+
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var projectId = input.Items[0].ProjectId;
+        var sessionId = input.SessionId ?? Guid.NewGuid().ToString();
+
+        var items = input.Items.Select(i => new ReviewedCandidateItem(
+            i.Title,
+            i.Classification,
+            i.ReviewStatus,
+            i.SourceDocument,
+            i.SourceSection,
+            i.ReviewedBy,
+            i.ReviewedAt));
+
+        var savedCount = await reviewedCandidateService.SaveBatchAsync(
+            projectId, sessionId, items, correlationId, cancellationToken);
+
+        logger.LogInformation(
+            "ReviewDecisionsSaved: correlationId={CorrelationId}, projectId={ProjectId}, sessionId={SessionId}, savedCount={SavedCount}",
+            correlationId, projectId, sessionId, savedCount);
+
+        return new SaveReviewedCandidatesPayload
+        {
+            SavedCount = savedCount,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Persists the traceability links between candidates for an extraction session.</summary>
+    public async Task<SaveCandidateLinksPayload> SaveCandidateLinksAsync(
+        SaveCandidateLinksInput input,
+        [Service] CandidateLinkService candidateLinkService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        [Service] ILogger<Mutation> logger,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var links = input.Links.Select(l => new CandidateLinkItem(
+            l.SourceCandidateRef,
+            l.TargetCandidateRef,
+            l.LinkType));
+
+        var savedCount = await candidateLinkService.SaveBatchAsync(
+            input.ProjectId, input.SessionId, links, correlationId, cancellationToken);
+
+        logger.LogInformation(
+            "CandidateLinksSaved: correlationId={CorrelationId}, projectId={ProjectId}, sessionId={SessionId}, savedCount={SavedCount}",
+            correlationId, input.ProjectId, input.SessionId, savedCount);
+
+        return new SaveCandidateLinksPayload
+        {
+            SavedCount = savedCount,
             CorrelationId = correlationId,
         };
     }

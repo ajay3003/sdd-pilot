@@ -1,0 +1,29 @@
+@using BirkNext.Web.GraphQL
+
+<span class="review-status-badge review-status-badge-@_key"
+      data-testid="review-status-badge"
+      aria-label="Review status: @_label">
+    @_label
+</span>
+
+@code {
+    [Parameter, EditorRequired] public CandidateReviewStatus Status { get; set; }
+
+    private string _label => Status switch
+    {
+        CandidateReviewStatus.New         => "New",
+        CandidateReviewStatus.Accepted    => "Accepted",
+        CandidateReviewStatus.Rejected    => "Rejected",
+        CandidateReviewStatus.NeedsReview => "Needs Review",
+        _                                 => Status.ToString(),
+    };
+
+    private string _key => Status switch
+    {
+        CandidateReviewStatus.New         => "new",
+        CandidateReviewStatus.Accepted    => "accepted",
+        CandidateReviewStatus.Rejected    => "rejected",
+        CandidateReviewStatus.NeedsReview => "needsreview",
+        _                                 => "new",
+    };
+}

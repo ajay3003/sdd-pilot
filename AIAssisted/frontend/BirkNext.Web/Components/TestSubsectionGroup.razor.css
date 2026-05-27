@@ -1,0 +1,125 @@
+.test-subsection-group {
+    margin-bottom: 0.25rem;
+}
+
+.test-subsection-group:last-child {
+    margin-bottom: 0;
+}
+
+.test-subsection-group + .test-subsection-group {
+    border-top: 1px solid var(--clr-border-subtle, #f1f5f9);
+    padding-top: 0.25rem;
+}
+
+/* ── Toggle button ── */
+.subsection-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.3rem 0.25rem;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    text-align: left;
+    transition: background-color var(--transition, 0.15s ease);
+}
+
+.subsection-toggle:hover {
+    background: var(--clr-border-subtle, #f1f5f9);
+}
+
+/* ── Chevron ── */
+.subsection-chevron {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--clr-text-subtle, #64748b);
+    transform: rotate(-90deg);
+    transition: transform var(--transition, 0.15s ease);
+}
+
+.subsection-chevron.is-open {
+    transform: rotate(0deg);
+}
+
+/* ── Heading ── */
+.subsection-heading {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--clr-text-subtle, #64748b);
+    letter-spacing: 0.02em;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Count ── */
+.subsection-count {
+    font-size: 0.63rem;
+    font-weight: 700;
+    color: var(--clr-text-subtle, #64748b);
+    opacity: 0.75;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.subsection-count-of {
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+/* ── Status line (inline, right of count) ── */
+.subsection-status-line {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    flex-shrink: 0;
+    margin-left: 0.125rem;
+}
+
+.subsection-status-micro {
+    font-size: 0.58rem;
+    font-weight: 700;
+    padding: 0.08rem 0.28rem;
+    border-radius: var(--radius-sm, 4px);
+    white-space: nowrap;
+}
+
+.subsection-status-micro-accepted {
+    background: var(--clr-review-accepted-bg);
+    color: var(--clr-review-accepted-text);
+}
+
+.subsection-status-micro-rejected {
+    background: var(--clr-review-rejected-bg);
+    color: var(--clr-review-rejected-text);
+}
+
+.subsection-status-micro-needsreview {
+    background: var(--clr-review-needsreview-bg);
+    color: var(--clr-review-needsreview-text);
+}
+
+/* ── Collapse animation — same grid trick as ExtractionSectionGroup ── */
+.subsection-body {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transition: grid-template-rows 0.18s ease, opacity 0.15s ease;
+}
+
+.subsection-body.is-collapsed {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transition: grid-template-rows 0.18s ease, opacity 0.15s ease, visibility 0s linear 0.18s;
+}
+
+.subsection-body-inner {
+    overflow: hidden;
+    min-height: 0;
+}

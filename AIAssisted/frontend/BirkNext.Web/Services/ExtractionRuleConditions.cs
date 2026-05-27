@@ -27,3 +27,16 @@ public sealed record PatternMatchCondition : ClassificationCondition
 
 // Always returns true; no state. Exactly one instance allowed per rule set (the Default rule).
 public sealed record UnconditionalCondition : ClassificationCondition;
+
+// Matches against the block's PrecedingHeading rather than its text content.
+// Returns false when PrecedingHeading is null (block has no preceding heading in document).
+public sealed record HeadingContextCondition : ClassificationCondition
+{
+    public Regex Pattern { get; }
+
+    public HeadingContextCondition(Regex pattern)
+    {
+        ArgumentNullException.ThrowIfNull(pattern);
+        Pattern = pattern;
+    }
+}

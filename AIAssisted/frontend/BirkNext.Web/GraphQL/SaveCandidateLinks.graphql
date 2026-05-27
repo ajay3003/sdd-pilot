@@ -1,0 +1,6 @@
+mutation SaveCandidateLinks($input: SaveCandidateLinksInput!) {
+  saveCandidateLinks(input: $input) {
+    savedCount
+    correlationId
+  }
+}

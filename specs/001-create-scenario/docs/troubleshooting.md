@@ -2,18 +2,17 @@
 
 ## Frontend Does Not Start
 
-Check:
-
-- .NET SDK 8 is installed
-- correct frontend project is selected
-- startup script found the correct `.csproj`
-- backend is not required for static startup but is required for GraphQL features
-
 Try:
 
 ```powershell
 .\scripts\start-local.ps1 -FrontendOnly -SkipContainers
 ```
+
+Check:
+
+- .NET SDK 8 is installed
+- correct frontend project is selected
+- browser console errors
 
 ## Backend Does Not Start
 
@@ -21,8 +20,8 @@ Check:
 
 - database container is running
 - connection string is correct
-- backend project builds
-- ports are not already in use
+- backend builds
+- ports are free
 
 Try:
 
@@ -44,80 +43,50 @@ or:
 powershell.exe -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
 ```
 
-## Database Not Running
-
-For Podman:
-
-```bash
-podman ps
-podman compose up -d
-```
-
-For Docker:
-
-```bash
-docker ps
-docker compose up -d
-```
-
-## Frontend Cannot Reach Backend
+## Podman Machine Problems
 
 Check:
 
-- backend window is still running
-- backend URL is correct
-- GraphQL endpoint is available
-- browser console does not show network errors
+```bash
+podman machine list
+```
+
+Start:
+
+```bash
+podman machine start
+```
+
+Only if no machine exists:
+
+```bash
+podman machine init
+podman machine start
+```
+
+If machine is running but Podman is not responding:
+
+```bash
+podman machine stop
+podman machine start
+podman info
+```
+
+Restart Podman Desktop if needed.
 
 ## GraphQL Mutation Service Missing
 
-Example error:
+Example:
 
 ```text
 There is no registered service of type ICreateScenariosMutation
 ```
 
-Cause:
-
-- generated Strawberry Shake operation exists
-- DI registration is missing
-
 Fix:
 
-- register the generated mutation operation in frontend `Program.cs`
+- register generated Strawberry Shake operation in frontend `Program.cs`
 - rebuild frontend
 - refresh browser
-
-## No Scenarios Extracted
-
-Possible causes:
-
-- input contains mostly prose
-- no recognizable patterns
-- ignore prefixes suppress extraction
-- configuration changed extraction behavior
-
-Try:
-
-- bullet lists
-- clearer requirement statements
-- explicit `Verify...`
-- explicit `Clarify...`
-
-## Unexpected Classification
-
-Check:
-
-- configured prefixes
-- configured keywords
-- enabled rule groups
-- rule priority overrides
-
-Remember:
-
-```text
-same input + same configuration = same output
-```
 
 ## File Import Fails
 
@@ -129,25 +98,30 @@ Check:
 - file is readable text
 - file is not binary
 
-## Configuration Not Applied
+## Review State Not Saved
 
-Possible causes:
+Check:
 
-- application was not restarted
-- configuration is invalid
-- fallback to defaults occurred
+- backend is running
+- database is running
+- GraphQL save-review mutation succeeds
+- browser console has no network errors
 
-Fix:
+Remember:
 
-1. correct configuration
-2. restart frontend
-3. verify extraction behavior again
+```text
+Save Review persists reviewed candidates.
+Save Selected creates finalized scenarios.
+```
+
+## Saved Review Does Not Create Scenarios
+
+This is expected. Use **Save Selected** to create finalized scenarios.
 
 ## UI Looks Old or Broken
 
 Check:
 
-- latest frontend files are running
+- latest frontend is running
 - browser cache is refreshed
 - shared CSS files are included
-- old Blazor template pages are removed

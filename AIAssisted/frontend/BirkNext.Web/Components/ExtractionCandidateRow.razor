@@ -1,7 +1,8 @@
 @using BirkNext.Web.GraphQL
 @using BirkNext.Web.Models
 
-<div class="extraction-candidate-row @(Candidate.IsSelected ? "is-selected" : "")" data-testid="candidate-row">
+<div class="extraction-candidate-row @(Candidate.IsSelected ? "is-selected" : "") is-review-@_reviewKey"
+     data-testid="candidate-row">
     <input
         type="checkbox"
         checked="@Candidate.IsSelected"
@@ -12,9 +13,18 @@
     <div class="candidate-body">
         <div class="candidate-header">
             <span class="badge badge-@Candidate.Classification.ToString().ToLowerInvariant()" data-testid="classification-badge">
-                @ClassificationLabel
+                @_classificationLabel
             </span>
-
+            <ReviewStatusBadge Status="@Candidate.ReviewStatus" />
+            @if (Links.Count > 0 || LinkableCandidates.Count > 0)
+            {
+                <button type="button" class="link-indicator @(_linkPanelOpen ? "is-open" : "")"
+                        @onclick="ToggleLinkPanel"
+                        data-testid="link-indicator"
+                        aria-label="@_linkIndicatorLabel (@(_linkPanelOpen ? "collapse" : "expand") links)">
+                    @_linkIndicatorLabel
+                </button>
+            }
             @if (Candidate.ContextHeading is not null)
             {
                 <span class="candidate-context-heading" data-testid="context-heading">@Candidate.ContextHeading</span>
@@ -35,24 +45,98 @@
         {
             <span class="save-error" data-testid="save-error">@Candidate.SaveError</span>
         }
+
+        <div class="review-actions" role="group" aria-label="Review this candidate">
+            <button type="button"
+                    class="review-action-btn review-action-accept @(Candidate.ReviewStatus == CandidateReviewStatus.Accepted ? "is-active" : "")"
+                    @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Accepted))"
+                    aria-pressed="@(Candidate.ReviewStatus == CandidateReviewStatus.Accepted)">
+                Accept
+            </button>
+            <button type="button"
+                    class="review-action-btn review-action-reject @(Candidate.ReviewStatus == CandidateReviewStatus.Rejected ? "is-active" : "")"
+                    @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Rejected))"
+                    aria-pressed="@(Candidate.ReviewStatus == CandidateReviewStatus.Rejected)">
+                Reject
+            </button>
+            <button type="button"
+                    class="review-action-btn review-action-needsreview @(Candidate.ReviewStatus == CandidateReviewStatus.NeedsReview ? "is-active" : "")"
+                    @onclick="@(() => SetReviewStatus(CandidateReviewStatus.NeedsReview))"
+                    aria-pressed="@(Candidate.ReviewStatus == CandidateReviewStatus.NeedsReview)">
+                Needs Review
+            </button>
+        </div>
+
+        @if (_linkPanelOpen)
+        {
+            <CandidateLinkPanel Candidate="Candidate"
+                                Links="Links"
+                                LinkableCandidates="LinkableCandidates"
+                                OnLinkAdded="OnLinkAdded"
+                                OnLinkRemoved="OnLinkRemoved" />
+        }
     </div>
 </div>
 
 @code {
     [Parameter, EditorRequired] public ExtractionCandidate Candidate { get; set; } = default!;
     [Parameter] public EventCallback<Guid> OnSelectionToggled { get; set; }
+    [Parameter] public EventCallback<CandidateReviewStatus> OnReviewStatusChanged { get; set; }
+    [Parameter] public IReadOnlyList<CandidateLinkEntry> Links { get; set; } = [];
+    [Parameter] public IReadOnlyList<ExtractionCandidate> LinkableCandidates { get; set; } = [];
+    [Parameter] public EventCallback<CandidateLinkEntry> OnLinkAdded { get; set; }
+    [Parameter] public EventCallback<CandidateLinkEntry> OnLinkRemoved { get; set; }
 
-    private string ClassificationLabel => Candidate.Classification switch
+    private bool _linkPanelOpen = false;
+    private void ToggleLinkPanel() => _linkPanelOpen = !_linkPanelOpen;
+
+    private string _linkIndicatorLabel
     {
-        ScenarioKind.Requirement => "REQUIREMENT",
-        ScenarioKind.Test => "TEST",
+        get
+        {
+            if (Links.Count == 0) return "No links";
+            if (Candidate.Classification == ScenarioKind.Requirement)
+            {
+                int tests = Links.Count(l => l.LinkType == CandidateLinkType.RequirementTest);
+                int clrs  = Links.Count(l => l.LinkType == CandidateLinkType.RequirementClarification);
+                var parts = new List<string>();
+                if (tests > 0) parts.Add($"{tests} test{(tests == 1 ? "" : "s")}");
+                if (clrs  > 0) parts.Add($"{clrs} clarification{(clrs == 1 ? "" : "s")}");
+                return parts.Count > 0 ? string.Join(" · ", parts) : "No links";
+            }
+            return $"{Links.Count} req{(Links.Count == 1 ? "" : "s")}";
+        }
+    }
+
+    private string _classificationLabel => Candidate.Classification switch
+    {
+        ScenarioKind.Requirement      => "REQUIREMENT",
+        ScenarioKind.Test             => "TEST",
         ScenarioKind.NeedsClarification => "NEEDS_CLARIFICATION",
-        _ => Candidate.Classification.ToString().ToUpperInvariant(),
+        _                             => Candidate.Classification.ToString().ToUpperInvariant(),
+    };
+
+    private string _reviewKey => Candidate.ReviewStatus switch
+    {
+        CandidateReviewStatus.New         => "new",
+        CandidateReviewStatus.Accepted    => "accepted",
+        CandidateReviewStatus.Rejected    => "rejected",
+        CandidateReviewStatus.NeedsReview => "needsreview",
+        _                                 => "new",
     };
 
     private async Task HandleCheckboxChange(ChangeEventArgs e)
     {
         Candidate.IsSelected = e.Value is true;
         await OnSelectionToggled.InvokeAsync(Candidate.CandidateId);
+    }
+
+    private async Task SetReviewStatus(CandidateReviewStatus status)
+    {
+        // Toggle: clicking the active status resets to New
+        Candidate.ReviewStatus = Candidate.ReviewStatus == status
+            ? CandidateReviewStatus.New
+            : status;
+        await OnReviewStatusChanged.InvokeAsync(Candidate.ReviewStatus);
     }
 }

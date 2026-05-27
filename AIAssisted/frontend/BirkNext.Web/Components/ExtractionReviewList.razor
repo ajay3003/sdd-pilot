@@ -3,6 +3,8 @@
 @using Microsoft.Extensions.Logging
 @implements IDisposable
 @inject ICreateScenariosMutation CreateScenariosMutation
+@inject ISaveReviewedCandidatesMutation SaveReviewedCandidatesMutation
+@inject ISaveCandidateLinksMutation SaveCandidateLinksMutation
 @inject ILogger<ExtractionReviewList> Logger
 
 @if (PipelineResult is null)
@@ -24,7 +26,169 @@ else
             @PipelineResult.RequirementCount REQUIREMENT,
             @PipelineResult.TestCount TEST,
             @PipelineResult.NeedsClarificationCount NEEDS_CLARIFICATION
+            @if (PipelineResult.Profile != ExtractionProfile.Default)
+            {
+                <span class="profile-badge" data-testid="profile-badge">@PipelineResult.Profile</span>
+            }
         </p>
+
+        <div class="filter-toolbar">
+            <div class="filter-chips" role="group" aria-label="Filter by type">
+                <button type="button"
+                        class="filter-chip @(_activeFilter is null ? "is-active" : "")"
+                        @onclick="() => _activeFilter = null"
+                        aria-pressed="@(_activeFilter is null)">
+                    All <span class="chip-count">@PipelineResult.Candidates.Count</span>
+                </button>
+                @if (PipelineResult.RequirementCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-requirement @(_activeFilter == ScenarioKind.Requirement ? "is-active" : "")"
+                            @onclick="() => _activeFilter = ScenarioKind.Requirement"
+                            aria-pressed="@(_activeFilter == ScenarioKind.Requirement)">
+                        REQUIREMENT <span class="chip-count">@PipelineResult.RequirementCount</span>
+                    </button>
+                }
+                @if (PipelineResult.TestCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-test @(_activeFilter == ScenarioKind.Test ? "is-active" : "")"
+                            @onclick="() => _activeFilter = ScenarioKind.Test"
+                            aria-pressed="@(_activeFilter == ScenarioKind.Test)">
+                        TEST <span class="chip-count">@PipelineResult.TestCount</span>
+                    </button>
+                }
+                @if (PipelineResult.NeedsClarificationCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-needsclarification @(_activeFilter == ScenarioKind.NeedsClarification ? "is-active" : "")"
+                            @onclick="() => _activeFilter = ScenarioKind.NeedsClarification"
+                            aria-pressed="@(_activeFilter == ScenarioKind.NeedsClarification)">
+                        NEEDS_CLARIFICATION <span class="chip-count">@PipelineResult.NeedsClarificationCount</span>
+                    </button>
+                }
+            </div>
+            <input type="search"
+                   class="search-input"
+                   placeholder="Search candidates…"
+                   @bind="_searchTerm"
+                   @bind:event="oninput"
+                   aria-label="Search candidates" />
+        </div>
+
+        @{
+            var rNewCount       = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.New);
+            var rAcceptedCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted);
+            var rRejectedCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Rejected);
+            var rNeedsRevCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.NeedsReview);
+            var hasNonNewStatus = rAcceptedCount > 0 || rRejectedCount > 0 || rNeedsRevCount > 0;
+        }
+
+        @if (hasNonNewStatus || _activeReviewFilter is not null)
+        {
+            <div class="review-status-filter" role="group" aria-label="Filter by review status">
+                <button type="button"
+                        class="filter-chip @(_activeReviewFilter is null ? "is-active" : "")"
+                        @onclick="() => _activeReviewFilter = null"
+                        aria-pressed="@(_activeReviewFilter is null)">
+                    All statuses
+                </button>
+                @if (rAcceptedCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-status-accepted @(_activeReviewFilter == CandidateReviewStatus.Accepted ? "is-active" : "")"
+                            @onclick="() => _activeReviewFilter = CandidateReviewStatus.Accepted"
+                            aria-pressed="@(_activeReviewFilter == CandidateReviewStatus.Accepted)">
+                        Accepted <span class="chip-count">@rAcceptedCount</span>
+                    </button>
+                }
+                @if (rRejectedCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-status-rejected @(_activeReviewFilter == CandidateReviewStatus.Rejected ? "is-active" : "")"
+                            @onclick="() => _activeReviewFilter = CandidateReviewStatus.Rejected"
+                            aria-pressed="@(_activeReviewFilter == CandidateReviewStatus.Rejected)">
+                        Rejected <span class="chip-count">@rRejectedCount</span>
+                    </button>
+                }
+                @if (rNeedsRevCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-status-needsreview @(_activeReviewFilter == CandidateReviewStatus.NeedsReview ? "is-active" : "")"
+                            @onclick="() => _activeReviewFilter = CandidateReviewStatus.NeedsReview"
+                            aria-pressed="@(_activeReviewFilter == CandidateReviewStatus.NeedsReview)">
+                        Needs Review <span class="chip-count">@rNeedsRevCount</span>
+                    </button>
+                }
+                @if (rNewCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-status-new @(_activeReviewFilter == CandidateReviewStatus.New ? "is-active" : "")"
+                            @onclick="() => _activeReviewFilter = CandidateReviewStatus.New"
+                            aria-pressed="@(_activeReviewFilter == CandidateReviewStatus.New)">
+                        Pending <span class="chip-count">@rNewCount</span>
+                    </button>
+                }
+            </div>
+        }
+
+        @if (_links.Count > 0)
+        {
+            <div class="traceability-filter" role="group" aria-label="Filter by traceability">
+                <button type="button"
+                        class="filter-chip @(_activeLinkFilter is null ? "is-active" : "")"
+                        @onclick="() => _activeLinkFilter = null"
+                        aria-pressed="@(_activeLinkFilter is null)">
+                    All
+                </button>
+                @if (PipelineResult.RequirementCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithoutTests ? "is-active" : "")"
+                            @onclick="() => _activeLinkFilter = LinkFilter.RequirementsWithoutTests"
+                            aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithoutTests)">
+                        No test coverage
+                    </button>
+                    <button type="button"
+                            class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithClarifications ? "is-active" : "")"
+                            @onclick="() => _activeLinkFilter = LinkFilter.RequirementsWithClarifications"
+                            aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithClarifications)">
+                        Has clarifications
+                    </button>
+                }
+                @if (PipelineResult.TestCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip @(_activeLinkFilter == LinkFilter.OrphanTests ? "is-active" : "")"
+                            @onclick="() => _activeLinkFilter = LinkFilter.OrphanTests"
+                            aria-pressed="@(_activeLinkFilter == LinkFilter.OrphanTests)">
+                        Orphan tests
+                    </button>
+                }
+            </div>
+        }
+
+        @{
+            var visibleRequirements = (_activeFilter is null || _activeFilter == ScenarioKind.Requirement)
+                                          ? GetVisible(ScenarioKind.Requirement) : [];
+            var visibleTests        = (_activeFilter is null || _activeFilter == ScenarioKind.Test)
+                                          ? GetVisible(ScenarioKind.Test) : [];
+            var visibleNeeds        = (_activeFilter is null || _activeFilter == ScenarioKind.NeedsClarification)
+                                          ? GetVisible(ScenarioKind.NeedsClarification) : [];
+            var reqGroups           = GetRequirementGroups(visibleRequirements);
+            var testGroups          = GetTestGroups(visibleTests);
+            var clrGroups           = GetClarificationGroups(visibleNeeds);
+            var anyVisible          = visibleRequirements.Count > 0 || visibleTests.Count > 0 || visibleNeeds.Count > 0;
+        }
+
+        @if (_reviewPersistState == ReviewPersistState.Saved)
+        {
+            <p class="notification notification-success" data-testid="review-saved" role="status">Review saved successfully.</p>
+        }
+        else if (_reviewPersistState == ReviewPersistState.Failed)
+        {
+            <p class="notification notification-error" data-testid="review-save-failed" role="alert">Review save failed. Please try again.</p>
+        }
 
         @if (_savePhase == ReviewSavePhase.PartialSuccess)
         {
@@ -39,73 +203,200 @@ else
             <p class="notification notification-error" data-testid="save-failed" role="alert">Save failed. Please try again.</p>
         }
 
-        @{ var requirements = PipelineResult.Candidates.Where(c => c.Classification == ScenarioKind.Requirement).ToList(); }
-        @if (requirements.Count > 0)
+        @if (anyVisible)
         {
-            <section aria-label="Requirements" data-testid="group-requirement">
-                <div class="group-header">
-                    <h3 class="section-heading">Requirements</h3>
-                    <span class="count-badge">@requirements.Count</span>
+            <div class="section-summary-bar" role="toolbar" aria-label="Section controls">
+                <div class="section-summary-pills">
+                    @if (visibleRequirements.Count > 0)
+                    {
+                        <span class="summary-pill summary-pill-requirement">
+                            @visibleRequirements.Count REQUIREMENT
+                        </span>
+                    }
+                    @if (visibleTests.Count > 0)
+                    {
+                        <span class="summary-pill summary-pill-test">
+                            @visibleTests.Count TEST
+                        </span>
+                    }
+                    @if (visibleNeeds.Count > 0)
+                    {
+                        <span class="summary-pill summary-pill-needsclarification">
+                            @visibleNeeds.Count NEEDS_CLARIFICATION
+                        </span>
+                    }
                 </div>
-                @foreach (var candidate in requirements)
-                {
-                    <ExtractionCandidateRow Candidate="candidate" OnSelectionToggled="HandleSelectionToggled" />
-                }
-            </section>
+                <div class="section-expand-controls">
+                    <button type="button"
+                            class="section-expand-btn"
+                            @onclick="ExpandAll"
+                            disabled="@AllSectionsExpanded"
+                            aria-label="Expand all sections">
+                        Expand All
+                    </button>
+                    <button type="button"
+                            class="section-expand-btn"
+                            @onclick="CollapseAll"
+                            disabled="@AllSectionsCollapsed"
+                            aria-label="Collapse all sections">
+                        Collapse All
+                    </button>
+                </div>
+            </div>
         }
 
-        @{ var tests = PipelineResult.Candidates.Where(c => c.Classification == ScenarioKind.Test).ToList(); }
-        @if (tests.Count > 0)
+        @if (visibleRequirements.Count > 0)
         {
-            <section aria-label="Tests" data-testid="group-test">
-                <div class="group-header">
-                    <h3 class="section-heading">Tests</h3>
-                    <span class="count-badge">@tests.Count</span>
-                </div>
-                @foreach (var candidate in tests)
+            <ExtractionSectionGroup Title="Requirements"
+                                    Accent="requirement"
+                                    DataTestId="group-requirement"
+                                    TotalCount="@PipelineResult.RequirementCount"
+                                    VisibleCount="@visibleRequirements.Count"
+                                    StatusCounts="@ComputeStatusCounts(ScenarioKind.Requirement)"
+                                    @bind-IsExpanded="_sectionExpanded[ScenarioKind.Requirement]">
+                @foreach (var group in reqGroups)
                 {
-                    <ExtractionCandidateRow Candidate="candidate" OnSelectionToggled="HandleSelectionToggled" />
+                    <TestSubsectionGroup Title="@group.Label"
+                                         TotalCount="@group.TotalCount"
+                                         VisibleCount="@group.VisibleItems.Count"
+                                         StatusCounts="@ComputeStatusCountsFor(group.VisibleItems)"
+                                         IsExpanded="@GetReqSubsectionExpanded(group.Key)"
+                                         IsExpandedChanged="@(v => SetReqSubsectionExpanded(group.Key, v))">
+                        @foreach (var candidate in group.VisibleItems)
+                        {
+                            <ExtractionCandidateRow Candidate="candidate"
+                                                    OnSelectionToggled="HandleSelectionToggled"
+                                                    OnReviewStatusChanged="HandleReviewStatusChanged"
+                                                    Links="GetLinksForCandidate(candidate.CandidateId)"
+                                                    LinkableCandidates="GetLinkableCandidates(candidate)"
+                                                    OnLinkAdded="HandleLinkAdded"
+                                                    OnLinkRemoved="HandleLinkRemoved" />
+                        }
+                    </TestSubsectionGroup>
                 }
-            </section>
+            </ExtractionSectionGroup>
         }
 
-        @{ var needsClarification = PipelineResult.Candidates.Where(c => c.Classification == ScenarioKind.NeedsClarification).ToList(); }
-        @if (needsClarification.Count > 0)
+        @if (visibleTests.Count > 0)
         {
-            <section aria-label="Needs Clarification" data-testid="group-needs-clarification">
-                <div class="group-header">
-                    <h3 class="section-heading">Needs Clarification</h3>
-                    <span class="count-badge">@needsClarification.Count</span>
-                </div>
-                @foreach (var candidate in needsClarification)
+            <ExtractionSectionGroup Title="Tests"
+                                    Accent="test"
+                                    DataTestId="group-test"
+                                    TotalCount="@PipelineResult.TestCount"
+                                    VisibleCount="@visibleTests.Count"
+                                    StatusCounts="@ComputeStatusCounts(ScenarioKind.Test)"
+                                    @bind-IsExpanded="_sectionExpanded[ScenarioKind.Test]">
+                @foreach (var group in testGroups)
                 {
-                    <ExtractionCandidateRow Candidate="candidate" OnSelectionToggled="HandleSelectionToggled" />
+                    <TestSubsectionGroup Title="@group.Label"
+                                         TotalCount="@group.TotalCount"
+                                         VisibleCount="@group.VisibleItems.Count"
+                                         StatusCounts="@ComputeStatusCountsFor(group.VisibleItems)"
+                                         IsExpanded="@GetSubsectionExpanded(group.Key)"
+                                         IsExpandedChanged="@(v => SetSubsectionExpanded(group.Key, v))">
+                        @foreach (var candidate in group.VisibleItems)
+                        {
+                            <ExtractionCandidateRow Candidate="candidate"
+                                                    OnSelectionToggled="HandleSelectionToggled"
+                                                    OnReviewStatusChanged="HandleReviewStatusChanged"
+                                                    Links="GetLinksForCandidate(candidate.CandidateId)"
+                                                    LinkableCandidates="GetLinkableCandidates(candidate)"
+                                                    OnLinkAdded="HandleLinkAdded"
+                                                    OnLinkRemoved="HandleLinkRemoved" />
+                        }
+                    </TestSubsectionGroup>
                 }
-            </section>
+            </ExtractionSectionGroup>
+        }
+
+        @if (visibleNeeds.Count > 0)
+        {
+            <ExtractionSectionGroup Title="Needs Clarification"
+                                    Accent="needsclarification"
+                                    DataTestId="group-needs-clarification"
+                                    TotalCount="@PipelineResult.NeedsClarificationCount"
+                                    VisibleCount="@visibleNeeds.Count"
+                                    StatusCounts="@ComputeStatusCounts(ScenarioKind.NeedsClarification)"
+                                    @bind-IsExpanded="_sectionExpanded[ScenarioKind.NeedsClarification]">
+                @foreach (var group in clrGroups)
+                {
+                    <TestSubsectionGroup Title="@group.Label"
+                                         TotalCount="@group.TotalCount"
+                                         VisibleCount="@group.VisibleItems.Count"
+                                         StatusCounts="@ComputeStatusCountsFor(group.VisibleItems)"
+                                         IsExpanded="@GetClrSubsectionExpanded(group.Key)"
+                                         IsExpandedChanged="@(v => SetClrSubsectionExpanded(group.Key, v))">
+                        @foreach (var candidate in group.VisibleItems)
+                        {
+                            <ExtractionCandidateRow Candidate="candidate"
+                                                    OnSelectionToggled="HandleSelectionToggled"
+                                                    OnReviewStatusChanged="HandleReviewStatusChanged"
+                                                    Links="GetLinksForCandidate(candidate.CandidateId)"
+                                                    LinkableCandidates="GetLinkableCandidates(candidate)"
+                                                    OnLinkAdded="HandleLinkAdded"
+                                                    OnLinkRemoved="HandleLinkRemoved" />
+                        }
+                    </TestSubsectionGroup>
+                }
+            </ExtractionSectionGroup>
+        }
+
+        @if (!anyVisible)
+        {
+            <div class="filter-empty-state" data-testid="filter-empty-state">
+                <p>No candidates match@(_searchTerm.Length > 0 ? " your search" : " the selected filter").</p>
+            </div>
         }
 
         <div class="review-action-bar">
+            <button type="button"
+                    class="btn-save-review"
+                    @onclick="HandleSaveReviewAsync"
+                    disabled="@(_reviewPersistState == ReviewPersistState.Saving)"
+                    data-testid="save-review-button">
+                @(_reviewPersistState == ReviewPersistState.Saving ? "Saving review…" : "Save Review")
+            </button>
             @if (_selectedIds.Count > 0 && _savePhase != ReviewSavePhase.Saving)
             {
-                <button type="button" class="btn-secondary" @onclick="ClearSelection">
-                    Clear selection
-                </button>
+                <span class="action-bar-selection-count">@_selectedIds.Count selected</span>
+                <div class="bulk-review-actions">
+                    <button type="button" class="bulk-review-btn bulk-review-accept"
+                            @onclick="@(() => BulkSetStatus(CandidateReviewStatus.Accepted))">
+                        Accept Selected
+                    </button>
+                    <button type="button" class="bulk-review-btn bulk-review-reject"
+                            @onclick="@(() => BulkSetStatus(CandidateReviewStatus.Rejected))">
+                        Reject Selected
+                    </button>
+                    <button type="button" class="bulk-review-btn bulk-review-needsreview"
+                            @onclick="@(() => BulkSetStatus(CandidateReviewStatus.NeedsReview))">
+                        Needs Review
+                    </button>
+                </div>
             }
-            <button
-                type="button"
-                disabled="@(_selectedIds.Count == 0 || _savePhase == ReviewSavePhase.Saving)"
-                @onclick="HandleSaveConfirm"
-                data-testid="confirm-save-button"
-                class="btn-primary">
-                @if (_savePhase == ReviewSavePhase.Saving)
+            <div class="action-bar-right">
+                @if (_selectedIds.Count > 0 && _savePhase != ReviewSavePhase.Saving)
                 {
-                    <span>Saving…</span>
+                    <button type="button" class="btn-secondary" @onclick="ClearSelection">
+                        Clear selection
+                    </button>
                 }
-                else
-                {
-                    <span>Save @_selectedIds.Count selected</span>
-                }
-            </button>
+                <button
+                    type="button"
+                    disabled="@(_selectedIds.Count == 0 || _savePhase == ReviewSavePhase.Saving)"
+                    @onclick="HandleSaveConfirm"
+                    data-testid="confirm-save-button"
+                    class="btn-primary">
+                    @if (_savePhase == ReviewSavePhase.Saving)
+                    {
+                        <span>Saving…</span>
+                    }
+                    else
+                    {
+                        <span>Save @_selectedIds.Count selected</span>
+                    }
+                </button>
+            </div>
         </div>
     </div>
 }
@@ -115,10 +406,23 @@ else
 
     private const string ProjectId = "00000000-0000-0000-0000-000000000001";
 
+    private enum ReviewPersistState { Idle, Saving, Saved, Failed }
+    private enum LinkFilter { RequirementsWithoutTests, RequirementsWithClarifications, OrphanTests }
+
     private readonly HashSet<Guid> _selectedIds = new();
     private ReviewSavePhase _savePhase = ReviewSavePhase.Idle;
+    private ReviewPersistState _reviewPersistState = ReviewPersistState.Idle;
     private string _sessionId = Guid.NewGuid().ToString();
     private ExtractionPipelineResult? _previousPipelineResult;
+    private ScenarioKind? _activeFilter = null;
+    private CandidateReviewStatus? _activeReviewFilter = null;
+    private LinkFilter? _activeLinkFilter = null;
+    private string _searchTerm = string.Empty;
+    private readonly Dictionary<ScenarioKind, bool> _sectionExpanded = new();
+    private readonly Dictionary<string, bool> _reqSubsectionExpanded = new();
+    private readonly Dictionary<string, bool> _testSubsectionExpanded = new();
+    private readonly Dictionary<string, bool> _clrSubsectionExpanded = new();
+    private readonly List<CandidateLinkEntry> _links = new();
 
     protected override void OnParametersSet()
     {
@@ -128,6 +432,322 @@ else
             _savePhase = ReviewSavePhase.Idle;
             _sessionId = Guid.NewGuid().ToString();
             _previousPipelineResult = PipelineResult;
+            _activeFilter = null;
+            _activeReviewFilter = null;
+            _activeLinkFilter = null;
+            _reviewPersistState = ReviewPersistState.Idle;
+            _searchTerm = string.Empty;
+            _sectionExpanded.Clear();
+            _reqSubsectionExpanded.Clear();
+            _testSubsectionExpanded.Clear();
+            _clrSubsectionExpanded.Clear();
+            _links.Clear();
+            if (PipelineResult is not null)
+            {
+                foreach (var kind in PipelineResult.Candidates.Select(c => c.Classification).Distinct())
+                    _sectionExpanded[kind] = true;
+            }
+        }
+    }
+
+    private void ExpandAll()
+    {
+        foreach (var key in _sectionExpanded.Keys.ToList())
+            _sectionExpanded[key] = true;
+    }
+
+    private void CollapseAll()
+    {
+        foreach (var key in _sectionExpanded.Keys.ToList())
+            _sectionExpanded[key] = false;
+    }
+
+    private bool AllSectionsExpanded => _sectionExpanded.Count > 0 && _sectionExpanded.Values.All(v => v);
+    private bool AllSectionsCollapsed => _sectionExpanded.Count > 0 && _sectionExpanded.Values.All(v => !v);
+
+    private List<ExtractionCandidate> GetVisible(ScenarioKind kind)
+    {
+        var source = PipelineResult!.Candidates.Where(c => c.Classification == kind);
+        if (_searchTerm.Length > 0)
+            source = source.Where(c => c.Title.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase));
+        if (_activeReviewFilter is not null)
+            source = source.Where(c => c.ReviewStatus == _activeReviewFilter);
+        if (_activeLinkFilter is not null)
+        {
+            source = _activeLinkFilter switch
+            {
+                LinkFilter.RequirementsWithoutTests when kind == ScenarioKind.Requirement =>
+                    source.Where(c => GetLinkTestCount(c) == 0),
+                LinkFilter.RequirementsWithClarifications when kind == ScenarioKind.Requirement =>
+                    source.Where(c => GetLinkClrCount(c) > 0),
+                LinkFilter.OrphanTests when kind == ScenarioKind.Test =>
+                    source.Where(c => GetLinkTestCount(c) == 0),
+                _ => source,
+            };
+        }
+        return source.ToList();
+    }
+
+    private IReadOnlyList<CandidateLinkEntry> GetLinksForCandidate(Guid id) =>
+        _links.Where(l => l.SourceId == id || l.TargetId == id).ToList();
+
+    private IReadOnlyList<ExtractionCandidate> GetLinkableCandidates(ExtractionCandidate c)
+    {
+        if (PipelineResult is null) return [];
+        return c.Classification switch
+        {
+            ScenarioKind.Requirement => PipelineResult.Candidates
+                .Where(x => x.Classification == ScenarioKind.Test ||
+                             x.Classification == ScenarioKind.NeedsClarification)
+                .ToList(),
+            ScenarioKind.Test => PipelineResult.Candidates
+                .Where(x => x.Classification == ScenarioKind.Requirement)
+                .ToList(),
+            ScenarioKind.NeedsClarification => PipelineResult.Candidates
+                .Where(x => x.Classification == ScenarioKind.Requirement)
+                .ToList(),
+            _ => [],
+        };
+    }
+
+    private int GetLinkTestCount(ExtractionCandidate c) =>
+        _links.Count(l => l.LinkType == CandidateLinkType.RequirementTest &&
+                          (l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
+
+    private int GetLinkClrCount(ExtractionCandidate c) =>
+        _links.Count(l => l.LinkType == CandidateLinkType.RequirementClarification &&
+                          (l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
+
+    private void HandleLinkAdded(CandidateLinkEntry entry)
+    {
+        if (!_links.Any(l => l.SourceId == entry.SourceId && l.TargetId == entry.TargetId && l.LinkType == entry.LinkType))
+            _links.Add(entry);
+    }
+
+    private void HandleLinkRemoved(CandidateLinkEntry entry)
+    {
+        _links.RemoveAll(l => l.SourceId == entry.SourceId && l.TargetId == entry.TargetId && l.LinkType == entry.LinkType);
+    }
+
+    private ReviewStatusCounts ComputeStatusCounts(ScenarioKind kind)
+    {
+        var candidates = PipelineResult!.Candidates.Where(c => c.Classification == kind);
+        return new ReviewStatusCounts(
+            New:         candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.New),
+            Accepted:    candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted),
+            Rejected:    candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Rejected),
+            NeedsReview: candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.NeedsReview));
+    }
+
+    private static ReviewStatusCounts ComputeStatusCountsFor(IList<ExtractionCandidate> items) =>
+        new(New:         items.Count(c => c.ReviewStatus == CandidateReviewStatus.New),
+            Accepted:    items.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted),
+            Rejected:    items.Count(c => c.ReviewStatus == CandidateReviewStatus.Rejected),
+            NeedsReview: items.Count(c => c.ReviewStatus == CandidateReviewStatus.NeedsReview));
+
+    private sealed record TestGroup(
+        string Key,
+        string Label,
+        int TotalCount,
+        List<ExtractionCandidate> VisibleItems);
+
+    private IReadOnlyList<TestGroup> GetTestGroups(IReadOnlyList<ExtractionCandidate> visibleTests)
+    {
+        var totalCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var groupOrder  = new List<string>();
+
+        foreach (var c in PipelineResult!.Candidates.Where(c => c.Classification == ScenarioKind.Test))
+        {
+            var key = c.ContextHeading ?? string.Empty;
+            if (!totalCounts.ContainsKey(key))
+            {
+                totalCounts[key] = 0;
+                groupOrder.Add(key);
+            }
+            totalCounts[key]++;
+        }
+
+        var visibleByKey = new Dictionary<string, List<ExtractionCandidate>>(StringComparer.Ordinal);
+        foreach (var c in visibleTests)
+        {
+            var key = c.ContextHeading ?? string.Empty;
+            if (!visibleByKey.TryGetValue(key, out var list))
+            {
+                list = [];
+                visibleByKey[key] = list;
+            }
+            list.Add(c);
+        }
+
+        var result = new List<TestGroup>();
+        foreach (var key in groupOrder)
+        {
+            if (!visibleByKey.TryGetValue(key, out var items)) continue;
+            result.Add(new TestGroup(
+                Key:          key,
+                Label:        string.IsNullOrEmpty(key) ? "Other Tests" : key,
+                TotalCount:   totalCounts[key],
+                VisibleItems: items));
+        }
+        return result;
+    }
+
+    private bool GetSubsectionExpanded(string key) =>
+        !_testSubsectionExpanded.TryGetValue(key, out var v) || v;
+
+    private void SetSubsectionExpanded(string key, bool value) =>
+        _testSubsectionExpanded[key] = value;
+
+    private IReadOnlyList<TestGroup> GetClarificationGroups(IReadOnlyList<ExtractionCandidate> visibleNeeds)
+    {
+        var totalCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var groupOrder  = new List<string>();
+
+        foreach (var c in PipelineResult!.Candidates.Where(c => c.Classification == ScenarioKind.NeedsClarification))
+        {
+            var key = c.ContextHeading ?? string.Empty;
+            if (!totalCounts.ContainsKey(key))
+            {
+                totalCounts[key] = 0;
+                groupOrder.Add(key);
+            }
+            totalCounts[key]++;
+        }
+
+        var visibleByKey = new Dictionary<string, List<ExtractionCandidate>>(StringComparer.Ordinal);
+        foreach (var c in visibleNeeds)
+        {
+            var key = c.ContextHeading ?? string.Empty;
+            if (!visibleByKey.TryGetValue(key, out var list))
+            {
+                list = [];
+                visibleByKey[key] = list;
+            }
+            list.Add(c);
+        }
+
+        var result = new List<TestGroup>();
+        foreach (var key in groupOrder)
+        {
+            if (!visibleByKey.TryGetValue(key, out var items)) continue;
+            result.Add(new TestGroup(
+                Key:          key,
+                Label:        string.IsNullOrEmpty(key) ? "Other Clarifications" : key,
+                TotalCount:   totalCounts[key],
+                VisibleItems: items));
+        }
+        return result;
+    }
+
+    private bool GetClrSubsectionExpanded(string key) =>
+        !_clrSubsectionExpanded.TryGetValue(key, out var v) || v;
+
+    private void SetClrSubsectionExpanded(string key, bool value) =>
+        _clrSubsectionExpanded[key] = value;
+
+    private IReadOnlyList<TestGroup> GetRequirementGroups(IReadOnlyList<ExtractionCandidate> visibleRequirements)
+    {
+        var totalCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var groupOrder  = new List<string>();
+
+        foreach (var c in PipelineResult!.Candidates.Where(c => c.Classification == ScenarioKind.Requirement))
+        {
+            var key = c.ContextHeading ?? string.Empty;
+            if (!totalCounts.ContainsKey(key))
+            {
+                totalCounts[key] = 0;
+                groupOrder.Add(key);
+            }
+            totalCounts[key]++;
+        }
+
+        var visibleByKey = new Dictionary<string, List<ExtractionCandidate>>(StringComparer.Ordinal);
+        foreach (var c in visibleRequirements)
+        {
+            var key = c.ContextHeading ?? string.Empty;
+            if (!visibleByKey.TryGetValue(key, out var list))
+            {
+                list = [];
+                visibleByKey[key] = list;
+            }
+            list.Add(c);
+        }
+
+        var result = new List<TestGroup>();
+        foreach (var key in groupOrder)
+        {
+            if (!visibleByKey.TryGetValue(key, out var items)) continue;
+            result.Add(new TestGroup(
+                Key:          key,
+                Label:        string.IsNullOrEmpty(key) ? "Other Requirements" : key,
+                TotalCount:   totalCounts[key],
+                VisibleItems: items));
+        }
+        return result;
+    }
+
+    private bool GetReqSubsectionExpanded(string key) =>
+        !_reqSubsectionExpanded.TryGetValue(key, out var v) || v;
+
+    private void SetReqSubsectionExpanded(string key, bool value) =>
+        _reqSubsectionExpanded[key] = value;
+
+    private async Task HandleSaveReviewAsync()
+    {
+        if (PipelineResult is null)
+            return;
+
+        _reviewPersistState = ReviewPersistState.Saving;
+        StateHasChanged();
+
+        try
+        {
+            var items = PipelineResult.Candidates
+                .Select(c => new SaveReviewedCandidateItemInput
+                {
+                    Title          = c.Title,
+                    Classification = c.Classification,
+                    ReviewStatus   = c.ReviewStatus,
+                    SourceDocument = null,
+                    SourceSection  = c.ContextHeading,
+                    ProjectId      = ProjectId,
+                    ReviewedBy     = null,
+                    ReviewedAt     = c.ReviewStatus != CandidateReviewStatus.New
+                                         ? DateTimeOffset.UtcNow
+                                         : null,
+                })
+                .ToList();
+
+            var input = new SaveReviewedCandidatesInput
+            {
+                Items     = items,
+                SessionId = _sessionId,
+            };
+
+            await SaveReviewedCandidatesMutation.ExecuteAsync(input);
+
+            var linkItems = _links
+                .Select(l => new SaveCandidateLinkItemInput
+                {
+                    SourceCandidateRef = l.SourceId.ToString(),
+                    TargetCandidateRef = l.TargetId.ToString(),
+                    LinkType           = l.LinkType,
+                })
+                .ToList();
+
+            var linkInput = new SaveCandidateLinksInput
+            {
+                ProjectId = ProjectId,
+                SessionId = _sessionId,
+                Links     = linkItems,
+            };
+
+            await SaveCandidateLinksMutation.ExecuteAsync(linkInput);
+            _reviewPersistState = ReviewPersistState.Saved;
+        }
+        catch (Exception)
+        {
+            _reviewPersistState = ReviewPersistState.Failed;
         }
     }
 
@@ -141,6 +761,14 @@ else
             _selectedIds.Add(candidateId);
         else
             _selectedIds.Remove(candidateId);
+    }
+
+    private void HandleReviewStatusChanged(CandidateReviewStatus _) { }
+
+    private void BulkSetStatus(CandidateReviewStatus status)
+    {
+        foreach (var candidate in PipelineResult!.Candidates.Where(c => _selectedIds.Contains(c.CandidateId)))
+            candidate.ReviewStatus = status;
     }
 
     private void ClearSelection()

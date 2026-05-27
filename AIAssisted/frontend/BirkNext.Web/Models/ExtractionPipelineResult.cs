@@ -10,6 +10,7 @@ public sealed class ExtractionPipelineResult
     public int RequirementCount { get; }
     public int TestCount { get; }
     public int NeedsClarificationCount { get; }
+    public ExtractionProfile Profile { get; }
 
     private ExtractionPipelineResult(
         PipelineStatus status,
@@ -19,7 +20,8 @@ public sealed class ExtractionPipelineResult
         long durationMs,
         int requirementCount,
         int testCount,
-        int needsClarificationCount)
+        int needsClarificationCount,
+        ExtractionProfile profile)
     {
         if (requirementCount + testCount + needsClarificationCount != candidates.Count)
             throw new ArgumentException(
@@ -33,6 +35,7 @@ public sealed class ExtractionPipelineResult
         RequirementCount = requirementCount;
         TestCount = testCount;
         NeedsClarificationCount = needsClarificationCount;
+        Profile = profile;
     }
 
     public static ExtractionPipelineResult Success(
@@ -42,7 +45,8 @@ public sealed class ExtractionPipelineResult
         long durationMs,
         int requirementCount,
         int testCount,
-        int needsClarificationCount)
+        int needsClarificationCount,
+        ExtractionProfile profile = ExtractionProfile.Default)
         => new(
             PipelineStatus.Success,
             candidates,
@@ -51,17 +55,19 @@ public sealed class ExtractionPipelineResult
             durationMs,
             requirementCount,
             testCount,
-            needsClarificationCount);
+            needsClarificationCount,
+            profile);
 
     public static ExtractionPipelineResult NonSuccess(
         PipelineStatus status,
         int inputLengthChars,
         int inputLineCount,
-        long durationMs)
+        long durationMs,
+        ExtractionProfile profile = ExtractionProfile.Default)
     {
         if (status == PipelineStatus.Success)
             throw new ArgumentException("Use Success() factory for PipelineStatus.Success.");
 
-        return new(status, [], inputLengthChars, inputLineCount, durationMs, 0, 0, 0);
+        return new(status, [], inputLengthChars, inputLineCount, durationMs, 0, 0, 0, profile);
     }
 }

@@ -82,3 +82,102 @@ input[type="checkbox"] {
     font-size: 0.78rem;
     color: var(--clr-danger, #dc2626);
 }
+
+/* ── Review status visual treatments ──
+ * Selection (is-selected) takes priority; review treatment only applies when not selected.
+ */
+.extraction-candidate-row.is-review-accepted:not(.is-selected) {
+    border-left: 3px solid var(--clr-review-accepted-text);
+    background-color: var(--clr-review-accepted-bg-light);
+}
+
+.extraction-candidate-row.is-review-rejected:not(.is-selected) {
+    background-color: var(--clr-review-rejected-bg);
+    border-color: var(--clr-border-subtle);
+}
+
+.extraction-candidate-row.is-review-rejected:not(.is-selected) .candidate-body {
+    opacity: 0.6;
+}
+
+.extraction-candidate-row.is-review-needsreview:not(.is-selected) {
+    border-left: 3px solid var(--clr-review-needsreview-text);
+    background-color: var(--clr-review-needsreview-bg-light);
+}
+
+/* ── Per-card review action buttons ── */
+.review-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.review-action-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.185rem 0.55rem;
+    font-size: 0.69rem;
+    font-weight: 600;
+    border: 1px solid var(--clr-border-input);
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--clr-text-subtle);
+    cursor: pointer;
+    transition: background-color var(--transition), color var(--transition), border-color var(--transition);
+    white-space: nowrap;
+}
+
+.review-action-btn:hover:not(.is-active) {
+    border-color: var(--clr-border-hover);
+    color: var(--clr-text-muted);
+    background: var(--clr-surface);
+}
+
+.review-action-btn:focus-visible {
+    outline: 2px solid var(--clr-primary-focus);
+    outline-offset: 2px;
+}
+
+.review-action-accept.is-active {
+    background: var(--clr-review-accepted-bg);
+    border-color: var(--clr-review-accepted-text);
+    color: var(--clr-review-accepted-text);
+}
+
+.review-action-reject.is-active {
+    background: var(--clr-review-rejected-bg);
+    border-color: var(--clr-review-rejected-text);
+    color: var(--clr-review-rejected-text);
+}
+
+.review-action-needsreview.is-active {
+    background: var(--clr-review-needsreview-bg);
+    border-color: var(--clr-review-needsreview-text);
+    color: var(--clr-review-needsreview-text);
+}
+
+/* ── Link indicator badge ── */
+.link-indicator {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    background: var(--clr-surface, #f8fafc);
+    border: 1px solid var(--clr-border-input);
+    border-radius: var(--radius-pill);
+    color: var(--clr-text-subtle);
+    cursor: pointer;
+    transition: background-color var(--transition), border-color var(--transition), color var(--transition);
+    white-space: nowrap;
+}
+
+.link-indicator:hover,
+.link-indicator.is-open {
+    background: var(--clr-primary-ring, #eff6ff);
+    border-color: var(--clr-primary-focus, #3b82f6);
+    color: var(--clr-primary, #2563eb);
+}

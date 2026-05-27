@@ -1,0 +1,179 @@
+/* ── Container ── */
+.section-group {
+    margin-bottom: 0.875rem;
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+/* ── Accent left borders ── */
+.section-group-requirement {
+    border-left: 3px solid var(--clr-badge-req-text);
+}
+
+.section-group-test {
+    border-left: 3px solid var(--clr-badge-test-text);
+}
+
+.section-group-needsclarification {
+    border-left: 3px solid var(--clr-badge-clr-text);
+}
+
+/* ── Toggle button ── */
+.section-toggle {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.6rem 0.875rem;
+    background: var(--clr-surface);
+    border: none;
+    border-bottom: 1px solid transparent;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color var(--transition), border-color var(--transition);
+    position: sticky;
+    top: var(--section-bar-height, 0px);
+    z-index: 5;
+}
+
+.section-toggle:hover {
+    background: var(--clr-border-subtle);
+}
+
+.section-toggle.is-open {
+    border-bottom-color: var(--clr-border-subtle);
+}
+
+/* ── Toggle content layout ── */
+.section-toggle-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.section-toggle-main {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* ── Chevron ── */
+.section-chevron {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--clr-text-subtle);
+    transform: rotate(-90deg);
+    transition: transform var(--transition);
+    margin-top: 0.15rem;
+}
+
+.section-chevron.is-open {
+    transform: rotate(0deg);
+}
+
+/* ── Heading ── */
+.section-heading {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--clr-text-heading);
+    margin: 0;
+    flex: 1;
+}
+
+/* ── Count badge ── */
+.section-count-badge {
+    font-size: 0.67rem;
+    font-weight: 700;
+    padding: 0.15rem 0.45rem;
+    border-radius: var(--radius-pill);
+    white-space: nowrap;
+}
+
+.section-count-badge-requirement {
+    background: var(--clr-badge-req-bg);
+    color: var(--clr-badge-req-text);
+}
+
+.section-count-badge-test {
+    background: var(--clr-badge-test-bg);
+    color: var(--clr-badge-test-text);
+}
+
+.section-count-badge-needsclarification {
+    background: var(--clr-badge-clr-bg);
+    color: var(--clr-badge-clr-text);
+}
+
+.section-count-of {
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+/* ── Review status breakdown line ── */
+.section-status-line {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.section-status-micro {
+    font-size: 0.63rem;
+    font-weight: 600;
+    padding: 0.1rem 0.35rem;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+}
+
+.section-status-micro-accepted {
+    background: var(--clr-review-accepted-bg);
+    color: var(--clr-review-accepted-text);
+}
+
+.section-status-micro-rejected {
+    background: var(--clr-review-rejected-bg);
+    color: var(--clr-review-rejected-text);
+    border: 1px solid var(--clr-border);
+}
+
+.section-status-micro-needsreview {
+    background: var(--clr-review-needsreview-bg);
+    color: var(--clr-review-needsreview-text);
+}
+
+.section-status-micro-new {
+    background: var(--clr-review-new-bg);
+    color: var(--clr-review-new-text);
+}
+
+/* ── Expand/collapse animation ── */
+/*
+ * Grid row animation: animates both open and close smoothly.
+ * visibility delay on close prevents keyboard focus reaching hidden items.
+ */
+.section-body {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transition: grid-template-rows 0.22s ease, opacity 0.18s ease;
+}
+
+.section-body.is-collapsed {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transition: grid-template-rows 0.22s ease, opacity 0.18s ease, visibility 0s linear 0.22s;
+}
+
+.section-body-inner {
+    overflow: hidden;
+    min-height: 0;
+    padding: 0.5rem 0.75rem 0.625rem;
+}

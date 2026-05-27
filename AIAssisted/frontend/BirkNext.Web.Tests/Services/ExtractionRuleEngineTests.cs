@@ -245,8 +245,9 @@ public sealed class ExtractionRuleEngineTests
     {
         var engine = DefaultEngine();
 
-        // 9 filter rules + 7 classification rules = 16 total
-        engine.RuleNames.Should().HaveCount(16);
+        // 9 filter rules + 9 classification rules = 18 total
+        // (added Classify:ClarificationSignal at p55 and Classify:RequirementLanguage at p15)
+        engine.RuleNames.Should().HaveCount(18);
         engine.RuleNames.First().Should().StartWith("Filter:");
         engine.RuleNames.Last().Should().Be("Classify:Default");
     }
@@ -400,5 +401,138 @@ public sealed class ExtractionRuleEngineTests
         var result = engine.Evaluate(block, "plain content");
 
         result.IsFiltered.Should().BeFalse();
+    }
+
+    // =========================================================================
+    // T105+ — New Classify:ClarificationSignal rule (priority 55)
+    // =========================================================================
+
+    [Theory]
+    [InlineData("How should we handle the edge case?")]
+    [InlineData("Should we implement pagination?")]
+    [InlineData("What happens if the server is unavailable?")]
+    [InlineData("This issue is unresolved")]
+    [InlineData("Needs decision on retry policy")]
+    [InlineData("Please clarify the expected behavior")]
+    public void ClarificationSignal_phrases_classify_as_NeedsClarification(string text)
+    {
+        var engine = DefaultEngine();
+
+        var result = engine.Evaluate(MakeBlock(text, BlockType.ParagraphLine), text);
+
+        result.Classification.Should().Be(ScenarioKind.NeedsClarification);
+        result.Signal.Should().Be(ClassificationSignal.ClarificationSignal);
+        result.WinningRuleName.Should().Be("Classify:ClarificationSignal");
+    }
+
+    [Fact]
+    public void ClarificationSignal_beats_RequirementLanguage_for_how_should()
+    {
+        // "how should" in ClarificationSignal (55) beats "should" in RequirementLanguage (15).
+        var engine = DefaultEngine();
+        const string text = "How should the system handle session expiry";
+
+        var result = engine.Evaluate(MakeBlock(text, BlockType.ParagraphLine), text);
+
+        result.Classification.Should().Be(ScenarioKind.NeedsClarification);
+        result.Signal.Should().Be(ClassificationSignal.ClarificationSignal);
+    }
+
+    [Fact]
+    public void ClarificationSignal_beats_Rfc2119Lowercase_for_should_we()
+    {
+        // "should we" in ClarificationSignal (55) beats Rfc2119Lowercase "must" (50) on same line.
+        // But here the sentence has only "should we" — still ClarificationSignal wins vs Default.
+        var engine = DefaultEngine();
+        const string text = "Should we add rate limiting here";
+
+        var result = engine.Evaluate(MakeBlock(text, BlockType.ParagraphLine), text);
+
+        result.Classification.Should().Be(ScenarioKind.NeedsClarification);
+        result.Signal.Should().Be(ClassificationSignal.ClarificationSignal);
+    }
+
+    // =========================================================================
+    // T105+ — New Classify:RequirementLanguage rule (priority 15)
+    // =========================================================================
+
+    [Theory]
+    [InlineData("Validation failures should be logged")]
+    [InlineData("Successful scenario creation should be logged")]
+    [InlineData("Response time should be measurable")]
+    [InlineData("The feature can be enabled by the administrator")]
+    [InlineData("Users can opt out of notifications")]
+    public void RequirementLanguage_should_and_can_classify_as_Requirement(string text)
+    {
+        var engine = DefaultEngine();
+
+        var result = engine.Evaluate(MakeBlock(text, BlockType.ParagraphLine), text);
+
+        result.Classification.Should().Be(ScenarioKind.Requirement);
+        result.Signal.Should().Be(ClassificationSignal.RequirementLanguage);
+        result.WinningRuleName.Should().Be("Classify:RequirementLanguage");
+    }
+
+    [Fact]
+    public void RequirementLanguage_loses_to_QuestionTerminator_for_question_with_should()
+    {
+        // "What should happen when the session expires?" ends with '?'.
+        // QuestionTerminator (30) beats RequirementLanguage (15).
+        var engine = DefaultEngine();
+        const string text = "What should happen when the session expires?";
+
+        var result = engine.Evaluate(MakeBlock(text, BlockType.ParagraphLine), text);
+
+        result.Classification.Should().Be(ScenarioKind.NeedsClarification);
+        result.Signal.Should().Be(ClassificationSignal.QuestionTerminator);
+    }
+
+    [Fact]
+    public void RequirementLanguage_loses_to_DeferralMarker_for_TBD_with_should()
+    {
+        // "TBD should be decided" — DeferralMarker (20) beats RequirementLanguage (15).
+        var engine = DefaultEngine();
+        const string text = "TBD should be decided later";
+
+        var result = engine.Evaluate(MakeBlock(text, BlockType.ParagraphLine), text);
+
+        result.Classification.Should().Be(ScenarioKind.NeedsClarification);
+        result.Signal.Should().Be(ClassificationSignal.DeferralMarker);
+    }
+
+    // =========================================================================
+    // T105+ — And/But are grouping continuers, not BDD openers at engine level
+    // =========================================================================
+
+    [Theory]
+    [InlineData("And the user sees a confirmation message")]
+    [InlineData("But the scenario is not saved")]
+    public void Bdd_And_But_openers_no_longer_classify_as_BddPattern(string text)
+    {
+        // And/But continuers are merged by GroupBddSteps at the pipeline level (Stage 5.3).
+        // At the rule engine level they match no strong rule and fall to Default.
+        var engine = DefaultEngine();
+
+        var result = engine.Evaluate(MakeBlock(text, BlockType.ParagraphLine), text);
+
+        result.Classification.Should().Be(ScenarioKind.NeedsClarification);
+        result.Signal.Should().Be(ClassificationSignal.Default);
+    }
+
+    // =========================================================================
+    // T105+ — BDD triple with word boundaries (handles bold-stripped text)
+    // =========================================================================
+
+    [Fact]
+    public void Bdd_triple_word_boundary_classifies_as_Test()
+    {
+        // Bold-stripped text: **Given** → Given, etc.
+        const string text = "Given a user submits the form When valid Then the scenario is saved";
+        var engine = DefaultEngine();
+
+        var result = engine.Evaluate(MakeBlock(text, BlockType.ParagraphLine), text);
+
+        result.Classification.Should().Be(ScenarioKind.Test);
+        result.Signal.Should().Be(ClassificationSignal.BddPattern);
     }
 }

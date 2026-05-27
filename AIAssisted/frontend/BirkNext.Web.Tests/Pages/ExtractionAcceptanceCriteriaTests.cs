@@ -36,6 +36,19 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         Services.AddSingleton(_mockExtraction.Object);
         Services.AddSingleton(mockConfig.Object);
         Services.AddSingleton(_mockMutation.Object);
+
+        var mockSaveReview = new Mock<ISaveReviewedCandidatesMutation>();
+        mockSaveReview
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveReviewedCandidatesInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveReviewedCandidatesResult>>());
+        Services.AddSingleton(mockSaveReview.Object);
+
+        var mockSaveLinks = new Mock<ISaveCandidateLinksMutation>();
+        mockSaveLinks
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
+        Services.AddSingleton(mockSaveLinks.Object);
+
         Services.AddLogging();
         JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
     }
@@ -114,7 +127,7 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         };
 
         _mockExtraction
-            .Setup(s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeSuccessResult(candidates));
 
         var cut = Render<ScenarioExtraction>();
@@ -146,7 +159,7 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         };
 
         _mockExtraction
-            .Setup(s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeSuccessResult(candidates));
 
         var cut = Render<ScenarioExtraction>();
@@ -181,7 +194,7 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         };
 
         _mockExtraction
-            .Setup(s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeSuccessResult(candidates));
 
         var cut = Render<ScenarioExtraction>();
@@ -209,7 +222,7 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
     public async Task AC4_NoExtractableCandidates_EmptyStateMessageDisplayed()
     {
         _mockExtraction
-            .Setup(s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(ExtractionPipelineResult.NonSuccess(PipelineStatus.NoResults, 0, 0, 0));
 
         var cut = Render<ScenarioExtraction>();
@@ -239,7 +252,7 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         var candidateC = MakeCandidate("Session timeout policy is TBD", ScenarioKind.NeedsClarification);
 
         _mockExtraction
-            .Setup(s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeSuccessResult([candidateA, candidateB, candidateC]));
 
         _mockMutation
@@ -297,7 +310,7 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
             .Should().NotBeNullOrEmpty("a validation message must appear for empty input");
 
         _mockExtraction.Verify(
-            s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()),
             Times.Never,
             "extraction service must not be called when input is empty");
     }
@@ -312,7 +325,7 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         const string importedText = "The system shall allow imported users to log in.";
         var candidates = new[] { MakeCandidate("The system shall allow imported users to log in.") };
         _mockExtraction
-            .Setup(s => s.ExtractAsync(importedText, It.IsAny<CancellationToken>()))
+            .Setup(s => s.ExtractAsync(importedText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeSuccessResult(candidates));
 
         var cut = Render<ScenarioExtraction>();
@@ -327,9 +340,10 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
             timeout: TimeSpan.FromSeconds(2));
 
         _mockExtraction.Verify(
-            s => s.ExtractAsync(importedText, It.IsAny<CancellationToken>()),
+            s => s.ExtractAsync(importedText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()),
             Times.Once,
             "extraction service must be called with the imported file content");
         cut.FindAll("[data-testid='candidate-row']").Should().HaveCount(1);
     }
 }
+

@@ -26,6 +26,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ScenarioService>();
+builder.Services.AddScoped<ReviewedCandidateService>();
+builder.Services.AddScoped<CandidateLinkService>();
 
 builder.Services
     .AddGraphQLServer()
@@ -33,6 +35,8 @@ builder.Services
     .AddMutationType<Mutation>()
     .AddType<ScenarioObjectType>()
     .AddType<CreateScenarioResultType>()
+    .AddType<ReviewedCandidateObjectType>()
+    .AddType<CandidateLinkObjectType>()
     .AddDiagnosticEventListener<OperationDiagnosticEventListener>()
     .ConfigureSchema(b => b.ModifyOptions(o => o.UseXmlDocumentation = true));
 

@@ -109,10 +109,11 @@ public sealed class ExtractionRuleSetCompiler
                 new ClassificationOutcome(entry.Classification, ClassificationSignal.ConfiguredPrefix)));
         }
 
-        // Step 6: Set IgnorePrefixes.
+        // Step 6: Set IgnorePrefixes — base set built-ins are always preserved;
+        // user-configured additions are appended after them.
         var ignorePrefixes = config.IgnorePrefixes.Length > 0
-            ? ImmutableArray.CreateRange(config.IgnorePrefixes)
-            : ImmutableArray<string>.Empty;
+            ? ImmutableArray.CreateRange(baseSet.IgnorePrefixes.Concat(config.IgnorePrefixes))
+            : (IReadOnlyList<string>)baseSet.IgnorePrefixes;
 
         // Step 7: Sort (stable, priority descending).
         // ExtractionRuleSet constructor also sorts; this step makes the intent explicit.

@@ -11,6 +11,7 @@ public interface IScenarioExtractionService
 {
     Task<ExtractionPipelineResult> ExtractAsync(
         string specificationText,
+        ExtractionProfile profile = ExtractionProfile.Default,
         CancellationToken cancellationToken = default);
 }
 
@@ -19,6 +20,8 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
     private readonly IExtractionConfiguration _config;
     private readonly IExtractionRuleEngine _ruleEngine;
     private readonly ILogger<ScenarioExtractionService> _logger;
+    // Lazily-initialized Speckit engine — created on first Speckit extraction.
+    private IExtractionRuleEngine? _speckitRuleEngine;
 
     // Internal constructor used by the DI factory in Program.cs.
     // IExtractionRuleEngine is internal; a public constructor cannot accept it (CS0051).
@@ -42,11 +45,18 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
 
     public Task<ExtractionPipelineResult> ExtractAsync(
         string specificationText,
+        ExtractionProfile profile = ExtractionProfile.Default,
         CancellationToken cancellationToken = default)
-        => Task.FromResult(RunPipeline(specificationText));
+        => Task.FromResult(RunPipeline(specificationText, profile));
 
-    private ExtractionPipelineResult RunPipeline(string rawInput)
+    private IExtractionRuleEngine GetEngineForProfile(ExtractionProfile profile) =>
+        profile == ExtractionProfile.Speckit
+            ? (_speckitRuleEngine ??= new ExtractionRuleEngine(ExtractionRuleSet.Speckit(), _config))
+            : _ruleEngine;
+
+    private ExtractionPipelineResult RunPipeline(string rawInput, ExtractionProfile profile)
     {
+        var engine = GetEngineForProfile(profile);
         var sw = Stopwatch.StartNew();
         var summary = new RuleExecutionSummary();
 
@@ -62,7 +72,7 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
             _logger.LogInformation(
                 "ExtractionEmpty: inputLengthChars={InputLengthChars}, reason={Reason}",
                 inputLengthChars, "empty_input");
-            return ExtractionPipelineResult.NonSuccess(PipelineStatus.EmptyInput, inputLengthChars, 0, 0);
+            return ExtractionPipelineResult.NonSuccess(PipelineStatus.EmptyInput, inputLengthChars, 0, 0, profile);
         }
 
         if (inputLengthChars > _config.MaxInputLengthChars)
@@ -73,7 +83,7 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
                 "ExtractionEmpty: inputLengthChars={InputLengthChars}, reason={Reason}",
                 inputLengthChars, "input_too_large");
             return ExtractionPipelineResult.NonSuccess(
-                PipelineStatus.InputTooLarge, inputLengthChars, CountLines(rawInput), sw.ElapsedMilliseconds);
+                PipelineStatus.InputTooLarge, inputLengthChars, CountLines(rawInput), sw.ElapsedMilliseconds, profile);
         }
 
         // -------------------------------------------------------------------------
@@ -89,21 +99,22 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
         // -------------------------------------------------------------------------
         // Stages 3–7
         // -------------------------------------------------------------------------
-        var blocks = PartitionBlocks(lines);                    // Stage 3
-        var filtered = FilterBlocksWithEngine(blocks, summary); // Stage 4
-        var contents = ExtractContent(filtered);                 // Stage 5
+        var blocks = PartitionBlocks(lines);                           // Stage 3
+        var filtered = FilterBlocksWithEngine(blocks, summary, engine); // Stage 4
+        var contents = ExtractContent(filtered);                        // Stage 5
+        contents = GroupBddSteps(contents);                             // Stage 5.3
 
         // Stage 5.5 — IgnorePrefixes filter (US4)
         // No-op when IgnorePrefixes is empty (default configuration).
-        var ignorePrefixes = _ruleEngine.IgnorePrefixes;
+        var ignorePrefixes = engine.IgnorePrefixes;
         if (ignorePrefixes.Count > 0)
             contents = contents
                 .Where(item => !ignorePrefixes.Any(p =>
                     item.PlainText.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
 
-        var classified = ClassifyContent(contents, summary);     // Stage 6
-        var deduplicated = Deduplicate(classified);              // Stage 7
+        var classified = ClassifyContent(contents, summary, engine);    // Stage 6
+        var deduplicated = Deduplicate(classified, summary);            // Stage 7
 
         sw.Stop();
         var durationMs = sw.ElapsedMilliseconds;
@@ -118,7 +129,7 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
                 "ExtractionEmpty: inputLengthChars={InputLengthChars}, reason={Reason}",
                 inputLengthChars, "no_candidates_found");
             return ExtractionPipelineResult.NonSuccess(
-                PipelineStatus.NoResults, inputLengthChars, inputLineCount, durationMs);
+                PipelineStatus.NoResults, inputLengthChars, inputLineCount, durationMs, profile);
         }
 
         var candidates = new List<ExtractionCandidate>(deduplicated.Count);
@@ -144,12 +155,12 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
 
         // no raw text — counts only
         _logger.LogInformation(
-            "ExtractionCompleted: candidateCount={CandidateCount}, requirementCount={RequirementCount}, testCount={TestCount}, needsClarificationCount={NeedsClarificationCount}, durationMs={DurationMs}, rulesEvaluatedCount={RulesEvaluatedCount}",
-            candidates.Count, reqCount, testCount, ncCount, durationMs, summary.TotalRulesEvaluated);
+            "ExtractionCompleted: candidateCount={CandidateCount}, requirementCount={RequirementCount}, testCount={TestCount}, needsClarificationCount={NeedsClarificationCount}, durationMs={DurationMs}, rulesEvaluatedCount={RulesEvaluatedCount}, duplicatesDroppedCount={DuplicatesDroppedCount}",
+            candidates.Count, reqCount, testCount, ncCount, durationMs, summary.TotalRulesEvaluated, summary.DuplicatesDropped);
 
         return ExtractionPipelineResult.Success(
             candidates, inputLengthChars, inputLineCount, durationMs,
-            reqCount, testCount, ncCount);
+            reqCount, testCount, ncCount, profile);
     }
 
     // =============================================================================
@@ -317,12 +328,13 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
     // Stage 4: Structure Filter
     // =============================================================================
 
-    private List<TextBlock> FilterBlocksWithEngine(IReadOnlyList<TextBlock> blocks, RuleExecutionSummary summary)
+    private static List<TextBlock> FilterBlocksWithEngine(
+        IReadOnlyList<TextBlock> blocks, RuleExecutionSummary summary, IExtractionRuleEngine engine)
     {
         var result = new List<TextBlock>(blocks.Count);
         foreach (var block in blocks)
         {
-            var evalResult = _ruleEngine.Evaluate(block, string.Empty);
+            var evalResult = engine.Evaluate(block, string.Empty);
             if (evalResult.IsFiltered)
             {
                 summary.FilteredBlockCount++;
@@ -387,8 +399,14 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
         // Strip link syntax [text](url) → display text
         text = LinkPattern.Replace(text, "$1");
 
-        // Strip inline code `text` → text
+        // Strip inline code `text` → text (before bold/italic so backtick content is resolved first)
         text = CodePattern.Replace(text, "$1");
+
+        // Strip bold **text** → text (must precede italic stripping to avoid partial matching of **)
+        text = BoldAsteriskPattern.Replace(text, "$1");
+
+        // Strip italic *text* → text
+        text = ItalicAsteriskPattern.Replace(text, "$1");
 
         return text.Trim();
     }
@@ -402,6 +420,82 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
     private static readonly Regex CodePattern = new(
         @"`([^`]*)`", RegexOptions.None, TimeSpan.FromMilliseconds(100));
 
+    // Bold markers **text** → text. Uses [^*\n]+ (one-or-more non-star, non-newline) so
+    // empty-content and triple-asterisk edge cases are handled without greedy mismatch.
+    private static readonly Regex BoldAsteriskPattern = new(
+        @"\*{2}([^*\n]+)\*{2}", RegexOptions.None, TimeSpan.FromMilliseconds(100));
+
+    // Italic markers *text* → text. Applied after bold so **text** is already resolved.
+    private static readonly Regex ItalicAsteriskPattern = new(
+        @"\*([^*\n]+)\*", RegexOptions.None, TimeSpan.FromMilliseconds(100));
+
+    // =============================================================================
+    // Stage 5.3: BDD Step Grouping
+    // Merges adjacent BDD step lines (Given/When/Then/And/But) into single ContentItems
+    // so that multi-line scenarios produce one TEST candidate instead of several.
+    // Orphaned And/But lines (no preceding BDD step) are silently dropped.
+    // =============================================================================
+
+    private enum BddStepKind { None, Given, WhenOrThen, AndOrBut }
+
+    private static BddStepKind GetBddStepKind(string text)
+    {
+        if (text.StartsWith("Given ", StringComparison.OrdinalIgnoreCase)) return BddStepKind.Given;
+        if (text.StartsWith("When ",  StringComparison.OrdinalIgnoreCase)) return BddStepKind.WhenOrThen;
+        if (text.StartsWith("Then ",  StringComparison.OrdinalIgnoreCase)) return BddStepKind.WhenOrThen;
+        if (text.StartsWith("And ",   StringComparison.OrdinalIgnoreCase)) return BddStepKind.AndOrBut;
+        if (text.StartsWith("But ",   StringComparison.OrdinalIgnoreCase)) return BddStepKind.AndOrBut;
+        return BddStepKind.None;
+    }
+
+    private static List<ContentItem> GroupBddSteps(List<ContentItem> items)
+    {
+        var result = new List<ContentItem>(items.Count);
+        var group  = new List<ContentItem>();
+
+        foreach (var item in items)
+        {
+            switch (GetBddStepKind(item.PlainText))
+            {
+                case BddStepKind.Given:
+                    FlushBddGroup(group, result);
+                    group.Clear();
+                    group.Add(item);
+                    break;
+
+                case BddStepKind.WhenOrThen:
+                    group.Add(item);
+                    break;
+
+                case BddStepKind.AndOrBut:
+                    if (group.Count > 0)
+                        group.Add(item);
+                    // else: orphaned continuation — silently drop
+                    break;
+
+                default:
+                    FlushBddGroup(group, result);
+                    group.Clear();
+                    result.Add(item);
+                    break;
+            }
+        }
+
+        FlushBddGroup(group, result);
+        return result;
+    }
+
+    private static void FlushBddGroup(List<ContentItem> group, List<ContentItem> result)
+    {
+        if (group.Count == 0) return;
+        result.Add(group.Count == 1
+            ? group[0]
+            : new ContentItem(
+                  string.Join(" ", group.Select(i => i.PlainText)),
+                  group[0].ContextHeading,
+                  group[0].SourceBlockType));
+    }
+
     // =============================================================================
     // Stage 6: Classification
     // =============================================================================
@@ -412,13 +506,14 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
         BlockType SourceBlockType,
         ClassificationSignal Signal,
         ScenarioKind Kind);
-    private List<ClassifiedItem> ClassifyContent(List<ContentItem> items, RuleExecutionSummary summary)
+    private static List<ClassifiedItem> ClassifyContent(
+        List<ContentItem> items, RuleExecutionSummary summary, IExtractionRuleEngine engine)
     {
         var result = new List<ClassifiedItem>(items.Count);
         foreach (var item in items)
         {
             var block = new TextBlock(item.PlainText, item.SourceBlockType, 0, item.ContextHeading);
-            var evalResult = _ruleEngine.Evaluate(block, item.PlainText);
+            var evalResult = engine.Evaluate(block, item.PlainText);
             summary.TotalRulesEvaluated += evalResult.EvaluatedRuleCount;
             if (evalResult.Signal == ClassificationSignal.Default)
                 summary.DefaultFallbackCount++;
@@ -431,17 +526,97 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
 
     // =============================================================================
     // Stage 7: Deduplication
+    // Two-pass algorithm:
+    //   Pass 1 — group items by normalized key; track the highest-quality candidate per group.
+    //   Pass 2 — emit winners in original document order; count dropped items for diagnostics.
+    // Normalization strips terminal punctuation, leading articles, and leading subject+modal
+    // phrases so that "System must validate X" and "Application should validate X" reduce to
+    // the same key. Word-order changes and mid-sentence modals are NOT normalized (determinism).
     // =============================================================================
 
-    private static List<ClassifiedItem> Deduplicate(List<ClassifiedItem> items)
+    private static List<ClassifiedItem> Deduplicate(List<ClassifiedItem> items, RuleExecutionSummary summary)
     {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = new List<ClassifiedItem>(items.Count);
-        foreach (var item in items)
-            if (seen.Add(item.PlainText.Trim()))
-                result.Add(item);
+        if (items.Count == 0) return items;
+
+        // Pass 1: for each normalized key, track the best candidate (index + quality score).
+        // Strictly-greater guard preserves first-occurrence when scores are equal.
+        var best = new Dictionary<string, (int Index, int Score)>(StringComparer.Ordinal);
+        for (int i = 0; i < items.Count; i++)
+        {
+            var key   = ComputeDedupKey(items[i].PlainText);
+            var score = CandidateQualityScore(items[i]);
+            if (!best.TryGetValue(key, out var existing) || score > existing.Score)
+                best[key] = (i, score);
+        }
+
+        // Pass 2: emit winners in original document order.
+        var winnerSet = new HashSet<int>(best.Values.Select(v => v.Index));
+        var result    = new List<ClassifiedItem>(best.Count);
+        for (int i = 0; i < items.Count; i++)
+            if (winnerSet.Contains(i))
+                result.Add(items[i]);
+
+        summary.DuplicatesDropped = items.Count - result.Count;
         return result;
     }
+
+    // Normalized deduplication key. Operates on PlainText that has already had markdown
+    // formatting stripped by Stage 5 (StripMarkdown). The key is always lowercase.
+    private static string ComputeDedupKey(string text)
+    {
+        var t = text.ToLowerInvariant();
+
+        // Strip terminal punctuation
+        t = t.TrimEnd('.', ',', ';', ':', '!', '?');
+
+        // Collapse internal whitespace
+        t = DedupWhitespacePattern.Replace(t.Trim(), " ");
+
+        // Strip leading article
+        if      (t.StartsWith("the ")) t = t[4..];
+        else if (t.StartsWith("an "))  t = t[3..];
+        else if (t.StartsWith("a "))   t = t[2..];
+
+        // Strip leading subject + modal phrase:
+        //   "system must", "application should", "app will", "service shall", etc.
+        //   Requires the modal — does NOT strip subject-only ("system validates").
+        t = DedupSubjectPhrasePattern.Replace(t, string.Empty);
+
+        // Strip any remaining leading standalone modal:
+        //   "should validate" → "validate", "must log" → "log"
+        t = DedupLeadingModalPattern.Replace(t, string.Empty);
+
+        return t.Trim();
+    }
+
+    // Quality score used to select the best candidate when multiple items share a key.
+    // Higher word count = more complete sentence. Signal bonus rewards explicit markers.
+    private static int CandidateQualityScore(ClassifiedItem item)
+    {
+        int words = item.PlainText.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        int bonus = item.Signal switch
+        {
+            ClassificationSignal.BddPattern          => 20,
+            ClassificationSignal.Rfc2119Uppercase    => 15,
+            ClassificationSignal.Rfc2119Lowercase    => 10,
+            ClassificationSignal.FrPrefix            => 10,
+            ClassificationSignal.ClarificationSignal => 5,
+            _                                        => 0,
+        };
+        return words + bonus;
+    }
+
+    // Operates on already-lowercased text (ComputeDedupKey lowercases before applying).
+    private static readonly Regex DedupWhitespacePattern = new(
+        @"\s+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex DedupSubjectPhrasePattern = new(
+        @"^(?:system|application|app|service)\s+(?:should|must|shall|will|can|may|is required to)\s+",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex DedupLeadingModalPattern = new(
+        @"^(?:should|must|shall|will|can|may)\s+",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     // =============================================================================
     // Helpers

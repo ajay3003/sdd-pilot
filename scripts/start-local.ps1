@@ -2,13 +2,17 @@ param(
     [ValidateSet("podman", "docker")]
     [string]$ContainerRuntime = "podman",
 
+    [string]$ComposeFile = "",
+
     [switch]$Fast,
     [switch]$SkipContainers,
     [switch]$BackendOnly,
     [switch]$FrontendOnly,
 
     [int]$ContainerDelaySeconds = 10,
-    [int]$BackendDelaySeconds = 20
+    [int]$BackendDelaySeconds = 20,
+    [int]$PodmanReadyRetries = 20,
+    [int]$PodmanReadyDelaySeconds = 2
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,7 +32,258 @@ function Require-Command($command, $hint) {
         Write-Host $hint -ForegroundColor Yellow
         throw "Missing command: $command"
     }
+
     Ok "$command found"
+}
+
+function Invoke-PodmanMachineCommand {
+    param([string[]]$Arguments)
+
+    $savedEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & podman @Arguments
+    } finally {
+        $ErrorActionPreference = $savedEAP
+    }
+
+    return $LASTEXITCODE
+}
+
+function Invoke-NativeCommand {
+    param(
+        [string]$Executable,
+        [string[]]$Arguments,
+        [switch]$ThrowOnError,
+        [switch]$ShowOutput
+    )
+
+    $stdoutFile = [System.IO.Path]::GetTempFileName()
+    $stderrFile = [System.IO.Path]::GetTempFileName()
+
+    $argString = ($Arguments | ForEach-Object {
+        if ($_ -match '\s') { "`"$_`"" } else { $_ }
+    }) -join ' '
+
+    try {
+        $process = Start-Process `
+            -FilePath $Executable `
+            -ArgumentList $argString `
+            -NoNewWindow `
+            -RedirectStandardOutput $stdoutFile `
+            -RedirectStandardError $stderrFile `
+            -PassThru `
+            -Wait
+
+        $stdout = Get-Content $stdoutFile -Raw -ErrorAction SilentlyContinue
+        $stderr = Get-Content $stderrFile -Raw -ErrorAction SilentlyContinue
+
+        if ($ShowOutput -and -not [string]::IsNullOrWhiteSpace($stdout)) {
+            Write-Host $stdout.TrimEnd()
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+            foreach ($line in ($stderr -split "`r`n|`n")) {
+                $trimmed = $line.Trim()
+                if (-not [string]::IsNullOrWhiteSpace($trimmed)) {
+                    Warn $trimmed
+                }
+            }
+        }
+
+        if ($ThrowOnError -and $process.ExitCode -ne 0) {
+            throw "'$Executable $argString' failed with exit code $($process.ExitCode)"
+        }
+
+        return [PSCustomObject]@{
+            ExitCode = $process.ExitCode
+            Stdout   = if ($null -ne $stdout) { $stdout } else { "" }
+            Stderr   = if ($null -ne $stderr) { $stderr } else { "" }
+        }
+    }
+    finally {
+        Remove-Item $stdoutFile -ErrorAction SilentlyContinue
+        Remove-Item $stderrFile -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-PodmanReady {
+    try {
+        $result = Invoke-NativeCommand -Executable "podman" -Arguments @("info")
+        return $result.ExitCode -eq 0
+    }
+    catch {
+        return $false
+    }
+}
+
+function Get-PodmanMachines {
+    $result = Invoke-NativeCommand -Executable "podman" -Arguments @("machine", "list", "--format", "json")
+
+    if ($result.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($result.Stdout)) {
+        return @()
+    }
+
+    try {
+        $machines = $result.Stdout | ConvertFrom-Json
+
+        if ($null -eq $machines) {
+            return @()
+        }
+
+        if ($machines -isnot [System.Array]) {
+            return @($machines)
+        }
+
+        return $machines
+    }
+    catch {
+        return @()
+    }
+}
+
+function Ensure-PodmanReady {
+
+    Require-Command "podman" "Install Podman Desktop or add podman to PATH."
+
+    Info "Checking Podman..."
+
+    if (Test-PodmanReady) {
+        Ok "Podman is already ready"
+        return
+    }
+
+    $machines = Get-PodmanMachines
+
+    if ($machines.Count -eq 0) {
+
+        Fail "No Podman machine found."
+
+        Write-Host ""
+        Write-Host "Run once manually:" -ForegroundColor Yellow
+        Write-Host "  podman machine init"
+        Write-Host "  podman machine start"
+
+        throw "Podman machine missing."
+    }
+
+    $machine = $machines | Select-Object -First 1
+
+    $machineName = $machine.Name
+
+    if ([string]::IsNullOrWhiteSpace($machineName)) {
+        $machineName = "podman-machine-default"
+    }
+
+    Info "Using Podman machine: $machineName"
+
+    $isRunning = $false
+
+    if ($null -ne $machine.Running) {
+        $isRunning = [bool]$machine.Running
+    }
+
+    if (-not $isRunning) {
+
+        Warn "Podman machine is stopped."
+        Info "Starting Podman machine..."
+
+        $exitCode = Invoke-PodmanMachineCommand -Arguments @("machine", "start", $machineName)
+
+        if ($exitCode -ne 0) {
+            throw "podman machine start failed with exit code $exitCode"
+        }
+
+        Start-Sleep -Seconds 5
+    }
+    else {
+
+        Warn "Podman machine already running, but Podman not responding."
+        Info "Restarting Podman machine..."
+
+        Invoke-PodmanMachineCommand -Arguments @("machine", "stop", $machineName)
+
+        Start-Sleep -Seconds 5
+
+        $exitCode = Invoke-PodmanMachineCommand -Arguments @("machine", "start", $machineName)
+
+        if ($exitCode -ne 0) {
+            throw "podman machine start failed with exit code $exitCode"
+        }
+
+        Start-Sleep -Seconds 10
+    }
+
+    Info "Waiting for Podman to become ready..."
+
+    for ($i = 1; $i -le $PodmanReadyRetries; $i++) {
+
+        if (Test-PodmanReady) {
+
+            Ok "Podman is ready"
+            return
+        }
+
+        Info "Podman not ready yet. Retry $i/$PodmanReadyRetries..."
+
+        Start-Sleep -Seconds $PodmanReadyDelaySeconds
+    }
+
+    Fail "Podman failed to become ready."
+
+    Write-Host ""
+    Write-Host "Try manually:" -ForegroundColor Yellow
+    Write-Host "  podman machine stop"
+    Write-Host "  podman machine start"
+    Write-Host "  podman info"
+    Write-Host ""
+    Write-Host "Or restart Podman Desktop completely."
+
+    throw "Podman readiness check failed."
+}
+
+function Find-ComposeFile {
+    param([string]$Root)
+
+    if (-not [string]::IsNullOrWhiteSpace($ComposeFile)) {
+        $explicit = if ([System.IO.Path]::IsPathRooted($ComposeFile)) {
+            $ComposeFile
+        }
+        else {
+            Join-Path $Root $ComposeFile
+        }
+
+        if (Test-Path $explicit) {
+            return (Resolve-Path $explicit).Path
+        }
+
+        throw "Compose file was specified but not found: $explicit"
+    }
+
+    $candidates = @(
+        "compose.yaml",
+        "compose.yml",
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        "infra\compose.yaml",
+        "infra\compose.yml",
+        "infra\docker-compose.yml",
+        "infra\docker-compose.yaml",
+        "AIAssisted\compose.yaml",
+        "AIAssisted\compose.yml",
+        "AIAssisted\docker-compose.yml",
+        "AIAssisted\docker-compose.yaml"
+    )
+
+    foreach ($candidate in $candidates) {
+        $path = Join-Path $Root $candidate
+
+        if (Test-Path $path) {
+            return (Resolve-Path $path).Path
+        }
+    }
+
+    return $null
 }
 
 function Start-ContainerServices {
@@ -37,24 +292,54 @@ function Start-ContainerServices {
         return
     }
 
-    Info "Starting container services using $ContainerRuntime..."
+    Info "Preparing container services using $ContainerRuntime..."
+
+    $composePath = Find-ComposeFile -Root $repoRoot
+
+    if ($null -eq $composePath) {
+        Fail "No compose file found."
+        Write-Host "Expected one of:" -ForegroundColor Yellow
+        Write-Host "  compose.yaml"
+        Write-Host "  docker-compose.yml"
+        Write-Host "  infra\compose.yaml"
+        Write-Host "  AIAssisted\docker-compose.yml"
+        Write-Host ""
+        Write-Host "Or run with:" -ForegroundColor Yellow
+        Write-Host "  .\start-local.ps1 -SkipContainers"
+        throw "Container startup cannot continue without a compose file."
+    }
+
+    Ok "Compose file: $composePath"
 
     if ($ContainerRuntime -eq "podman") {
-        Require-Command "podman" "Install Podman Desktop or add podman to PATH."
+        Ensure-PodmanReady
 
         if (Command-Exists "podman-compose") {
-            podman-compose up -d
+            Info "Running podman-compose..."
+            $composeResult = Invoke-NativeCommand -Executable "podman-compose" -Arguments @("-f", $composePath, "up", "-d") -ShowOutput
         }
         else {
-            podman compose up -d
+            Info "Running podman compose..."
+            $composeResult = Invoke-NativeCommand -Executable "podman" -Arguments @("compose", "-f", $composePath, "up", "-d") -ShowOutput
         }
 
-        podman ps
+        if ($composeResult.ExitCode -ne 0) {
+            throw "Podman compose failed."
+        }
+
+        Invoke-NativeCommand -Executable "podman" -Arguments @("ps") -ShowOutput
     }
     else {
         Require-Command "docker" "Install Docker Desktop or add docker to PATH."
-        docker compose up -d
-        docker ps
+
+        Info "Running docker compose..."
+        $composeResult = Invoke-NativeCommand -Executable "docker" -Arguments @("compose", "-f", $composePath, "up", "-d") -ShowOutput
+
+        if ($composeResult.ExitCode -ne 0) {
+            throw "Docker compose failed."
+        }
+
+        Invoke-NativeCommand -Executable "docker" -Arguments @("ps") -ShowOutput
     }
 
     if ($ContainerDelaySeconds -gt 0) {
@@ -70,12 +355,20 @@ function Find-ProjectFile {
     )
 
     $preferred = Get-ChildItem -Path $BasePath -Recurse -Filter "$PreferredName.csproj" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($preferred) { return $preferred.FullName }
+
+    if ($preferred) {
+        return $preferred.FullName
+    }
 
     $allProjects = Get-ChildItem -Path $BasePath -Recurse -Filter "*.csproj" -ErrorAction SilentlyContinue
-    $nonTest = $allProjects | Where-Object { $_.FullName -notmatch "\.Tests\.csproj$" } | Select-Object -First 1
 
-    if ($nonTest) { return $nonTest.FullName }
+    $nonTest = $allProjects |
+        Where-Object { $_.FullName -notmatch "\.Tests\.csproj$" } |
+        Select-Object -First 1
+
+    if ($nonTest) {
+        return $nonTest.FullName
+    }
 
     throw "No runnable project file found under $BasePath"
 }
@@ -87,8 +380,13 @@ function Start-DotNetProjectWindow {
         [string]$ProjectFile
     )
 
-    if (-not (Test-Path $WorkingPath)) { throw "$Name folder not found: $WorkingPath" }
-    if (-not (Test-Path $ProjectFile)) { throw "$Name project file not found: $ProjectFile" }
+    if (-not (Test-Path $WorkingPath)) {
+        throw "$Name folder not found: $WorkingPath"
+    }
+
+    if (-not (Test-Path $ProjectFile)) {
+        throw "$Name project file not found: $ProjectFile"
+    }
 
     if ($Fast) {
         $runCommand = "dotnet run --no-build --project `"$ProjectFile`""
@@ -109,6 +407,7 @@ $runCommand
 "@
 
     Info "Opening $Name window..."
+
     Start-Process powershell.exe -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", $command
 }
 
@@ -134,8 +433,13 @@ Info "Backend delay:   $BackendDelaySeconds seconds"
 
 Require-Command "dotnet" "Install .NET SDK 8 or add dotnet to PATH."
 
-if (-not (Test-Path $backendPath)) { throw "Backend folder not found: $backendPath" }
-if (-not (Test-Path $frontendPath)) { throw "Frontend folder not found: $frontendPath" }
+if (-not (Test-Path $backendPath)) {
+    throw "Backend folder not found: $backendPath"
+}
+
+if (-not (Test-Path $frontendPath)) {
+    throw "Frontend folder not found: $frontendPath"
+}
 
 $backendProject = Find-ProjectFile -BasePath $backendPath -PreferredName "BirkNext.Api"
 $frontendProject = Find-ProjectFile -BasePath $frontendPath -PreferredName "BirkNext.Web"
@@ -172,38 +476,27 @@ try {
     Write-Host ""
     Write-Host "How to access the frontend:" -ForegroundColor Cyan
     Write-Host "  1. Look in the 'BirkNext Frontend' window."
-    Write-Host "  2. Find the line that says something like:"
-    Write-Host "       Now listening on: https://localhost:xxxx"
+    Write-Host "  2. Find: Now listening on: https://localhost:xxxx"
     Write-Host "  3. Open that URL in your browser."
     Write-Host ""
-    Write-Host "Likely frontend URLs to try:" -ForegroundColor Cyan
-    Write-Host "  https://localhost:5001"
-    Write-Host "  https://localhost:7001"
-    Write-Host "  https://localhost:7043"
-    Write-Host ""
-    Write-Host "Useful paths after frontend opens:" -ForegroundColor Cyan
+    Write-Host "Useful paths:" -ForegroundColor Cyan
     Write-Host "  /extract"
     Write-Host "  /scenarios"
-    Write-Host ""
-    Write-Host "Backend GraphQL is usually available at:" -ForegroundColor Cyan
-    Write-Host "  https://localhost:<backend-port>/graphql"
-    Write-Host ""
 }
 catch {
     Fail $_.Exception.Message
     Write-Host ""
-    Write-Host "Troubleshooting:"
-    Write-Host "  1. Check Podman/Docker is running"
-    Write-Host "  2. Check .NET SDK 8 is installed"
-    Write-Host "  3. Try: .\start-local.ps1 -SkipContainers"
-    Write-Host "  4. Try longer delays:"
-    Write-Host "       .\start-local.ps1 -ContainerDelaySeconds 20 -BackendDelaySeconds 30"
-    Write-Host "  5. If project detection fails, verify .csproj names under AIAssisted\backend and AIAssisted\frontend"
+    Write-Host "Troubleshooting:" -ForegroundColor Yellow
+    Write-Host "  podman machine list"
+    Write-Host "  podman machine start"
+    Write-Host "  podman machine init   # only if no machine exists"
+    Write-Host "  .\start-local.ps1 -FrontendOnly -SkipContainers"
     throw
 }
 finally {
     Pop-Location
 }
 
+Write-Host ""
 Write-Host "Press Enter to close this launcher window..."
 [void][System.Console]::ReadLine()

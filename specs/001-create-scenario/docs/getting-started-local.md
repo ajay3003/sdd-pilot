@@ -1,212 +1,93 @@
 # BirkNext Local Startup Guide
 
-## Purpose
+## Recommended Startup
 
-This guide explains how to start BirkNext locally for development, testing, demos, and troubleshooting.
-
-## Recommended Startup Method
-
-Use the local startup scripts:
+Use:
 
 ```text
 scripts/start-local.bat
-scripts/start-local.ps1
 ```
 
-Recommended for Windows users:
-
-```text
-Double-click scripts/start-local.bat
-```
-
-The batch file runs the PowerShell script with execution-policy bypass.
-
-## What the Startup Script Does
-
-The script:
-
-1. Starts container services using Podman by default
-2. Waits for containers/database to initialize
-3. Starts backend in a separate PowerShell window
-4. Waits before starting frontend
-5. Starts frontend in a separate PowerShell window
-6. Prints guidance for accessing frontend URLs
-
-## Default Runtime
-
-Podman is the default container runtime.
+or:
 
 ```powershell
 .\scripts\start-local.ps1
 ```
 
-Docker can be used instead:
+## What the Startup Script Does
+
+1. Starts container services using Podman by default
+2. Checks Podman machine readiness
+3. Starts/restarts Podman machine where possible
+4. Waits for database/container initialization
+5. Starts backend in a separate PowerShell window
+6. Waits before starting frontend
+7. Starts frontend in a separate PowerShell window
+
+## Runtime Options
+
+Podman is default:
+
+```powershell
+.\scripts\start-local.ps1
+```
+
+Docker:
 
 ```powershell
 .\scripts\start-local.ps1 -ContainerRuntime docker
 ```
 
-## Common Script Options
-
-### Default startup
-
-```powershell
-.\scripts\start-local.ps1
-```
-
-### Fast mode
-
-Use only after successful build:
-
-```powershell
-.\scripts\start-local.ps1 -Fast
-```
-
-### Skip containers
-
-```powershell
-.\scripts\start-local.ps1 -SkipContainers
-```
-
-### Longer delays
-
-```powershell
-.\scripts\start-local.ps1 -ContainerDelaySeconds 20 -BackendDelaySeconds 30
-```
-
-### Backend only
-
-```powershell
-.\scripts\start-local.ps1 -BackendOnly
-```
-
-### Frontend only
+Frontend only:
 
 ```powershell
 .\scripts\start-local.ps1 -FrontendOnly -SkipContainers
 ```
 
-## Prerequisites
+Longer delays:
 
-Install:
+```powershell
+.\scripts\start-local.ps1 -ContainerDelaySeconds 20 -BackendDelaySeconds 30
+```
+
+## Prerequisites
 
 - .NET SDK 8
 - Podman Desktop or Docker Desktop
 - Git
 
-Optional:
-
-- Visual Studio 2022
-- VS Code
-
-## Typical Repository Structure
-
-```text
-BirkNext/
-├── AIAssisted/
-│   ├── frontend/
-│   └── backend/
-├── scripts/
-│   ├── start-local.bat
-│   └── start-local.ps1
-├── specs/
-├── CLAUDE.md
-└── .gitignore
-```
-
-## Manual Startup with Podman
-
-```bash
-podman compose up -d
-podman ps
-```
-
-Stop:
-
-```bash
-podman compose down
-```
-
-## Start Backend Manually
-
-```bash
-cd AIAssisted/backend
-dotnet restore
-dotnet build
-dotnet run
-```
-
-If needed:
-
-```bash
-dotnet run --project path/to/backend-project.csproj
-```
-
-## Start Frontend Manually
-
-```bash
-cd AIAssisted/frontend
-dotnet restore
-dotnet build
-dotnet run
-```
-
-If needed:
-
-```bash
-dotnet run --project path/to/frontend-project.csproj
-```
-
-## Access the Frontend
-
-Look in the frontend PowerShell window for:
-
-```text
-Now listening on: https://localhost:xxxx
-```
-
-Open that URL in the browser.
-
-Useful paths:
+## Useful Paths
 
 ```text
 /extract
 /scenarios
 ```
 
-## Verify Scenario Extraction
+## Verify Extraction and Review
 
-Open:
+1. Open `/extract`
+2. Import or paste text
+3. Click **Extract Scenarios**
+4. Change review statuses
+5. Click **Save Review**
+6. Select candidates
+7. Click **Save Selected**
+8. Open `/scenarios`
 
-```text
-/extract
+## Podman Manual Commands
+
+```bash
+podman machine list
+podman machine start
+podman ps
 ```
 
-Paste:
+Only if no machine exists:
 
-```text
-- User can archive scenarios
-- Verify archive button visibility
-- Clarify archive retention policy
+```bash
+podman machine init
+podman machine start
 ```
-
-Expected:
-
-- REQUIREMENT candidate
-- TEST candidate
-- NEEDS_CLARIFICATION candidate
-
-## Verify File Import
-
-On the Extract page:
-
-1. Import a `.md` file
-2. Verify text appears in the input area
-3. Click Extract
-4. Review candidates
-5. Save selected candidates
-
-Repeat with a `.txt` file.
 
 ## Run Tests
 
@@ -222,49 +103,4 @@ Frontend:
 ```bash
 cd AIAssisted/frontend
 dotnet test
-```
-
-## Useful Development Commands
-
-```bash
-dotnet restore
-dotnet build
-dotnet test
-dotnet format --verify-no-changes
-```
-
-## Common Problems
-
-### PowerShell blocks script execution
-
-Run through the batch file:
-
-```text
-scripts/start-local.bat
-```
-
-Or run:
-
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
-```
-
-### Database not running
-
-```bash
-podman ps
-```
-
-or:
-
-```bash
-docker ps
-```
-
-### Frontend URL unknown
-
-Check the frontend terminal for:
-
-```text
-Now listening on: https://localhost:xxxx
 ```

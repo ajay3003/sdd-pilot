@@ -65,3 +65,31 @@ textarea:disabled {
     display: flex;
     align-items: center;
 }
+
+.profile-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.profile-radio-group {
+    display: flex;
+    gap: 1.25rem;
+}
+
+.profile-radio-label {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--clr-text-body, #1e293b);
+    cursor: pointer;
+    margin-bottom: 0;
+}
+
+.profile-helper-text {
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle, #64748b);
+    margin: 0;
+}

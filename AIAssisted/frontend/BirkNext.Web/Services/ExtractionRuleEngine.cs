@@ -45,7 +45,7 @@ internal sealed class ExtractionRuleEngine : IExtractionRuleEngine
                 continue;
 
             evaluatedCount++;
-            if (EvaluateClassificationCondition(rule.Condition, strippedText)
+            if (EvaluateClassificationCondition(rule.Condition, strippedText, block)
                 && (winner is null || rule.Priority > winner.Priority))
             {
                 winner = rule;
@@ -75,7 +75,8 @@ internal sealed class ExtractionRuleEngine : IExtractionRuleEngine
     // → return Default" guard, ensuring over-limit lines always resolve to NeedsClarification/Default.
     // It also prevents ReDoS on adversarially crafted long inputs.
     // PrefixMatchCondition uses StartsWith — O(prefix_length), no ReDoS surface; no length cap needed.
-    private bool EvaluateClassificationCondition(ClassificationCondition condition, string strippedText) =>
+    // HeadingContextCondition matches block.PrecedingHeading — no length cap needed (headings are short).
+    private bool EvaluateClassificationCondition(ClassificationCondition condition, string strippedText, TextBlock block) =>
         condition switch
         {
             PatternMatchCondition pmc =>
@@ -83,6 +84,8 @@ internal sealed class ExtractionRuleEngine : IExtractionRuleEngine
                 && pmc.Pattern.IsMatch(strippedText),
             PrefixMatchCondition pmc =>
                 strippedText.StartsWith(pmc.Prefix, StringComparison.OrdinalIgnoreCase),
+            HeadingContextCondition hcc =>
+                block.PrecedingHeading is not null && hcc.Pattern.IsMatch(block.PrecedingHeading),
             UnconditionalCondition => true,
             _ => throw new InvalidOperationException(
                 $"Unknown classification condition type: {condition.GetType().Name}")
@@ -117,15 +120,16 @@ internal sealed class ExtractionRuleEngine : IExtractionRuleEngine
             throw new InvalidOperationException(
                 $"Rule names must be unique across all rules. Duplicates: {string.Join(", ", duplicates)}");
 
-        // (4) Defence-in-depth: PatternMatchCondition patterns must not be null.
-        //     PatternMatchCondition's constructor already enforces this; this is an extra guard.
+        // (4) Defence-in-depth: PatternMatchCondition and HeadingContextCondition patterns must not be null.
+        //     Constructors already enforce this; this is an extra guard.
         var nullPatternRules = ruleSet.ClassificationRules
-            .Where(r => r.Condition is PatternMatchCondition { Pattern: null })
+            .Where(r => r.Condition is PatternMatchCondition { Pattern: null }
+                     || r.Condition is HeadingContextCondition { Pattern: null })
             .Select(r => r.Name)
             .ToList();
         if (nullPatternRules.Count > 0)
             throw new InvalidOperationException(
-                $"PatternMatchCondition patterns must not be null. Affected rules: "
+                $"PatternMatchCondition/HeadingContextCondition patterns must not be null. Affected rules: "
                 + string.Join(", ", nullPatternRules));
 
         // (5) Defence-in-depth: no ClassificationRule at priority 0 other than the unconditional Default.

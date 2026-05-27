@@ -2,29 +2,31 @@
 
 ## Overview
 
-This guide explains operational and administrative responsibilities for BirkNext.
-
 BirkNext currently supports:
 
 - manual scenario management
 - deterministic scenario extraction
 - configurable extraction rules
 - local `.md` / `.txt` import
-- review-before-save scenario persistence
+- review workflow
+- reviewed candidate persistence
+- finalized scenario persistence
+- grouped review sections
 - modern frontend UX with shared design-system styles
 
 ## Responsibilities
 
-Administrators or technical maintainers should:
+Administrators or maintainers should:
 
 - validate local startup configuration
+- verify database/container startup
 - configure extraction rules
 - verify deterministic extraction behavior
-- monitor application logs
-- verify that raw specification text is not logged
-- verify backend/frontend startup
+- monitor logs
+- verify raw specification text is not logged
 - maintain startup scripts
-- keep documentation updated after feature changes
+- verify review persistence
+- verify finalized scenario persistence
 
 ## Local Startup
 
@@ -34,60 +36,41 @@ Recommended startup method:
 scripts/start-local.bat
 ```
 
-The PowerShell script:
+The PowerShell launcher uses Podman by default, detects compose files, checks Podman readiness, starts containers, starts backend, then starts frontend.
 
-- starts Podman/Docker containers
-- waits for database/container initialization
-- starts backend
-- waits before starting frontend
-- starts frontend
-- prints guidance for accessing frontend URLs
+## Persistence Responsibilities
 
-## Configuration
+| Area | Purpose |
+|---|---|
+| reviewed_candidates | QA review workspace and audit trail |
+| scenarios | finalized scenario registry |
 
-Extraction rule configuration is loaded at startup.
-
-Default expected location:
-
-```text
-wwwroot/appsettings.json
-```
-
-Configuration changes require frontend restart.
-
-Invalid configuration should fall back safely to defaults.
+**Save Review** persists reviewed candidates.  
+**Save Selected** creates finalized scenarios.
 
 ## Observability Expectations
 
-Logs should help diagnose:
-
-- application startup
-- rule configuration loading
-- rule configuration fallback
-- extraction completed
-- save completed
-- validation failures
+Logs should help diagnose startup, rule loading, extraction, review save, scenario save, and validation failures.
 
 Logs must not contain:
 
 - raw pasted specification text
 - uploaded file content
 - candidate body text
-- private vocabulary values from rule configuration
+- private configured vocabulary values
 
 ## Post-Deployment Checks
 
-After deployment or local startup, verify:
+Verify:
 
-1. Backend starts successfully
-2. Frontend starts successfully
+1. Backend starts
+2. Frontend starts
 3. GraphQL endpoint is reachable
-4. Extract page loads
-5. `.md` import works
-6. `.txt` import works
-7. unsupported file is rejected
-8. extraction produces candidates
-9. selected scenarios can be saved
+4. `.md` / `.txt` import works
+5. extraction produces grouped candidates
+6. filters/search work
+7. review statuses can be changed
+8. Save Review persists reviewed candidates
+9. Save Selected creates scenarios
 10. saved scenarios appear on Scenarios page
-11. no console errors are visible
-12. logs do not contain raw specification text
+11. no browser console errors appear

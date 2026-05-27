@@ -1,6 +1,7 @@
 using BirkNext.Api.Models;
 using BirkNext.Api.Services;
 using HotChocolate;
+using HotChocolate.Types;
 
 namespace BirkNext.Api.GraphQL;
 
@@ -17,5 +18,25 @@ public class Query
         CancellationToken cancellationToken)
     {
         return await scenarioService.GetAllAsync(projectId, cancellationToken);
+    }
+
+    /// <summary>Returns reviewed candidates for the given project, optionally filtered by session.</summary>
+    public async Task<IReadOnlyList<ReviewedCandidate>> ReviewedCandidatesAsync(
+        string projectId,
+        string? sessionId,
+        [Service] ReviewedCandidateService reviewedCandidateService,
+        CancellationToken cancellationToken)
+    {
+        return await reviewedCandidateService.GetByProjectAsync(projectId, sessionId, cancellationToken);
+    }
+
+    /// <summary>Returns candidate links for the given project, optionally filtered by session.</summary>
+    public async Task<IReadOnlyList<CandidateLink>> CandidateLinksAsync(
+        string projectId,
+        string? sessionId,
+        [Service] CandidateLinkService candidateLinkService,
+        CancellationToken cancellationToken)
+    {
+        return await candidateLinkService.GetByProjectAsync(projectId, sessionId, cancellationToken);
     }
 }
