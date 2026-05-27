@@ -720,7 +720,6 @@ public sealed class ScenarioExtractionServiceTests
     [InlineData("Measurable Outcomes")]
     [InlineData("Edge Cases")]
     [InlineData("Functional Requirements")]
-    [InlineData("Non-Goals")]
     [InlineData("Independent Test: Can be fully tested by submitting the form")]
     public async Task Section_heading_labels_are_filtered_by_default_ignore_prefixes(string line)
     {

@@ -49,6 +49,33 @@ public class ExtractionCandidateRowTests : BunitContext
     }
 
     [Fact]
+    public void CandidateIdentity_UsesRequirementIdWhenPresent()
+    {
+        var cut = Render<ExtractionCandidateRow>(p =>
+            p.Add(c => c.Candidate, MakeCandidate(title: "FR-001: The system MUST validate credentials")));
+
+        cut.Find("[data-testid='candidate-identity']").TextContent.Trim().Should().Be("FR-001");
+    }
+
+    [Fact]
+    public void CandidateIdentity_UsesTestForTestCandidates()
+    {
+        var cut = Render<ExtractionCandidateRow>(p =>
+            p.Add(c => c.Candidate, MakeCandidate(kind: ScenarioKind.Test)));
+
+        cut.Find("[data-testid='candidate-identity']").TextContent.Trim().Should().Be("TEST");
+    }
+
+    [Fact]
+    public void CandidateIdentity_UsesNeedsClarificationForClarificationCandidates()
+    {
+        var cut = Render<ExtractionCandidateRow>(p =>
+            p.Add(c => c.Candidate, MakeCandidate(kind: ScenarioKind.NeedsClarification)));
+
+        cut.Find("[data-testid='candidate-identity']").TextContent.Trim().Should().Be("NEEDS_CLARIFICATION");
+    }
+
+    [Fact]
     public void ContextHeading_AppearsWhenNonNull()
     {
         var cut = Render<ExtractionCandidateRow>(p =>

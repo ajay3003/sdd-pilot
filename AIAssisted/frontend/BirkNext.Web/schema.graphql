@@ -120,9 +120,10 @@ type SaveReviewedCandidatesPayload {
 }
 
 enum CandidateLinkType {
-  REQUIREMENT_TEST
-  REQUIREMENT_CLARIFICATION
-}
+    REQUIREMENT_TEST
+    REQUIREMENT_CLARIFICATION
+    TEST_CLARIFICATION
+  }
 
 type CandidateLink {
   id: ID!

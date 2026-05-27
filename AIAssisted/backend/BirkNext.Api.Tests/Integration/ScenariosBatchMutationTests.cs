@@ -285,6 +285,90 @@ public class ScenariosBatchMutationTests : IAsyncLifetime
         }
         """;
 
+    private const string SaveCandidateLinksMutation = """
+        mutation SaveCandidateLinks($input: SaveCandidateLinksInput!) {
+          saveCandidateLinks(input: $input) {
+            savedCount
+            correlationId
+          }
+        }
+        """;
+
+    private const string CandidateLinksQuery = """
+        query GetCandidateLinks($projectId: String!, $sessionId: String) {
+          candidateLinks(projectId: $projectId, sessionId: $sessionId) {
+            sourceCandidateRef
+            targetCandidateRef
+            linkType
+            projectId
+            sessionId
+          }
+        }
+        """;
+
+    [Fact]
+    public async Task SaveCandidateLinks_PersistsRequirementTestAndClarificationLinks()
+    {
+        var response = await _client.PostAsync("/graphql", GqlRequest(SaveCandidateLinksMutation, new
+        {
+            input = new
+            {
+                projectId = "proj-links-01",
+                sessionId = "session-links-01",
+                links = new[]
+                {
+                    new { sourceCandidateRef = "req-1", targetCandidateRef = "test-1", linkType = "REQUIREMENT_TEST" },
+                    new { sourceCandidateRef = "req-1", targetCandidateRef = "clr-1", linkType = "REQUIREMENT_CLARIFICATION" },
+                    new { sourceCandidateRef = "test-1", targetCandidateRef = "clr-1", linkType = "TEST_CLARIFICATION" }
+                }
+            }
+        }));
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("data").GetProperty("saveCandidateLinks")
+            .GetProperty("savedCount").GetInt32().Should().Be(3);
+
+        var queryResponse = await _client.PostAsync("/graphql", GqlRequest(CandidateLinksQuery, new
+        {
+            projectId = "proj-links-01",
+            sessionId = "session-links-01"
+        }));
+        var queryJson = await queryResponse.Content.ReadAsStringAsync();
+        using var queryDoc = JsonDocument.Parse(queryJson);
+        var links = queryDoc.RootElement.GetProperty("data").GetProperty("candidateLinks").EnumerateArray().ToList();
+
+        links.Should().HaveCount(3);
+        links.Select(l => l.GetProperty("linkType").GetString()).Should().BeEquivalentTo(
+            "REQUIREMENT_TEST",
+            "REQUIREMENT_CLARIFICATION",
+            "TEST_CLARIFICATION");
+    }
+
+    [Fact]
+    public async Task SaveCandidateLinks_DeduplicatesSamePairRegardlessOfDirection()
+    {
+        var response = await _client.PostAsync("/graphql", GqlRequest(SaveCandidateLinksMutation, new
+        {
+            input = new
+            {
+                projectId = "proj-links-02",
+                sessionId = "session-links-02",
+                links = new[]
+                {
+                    new { sourceCandidateRef = "req-1", targetCandidateRef = "test-1", linkType = "REQUIREMENT_TEST" },
+                    new { sourceCandidateRef = "test-1", targetCandidateRef = "req-1", linkType = "REQUIREMENT_TEST" }
+                }
+            }
+        }));
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.GetProperty("data").GetProperty("saveCandidateLinks")
+            .GetProperty("savedCount").GetInt32().Should().Be(1);
+    }
+
     [Fact]
     public async Task CreateScenarios_TitleTooLong_ErrorIncludesTitleField()
     {
@@ -450,7 +534,7 @@ public class ScenariosBatchMutationTests : IAsyncLifetime
             }
         }));
 
-        var match = logFactory.Messages
+        var match = logFactory.Messages.ToList()
             .Select(m => System.Text.RegularExpressions.Regex.Match(m, @"durationMs=(\d+)"))
             .FirstOrDefault(m => m.Success);
 

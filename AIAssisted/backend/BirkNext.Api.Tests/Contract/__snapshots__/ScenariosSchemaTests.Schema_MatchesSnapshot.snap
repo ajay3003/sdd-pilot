@@ -3,6 +3,16 @@
   mutation: Mutation
 }
 
+type CandidateLink {
+  id: ID!
+  projectId: String!
+  sessionId: String!
+  sourceCandidateRef: String!
+  targetCandidateRef: String!
+  linkType: CandidateLinkType!
+  createdAt: DateTime!
+}
+
 "Indicates that creation of a single batch item failed."
 type CreateScenarioError {
   code: String!
@@ -39,6 +49,10 @@ type Mutation {
   createScenario(input: CreateScenarioInput!): CreateScenarioPayload! @cost(weight: "10")
   "Creates multiple scenarios from a completed extraction review session."
   createScenarios(input: CreateScenariosInput!): CreateScenariosPayload! @cost(weight: "10")
+  "Persists the QA review decisions for all candidates in an extraction session."
+  saveReviewedCandidates(input: SaveReviewedCandidatesInput!): SaveReviewedCandidatesPayload! @cost(weight: "10")
+  "Persists the traceability links between candidates for an extraction session."
+  saveCandidateLinks(input: SaveCandidateLinksInput!): SaveCandidateLinksPayload! @cost(weight: "10")
 }
 
 "Root query type."
@@ -47,6 +61,35 @@ type Query {
   ping: String
   "Returns all scenarios for the given project, newest first."
   scenarios(projectId: String!): [Scenario!]! @cost(weight: "10")
+  "Returns reviewed candidates for the given project, optionally filtered by session."
+  reviewedCandidates(projectId: String! sessionId: String): [ReviewedCandidate!]! @cost(weight: "10")
+  "Returns candidate links for the given project, optionally filtered by session."
+  candidateLinks(projectId: String! sessionId: String): [CandidateLink!]! @cost(weight: "10")
+}
+
+"A candidate extracted from a document with its QA review decision."
+type ReviewedCandidate {
+  id: ID!
+  title: String!
+  classification: ScenarioKind!
+  reviewStatus: CandidateReviewStatus!
+  sourceDocument: String
+  sourceSection: String
+  projectId: String!
+  sessionId: String!
+  reviewedBy: String!
+  createdAt: DateTime!
+  reviewedAt: DateTime
+}
+
+type SaveCandidateLinksPayload {
+  savedCount: Int!
+  correlationId: String!
+}
+
+type SaveReviewedCandidatesPayload {
+  savedCount: Int!
+  correlationId: String!
 }
 
 "Represents a scenario used for specification and QA."
@@ -96,6 +139,47 @@ input ExtractionMetadataInput {
   selectedCount: Int!
   extractionDurationMs: Int!
   sessionId: String!
+}
+
+input SaveCandidateLinkItemInput {
+  sourceCandidateRef: String!
+  targetCandidateRef: String!
+  linkType: CandidateLinkType!
+}
+
+input SaveCandidateLinksInput {
+  projectId: String!
+  sessionId: String!
+  links: [SaveCandidateLinkItemInput!]!
+}
+
+input SaveReviewedCandidateItemInput {
+  title: String!
+  classification: ScenarioKind!
+  reviewStatus: CandidateReviewStatus!
+  sourceDocument: String
+  sourceSection: String
+  projectId: String!
+  reviewedBy: String
+  reviewedAt: DateTime
+}
+
+input SaveReviewedCandidatesInput {
+  items: [SaveReviewedCandidateItemInput!]!
+  sessionId: String
+}
+
+enum CandidateLinkType {
+  REQUIREMENT_TEST
+  REQUIREMENT_CLARIFICATION
+  TEST_CLARIFICATION
+}
+
+enum CandidateReviewStatus {
+  NEW
+  ACCEPTED
+  REJECTED
+  NEEDS_REVIEW
 }
 
 enum ScenarioKind {

@@ -36,10 +36,10 @@
     }
     else
     {
-        <InputFile id="spec-file-input" accept=".md,.txt" OnChange="HandleFileSelected"
+        <InputFile id="@InputId" accept=".md,.txt" OnChange="HandleFileSelected"
                    class="import-file-input-hidden" disabled="@IsDisabled"
                    data-testid="import-file-input" />
-        <label for="spec-file-input" class="import-dropzone-label">
+        <label for="@InputId" class="import-dropzone-label">
             <span class="import-icon" aria-hidden="true">&#128194;</span>
             @if (IsDragOver)
             {
@@ -58,6 +58,7 @@
     [Parameter] public EventCallback<string> OnFileImported { get; set; }
     [Parameter] public EventCallback OnFileRemoved { get; set; }
     [Parameter] public bool IsDisabled { get; set; }
+    [Parameter] public string InputId { get; set; } = "spec-file-input";
 
     private enum ImportState { Idle, Reading, FileLoaded, Error }
 

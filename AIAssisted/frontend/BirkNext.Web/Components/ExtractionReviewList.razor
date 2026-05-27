@@ -32,6 +32,169 @@ else
             }
         </p>
 
+        @{
+            var rNewCount       = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.New);
+            var rAcceptedCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted);
+            var rRejectedCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Rejected);
+            var rNeedsRevCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.NeedsReview);
+            var hasNonNewStatus = rAcceptedCount > 0 || rRejectedCount > 0 || rNeedsRevCount > 0;
+            var totalCandidates = PipelineResult.Candidates.Count;
+            var reviewedCount = rAcceptedCount + rRejectedCount + rNeedsRevCount;
+            var reviewedPct = Percent(reviewedCount, totalCandidates);
+            var acceptedRatio = Percent(rAcceptedCount, totalCandidates);
+            var rejectedRatio = Percent(rRejectedCount, totalCandidates);
+            var requirementsWithTests = CountRequirementsWithTests();
+            var requirementsWithoutTests = CountRequirementsWithoutTests();
+            var requirementsWithClarifications = CountRequirementsWithClarifications();
+            var requirementsWithUnresolvedClarifications = CountRequirementsWithUnresolvedClarifications();
+            var testsWithoutRequirements = CountTestsWithoutRequirements();
+            var clarificationsWithoutRequirements = CountClarificationsWithoutRequirements();
+            var unresolvedClarifications = CountUnresolvedClarifications();
+            var requirementsCoveredPct = Percent(requirementsWithTests, PipelineResult.RequirementCount);
+            var requirementsWithoutTestsPct = Percent(requirementsWithoutTests, PipelineResult.RequirementCount);
+            var testsWithRequirements = PipelineResult.TestCount - testsWithoutRequirements;
+            var testsLinkedToRequirementsPct = Percent(testsWithRequirements, PipelineResult.TestCount);
+            var pendingRequirements = CountPending(ScenarioKind.Requirement);
+            var pendingTests = CountPending(ScenarioKind.Test);
+            var pendingClarifications = CountPending(ScenarioKind.NeedsClarification);
+        }
+
+        <section class="coverage-dashboard qa-dashboard" aria-label="QA review dashboard" data-testid="coverage-dashboard">
+            <div class="qa-dashboard-card qa-dashboard-card-progress">
+                <h3 class="qa-dashboard-title">Review Progress</h3>
+                <div class="qa-metric-grid">
+                    <button type="button" class="coverage-tile qa-metric qa-metric-primary" @onclick="() => _activeReviewFilter = null" aria-label="Show all review statuses">
+                        <span class="coverage-value">@reviewedPct%</span>
+                        <span class="coverage-label">Reviewed</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-accepted" @onclick="() => ApplyReviewFilter(CandidateReviewStatus.Accepted)" aria-label="Show accepted candidates">
+                        <span class="coverage-value">@rAcceptedCount</span>
+                        <span class="coverage-label">Accepted</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-rejected" @onclick="() => ApplyReviewFilter(CandidateReviewStatus.Rejected)" aria-label="Show rejected candidates">
+                        <span class="coverage-value">@rRejectedCount</span>
+                        <span class="coverage-label">Rejected</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-needsreview @(rNeedsRevCount > 0 ? "has-warning" : "")" @onclick="() => ApplyReviewFilter(CandidateReviewStatus.NeedsReview)" aria-label="Show candidates marked needs review">
+                        <span class="coverage-value">@rNeedsRevCount</span>
+                        <span class="coverage-label">Needs review</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-new @(rNewCount > 0 ? "has-warning" : "")" @onclick="() => ApplyReviewFilter(CandidateReviewStatus.New)" aria-label="Show unreviewed candidates">
+                        <span class="coverage-value">@rNewCount</span>
+                        <span class="coverage-label">Unreviewed</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="qa-dashboard-card">
+                <h3 class="qa-dashboard-title">Requirements Missing Tests</h3>
+                <div class="qa-metric-grid">
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-test" @onclick="() => ApplyTraceabilityFilter(LinkFilter.RequirementsWithTests)" aria-label="Show requirements with linked tests">
+                        <span class="coverage-value">@requirementsWithTests</span>
+                        <span class="coverage-label">With tests</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-gap @(requirementsWithoutTests > 0 ? "has-gap" : "")" @onclick="() => ApplyTraceabilityFilter(LinkFilter.RequirementsWithoutTests)" aria-label="Show requirements without linked tests">
+                        <span class="coverage-value">@requirementsWithoutTests</span>
+                        <span class="coverage-label">Missing tests</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="qa-dashboard-card">
+                <h3 class="qa-dashboard-title">Open Clarification Risk</h3>
+                <div class="qa-metric-grid">
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-clarification @(requirementsWithUnresolvedClarifications > 0 ? "has-warning" : "")" @onclick="() => ApplyTraceabilityFilter(LinkFilter.RequirementsWithClarifications)" aria-label="Show requirements with linked clarifications">
+                        <span class="coverage-value">@requirementsWithUnresolvedClarifications</span>
+                        <span class="coverage-label">Reqs with unresolved clarifications</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-clarification @(unresolvedClarifications > 0 ? "has-warning" : "")" @onclick="() => ApplyTypeFilter(ScenarioKind.NeedsClarification)" aria-label="Show clarification candidates">
+                        <span class="coverage-value">@unresolvedClarifications</span>
+                        <span class="coverage-label">Unresolved clarifications</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="qa-dashboard-card">
+                <h3 class="qa-dashboard-title">Extraction Quality</h3>
+                <div class="qa-metric-grid">
+                    <button type="button" class="coverage-tile qa-metric qa-metric-primary" @onclick="ClearDashboardFilters" aria-label="Show all extracted candidates">
+                        <span class="coverage-value">@totalCandidates</span>
+                        <span class="coverage-label">Extracted</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-accepted" @onclick="() => ApplyReviewFilter(CandidateReviewStatus.Accepted)" aria-label="Show accepted candidates">
+                        <span class="coverage-value">@rAcceptedCount</span>
+                        <span class="coverage-label">Accepted candidates</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-rejected @(rRejectedCount > 0 ? "has-warning" : "")" @onclick="() => ApplyReviewFilter(CandidateReviewStatus.Rejected)" aria-label="Show rejected candidates">
+                        <span class="coverage-value">@rRejectedCount</span>
+                        <span class="coverage-label">Rejected candidates</span>
+                    </button>
+                    <div class="coverage-tile qa-metric qa-metric-static" role="group" aria-label="Acceptance ratio">
+                        <span class="coverage-value">@acceptedRatio%</span>
+                        <span class="coverage-label">Acceptance ratio</span>
+                    </div>
+                    <div class="coverage-tile qa-metric qa-metric-static @(rejectedRatio > 0 ? "has-warning" : "")" role="group" aria-label="Rejection ratio">
+                        <span class="coverage-value">@rejectedRatio%</span>
+                        <span class="coverage-label">Rejection ratio</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="qa-dashboard-card">
+                <h3 class="qa-dashboard-title">Coverage Summary</h3>
+                <div class="qa-metric-grid">
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-test" @onclick="() => ApplyTraceabilityFilter(LinkFilter.RequirementsWithTests)" aria-label="Show covered requirements">
+                        <span class="coverage-value">@requirementsCoveredPct%</span>
+                        <span class="coverage-label">Requirements covered</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-gap @(requirementsWithoutTests > 0 ? "has-gap" : "")" @onclick="() => ApplyTraceabilityFilter(LinkFilter.RequirementsWithoutTests)" aria-label="Show requirements without tests">
+                        <span class="coverage-value">@requirementsWithoutTestsPct%</span>
+                        <span class="coverage-label">Requirements without tests</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-test" @onclick="() => ApplyTraceabilityFilter(LinkFilter.RequirementsWithTests)" aria-label="Show linked tests through requirements">
+                        <span class="coverage-value">@testsLinkedToRequirementsPct%</span>
+                        <span class="coverage-label">Tests linked to requirements</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-gap @(testsWithoutRequirements > 0 ? "has-gap" : "")" @onclick="() => ApplyTraceabilityFilter(LinkFilter.TestsWithoutRequirements)" aria-label="Show orphan tests">
+                        <span class="coverage-value">@testsWithoutRequirements</span>
+                        <span class="coverage-label">Orphan tests</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="qa-dashboard-card">
+                <h3 class="qa-dashboard-title">Orphan Detection</h3>
+                <div class="qa-metric-grid">
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-gap @(testsWithoutRequirements > 0 ? "has-gap" : "")" @onclick="() => ApplyTraceabilityFilter(LinkFilter.TestsWithoutRequirements)" aria-label="Show tests without linked requirements">
+                        <span class="coverage-value">@testsWithoutRequirements</span>
+                        <span class="coverage-label">Orphan tests</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-gap @(clarificationsWithoutRequirements > 0 ? "has-gap" : "")" @onclick="() => ApplyTraceabilityFilter(LinkFilter.ClarificationsWithoutRequirements)" aria-label="Show clarifications without linked requirements">
+                        <span class="coverage-value">@clarificationsWithoutRequirements</span>
+                        <span class="coverage-label">Orphan clarifications</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="qa-dashboard-card">
+                <h3 class="qa-dashboard-title">Review Queue</h3>
+                <div class="qa-metric-grid">
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-requirement @(pendingRequirements > 0 ? "has-warning" : "")" @onclick="() => ApplyTypeFilter(ScenarioKind.Requirement)" aria-label="Show requirement review queue">
+                        <span class="coverage-value">@pendingRequirements</span>
+                        <span class="coverage-label">Pending requirements</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-test @(pendingTests > 0 ? "has-warning" : "")" @onclick="() => ApplyTypeFilter(ScenarioKind.Test)" aria-label="Show test review queue">
+                        <span class="coverage-value">@pendingTests</span>
+                        <span class="coverage-label">Pending tests</span>
+                    </button>
+                    <button type="button" class="coverage-tile qa-metric coverage-tile-clarification @(pendingClarifications > 0 ? "has-warning" : "")" @onclick="() => ApplyTypeFilter(ScenarioKind.NeedsClarification)" aria-label="Show clarification review queue">
+                        <span class="coverage-value">@pendingClarifications</span>
+                        <span class="coverage-label">Pending clarifications</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
         <div class="filter-toolbar">
             <div class="filter-chips" role="group" aria-label="Filter by type">
                 <button type="button"
@@ -75,14 +238,6 @@ else
                    @bind:event="oninput"
                    aria-label="Search candidates" />
         </div>
-
-        @{
-            var rNewCount       = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.New);
-            var rAcceptedCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted);
-            var rRejectedCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Rejected);
-            var rNeedsRevCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.NeedsReview);
-            var hasNonNewStatus = rAcceptedCount > 0 || rRejectedCount > 0 || rNeedsRevCount > 0;
-        }
 
         @if (hasNonNewStatus || _activeReviewFilter is not null)
         {
@@ -132,7 +287,7 @@ else
             </div>
         }
 
-        @if (_links.Count > 0)
+        @if (PipelineResult.RequirementCount > 0 || PipelineResult.TestCount > 0 || PipelineResult.NeedsClarificationCount > 0)
         {
             <div class="traceability-filter" role="group" aria-label="Filter by traceability">
                 <button type="button"
@@ -147,22 +302,37 @@ else
                             class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithoutTests ? "is-active" : "")"
                             @onclick="() => _activeLinkFilter = LinkFilter.RequirementsWithoutTests"
                             aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithoutTests)">
-                        No test coverage
+                        Requirements without tests <span class="chip-count">@CountRequirementsWithoutTests()</span>
+                    </button>
+                    <button type="button"
+                            class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithTests ? "is-active" : "")"
+                            @onclick="() => _activeLinkFilter = LinkFilter.RequirementsWithTests"
+                            aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithTests)">
+                        Requirements with tests <span class="chip-count">@CountRequirementsWithTests()</span>
                     </button>
                     <button type="button"
                             class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithClarifications ? "is-active" : "")"
                             @onclick="() => _activeLinkFilter = LinkFilter.RequirementsWithClarifications"
                             aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithClarifications)">
-                        Has clarifications
+                        Requirements with clarifications <span class="chip-count">@CountRequirementsWithClarifications()</span>
                     </button>
                 }
                 @if (PipelineResult.TestCount > 0)
                 {
                     <button type="button"
-                            class="filter-chip @(_activeLinkFilter == LinkFilter.OrphanTests ? "is-active" : "")"
-                            @onclick="() => _activeLinkFilter = LinkFilter.OrphanTests"
-                            aria-pressed="@(_activeLinkFilter == LinkFilter.OrphanTests)">
-                        Orphan tests
+                            class="filter-chip @(_activeLinkFilter == LinkFilter.TestsWithoutRequirements ? "is-active" : "")"
+                            @onclick="() => _activeLinkFilter = LinkFilter.TestsWithoutRequirements"
+                            aria-pressed="@(_activeLinkFilter == LinkFilter.TestsWithoutRequirements)">
+                        Tests without requirements <span class="chip-count">@CountTestsWithoutRequirements()</span>
+                    </button>
+                }
+                @if (PipelineResult.NeedsClarificationCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip @(_activeLinkFilter == LinkFilter.ClarificationsWithoutRequirements ? "is-active" : "")"
+                            @onclick="() => _activeLinkFilter = LinkFilter.ClarificationsWithoutRequirements"
+                            aria-pressed="@(_activeLinkFilter == LinkFilter.ClarificationsWithoutRequirements)">
+                        Clarifications without requirements <span class="chip-count">@CountClarificationsWithoutRequirements()</span>
                     </button>
                 }
             </div>
@@ -257,6 +427,7 @@ else
                 @foreach (var group in reqGroups)
                 {
                     <TestSubsectionGroup Title="@group.Label"
+                                         Accent="requirement"
                                          TotalCount="@group.TotalCount"
                                          VisibleCount="@group.VisibleItems.Count"
                                          StatusCounts="@ComputeStatusCountsFor(group.VisibleItems)"
@@ -289,6 +460,7 @@ else
                 @foreach (var group in testGroups)
                 {
                     <TestSubsectionGroup Title="@group.Label"
+                                         Accent="test"
                                          TotalCount="@group.TotalCount"
                                          VisibleCount="@group.VisibleItems.Count"
                                          StatusCounts="@ComputeStatusCountsFor(group.VisibleItems)"
@@ -321,6 +493,7 @@ else
                 @foreach (var group in clrGroups)
                 {
                     <TestSubsectionGroup Title="@group.Label"
+                                         Accent="needsclarification"
                                          TotalCount="@group.TotalCount"
                                          VisibleCount="@group.VisibleItems.Count"
                                          StatusCounts="@ComputeStatusCountsFor(group.VisibleItems)"
@@ -407,7 +580,14 @@ else
     private const string ProjectId = "00000000-0000-0000-0000-000000000001";
 
     private enum ReviewPersistState { Idle, Saving, Saved, Failed }
-    private enum LinkFilter { RequirementsWithoutTests, RequirementsWithClarifications, OrphanTests }
+    private enum LinkFilter
+    {
+        RequirementsWithoutTests,
+        RequirementsWithTests,
+        RequirementsWithClarifications,
+        TestsWithoutRequirements,
+        ClarificationsWithoutRequirements,
+    }
 
     private readonly HashSet<Guid> _selectedIds = new();
     private ReviewSavePhase _savePhase = ReviewSavePhase.Idle;
@@ -478,11 +658,15 @@ else
             {
                 LinkFilter.RequirementsWithoutTests when kind == ScenarioKind.Requirement =>
                     source.Where(c => GetLinkTestCount(c) == 0),
+                LinkFilter.RequirementsWithTests when kind == ScenarioKind.Requirement =>
+                    source.Where(c => GetLinkTestCount(c) > 0),
                 LinkFilter.RequirementsWithClarifications when kind == ScenarioKind.Requirement =>
                     source.Where(c => GetLinkClrCount(c) > 0),
-                LinkFilter.OrphanTests when kind == ScenarioKind.Test =>
-                    source.Where(c => GetLinkTestCount(c) == 0),
-                _ => source,
+                LinkFilter.TestsWithoutRequirements when kind == ScenarioKind.Test =>
+                    source.Where(c => GetLinkRequirementCount(c) == 0),
+                LinkFilter.ClarificationsWithoutRequirements when kind == ScenarioKind.NeedsClarification =>
+                    source.Where(c => GetLinkRequirementCount(c) == 0),
+                _ => [],
             };
         }
         return source.ToList();
@@ -501,33 +685,123 @@ else
                              x.Classification == ScenarioKind.NeedsClarification)
                 .ToList(),
             ScenarioKind.Test => PipelineResult.Candidates
-                .Where(x => x.Classification == ScenarioKind.Requirement)
+                .Where(x => x.Classification == ScenarioKind.Requirement ||
+                             x.Classification == ScenarioKind.NeedsClarification)
                 .ToList(),
             ScenarioKind.NeedsClarification => PipelineResult.Candidates
-                .Where(x => x.Classification == ScenarioKind.Requirement)
+                .Where(x => x.Classification == ScenarioKind.Requirement ||
+                             x.Classification == ScenarioKind.Test)
                 .ToList(),
             _ => [],
         };
     }
 
     private int GetLinkTestCount(ExtractionCandidate c) =>
-        _links.Count(l => l.LinkType == CandidateLinkType.RequirementTest &&
+        _links.Count(l => (l.LinkType == CandidateLinkType.RequirementTest ||
+                           l.LinkType == CandidateLinkType.TestClarification) &&
                           (l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
 
     private int GetLinkClrCount(ExtractionCandidate c) =>
-        _links.Count(l => l.LinkType == CandidateLinkType.RequirementClarification &&
+        _links.Count(l => (l.LinkType == CandidateLinkType.RequirementClarification ||
+                           l.LinkType == CandidateLinkType.TestClarification) &&
                           (l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
+
+    private int GetLinkRequirementCount(ExtractionCandidate c) =>
+        _links.Count(l => (l.LinkType == CandidateLinkType.RequirementTest ||
+                           l.LinkType == CandidateLinkType.RequirementClarification) &&
+                          (l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
+
+    private int CountRequirementsWithoutTests() =>
+        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.Requirement && GetLinkTestCount(c) == 0);
+
+    private int CountRequirementsWithTests() =>
+        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.Requirement && GetLinkTestCount(c) > 0);
+
+    private int CountRequirementsWithClarifications() =>
+        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.Requirement && GetLinkClrCount(c) > 0);
+
+    private int CountTestsWithoutRequirements() =>
+        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.Test && GetLinkRequirementCount(c) == 0);
+
+    private int CountClarificationsWithoutRequirements() =>
+        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification && GetLinkRequirementCount(c) == 0);
+
+    private int CountUnresolvedClarifications() =>
+        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification && IsUnresolved(c));
+
+    private int CountRequirementsWithUnresolvedClarifications()
+    {
+        var unresolvedClarificationIds = PipelineResult!.Candidates
+            .Where(c => c.Classification == ScenarioKind.NeedsClarification && IsUnresolved(c))
+            .Select(c => c.CandidateId)
+            .ToHashSet();
+
+        return PipelineResult.Candidates.Count(c =>
+            c.Classification == ScenarioKind.Requirement &&
+            _links.Any(l => l.LinkType == CandidateLinkType.RequirementClarification &&
+                            (l.SourceId == c.CandidateId && unresolvedClarificationIds.Contains(l.TargetId) ||
+                             l.TargetId == c.CandidateId && unresolvedClarificationIds.Contains(l.SourceId))));
+    }
+
+    private int CountPending(ScenarioKind kind) =>
+        PipelineResult!.Candidates.Count(c => c.Classification == kind && IsUnresolved(c));
+
+    private static bool IsUnresolved(ExtractionCandidate c) =>
+        c.ReviewStatus is CandidateReviewStatus.New or CandidateReviewStatus.NeedsReview;
+
+    private static int Percent(int value, int total) =>
+        total == 0 ? 0 : (int)Math.Round(value * 100.0 / total, MidpointRounding.AwayFromZero);
+
+    private void ApplyTypeFilter(ScenarioKind kind)
+    {
+        _activeFilter = kind;
+        _activeLinkFilter = null;
+    }
+
+    private void ApplyReviewFilter(CandidateReviewStatus status)
+    {
+        _activeReviewFilter = status;
+    }
+
+    private void ApplyTraceabilityFilter(LinkFilter filter)
+    {
+        _activeLinkFilter = filter;
+        _activeFilter = filter switch
+        {
+            LinkFilter.RequirementsWithoutTests => ScenarioKind.Requirement,
+            LinkFilter.RequirementsWithTests => ScenarioKind.Requirement,
+            LinkFilter.RequirementsWithClarifications => ScenarioKind.Requirement,
+            LinkFilter.TestsWithoutRequirements => ScenarioKind.Test,
+            LinkFilter.ClarificationsWithoutRequirements => ScenarioKind.NeedsClarification,
+            _ => _activeFilter,
+        };
+    }
+
+    private void ClearDashboardFilters()
+    {
+        _activeFilter = null;
+        _activeReviewFilter = null;
+        _activeLinkFilter = null;
+    }
 
     private void HandleLinkAdded(CandidateLinkEntry entry)
     {
-        if (!_links.Any(l => l.SourceId == entry.SourceId && l.TargetId == entry.TargetId && l.LinkType == entry.LinkType))
+        if (entry.SourceId == entry.TargetId)
+            return;
+
+        if (!_links.Any(l => SameLink(l, entry)))
             _links.Add(entry);
     }
 
     private void HandleLinkRemoved(CandidateLinkEntry entry)
     {
-        _links.RemoveAll(l => l.SourceId == entry.SourceId && l.TargetId == entry.TargetId && l.LinkType == entry.LinkType);
+        _links.RemoveAll(l => SameLink(l, entry));
     }
+
+    private static bool SameLink(CandidateLinkEntry left, CandidateLinkEntry right) =>
+        left.LinkType == right.LinkType &&
+        ((left.SourceId == right.SourceId && left.TargetId == right.TargetId) ||
+         (left.SourceId == right.TargetId && left.TargetId == right.SourceId));
 
     private ReviewStatusCounts ComputeStatusCounts(ScenarioKind kind)
     {

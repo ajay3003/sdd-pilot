@@ -245,9 +245,9 @@ public sealed class ExtractionRuleEngineTests
     {
         var engine = DefaultEngine();
 
-        // 9 filter rules + 9 classification rules = 18 total
+        // 9 filter rules + 10 classification rules = 19 total
         // (added Classify:ClarificationSignal at p55 and Classify:RequirementLanguage at p15)
-        engine.RuleNames.Should().HaveCount(18);
+        engine.RuleNames.Should().HaveCount(19);
         engine.RuleNames.First().Should().StartWith("Filter:");
         engine.RuleNames.Last().Should().Be("Classify:Default");
     }
@@ -498,6 +498,48 @@ public sealed class ExtractionRuleEngineTests
 
         result.Classification.Should().Be(ScenarioKind.NeedsClarification);
         result.Signal.Should().Be(ClassificationSignal.DeferralMarker);
+    }
+
+    // =========================================================================
+    // T105+ - Narrative documentation labels are not TEST
+    // =========================================================================
+
+    [Theory]
+    [InlineData("Why this priority")]
+    [InlineData("Business value")]
+    [InlineData("Goals")]
+    [InlineData("Summary")]
+    [InlineData("Future evolution")]
+    [InlineData("Non-goals")]
+    [InlineData("Background")]
+    [InlineData("Context")]
+    [InlineData("Assumptions")]
+    [InlineData("Scope")]
+    [InlineData("User Workflow Impact")]
+    [InlineData("Determinism Guarantees")]
+    [InlineData("Configuration Boundaries")]
+    [InlineData("Fallback and Default Behavior")]
+    public void Narrative_documentation_labels_classify_as_NeedsClarification_not_Test(string text)
+    {
+        var engine = DefaultEngine();
+
+        var result = engine.Evaluate(MakeBlock(text, BlockType.ParagraphLine), text);
+
+        result.Classification.Should().Be(ScenarioKind.NeedsClarification);
+        result.Classification.Should().NotBe(ScenarioKind.Test);
+        result.WinningRuleName.Should().Be("Classify:NarrativeDocumentationLabel");
+    }
+
+    [Fact]
+    public void Narrative_documentation_label_beats_RequirementLanguage()
+    {
+        var engine = DefaultEngine();
+        const string text = "Goals";
+
+        var result = engine.Evaluate(MakeBlock(text, BlockType.ParagraphLine), text);
+
+        result.Classification.Should().Be(ScenarioKind.NeedsClarification);
+        result.WinningRuleName.Should().Be("Classify:NarrativeDocumentationLabel");
     }
 
     // =========================================================================

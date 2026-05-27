@@ -92,6 +92,13 @@ public sealed class ExtractionRuleSet
                 new PatternMatchCondition(DeferralPattern),
                 new ClassificationOutcome(ScenarioKind.NeedsClarification, ClassificationSignal.DeferralMarker)),
 
+            // Priority 18: Narrative/rationale labels are documentation structure, not executable
+            // scenarios. Placed above RequirementLanguage (15) and profile heading-context rules
+            // (10/16) so lines like "Why this priority" never become TEST through section context.
+            new("Classify:NarrativeDocumentationLabel", 18,
+                new PatternMatchCondition(NarrativeDocumentationLabelPattern),
+                new ClassificationOutcome(ScenarioKind.NeedsClarification, ClassificationSignal.ClarificationSignal)),
+
             // Priority 15: Requirement-language words ("should", "can") that did not match a
             // stronger signal. Lower than QuestionTerminator (30) and DeferralMarker (20) so
             // "Should we implement X?" and "TBD should be decided" remain NeedsClarification.
@@ -126,7 +133,6 @@ public sealed class ExtractionRuleSet
             "Measurable Outcomes",
             "Edge Cases",
             "Functional Requirements",
-            "Non-Goals",
             "Independent Test:",
             // Bare BDD step labels (e.g. "Given: setup" used as section markers, not step content)
             "Given:",
@@ -241,6 +247,12 @@ public sealed class ExtractionRuleSet
         @"\b(should|can)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    // Standalone narrative/rationale labels that commonly appear inside acceptance or priority
+    // sections. These headings are not executable/verifiable scenarios by themselves.
+    private static readonly Regex NarrativeDocumentationLabelPattern = new(
+        @"^(?:Why this priority|Business value|Goals?|Summary|Future evolution|Non-goals?|Background|Context|Assumptions?|Scope|User Workflow Impact|Determinism Guarantees|Configuration Boundaries|Fallback and Default Behavior)\s*:?\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     // ── Speckit profile patterns ─────────────────────────────────────────────
 
     // NFR-NNN: Non-Functional Requirement identifier.
@@ -253,9 +265,10 @@ public sealed class ExtractionRuleSet
         @"\bSC-\d+\b",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    // Heading context → TEST: Acceptance Criteria, Test Cases, Scenarios, etc.
+    // Heading context → TEST: explicit acceptance/test sections only. Generic "Scenarios"
+    // headings are too broad and can turn narrative documentation into TEST.
     private static readonly Regex SpeckitTestHeadingPattern = new(
-        @"\b(?:Acceptance Criteria|Acceptance Scenarios?|Test Cases?|Tests?|Scenarios?)\b",
+        @"\b(?:Acceptance Criteria|Acceptance Scenarios?|Test Cases?|Tests?)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     // Heading context → NEEDS_CLARIFICATION: Open Questions, Risks, Unknowns, etc.

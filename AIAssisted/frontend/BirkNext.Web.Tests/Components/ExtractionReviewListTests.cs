@@ -286,6 +286,330 @@ public class ExtractionReviewListTests : BunitContext
 
         cut.Find("[data-testid='save-complete']").Should().NotBeNull();
     }
+
+    [Fact]
+    public void TraceabilityFilters_RenderCoverageCountsBeforeLinksExist()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeCandidate("FR-001: The system MUST validate credentials", ScenarioKind.Requirement),
+            MakeCandidate("FR-002: The system MUST log sign-ins", ScenarioKind.Requirement),
+            MakeCandidate("Given valid credentials When submitted Then login succeeds", ScenarioKind.Test),
+            MakeCandidate("What happens when the identity provider is down?", ScenarioKind.NeedsClarification),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        var traceability = cut.Find(".traceability-filter").TextContent;
+
+        traceability.Should().Contain("Requirements without tests");
+        traceability.Should().Contain("2");
+        traceability.Should().Contain("Tests without requirements");
+        traceability.Should().Contain("1");
+        traceability.Should().Contain("Clarifications without requirements");
+        traceability.Should().Contain("1");
+    }
+
+    [Fact]
+    public void CoverageDashboard_ShowsReviewAndTraceabilityMetrics()
+    {
+        var acceptedRequirement = MakeCandidate("FR-001: The system MUST validate credentials", ScenarioKind.Requirement);
+        acceptedRequirement.ReviewStatus = CandidateReviewStatus.Accepted;
+        var rejectedRequirement = MakeCandidate("FR-002: The system MUST log sign-ins", ScenarioKind.Requirement);
+        rejectedRequirement.ReviewStatus = CandidateReviewStatus.Rejected;
+        var needsReviewTest = MakeCandidate("Given valid credentials When submitted Then login succeeds", ScenarioKind.Test);
+        needsReviewTest.ReviewStatus = CandidateReviewStatus.NeedsReview;
+        var clarification = MakeCandidate("What happens when the identity provider is down?", ScenarioKind.NeedsClarification);
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([acceptedRequirement, rejectedRequirement, needsReviewTest, clarification])));
+
+        var dashboard = cut.Find("[data-testid='coverage-dashboard']").TextContent;
+
+        dashboard.Should().Contain("Requirements");
+        dashboard.Should().Contain("Missing tests");
+        dashboard.Should().Contain("Orphan tests");
+        dashboard.Should().Contain("Orphan clarifications");
+        dashboard.Should().Contain("Accepted");
+        dashboard.Should().Contain("Rejected");
+        dashboard.Should().Contain("Needs review");
+        dashboard.Should().Contain("2", "there are two requirements and both initially lack linked tests");
+        dashboard.Should().Contain("1", "one accepted, one rejected, one needs-review, one orphan test, and one orphan clarification are shown");
+    }
+
+    [Fact]
+    public void CoverageDashboard_UpdatesWhenLinksChange()
+    {
+        var requirement = MakeCandidate("FR-001: The system MUST validate credentials", ScenarioKind.Requirement);
+        var test = MakeCandidate("Given valid credentials When submitted Then login succeeds", ScenarioKind.Test);
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([requirement, test])));
+
+        CoverageTileText(cut, "Missing tests").Should().Contain("1");
+
+        AddFirstAvailableLinkFromFirstRow(cut);
+
+        CoverageTileText(cut, "With tests").Should().Contain("1");
+        CoverageTileText(cut, "Missing tests").Should().Contain("0");
+        CoverageTileText(cut, "Orphan tests").Should().Contain("0");
+    }
+
+    [Fact]
+    public void ClickingCoverageGapTile_AppliesTraceabilityFilter()
+    {
+        var linkedRequirement = MakeCandidate("FR-001: The system MUST validate credentials", ScenarioKind.Requirement);
+        var unlinkedRequirement = MakeCandidate("FR-002: The system MUST log sign-ins", ScenarioKind.Requirement);
+        var test = MakeCandidate("Given valid credentials When submitted Then login succeeds", ScenarioKind.Test);
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([linkedRequirement, unlinkedRequirement, test])));
+
+        AddFirstAvailableLinkFromFirstRow(cut);
+        ClickCoverageTile(cut, "Missing tests");
+
+        var rows = cut.FindAll("[data-testid='candidate-row']");
+        rows.Should().ContainSingle();
+        rows[0].TextContent.Should().Contain("FR-002");
+    }
+
+    [Fact]
+    public void ClickingCoverageReviewTile_AppliesReviewStatusFilter()
+    {
+        var acceptedRequirement = MakeCandidate("FR-001: The system MUST validate credentials", ScenarioKind.Requirement);
+        acceptedRequirement.ReviewStatus = CandidateReviewStatus.Accepted;
+        var newRequirement = MakeCandidate("FR-002: The system MUST log sign-ins", ScenarioKind.Requirement);
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([acceptedRequirement, newRequirement])));
+
+        ClickCoverageTile(cut, "Accepted");
+
+        var rows = cut.FindAll("[data-testid='candidate-row']");
+        rows.Should().ContainSingle();
+        rows[0].TextContent.Should().Contain("FR-001");
+    }
+
+    [Fact]
+    public void RequirementsWithTests_FilterAndIndicator_UpdateAfterManualLink()
+    {
+        var requirement = MakeCandidate("FR-001: The system MUST validate credentials", ScenarioKind.Requirement);
+        var test = MakeCandidate("Given valid credentials When submitted Then login succeeds", ScenarioKind.Test);
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([requirement, test])));
+
+        AddFirstAvailableLinkFromFirstRow(cut);
+
+        cut.FindAll("[data-testid='link-indicator']")
+            .Select(i => i.TextContent)
+            .Should().Contain(t => t.Contains("1 test"));
+
+        ClickTraceabilityFilter(cut, "Requirements with tests");
+
+        var rows = cut.FindAll("[data-testid='candidate-row']");
+        rows.Should().ContainSingle();
+        rows[0].TextContent.Should().Contain("FR-001");
+        cut.Find(".traceability-filter").TextContent.Should().Contain("Requirements with tests 1");
+    }
+
+    [Fact]
+    public void RequirementsWithoutTests_FilterExcludesLinkedRequirements()
+    {
+        var linkedRequirement = MakeCandidate("FR-001: The system MUST validate credentials", ScenarioKind.Requirement);
+        var unlinkedRequirement = MakeCandidate("FR-002: The system MUST log sign-ins", ScenarioKind.Requirement);
+        var test = MakeCandidate("Given valid credentials When submitted Then login succeeds", ScenarioKind.Test);
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([linkedRequirement, unlinkedRequirement, test])));
+
+        AddFirstAvailableLinkFromFirstRow(cut);
+        ClickTraceabilityFilter(cut, "Requirements without tests");
+
+        var rows = cut.FindAll("[data-testid='candidate-row']");
+        rows.Should().ContainSingle();
+        rows[0].TextContent.Should().Contain("FR-002");
+        rows[0].TextContent.Should().NotContain("FR-001");
+        cut.Find(".traceability-filter").TextContent.Should().Contain("Requirements without tests 1");
+    }
+
+    [Fact]
+    public void TestsWithoutRequirements_FilterExcludesTestsLinkedToRequirements()
+    {
+        var requirement = MakeCandidate("FR-001: The system MUST validate credentials", ScenarioKind.Requirement);
+        var linkedTest = MakeCandidate("Given valid credentials When submitted Then login succeeds", ScenarioKind.Test);
+        var unlinkedTest = MakeCandidate("Given invalid credentials When submitted Then error appears", ScenarioKind.Test);
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([requirement, linkedTest, unlinkedTest])));
+
+        AddFirstAvailableLinkFromFirstRow(cut);
+        ClickTraceabilityFilter(cut, "Tests without requirements");
+
+        var rows = cut.FindAll("[data-testid='candidate-row']");
+        rows.Should().ContainSingle();
+        rows[0].TextContent.Should().Contain("invalid credentials");
+        cut.Find(".traceability-filter").TextContent.Should().Contain("Tests without requirements 1");
+    }
+
+    [Fact]
+    public void ClarificationsWithoutRequirements_FilterExcludesClarificationsLinkedToRequirements()
+    {
+        var requirement = MakeCandidate("FR-001: The system MUST validate credentials", ScenarioKind.Requirement);
+        var linkedClarification = MakeCandidate("What happens when the identity provider is down?", ScenarioKind.NeedsClarification);
+        var unlinkedClarification = MakeCandidate("Who owns retry policy?", ScenarioKind.NeedsClarification);
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([requirement, linkedClarification, unlinkedClarification])));
+
+        cut.Find("[data-testid='link-indicator']").Click();
+        var clarificationSection = cut.FindAll(".candidate-link-panel .link-section")
+            .Single(s => s.TextContent.Contains("Clarifications"));
+        clarificationSection.QuerySelector(".link-add-btn")!.Click();
+        cut.FindAll(".candidate-link-panel .link-section")
+            .Single(s => s.TextContent.Contains("Clarifications"))
+            .QuerySelector(".link-picker-item")!
+            .Click();
+
+        ClickTraceabilityFilter(cut, "Clarifications without requirements");
+
+        var rows = cut.FindAll("[data-testid='candidate-row']");
+        rows.Should().ContainSingle();
+        rows[0].TextContent.Should().Contain("retry policy");
+        cut.Find(".traceability-filter").TextContent.Should().Contain("Clarifications without requirements 1");
+    }
+
+    [Fact]
+    public void AdvancedCoverageDashboard_ShowsProgressQualityCoverageRiskAndQueueMetrics()
+    {
+        var coveredRequirement = MakeCandidate("FR-001: The system MUST validate credentials", ScenarioKind.Requirement);
+        coveredRequirement.ReviewStatus = CandidateReviewStatus.Accepted;
+        var clarificationRiskRequirement = MakeCandidate("FR-002: The system MUST define outage behavior", ScenarioKind.Requirement);
+        var linkedTest = MakeCandidate("Given valid credentials When submitted Then login succeeds", ScenarioKind.Test);
+        linkedTest.ReviewStatus = CandidateReviewStatus.Accepted;
+        var orphanTest = MakeCandidate("Given expired sessions When opened Then reauth is required", ScenarioKind.Test);
+        orphanTest.ReviewStatus = CandidateReviewStatus.Rejected;
+        var unresolvedClarification = MakeCandidate("What happens when the identity provider is down?", ScenarioKind.NeedsClarification);
+        unresolvedClarification.ReviewStatus = CandidateReviewStatus.NeedsReview;
+        var orphanClarification = MakeCandidate("Who owns retry policy?", ScenarioKind.NeedsClarification);
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([
+                coveredRequirement,
+                clarificationRiskRequirement,
+                linkedTest,
+                orphanTest,
+                unresolvedClarification,
+                orphanClarification
+            ])));
+
+        AddFirstAvailableLinkFromFirstRow(cut);
+        AddClarificationLinkFromRow(cut, "FR-002");
+
+        CoverageTileText(cut, "Reviewed").Should().Contain("67%");
+        CoverageTileText(cut, "Accepted").Should().Contain("2");
+        CoverageTileText(cut, "Rejected").Should().Contain("1");
+        CoverageTileText(cut, "Needs review").Should().Contain("1");
+        CoverageTileText(cut, "Unreviewed").Should().Contain("2");
+        CoverageTileText(cut, "Extracted").Should().Contain("6");
+        CoverageTileText(cut, "Acceptance ratio").Should().Contain("33%");
+        CoverageTileText(cut, "Rejection ratio").Should().Contain("17%");
+        CoverageTileText(cut, "Requirements covered").Should().Contain("50%");
+        CoverageTileText(cut, "Requirements without tests").Should().Contain("50%");
+        CoverageTileText(cut, "Tests linked to requirements").Should().Contain("50%");
+        CoverageTileText(cut, "Reqs with unresolved clarifications").Should().Contain("1");
+        CoverageTileText(cut, "Unresolved clarifications").Should().Contain("2");
+        CoverageTileText(cut, "Pending requirements").Should().Contain("1");
+        CoverageTileText(cut, "Pending tests").Should().Contain("0");
+        CoverageTileText(cut, "Pending clarifications").Should().Contain("2");
+    }
+
+    [Fact]
+    public void AdvancedCoverageDashboard_UpdatesWhenReviewStatusChanges()
+    {
+        var requirement = MakeCandidate("FR-001: The system MUST validate credentials", ScenarioKind.Requirement);
+        var test = MakeCandidate("Given valid credentials When submitted Then login succeeds", ScenarioKind.Test);
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([requirement, test])));
+
+        CoverageTileText(cut, "Reviewed").Should().Contain("0%");
+        CoverageTileText(cut, "Unreviewed").Should().Contain("2");
+        CoverageTileText(cut, "Pending requirements").Should().Contain("1");
+
+        cut.FindAll(".review-action-accept").First().Click();
+
+        CoverageTileText(cut, "Reviewed").Should().Contain("50%");
+        CoverageTileText(cut, "Accepted").Should().Contain("1");
+        CoverageTileText(cut, "Unreviewed").Should().Contain("1");
+        CoverageTileText(cut, "Acceptance ratio").Should().Contain("50%");
+        CoverageTileText(cut, "Pending requirements").Should().Contain("0");
+    }
+
+    [Fact]
+    public void AdvancedCoverageDashboard_UpdatesWhenLinkIsRemoved()
+    {
+        var requirement = MakeCandidate("FR-001: The system MUST validate credentials", ScenarioKind.Requirement);
+        var test = MakeCandidate("Given valid credentials When submitted Then login succeeds", ScenarioKind.Test);
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([requirement, test])));
+
+        AddFirstAvailableLinkFromFirstRow(cut);
+
+        CoverageTileText(cut, "With tests").Should().Contain("1");
+        CoverageTileText(cut, "Missing tests").Should().Contain("0");
+        CoverageTileText(cut, "Orphan tests").Should().Contain("0");
+
+        cut.Find(".candidate-link-panel .link-remove-btn").Click();
+
+        CoverageTileText(cut, "With tests").Should().Contain("0");
+        CoverageTileText(cut, "Missing tests").Should().Contain("1");
+        CoverageTileText(cut, "Orphan tests").Should().Contain("1");
+    }
+
+    private static void AddFirstAvailableLinkFromFirstRow(IRenderedComponent<ExtractionReviewList> cut)
+    {
+        cut.Find("[data-testid='link-indicator']").Click();
+        cut.Find(".candidate-link-panel .link-add-btn").Click();
+        cut.Find(".candidate-link-panel .link-picker-item").Click();
+    }
+
+    private static void AddClarificationLinkFromRow(IRenderedComponent<ExtractionReviewList> cut, string rowText)
+    {
+        var row = cut.FindAll("[data-testid='candidate-row']")
+            .Single(r => r.TextContent.Contains(rowText));
+        row.QuerySelector("[data-testid='link-indicator']")!.Click();
+        var clarificationSection = cut.FindAll(".candidate-link-panel .link-section")
+            .Last(s => s.TextContent.Contains("Clarifications"));
+        clarificationSection.QuerySelector(".link-add-btn")!.Click();
+        cut.FindAll(".candidate-link-panel .link-section")
+            .Last(s => s.TextContent.Contains("Clarifications"))
+            .QuerySelector(".link-picker-item")!
+            .Click();
+    }
+
+    private static void ClickTraceabilityFilter(IRenderedComponent<ExtractionReviewList> cut, string label)
+    {
+        cut.FindAll(".traceability-filter .filter-chip")
+            .Single(b => b.TextContent.Contains(label))
+            .Click();
+    }
+
+    private static void ClickCoverageTile(IRenderedComponent<ExtractionReviewList> cut, string label)
+    {
+        cut.FindAll("[data-testid='coverage-dashboard'] .coverage-tile")
+            .First(b => b.TextContent.Contains(label))
+            .Click();
+    }
+
+    private static string CoverageTileText(IRenderedComponent<ExtractionReviewList> cut, string label)
+    {
+        return cut.FindAll("[data-testid='coverage-dashboard'] .coverage-tile")
+            .First(b => b.TextContent.Contains(label))
+            .TextContent;
+    }
 }
 
 // ── T086 ─────────────────────────────────────────────────────────────────────

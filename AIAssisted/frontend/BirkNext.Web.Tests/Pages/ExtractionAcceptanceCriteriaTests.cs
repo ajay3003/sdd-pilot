@@ -36,6 +36,7 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         Services.AddSingleton(_mockExtraction.Object);
         Services.AddSingleton(mockConfig.Object);
         Services.AddSingleton(_mockMutation.Object);
+        Services.AddSingleton<ISpecComparisonService, SpecComparisonService>();
 
         var mockSaveReview = new Mock<ISaveReviewedCandidatesMutation>();
         mockSaveReview

@@ -1,0 +1,323 @@
+@using System.Text.RegularExpressions
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using Microsoft.AspNetCore.Components.Rendering
+@inject IScenarioExtractionService ExtractionService
+@inject IExtractionConfiguration ExtractionConfig
+@inject ISpecComparisonService ComparisonService
+
+<section class="spec-comparison-panel" aria-labelledby="spec-comparison-title" data-testid="spec-comparison-panel">
+    <div class="comparison-header">
+        <div>
+            <h2 id="spec-comparison-title">Specification Comparison</h2>
+            <p>Compare two .md or .txt specs and review deterministic deltas before updating test coverage.</p>
+        </div>
+        <div class="comparison-profile" role="radiogroup" aria-label="Comparison extraction profile">
+            <label>
+                <input type="radio" name="comparison-profile"
+                       checked="@(_profile == ExtractionProfile.Default)"
+                       @onchange="@(() => _profile = ExtractionProfile.Default)" />
+                Default
+            </label>
+            <label>
+                <input type="radio" name="comparison-profile"
+                       checked="@(_profile == ExtractionProfile.Speckit)"
+                       @onchange="@(() => _profile = ExtractionProfile.Speckit)" />
+                Speckit
+            </label>
+        </div>
+    </div>
+
+    <div class="comparison-input-grid">
+        <div class="comparison-input-card">
+            <h3>Old Spec</h3>
+            <SpecificationImport InputId="old-spec-file-input"
+                                 OnFileImported="HandleOldImported"
+                                 OnFileRemoved="HandleOldRemoved"
+                                 IsDisabled="_isComparing" />
+            <textarea rows="8"
+                      placeholder="Paste the old spec.md or .txt content"
+                      @bind="_oldSpecText"
+                      @bind:event="oninput"
+                      disabled="@_isComparing"
+                      aria-label="Old specification text"
+                      data-testid="old-spec-textarea"></textarea>
+        </div>
+
+        <div class="comparison-input-card">
+            <h3>New Spec</h3>
+            <SpecificationImport InputId="new-spec-file-input"
+                                 OnFileImported="HandleNewImported"
+                                 OnFileRemoved="HandleNewRemoved"
+                                 IsDisabled="_isComparing" />
+            <textarea rows="8"
+                      placeholder="Paste the new spec.md or .txt content"
+                      @bind="_newSpecText"
+                      @bind:event="oninput"
+                      disabled="@_isComparing"
+                      aria-label="New specification text"
+                      data-testid="new-spec-textarea"></textarea>
+        </div>
+    </div>
+
+    @if (_validationMessage is not null)
+    {
+        <p class="notification notification-error" role="alert" data-testid="comparison-validation">@_validationMessage</p>
+    }
+
+    <div class="comparison-actions">
+        <button type="button"
+                class="btn-secondary"
+                @onclick="RunComparison"
+                disabled="@_isComparing"
+                data-testid="run-comparison-button">
+            @(_isComparing ? "Comparing..." : "Run Delta Analysis")
+        </button>
+    </div>
+
+    @if (_comparisonResult is not null)
+    {
+        <div class="delta-dashboard" aria-label="Delta summary" data-testid="delta-dashboard">
+            <button type="button" class="delta-summary-tile delta-added" @onclick="@(() => _activeStatus = SpecDeltaStatus.Added)">
+                <span>@_comparisonResult.Summary.AddedRequirements</span>
+                <small>Added requirements</small>
+            </button>
+            <button type="button" class="delta-summary-tile delta-modified" @onclick="@(() => _activeStatus = SpecDeltaStatus.Modified)">
+                <span>@_comparisonResult.Summary.ModifiedRequirements</span>
+                <small>Modified requirements</small>
+            </button>
+            <button type="button" class="delta-summary-tile delta-removed" @onclick="@(() => _activeStatus = SpecDeltaStatus.Removed)">
+                <span>@_comparisonResult.Summary.RemovedRequirements</span>
+                <small>Removed requirements</small>
+            </button>
+            <div class="delta-summary-tile delta-modified">
+                <span>@_comparisonResult.Summary.PotentiallyImpactedTests</span>
+                <small>Impacted tests</small>
+            </div>
+            <div class="delta-summary-tile delta-modified">
+                <span>@_comparisonResult.Summary.UncoveredRequirements</span>
+                <small>Uncovered requirements</small>
+            </div>
+            <button type="button" class="delta-summary-tile delta-added" @onclick="@(() => _activeKind = ScenarioKind.NeedsClarification)">
+                <span>@_comparisonResult.Summary.NewClarificationRisks</span>
+                <small>New clarifications</small>
+            </button>
+        </div>
+
+        <div class="delta-filter-row" role="toolbar" aria-label="Delta filters">
+            <button type="button" class="filter-chip @(_activeKind is null ? "is-active" : "")" @onclick="@(() => _activeKind = null)">All types</button>
+            <button type="button" class="filter-chip @(_activeKind == ScenarioKind.Requirement ? "is-active" : "")" @onclick="@(() => _activeKind = ScenarioKind.Requirement)">Requirements</button>
+            <button type="button" class="filter-chip @(_activeKind == ScenarioKind.Test ? "is-active" : "")" @onclick="@(() => _activeKind = ScenarioKind.Test)">Tests</button>
+            <button type="button" class="filter-chip @(_activeKind == ScenarioKind.NeedsClarification ? "is-active" : "")" @onclick="@(() => _activeKind = ScenarioKind.NeedsClarification)">Clarifications</button>
+            <button type="button" class="filter-chip @(_activeStatus is null ? "is-active" : "")" @onclick="@(() => _activeStatus = null)">All deltas</button>
+            <button type="button" class="filter-chip" @onclick="@(() => _activeStatus = SpecDeltaStatus.Added)">Added</button>
+            <button type="button" class="filter-chip" @onclick="@(() => _activeStatus = SpecDeltaStatus.Modified)">Modified</button>
+            <button type="button" class="filter-chip" @onclick="@(() => _activeStatus = SpecDeltaStatus.Removed)">Removed</button>
+        </div>
+
+        <div class="delta-section-grid">
+            @RenderDeltaSection("Requirements", ScenarioKind.Requirement, _comparisonResult.RequirementDeltas)
+            @RenderDeltaSection("Tests", ScenarioKind.Test, _comparisonResult.TestDeltas)
+            @RenderDeltaSection("Clarifications", ScenarioKind.NeedsClarification, _comparisonResult.ClarificationDeltas)
+        </div>
+    }
+</section>
+
+@code {
+    private string _oldSpecText = string.Empty;
+    private string _newSpecText = string.Empty;
+    private string? _validationMessage;
+    private bool _isComparing;
+    private ExtractionProfile _profile = ExtractionProfile.Speckit;
+    private SpecComparisonResult? _comparisonResult;
+    private ScenarioKind? _activeKind;
+    private SpecDeltaStatus? _activeStatus;
+
+    private void HandleOldImported(string content)
+    {
+        _oldSpecText = content;
+        _validationMessage = null;
+    }
+
+    private void HandleOldRemoved()
+    {
+        _oldSpecText = string.Empty;
+        _validationMessage = null;
+    }
+
+    private void HandleNewImported(string content)
+    {
+        _newSpecText = content;
+        _validationMessage = null;
+    }
+
+    private void HandleNewRemoved()
+    {
+        _newSpecText = string.Empty;
+        _validationMessage = null;
+    }
+
+    private async Task RunComparison()
+    {
+        _validationMessage = null;
+
+        if (string.IsNullOrWhiteSpace(_oldSpecText) || string.IsNullOrWhiteSpace(_newSpecText))
+        {
+            _validationMessage = "Provide both old and new specification text before running delta analysis.";
+            return;
+        }
+
+        if (_oldSpecText.Length > ExtractionConfig.MaxInputLengthChars || _newSpecText.Length > ExtractionConfig.MaxInputLengthChars)
+        {
+            _validationMessage = $"Each spec must be under {ExtractionConfig.MaxInputLengthChars:N0} characters.";
+            return;
+        }
+
+        _isComparing = true;
+        try
+        {
+            var oldResult = await ExtractionService.ExtractAsync(_oldSpecText, _profile);
+            var newResult = await ExtractionService.ExtractAsync(_newSpecText, _profile);
+            _comparisonResult = ComparisonService.Compare(oldResult, newResult);
+            _activeKind = null;
+            _activeStatus = null;
+        }
+        finally
+        {
+            _isComparing = false;
+        }
+    }
+
+    private RenderFragment RenderDeltaSection(string title, ScenarioKind kind, IReadOnlyList<SpecDeltaItem> deltas) => builder =>
+    {
+        if (_activeKind is not null && _activeKind != kind)
+            return;
+
+        var filtered = deltas
+            .Where(d => _activeStatus is null || d.Status == _activeStatus)
+            .ToList();
+
+        if (filtered.Count == 0)
+            return;
+
+        var seq = 0;
+        builder.OpenElement(seq++, "section");
+        builder.AddAttribute(seq++, "class", "delta-section");
+        builder.OpenElement(seq++, "h3");
+        builder.AddContent(seq++, title);
+        builder.OpenElement(seq++, "span");
+        builder.AddAttribute(seq++, "class", "delta-section-count");
+        builder.AddContent(seq++, filtered.Count);
+        builder.CloseElement();
+        builder.CloseElement();
+
+        foreach (var delta in filtered)
+        {
+            builder.OpenElement(seq++, "article");
+            builder.AddAttribute(seq++, "class", $"delta-card delta-card-{delta.Status.ToString().ToLowerInvariant()}");
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "delta-card-header");
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", $"delta-badge delta-badge-{delta.Status.ToString().ToLowerInvariant()}");
+            builder.AddContent(seq++, delta.Status.ToString());
+            builder.CloseElement();
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "delta-kind");
+            builder.AddContent(seq++, FormatKind(delta.Classification));
+            builder.CloseElement();
+            builder.CloseElement();
+
+            if (delta.Status == SpecDeltaStatus.Modified)
+            {
+                builder.OpenElement(seq++, "div");
+                builder.AddAttribute(seq++, "class", "delta-diff-grid");
+                RenderSide(builder, ref seq, "Old", delta.OldCandidate?.Title, delta.NewCandidate?.Title);
+                RenderSide(builder, ref seq, "New", delta.NewCandidate?.Title, delta.OldCandidate?.Title);
+                builder.CloseElement();
+            }
+            else
+            {
+                builder.OpenElement(seq++, "p");
+                builder.AddAttribute(seq++, "class", "delta-single-text");
+                builder.AddContent(seq++, delta.NewCandidate?.Title ?? delta.OldCandidate?.Title);
+                builder.CloseElement();
+            }
+
+            var context = delta.NewCandidate?.ContextHeading ?? delta.OldCandidate?.ContextHeading;
+            if (!string.IsNullOrWhiteSpace(context))
+            {
+                builder.OpenElement(seq++, "p");
+                builder.AddAttribute(seq++, "class", "delta-context");
+                builder.AddContent(seq++, context);
+                builder.CloseElement();
+            }
+
+            if (delta.ImpactHints.Count > 0)
+            {
+                builder.OpenElement(seq++, "ul");
+                builder.AddAttribute(seq++, "class", "delta-impact-list");
+                foreach (var hint in delta.ImpactHints)
+                {
+                    builder.OpenElement(seq++, "li");
+                    builder.AddContent(seq++, hint);
+                    builder.CloseElement();
+                }
+                builder.CloseElement();
+            }
+
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private static void RenderSide(RenderTreeBuilder builder, ref int seq, string label, string? text, string? otherText)
+    {
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "delta-diff-side");
+        builder.OpenElement(seq++, "strong");
+        builder.AddContent(seq++, label);
+        builder.CloseElement();
+        builder.OpenElement(seq++, "p");
+        builder.AddContent(seq++, RenderChangedText(text ?? string.Empty, otherText ?? string.Empty));
+        builder.CloseElement();
+        builder.CloseElement();
+    }
+
+    private static RenderFragment RenderChangedText(string text, string otherText) => builder =>
+    {
+        var otherTokens = WordRegex.Matches(otherText)
+            .Select(m => m.Value.ToUpperInvariant())
+            .ToHashSet(StringComparer.Ordinal);
+        var matches = TokenRegex.Matches(text);
+
+        var seq = 0;
+        foreach (Match match in matches)
+        {
+            var token = match.Value;
+            if (WordRegex.IsMatch(token) && !otherTokens.Contains(token.ToUpperInvariant()))
+            {
+                builder.OpenElement(seq++, "mark");
+                builder.AddContent(seq++, token);
+                builder.CloseElement();
+            }
+            else
+            {
+                builder.AddContent(seq++, token);
+            }
+        }
+    };
+
+    private static string FormatKind(ScenarioKind kind) => kind switch
+    {
+        ScenarioKind.Requirement => "REQUIREMENT",
+        ScenarioKind.Test => "TEST",
+        ScenarioKind.NeedsClarification => "NEEDS_CLARIFICATION",
+        _ => kind.ToString().ToUpperInvariant(),
+    };
+
+    private static readonly Regex TokenRegex = new(@"\w+|\W+", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private static readonly Regex WordRegex = new(@"\w+", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+}

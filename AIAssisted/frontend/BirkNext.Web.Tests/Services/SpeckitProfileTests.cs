@@ -226,6 +226,85 @@ public sealed class SpeckitProfileTests
 
     // ── Context heading preserved ────────────────────────────────────────────────
 
+    [Theory]
+    [InlineData("Why this priority")]
+    [InlineData("Business value")]
+    [InlineData("Goals")]
+    [InlineData("Summary")]
+    [InlineData("Future evolution")]
+    [InlineData("Non-goals")]
+    [InlineData("Background")]
+    [InlineData("Context")]
+    [InlineData("Assumptions")]
+    [InlineData("Scope")]
+    [InlineData("User Workflow Impact")]
+    [InlineData("Determinism Guarantees")]
+    [InlineData("Configuration Boundaries")]
+    [InlineData("Fallback and Default Behavior")]
+    public async Task Speckit_narrative_labels_under_acceptance_heading_are_not_test(string label)
+    {
+        var input = $"""
+## Acceptance Criteria
+
+- {label}
+""";
+
+        var result = await ExtractSpeckit(input);
+
+        result.Candidates.Should().ContainSingle();
+        result.Candidates[0].Classification.Should().Be(ScenarioKind.NeedsClarification,
+            "narrative labels are documentation structure, not executable scenarios");
+        result.Candidates[0].Classification.Should().NotBe(ScenarioKind.Test);
+    }
+
+    [Fact]
+    public async Task Speckit_Why_this_priority_never_becomes_test_under_test_section()
+    {
+        const string input = """
+## Tests
+
+- Why this priority
+""";
+
+        var result = await ExtractSpeckit(input);
+
+        result.Candidates.Should().ContainSingle();
+        result.Candidates[0].Classification.Should().Be(ScenarioKind.NeedsClarification);
+        result.Candidates[0].Title.Should().Be("Why this priority");
+    }
+
+    [Fact]
+    public async Task Speckit_generic_scenarios_heading_does_not_classify_plain_narrative_as_test()
+    {
+        const string input = """
+## Scenarios
+
+- Summary of the rollout approach.
+""";
+
+        var result = await ExtractSpeckit(input);
+
+        result.Candidates.Should().ContainSingle();
+        result.Candidates[0].Classification.Should().Be(ScenarioKind.NeedsClarification,
+            "generic Scenarios headings are not enough to infer an executable test");
+    }
+
+    [Fact]
+    public async Task Speckit_BDD_under_generic_scenarios_heading_remains_test()
+    {
+        const string input = """
+## Scenarios
+
+- Given a valid user When they submit credentials Then they see the dashboard.
+""";
+
+        var result = await ExtractSpeckit(input);
+
+        result.Candidates.Should().ContainSingle();
+        result.Candidates[0].Classification.Should().Be(ScenarioKind.Test,
+            "Given/When/Then remains a strong TEST signal independent of heading context");
+    }
+
     [Fact]
     public async Task Speckit_preserves_context_heading_on_extracted_candidate()
     {

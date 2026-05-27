@@ -104,6 +104,75 @@
                 </div>
             }
         </div>
+
+        @if (Candidate.Classification == ScenarioKind.Test)
+        {
+            <div class="link-section">
+                <div class="link-section-header">
+                    <span class="link-section-label">Clarifications</span>
+                    <button type="button" class="link-add-btn" @onclick="@(() => TogglePicker(ref _clrPickerOpen, ref _reqPickerOpen))">
+                        @(_clrPickerOpen ? "Cancel" : "+ Add")
+                    </button>
+                </div>
+                @foreach (var link in LinkedClarifications)
+                {
+                    var other = CandidateById(link.TargetId == Candidate.CandidateId ? link.SourceId : link.TargetId);
+                    <div class="link-item">
+                        <span class="link-item-title">@(other?.Title ?? "(unknown)")</span>
+                        <button type="button" class="link-remove-btn" @onclick="@(() => RemoveLink(link))" aria-label="Remove link">x</button>
+                    </div>
+                }
+                @if (_clrPickerOpen)
+                {
+                    <div class="link-picker">
+                        @foreach (var c in AvailableClarifications)
+                        {
+                            <button type="button" class="link-picker-item" @onclick="@(() => AddLink(c, CandidateLinkType.TestClarification))">
+                                @c.Title
+                            </button>
+                        }
+                        @if (!AvailableClarifications.Any())
+                        {
+                            <span class="link-picker-empty">No clarifications available</span>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        else if (Candidate.Classification == ScenarioKind.NeedsClarification)
+        {
+            <div class="link-section">
+                <div class="link-section-header">
+                    <span class="link-section-label">Tests</span>
+                    <button type="button" class="link-add-btn" @onclick="@(() => TogglePicker(ref _testPickerOpen, ref _reqPickerOpen))">
+                        @(_testPickerOpen ? "Cancel" : "+ Add")
+                    </button>
+                </div>
+                @foreach (var link in LinkedTests)
+                {
+                    var other = CandidateById(link.TargetId == Candidate.CandidateId ? link.SourceId : link.TargetId);
+                    <div class="link-item">
+                        <span class="link-item-title">@(other?.Title ?? "(unknown)")</span>
+                        <button type="button" class="link-remove-btn" @onclick="@(() => RemoveLink(link))" aria-label="Remove link">x</button>
+                    </div>
+                }
+                @if (_testPickerOpen)
+                {
+                    <div class="link-picker">
+                        @foreach (var c in AvailableTests)
+                        {
+                            <button type="button" class="link-picker-item" @onclick="@(() => AddLink(c, CandidateLinkType.TestClarification))">
+                                @c.Title
+                            </button>
+                        }
+                        @if (!AvailableTests.Any())
+                        {
+                            <span class="link-picker-empty">No tests available</span>
+                        }
+                    </div>
+                }
+            </div>
+        }
     }
 </div>
 
@@ -119,10 +188,12 @@
     private bool _reqPickerOpen = false;
 
     private IEnumerable<CandidateLinkEntry> LinkedTests =>
-        Links.Where(l => l.LinkType == CandidateLinkType.RequirementTest);
+        Links.Where(l => l.LinkType == CandidateLinkType.RequirementTest ||
+                         l.LinkType == CandidateLinkType.TestClarification);
 
     private IEnumerable<CandidateLinkEntry> LinkedClarifications =>
-        Links.Where(l => l.LinkType == CandidateLinkType.RequirementClarification);
+        Links.Where(l => l.LinkType == CandidateLinkType.RequirementClarification ||
+                         l.LinkType == CandidateLinkType.TestClarification);
 
     private IEnumerable<CandidateLinkEntry> LinkedRequirements =>
         Links.Where(l => l.LinkType == CandidateLinkType.RequirementTest ||
@@ -130,14 +201,17 @@
 
     private IEnumerable<ExtractionCandidate> AvailableTests =>
         LinkableCandidates.Where(c => c.Classification == ScenarioKind.Test &&
+                                      c.CandidateId != Candidate.CandidateId &&
                                       !LinkedTests.Any(l => l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
 
     private IEnumerable<ExtractionCandidate> AvailableClarifications =>
         LinkableCandidates.Where(c => c.Classification == ScenarioKind.NeedsClarification &&
+                                      c.CandidateId != Candidate.CandidateId &&
                                       !LinkedClarifications.Any(l => l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
 
     private IEnumerable<ExtractionCandidate> AvailableRequirements =>
         LinkableCandidates.Where(c => c.Classification == ScenarioKind.Requirement &&
+                                      c.CandidateId != Candidate.CandidateId &&
                                       !LinkedRequirements.Any(l => l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
 
     private ExtractionCandidate? CandidateById(Guid id) =>
