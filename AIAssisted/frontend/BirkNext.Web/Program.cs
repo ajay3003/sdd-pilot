@@ -27,6 +27,8 @@ builder.Services.AddSingleton<ISaveQaDeltaReviewMutation>(sp =>
     sp.GetRequiredService<SaveQaDeltaReviewMutation>());
 builder.Services.AddSingleton<IDeleteQaDeltaReviewMutation>(sp =>
     sp.GetRequiredService<DeleteQaDeltaReviewMutation>());
+builder.Services.AddSingleton<IReorderTestScenariosMutation>(sp =>
+    sp.GetRequiredService<ReorderTestScenariosMutation>());
 
 builder.Services.AddSingleton<IExtractionConfiguration, ExtractionConfiguration>();
 builder.Services.Configure<ExtractionRuleConfiguration>(

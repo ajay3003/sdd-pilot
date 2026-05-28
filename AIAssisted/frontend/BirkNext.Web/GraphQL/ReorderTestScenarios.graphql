@@ -1,0 +1,11 @@
+mutation ReorderTestScenarios($input: ReorderTestScenariosInput!) {
+  reorderTestScenarios(input: $input) {
+    success
+    errors {
+      code
+      message
+      field
+    }
+    correlationId
+  }
+}

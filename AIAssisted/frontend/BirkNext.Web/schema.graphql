@@ -15,6 +15,7 @@ type Mutation {
   deleteScenario(id: ID!): DeleteScenarioPayload!
   saveQaDeltaReview(input: SaveQaDeltaReviewInput!): SaveQaDeltaReviewPayload!
   deleteQaDeltaReview(id: ID!): DeleteQaDeltaReviewPayload!
+  reorderTestScenarios(input: ReorderTestScenariosInput!): ReorderTestScenariosPayload!
 }
 
 type Scenario {
@@ -24,6 +25,7 @@ type Scenario {
   kind: ScenarioKind!
   projectId: String!
   createdAt: DateTime!
+  displayOrder: Int!
 }
 
 enum ScenarioKind {
@@ -202,6 +204,17 @@ type SaveQaDeltaReviewPayload {
 
 type DeleteQaDeltaReviewPayload {
   deletedId: ID
+  success: Boolean!
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+input ReorderTestScenariosInput {
+  projectId: String!
+  orderedIds: [String!]!
+}
+
+type ReorderTestScenariosPayload {
   success: Boolean!
   errors: [UserError!]!
   correlationId: String!

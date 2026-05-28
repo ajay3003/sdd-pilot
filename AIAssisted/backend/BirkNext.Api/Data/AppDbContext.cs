@@ -43,6 +43,10 @@ public class AppDbContext : DbContext
             entity.Property(s => s.CreatedAt)
                 .HasColumnName("created_at");
 
+            entity.Property(s => s.DisplayOrder)
+                .HasColumnName("display_order")
+                .HasDefaultValue(0);
+
             entity.HasIndex(s => new { s.ProjectId, s.CreatedAt })
                 .HasDatabaseName("ix_scenarios_project_id_created_at")
                 .IsDescending(false, true);

@@ -74,6 +74,25 @@
     color: #991b1b;
 }
 
+/* Drag hint */
+.drag-hint {
+    font-size: 0.8rem;
+    color: var(--clr-text-muted, #475569);
+    margin: 0 0 0.75rem 0;
+    font-style: italic;
+}
+
+/* Reorder error */
+.reorder-error {
+    padding: 0.75rem 1rem;
+    border: 1px solid #fecaca;
+    border-radius: var(--radius-md, 6px);
+    background: #fef2f2;
+    color: #991b1b;
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+}
+
 /* Artifact groups */
 .artifact-group {
     margin-bottom: 2rem;

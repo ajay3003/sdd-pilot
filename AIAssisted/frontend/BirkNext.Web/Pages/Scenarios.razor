@@ -60,6 +60,7 @@
     }
     else
     {
+        var isDragEnabled = _filterKind == "Test" && string.IsNullOrEmpty(_searchQuery);
         var testItems  = FilteredScenarios.Where(s => s.Kind == "Test").ToList();
         var reqItems   = FilteredScenarios.Where(s => s.Kind == "Requirement").ToList();
         var clrItems   = FilteredScenarios.Where(s => s.Kind == "NeedsClarification").ToList();
@@ -76,12 +77,22 @@
             {
                 <section class="artifact-group" data-testid="group-tests">
                     <h2 class="artifact-group-header">Tests</h2>
+                    @if (isDragEnabled)
+                    {
+                        <p class="drag-hint" data-testid="drag-hint">Drag tests to define execution order.</p>
+                    }
                     <ScenarioList
                         Scenarios="testItems"
                         OnDeleteRequested="HandleDeleteAsync"
                         DeletingId="_deletingId"
-                        DeleteErrors="_deleteErrors" />
+                        DeleteErrors="_deleteErrors"
+                        IsDraggable="@isDragEnabled"
+                        OnReordered="HandleReorderAsync" />
                 </section>
+            }
+            @if (_reorderError is not null)
+            {
+                <div class="reorder-error" role="alert" data-testid="reorder-error">@_reorderError</div>
             }
             @if (reqItems.Count > 0)
             {
@@ -118,6 +129,7 @@
     private string? _loadError;
     private string? _deletingId;
     private Dictionary<string, string> _deleteErrors = [];
+    private string? _reorderError;
 
     private IReadOnlyList<ScenarioListItem> FilteredScenarios =>
         _scenarios
@@ -151,7 +163,7 @@
             if (result.Data is { } data)
             {
                 _scenarios = data.Scenarios
-                    .Select(s => new ScenarioListItem(s.Id, s.Title, s.Description, s.Kind.ToString()))
+                    .Select(s => new ScenarioListItem(s.Id, s.Title, s.Description, s.Kind.ToString(), s.DisplayOrder))
                     .ToList();
             }
             else
@@ -197,6 +209,39 @@
         finally
         {
             _deletingId = null;
+        }
+    }
+
+    private async Task HandleReorderAsync(List<ScenarioListItem> reorderedTests)
+    {
+        _reorderError = null;
+
+        // Optimistic update
+        var nonTest = _scenarios.Where(s => s.Kind != "Test").ToList();
+        _scenarios = reorderedTests
+            .Select((s, i) => s with { DisplayOrder = i })
+            .Concat(nonTest)
+            .ToList();
+
+        StateHasChanged();
+
+        try
+        {
+            var input = new ReorderTestScenariosInput
+            {
+                ProjectId = ProjectId,
+                OrderedIds = reorderedTests.Select(s => s.Id).ToList(),
+            };
+            var result = await Client.ReorderTestScenarios.ExecuteAsync(input);
+
+            if (result.Data?.ReorderTestScenarios?.Success != true)
+            {
+                _reorderError = "Couldn't save the new order. Please try again.";
+            }
+        }
+        catch (Exception)
+        {
+            _reorderError = "Couldn't save the new order. Please try again.";
         }
     }
 }

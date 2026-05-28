@@ -28,6 +28,12 @@ public class DeleteScenarioResult
     public bool IsSuccess => DeletedId is not null;
 }
 
+public class ReorderTestScenariosResult
+{
+    public bool Success { get; init; }
+    public IReadOnlyList<UserError> Errors { get; init; } = [];
+}
+
 public class ScenarioService
 {
     private readonly AppDbContext _dbContext;
@@ -58,12 +64,22 @@ public class ScenarioService
             return new ScenarioResult { Errors = errors };
         }
 
+        int displayOrder = 0;
+        if (kind == ScenarioKind.Test)
+        {
+            var maxOrder = await _dbContext.Scenarios
+                .Where(s => s.ProjectId == projectId && s.Kind == ScenarioKind.Test)
+                .MaxAsync(s => (int?)s.DisplayOrder, ct) ?? -1;
+            displayOrder = maxOrder + 1;
+        }
+
         var scenario = new Scenario
         {
             Title = title,
             Description = description,
             Kind = kind,
             ProjectId = projectId,
+            DisplayOrder = displayOrder,
         };
 
         try
@@ -95,6 +111,8 @@ public class ScenarioService
         var results = new BatchScenarioResult[itemsList.Count];
         var validScenarios = new List<(int Index, Scenario Scenario)>(itemsList.Count);
 
+        var maxOrderByProject = new Dictionary<string, int>(StringComparer.Ordinal);
+
         for (int i = 0; i < itemsList.Count; i++)
         {
             var item = itemsList[i];
@@ -115,12 +133,26 @@ public class ScenarioService
                 continue;
             }
 
+            int displayOrder = 0;
+            if (item.Kind == ScenarioKind.Test)
+            {
+                if (!maxOrderByProject.TryGetValue(item.ProjectId, out var currentMax))
+                {
+                    currentMax = await _dbContext.Scenarios
+                        .Where(s => s.ProjectId == item.ProjectId && s.Kind == ScenarioKind.Test)
+                        .MaxAsync(s => (int?)s.DisplayOrder, ct) ?? -1;
+                }
+                displayOrder = currentMax + 1;
+                maxOrderByProject[item.ProjectId] = displayOrder;
+            }
+
             var scenario = new Scenario
             {
                 Title = item.Title,
                 Description = item.Description,
                 Kind = item.Kind,
                 ProjectId = item.ProjectId,
+                DisplayOrder = displayOrder,
             };
 
             _dbContext.Scenarios.Add(scenario);
@@ -151,8 +183,53 @@ public class ScenarioService
     {
         return await _dbContext.Scenarios
             .Where(s => s.ProjectId == projectId)
-            .OrderByDescending(s => s.CreatedAt)
+            .OrderBy(s => s.Kind == ScenarioKind.Test ? s.DisplayOrder : int.MaxValue)
+            .ThenByDescending(s => s.CreatedAt)
             .ToListAsync(ct);
+    }
+
+    public async Task<ReorderTestScenariosResult> ReorderTestScenariosAsync(
+        string projectId,
+        IReadOnlyList<string> orderedIds,
+        string correlationId,
+        CancellationToken ct = default)
+    {
+        var guids = new List<Guid>(orderedIds.Count);
+        foreach (var id in orderedIds)
+        {
+            if (!Guid.TryParse(id, out var guid))
+            {
+                return new ReorderTestScenariosResult
+                {
+                    Errors = [new UserError("INVALID_ID", $"Invalid scenario ID: {id}")]
+                };
+            }
+            guids.Add(guid);
+        }
+
+        var scenarios = await _dbContext.Scenarios
+            .Where(s => s.ProjectId == projectId && s.Kind == ScenarioKind.Test && guids.Contains(s.Id))
+            .ToListAsync(ct);
+
+        if (scenarios.Count != guids.Count)
+        {
+            return new ReorderTestScenariosResult
+            {
+                Errors = [new UserError("SCENARIOS_NOT_FOUND", "One or more scenarios were not found")]
+            };
+        }
+
+        var scenarioById = scenarios.ToDictionary(s => s.Id);
+        for (int i = 0; i < guids.Count; i++)
+            scenarioById[guids[i]].DisplayOrder = i;
+
+        await _dbContext.SaveChangesAsync(ct);
+
+        _logger?.LogInformation(
+            "ScenariosReordered {CorrelationId} {ProjectId} {Count}",
+            correlationId, projectId, guids.Count);
+
+        return new ReorderTestScenariosResult { Success = true };
     }
 
     public async Task<DeleteScenarioResult> DeleteAsync(

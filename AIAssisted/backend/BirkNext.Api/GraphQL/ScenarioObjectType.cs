@@ -14,5 +14,6 @@ public class ScenarioObjectType : ObjectType<Scenario>
         descriptor.Field(s => s.Kind).Type<NonNullType<EnumType<ScenarioKind>>>();
         descriptor.Field(s => s.ProjectId).Type<NonNullType<StringType>>();
         descriptor.Field(s => s.CreatedAt).Type<NonNullType<DateTimeType>>();
+        descriptor.Field(s => s.DisplayOrder).Type<NonNullType<IntType>>();
     }
 }

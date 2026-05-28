@@ -245,6 +245,32 @@ public class Mutation
         };
     }
 
+    /// <summary>Reorders TEST scenarios within a project by assigning display_order from the given ordered IDs.</summary>
+    public async Task<ReorderTestScenariosPayload> ReorderTestScenariosAsync(
+        ReorderTestScenariosInput input,
+        [Service] ScenarioService scenarioService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var result = await scenarioService.ReorderTestScenariosAsync(
+            input.ProjectId,
+            input.OrderedIds,
+            correlationId,
+            cancellationToken);
+
+        return new ReorderTestScenariosPayload
+        {
+            Success = result.Success,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
     /// <summary>Deletes a QA delta review by ID.</summary>
     public async Task<DeleteQaDeltaReviewPayload> DeleteQaDeltaReviewAsync(
         [ID] string id,

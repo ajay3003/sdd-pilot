@@ -345,6 +345,170 @@ public class ScenariosPageTests : BunitContext
         reqSection.TextContent.Should().Contain("A requirement").And.NotContain("A test");
     }
 
+    // ── Drag ordering tests ──────────────────────────────────────────────────
+
+    [Fact]
+    public void ScenariosPage_TestItems_RenderedInDisplayOrder()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult(
+            [
+                MakeScenario("sc-1", "First test",  null, ScenarioKind.Test, displayOrder: 0),
+                MakeScenario("sc-2", "Second test", null, ScenarioKind.Test, displayOrder: 1),
+                MakeScenario("sc-3", "Third test",  null, ScenarioKind.Test, displayOrder: 2),
+            ]));
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var rows = cut.FindAll("[data-testid='scenario-row']");
+            rows.Should().HaveCount(3);
+            rows[0].TextContent.Should().Contain("First test");
+            rows[1].TextContent.Should().Contain("Second test");
+            rows[2].TextContent.Should().Contain("Third test");
+        }, timeout: TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public void ScenariosPage_TestFilterNoSearch_ShowsDragHintAndHandles()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult(
+            [
+                MakeScenario("sc-1", "A test", null, ScenarioKind.Test),
+            ]));
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid='drag-hint']").Should().NotBeNull();
+            cut.Find("[data-testid='drag-handle-sc-1']").Should().NotBeNull();
+        }, timeout: TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public void ScenariosPage_RequirementFilter_NoDragHandles()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult(
+            [
+                MakeScenario("sc-1", "A req", null, ScenarioKind.Requirement),
+            ]));
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.WaitForAssertion(() =>
+            cut.Markup.Should().NotContain("Loading scenarios"),
+            timeout: TimeSpan.FromSeconds(1));
+
+        cut.Find("select[aria-label='Filter by type']").Change("Requirement");
+
+        cut.FindAll("[data-testid='drag-hint']").Should().BeEmpty();
+        cut.FindAll("[aria-label^='Drag to reorder']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ScenariosPage_WithSearchText_NoDragHandles()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult(
+            [
+                MakeScenario("sc-1", "Login test", null, ScenarioKind.Test),
+            ]));
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll("[data-testid='scenario-row']").Should().ContainSingle(),
+            timeout: TimeSpan.FromSeconds(1));
+
+        cut.Find("input[aria-label='Search scenarios']").Input("login");
+
+        cut.FindAll("[data-testid='drag-hint']").Should().BeEmpty();
+        cut.FindAll("[aria-label^='Drag to reorder']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ScenariosPage_MoveUp_CallsReorderMutation()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult(
+            [
+                MakeScenario("sc-1", "First test",  null, ScenarioKind.Test, displayOrder: 0),
+                MakeScenario("sc-2", "Second test", null, ScenarioKind.Test, displayOrder: 1),
+            ]));
+
+        var mockPayload = new Mock<IReorderTestScenarios_ReorderTestScenarios>();
+        mockPayload.Setup(p => p.Success).Returns(true);
+        mockPayload.Setup(p => p.Errors).Returns([]);
+        mockPayload.Setup(p => p.CorrelationId).Returns("corr-1");
+
+        var mockData = new Mock<IReorderTestScenariosResult>();
+        mockData.Setup(d => d.ReorderTestScenarios).Returns(mockPayload.Object);
+
+        var mockResult = new Mock<IOperationResult<IReorderTestScenariosResult>>();
+        mockResult.Setup(r => r.Data).Returns(mockData.Object);
+        mockResult.Setup(r => r.Errors).Returns([]);
+
+        var mockReorderMutation = new Mock<IReorderTestScenariosMutation>();
+        mockReorderMutation
+            .Setup(m => m.ExecuteAsync(It.IsAny<ReorderTestScenariosInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResult.Object);
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        mockClient.Setup(c => c.ReorderTestScenarios).Returns(mockReorderMutation.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll("[data-testid='scenario-row']").Should().HaveCount(2),
+            timeout: TimeSpan.FromSeconds(1));
+
+        cut.Find("[data-testid='move-up-btn-sc-2']").Click();
+
+        await Task.Delay(100);
+
+        mockReorderMutation.Verify(
+            m => m.ExecuteAsync(It.IsAny<ReorderTestScenariosInput>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        var rows = cut.FindAll("[data-testid='scenario-row']");
+        rows[0].TextContent.Should().Contain("Second test");
+        rows[1].TextContent.Should().Contain("First test");
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
     private static IOperationResult<IGetScenariosResult> MakeGetScenariosResult(
         IReadOnlyList<IGetScenarios_Scenarios> scenarios)
     {
@@ -362,7 +526,8 @@ public class ScenariosPageTests : BunitContext
         string id,
         string title,
         string? description,
-        ScenarioKind kind)
+        ScenarioKind kind,
+        int displayOrder = 0)
     {
         var mockScenario = new Mock<IGetScenarios_Scenarios>();
         mockScenario.Setup(s => s.Id).Returns(id);
@@ -370,6 +535,7 @@ public class ScenariosPageTests : BunitContext
         mockScenario.Setup(s => s.Description).Returns(description);
         mockScenario.Setup(s => s.Kind).Returns(kind);
         mockScenario.Setup(s => s.CreatedAt).Returns(DateTimeOffset.UtcNow);
+        mockScenario.Setup(s => s.DisplayOrder).Returns(displayOrder);
 
         return mockScenario.Object;
     }

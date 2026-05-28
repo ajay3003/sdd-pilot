@@ -8,4 +8,5 @@ public class Scenario
     public ScenarioKind Kind { get; set; }
     public string ProjectId { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+    public int DisplayOrder { get; set; } = 0;
 }

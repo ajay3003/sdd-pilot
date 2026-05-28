@@ -128,3 +128,61 @@
     padding: 0.25rem 0.625rem;
     font-size: 0.78rem;
 }
+
+/* ── Drag handle ── */
+.drag-handle {
+    cursor: grab;
+    color: var(--clr-text-subtle, #64748b);
+    font-size: 1rem;
+    padding: 0 0.25rem;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+}
+
+/* ── Drag-source card (being dragged) ── */
+.drag-source {
+    opacity: 0.45;
+}
+
+/* ── Drop target (item that would be displaced) ── */
+.drag-over-above {
+    border-top: 2px solid var(--clr-primary-focus, #3b82f6);
+}
+
+/* ── Move up / down buttons ── */
+.move-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-sm, 4px);
+    background: transparent;
+    color: var(--clr-text-subtle, #64748b);
+    cursor: pointer;
+    transition: background-color var(--transition, 0.15s ease), border-color var(--transition, 0.15s ease);
+    margin-right: 0.25rem;
+}
+
+.move-btn:hover:not(:disabled) {
+    background: var(--clr-surface, #f8fafc);
+    border-color: var(--clr-border-hover, #cbd5e1);
+    color: var(--clr-text-body, #1e293b);
+}
+
+.move-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.move-btn:focus-visible {
+    outline: 2px solid var(--clr-primary-focus, #3b82f6);
+    outline-offset: 2px;
+}

@@ -6,12 +6,43 @@
 }
 else
 {
-    @foreach (var scenario in Scenarios)
+    @for (int i = 0; i < Scenarios.Count; i++)
     {
-        <div class="scenario-card" data-testid="scenario-row">
+        var scenario = Scenarios[i];
+        var index = i;
+        var isDragTarget = _dragTargetIndex == index && _dragSourceIndex != index;
+        var isDragSource = _dragSourceIndex == index;
+        <div class="scenario-card @(isDragSource ? "drag-source" : "") @(isDragTarget ? "drag-over-above" : "")"
+             data-testid="scenario-row"
+             draggable="@(IsDraggable ? "true" : "false")"
+             @ondragstart="() => HandleDragStart(index)"
+             @ondragenter="() => HandleDragEnter(index)"
+             @ondragover:preventDefault="@IsDraggable"
+             @ondrop="HandleDrop"
+             @ondragend="HandleDragEnd">
             <div class="scenario-card-header">
+                @if (IsDraggable)
+                {
+                    <span class="drag-handle"
+                          aria-label="Drag to reorder test scenario"
+                          data-testid="drag-handle-@scenario.Id"
+                          role="img">⠿</span>
+                }
                 <span class="badge badge-@scenario.Kind.ToLowerInvariant()">@scenario.Kind</span>
                 <div class="scenario-card-actions">
+                    @if (IsDraggable)
+                    {
+                        <button type="button" class="move-btn"
+                                aria-label="Move test scenario up: @scenario.Title"
+                                data-testid="move-up-btn-@scenario.Id"
+                                disabled="@(index == 0)"
+                                @onclick="() => MoveUp(index)">↑</button>
+                        <button type="button" class="move-btn"
+                                aria-label="Move test scenario down: @scenario.Title"
+                                data-testid="move-down-btn-@scenario.Id"
+                                disabled="@(index == Scenarios.Count - 1)"
+                                @onclick="() => MoveDown(index)">↓</button>
+                    }
                     @if (DeletingId == scenario.Id)
                     {
                         <span class="delete-spinner" aria-label="Deleting scenario">Deleting…</span>
@@ -53,8 +84,12 @@ else
     [Parameter] public EventCallback<string> OnDeleteRequested { get; set; }
     [Parameter] public string? DeletingId { get; set; }
     [Parameter] public IReadOnlyDictionary<string, string>? DeleteErrors { get; set; }
+    [Parameter] public bool IsDraggable { get; set; }
+    [Parameter] public EventCallback<List<ScenarioListItem>> OnReordered { get; set; }
 
     private string? _pendingDeleteId;
+    private int? _dragSourceIndex;
+    private int? _dragTargetIndex;
 
     private void RequestDelete(string id) => _pendingDeleteId = id;
 
@@ -64,5 +99,53 @@ else
     {
         _pendingDeleteId = null;
         await OnDeleteRequested.InvokeAsync(id);
+    }
+
+    private void HandleDragStart(int index) => _dragSourceIndex = index;
+
+    private void HandleDragEnter(int index)
+    {
+        if (_dragSourceIndex is null) return;
+        _dragTargetIndex = index;
+    }
+
+    private void HandleDragEnd()
+    {
+        _dragSourceIndex = null;
+        _dragTargetIndex = null;
+    }
+
+    private async Task HandleDrop()
+    {
+        if (_dragSourceIndex is null || _dragTargetIndex is null || _dragSourceIndex == _dragTargetIndex)
+        {
+            HandleDragEnd();
+            return;
+        }
+
+        var reordered = Scenarios.ToList();
+        var item = reordered[_dragSourceIndex.Value];
+        reordered.RemoveAt(_dragSourceIndex.Value);
+        var insertAt = _dragTargetIndex.Value > _dragSourceIndex.Value ? _dragTargetIndex.Value - 1 : _dragTargetIndex.Value;
+        reordered.Insert(insertAt, item);
+
+        HandleDragEnd();
+        await OnReordered.InvokeAsync(reordered);
+    }
+
+    private async Task MoveUp(int index)
+    {
+        if (index == 0) return;
+        var reordered = Scenarios.ToList();
+        (reordered[index], reordered[index - 1]) = (reordered[index - 1], reordered[index]);
+        await OnReordered.InvokeAsync(reordered);
+    }
+
+    private async Task MoveDown(int index)
+    {
+        if (index == Scenarios.Count - 1) return;
+        var reordered = Scenarios.ToList();
+        (reordered[index], reordered[index + 1]) = (reordered[index + 1], reordered[index]);
+        await OnReordered.InvokeAsync(reordered);
     }
 }
