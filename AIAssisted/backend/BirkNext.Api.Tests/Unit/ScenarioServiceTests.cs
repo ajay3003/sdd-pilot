@@ -85,21 +85,22 @@ public class ScenarioServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetAllAsync_ReturnsListOrderedByCreatedAtDesc_ForGivenProjectId()
+    public async Task GetAllAsync_ReturnsTestScenariosFirst_ThenNonTestByCreatedAtDesc()
     {
         var projectId = "proj-001";
-        var oldest = new Scenario { Title = "Oldest", Kind = ScenarioKind.Test, ProjectId = projectId, CreatedAt = DateTimeOffset.UtcNow.AddDays(-2) };
-        var middle = new Scenario { Title = "Middle", Kind = ScenarioKind.Requirement, ProjectId = projectId, CreatedAt = DateTimeOffset.UtcNow.AddDays(-1) };
-        var newest = new Scenario { Title = "Newest", Kind = ScenarioKind.Test, ProjectId = projectId, CreatedAt = DateTimeOffset.UtcNow };
-        _context.Scenarios.AddRange(oldest, middle, newest);
+        // Tests (DisplayOrder=0) precede Requirements; within Tests, CreatedAt DESC applies.
+        var oldTest  = new Scenario { Title = "OldTest",  Kind = ScenarioKind.Test,        ProjectId = projectId, CreatedAt = DateTimeOffset.UtcNow.AddDays(-2) };
+        var req      = new Scenario { Title = "Req",      Kind = ScenarioKind.Requirement, ProjectId = projectId, CreatedAt = DateTimeOffset.UtcNow.AddDays(-1) };
+        var newTest  = new Scenario { Title = "NewTest",  Kind = ScenarioKind.Test,        ProjectId = projectId, CreatedAt = DateTimeOffset.UtcNow };
+        _context.Scenarios.AddRange(oldTest, req, newTest);
         await _context.SaveChangesAsync();
 
         var result = await _service.GetAllAsync(projectId);
 
         result.Should().HaveCount(3);
-        result[0].Id.Should().Be(newest.Id);
-        result[1].Id.Should().Be(middle.Id);
-        result[2].Id.Should().Be(oldest.Id);
+        result[0].Id.Should().Be(newTest.Id);  // Test, DisplayOrder=0, most recent
+        result[1].Id.Should().Be(oldTest.Id);  // Test, DisplayOrder=0, older
+        result[2].Id.Should().Be(req.Id);      // Requirement, always after Tests
     }
 
     [Fact]
