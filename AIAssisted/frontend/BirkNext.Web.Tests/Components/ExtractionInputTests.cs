@@ -53,7 +53,7 @@ public class ExtractionInputTests : BunitContext
         cut.Find("[data-testid='extract-button']").Click();
 
         cut.Find("[data-testid='validation-message']").TextContent
-            .Should().Contain("Paste some text");
+            .Should().Contain("Paste specification text");
 
         _mockExtractionService.Verify(
             s => s.ExtractAsync(It.IsAny<string>(), It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()),
@@ -408,13 +408,15 @@ public class ExtractionInputProfileSelectorTests : BunitContext
     }
 
     [Fact]
-    public void ProfileSelector_DefaultIsSelectedByDefault()
+    public void ProfileSelector_SpeckitIsSelectedByDefault()
     {
         var cut = Render<ExtractionInput>();
-        cut.Find("[data-testid='profile-radio-default']").HasAttribute("checked").Should().BeTrue(
-            "Default radio must be checked initially");
-        cut.Find("[data-testid='profile-radio-speckit']").HasAttribute("checked").Should().BeFalse(
-            "Speckit radio must be unchecked initially");
+        cut.Find("[data-testid='profile-radio-speckit']").HasAttribute("checked").Should().BeTrue(
+            "Speckit radio must be checked initially");
+        cut.Find("[data-testid='profile-radio-default']").HasAttribute("checked").Should().BeFalse(
+            "Generic radio must be unchecked initially");
+        cut.Find("[data-testid='profile-selector']").TextContent.Should().Contain("Speckit Structured Spec");
+        cut.Find("[data-testid='profile-selector']").TextContent.Should().Contain("Generic Document");
     }
 
     [Fact]
@@ -447,7 +449,7 @@ public class ExtractionInputProfileSelectorTests : BunitContext
             .ReturnsAsync(MakeSuccessResult());
 
         var cut = Render<ExtractionInput>();
-        // Explicitly click Default (it starts selected, but confirm it passes Default)
+        // Explicitly click Generic Document to confirm it passes Default.
         cut.Find("[data-testid='profile-radio-default']").Change(true);
         cut.Find("[data-testid='spec-textarea']").Input("some spec text");
         cut.Find("[data-testid='extract-button']").Click();

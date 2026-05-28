@@ -46,7 +46,7 @@ public class DashboardPageTests : BunitContext
             dashboard.Should().Contain("Reviewed candidates");
             dashboard.Should().Contain("No active QA risks");
             dashboard.Should().Contain("No QA metrics yet");
-            dashboard.Should().Contain("Run extraction and save reviews to populate QA metrics.");
+            dashboard.Should().Contain("Analyze a specification and save reviews to populate QA metrics.");
             dashboard.Should().Contain("0%");
             cut.Find("[data-testid='dashboard-empty-state'] a[href='extract']").Should().NotBeNull();
             cut.FindAll("[data-testid='dashboard-health-card']").Should().HaveCount(4);

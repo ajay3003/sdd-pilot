@@ -15,14 +15,14 @@
 @if (PipelineResult.Status == PipelineStatus.NoResults)
 {
     <div class="empty-state-container">
-        <p data-testid="empty-state">No extractable candidates were found in the pasted text.</p>
+        <p data-testid="empty-state">No review candidates were found in the pasted text.</p>
     </div>
 }
 else
 {
     <div class="extraction-review-list">
         <p class="candidate-summary" data-testid="candidate-summary">
-            @PipelineResult.Candidates.Count candidates extracted —
+            @PipelineResult.Candidates.Count review candidates found -
             @PipelineResult.RequirementCount REQUIREMENT,
             @PipelineResult.TestCount TEST,
             @PipelineResult.NeedsClarificationCount NEEDS_CLARIFICATION
@@ -1027,3 +1027,4 @@ else
         }
     }
 }
+

@@ -19,9 +19,9 @@
             <div class="empty-state-icon" aria-hidden="true"></div>
             <div>
                 <h3>No QA metrics yet</h3>
-                <p>Run extraction and save reviews to populate QA metrics.</p>
+                <p>Analyze a specification and save reviews to populate QA metrics.</p>
             </div>
-            <a class="empty-state-action" href="extract">Run extraction</a>
+            <a class="empty-state-action" href="extract">Analyze specification</a>
         </section>
     }
 
@@ -187,7 +187,7 @@
         new("Reviewed candidates", Metrics.ReviewedPercent, $"{Metrics.ReviewedCount} of {Metrics.TotalCandidates} candidates reviewed.", StateForProgress(Metrics.ReviewedPercent, Metrics.TotalCandidates)),
         new("Linked requirements/tests", Metrics.RequirementsCoveredPercent, $"{Metrics.RequirementsWithTests} of {Metrics.RequirementCount} requirements have tests.", StateForCoverage(Metrics.RequirementsCoveredPercent, Metrics.RequirementCount)),
         new("Resolved clarifications", ResolvedClarificationPercent, $"{ResolvedClarifications} of {Metrics.ClarificationCount} clarification items resolved.", StateForProgress(ResolvedClarificationPercent, Metrics.ClarificationCount)),
-        new("Extraction coverage", Metrics.AcceptanceRatio, $"{Metrics.AcceptedCount} accepted of {Metrics.TotalCandidates} extracted candidates.", StateForProgress(Metrics.AcceptanceRatio, Metrics.TotalCandidates))
+        new("Review candidate coverage", Metrics.AcceptanceRatio, $"{Metrics.AcceptedCount} accepted of {Metrics.TotalCandidates} review candidates.", StateForProgress(Metrics.AcceptanceRatio, Metrics.TotalCandidates))
     ];
 
     private IReadOnlyList<RiskItem> RiskItems

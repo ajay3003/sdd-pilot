@@ -148,7 +148,7 @@ public class ExtractionReviewListTests : BunitContext
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
 
         var summary = cut.Find("[data-testid='candidate-summary']").TextContent;
-        summary.Should().Contain("4 candidates");
+        summary.Should().Contain("4 review candidates found");
         summary.Should().Contain("2 REQUIREMENT");
         summary.Should().Contain("1 TEST");
         summary.Should().Contain("1 NEEDS_CLARIFICATION");

@@ -17,13 +17,13 @@ public class NavMenuTests : BunitContext
         navText.Should().Contain("Library");
         navText.Should().Contain("Analysis");
         navText.Should().Contain("Dashboard");
-        navText.Should().Contain("Extract");
+        navText.Should().Contain("Specification Review");
         navText.Should().Contain("Scenarios");
         navText.Should().Contain("Compare");
         navText.Should().NotContain("Compare Specs");
 
-        navText.IndexOf("Dashboard", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Extract", StringComparison.Ordinal));
-        navText.IndexOf("Extract", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Scenarios", StringComparison.Ordinal));
+        navText.IndexOf("Dashboard", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Review", StringComparison.Ordinal));
+        navText.IndexOf("Specification Review", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Scenarios", StringComparison.Ordinal));
         navText.IndexOf("Scenarios", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Compare", StringComparison.Ordinal));
 
         cut.Find("a[href='dashboard']").Should().NotBeNull();

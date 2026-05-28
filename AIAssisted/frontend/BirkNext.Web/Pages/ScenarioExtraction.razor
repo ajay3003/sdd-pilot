@@ -2,17 +2,17 @@
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models
 
-<PageTitle>Extract Scenarios</PageTitle>
+<PageTitle>Analyze Specification</PageTitle>
 
-<h1>Extract Scenarios</h1>
-<p class="page-lead">Paste a specification document and extract requirements, test cases, and items needing clarification.</p>
+<h1>Analyze Specification</h1>
+<p class="page-lead">Paste a specification document and review requirements, test cases, and items needing clarification.</p>
 
 <ExtractionInput OnExtractionCompleted="HandleExtractionCompleted" />
 
 @if (_pipelineResult is null)
 {
     <div class="extract-pre-state" data-testid="extract-pre-state">
-        <p>Extracted candidates will appear here for review.</p>
+        <p>Specification review candidates will appear here.</p>
     </div>
 }
 else

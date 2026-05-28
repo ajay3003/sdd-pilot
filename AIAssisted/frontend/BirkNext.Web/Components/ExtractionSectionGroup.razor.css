@@ -3,7 +3,8 @@
     margin-bottom: 0.875rem;
     border: 1px solid var(--clr-border);
     border-radius: var(--radius-lg);
-    overflow: hidden;
+    overflow: visible;
+    background: var(--clr-surface-white, #ffffff);
 }
 
 /* ── Accent left borders ── */
@@ -22,19 +23,20 @@
 /* ── Toggle button ── */
 .section-toggle {
     width: 100%;
+    min-height: 3.25rem;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 0.5rem;
-    padding: 0.6rem 0.875rem;
+    padding: 0.75rem 0.875rem;
     background: var(--clr-surface);
-    border: none;
+    border: 0;
     border-bottom: 1px solid transparent;
+    border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0;
     cursor: pointer;
     text-align: left;
     transition: background-color var(--transition), border-color var(--transition);
-    position: sticky;
-    top: var(--section-bar-height, 0px);
-    z-index: 5;
+    position: relative;
+    z-index: 2;
 }
 
 .section-toggle:hover {
@@ -175,5 +177,14 @@
 .section-body-inner {
     overflow: hidden;
     min-height: 0;
-    padding: 0.5rem 0.75rem 0.625rem;
+    padding: 0.875rem 0.75rem 0.75rem;
+    background: var(--clr-surface-white, #ffffff);
+}
+
+.section-body.is-expanded .section-body-inner {
+    overflow: visible;
+}
+
+.section-body-inner > *:first-child {
+    margin-top: 0;
 }

@@ -1,6 +1,6 @@
 .extraction-review-list {
     position: relative;
-    --section-bar-height: 42px;
+    --section-bar-height: 54px;
 }
 
 .candidate-summary {
@@ -44,11 +44,15 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    min-height: var(--section-bar-height, 42px);
-    padding: 0.4rem 0;
+    min-height: var(--section-bar-height, 54px);
+    padding: 0.5rem 0;
     margin-bottom: 0.875rem;
     background: white;
     border-bottom: 1px solid var(--clr-border-subtle);
+}
+
+.section-summary-bar + .section-group {
+    margin-top: 0.25rem;
 }
 
 .section-summary-pills {

@@ -13,18 +13,18 @@
             <h2 id="spec-comparison-title">Specification Comparison</h2>
             <p>Compare two .md or .txt specs and review deterministic deltas before updating test coverage.</p>
         </div>
-        <div class="comparison-profile" role="radiogroup" aria-label="Comparison extraction profile">
-            <label>
-                <input type="radio" name="comparison-profile"
-                       checked="@(_profile == ExtractionProfile.Default)"
-                       @onchange="@(() => _profile = ExtractionProfile.Default)" />
-                Default
-            </label>
+        <div class="comparison-profile" role="radiogroup" aria-label="Comparison analysis profile">
             <label>
                 <input type="radio" name="comparison-profile"
                        checked="@(_profile == ExtractionProfile.Speckit)"
                        @onchange="@(() => _profile = ExtractionProfile.Speckit)" />
-                Speckit
+                Speckit Structured Spec
+            </label>
+            <label>
+                <input type="radio" name="comparison-profile"
+                       checked="@(_profile == ExtractionProfile.Default)"
+                       @onchange="@(() => _profile = ExtractionProfile.Default)" />
+                Generic Document
             </label>
         </div>
     </div>
