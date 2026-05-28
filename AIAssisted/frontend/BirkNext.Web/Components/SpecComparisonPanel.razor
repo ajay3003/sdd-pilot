@@ -7,125 +7,177 @@
 @inject IExtractionConfiguration ExtractionConfig
 @inject ISpecComparisonService ComparisonService
 
-<section class="spec-comparison-panel" aria-labelledby="spec-comparison-title" data-testid="spec-comparison-panel">
-    <div class="comparison-header">
-        <div>
-            <h2 id="spec-comparison-title">Specification Comparison</h2>
-            <p>Compare two .md or .txt specs and review deterministic deltas before updating test coverage.</p>
-        </div>
-        <div class="comparison-profile" role="radiogroup" aria-label="Comparison analysis profile">
-            <label>
-                <input type="radio" name="comparison-profile"
-                       checked="@(_profile == ExtractionProfile.Speckit)"
-                       @onchange="@(() => _profile = ExtractionProfile.Speckit)" />
-                Speckit Structured Spec
-            </label>
-            <label>
-                <input type="radio" name="comparison-profile"
-                       checked="@(_profile == ExtractionProfile.Default)"
-                       @onchange="@(() => _profile = ExtractionProfile.Default)" />
-                Generic Document
-            </label>
-        </div>
-    </div>
+<section class="spec-comparison-panel" aria-label="Specification Comparison" data-testid="spec-comparison-panel">
 
-    <div class="comparison-input-grid">
-        <div class="comparison-input-card">
-            <h3>Old Spec</h3>
-            <SpecificationImport InputId="old-spec-file-input"
-                                 OnFileImported="HandleOldImported"
-                                 OnFileRemoved="HandleOldRemoved"
-                                 IsDisabled="_isComparing" />
-            <textarea rows="8"
-                      placeholder="Paste the old spec.md or .txt content"
-                      @bind="_oldSpecText"
-                      @bind:event="oninput"
-                      disabled="@_isComparing"
-                      aria-label="Old specification text"
-                      data-testid="old-spec-textarea"></textarea>
+    <section class="compare-section compare-section-inputs" data-testid="spec-inputs-section">
+        <div class="comparison-header">
+            <h2 class="compare-section-title">Spec Inputs</h2>
+            <div class="comparison-profile" role="radiogroup" aria-label="Comparison analysis profile">
+                <label>
+                    <input type="radio" name="comparison-profile"
+                           checked="@(_profile == ExtractionProfile.Speckit)"
+                           @onchange="@(() => _profile = ExtractionProfile.Speckit)" />
+                    Speckit Structured Spec
+                </label>
+                <label>
+                    <input type="radio" name="comparison-profile"
+                           checked="@(_profile == ExtractionProfile.Default)"
+                           @onchange="@(() => _profile = ExtractionProfile.Default)" />
+                    Generic Document
+                </label>
+            </div>
         </div>
 
-        <div class="comparison-input-card">
-            <h3>New Spec</h3>
-            <SpecificationImport InputId="new-spec-file-input"
-                                 OnFileImported="HandleNewImported"
-                                 OnFileRemoved="HandleNewRemoved"
-                                 IsDisabled="_isComparing" />
-            <textarea rows="8"
-                      placeholder="Paste the new spec.md or .txt content"
-                      @bind="_newSpecText"
-                      @bind:event="oninput"
-                      disabled="@_isComparing"
-                      aria-label="New specification text"
-                      data-testid="new-spec-textarea"></textarea>
+        <div class="comparison-input-grid">
+            <div class="comparison-input-card">
+                <h3>Old Spec</h3>
+                <SpecificationImport InputId="old-spec-file-input"
+                                     OnFileImported="HandleOldImported"
+                                     OnFileRemoved="HandleOldRemoved"
+                                     IsDisabled="_isComparing" />
+                <textarea rows="8"
+                          placeholder="Paste the old spec.md or .txt content"
+                          @bind="_oldSpecText"
+                          @bind:event="oninput"
+                          disabled="@_isComparing"
+                          aria-label="Old specification text"
+                          data-testid="old-spec-textarea"></textarea>
+            </div>
+
+            <div class="comparison-input-card">
+                <h3>New Spec</h3>
+                <SpecificationImport InputId="new-spec-file-input"
+                                     OnFileImported="HandleNewImported"
+                                     OnFileRemoved="HandleNewRemoved"
+                                     IsDisabled="_isComparing" />
+                <textarea rows="8"
+                          placeholder="Paste the new spec.md or .txt content"
+                          @bind="_newSpecText"
+                          @bind:event="oninput"
+                          disabled="@_isComparing"
+                          aria-label="New specification text"
+                          data-testid="new-spec-textarea"></textarea>
+            </div>
         </div>
-    </div>
 
-    @if (_validationMessage is not null)
-    {
-        <p class="notification notification-error" role="alert" data-testid="comparison-validation">@_validationMessage</p>
-    }
+        @if (_validationMessage is not null)
+        {
+            <p class="notification notification-error" role="alert" data-testid="comparison-validation">@_validationMessage</p>
+        }
 
-    <div class="comparison-actions">
-        <button type="button"
-                class="btn-secondary"
-                @onclick="RunComparison"
-                disabled="@_isComparing"
-                data-testid="run-comparison-button">
-            @(_isComparing ? "Comparing..." : "Run Comparison")
-        </button>
-    </div>
+        <div class="comparison-actions">
+            <button type="button"
+                    class="btn-secondary"
+                    @onclick="RunComparison"
+                    disabled="@_isComparing"
+                    data-testid="run-comparison-button">
+                @(_isComparing ? "Comparing..." : "Run Comparison")
+            </button>
+        </div>
 
-    @if (_comparisonError is not null)
-    {
-        <p class="notification notification-error" role="alert" data-testid="comparison-error">@_comparisonError</p>
-    }
+        @if (_comparisonError is not null)
+        {
+            <p class="notification notification-error" role="alert" data-testid="comparison-error">@_comparisonError</p>
+        }
+    </section>
 
     @if (_comparisonResult is not null)
     {
-        <div class="delta-dashboard" aria-label="Delta summary" data-testid="delta-dashboard">
-            <button type="button" class="delta-summary-tile delta-added" @onclick="@(() => _activeStatus = SpecDeltaStatus.Added)">
-                <span>@_comparisonResult.Summary.AddedRequirements</span>
-                <small>Added requirements</small>
-            </button>
-            <button type="button" class="delta-summary-tile delta-modified" @onclick="@(() => _activeStatus = SpecDeltaStatus.Modified)">
-                <span>@_comparisonResult.Summary.ModifiedRequirements</span>
-                <small>Modified requirements</small>
-            </button>
-            <button type="button" class="delta-summary-tile delta-removed" @onclick="@(() => _activeStatus = SpecDeltaStatus.Removed)">
-                <span>@_comparisonResult.Summary.RemovedRequirements</span>
-                <small>Removed requirements</small>
-            </button>
-            <div class="delta-summary-tile delta-modified">
-                <span>@_comparisonResult.Summary.PotentiallyImpactedTests</span>
-                <small>Impacted tests</small>
+        <section class="compare-section compare-section-summary" data-testid="delta-summary-section">
+            <h2 class="compare-section-title">Delta Summary</h2>
+            <div class="delta-dashboard" aria-label="Delta summary" data-testid="delta-dashboard">
+                <button type="button" class="delta-summary-tile delta-added" @onclick="@(() => _activeStatus = SpecDeltaStatus.Added)">
+                    <span>@_comparisonResult.Summary.AddedRequirements</span>
+                    <small>Added requirements</small>
+                </button>
+                <button type="button" class="delta-summary-tile delta-modified" @onclick="@(() => _activeStatus = SpecDeltaStatus.Modified)">
+                    <span>@_comparisonResult.Summary.ModifiedRequirements</span>
+                    <small>Modified requirements</small>
+                </button>
+                <button type="button" class="delta-summary-tile delta-removed" @onclick="@(() => _activeStatus = SpecDeltaStatus.Removed)">
+                    <span>@_comparisonResult.Summary.RemovedRequirements</span>
+                    <small>Removed requirements</small>
+                </button>
+                <div class="delta-summary-tile delta-impacted">
+                    <span>@_comparisonResult.Summary.PotentiallyImpactedTests</span>
+                    <small>Impacted tests</small>
+                </div>
+                <div class="delta-summary-tile delta-impacted">
+                    <span>@_comparisonResult.Summary.UncoveredRequirements</span>
+                    <small>Uncovered requirements</small>
+                </div>
+                <div class="delta-summary-tile delta-impacted">
+                    <span>@_comparisonResult.Summary.NewClarificationRisks</span>
+                    <small>New clarifications</small>
+                </div>
             </div>
-            <div class="delta-summary-tile delta-modified">
-                <span>@_comparisonResult.Summary.UncoveredRequirements</span>
-                <small>Uncovered requirements</small>
+        </section>
+
+        <section class="compare-section compare-section-explorer" data-testid="change-explorer-section">
+            <h2 class="compare-section-title">Change Explorer</h2>
+            <div class="delta-filter-row" role="toolbar" aria-label="Delta filters">
+                <span class="filter-group-label" aria-hidden="true">Type</span>
+                <button type="button"
+                        class="filter-chip @(_activeKind is null ? "is-active" : "")"
+                        aria-pressed="@(_activeKind is null ? "true" : "false")"
+                        data-testid="filter-all-types"
+                        @onclick="@(() => _activeKind = null)">All</button>
+                <button type="button"
+                        class="filter-chip @(_activeKind == ScenarioKind.Requirement ? "is-active" : "")"
+                        aria-pressed="@(_activeKind == ScenarioKind.Requirement ? "true" : "false")"
+                        data-testid="filter-requirements"
+                        @onclick="@(() => _activeKind = ScenarioKind.Requirement)">Requirements</button>
+                <button type="button"
+                        class="filter-chip @(_activeKind == ScenarioKind.Test ? "is-active" : "")"
+                        aria-pressed="@(_activeKind == ScenarioKind.Test ? "true" : "false")"
+                        data-testid="filter-tests"
+                        @onclick="@(() => _activeKind = ScenarioKind.Test)">Tests</button>
+                <button type="button"
+                        class="filter-chip @(_activeKind == ScenarioKind.NeedsClarification ? "is-active" : "")"
+                        aria-pressed="@(_activeKind == ScenarioKind.NeedsClarification ? "true" : "false")"
+                        data-testid="filter-clarifications"
+                        @onclick="@(() => _activeKind = ScenarioKind.NeedsClarification)">Clarifications</button>
+
+                <span class="filter-group-divider" aria-hidden="true"></span>
+
+                <span class="filter-group-label" aria-hidden="true">Delta</span>
+                <button type="button"
+                        class="filter-chip @(_activeStatus is null ? "is-active" : "")"
+                        aria-pressed="@(_activeStatus is null ? "true" : "false")"
+                        data-testid="filter-all-deltas"
+                        @onclick="@(() => _activeStatus = null)">All</button>
+                <button type="button"
+                        class="filter-chip @(_activeStatus == SpecDeltaStatus.Added ? "is-active" : "")"
+                        aria-pressed="@(_activeStatus == SpecDeltaStatus.Added ? "true" : "false")"
+                        data-testid="filter-added"
+                        @onclick="@(() => _activeStatus = SpecDeltaStatus.Added)">Added</button>
+                <button type="button"
+                        class="filter-chip @(_activeStatus == SpecDeltaStatus.Modified ? "is-active" : "")"
+                        aria-pressed="@(_activeStatus == SpecDeltaStatus.Modified ? "true" : "false")"
+                        data-testid="filter-modified"
+                        @onclick="@(() => _activeStatus = SpecDeltaStatus.Modified)">Modified</button>
+                <button type="button"
+                        class="filter-chip @(_activeStatus == SpecDeltaStatus.Removed ? "is-active" : "")"
+                        aria-pressed="@(_activeStatus == SpecDeltaStatus.Removed ? "true" : "false")"
+                        data-testid="filter-removed"
+                        @onclick="@(() => _activeStatus = SpecDeltaStatus.Removed)">Removed</button>
             </div>
-            <button type="button" class="delta-summary-tile delta-added" @onclick="@(() => _activeKind = ScenarioKind.NeedsClarification)">
-                <span>@_comparisonResult.Summary.NewClarificationRisks</span>
-                <small>New clarifications</small>
-            </button>
-        </div>
 
-        <div class="delta-filter-row" role="toolbar" aria-label="Delta filters">
-            <button type="button" class="filter-chip @(_activeKind is null ? "is-active" : "")" @onclick="@(() => _activeKind = null)">All types</button>
-            <button type="button" class="filter-chip @(_activeKind == ScenarioKind.Requirement ? "is-active" : "")" @onclick="@(() => _activeKind = ScenarioKind.Requirement)">Requirements</button>
-            <button type="button" class="filter-chip @(_activeKind == ScenarioKind.Test ? "is-active" : "")" @onclick="@(() => _activeKind = ScenarioKind.Test)">Tests</button>
-            <button type="button" class="filter-chip @(_activeKind == ScenarioKind.NeedsClarification ? "is-active" : "")" @onclick="@(() => _activeKind = ScenarioKind.NeedsClarification)">Clarifications</button>
-            <button type="button" class="filter-chip @(_activeStatus is null ? "is-active" : "")" @onclick="@(() => _activeStatus = null)">All deltas</button>
-            <button type="button" class="filter-chip" @onclick="@(() => _activeStatus = SpecDeltaStatus.Added)">Added</button>
-            <button type="button" class="filter-chip" @onclick="@(() => _activeStatus = SpecDeltaStatus.Modified)">Modified</button>
-            <button type="button" class="filter-chip" @onclick="@(() => _activeStatus = SpecDeltaStatus.Removed)">Removed</button>
-        </div>
-
-        <div class="delta-section-grid">
-            @RenderDeltaSection("Requirements", ScenarioKind.Requirement, _comparisonResult.RequirementDeltas)
-            @RenderDeltaSection("Tests", ScenarioKind.Test, _comparisonResult.TestDeltas)
-            @RenderDeltaSection("Clarifications", ScenarioKind.NeedsClarification, _comparisonResult.ClarificationDeltas)
-        </div>
+            @if (!HasFilteredResults)
+            {
+                <div class="change-explorer-empty" data-testid="change-explorer-empty">
+                    <p>No changes match the current filters.</p>
+                </div>
+            }
+            else
+            {
+                <div class="delta-section-grid">
+                    @RenderDeltaSection("Requirements", ScenarioKind.Requirement, _comparisonResult.RequirementDeltas)
+                    @RenderDeltaSection("Tests", ScenarioKind.Test, _comparisonResult.TestDeltas)
+                    @RenderDeltaSection("Clarifications", ScenarioKind.NeedsClarification, _comparisonResult.ClarificationDeltas)
+                </div>
+            }
+        </section>
     }
 </section>
 
@@ -139,6 +191,16 @@
     private SpecComparisonResult? _comparisonResult;
     private ScenarioKind? _activeKind;
     private SpecDeltaStatus? _activeStatus;
+
+    private bool HasFilteredResults =>
+        _comparisonResult is not null && (
+            SectionHasResults(ScenarioKind.Requirement, _comparisonResult.RequirementDeltas) ||
+            SectionHasResults(ScenarioKind.Test, _comparisonResult.TestDeltas) ||
+            SectionHasResults(ScenarioKind.NeedsClarification, _comparisonResult.ClarificationDeltas));
+
+    private bool SectionHasResults(ScenarioKind kind, IReadOnlyList<SpecDeltaItem> deltas) =>
+        (_activeKind is null || _activeKind == kind) &&
+        deltas.Any(d => _activeStatus is null || d.Status == _activeStatus);
 
     private void HandleOldImported(string content)
     {
@@ -228,6 +290,7 @@
         {
             builder.OpenElement(seq++, "article");
             builder.AddAttribute(seq++, "class", $"delta-card delta-card-{delta.Status.ToString().ToLowerInvariant()}");
+            builder.AddAttribute(seq++, "data-testid", "delta-card");
 
             builder.OpenElement(seq++, "div");
             builder.AddAttribute(seq++, "class", "delta-card-header");
