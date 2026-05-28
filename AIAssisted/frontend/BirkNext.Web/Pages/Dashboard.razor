@@ -1,0 +1,72 @@
+@page "/dashboard"
+@using BirkNext.Web.Components
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Services
+@inject IBirkNextClient Client
+@inject IDashboardMetricsService MetricsService
+
+<PageTitle>Dashboard</PageTitle>
+
+<div class="dashboard-page">
+    <h1>Dashboard</h1>
+    <p class="page-lead">Review progress, coverage gaps, traceability risk, and extraction quality across saved review data.</p>
+</div>
+
+@if (_isLoading)
+{
+    <p class="loading-state">Loading dashboard...</p>
+}
+else
+{
+    @if (_loadError is not null)
+    {
+        <div class="dashboard-load-error" role="alert" data-testid="dashboard-load-error">
+            @_loadError
+        </div>
+    }
+
+    <DashboardMetricsCards Metrics="_metrics" />
+}
+
+@code {
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+    private bool _isLoading;
+    private string? _loadError;
+    private DashboardMetrics _metrics = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+
+        try
+        {
+            var candidatesResult = await Client.GetReviewedCandidates.ExecuteAsync(ProjectId, null);
+            var linksResult = await Client.GetCandidateLinks.ExecuteAsync(ProjectId, null);
+
+            if (candidatesResult.Errors is { Count: > 0 } || linksResult.Errors is { Count: > 0 })
+            {
+                _loadError = "We couldn't load dashboard data right now. Please try again later.";
+                return;
+            }
+
+            var candidates = candidatesResult.Data?.ReviewedCandidates
+                .Select(c => new DashboardCandidate(c.Id, c.Classification, c.ReviewStatus))
+                .ToList() ?? [];
+
+            var links = linksResult.Data?.CandidateLinks
+                .Select(l => new DashboardCandidateLink(l.SourceCandidateRef, l.TargetCandidateRef, l.LinkType))
+                .ToList() ?? [];
+
+            _metrics = MetricsService.Calculate(candidates, links);
+        }
+        catch (Exception)
+        {
+            _loadError = "We couldn't load dashboard data right now. Please try again later.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+}

@@ -8,6 +8,7 @@ param(
     [switch]$SkipContainers,
     [switch]$BackendOnly,
     [switch]$FrontendOnly,
+    [switch]$ForceKillPorts,
 
     [int]$ContainerDelaySeconds = 10,
     [int]$BackendDelaySeconds = 20,
@@ -105,6 +106,266 @@ function Invoke-NativeCommand {
         Remove-Item $stdoutFile -ErrorAction SilentlyContinue
         Remove-Item $stderrFile -ErrorAction SilentlyContinue
     }
+}
+
+function Load-EnvFile {
+    param([string]$Path)
+
+    $values = @{}
+
+    if (-not (Test-Path $Path)) {
+        Warn "Environment file not found: $Path"
+        return $values
+    }
+
+    foreach ($line in Get-Content $Path) {
+        $trimmed = $line.Trim()
+        if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#")) {
+            continue
+        }
+
+        $separator = $trimmed.IndexOf("=")
+        if ($separator -lt 1) {
+            continue
+        }
+
+        $name = $trimmed.Substring(0, $separator).Trim()
+        $value = $trimmed.Substring($separator + 1).Trim().Trim('"').Trim("'")
+        $values[$name] = $value
+        [Environment]::SetEnvironmentVariable($name, $value, "Process")
+    }
+
+    return $values
+}
+
+function Escape-PowerShellSingleQuotedString {
+    param([string]$Value)
+    return $Value.Replace("'", "''")
+}
+
+function Get-ProjectLaunchPort {
+    param(
+        [string]$ProjectFile,
+        [string]$ProfileName = "http"
+    )
+
+    $projectDir = Split-Path -Parent $ProjectFile
+    $launchSettingsPath = Join-Path $projectDir "Properties\launchSettings.json"
+
+    if (-not (Test-Path $launchSettingsPath)) {
+        return $null
+    }
+
+    try {
+        $launchSettings = Get-Content $launchSettingsPath -Raw | ConvertFrom-Json
+        $profile = $launchSettings.profiles.$ProfileName
+
+        if ($null -eq $profile -or [string]::IsNullOrWhiteSpace($profile.applicationUrl)) {
+            return $null
+        }
+
+        $firstUrl = ($profile.applicationUrl -split ";") | Select-Object -First 1
+        $uri = [System.Uri]$firstUrl
+        return $uri.Port
+    }
+    catch {
+        Warn "Could not read launch port from $launchSettingsPath"
+        return $null
+    }
+}
+
+function Get-PortOwnerProcess {
+    param([int]$Port)
+
+    $processIds = @()
+
+    if (Command-Exists "Get-NetTCPConnection") {
+        try {
+            $processIds += Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop |
+                Select-Object -ExpandProperty OwningProcess -Unique
+        }
+        catch {
+            $processIds += @()
+        }
+    }
+
+    if ($processIds.Count -eq 0) {
+        try {
+            $netstatOutput = & netstat -ano -p tcp 2>$null
+
+            foreach ($line in $netstatOutput) {
+                if ($line -notmatch "LISTENING") {
+                    continue
+                }
+
+                $columns = $line.Trim() -split "\s+"
+
+                if ($columns.Count -lt 5) {
+                    continue
+                }
+
+                $localAddress = $columns[1]
+                $pidText = $columns[-1]
+
+                if ($localAddress -match "[:.]$Port$" -and $pidText -match "^\d+$") {
+                    $processIds += [int]$pidText
+                }
+            }
+        }
+        catch {
+            $processIds += @()
+        }
+    }
+
+    $owners = @()
+
+    foreach ($processId in ($processIds | Where-Object { $_ -gt 0 } | Select-Object -Unique)) {
+        $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+        $commandLine = ""
+
+        try {
+            $cimProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $processId" -ErrorAction Stop
+            $commandLine = if ($null -ne $cimProcess.CommandLine) { $cimProcess.CommandLine } else { "" }
+        }
+        catch {
+            $commandLine = ""
+        }
+
+        $owners += [PSCustomObject]@{
+            Id          = $processId
+            ProcessName = if ($null -ne $process) { $process.ProcessName } else { "unknown" }
+            Path        = if ($null -ne $process) { $process.Path } else { "" }
+            CommandLine = $commandLine
+        }
+    }
+
+    return $owners
+}
+
+function Test-PortInUse {
+    param([int]$Port)
+    return @(Get-PortOwnerProcess -Port $Port).Count -gt 0
+}
+
+function Test-IsAllowedLocalProcess {
+    param(
+        $Owner,
+        [string]$RepoRoot,
+        [string]$ProjectFile
+    )
+
+    $processName = if ($null -ne $Owner.ProcessName) { $Owner.ProcessName.ToLowerInvariant() } else { "" }
+    $commandLine = if ($null -ne $Owner.CommandLine) { $Owner.CommandLine } else { "" }
+    $normalizedRepoRoot = $RepoRoot.ToLowerInvariant()
+    $normalizedProjectFile = $ProjectFile.ToLowerInvariant()
+    $normalizedCommandLine = $commandLine.ToLowerInvariant()
+
+    if ($processName -ne "dotnet") {
+        return $false
+    }
+
+    if (
+        $normalizedCommandLine.Contains($normalizedProjectFile) -or
+        ($normalizedCommandLine.Contains("birknext") -and $normalizedCommandLine.Contains($normalizedRepoRoot))
+    ) {
+        return $true
+    }
+
+    return [string]::IsNullOrWhiteSpace($commandLine)
+}
+
+function Stop-PortOwnerIfAllowed {
+    param(
+        [string]$Name,
+        [int]$Port,
+        [string]$RepoRoot,
+        [string]$ProjectFile
+    )
+
+    $owners = @(Get-PortOwnerProcess -Port $Port)
+
+    if ($owners.Count -eq 0) {
+        Ok "$Name port $Port is available"
+        return $true
+    }
+
+    Warn "Port $Port is already in use"
+
+    foreach ($owner in $owners) {
+        $summary = "PID $($owner.Id) ($($owner.ProcessName))"
+        Write-Host "  Owner: $summary"
+
+        if (-not [string]::IsNullOrWhiteSpace($owner.CommandLine)) {
+            Write-Host "  Command: $($owner.CommandLine)" -ForegroundColor DarkGray
+        }
+    }
+
+    Write-Host ""
+
+    if (-not $ForceKillPorts) {
+        Warn "$Name will not be started while port $Port is busy."
+        Write-Host "Inspect the port:" -ForegroundColor Yellow
+        Write-Host "  netstat -ano | findstr :$Port"
+        Write-Host "Stop a known stale process:" -ForegroundColor Yellow
+        Write-Host "  taskkill /PID <pid> /F"
+        Write-Host "Or rerun local startup with:" -ForegroundColor Yellow
+        Write-Host "  .\scripts\start-local.ps1 -ForceKillPorts"
+        Write-Host ""
+        return $false
+    }
+
+    foreach ($owner in $owners) {
+        $isAllowed = Test-IsAllowedLocalProcess -Owner $owner -RepoRoot $RepoRoot -ProjectFile $ProjectFile
+
+        if (-not $isAllowed) {
+            Fail "Refusing to kill PID $($owner.Id) because it does not look like a local BirkNext dotnet process."
+            Write-Host "Inspect manually:" -ForegroundColor Yellow
+            Write-Host "  netstat -ano | findstr :$Port"
+            Write-Host "  taskkill /PID $($owner.Id) /F"
+            return $false
+        }
+
+        if ([string]::IsNullOrWhiteSpace($owner.CommandLine)) {
+            Warn "Command line for PID $($owner.Id) is not available; treating dotnet on configured $Name port $Port as a stale local process."
+        }
+
+        Info "Stopping stale $Name port owner PID $($owner.Id) ($($owner.ProcessName))..."
+        Stop-Process -Id $owner.Id -Force -ErrorAction Stop
+    }
+
+    Start-Sleep -Seconds 1
+
+    if (Test-PortInUse -Port $Port) {
+        Fail "Port $Port is still in use after cleanup."
+        return $false
+    }
+
+    Ok "$Name port $Port is available"
+    return $true
+}
+
+function Get-PostgresConfig {
+    param([hashtable]$EnvValues)
+
+    return [PSCustomObject]@{
+        Host     = if ($EnvValues.ContainsKey("POSTGRES_HOST")) { $EnvValues["POSTGRES_HOST"] } else { "localhost" }
+        Port     = if ($EnvValues.ContainsKey("POSTGRES_PORT")) { $EnvValues["POSTGRES_PORT"] } else { "5432" }
+        Database = if ($EnvValues.ContainsKey("POSTGRES_DB")) { $EnvValues["POSTGRES_DB"] } else { "birknext" }
+        User     = if ($EnvValues.ContainsKey("POSTGRES_USER")) { $EnvValues["POSTGRES_USER"] } else { "birknext" }
+        Password = if ($EnvValues.ContainsKey("POSTGRES_PASSWORD")) { $EnvValues["POSTGRES_PASSWORD"] } else { "birknext" }
+    }
+}
+
+function Get-BackendConnectionString {
+    param($PostgresConfig)
+
+    return "Host=$($PostgresConfig.Host);Port=$($PostgresConfig.Port);Database=$($PostgresConfig.Database);Username=$($PostgresConfig.User);Password=$($PostgresConfig.Password)"
+}
+
+function Get-SanitizedConnectionString {
+    param($PostgresConfig)
+
+    return "Host=$($PostgresConfig.Host);Port=$($PostgresConfig.Port);Database=$($PostgresConfig.Database);Username=$($PostgresConfig.User);Password=***"
 }
 
 function Test-PodmanReady {
@@ -288,6 +549,14 @@ function Find-ComposeFile {
 
 function Start-ContainerServices {
     if ($SkipContainers) {
+        $composePath = Find-ComposeFile -Root $repoRoot
+        if ($null -ne $composePath) {
+            $composeEnvPath = Join-Path (Split-Path -Parent $composePath) ".env"
+            $composeEnv = Load-EnvFile -Path $composeEnvPath
+            $script:PostgresConfig = Get-PostgresConfig -EnvValues $composeEnv
+            $script:BackendConnectionString = Get-BackendConnectionString -PostgresConfig $script:PostgresConfig
+            Info "PostgreSQL config: $(Get-SanitizedConnectionString -PostgresConfig $script:PostgresConfig)"
+        }
         Warn "Skipping container startup."
         return
     }
@@ -310,6 +579,13 @@ function Start-ContainerServices {
     }
 
     Ok "Compose file: $composePath"
+
+    $composeEnvPath = Join-Path (Split-Path -Parent $composePath) ".env"
+    $composeEnv = Load-EnvFile -Path $composeEnvPath
+    $script:PostgresConfig = Get-PostgresConfig -EnvValues $composeEnv
+    $script:BackendConnectionString = Get-BackendConnectionString -PostgresConfig $script:PostgresConfig
+
+    Info "PostgreSQL config: $(Get-SanitizedConnectionString -PostgresConfig $script:PostgresConfig)"
 
     if ($ContainerRuntime -eq "podman") {
         Ensure-PodmanReady
@@ -395,6 +671,21 @@ function Start-DotNetProjectWindow {
         $runCommand = "dotnet restore `"$ProjectFile`"; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }; dotnet build `"$ProjectFile`"; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }; dotnet run --project `"$ProjectFile`""
     }
 
+    $environmentCommand = ""
+    if ($Name -eq "Backend" -and -not [string]::IsNullOrWhiteSpace($script:BackendConnectionString)) {
+        $escapedConnectionString = Escape-PowerShellSingleQuotedString -Value $script:BackendConnectionString
+        $escapedPostgresDb = Escape-PowerShellSingleQuotedString -Value $script:PostgresConfig.Database
+        $escapedPostgresUser = Escape-PowerShellSingleQuotedString -Value $script:PostgresConfig.User
+        $escapedPostgresPassword = Escape-PowerShellSingleQuotedString -Value $script:PostgresConfig.Password
+        $environmentCommand = @"
+`$env:ConnectionStrings__Default = '$escapedConnectionString'
+`$env:POSTGRES_DB = '$escapedPostgresDb'
+`$env:POSTGRES_USER = '$escapedPostgresUser'
+`$env:POSTGRES_PASSWORD = '$escapedPostgresPassword'
+Write-Host 'Database: $(Get-SanitizedConnectionString -PostgresConfig $script:PostgresConfig)' -ForegroundColor DarkGray
+"@
+    }
+
     $command = @"
 `$host.UI.RawUI.WindowTitle = 'BirkNext $Name'
 Set-Location '$WorkingPath'
@@ -403,6 +694,7 @@ Write-Host 'Project: $ProjectFile' -ForegroundColor DarkGray
 Write-Host ''
 Write-Host 'When startup is complete, copy the shown localhost URL from this window.' -ForegroundColor Yellow
 Write-Host ''
+$environmentCommand
 $runCommand
 "@
 
@@ -430,6 +722,7 @@ Info "Runtime:         $ContainerRuntime"
 Info "Mode:            $(if ($Fast) { 'Fast' } else { 'Safe' })"
 Info "Container delay: $ContainerDelaySeconds seconds"
 Info "Backend delay:   $BackendDelaySeconds seconds"
+Info "Port cleanup:    $(if ($ForceKillPorts) { 'Force stale local dotnet processes' } else { 'Safe warning only' })"
 
 Require-Command "dotnet" "Install .NET SDK 8 or add dotnet to PATH."
 
@@ -447,9 +740,41 @@ $frontendProject = Find-ProjectFile -BasePath $frontendPath -PreferredName "Birk
 Ok "Backend project:  $backendProject"
 Ok "Frontend project: $frontendProject"
 
+$backendPort = Get-ProjectLaunchPort -ProjectFile $backendProject
+$frontendPort = Get-ProjectLaunchPort -ProjectFile $frontendProject
+
+if ($null -ne $backendPort) {
+    Info "Backend port:    $backendPort"
+}
+else {
+    Warn "Backend launch port could not be detected. Skipping backend port preflight."
+}
+
+if ($null -ne $frontendPort) {
+    Info "Frontend port:   $frontendPort"
+}
+else {
+    Warn "Frontend launch port could not be detected. Skipping frontend port preflight."
+}
+
 Push-Location $repoRoot
 
 try {
+    $canStart = $true
+
+    if (-not $FrontendOnly -and $null -ne $backendPort) {
+        $canStart = (Stop-PortOwnerIfAllowed -Name "Backend" -Port $backendPort -RepoRoot $repoRoot -ProjectFile $backendProject) -and $canStart
+    }
+
+    if (-not $BackendOnly -and $null -ne $frontendPort) {
+        $canStart = (Stop-PortOwnerIfAllowed -Name "Frontend" -Port $frontendPort -RepoRoot $repoRoot -ProjectFile $frontendProject) -and $canStart
+    }
+
+    if (-not $canStart) {
+        Warn "Startup stopped before launching backend/frontend because one or more required ports are busy."
+        return
+    }
+
     Start-ContainerServices
 
     if (-not $FrontendOnly) {

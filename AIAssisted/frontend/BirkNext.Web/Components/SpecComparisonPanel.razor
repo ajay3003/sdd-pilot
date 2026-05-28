@@ -76,6 +76,11 @@
         </button>
     </div>
 
+    @if (_comparisonError is not null)
+    {
+        <p class="notification notification-error" role="alert" data-testid="comparison-error">@_comparisonError</p>
+    }
+
     @if (_comparisonResult is not null)
     {
         <div class="delta-dashboard" aria-label="Delta summary" data-testid="delta-dashboard">
@@ -128,6 +133,7 @@
     private string _oldSpecText = string.Empty;
     private string _newSpecText = string.Empty;
     private string? _validationMessage;
+    private string? _comparisonError;
     private bool _isComparing;
     private ExtractionProfile _profile = ExtractionProfile.Speckit;
     private SpecComparisonResult? _comparisonResult;
@@ -161,6 +167,7 @@
     private async Task RunComparison()
     {
         _validationMessage = null;
+        _comparisonError = null;
 
         if (string.IsNullOrWhiteSpace(_oldSpecText) || string.IsNullOrWhiteSpace(_newSpecText))
         {
@@ -182,6 +189,11 @@
             _comparisonResult = ComparisonService.Compare(oldResult, newResult);
             _activeKind = null;
             _activeStatus = null;
+        }
+        catch (Exception)
+        {
+            _comparisonResult = null;
+            _comparisonError = "Comparison failed. Check the spec text and try again.";
         }
         finally
         {

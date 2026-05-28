@@ -1,6 +1,6 @@
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="">BirkNext</a>
+        <a class="navbar-brand" href="dashboard">BirkNext</a>
         <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
             <span class="navbar-toggler-icon"></span>
         </button>
@@ -9,19 +9,27 @@
 
 <div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
     <nav class="flex-column">
+        <div class="nav-section px-3">Review</div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+            <NavLink class="nav-link" href="dashboard">
+                <span class="nav-icon nav-icon-dashboard" aria-hidden="true"></span> Dashboard
             </NavLink>
         </div>
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="extract">
-                <span class="bi bi-file-text-nav-menu" aria-hidden="true"></span> Extract
+                <span class="nav-icon nav-icon-extract" aria-hidden="true"></span> Extract
             </NavLink>
         </div>
+        <div class="nav-section px-3">Library</div>
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="scenarios">
-                <span class="bi bi-card-list-nav-menu" aria-hidden="true"></span> Scenarios
+                <span class="nav-icon nav-icon-scenarios" aria-hidden="true"></span> Scenarios
+            </NavLink>
+        </div>
+        <div class="nav-section px-3">Analysis</div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="compare">
+                <span class="nav-icon nav-icon-compare" aria-hidden="true"></span> Compare
             </NavLink>
         </div>
     </nav>

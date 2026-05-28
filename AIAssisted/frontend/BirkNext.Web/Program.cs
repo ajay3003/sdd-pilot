@@ -42,5 +42,6 @@ builder.Services.AddScoped<IScenarioExtractionService>(sp =>
         sp.GetRequiredService<IExtractionRuleEngine>(),
         sp.GetRequiredService<ILogger<ScenarioExtractionService>>()));
 builder.Services.AddSingleton<ISpecComparisonService, SpecComparisonService>();
+builder.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
 
 await builder.Build().RunAsync();

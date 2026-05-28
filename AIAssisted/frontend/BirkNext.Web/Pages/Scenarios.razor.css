@@ -65,3 +65,11 @@
     border-color: var(--clr-primary-focus, #3b82f6);
     box-shadow: 0 0 0 3px var(--clr-primary-ring, rgba(59, 130, 246, 0.1));
 }
+
+.scenario-load-error {
+    padding: 0.875rem 1rem;
+    border: 1px solid #fecaca;
+    border-radius: var(--radius-md, 6px);
+    background: #fef2f2;
+    color: #991b1b;
+}

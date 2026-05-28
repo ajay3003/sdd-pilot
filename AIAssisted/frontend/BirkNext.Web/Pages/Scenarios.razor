@@ -20,6 +20,10 @@
             {
                 <span>Loading…</span>
             }
+            else if (_loadError is not null)
+            {
+                <span>Scenarios unavailable</span>
+            }
             else if (string.IsNullOrEmpty(_searchQuery) && string.IsNullOrEmpty(_filterKind))
             {
                 <span>@_scenarios.Count scenario@(_scenarios.Count == 1 ? "" : "s")</span>
@@ -54,6 +58,12 @@
     {
         <p class="loading-state">Loading scenarios…</p>
     }
+    else if (_loadError is not null)
+    {
+        <div class="scenario-load-error" role="alert" data-testid="scenario-load-error">
+            @_loadError
+        </div>
+    }
     else
     {
         <ScenarioList Scenarios="FilteredScenarios" />
@@ -66,6 +76,7 @@
     private bool _isLoading;
     private string _searchQuery = string.Empty;
     private string _filterKind = string.Empty;
+    private string? _loadError;
 
     private IReadOnlyList<ScenarioListItem> FilteredScenarios =>
         _scenarios
@@ -84,17 +95,37 @@
     private async Task LoadScenariosAsync()
     {
         _isLoading = true;
+        _loadError = null;
         StateHasChanged();
 
-        var result = await Client.GetScenarios.ExecuteAsync(ProjectId);
-        if (result.Data is { } data)
+        try
         {
-            _scenarios = data.Scenarios
-                .Select(s => new ScenarioListItem(s.Id, s.Title, s.Description, s.Kind.ToString()))
-                .ToList();
-        }
+            var result = await Client.GetScenarios.ExecuteAsync(ProjectId);
+            if (result.Errors is { Count: > 0 })
+            {
+                _loadError = "We couldn't load scenarios right now. Please try again later.";
+                return;
+            }
 
-        _isLoading = false;
+            if (result.Data is { } data)
+            {
+                _scenarios = data.Scenarios
+                    .Select(s => new ScenarioListItem(s.Id, s.Title, s.Description, s.Kind.ToString()))
+                    .ToList();
+            }
+            else
+            {
+                _loadError = "We couldn't load scenarios right now. Please try again later.";
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = "We couldn't load scenarios right now. Please try again later.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
     }
 
     private async Task RefreshListAsync()

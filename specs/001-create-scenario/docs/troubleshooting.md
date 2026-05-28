@@ -14,6 +14,30 @@ Check:
 - correct frontend project is selected
 - browser console errors
 
+If the frontend port is busy:
+
+```text
+Port 5173 is already in use
+```
+
+Inspect the owning process:
+
+```powershell
+netstat -ano | findstr :5173
+```
+
+Stop a known stale process:
+
+```powershell
+taskkill /PID <pid> /F
+```
+
+If the owner is a stale local BirkNext `dotnet` process, rerun:
+
+```powershell
+.\scripts\start-local.ps1 -ForceKillPorts
+```
+
 ## Backend Does Not Start
 
 Check:
@@ -28,6 +52,71 @@ Try:
 ```powershell
 .\scripts\start-local.ps1 -BackendOnly
 ```
+
+If the backend port is busy:
+
+```text
+Port 5000 is already in use
+```
+
+Inspect the owning process:
+
+```powershell
+netstat -ano | findstr :5000
+```
+
+Stop a known stale process:
+
+```powershell
+taskkill /PID <pid> /F
+```
+
+For stale local BirkNext `dotnet` processes:
+
+```powershell
+.\scripts\start-local.ps1 -ForceKillPorts
+```
+
+## PostgreSQL Password Authentication Failed
+
+Example:
+
+```text
+Npgsql.PostgresException 28P01: password authentication failed for user "birknext"
+```
+
+Local compose credentials are defined in:
+
+```text
+AIAssisted/.env
+```
+
+The launcher reads that file and exports a matching backend
+`ConnectionStrings__Default` value. If authentication still fails, the most
+common cause is an existing `postgres_data` volume that was initialized with
+older credentials. PostgreSQL does not update the stored database password when
+`.env` changes.
+
+Check what is listening on port 5432:
+
+```powershell
+netstat -ano | Select-String ':5432'
+```
+
+Fix options:
+
+- Restore `AIAssisted/.env` to the credentials used when the volume was created.
+- Set `ConnectionStrings__Default` to match the existing local database.
+- Recreate the local PostgreSQL volume if local data can be discarded.
+
+For Podman, inspect volumes first:
+
+```bash
+podman volume ls
+```
+
+Then remove only the BirkNext local PostgreSQL volume when you intentionally
+want a fresh database.
 
 ## PowerShell Script Is Blocked
 

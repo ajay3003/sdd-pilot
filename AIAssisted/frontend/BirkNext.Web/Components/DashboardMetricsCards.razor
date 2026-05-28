@@ -1,0 +1,272 @@
+@using BirkNext.Web.Services
+
+<section class="qa-dashboard" aria-label="QA dashboard" data-testid="coverage-dashboard">
+    <div class="dashboard-section dashboard-section-hero">
+        <div>
+            <p class="section-kicker">QA cockpit</p>
+            <h2>Health summary</h2>
+            <p>Review health, coverage pressure, and traceability gaps from saved candidate data.</p>
+        </div>
+        <div class="dashboard-total" aria-label="Saved review items">
+            <span>@Metrics.TotalCandidates</span>
+            <small>saved review items</small>
+        </div>
+    </div>
+
+    @if (Metrics.TotalCandidates == 0)
+    {
+        <section class="dashboard-empty-state" aria-label="Empty dashboard state" data-testid="dashboard-empty-state">
+            <div class="empty-state-icon" aria-hidden="true"></div>
+            <div>
+                <h3>No QA metrics yet</h3>
+                <p>Run extraction and save reviews to populate QA metrics.</p>
+            </div>
+            <a class="empty-state-action" href="extract">Run extraction</a>
+        </section>
+    }
+
+    <div class="health-grid" aria-label="Dashboard health summary">
+        @foreach (var card in HealthCards)
+        {
+            <article class="health-card health-@card.State" role="group" aria-label="@card.Title" data-testid="dashboard-health-card">
+                <div class="health-card-top">
+                    <span class="health-icon @card.IconClass" aria-hidden="true"></span>
+                    <span class="health-state">@card.StateLabel</span>
+                </div>
+                <h3>@card.Title</h3>
+                <div class="health-value">@card.Value</div>
+                <p>@card.Subtitle</p>
+                @if (card.ProgressPercent is not null)
+                {
+                    <div class="health-progress" aria-hidden="true">
+                        <span style="width: @card.ProgressPercent%;"></span>
+                    </div>
+                }
+            </article>
+        }
+    </div>
+
+    <div class="dashboard-grid">
+        <section class="dashboard-panel progress-panel" aria-label="Progress visuals">
+            <div class="panel-heading">
+                <p class="section-kicker">Flow</p>
+                <h2>Progress checks</h2>
+            </div>
+            @foreach (var progress in ProgressItems)
+            {
+                <div class="progress-row">
+                    <div class="progress-copy">
+                        <span>@progress.Label</span>
+                        <strong>@progress.Percent%</strong>
+                    </div>
+                    <div class="progress-track" role="progressbar" aria-label="@progress.Label" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@progress.Percent">
+                        <span class="progress-fill progress-@progress.State" style="width: @progress.Percent%;"></span>
+                    </div>
+                    <p>@progress.Detail</p>
+                </div>
+            }
+        </section>
+
+        <section class="dashboard-panel risk-panel" aria-label="Top QA risks" data-testid="top-qa-risks">
+            <div class="panel-heading">
+                <p class="section-kicker">Attention</p>
+                <h2>Top QA risks</h2>
+            </div>
+            @if (RiskItems.Count == 0)
+            {
+                <div class="empty-risk">
+                    <strong>No active QA risks</strong>
+                    <span>Coverage, traceability, and clarification queues are clear.</span>
+                </div>
+            }
+            else
+            {
+                <ol class="risk-list">
+                    @foreach (var risk in RiskItems)
+                    {
+                        <li class="risk-item risk-@risk.State">
+                            <span class="risk-count">@risk.Count</span>
+                            <div>
+                                <strong>@risk.Title</strong>
+                                <p>@risk.Detail</p>
+                            </div>
+                        </li>
+                    }
+                </ol>
+            }
+        </section>
+    </div>
+
+    <section class="dashboard-panel activity-panel" aria-label="Activity and review summary">
+        <div class="panel-heading">
+            <p class="section-kicker">Review queue</p>
+            <h2>Activity summary</h2>
+        </div>
+        <div class="activity-grid">
+            <div class="activity-item activity-good">
+                <span>@Metrics.AcceptedCount</span>
+                <p>Accepted</p>
+            </div>
+            <div class="activity-item activity-risk">
+                <span>@Metrics.RejectedCount</span>
+                <p>Rejected</p>
+            </div>
+            <div class="activity-item activity-attention">
+                <span>@Metrics.NeedsReviewCount</span>
+                <p>Needs review</p>
+            </div>
+            <div class="activity-item activity-info">
+                <span>@Metrics.UnreviewedCount</span>
+                <p>Unreviewed</p>
+            </div>
+            <div class="activity-item">
+                <span>@Metrics.RequirementCount</span>
+                <p>Requirements</p>
+            </div>
+            <div class="activity-item">
+                <span>@Metrics.TestCount</span>
+                <p>Tests</p>
+            </div>
+            <div class="activity-item">
+                <span>@Metrics.ClarificationCount</span>
+                <p>Clarifications</p>
+            </div>
+            <div class="activity-item">
+                <span>@Metrics.TotalCandidates</span>
+                <p>Saved items</p>
+            </div>
+        </div>
+    </section>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public DashboardMetrics Metrics { get; set; } = default!;
+
+    private IReadOnlyList<HealthCard> HealthCards =>
+    [
+        new(
+            "Coverage Health",
+            $"{Metrics.RequirementsCoveredPercent}%",
+            Metrics.RequirementsWithoutTests == 0
+                ? "All saved requirements have linked tests."
+                : $"{Metrics.RequirementsWithoutTests} requirements still need test coverage.",
+            StateForCoverage(Metrics.RequirementsCoveredPercent, Metrics.RequirementCount),
+            "chart",
+            Metrics.RequirementsCoveredPercent),
+        new(
+            "Review Progress",
+            $"{Metrics.ReviewedPercent}%",
+            Metrics.UnreviewedCount == 0
+                ? "No unreviewed candidates remain."
+                : $"{Metrics.UnreviewedCount} candidates are still unreviewed.",
+            StateForProgress(Metrics.ReviewedPercent, Metrics.TotalCandidates),
+            "check",
+            Metrics.ReviewedPercent),
+        new(
+            "Clarification Risk",
+            Metrics.UnresolvedClarifications.ToString(),
+            Metrics.UnresolvedClarifications == 0
+                ? "No unresolved clarification items are open."
+                : $"{Metrics.RequirementsWithUnresolvedClarifications} requirements are touched by open clarifications.",
+            Metrics.UnresolvedClarifications == 0 ? "healthy" : "risk",
+            "alert",
+            Metrics.ClarificationCount == 0 ? 0 : Percent(ResolvedClarifications, Metrics.ClarificationCount)),
+        new(
+            "Traceability Health",
+            $"{TraceabilityPercent}%",
+            Metrics.TestsWithoutRequirements == 0 && Metrics.ClarificationsWithoutRequirements == 0
+                ? "Tests and clarifications are linked back to requirements."
+                : $"{Metrics.TestsWithoutRequirements + Metrics.ClarificationsWithoutRequirements} orphan items need review.",
+            StateForCoverage(TraceabilityPercent, Metrics.TestCount + Metrics.ClarificationCount),
+            "link",
+            TraceabilityPercent)
+    ];
+
+    private IReadOnlyList<ProgressItem> ProgressItems =>
+    [
+        new("Reviewed candidates", Metrics.ReviewedPercent, $"{Metrics.ReviewedCount} of {Metrics.TotalCandidates} candidates reviewed.", StateForProgress(Metrics.ReviewedPercent, Metrics.TotalCandidates)),
+        new("Linked requirements/tests", Metrics.RequirementsCoveredPercent, $"{Metrics.RequirementsWithTests} of {Metrics.RequirementCount} requirements have tests.", StateForCoverage(Metrics.RequirementsCoveredPercent, Metrics.RequirementCount)),
+        new("Resolved clarifications", ResolvedClarificationPercent, $"{ResolvedClarifications} of {Metrics.ClarificationCount} clarification items resolved.", StateForProgress(ResolvedClarificationPercent, Metrics.ClarificationCount)),
+        new("Extraction coverage", Metrics.AcceptanceRatio, $"{Metrics.AcceptedCount} accepted of {Metrics.TotalCandidates} extracted candidates.", StateForProgress(Metrics.AcceptanceRatio, Metrics.TotalCandidates))
+    ];
+
+    private IReadOnlyList<RiskItem> RiskItems
+    {
+        get
+        {
+            var risks = new List<RiskItem>();
+
+            if (Metrics.RequirementsWithoutTests > 0)
+            {
+                risks.Add(new("Requirements without tests", Metrics.RequirementsWithoutTests, "Add or link tests before these requirements are considered covered.", "risk"));
+            }
+
+            if (Metrics.TestsWithoutRequirements > 0)
+            {
+                risks.Add(new("Orphan tests", Metrics.TestsWithoutRequirements, "Link tests to requirements or remove stale coverage.", "attention"));
+            }
+
+            if (Metrics.UnresolvedClarifications > 0)
+            {
+                risks.Add(new("Unresolved clarifications", Metrics.UnresolvedClarifications, "Resolve ambiguity before finalizing coverage decisions.", "risk"));
+            }
+
+            if (Metrics.ClarificationsWithoutRequirements > 0)
+            {
+                risks.Add(new("Orphan clarifications", Metrics.ClarificationsWithoutRequirements, "Attach clarification items to the requirements they affect.", "attention"));
+            }
+
+            if (Metrics.PendingRequirements > 0)
+            {
+                risks.Add(new("Requirements pending review", Metrics.PendingRequirements, "Review requirement candidates before relying on coverage metrics.", "info"));
+            }
+
+            return risks
+                .OrderByDescending(r => r.State == "risk")
+                .ThenByDescending(r => r.Count)
+                .Take(4)
+                .ToList();
+        }
+    }
+
+    private int TraceabilityPercent => AverageNonEmpty(
+        (Metrics.RequirementCount, Metrics.RequirementsCoveredPercent),
+        (Metrics.TestCount, Metrics.TestsLinkedToRequirementsPercent),
+        (Metrics.ClarificationCount, Percent(Metrics.ClarificationCount - Metrics.ClarificationsWithoutRequirements, Metrics.ClarificationCount)));
+
+    private int ResolvedClarifications => Math.Max(0, Metrics.ClarificationCount - Metrics.UnresolvedClarifications);
+
+    private int ResolvedClarificationPercent => Percent(ResolvedClarifications, Metrics.ClarificationCount);
+
+    private static int Percent(int value, int total) =>
+        total == 0 ? 0 : (int)Math.Round(value * 100.0 / total, MidpointRounding.AwayFromZero);
+
+    private static int AverageNonEmpty(params (int Total, int Percent)[] values)
+    {
+        var nonEmpty = values.Where(v => v.Total > 0).Select(v => v.Percent).ToList();
+        return nonEmpty.Count == 0 ? 0 : (int)Math.Round(nonEmpty.Average(), MidpointRounding.AwayFromZero);
+    }
+
+    private static string StateForCoverage(int percent, int total) =>
+        total == 0 ? "info" : percent >= 85 ? "healthy" : percent >= 60 ? "attention" : "risk";
+
+    private static string StateForProgress(int percent, int total) =>
+        total == 0 ? "info" : percent >= 80 ? "healthy" : percent >= 50 ? "attention" : "risk";
+
+    private sealed record HealthCard(string Title, string Value, string Subtitle, string State, string Icon, int? ProgressPercent)
+    {
+        public string StateLabel => State switch
+        {
+            "healthy" => "Healthy",
+            "attention" => "Attention",
+            "risk" => "Risk",
+            _ => "No data"
+        };
+
+        public string IconClass => $"health-icon-{Icon}";
+    }
+
+    private sealed record ProgressItem(string Label, int Percent, string Detail, string State);
+
+    private sealed record RiskItem(string Title, int Count, string Detail, string State);
+}

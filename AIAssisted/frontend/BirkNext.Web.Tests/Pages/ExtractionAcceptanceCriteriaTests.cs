@@ -346,5 +346,15 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
             "extraction service must be called with the imported file content");
         cut.FindAll("[data-testid='candidate-row']").Should().HaveCount(1);
     }
+
+    [Fact]
+    public void ExtractionPage_DoesNotRenderSpecComparisonUi()
+    {
+        var cut = Render<ScenarioExtraction>();
+
+        cut.FindAll("[data-testid='spec-comparison-panel']").Should().BeEmpty();
+        cut.Find("[data-testid='spec-textarea']").Should().NotBeNull();
+        cut.Find("[data-testid='extract-button']").Should().NotBeNull();
+    }
 }
 

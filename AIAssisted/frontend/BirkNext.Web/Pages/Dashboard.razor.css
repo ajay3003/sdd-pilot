@@ -1,0 +1,7 @@
+.dashboard-load-error {
+    padding: 0.875rem 1rem;
+    border: 1px solid #fecaca;
+    border-radius: var(--radius-md, 6px);
+    background: #fef2f2;
+    color: #991b1b;
+}
