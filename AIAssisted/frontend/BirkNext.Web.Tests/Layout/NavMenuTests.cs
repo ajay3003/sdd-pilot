@@ -18,14 +18,14 @@ public class NavMenuTests : BunitContext
         navText.Should().Contain("Analysis");
         navText.Should().Contain("Dashboard");
         navText.Should().Contain("Specification Review");
-        navText.Should().Contain("Scenario Library");
-        navText.Should().Contain("New Scenario");
+        navText.Should().Contain("QA Artifact Library");
+        navText.Should().Contain("New Test Scenario");
         navText.Should().Contain("Compare Specs");
 
         navText.IndexOf("Dashboard", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Review", StringComparison.Ordinal));
-        navText.IndexOf("Specification Review", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Scenario Library", StringComparison.Ordinal));
-        navText.IndexOf("Scenario Library", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("New Scenario", StringComparison.Ordinal));
-        navText.IndexOf("New Scenario", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Compare Specs", StringComparison.Ordinal));
+        navText.IndexOf("Specification Review", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("QA Artifact Library", StringComparison.Ordinal));
+        navText.IndexOf("QA Artifact Library", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("New Test Scenario", StringComparison.Ordinal));
+        navText.IndexOf("New Test Scenario", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Compare Specs", StringComparison.Ordinal));
 
         cut.Find("a[href='dashboard']").Should().NotBeNull();
         cut.Find("a[href='extract']").Should().NotBeNull();

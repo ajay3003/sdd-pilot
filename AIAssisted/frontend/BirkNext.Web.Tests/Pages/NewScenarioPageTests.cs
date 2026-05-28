@@ -20,8 +20,28 @@ public class NewScenarioPageTests : BunitContext
 
         cut.Find("input[id='title']").Should().NotBeNull();
         cut.Find("textarea[id='description']").Should().NotBeNull();
-        cut.Find("select[id='kind']").Should().NotBeNull();
         cut.Find("button[type='submit']").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void NewScenarioPage_DoesNotRenderTypeSelector()
+    {
+        Services.AddSingleton(new Mock<IBirkNextClient>().Object);
+
+        var cut = Render<NewScenario>();
+
+        cut.FindAll("select[id='kind']").Should().BeEmpty(
+            "type selector must not appear on New Test Scenario page");
+    }
+
+    [Fact]
+    public void NewScenarioPage_PageTitle_IsNewTestScenario()
+    {
+        Services.AddSingleton(new Mock<IBirkNextClient>().Object);
+
+        var cut = Render<NewScenario>();
+
+        cut.Find("h1").TextContent.Should().Be("New Test Scenario");
     }
 
     [Fact]
@@ -51,7 +71,6 @@ public class NewScenarioPageTests : BunitContext
         var cut = Render<NewScenario>();
 
         cut.Find("input[id='title']").Change("My scenario");
-        cut.Find("select[id='kind']").Change("Requirement");
         cut.Find("button[type='submit']").Click();
 
         cut.WaitForAssertion(() =>

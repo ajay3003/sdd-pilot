@@ -1,4 +1,4 @@
-# BirkNext Troubleshooting Guide
+# QA Review Studio Troubleshooting Guide
 
 ## Frontend Does Not Start
 
@@ -7,12 +7,6 @@ Try:
 ```powershell
 .\scripts\start-local.ps1 -FrontendOnly -SkipContainers
 ```
-
-Check:
-
-- .NET SDK 8 is installed
-- correct frontend project is selected
-- browser console errors
 
 If the frontend port is busy:
 
@@ -32,7 +26,7 @@ Stop a known stale process:
 taskkill /PID <pid> /F
 ```
 
-If the owner is a stale local BirkNext `dotnet` process, rerun:
+If the owner is a stale local QA Review Studio/BirkNext `dotnet` process, rerun:
 
 ```powershell
 .\scripts\start-local.ps1 -ForceKillPorts
@@ -53,30 +47,6 @@ Try:
 .\scripts\start-local.ps1 -BackendOnly
 ```
 
-If the backend port is busy:
-
-```text
-Port 5000 is already in use
-```
-
-Inspect the owning process:
-
-```powershell
-netstat -ano | findstr :5000
-```
-
-Stop a known stale process:
-
-```powershell
-taskkill /PID <pid> /F
-```
-
-For stale local BirkNext `dotnet` processes:
-
-```powershell
-.\scripts\start-local.ps1 -ForceKillPorts
-```
-
 ## PostgreSQL Password Authentication Failed
 
 Example:
@@ -85,38 +55,21 @@ Example:
 Npgsql.PostgresException 28P01: password authentication failed for user "birknext"
 ```
 
-Local compose credentials are defined in:
+Local compose credentials are usually defined in:
 
 ```text
 AIAssisted/.env
 ```
 
-The launcher reads that file and exports a matching backend
-`ConnectionStrings__Default` value. If authentication still fails, the most
-common cause is an existing `postgres_data` volume that was initialized with
-older credentials. PostgreSQL does not update the stored database password when
-`.env` changes.
+If authentication still fails, the most common cause is an existing `postgres_data` volume initialized with older credentials.
 
-Check what is listening on port 5432:
+PostgreSQL does not update stored database passwords when `.env` changes.
 
-```powershell
-netstat -ano | Select-String ':5432'
-```
+Options:
 
-Fix options:
-
-- Restore `AIAssisted/.env` to the credentials used when the volume was created.
-- Set `ConnectionStrings__Default` to match the existing local database.
-- Recreate the local PostgreSQL volume if local data can be discarded.
-
-For Podman, inspect volumes first:
-
-```bash
-podman volume ls
-```
-
-Then remove only the BirkNext local PostgreSQL volume when you intentionally
-want a fresh database.
+- restore `.env` to credentials used when the volume was created
+- set `ConnectionStrings__Default` to match the existing local database
+- recreate the local PostgreSQL volume if local data can be discarded
 
 ## PowerShell Script Is Blocked
 
@@ -161,31 +114,23 @@ podman machine start
 podman info
 ```
 
-Restart Podman Desktop if needed.
+## GraphQL Enum Does Not Support USER_STORY
 
-## GraphQL Mutation Service Missing
+This is expected unless the backend has explicitly added USER_STORY as a first-class artifact type.
 
-Example:
+Recommended MVP model:
 
 ```text
-There is no registered service of type ICreateScenariosMutation
+Artifact types:
+- REQUIREMENT
+- TEST
+- NEEDS_CLARIFICATION
+
+User Story:
+- ContextHeading / grouping metadata
 ```
 
-Fix:
-
-- register generated Strawberry Shake operation in frontend `Program.cs`
-- rebuild frontend
-- refresh browser
-
-## File Import Fails
-
-Check:
-
-- file extension is `.md` or `.txt`
-- file is not empty
-- file is not too large
-- file is readable text
-- file is not binary
+Do not add USER_STORY to GraphQL unless the product intentionally decides to persist user stories as first-class artifacts.
 
 ## Review State Not Saved
 
@@ -196,16 +141,26 @@ Check:
 - GraphQL save-review mutation succeeds
 - browser console has no network errors
 
-Remember:
+## Analyze Results Disappear After Navigation
 
-```text
-Save Review persists reviewed candidates.
-Save Selected creates finalized scenarios.
-```
+Expected desired behavior:
 
-## Saved Review Does Not Create Scenarios
+- active extraction session should restore when returning to Specification Review
+- filters, review decisions, and expanded groups should be preserved if session persistence is implemented
 
-This is expected. Use **Save Selected** to create finalized scenarios.
+If not:
+
+- check session/local storage implementation
+- check browser console
+- verify restore logic on `/extract`
+
+## Saved Review Does Not Create Test Scenarios
+
+This can be expected depending on workflow.
+
+Save Review persists reviewed QA artifacts.
+
+Saving selected TEST artifacts creates test scenarios where supported.
 
 ## UI Looks Old or Broken
 
@@ -214,3 +169,4 @@ Check:
 - latest frontend is running
 - browser cache is refreshed
 - shared CSS files are included
+- CSS isolation files are loaded

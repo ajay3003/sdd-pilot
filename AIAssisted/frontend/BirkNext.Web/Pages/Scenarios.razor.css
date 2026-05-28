@@ -73,3 +73,19 @@
     background: #fef2f2;
     color: #991b1b;
 }
+
+/* Artifact groups */
+.artifact-group {
+    margin-bottom: 2rem;
+}
+
+.artifact-group-header {
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-muted, #475569);
+    border-bottom: 1px solid var(--clr-border, #e2e8f0);
+    padding-bottom: 0.5rem;
+    margin: 0 0 1rem 0;
+}

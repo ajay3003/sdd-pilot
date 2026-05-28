@@ -29,12 +29,15 @@ public class ScenariosPageTests : BunitContext
 
         var cut = Render<Scenarios>();
 
+        // Switch to "All types" to see all scenarios before searching
         cut.WaitForAssertion(() =>
-        {
-            cut.FindAll("[data-testid='scenario-row']").Should().HaveCount(2);
-            cut.FindAll("[data-testid='coverage-dashboard']").Should().BeEmpty();
-            cut.Markup.Should().NotContain("Loading scenarios");
-        }, timeout: TimeSpan.FromSeconds(1));
+            cut.Markup.Should().NotContain("Loading scenarios"),
+            timeout: TimeSpan.FromSeconds(1));
+
+        cut.Find("select[aria-label='Filter by type']").Change(string.Empty);
+
+        cut.FindAll("[data-testid='scenario-row']").Should().HaveCount(2);
+        cut.FindAll("[data-testid='coverage-dashboard']").Should().BeEmpty();
 
         cut.Find("input[aria-label='Search scenarios']").Input("checkout");
 
@@ -60,7 +63,7 @@ public class ScenariosPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.FindAll("[data-testid='scenario-row']").Should().BeEmpty();
-            cut.Find("[data-testid='empty-state']").TextContent.Should().Contain("No scenarios yet");
+            cut.Find("[data-testid='empty-state']").TextContent.Should().NotBeNullOrEmpty();
             cut.Markup.Should().NotContain("Loading scenarios");
         }, timeout: TimeSpan.FromSeconds(1));
     }
@@ -102,7 +105,6 @@ public class ScenariosPageTests : BunitContext
         var cut = Render<ScenarioForm>();
 
         cut.Find("input[id='title']").Change("Network test scenario");
-        cut.Find("select[id='kind']").Change("Requirement");
         cut.Find("button[type='submit']").Click();
 
         cut.WaitForAssertion(() =>
@@ -119,7 +121,7 @@ public class ScenariosPageTests : BunitContext
             .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeGetScenariosResult(
             [
-                MakeScenario("sc-1", "Keep me", null, ScenarioKind.Requirement),
+                MakeScenario("sc-1", "Keep me", null, ScenarioKind.Test),
                 MakeScenario("sc-2", "Delete me", null, ScenarioKind.Test),
             ]));
 
@@ -169,7 +171,7 @@ public class ScenariosPageTests : BunitContext
             .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeGetScenariosResult(
             [
-                MakeScenario("sc-1", "My scenario", null, ScenarioKind.Requirement),
+                MakeScenario("sc-1", "My scenario", null, ScenarioKind.Test),
             ]));
 
         var mockDeletePayload = new Mock<IDeleteScenario_DeleteScenario>();
@@ -228,6 +230,119 @@ public class ScenariosPageTests : BunitContext
         var cut = Render<Scenarios>();
 
         cut.FindAll("a.btn-primary[href='scenarios/new']").Should().BeEmpty();
+    }
+
+    // ── New behavior tests ───────────────────────────────────────────────────
+
+    [Fact]
+    public void ScenariosPage_PageTitle_IsQaArtifactLibrary()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult([]));
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.Find("h1").TextContent.Should().Be("QA Artifact Library");
+    }
+
+    [Fact]
+    public void ScenariosPage_DefaultFilter_ShowsOnlyTestArtifacts()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult(
+            [
+                MakeScenario("sc-1", "Login requirement", null, ScenarioKind.Requirement),
+                MakeScenario("sc-2", "Checkout test", null, ScenarioKind.Test),
+            ]));
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.WaitForAssertion(() =>
+            cut.Markup.Should().NotContain("Loading scenarios"),
+            timeout: TimeSpan.FromSeconds(1));
+
+        // Default filter is TEST — only the Tests group should be visible
+        cut.FindAll("[data-testid='group-tests']").Should().HaveCount(1,
+            "Tests section must be shown by default");
+        cut.FindAll("[data-testid='group-requirements']").Should().BeEmpty(
+            "Requirements section must be hidden when default TEST filter is active");
+        cut.FindAll("[data-testid='scenario-row']").Should().ContainSingle(
+            "only the Test artifact should be visible by default");
+    }
+
+    [Fact]
+    public void ScenariosPage_AllTypesFilter_ShowsGroupedSections()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult(
+            [
+                MakeScenario("sc-1", "Login requirement", null, ScenarioKind.Requirement),
+                MakeScenario("sc-2", "Checkout test", null, ScenarioKind.Test),
+                MakeScenario("sc-3", "Clarify timeout", null, ScenarioKind.NeedsClarification),
+            ]));
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.WaitForAssertion(() =>
+            cut.Markup.Should().NotContain("Loading scenarios"),
+            timeout: TimeSpan.FromSeconds(1));
+
+        // Change to "All types"
+        cut.Find("select[aria-label='Filter by type']").Change(string.Empty);
+
+        cut.FindAll("[data-testid='group-tests']").Should().HaveCount(1);
+        cut.FindAll("[data-testid='group-requirements']").Should().HaveCount(1);
+        cut.FindAll("[data-testid='group-clarifications']").Should().HaveCount(1);
+        cut.FindAll("[data-testid='scenario-row']").Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void ScenariosPage_GroupedDisplay_TestsAndRequirementsSeparated()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult(
+            [
+                MakeScenario("sc-1", "A requirement", null, ScenarioKind.Requirement),
+                MakeScenario("sc-2", "A test", null, ScenarioKind.Test),
+            ]));
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.WaitForAssertion(() =>
+            cut.Markup.Should().NotContain("Loading scenarios"),
+            timeout: TimeSpan.FromSeconds(1));
+
+        cut.Find("select[aria-label='Filter by type']").Change(string.Empty);
+
+        var testsSection = cut.Find("[data-testid='group-tests']");
+        var reqSection = cut.Find("[data-testid='group-requirements']");
+
+        testsSection.TextContent.Should().Contain("A test").And.NotContain("A requirement");
+        reqSection.TextContent.Should().Contain("A requirement").And.NotContain("A test");
     }
 
     private static IOperationResult<IGetScenariosResult> MakeGetScenariosResult(

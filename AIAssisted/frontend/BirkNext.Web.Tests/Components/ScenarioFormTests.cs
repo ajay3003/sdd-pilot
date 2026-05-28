@@ -31,13 +31,14 @@ public class ScenarioFormTests : BunitContext
     }
 
     [Fact]
-    public void ScenarioForm_Renders_KindDropdown()
+    public void ScenarioForm_DoesNotRenderTypeSelector()
     {
         Services.AddSingleton(new Mock<IBirkNextClient>().Object);
 
         var cut = Render<ScenarioForm>();
 
-        cut.Find("select[id='kind']").Should().NotBeNull();
+        cut.FindAll("select[id='kind']").Should().BeEmpty(
+            "type selector must be removed — manual scenarios are always TEST type");
     }
 
     [Fact]
@@ -67,7 +68,6 @@ public class ScenarioFormTests : BunitContext
         var cut = Render<ScenarioForm>();
 
         cut.Find("input[id='title']").Change("Test scenario");
-        cut.Find("select[id='kind']").Change("Requirement");
         cut.Find("button[type='submit']").Click();
 
         await cut.WaitForStateAsync(
@@ -100,28 +100,6 @@ public class ScenarioFormTests : BunitContext
             .TextContent.Should().Contain("Title is required");
     }
 
-    [Fact]
-    public void ScenarioForm_NoKindSelected_ShowsKindRequiredValidationMessage()
-    {
-        var tcs = new TaskCompletionSource<IOperationResult<ICreateScenarioResult>>();
-        var mockMutation = new Mock<ICreateScenarioMutation>();
-        mockMutation
-            .Setup(m => m.ExecuteAsync(It.IsAny<CreateScenarioInput>(), It.IsAny<CancellationToken>()))
-            .Returns(tcs.Task);
-        var mockClient = new Mock<IBirkNextClient>();
-        mockClient.Setup(c => c.CreateScenario).Returns(mockMutation.Object);
-        Services.AddSingleton(mockClient.Object);
-
-        var cut = Render<ScenarioForm>();
-
-        // Provide a valid title so only the missing kind triggers the message
-        cut.Find("input[id='title']").Change("My scenario");
-        cut.Find("button[type='submit']").Click();
-
-        cut.Find("select[id='kind']").ParentElement!
-            .TextContent.Should().Contain("A valid type must be selected");
-    }
-
     // ── T038 ────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -152,9 +130,8 @@ public class ScenarioFormTests : BunitContext
         // Step 1: submit with empty title to trigger validation errors
         cut.Find("button[type='submit']").Click();
 
-        // Step 2: correct all validation errors
+        // Step 2: correct the validation error
         cut.Find("input[id='title']").Change("My scenario");
-        cut.Find("select[id='kind']").Change("Test");
 
         // Step 3: resubmit with valid data
         cut.Find("button[type='submit']").Click();
@@ -167,6 +144,44 @@ public class ScenarioFormTests : BunitContext
                 m => m.ExecuteAsync(It.IsAny<CreateScenarioInput>(), It.IsAny<CancellationToken>()),
                 Times.Once);
             cut.Find("input[id='title']").GetAttribute("value").Should().BeNullOrEmpty();
+        }, timeout: TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public void ScenarioForm_Submit_UsesTESTKind()
+    {
+        CreateScenarioInput? capturedInput = null;
+
+        var mockPayload = new Mock<ICreateScenario_CreateScenario>();
+        mockPayload.Setup(p => p.Scenario).Returns(new Mock<ICreateScenario_CreateScenario_Scenario>().Object);
+        mockPayload.Setup(p => p.Errors).Returns(new List<ICreateScenario_CreateScenario_Errors>());
+        mockPayload.Setup(p => p.CorrelationId).Returns(string.Empty);
+
+        var mockData = new Mock<ICreateScenarioResult>();
+        mockData.Setup(d => d.CreateScenario).Returns(mockPayload.Object);
+
+        var mockResult = new Mock<IOperationResult<ICreateScenarioResult>>();
+        mockResult.Setup(r => r.Data).Returns(mockData.Object);
+
+        var mockMutation = new Mock<ICreateScenarioMutation>();
+        mockMutation
+            .Setup(m => m.ExecuteAsync(It.IsAny<CreateScenarioInput>(), It.IsAny<CancellationToken>()))
+            .Callback<CreateScenarioInput, CancellationToken>((input, _) => capturedInput = input)
+            .ReturnsAsync(mockResult.Object);
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.CreateScenario).Returns(mockMutation.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<ScenarioForm>();
+        cut.Find("input[id='title']").Change("My test scenario");
+        cut.Find("button[type='submit']").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            capturedInput.Should().NotBeNull();
+            capturedInput!.Kind.Should().Be(ScenarioKind.Test,
+                "manually created scenarios must always be TEST type");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 }

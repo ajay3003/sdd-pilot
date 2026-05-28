@@ -3,10 +3,10 @@
 @using BirkNext.Web.GraphQL
 @inject IBirkNextClient Client
 
-<PageTitle>Scenario Library</PageTitle>
+<PageTitle>QA Artifact Library</PageTitle>
 
-<h1>Scenario Library</h1>
-<p class="page-lead">Browse and manage all saved scenarios for this project.</p>
+<h1>QA Artifact Library</h1>
+<p class="page-lead">Browse and manage all QA artifacts for this project.</p>
 <section class="scenarios-section">
     <div class="toolbar">
         <span class="toolbar-meta">
@@ -16,11 +16,11 @@
             }
             else if (_loadError is not null)
             {
-                <span>Scenarios unavailable</span>
+                <span>Artifacts unavailable</span>
             }
             else if (string.IsNullOrEmpty(_searchQuery) && string.IsNullOrEmpty(_filterKind))
             {
-                <span>@_scenarios.Count scenario@(_scenarios.Count == 1 ? "" : "s")</span>
+                <span>@_scenarios.Count artifact@(_scenarios.Count == 1 ? "" : "s")</span>
             }
             else
             {
@@ -31,7 +31,7 @@
             <input
                 type="search"
                 class="filter-search"
-                placeholder="Search scenarios…"
+                placeholder="Search artifacts…"
                 value="@_searchQuery"
                 @oninput="e => _searchQuery = e.Value?.ToString() ?? string.Empty"
                 aria-label="Search scenarios" />
@@ -60,11 +60,52 @@
     }
     else
     {
-        <ScenarioList
-            Scenarios="FilteredScenarios"
-            OnDeleteRequested="HandleDeleteAsync"
-            DeletingId="_deletingId"
-            DeleteErrors="_deleteErrors" />
+        var testItems  = FilteredScenarios.Where(s => s.Kind == "Test").ToList();
+        var reqItems   = FilteredScenarios.Where(s => s.Kind == "Requirement").ToList();
+        var clrItems   = FilteredScenarios.Where(s => s.Kind == "NeedsClarification").ToList();
+        var anyVisible = testItems.Count > 0 || reqItems.Count > 0 || clrItems.Count > 0;
+        @if (!anyVisible)
+        {
+            <div class="empty-state empty-state-dashed" data-testid="empty-state">
+                <p>No QA artifacts found. <a href="scenarios/new">Create a test scenario</a> or use <a href="/extract">Specification Review</a> to identify and save artifacts from your specification text.</p>
+            </div>
+        }
+        else
+        {
+            @if (testItems.Count > 0)
+            {
+                <section class="artifact-group" data-testid="group-tests">
+                    <h2 class="artifact-group-header">Tests</h2>
+                    <ScenarioList
+                        Scenarios="testItems"
+                        OnDeleteRequested="HandleDeleteAsync"
+                        DeletingId="_deletingId"
+                        DeleteErrors="_deleteErrors" />
+                </section>
+            }
+            @if (reqItems.Count > 0)
+            {
+                <section class="artifact-group" data-testid="group-requirements">
+                    <h2 class="artifact-group-header">Requirements</h2>
+                    <ScenarioList
+                        Scenarios="reqItems"
+                        OnDeleteRequested="HandleDeleteAsync"
+                        DeletingId="_deletingId"
+                        DeleteErrors="_deleteErrors" />
+                </section>
+            }
+            @if (clrItems.Count > 0)
+            {
+                <section class="artifact-group" data-testid="group-clarifications">
+                    <h2 class="artifact-group-header">Needs Clarification</h2>
+                    <ScenarioList
+                        Scenarios="clrItems"
+                        OnDeleteRequested="HandleDeleteAsync"
+                        DeletingId="_deletingId"
+                        DeleteErrors="_deleteErrors" />
+                </section>
+            }
+        }
     }
 </section>
 
@@ -73,7 +114,7 @@
     private IReadOnlyList<ScenarioListItem> _scenarios = [];
     private bool _isLoading;
     private string _searchQuery = string.Empty;
-    private string _filterKind = string.Empty;
+    private string _filterKind = "Test";
     private string? _loadError;
     private string? _deletingId;
     private Dictionary<string, string> _deleteErrors = [];

@@ -1,11 +1,13 @@
 @using BirkNext.Web.GraphQL
 @using BirkNext.Web.Models
+@using BirkNext.Web.Services
 @using Microsoft.Extensions.Logging
 @implements IDisposable
 @inject ICreateScenariosMutation CreateScenariosMutation
 @inject ISaveReviewedCandidatesMutation SaveReviewedCandidatesMutation
 @inject ISaveCandidateLinksMutation SaveCandidateLinksMutation
 @inject ILogger<ExtractionReviewList> Logger
+@inject IExtractionSessionService SessionService
 
 @if (PipelineResult is null)
 {
@@ -59,11 +61,22 @@ else
             var pendingClarifications = CountPending(ScenarioKind.NeedsClarification);
         }
 
+        @if (_showRestoreNotice)
+        {
+            <div class="session-restore-notice" role="status" data-testid="session-restore-notice"
+                 aria-label="Review session restored">
+                <span>Review session restored (@FormatSessionAge(InitialSession!.Timestamp))</span>
+                <button type="button" @onclick='() => _showRestoreNotice = false'
+                        aria-label="Dismiss session notice"
+                        data-testid="session-restore-dismiss">×</button>
+            </div>
+        }
+
         <div class="filter-toolbar">
             <div class="filter-chips" role="group" aria-label="Filter by type">
                 <button type="button"
                         class="filter-chip @(_activeFilter is null ? "is-active" : "")"
-                        @onclick="() => _activeFilter = null"
+                        @onclick="HandleClearTypeFilter"
                         aria-pressed="@(_activeFilter is null)">
                     All <span class="chip-count">@PipelineResult.Candidates.Count</span>
                 </button>
@@ -71,7 +84,7 @@ else
                 {
                     <button type="button"
                             class="filter-chip filter-chip-requirement @(_activeFilter == ScenarioKind.Requirement ? "is-active" : "")"
-                            @onclick="() => _activeFilter = ScenarioKind.Requirement"
+                            @onclick="() => HandleSetTypeFilter(ScenarioKind.Requirement)"
                             aria-pressed="@(_activeFilter == ScenarioKind.Requirement)">
                         REQUIREMENT <span class="chip-count">@PipelineResult.RequirementCount</span>
                     </button>
@@ -80,7 +93,7 @@ else
                 {
                     <button type="button"
                             class="filter-chip filter-chip-test @(_activeFilter == ScenarioKind.Test ? "is-active" : "")"
-                            @onclick="() => _activeFilter = ScenarioKind.Test"
+                            @onclick="() => HandleSetTypeFilter(ScenarioKind.Test)"
                             aria-pressed="@(_activeFilter == ScenarioKind.Test)">
                         TEST <span class="chip-count">@PipelineResult.TestCount</span>
                     </button>
@@ -89,7 +102,7 @@ else
                 {
                     <button type="button"
                             class="filter-chip filter-chip-needsclarification @(_activeFilter == ScenarioKind.NeedsClarification ? "is-active" : "")"
-                            @onclick="() => _activeFilter = ScenarioKind.NeedsClarification"
+                            @onclick="() => HandleSetTypeFilter(ScenarioKind.NeedsClarification)"
                             aria-pressed="@(_activeFilter == ScenarioKind.NeedsClarification)">
                         NEEDS_CLARIFICATION <span class="chip-count">@PipelineResult.NeedsClarificationCount</span>
                     </button>
@@ -98,8 +111,8 @@ else
             <input type="search"
                    class="search-input"
                    placeholder="Search candidates…"
-                   @bind="_searchTerm"
-                   @bind:event="oninput"
+                   value="@_searchTerm"
+                   @oninput="HandleSearchChanged"
                    aria-label="Search candidates" />
         </div>
 
@@ -108,7 +121,7 @@ else
             <div class="review-status-filter" role="group" aria-label="Filter by review status">
                 <button type="button"
                         class="filter-chip @(_activeReviewFilter is null ? "is-active" : "")"
-                        @onclick="() => _activeReviewFilter = null"
+                        @onclick="HandleClearReviewFilter"
                         aria-pressed="@(_activeReviewFilter is null)">
                     All statuses
                 </button>
@@ -116,7 +129,7 @@ else
                 {
                     <button type="button"
                             class="filter-chip filter-chip-status-accepted @(_activeReviewFilter == CandidateReviewStatus.Accepted ? "is-active" : "")"
-                            @onclick="() => _activeReviewFilter = CandidateReviewStatus.Accepted"
+                            @onclick="() => HandleSetReviewFilter(CandidateReviewStatus.Accepted)"
                             aria-pressed="@(_activeReviewFilter == CandidateReviewStatus.Accepted)">
                         Accepted <span class="chip-count">@rAcceptedCount</span>
                     </button>
@@ -125,7 +138,7 @@ else
                 {
                     <button type="button"
                             class="filter-chip filter-chip-status-rejected @(_activeReviewFilter == CandidateReviewStatus.Rejected ? "is-active" : "")"
-                            @onclick="() => _activeReviewFilter = CandidateReviewStatus.Rejected"
+                            @onclick="() => HandleSetReviewFilter(CandidateReviewStatus.Rejected)"
                             aria-pressed="@(_activeReviewFilter == CandidateReviewStatus.Rejected)">
                         Rejected <span class="chip-count">@rRejectedCount</span>
                     </button>
@@ -134,7 +147,7 @@ else
                 {
                     <button type="button"
                             class="filter-chip filter-chip-status-needsreview @(_activeReviewFilter == CandidateReviewStatus.NeedsReview ? "is-active" : "")"
-                            @onclick="() => _activeReviewFilter = CandidateReviewStatus.NeedsReview"
+                            @onclick="() => HandleSetReviewFilter(CandidateReviewStatus.NeedsReview)"
                             aria-pressed="@(_activeReviewFilter == CandidateReviewStatus.NeedsReview)">
                         Needs Review <span class="chip-count">@rNeedsRevCount</span>
                     </button>
@@ -143,7 +156,7 @@ else
                 {
                     <button type="button"
                             class="filter-chip filter-chip-status-new @(_activeReviewFilter == CandidateReviewStatus.New ? "is-active" : "")"
-                            @onclick="() => _activeReviewFilter = CandidateReviewStatus.New"
+                            @onclick="() => HandleSetReviewFilter(CandidateReviewStatus.New)"
                             aria-pressed="@(_activeReviewFilter == CandidateReviewStatus.New)">
                         Pending <span class="chip-count">@rNewCount</span>
                     </button>
@@ -156,7 +169,7 @@ else
             <div class="traceability-filter" role="group" aria-label="Filter by traceability">
                 <button type="button"
                         class="filter-chip @(_activeLinkFilter is null ? "is-active" : "")"
-                        @onclick="() => _activeLinkFilter = null"
+                        @onclick="HandleClearLinkFilter"
                         aria-pressed="@(_activeLinkFilter is null)">
                     All
                 </button>
@@ -164,19 +177,19 @@ else
                 {
                     <button type="button"
                             class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithoutTests ? "is-active" : "")"
-                            @onclick="() => _activeLinkFilter = LinkFilter.RequirementsWithoutTests"
+                            @onclick="() => HandleSetLinkFilter(LinkFilter.RequirementsWithoutTests)"
                             aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithoutTests)">
                         Requirements without tests <span class="chip-count">@CountRequirementsWithoutTests()</span>
                     </button>
                     <button type="button"
                             class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithTests ? "is-active" : "")"
-                            @onclick="() => _activeLinkFilter = LinkFilter.RequirementsWithTests"
+                            @onclick="() => HandleSetLinkFilter(LinkFilter.RequirementsWithTests)"
                             aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithTests)">
                         Requirements with tests <span class="chip-count">@CountRequirementsWithTests()</span>
                     </button>
                     <button type="button"
                             class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithClarifications ? "is-active" : "")"
-                            @onclick="() => _activeLinkFilter = LinkFilter.RequirementsWithClarifications"
+                            @onclick="() => HandleSetLinkFilter(LinkFilter.RequirementsWithClarifications)"
                             aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithClarifications)">
                         Requirements with clarifications <span class="chip-count">@CountRequirementsWithClarifications()</span>
                     </button>
@@ -185,7 +198,7 @@ else
                 {
                     <button type="button"
                             class="filter-chip @(_activeLinkFilter == LinkFilter.TestsWithoutRequirements ? "is-active" : "")"
-                            @onclick="() => _activeLinkFilter = LinkFilter.TestsWithoutRequirements"
+                            @onclick="() => HandleSetLinkFilter(LinkFilter.TestsWithoutRequirements)"
                             aria-pressed="@(_activeLinkFilter == LinkFilter.TestsWithoutRequirements)">
                         Tests without requirements <span class="chip-count">@CountTestsWithoutRequirements()</span>
                     </button>
@@ -194,7 +207,7 @@ else
                 {
                     <button type="button"
                             class="filter-chip @(_activeLinkFilter == LinkFilter.ClarificationsWithoutRequirements ? "is-active" : "")"
-                            @onclick="() => _activeLinkFilter = LinkFilter.ClarificationsWithoutRequirements"
+                            @onclick="() => HandleSetLinkFilter(LinkFilter.ClarificationsWithoutRequirements)"
                             aria-pressed="@(_activeLinkFilter == LinkFilter.ClarificationsWithoutRequirements)">
                         Clarifications without requirements <span class="chip-count">@CountClarificationsWithoutRequirements()</span>
                     </button>
@@ -458,18 +471,11 @@ else
 
 @code {
     [Parameter] public ExtractionPipelineResult? PipelineResult { get; set; }
+    [Parameter] public ExtractionSessionSnapshot? InitialSession { get; set; }
 
     private const string ProjectId = "00000000-0000-0000-0000-000000000001";
 
     private enum ReviewPersistState { Idle, Saving, Saved, Failed }
-    private enum LinkFilter
-    {
-        RequirementsWithoutTests,
-        RequirementsWithTests,
-        RequirementsWithClarifications,
-        TestsWithoutRequirements,
-        ClarificationsWithoutRequirements,
-    }
 
     private readonly HashSet<Guid> _selectedIds = new();
     private ReviewSavePhase _savePhase = ReviewSavePhase.Idle;
@@ -488,29 +494,44 @@ else
     private ExtractionCandidate? _linkModalCandidate;
     private ExtractionCandidate? _prevLinkModalCandidate;
     private ElementReference _drawerRef;
+    private bool _initialSessionConsumed;
+    private bool _showRestoreNotice;
 
     protected override void OnParametersSet()
     {
         if (!ReferenceEquals(PipelineResult, _previousPipelineResult))
         {
-            _selectedIds.Clear();
-            _savePhase = ReviewSavePhase.Idle;
-            _sessionId = Guid.NewGuid().ToString();
             _previousPipelineResult = PipelineResult;
-            _activeFilter = null;
-            _activeReviewFilter = null;
-            _activeLinkFilter = null;
+            _savePhase = ReviewSavePhase.Idle;
             _reviewPersistState = ReviewPersistState.Idle;
-            _searchTerm = string.Empty;
-            _sectionExpanded.Clear();
-            _reqSubsectionExpanded.Clear();
-            _testSubsectionExpanded.Clear();
-            _clrSubsectionExpanded.Clear();
-            _links.Clear();
-            if (PipelineResult is not null)
+
+            if (InitialSession is not null && !_initialSessionConsumed)
             {
-                foreach (var kind in PipelineResult.Candidates.Select(c => c.Classification).Distinct())
-                    _sectionExpanded[kind] = true;
+                _initialSessionConsumed = true;
+                _sessionId = InitialSession.SessionId;
+                RestoreFromSession(InitialSession);
+                _showRestoreNotice = true;
+            }
+            else
+            {
+                _selectedIds.Clear();
+                _sessionId = Guid.NewGuid().ToString();
+                _activeFilter = null;
+                _activeReviewFilter = null;
+                _activeLinkFilter = null;
+                _searchTerm = string.Empty;
+                _sectionExpanded.Clear();
+                _reqSubsectionExpanded.Clear();
+                _testSubsectionExpanded.Clear();
+                _clrSubsectionExpanded.Clear();
+                _links.Clear();
+                _showRestoreNotice = false;
+                if (PipelineResult is not null)
+                {
+                    foreach (var kind in PipelineResult.Candidates.Select(c => c.Classification).Distinct())
+                        _sectionExpanded[kind] = true;
+                }
+                _ = SaveSessionAsync();
             }
         }
     }
@@ -541,6 +562,7 @@ else
             _testSubsectionExpanded[key] = true;
         foreach (var key in GetAllSubgroupKeys(ScenarioKind.NeedsClarification))
             _clrSubsectionExpanded[key] = true;
+        _ = SaveSessionAsync();
     }
 
     private void CollapseAll()
@@ -553,6 +575,7 @@ else
             _testSubsectionExpanded[key] = false;
         foreach (var key in GetAllSubgroupKeys(ScenarioKind.NeedsClarification))
             _clrSubsectionExpanded[key] = false;
+        _ = SaveSessionAsync();
     }
 
     private bool AllSectionsExpanded =>
@@ -676,15 +699,25 @@ else
     private static int Percent(int value, int total) =>
         total == 0 ? 0 : (int)Math.Round(value * 100.0 / total, MidpointRounding.AwayFromZero);
 
+    private void HandleClearTypeFilter() { _activeFilter = null; _ = SaveSessionAsync(); }
+    private void HandleSetTypeFilter(ScenarioKind kind) { _activeFilter = kind; _ = SaveSessionAsync(); }
+    private void HandleClearReviewFilter() { _activeReviewFilter = null; _ = SaveSessionAsync(); }
+    private void HandleSetReviewFilter(CandidateReviewStatus status) { _activeReviewFilter = status; _ = SaveSessionAsync(); }
+    private void HandleClearLinkFilter() { _activeLinkFilter = null; _ = SaveSessionAsync(); }
+    private void HandleSetLinkFilter(LinkFilter filter) { _activeLinkFilter = filter; _ = SaveSessionAsync(); }
+    private void HandleSearchChanged(ChangeEventArgs e) { _searchTerm = e.Value?.ToString() ?? string.Empty; _ = SaveSessionAsync(); }
+
     private void ApplyTypeFilter(ScenarioKind kind)
     {
         _activeFilter = kind;
         _activeLinkFilter = null;
+        _ = SaveSessionAsync();
     }
 
     private void ApplyReviewFilter(CandidateReviewStatus status)
     {
         _activeReviewFilter = status;
+        _ = SaveSessionAsync();
     }
 
     private void ApplyTraceabilityFilter(LinkFilter filter)
@@ -699,6 +732,7 @@ else
             LinkFilter.ClarificationsWithoutRequirements => ScenarioKind.NeedsClarification,
             _ => _activeFilter,
         };
+        _ = SaveSessionAsync();
     }
 
     private void ClearDashboardFilters()
@@ -706,6 +740,7 @@ else
         _activeFilter = null;
         _activeReviewFilter = null;
         _activeLinkFilter = null;
+        _ = SaveSessionAsync();
     }
 
     private void HandleOpenLinkDrawer(ExtractionCandidate candidate) => _linkModalCandidate = candidate;
@@ -729,11 +764,13 @@ else
 
         if (!_links.Any(l => SameLink(l, entry)))
             _links.Add(entry);
+        _ = SaveSessionAsync();
     }
 
     private void HandleLinkRemoved(CandidateLinkEntry entry)
     {
         _links.RemoveAll(l => SameLink(l, entry));
+        _ = SaveSessionAsync();
     }
 
     private static bool SameLink(CandidateLinkEntry left, CandidateLinkEntry right) =>
@@ -807,8 +844,11 @@ else
     private bool GetSubsectionExpanded(string key) =>
         _testSubsectionExpanded.TryGetValue(key, out var v) && v;
 
-    private void SetSubsectionExpanded(string key, bool value) =>
+    private void SetSubsectionExpanded(string key, bool value)
+    {
         _testSubsectionExpanded[key] = value;
+        _ = SaveSessionAsync();
+    }
 
     private IReadOnlyList<TestGroup> GetClarificationGroups(IReadOnlyList<ExtractionCandidate> visibleNeeds)
     {
@@ -854,8 +894,11 @@ else
     private bool GetClrSubsectionExpanded(string key) =>
         _clrSubsectionExpanded.TryGetValue(key, out var v) && v;
 
-    private void SetClrSubsectionExpanded(string key, bool value) =>
+    private void SetClrSubsectionExpanded(string key, bool value)
+    {
         _clrSubsectionExpanded[key] = value;
+        _ = SaveSessionAsync();
+    }
 
     private IReadOnlyList<TestGroup> GetRequirementGroups(IReadOnlyList<ExtractionCandidate> visibleRequirements)
     {
@@ -901,8 +944,11 @@ else
     private bool GetReqSubsectionExpanded(string key) =>
         _reqSubsectionExpanded.TryGetValue(key, out var v) && v;
 
-    private void SetReqSubsectionExpanded(string key, bool value) =>
+    private void SetReqSubsectionExpanded(string key, bool value)
+    {
         _reqSubsectionExpanded[key] = value;
+        _ = SaveSessionAsync();
+    }
 
     private async Task HandleSaveReviewAsync()
     {
@@ -973,14 +1019,16 @@ else
             _selectedIds.Add(candidateId);
         else
             _selectedIds.Remove(candidateId);
+        _ = SaveSessionAsync();
     }
 
-    private void HandleReviewStatusChanged(CandidateReviewStatus _) { }
+    private void HandleReviewStatusChanged(CandidateReviewStatus status) => _ = SaveSessionAsync();
 
     private void BulkSetStatus(CandidateReviewStatus status)
     {
         foreach (var candidate in PipelineResult!.Candidates.Where(c => _selectedIds.Contains(c.CandidateId)))
             candidate.ReviewStatus = status;
+        _ = SaveSessionAsync();
     }
 
     private void ClearSelection()
@@ -1082,6 +1130,115 @@ else
             }
             _savePhase = ReviewSavePhase.Failed;
         }
+    }
+
+    private void RestoreFromSession(ExtractionSessionSnapshot snapshot)
+    {
+        _selectedIds.Clear();
+        foreach (var id in snapshot.SelectedIds)
+            _selectedIds.Add(id);
+
+        _activeFilter = snapshot.ActiveFilter;
+        _activeReviewFilter = snapshot.ActiveReviewFilter;
+        _activeLinkFilter = snapshot.ActiveLinkFilter;
+        _searchTerm = snapshot.SearchTerm;
+
+        _sectionExpanded.Clear();
+        foreach (var kv in snapshot.SectionExpanded)
+        {
+            if (Enum.TryParse<ScenarioKind>(kv.Key, out var kind))
+                _sectionExpanded[kind] = kv.Value;
+        }
+
+        _reqSubsectionExpanded.Clear();
+        foreach (var kv in snapshot.ReqSubsectionExpanded)
+            _reqSubsectionExpanded[kv.Key] = kv.Value;
+
+        _testSubsectionExpanded.Clear();
+        foreach (var kv in snapshot.TestSubsectionExpanded)
+            _testSubsectionExpanded[kv.Key] = kv.Value;
+
+        _clrSubsectionExpanded.Clear();
+        foreach (var kv in snapshot.ClrSubsectionExpanded)
+            _clrSubsectionExpanded[kv.Key] = kv.Value;
+
+        _links.Clear();
+        foreach (var l in snapshot.Links)
+            _links.Add(new CandidateLinkEntry(l.SourceId, l.TargetId, l.LinkType));
+
+        if (_sectionExpanded.Count == 0 && PipelineResult is not null)
+        {
+            foreach (var kind in PipelineResult.Candidates.Select(c => c.Classification).Distinct())
+                _sectionExpanded[kind] = true;
+        }
+    }
+
+    private async Task SaveSessionAsync()
+    {
+        if (PipelineResult is null) return;
+        try
+        {
+            await SessionService.SaveAsync(BuildSnapshot());
+        }
+        catch { }
+    }
+
+    private ExtractionSessionSnapshot BuildSnapshot()
+    {
+        var candidates = PipelineResult!.Candidates
+            .Select(c => new CandidateSnapshot(
+                CandidateId: c.CandidateId,
+                Title: c.Title,
+                Classification: c.Classification,
+                ClassificationSignal: c.ClassificationSignal,
+                ContextHeading: c.ContextHeading,
+                SourceBlockType: c.SourceBlockType,
+                Confidence: c.Confidence,
+                IsSelected: c.IsSelected,
+                ReviewStatus: c.ReviewStatus,
+                SaveState: c.SaveState,
+                SaveError: c.SaveError,
+                SavedScenarioId: c.SavedScenarioId))
+            .ToList();
+
+        var links = _links
+            .Select(l => new LinkSnapshot(l.SourceId, l.TargetId, l.LinkType))
+            .ToList();
+
+        return new ExtractionSessionSnapshot
+        {
+            SessionId = _sessionId,
+            Timestamp = DateTimeOffset.UtcNow,
+            Profile = PipelineResult.Profile,
+            PipelineStatus = PipelineResult.Status,
+            InputLengthChars = PipelineResult.InputLengthChars,
+            InputLineCount = PipelineResult.InputLineCount,
+            DurationMs = PipelineResult.DurationMs,
+            Candidates = candidates,
+            Links = links,
+            SelectedIds = _selectedIds.ToList(),
+            ActiveFilter = _activeFilter,
+            ActiveReviewFilter = _activeReviewFilter,
+            ActiveLinkFilter = _activeLinkFilter,
+            SearchTerm = _searchTerm,
+            SectionExpanded = _sectionExpanded.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
+            ReqSubsectionExpanded = new Dictionary<string, bool>(_reqSubsectionExpanded),
+            TestSubsectionExpanded = new Dictionary<string, bool>(_testSubsectionExpanded),
+            ClrSubsectionExpanded = new Dictionary<string, bool>(_clrSubsectionExpanded),
+        };
+    }
+
+    private static string FormatSessionAge(DateTimeOffset timestamp)
+    {
+        var age = DateTimeOffset.UtcNow - timestamp;
+        if (age.TotalMinutes < 1) return "just now";
+        if (age.TotalHours < 1)
+        {
+            var mins = (int)age.TotalMinutes;
+            return $"{mins} minute{(mins == 1 ? "" : "s")} ago";
+        }
+        var hours = (int)age.TotalHours;
+        return $"{hours} hour{(hours == 1 ? "" : "s")} ago";
     }
 
     public void Dispose()

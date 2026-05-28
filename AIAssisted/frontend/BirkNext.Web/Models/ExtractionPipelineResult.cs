@@ -1,3 +1,5 @@
+using BirkNext.Web.GraphQL;
+
 namespace BirkNext.Web.Models;
 
 public sealed class ExtractionPipelineResult
@@ -57,6 +59,35 @@ public sealed class ExtractionPipelineResult
             testCount,
             needsClarificationCount,
             profile);
+
+    public static ExtractionPipelineResult Restore(ExtractionSessionSnapshot snapshot)
+    {
+        var candidates = snapshot.Candidates.Select(c => new ExtractionCandidate
+        {
+            CandidateId           = c.CandidateId,
+            Title                 = c.Title,
+            Classification        = c.Classification,
+            ClassificationSignal  = c.ClassificationSignal,
+            ContextHeading        = c.ContextHeading,
+            SourceBlockType       = c.SourceBlockType,
+            Confidence            = c.Confidence,
+            IsSelected            = c.IsSelected,
+            ReviewStatus          = c.ReviewStatus,
+            SaveState             = c.SaveState,
+            SaveError             = c.SaveError,
+            SavedScenarioId       = c.SavedScenarioId,
+        }).ToList();
+
+        return Success(
+            candidates,
+            snapshot.InputLengthChars,
+            snapshot.InputLineCount,
+            snapshot.DurationMs,
+            snapshot.Candidates.Count(c => c.Classification == ScenarioKind.Requirement),
+            snapshot.Candidates.Count(c => c.Classification == ScenarioKind.Test),
+            snapshot.Candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification),
+            snapshot.Profile);
+    }
 
     public static ExtractionPipelineResult NonSuccess(
         PipelineStatus status,

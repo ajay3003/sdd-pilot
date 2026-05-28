@@ -1,6 +1,7 @@
 using BirkNext.Web.Components;
 using BirkNext.Web.GraphQL;
 using BirkNext.Web.Models;
+using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,6 +30,13 @@ public class ExtractionReviewListTests : BunitContext
             .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
         Services.AddSingleton(mockSaveLinks.Object);
+
+        var mockSession = new Mock<IExtractionSessionService>();
+        mockSession.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
+        mockSession.Setup(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>())).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
+        Services.AddSingleton(mockSession.Object);
 
         Services.AddLogging();
     }
@@ -533,6 +541,13 @@ public class ExtractionReviewListObservabilityTests : BunitContext
             .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
         Services.AddSingleton(mockSaveLinks.Object);
+
+        var mockSession = new Mock<IExtractionSessionService>();
+        mockSession.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
+        mockSession.Setup(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>())).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
+        Services.AddSingleton(mockSession.Object);
     }
 
     private static ExtractionCandidate MakeCandidate(string title = "sentinel-candidate-title") => new()
@@ -667,6 +682,13 @@ public class TestSubsectionGroupingTests : BunitContext
             .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
         Services.AddSingleton(mockSaveLinks.Object);
+
+        var mockSession = new Mock<IExtractionSessionService>();
+        mockSession.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
+        mockSession.Setup(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>())).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
+        Services.AddSingleton(mockSession.Object);
 
         Services.AddLogging();
     }
@@ -841,6 +863,13 @@ public class ClarificationSubsectionGroupingTests : BunitContext
             .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
         Services.AddSingleton(mockSaveLinks.Object);
+
+        var mockSession = new Mock<IExtractionSessionService>();
+        mockSession.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
+        mockSession.Setup(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>())).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
+        Services.AddSingleton(mockSession.Object);
 
         Services.AddLogging();
     }
@@ -1030,6 +1059,13 @@ public class RequirementSubsectionGroupingTests : BunitContext
             .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
         Services.AddSingleton(mockSaveLinks.Object);
+
+        var mockSession = new Mock<IExtractionSessionService>();
+        mockSession.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
+        mockSession.Setup(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>())).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
+        Services.AddSingleton(mockSession.Object);
 
         Services.AddLogging();
     }
@@ -1222,6 +1258,13 @@ public class ExtractionReviewListDefaultExpansionTests : BunitContext
             .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
         Services.AddSingleton(mockSaveLinks.Object);
+
+        var mockSession = new Mock<IExtractionSessionService>();
+        mockSession.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
+        mockSession.Setup(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>())).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
+        Services.AddSingleton(mockSession.Object);
 
         Services.AddLogging();
     }

@@ -50,6 +50,13 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
             .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
         Services.AddSingleton(mockSaveLinks.Object);
 
+        var mockSession = new Mock<IExtractionSessionService>();
+        mockSession.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
+        mockSession.Setup(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>())).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
+        Services.AddSingleton(mockSession.Object);
+
         Services.AddLogging();
         JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
     }

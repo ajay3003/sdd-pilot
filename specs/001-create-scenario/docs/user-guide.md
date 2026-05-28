@@ -1,29 +1,83 @@
-# BirkNext User Guide
+# QA Review Studio User Guide
 
 ## Overview
 
-BirkNext helps teams transform specification documents into structured QA review items and finalized scenarios.
+QA Review Studio helps test teams analyze specification documents and turn them into structured QA artifacts.
 
-Users can paste or import `.md` / `.txt` files, extract candidates, review them, save the review state, and save selected items as finalized scenarios.
+Users can:
+
+- paste specification text manually
+- import a local `.md` or `.txt` file
+- analyze the specification
+- review extracted QA artifacts
+- classify review decisions
+- save review state
+- save selected TEST artifacts as test scenarios
+- browse artifacts in the QA Artifact Library
+
+## Core Concepts
+
+| Concept | Meaning |
+|---|---|
+| QA Artifact | A reviewed item extracted from a specification |
+| Requirement | Expected system behavior |
+| Test | Verification, acceptance criteria, or Given/When/Then flow |
+| Needs Clarification | Open question, ambiguity, unresolved decision, or risk |
+| Context Heading | Source section/group such as User Story, Functional Requirements, Edge Cases |
+| Test Scenario | Executable or reviewable QA verification flow |
+
+## Artifact Type vs ContextHeading
+
+QA Review Studio separates artifact type from source context.
+
+Artifact type means:
+
+```text
+REQUIREMENT
+TEST
+NEEDS_CLARIFICATION
+```
+
+ContextHeading means the source section/group, for example:
+
+```text
+User Story 1
+Functional Requirements
+Acceptance Criteria
+Edge Cases
+Observability
+Assumptions
+```
+
+A User Story is normally treated as context/grouping metadata, not as a separate GraphQL artifact type.
+
+Example:
+
+| Spec Structure | Meaning |
+|---|---|
+| User Story 2 - View Scenario List | ContextHeading |
+| Given one or more scenarios exist... | TEST |
+| System MUST display all stored scenarios | REQUIREMENT |
+| What happens if backend is unavailable? | NEEDS_CLARIFICATION |
+
 
 ## Main Workflow
 
-1. Open **Extract**
+1. Open **Specification Review**
 2. Paste text or import a `.md` / `.txt` file
-3. Click **Extract Scenarios**
-4. Review grouped candidates
-5. Mark items as **New**, **Accepted**, **Rejected**, or **Needs Review**
-6. Click **Save Review** to persist the review session
-7. Select finalized candidates
-8. Click **Save Selected** to create scenarios
-
-## Candidate Types
-
-| Type | Meaning |
-|---|---|
-| REQUIREMENT | Expected system behavior |
-| TEST | Verification, acceptance criteria, or Given/When/Then flow |
-| NEEDS_CLARIFICATION | Question, uncertainty, or unresolved decision |
+3. Choose analysis profile
+   - Speckit Structured Spec
+   - Generic Document
+4. Click **Analyze Specification**
+5. Review grouped QA artifacts
+6. Mark items as:
+   - New
+   - Accepted
+   - Rejected
+   - Needs Review
+7. Click **Save Review** to persist review state
+8. Select TEST artifacts that should become executable scenarios
+9. Click **Save Selected** where supported
 
 ## Review Statuses
 
@@ -34,46 +88,51 @@ Users can paste or import `.md` / `.txt` files, extract candidates, review them,
 | Rejected | Noise, duplicate, or not useful |
 | Needs Review | Requires human clarification or follow-up |
 
-## Reviewed Candidates vs Scenarios
+## QA Artifact Library
 
-| Concept | Meaning |
-|---|---|
-| Reviewed Candidate | Extracted item plus QA review decision |
-| Scenario | Finalized item saved to the scenario registry |
+The QA Artifact Library stores reviewed artifacts.
 
-A reviewed candidate does not automatically become a scenario. Use **Save Selected** for finalized scenarios.
+It may contain:
 
-## Grouped Review
+- requirements
+- tests
+- clarification findings
 
-Results are grouped by type and then by source heading/context.
+The default library filter should prioritize **TEST** artifacts because testers usually want executable scenarios first.
 
-```text
-REQUIREMENT
-  Functional Requirements
-  Observability
+## New Test Scenario
 
-TEST
-  User Story 1
-  Acceptance Criteria
+The manual creation flow is for TEST scenarios only.
 
-NEEDS_CLARIFICATION
-  Edge Cases
-  Open Questions
-```
+Use **New Test Scenario** for:
 
-## Importing Files
+- exploratory testing
+- regression scenarios
+- bug reproduction flows
+- manual QA validation
 
-Supported file types:
+The manual creation page should not require a type selector because manually created scenarios are always TEST artifacts.
 
-- `.md`
-- `.txt`
+## Specification Review Session
 
-Files are read in the browser. The uploaded file itself is not stored automatically.
+After running **Analyze Specification**, the current review session should remain available when navigating away and back.
 
-## Key Principles
+The session may restore:
+
+- extracted artifacts
+- review decisions
+- filters
+- search text
+- expanded/collapsed groups
+- selected analysis profile
+
+This is temporary working-session continuity, not permanent spec storage.
+
+## Important Principles
 
 - Nothing is auto-saved
 - Extraction is deterministic
+- The original `spec.md` is not modified automatically
 - Users review before saving
-- Raw specification text is not logged
-- Review state and finalized scenarios are separate
+- Raw specification text should not be logged
+- QA artifacts and test scenarios are related but not identical

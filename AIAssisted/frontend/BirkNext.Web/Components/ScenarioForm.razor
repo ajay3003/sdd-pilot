@@ -15,19 +15,8 @@
         <label for="description">Description <span class="form-optional">(optional)</span></label>
         <InputTextArea id="description" @bind-Value="_model.Description" class="form-control form-textarea" placeholder="Provide additional context or details" rows="3" />
     </div>
-    <div class="form-field">
-        <label for="kind">Type</label>
-        <InputSelect id="kind" TValue="ScenarioKind?" @bind-Value="_model.Kind" class="form-control form-select">
-            <option value="">-- select a type --</option>
-            <option value="Requirement">Requirement</option>
-            <option value="Test">Test</option>
-            <option value="NeedsClarification">Needs Clarification</option>
-        </InputSelect>
-        <ValidationMessage For="() => _model.Kind" />
-        @if (FieldError("kind") is { } kindErr) { <span class="validation-message">@kindErr</span> }
-    </div>
 
-    @{ var unrouted = _errors.Where(e => e.Field is not ("title" or "kind")).ToList(); }
+    @{ var unrouted = _errors.Where(e => e.Field is not "title").ToList(); }
     @if (unrouted.Count > 0)
     {
         <ul role="alert" class="form-errors">
@@ -88,7 +77,7 @@
             {
                 Title = _model.Title,
                 Description = string.IsNullOrEmpty(_model.Description) ? null : _model.Description,
-                Kind = _model.Kind!.Value,
+                Kind = ScenarioKind.Test,
                 ProjectId = "00000000-0000-0000-0000-000000000001"
             };
 
@@ -128,7 +117,5 @@
         [MaxLength(500, ErrorMessage = "Title must be 500 characters or fewer")]
         public string Title { get; set; } = string.Empty;
         public string? Description { get; set; }
-        [Required(ErrorMessage = "A valid type must be selected")]
-        public ScenarioKind? Kind { get; set; }
     }
 }

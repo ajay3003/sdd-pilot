@@ -3,6 +3,7 @@
 @using Microsoft.Extensions.Logging
 @inject IScenarioExtractionService ExtractionService
 @inject IExtractionConfiguration ExtractionConfig
+@inject IExtractionSessionService SessionService
 @inject ILogger<ExtractionInput> Logger
 
 <div class="extraction-input">
@@ -51,23 +52,45 @@
         </div>
     </div>
 
-    <div class="input-actions">
-        <button
-            type="button"
-            @onclick="HandleExtract"
-            disabled="@_isExtracting"
-            data-testid="extract-button"
-            class="btn-primary">
-            @if (_isExtracting)
-            {
-                <span>Analyzing...</span>
-            }
-            else
-            {
-                <span>Analyze Specification</span>
-            }
-        </button>
-    </div>
+    @if (_showReplaceConfirm)
+    {
+        <div class="replace-session-confirm"
+             role="alertdialog"
+             aria-labelledby="replace-confirm-title"
+             aria-modal="true"
+             data-testid="replace-session-dialog">
+            <p id="replace-confirm-title">You already have an active review session.
+                Starting a new extraction will replace the current session.</p>
+            <div class="replace-session-actions">
+                <button type="button"
+                        @onclick="ConfirmReplaceAsync"
+                        data-testid="replace-confirm-btn">Continue and Replace</button>
+                <button type="button"
+                        @onclick="CancelReplace"
+                        data-testid="replace-cancel-btn">Cancel</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="input-actions">
+            <button
+                type="button"
+                @onclick="HandleExtract"
+                disabled="@_isExtracting"
+                data-testid="extract-button"
+                class="btn-primary">
+                @if (_isExtracting)
+                {
+                    <span>Analyzing...</span>
+                }
+                else
+                {
+                    <span>Analyze Specification</span>
+                }
+            </button>
+        </div>
+    }
 </div>
 
 @code {
@@ -77,6 +100,7 @@
     private bool _isExtracting;
     private string? _validationMessage;
     private ExtractionProfile _profile = ExtractionProfile.Speckit;
+    private bool _showReplaceConfirm;
 
     private void HandleFileImported(string content)
     {
@@ -106,6 +130,27 @@
             return;
         }
 
+        var existingSession = await SessionService.LoadAsync();
+        if (existingSession is not null && !SessionService.IsExpired(existingSession))
+        {
+            _showReplaceConfirm = true;
+            return;
+        }
+
+        await RunExtractionAsync();
+    }
+
+    private async Task ConfirmReplaceAsync()
+    {
+        _showReplaceConfirm = false;
+        await SessionService.ClearAsync();
+        await RunExtractionAsync();
+    }
+
+    private void CancelReplace() => _showReplaceConfirm = false;
+
+    private async Task RunExtractionAsync()
+    {
         _isExtracting = true;
         StateHasChanged();
 
@@ -152,4 +197,3 @@
         }
     }
 }
-

@@ -1,18 +1,20 @@
-# BirkNext Admin Guide
+# QA Review Studio Admin Guide
 
 ## Overview
 
-BirkNext currently supports:
+QA Review Studio supports:
 
-- manual scenario management
-- deterministic scenario extraction
+- deterministic specification analysis
 - configurable extraction rules
 - local `.md` / `.txt` import
+- Speckit-aware analysis profile
 - review workflow
 - reviewed candidate persistence
-- finalized scenario persistence
-- grouped review sections
-- modern frontend UX with shared design-system styles
+- QA Artifact Library
+- manual New Test Scenario workflow
+- traceability links
+- coverage/dashboard metrics
+- local developer startup scripts
 
 ## Responsibilities
 
@@ -20,13 +22,15 @@ Administrators or maintainers should:
 
 - validate local startup configuration
 - verify database/container startup
-- configure extraction rules
 - verify deterministic extraction behavior
+- configure extraction rules if supported
 - monitor logs
 - verify raw specification text is not logged
 - maintain startup scripts
 - verify review persistence
-- verify finalized scenario persistence
+- verify QA Artifact Library behavior
+- verify New Test Scenario behavior
+- verify dashboard and traceability metrics
 
 ## Local Startup
 
@@ -36,21 +40,63 @@ Recommended startup method:
 scripts/start-local.bat
 ```
 
-The PowerShell launcher uses Podman by default, detects compose files, checks Podman readiness, starts containers, starts backend, then starts frontend.
+The PowerShell launcher uses Podman by default, detects compose files, checks Podman readiness, starts containers, starts backend, and then starts frontend.
 
 ## Persistence Responsibilities
 
 | Area | Purpose |
 |---|---|
 | reviewed_candidates | QA review workspace and audit trail |
-| scenarios | finalized scenario registry |
+| scenarios / artifacts | Saved QA artifacts and TEST scenarios, depending on implementation naming |
+| candidate links | Traceability between requirements, tests, and clarifications |
 
-**Save Review** persists reviewed candidates.  
-**Save Selected** creates finalized scenarios.
+## Artifact Model
+
+Current supported artifact classifications are:
+
+- REQUIREMENT
+- TEST
+- NEEDS_CLARIFICATION
+
+User Story headings should normally be stored as context/grouping metadata, not as a separate GraphQL type unless the backend explicitly supports it.
+### Artifact Type vs ContextHeading
+
+User Story, Functional Requirements, Acceptance Criteria, Edge Cases, Observability, and Assumptions are normally treated as `ContextHeading` / grouping metadata.
+
+They should not become new GraphQL artifact types unless the product explicitly decides to persist them as first-class artifacts.
+
+
+## Manual Scenario Creation
+
+Manual creation is intended for TEST scenarios only.
+
+The manual creation page should be named **New Test Scenario** and should not ask the user to choose Requirement/Test/Clarification.
+
+## Specification Source of Truth
+
+The imported `spec.md` remains the source of truth.
+
+QA Review Studio should:
+
+- analyze specifications
+- extract QA artifacts
+- identify gaps
+- support traceability
+- support review workflow
+
+It should not silently rewrite original specification documents.
 
 ## Observability Expectations
 
-Logs should help diagnose startup, rule loading, extraction, review save, scenario save, and validation failures.
+Logs should help diagnose:
+
+- application startup
+- rule loading
+- extraction/analyze events
+- review save
+- artifact save
+- scenario save
+- validation failures
 
 Logs must not contain:
 
@@ -67,10 +113,13 @@ Verify:
 2. Frontend starts
 3. GraphQL endpoint is reachable
 4. `.md` / `.txt` import works
-5. extraction produces grouped candidates
-6. filters/search work
+5. Speckit profile is available and selected by default if intended
+6. Analyze Specification produces grouped artifacts
 7. review statuses can be changed
-8. Save Review persists reviewed candidates
-9. Save Selected creates scenarios
-10. saved scenarios appear on Scenarios page
-11. no browser console errors appear
+8. Save Review persists reviewed artifacts
+9. QA Artifact Library loads
+10. TEST filter is default in library if implemented
+11. New Test Scenario creates TEST artifacts only
+12. dashboard metrics load
+13. traceability links work
+14. no browser console errors appear

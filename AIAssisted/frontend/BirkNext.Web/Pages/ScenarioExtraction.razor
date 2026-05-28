@@ -1,6 +1,8 @@
 @page "/extract"
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IExtractionSessionService SessionService
 
 <PageTitle>Analyze Specification</PageTitle>
 
@@ -17,14 +19,29 @@
 }
 else
 {
-    <ExtractionReviewList PipelineResult="_pipelineResult" />
+    <ExtractionReviewList PipelineResult="_pipelineResult" InitialSession="_sessionSnapshot" />
 }
 
 @code {
     private ExtractionPipelineResult? _pipelineResult;
+    private ExtractionSessionSnapshot? _sessionSnapshot;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var session = await SessionService.LoadAsync();
+        if (session is not null
+            && !SessionService.IsExpired(session)
+            && session.PipelineStatus == PipelineStatus.Success
+            && session.Candidates.Count > 0)
+        {
+            _sessionSnapshot = session;
+            _pipelineResult = ExtractionPipelineResult.Restore(session);
+        }
+    }
 
     private void HandleExtractionCompleted(ExtractionPipelineResult result)
     {
+        _sessionSnapshot = null;   // new extraction — ExtractionReviewList saves its own initial session
         _pipelineResult = result;
     }
 }

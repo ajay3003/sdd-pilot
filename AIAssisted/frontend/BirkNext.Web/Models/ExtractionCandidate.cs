@@ -4,7 +4,7 @@ namespace BirkNext.Web.Models;
 
 public sealed class ExtractionCandidate
 {
-    public Guid CandidateId { get; } = Guid.NewGuid();
+    public Guid CandidateId { get; init; } = Guid.NewGuid();
     public required string Title { get; init; }
     public required ScenarioKind Classification { get; init; }
     public required ClassificationSignal ClassificationSignal { get; init; }

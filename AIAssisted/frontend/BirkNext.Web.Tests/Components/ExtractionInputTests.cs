@@ -22,6 +22,12 @@ public class ExtractionInputTests : BunitContext
         _mockConfig.Setup(c => c.MaxLineLengthForPatternMatching).Returns(2_000);
         Services.AddSingleton(_mockExtractionService.Object);
         Services.AddSingleton(_mockConfig.Object);
+        var mockSession = new Mock<IExtractionSessionService>();
+        mockSession.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
+        mockSession.Setup(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>())).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
+        Services.AddSingleton(mockSession.Object);
         Services.AddLogging();
         JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
     }
@@ -229,6 +235,12 @@ public class ExtractionInputObservabilityTests : BunitContext
         Services.AddSingleton(_mockService.Object);
         Services.AddSingleton<IExtractionConfiguration>(mockConfig.Object);
         Services.AddSingleton<ILogger<ExtractionInput>>(_logger);
+        var mockSession = new Mock<IExtractionSessionService>();
+        mockSession.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
+        mockSession.Setup(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>())).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
+        Services.AddSingleton(mockSession.Object);
         JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
     }
 
@@ -391,6 +403,12 @@ public class ExtractionInputProfileSelectorTests : BunitContext
 
         Services.AddSingleton(_mockService.Object);
         Services.AddSingleton(mockConfig.Object);
+        var mockSession = new Mock<IExtractionSessionService>();
+        mockSession.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
+        mockSession.Setup(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>())).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
+        mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
+        Services.AddSingleton(mockSession.Object);
         Services.AddLogging();
         JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
     }
