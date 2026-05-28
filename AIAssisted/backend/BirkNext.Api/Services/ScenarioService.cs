@@ -21,6 +21,13 @@ public class ScenarioResult
     public IReadOnlyList<UserError> Errors { get; init; } = [];
 }
 
+public class DeleteScenarioResult
+{
+    public string? DeletedId { get; init; }
+    public IReadOnlyList<UserError> Errors { get; init; } = [];
+    public bool IsSuccess => DeletedId is not null;
+}
+
 public class ScenarioService
 {
     private readonly AppDbContext _dbContext;
@@ -146,6 +153,53 @@ public class ScenarioService
             .Where(s => s.ProjectId == projectId)
             .OrderByDescending(s => s.CreatedAt)
             .ToListAsync(ct);
+    }
+
+    public async Task<DeleteScenarioResult> DeleteAsync(
+        string id,
+        string correlationId,
+        CancellationToken ct = default)
+    {
+        if (!Guid.TryParse(id, out var guid))
+        {
+            return new DeleteScenarioResult
+            {
+                Errors = [new UserError("NOT_FOUND", "Scenario not found")]
+            };
+        }
+
+        var scenario = await _dbContext.Scenarios.FindAsync([guid], ct);
+
+        if (scenario is null)
+        {
+            _logger?.LogWarning(
+                "ScenarioDeleteNotFound {CorrelationId} {ScenarioId}",
+                correlationId, id);
+
+            return new DeleteScenarioResult
+            {
+                Errors = [new UserError("NOT_FOUND", "Scenario not found")]
+            };
+        }
+
+        try
+        {
+            _dbContext.Scenarios.Remove(scenario);
+            await _dbContext.SaveChangesAsync(ct);
+
+            _logger?.LogInformation(
+                "ScenarioDeleted {CorrelationId} {ScenarioId}",
+                correlationId, id);
+
+            return new DeleteScenarioResult { DeletedId = id };
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex,
+                "ScenarioDeletionFailed {CorrelationId} {ScenarioId}",
+                correlationId, id);
+            throw;
+        }
     }
 
     private static List<UserError> Validate(string title, ScenarioKind kind)

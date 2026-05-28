@@ -154,6 +154,29 @@ public class Mutation
         };
     }
 
+    /// <summary>Deletes a scenario by ID.</summary>
+    public async Task<DeleteScenarioPayload> DeleteScenarioAsync(
+        [ID] string id,
+        [Service] ScenarioService scenarioService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var result = await scenarioService.DeleteAsync(id, correlationId, cancellationToken);
+
+        return new DeleteScenarioPayload
+        {
+            DeletedId = result.DeletedId,
+            Success = result.IsSuccess,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
     /// <summary>Persists the traceability links between candidates for an extraction session.</summary>
     public async Task<SaveCandidateLinksPayload> SaveCandidateLinksAsync(
         SaveCandidateLinksInput input,

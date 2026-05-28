@@ -1,6 +1,6 @@
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="dashboard">BirkNext</a>
+        <a class="navbar-brand" href="dashboard">QA Review Studio</a>
         <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
             <span class="navbar-toggler-icon"></span>
         </button>
@@ -22,14 +22,19 @@
         </div>
         <div class="nav-section px-3">Library</div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="scenarios">
-                <span class="nav-icon nav-icon-scenarios" aria-hidden="true"></span> Scenarios
+            <NavLink class="nav-link" href="scenarios" Match="NavLinkMatch.All">
+                <span class="nav-icon nav-icon-scenarios" aria-hidden="true"></span> Scenario Library
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="scenarios/new">
+                <span class="nav-icon nav-icon-new-scenario" aria-hidden="true"></span> New Scenario
             </NavLink>
         </div>
         <div class="nav-section px-3">Analysis</div>
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="compare">
-                <span class="nav-icon nav-icon-compare" aria-hidden="true"></span> Compare
+                <span class="nav-icon nav-icon-compare" aria-hidden="true"></span> Compare Specs
             </NavLink>
         </div>
     </nav>

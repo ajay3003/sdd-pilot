@@ -303,9 +303,8 @@ else
                                                     OnSelectionToggled="HandleSelectionToggled"
                                                     OnReviewStatusChanged="HandleReviewStatusChanged"
                                                     Links="GetLinksForCandidate(candidate.CandidateId)"
-                                                    LinkableCandidates="GetLinkableCandidates(candidate)"
-                                                    OnLinkAdded="HandleLinkAdded"
-                                                    OnLinkRemoved="HandleLinkRemoved" />
+                                                    OnOpenLinkPanel="HandleOpenLinkDrawer"
+                                                    IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == candidate.CandidateId)" />
                         }
                     </TestSubsectionGroup>
                 }
@@ -336,9 +335,8 @@ else
                                                     OnSelectionToggled="HandleSelectionToggled"
                                                     OnReviewStatusChanged="HandleReviewStatusChanged"
                                                     Links="GetLinksForCandidate(candidate.CandidateId)"
-                                                    LinkableCandidates="GetLinkableCandidates(candidate)"
-                                                    OnLinkAdded="HandleLinkAdded"
-                                                    OnLinkRemoved="HandleLinkRemoved" />
+                                                    OnOpenLinkPanel="HandleOpenLinkDrawer"
+                                                    IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == candidate.CandidateId)" />
                         }
                     </TestSubsectionGroup>
                 }
@@ -369,9 +367,8 @@ else
                                                     OnSelectionToggled="HandleSelectionToggled"
                                                     OnReviewStatusChanged="HandleReviewStatusChanged"
                                                     Links="GetLinksForCandidate(candidate.CandidateId)"
-                                                    LinkableCandidates="GetLinkableCandidates(candidate)"
-                                                    OnLinkAdded="HandleLinkAdded"
-                                                    OnLinkRemoved="HandleLinkRemoved" />
+                                                    OnOpenLinkPanel="HandleOpenLinkDrawer"
+                                                    IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == candidate.CandidateId)" />
                         }
                     </TestSubsectionGroup>
                 }
@@ -435,6 +432,27 @@ else
                 </button>
             </div>
         </div>
+
+        @if (_linkModalCandidate is not null)
+        {
+            <div class="link-drawer-overlay" @onclick="CloseDrawer" aria-hidden="true"></div>
+            <div class="link-drawer"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-label="Link related candidates"
+                 tabindex="-1"
+                 @ref="_drawerRef"
+                 @onkeydown="HandleDrawerKeyDown"
+                 data-testid="link-drawer">
+                <CandidateLinkPanel
+                    Candidate="_linkModalCandidate"
+                    Links="GetLinksForCandidate(_linkModalCandidate.CandidateId)"
+                    LinkableCandidates="GetLinkableCandidates(_linkModalCandidate)"
+                    OnLinkAdded="HandleLinkAdded"
+                    OnLinkRemoved="HandleLinkRemoved"
+                    OnClose="CloseDrawer" />
+            </div>
+        }
     </div>
 }
 
@@ -467,6 +485,9 @@ else
     private readonly Dictionary<string, bool> _testSubsectionExpanded = new();
     private readonly Dictionary<string, bool> _clrSubsectionExpanded = new();
     private readonly List<CandidateLinkEntry> _links = new();
+    private ExtractionCandidate? _linkModalCandidate;
+    private ExtractionCandidate? _prevLinkModalCandidate;
+    private ElementReference _drawerRef;
 
     protected override void OnParametersSet()
     {
@@ -494,20 +515,59 @@ else
         }
     }
 
+    private IEnumerable<string> GetAllSubgroupKeys(ScenarioKind kind) =>
+        PipelineResult?.Candidates
+            .Where(c => c.Classification == kind)
+            .Select(c => c.ContextHeading ?? string.Empty)
+            .Distinct(StringComparer.Ordinal) ?? [];
+
+    private bool AllSubgroupsInState(ScenarioKind kind, Dictionary<string, bool> dict, bool expectedExpanded)
+    {
+        foreach (var k in GetAllSubgroupKeys(kind))
+        {
+            var isExpanded = dict.TryGetValue(k, out var v) && v;
+            if (isExpanded != expectedExpanded) return false;
+        }
+        return true;
+    }
+
     private void ExpandAll()
     {
         foreach (var key in _sectionExpanded.Keys.ToList())
             _sectionExpanded[key] = true;
+        foreach (var key in GetAllSubgroupKeys(ScenarioKind.Requirement))
+            _reqSubsectionExpanded[key] = true;
+        foreach (var key in GetAllSubgroupKeys(ScenarioKind.Test))
+            _testSubsectionExpanded[key] = true;
+        foreach (var key in GetAllSubgroupKeys(ScenarioKind.NeedsClarification))
+            _clrSubsectionExpanded[key] = true;
     }
 
     private void CollapseAll()
     {
         foreach (var key in _sectionExpanded.Keys.ToList())
             _sectionExpanded[key] = false;
+        foreach (var key in GetAllSubgroupKeys(ScenarioKind.Requirement))
+            _reqSubsectionExpanded[key] = false;
+        foreach (var key in GetAllSubgroupKeys(ScenarioKind.Test))
+            _testSubsectionExpanded[key] = false;
+        foreach (var key in GetAllSubgroupKeys(ScenarioKind.NeedsClarification))
+            _clrSubsectionExpanded[key] = false;
     }
 
-    private bool AllSectionsExpanded => _sectionExpanded.Count > 0 && _sectionExpanded.Values.All(v => v);
-    private bool AllSectionsCollapsed => _sectionExpanded.Count > 0 && _sectionExpanded.Values.All(v => !v);
+    private bool AllSectionsExpanded =>
+        _sectionExpanded.Count > 0 &&
+        _sectionExpanded.Values.All(v => v) &&
+        AllSubgroupsInState(ScenarioKind.Requirement, _reqSubsectionExpanded, true) &&
+        AllSubgroupsInState(ScenarioKind.Test, _testSubsectionExpanded, true) &&
+        AllSubgroupsInState(ScenarioKind.NeedsClarification, _clrSubsectionExpanded, true);
+
+    private bool AllSectionsCollapsed =>
+        _sectionExpanded.Count > 0 &&
+        _sectionExpanded.Values.All(v => !v) &&
+        AllSubgroupsInState(ScenarioKind.Requirement, _reqSubsectionExpanded, false) &&
+        AllSubgroupsInState(ScenarioKind.Test, _testSubsectionExpanded, false) &&
+        AllSubgroupsInState(ScenarioKind.NeedsClarification, _clrSubsectionExpanded, false);
 
     private List<ExtractionCandidate> GetVisible(ScenarioKind kind)
     {
@@ -648,6 +708,20 @@ else
         _activeLinkFilter = null;
     }
 
+    private void HandleOpenLinkDrawer(ExtractionCandidate candidate) => _linkModalCandidate = candidate;
+    private void CloseDrawer() => _linkModalCandidate = null;
+    private void HandleDrawerKeyDown(KeyboardEventArgs e) { if (e.Key == "Escape") CloseDrawer(); }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_linkModalCandidate is not null &&
+            !ReferenceEquals(_linkModalCandidate, _prevLinkModalCandidate))
+        {
+            _prevLinkModalCandidate = _linkModalCandidate;
+            await _drawerRef.FocusAsync();
+        }
+    }
+
     private void HandleLinkAdded(CandidateLinkEntry entry)
     {
         if (entry.SourceId == entry.TargetId)
@@ -731,7 +805,7 @@ else
     }
 
     private bool GetSubsectionExpanded(string key) =>
-        !_testSubsectionExpanded.TryGetValue(key, out var v) || v;
+        _testSubsectionExpanded.TryGetValue(key, out var v) && v;
 
     private void SetSubsectionExpanded(string key, bool value) =>
         _testSubsectionExpanded[key] = value;
@@ -778,7 +852,7 @@ else
     }
 
     private bool GetClrSubsectionExpanded(string key) =>
-        !_clrSubsectionExpanded.TryGetValue(key, out var v) || v;
+        _clrSubsectionExpanded.TryGetValue(key, out var v) && v;
 
     private void SetClrSubsectionExpanded(string key, bool value) =>
         _clrSubsectionExpanded[key] = value;
@@ -825,7 +899,7 @@ else
     }
 
     private bool GetReqSubsectionExpanded(string key) =>
-        !_reqSubsectionExpanded.TryGetValue(key, out var v) || v;
+        _reqSubsectionExpanded.TryGetValue(key, out var v) && v;
 
     private void SetReqSubsectionExpanded(string key, bool value) =>
         _reqSubsectionExpanded[key] = value;

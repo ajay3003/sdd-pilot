@@ -368,3 +368,28 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* ── Link drawer ─────────────────────────────────────────────────────────── */
+
+.link-drawer-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgb(15 23 42 / 0.35);
+    z-index: 1000;
+}
+
+.link-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 420px;
+    max-width: 90vw;
+    height: 100dvh;
+    background: white;
+    box-shadow: -4px 0 24px rgb(15 23 42 / 0.14);
+    z-index: 1001;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    outline: none;
+}

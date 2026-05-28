@@ -35,13 +35,7 @@ public class CandidateLinkPanelTests : BunitContext
         cut.FindAll(".link-section")
             .Should().Contain(s => s.TextContent.Contains("Clarifications"));
 
-        var clarificationSection = cut.FindAll(".link-section")
-            .Single(s => s.TextContent.Contains("Clarifications"));
-        clarificationSection.QuerySelector(".link-add-btn")!.Click();
-        cut.FindAll(".link-section")
-            .Single(s => s.TextContent.Contains("Clarifications"))
-            .QuerySelector(".link-picker-item")!
-            .Click();
+        cut.Find("[data-testid='link-section-clarifications'] [data-testid='link-add-btn']").Click();
 
         added.Should().NotBeNull();
         added!.SourceId.Should().Be(test.CandidateId);
@@ -67,8 +61,116 @@ public class CandidateLinkPanelTests : BunitContext
                 return Task.CompletedTask;
             }));
 
-        cut.Find(".link-remove-btn").Click();
+        cut.Find("[data-testid='link-remove-btn']").Click();
 
         removed.Should().Be(link);
+    }
+
+    [Fact]
+    public void RequirementCandidate_ShowsTestsAndClarificationsSections()
+    {
+        var req = Candidate("FR-001: system validates credentials", ScenarioKind.Requirement);
+
+        var cut = Render<CandidateLinkPanel>(p => p
+            .Add(c => c.Candidate, req)
+            .Add(c => c.LinkableCandidates, Array.Empty<ExtractionCandidate>()));
+
+        cut.Find("[data-testid='link-section-tests']").Should().NotBeNull();
+        cut.Find("[data-testid='link-section-clarifications']").Should().NotBeNull();
+        cut.FindAll("[data-testid='link-section-requirements']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TestCandidate_ShowsRequirementsAndClarificationsSections()
+    {
+        var test = Candidate("Given login When valid Then success", ScenarioKind.Test);
+
+        var cut = Render<CandidateLinkPanel>(p => p
+            .Add(c => c.Candidate, test)
+            .Add(c => c.LinkableCandidates, Array.Empty<ExtractionCandidate>()));
+
+        cut.Find("[data-testid='link-section-requirements']").Should().NotBeNull();
+        cut.Find("[data-testid='link-section-clarifications']").Should().NotBeNull();
+        cut.FindAll("[data-testid='link-section-tests']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void SearchFilter_HidesNonMatchingAvailableCandidates()
+    {
+        var req = Candidate("FR-001: system validates credentials", ScenarioKind.Requirement);
+        var testA = Candidate("Given login succeeds", ScenarioKind.Test);
+        var testB = Candidate("Given logout works", ScenarioKind.Test);
+
+        var cut = Render<CandidateLinkPanel>(p => p
+            .Add(c => c.Candidate, req)
+            .Add(c => c.LinkableCandidates, [testA, testB]));
+
+        cut.Find("[data-testid='link-search']").Input("login");
+
+        var availableItems = cut.Find("[data-testid='link-section-tests']")
+            .QuerySelectorAll("[data-testid='link-available-item']");
+        availableItems.Should().HaveCount(1);
+        availableItems[0].TextContent.Should().Contain("login");
+    }
+
+    [Fact]
+    public void SearchFilter_ShowsNoMatchingCandidates_DisplaysEmptyMessage()
+    {
+        var req = Candidate("FR-001: system validates credentials", ScenarioKind.Requirement);
+        var test = Candidate("Given login succeeds", ScenarioKind.Test);
+
+        var cut = Render<CandidateLinkPanel>(p => p
+            .Add(c => c.Candidate, req)
+            .Add(c => c.LinkableCandidates, [test]));
+
+        cut.Find("[data-testid='link-search']").Input("xyznotfound");
+
+        var testsSection = cut.Find("[data-testid='link-section-tests']");
+        testsSection.QuerySelectorAll("[data-testid='link-available-item']").Should().BeEmpty();
+        testsSection.TextContent.Should().Contain("No matching candidates");
+    }
+
+    [Fact]
+    public void SelfLink_NotShownInAvailableCandidates()
+    {
+        var req = Candidate("FR-001: system validates credentials", ScenarioKind.Requirement);
+
+        var cut = Render<CandidateLinkPanel>(p => p
+            .Add(c => c.Candidate, req)
+            .Add(c => c.LinkableCandidates, [req]));
+
+        cut.FindAll("[data-testid='link-available-item']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AlreadyLinked_NotShownInAvailableList()
+    {
+        var req = Candidate("FR-001: system validates credentials", ScenarioKind.Requirement);
+        var test = Candidate("Given login When valid Then success", ScenarioKind.Test);
+        var link = new CandidateLinkEntry(req.CandidateId, test.CandidateId, CandidateLinkType.RequirementTest);
+
+        var cut = Render<CandidateLinkPanel>(p => p
+            .Add(c => c.Candidate, req)
+            .Add(c => c.LinkableCandidates, [test])
+            .Add(c => c.Links, [link]));
+
+        var testsSection = cut.Find("[data-testid='link-section-tests']");
+        testsSection.QuerySelectorAll("[data-testid='link-available-item']").Should().BeEmpty();
+        testsSection.QuerySelectorAll("[data-testid='link-linked-item']").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void OnClose_InvokedWhenCloseButtonClicked()
+    {
+        var req = Candidate("FR-001: system validates credentials", ScenarioKind.Requirement);
+        bool closed = false;
+
+        var cut = Render<CandidateLinkPanel>(p => p
+            .Add(c => c.Candidate, req)
+            .Add(c => c.OnClose, () => { closed = true; return Task.CompletedTask; }));
+
+        cut.Find("[data-testid='link-drawer-close']").Click();
+
+        closed.Should().BeTrue();
     }
 }

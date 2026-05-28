@@ -1,7 +1,7 @@
 @if (Scenarios.Count == 0)
 {
     <div class="empty-state empty-state-dashed">
-        <p data-testid="empty-state">No scenarios yet. Use <a href="/extract">Specification Review</a> to identify and save scenarios from your specification text.</p>
+        <p data-testid="empty-state">No scenarios yet. <a href="scenarios/new">Create one manually</a> or use <a href="/extract">Specification Review</a> to identify and save scenarios from your specification text.</p>
     </div>
 }
 else
@@ -11,11 +11,38 @@ else
         <div class="scenario-card" data-testid="scenario-row">
             <div class="scenario-card-header">
                 <span class="badge badge-@scenario.Kind.ToLowerInvariant()">@scenario.Kind</span>
+                <div class="scenario-card-actions">
+                    @if (DeletingId == scenario.Id)
+                    {
+                        <span class="delete-spinner" aria-label="Deleting scenario">Deleting…</span>
+                    }
+                    else if (_pendingDeleteId != scenario.Id)
+                    {
+                        <button type="button" class="scenario-delete-btn"
+                                aria-label="Delete scenario: @scenario.Title"
+                                @onclick="() => RequestDelete(scenario.Id)"
+                                data-testid="delete-btn-@scenario.Id">
+                            Delete
+                        </button>
+                    }
+                </div>
             </div>
             <div class="scenario-card-title">@scenario.Title</div>
             @if (scenario.Description is not null)
             {
                 <div class="scenario-card-description">@scenario.Description</div>
+            }
+            @if (_pendingDeleteId == scenario.Id)
+            {
+                <div class="delete-confirm" role="alert" data-testid="delete-confirm-@scenario.Id">
+                    <span>Delete this scenario? This cannot be undone.</span>
+                    <button type="button" class="btn-danger btn-sm" @onclick="() => ConfirmDeleteAsync(scenario.Id)" data-testid="delete-confirm-btn">Confirm</button>
+                    <button type="button" class="btn-secondary btn-sm" @onclick="CancelDelete" data-testid="delete-cancel-btn">Cancel</button>
+                </div>
+            }
+            @if (DeleteErrors is not null && DeleteErrors.TryGetValue(scenario.Id, out var deleteError))
+            {
+                <div class="delete-error" role="alert" data-testid="delete-error-@scenario.Id">@deleteError</div>
             }
         </div>
     }
@@ -23,4 +50,19 @@ else
 
 @code {
     [Parameter] public IReadOnlyList<ScenarioListItem> Scenarios { get; set; } = [];
+    [Parameter] public EventCallback<string> OnDeleteRequested { get; set; }
+    [Parameter] public string? DeletingId { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, string>? DeleteErrors { get; set; }
+
+    private string? _pendingDeleteId;
+
+    private void RequestDelete(string id) => _pendingDeleteId = id;
+
+    private void CancelDelete() => _pendingDeleteId = null;
+
+    private async Task ConfirmDeleteAsync(string id)
+    {
+        _pendingDeleteId = null;
+        await OnDeleteRequested.InvokeAsync(id);
+    }
 }

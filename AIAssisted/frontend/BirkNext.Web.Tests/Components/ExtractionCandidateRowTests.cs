@@ -198,4 +198,37 @@ public class ExtractionCandidateRowTests : BunitContext
 
         cut.Find("[data-testid='save-spinner']").Should().NotBeNull();
     }
+
+    [Fact]
+    public async Task LinkIndicator_Click_InvokesOnOpenLinkPanel()
+    {
+        var candidate = MakeCandidate();
+        ExtractionCandidate? raised = null;
+
+        var cut = Render<ExtractionCandidateRow>(p =>
+        {
+            p.Add(c => c.Candidate, candidate);
+            p.Add(c => c.OnOpenLinkPanel, (ExtractionCandidate c) => { raised = c; return Task.CompletedTask; });
+        });
+
+        cut.Find("[data-testid='link-indicator']").Click();
+
+        await cut.WaitForStateAsync(() => raised is not null, timeout: TimeSpan.FromSeconds(1));
+
+        raised.Should().BeSameAs(candidate);
+    }
+
+    [Fact]
+    public void LinkIndicator_IsOpenClass_SetWhenIsLinkPanelOpenTrue()
+    {
+        var candidate = MakeCandidate();
+
+        var cut = Render<ExtractionCandidateRow>(p =>
+        {
+            p.Add(c => c.Candidate, candidate);
+            p.Add(c => c.IsLinkPanelOpen, true);
+        });
+
+        cut.Find("[data-testid='link-indicator']").ClassList.Should().Contain("is-open");
+    }
 }

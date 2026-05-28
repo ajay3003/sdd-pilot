@@ -84,7 +84,6 @@ public class ScenariosPageTests : BunitContext
             cut.Find("[data-testid='scenario-load-error']")
                 .TextContent.Should().Contain("couldn't load scenarios");
             cut.Markup.Should().NotContain("Loading scenarios");
-            cut.Find("input[id='title']").Should().NotBeNull();
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -110,6 +109,125 @@ public class ScenariosPageTests : BunitContext
             cut.Find("[role='alert']").TextContent
                 .Should().Contain("Something went wrong"),
             timeout: TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public void ScenariosPage_SuccessfulDelete_RemovesScenarioFromList()
+    {
+        var mockGetQuery = new Mock<IGetScenariosQuery>();
+        mockGetQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult(
+            [
+                MakeScenario("sc-1", "Keep me", null, ScenarioKind.Requirement),
+                MakeScenario("sc-2", "Delete me", null, ScenarioKind.Test),
+            ]));
+
+        var mockDeletePayload = new Mock<IDeleteScenario_DeleteScenario>();
+        mockDeletePayload.Setup(p => p.Success).Returns(true);
+        mockDeletePayload.Setup(p => p.DeletedId).Returns("sc-2");
+        mockDeletePayload.Setup(p => p.Errors).Returns([]);
+
+        var mockDeleteData = new Mock<IDeleteScenarioResult>();
+        mockDeleteData.Setup(d => d.DeleteScenario).Returns(mockDeletePayload.Object);
+
+        var mockDeleteResult = new Mock<IOperationResult<IDeleteScenarioResult>>();
+        mockDeleteResult.Setup(r => r.Data).Returns(mockDeleteData.Object);
+
+        var mockDeleteMutation = new Mock<IDeleteScenarioMutation>();
+        mockDeleteMutation
+            .Setup(m => m.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockDeleteResult.Object);
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockGetQuery.Object);
+        mockClient.Setup(c => c.DeleteScenario).Returns(mockDeleteMutation.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll("[data-testid='scenario-row']").Should().HaveCount(2),
+            timeout: TimeSpan.FromSeconds(1));
+
+        cut.Find("[data-testid='delete-btn-sc-2']").Click();
+        cut.Find("[data-testid='delete-confirm-btn']").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("[data-testid='scenario-row']").Should().ContainSingle();
+            cut.Markup.Should().Contain("Keep me");
+            cut.Markup.Should().NotContain("Delete me");
+        }, timeout: TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public void ScenariosPage_FailedDelete_ShowsInlineError()
+    {
+        var mockGetQuery = new Mock<IGetScenariosQuery>();
+        mockGetQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult(
+            [
+                MakeScenario("sc-1", "My scenario", null, ScenarioKind.Requirement),
+            ]));
+
+        var mockDeletePayload = new Mock<IDeleteScenario_DeleteScenario>();
+        mockDeletePayload.Setup(p => p.Success).Returns(false);
+        mockDeletePayload.Setup(p => p.DeletedId).Returns((string?)null);
+
+        var mockError = new Mock<IDeleteScenario_DeleteScenario_Errors>();
+        mockError.Setup(e => e.Message).Returns("Scenario not found");
+        mockDeletePayload.Setup(p => p.Errors).Returns([mockError.Object]);
+
+        var mockDeleteData = new Mock<IDeleteScenarioResult>();
+        mockDeleteData.Setup(d => d.DeleteScenario).Returns(mockDeletePayload.Object);
+
+        var mockDeleteResult = new Mock<IOperationResult<IDeleteScenarioResult>>();
+        mockDeleteResult.Setup(r => r.Data).Returns(mockDeleteData.Object);
+
+        var mockDeleteMutation = new Mock<IDeleteScenarioMutation>();
+        mockDeleteMutation
+            .Setup(m => m.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockDeleteResult.Object);
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockGetQuery.Object);
+        mockClient.Setup(c => c.DeleteScenario).Returns(mockDeleteMutation.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll("[data-testid='scenario-row']").Should().ContainSingle(),
+            timeout: TimeSpan.FromSeconds(1));
+
+        cut.Find("[data-testid='delete-btn-sc-1']").Click();
+        cut.Find("[data-testid='delete-confirm-btn']").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("[data-testid='scenario-row']").Should().ContainSingle();
+            cut.Find("[data-testid='delete-error-sc-1']")
+                .TextContent.Should().Contain("Scenario not found");
+        }, timeout: TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public void ScenariosPage_DoesNotHaveNewScenarioButton()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult([]));
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.FindAll("a.btn-primary[href='scenarios/new']").Should().BeEmpty();
     }
 
     private static IOperationResult<IGetScenariosResult> MakeGetScenariosResult(

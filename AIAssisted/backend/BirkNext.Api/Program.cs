@@ -39,6 +39,7 @@ builder.Services
     .AddMutationType<Mutation>()
     .AddType<ScenarioObjectType>()
     .AddType<CreateScenarioResultType>()
+    .AddType<DeleteScenarioPayloadObjectType>()
     .AddType<ReviewedCandidateObjectType>()
     .AddType<CandidateLinkObjectType>()
     .AddDiagnosticEventListener<OperationDiagnosticEventListener>()

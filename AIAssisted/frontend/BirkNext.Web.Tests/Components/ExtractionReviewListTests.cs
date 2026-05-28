@@ -395,13 +395,7 @@ public class ExtractionReviewListTests : BunitContext
             p.Add(c => c.PipelineResult, MakeResult([requirement, linkedClarification, unlinkedClarification])));
 
         cut.Find("[data-testid='link-indicator']").Click();
-        var clarificationSection = cut.FindAll(".candidate-link-panel .link-section")
-            .Single(s => s.TextContent.Contains("Clarifications"));
-        clarificationSection.QuerySelector(".link-add-btn")!.Click();
-        cut.FindAll(".candidate-link-panel .link-section")
-            .Single(s => s.TextContent.Contains("Clarifications"))
-            .QuerySelector(".link-picker-item")!
-            .Click();
+        cut.Find("[data-testid='link-section-clarifications'] [data-testid='link-add-btn']").Click();
 
         ClickTraceabilityFilter(cut, "Clarifications without requirements");
 
@@ -414,22 +408,15 @@ public class ExtractionReviewListTests : BunitContext
     private static void AddFirstAvailableLinkFromFirstRow(IRenderedComponent<ExtractionReviewList> cut)
     {
         cut.Find("[data-testid='link-indicator']").Click();
-        cut.Find(".candidate-link-panel .link-add-btn").Click();
-        cut.Find(".candidate-link-panel .link-picker-item").Click();
+        cut.Find("[data-testid='link-drawer'] [data-testid='link-add-btn']").Click();
     }
 
     private static void AddClarificationLinkFromRow(IRenderedComponent<ExtractionReviewList> cut, string rowText)
     {
-        var row = cut.FindAll("[data-testid='candidate-row']")
-            .Single(r => r.TextContent.Contains(rowText));
-        row.QuerySelector("[data-testid='link-indicator']")!.Click();
-        var clarificationSection = cut.FindAll(".candidate-link-panel .link-section")
-            .Last(s => s.TextContent.Contains("Clarifications"));
-        clarificationSection.QuerySelector(".link-add-btn")!.Click();
-        cut.FindAll(".candidate-link-panel .link-section")
-            .Last(s => s.TextContent.Contains("Clarifications"))
-            .QuerySelector(".link-picker-item")!
-            .Click();
+        cut.FindAll("[data-testid='candidate-row']")
+            .Single(r => r.TextContent.Contains(rowText))
+            .QuerySelector("[data-testid='link-indicator']")!.Click();
+        cut.Find("[data-testid='link-section-clarifications'] [data-testid='link-add-btn']").Click();
     }
 
     private static void ClickTraceabilityFilter(IRenderedComponent<ExtractionReviewList> cut, string label)
@@ -437,6 +424,70 @@ public class ExtractionReviewListTests : BunitContext
         cut.FindAll(".traceability-filter .filter-chip")
             .Single(b => b.TextContent.Contains(label))
             .Click();
+    }
+
+    [Fact]
+    public void LinkIndicator_Click_OpensDrawer()
+    {
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult()));
+
+        cut.Find("[data-testid='link-indicator']").Click();
+
+        cut.Find("[data-testid='link-drawer']").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void CloseButton_Click_ClosesDrawer()
+    {
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult()));
+
+        cut.Find("[data-testid='link-indicator']").Click();
+        cut.Find("[data-testid='link-drawer-close']").Click();
+
+        cut.FindAll("[data-testid='link-drawer']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Backdrop_Click_ClosesDrawer()
+    {
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult()));
+
+        cut.Find("[data-testid='link-indicator']").Click();
+        cut.Find(".link-drawer-overlay").Click();
+
+        cut.FindAll("[data-testid='link-drawer']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void EscapeKey_ClosesDrawer()
+    {
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult()));
+
+        cut.Find("[data-testid='link-indicator']").Click();
+        cut.Find("[data-testid='link-drawer']").KeyDown("Escape");
+
+        cut.FindAll("[data-testid='link-drawer']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Drawer_ShowsCorrectCandidateName()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            MakeCandidate("FR-007: The system MUST restrict access", ScenarioKind.Requirement),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find("[data-testid='link-indicator']").Click();
+
+        cut.Find("[data-testid='link-drawer']").TextContent
+            .Should().Contain("FR-007: The system MUST restrict access");
     }
 
 }
@@ -1145,5 +1196,171 @@ public class RequirementSubsectionGroupingTests : BunitContext
         var subsections = cut.FindAll("[data-testid='test-subsection-group']");
         subsections.Should().HaveCount(1, "Functional Requirements group has no visible candidates");
         subsections[0].TextContent.Should().Contain("Performance");
+    }
+}
+
+// ── T093 ─────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Tests that top-level sections are expanded and subgroups are collapsed by default
+/// after a new extraction, and that Expand All / Collapse All operate on both levels.
+/// </summary>
+public class ExtractionReviewListDefaultExpansionTests : BunitContext
+{
+    public ExtractionReviewListDefaultExpansionTests()
+    {
+        Services.AddSingleton(new Mock<ICreateScenariosMutation>().Object);
+
+        var mockSaveReview = new Mock<ISaveReviewedCandidatesMutation>();
+        mockSaveReview
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveReviewedCandidatesInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveReviewedCandidatesResult>>());
+        Services.AddSingleton(mockSaveReview.Object);
+
+        var mockSaveLinks = new Mock<ISaveCandidateLinksMutation>();
+        mockSaveLinks
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
+        Services.AddSingleton(mockSaveLinks.Object);
+
+        Services.AddLogging();
+    }
+
+    private static ExtractionCandidate Make(string title, ScenarioKind kind, string? heading = null) => new()
+    {
+        Title = title,
+        Classification = kind,
+        ClassificationSignal = ClassificationSignal.Rfc2119Uppercase,
+        SourceBlockType = BlockType.UnorderedListItem,
+        ContextHeading = heading,
+    };
+
+    private static ExtractionPipelineResult MakeResult(IReadOnlyList<ExtractionCandidate> candidates)
+    {
+        var req  = candidates.Count(c => c.Classification == ScenarioKind.Requirement);
+        var test = candidates.Count(c => c.Classification == ScenarioKind.Test);
+        var nc   = candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification);
+        return ExtractionPipelineResult.Success(candidates, 100, 5, 10, req, test, nc);
+    }
+
+    [Fact]
+    public void AfterExtraction_TopLevelSections_AreExpandedByDefault()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            Make("The system MUST login", ScenarioKind.Requirement, "Auth"),
+            Make("Given user logs in", ScenarioKind.Test, "Feature X"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        var sectionBodies = cut.FindAll(".section-body");
+        sectionBodies.Should().NotBeEmpty();
+        sectionBodies.Should().AllSatisfy(b =>
+            b.ClassList.Should().Contain("is-expanded"));
+    }
+
+    [Fact]
+    public void AfterExtraction_Subgroups_AreCollapsedByDefault()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            Make("The system MUST login", ScenarioKind.Requirement, "Auth"),
+            Make("The system MUST logout", ScenarioKind.Requirement, "Auth"),
+            Make("Given user logs in", ScenarioKind.Test, "Feature X"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        var subgroupBodies = cut.FindAll(".subsection-body");
+        subgroupBodies.Should().NotBeEmpty();
+        subgroupBodies.Should().AllSatisfy(b =>
+            b.ClassList.Should().Contain("is-collapsed"));
+    }
+
+    [Fact]
+    public void ExpandAll_ExpandsAllSectionsAndSubgroups()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            Make("The system MUST login", ScenarioKind.Requirement, "Auth"),
+            Make("Given user logs in", ScenarioKind.Test, "Feature X"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find("[aria-label='Expand all sections']").Click();
+
+        cut.FindAll(".section-body").Should().AllSatisfy(b =>
+            b.ClassList.Should().Contain("is-expanded"));
+        cut.FindAll(".subsection-body").Should().AllSatisfy(b =>
+            b.ClassList.Should().Contain("is-expanded"));
+    }
+
+    [Fact]
+    public void CollapseAll_CollapsesSectionsAndSubgroups()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            Make("The system MUST login", ScenarioKind.Requirement, "Auth"),
+            Make("Given user logs in", ScenarioKind.Test, "Feature X"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find("[aria-label='Collapse all sections']").Click();
+
+        cut.FindAll(".section-body").Should().AllSatisfy(b =>
+            b.ClassList.Should().Contain("is-collapsed"));
+        cut.FindAll(".subsection-body").Should().AllSatisfy(b =>
+            b.ClassList.Should().Contain("is-collapsed"));
+    }
+
+    [Fact]
+    public void FilterChange_DoesNotExpandCollapsedSubgroups()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            Make("The system MUST login", ScenarioKind.Requirement, "Auth"),
+            Make("Given user logs in", ScenarioKind.Test, "Feature X"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        cut.Find(".filter-chip-requirement").Click();
+
+        cut.FindAll(".subsection-body").Should().NotBeEmpty();
+        cut.FindAll(".subsection-body").Should().AllSatisfy(b =>
+            b.ClassList.Should().Contain("is-collapsed"));
+    }
+
+    [Fact]
+    public void ManuallyExpandedSubgroup_RemainsExpandedAfterSearchFilter()
+    {
+        var candidates = new List<ExtractionCandidate>
+        {
+            Make("The system MUST login", ScenarioKind.Requirement, "Auth"),
+            Make("The system MUST validate input", ScenarioKind.Requirement, "Validation"),
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(candidates)));
+
+        // Manually expand the first subgroup (Auth)
+        cut.FindAll(".subsection-toggle")[0].Click();
+        cut.FindAll(".subsection-body")[0].ClassList.Should().Contain("is-expanded");
+
+        // Apply a search that keeps Auth visible but hides Validation
+        cut.Find(".search-input").Input("login");
+
+        // Auth is still the only rendered subgroup and should still be expanded
+        var remaining = cut.FindAll(".subsection-body");
+        remaining.Should().ContainSingle();
+        remaining[0].ClassList.Should().Contain("is-expanded");
     }
 }

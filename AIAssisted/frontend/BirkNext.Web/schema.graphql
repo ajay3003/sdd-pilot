@@ -10,6 +10,7 @@ type Mutation {
   createScenarios(input: CreateScenariosInput!): CreateScenariosPayload!
   saveReviewedCandidates(input: SaveReviewedCandidatesInput!): SaveReviewedCandidatesPayload!
   saveCandidateLinks(input: SaveCandidateLinksInput!): SaveCandidateLinksPayload!
+  deleteScenario(id: ID!): DeleteScenarioPayload!
 }
 
 type Scenario {
@@ -149,6 +150,13 @@ input SaveCandidateLinksInput {
 
 type SaveCandidateLinksPayload {
   savedCount: Int!
+  correlationId: String!
+}
+
+type DeleteScenarioPayload {
+  deletedId: ID
+  success: Boolean!
+  errors: [UserError!]!
   correlationId: String!
 }
 

@@ -1,0 +1,17 @@
+@page "/scenarios/new"
+@using BirkNext.Web.Components
+@inject NavigationManager Navigation
+
+<PageTitle>New Scenario</PageTitle>
+
+<h1>New Scenario</h1>
+<p class="page-lead">Create a new scenario for this project.</p>
+
+<ScenarioForm OnScenarioCreated="HandleScenarioCreated" />
+
+@code {
+    private void HandleScenarioCreated()
+    {
+        Navigation.NavigateTo("scenarios");
+    }
+}

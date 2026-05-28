@@ -35,22 +35,19 @@
             {
                 <span class="candidate-context-heading" data-testid="context-heading">@Candidate.ContextHeading</span>
             }
-            @if (Links.Count > 0 || LinkableCandidates.Count > 0)
-            {
-                <button type="button" class="link-indicator @(Links.Count == 0 ? "is-empty" : "") @(_linkPanelOpen ? "is-open" : "")"
-                        @onclick="ToggleLinkPanel"
-                        data-testid="link-indicator"
-                        aria-label="@_linkIndicatorLabel (@(_linkPanelOpen ? "collapse" : "expand") links)">
-                    @if (Links.Count == 0)
-                    {
-                        <span aria-hidden="true">+</span>
-                    }
-                    else
-                    {
-                        @_linkIndicatorLabel
-                    }
-                </button>
-            }
+            <button type="button" class="link-indicator @(Links.Count == 0 ? "is-empty" : "") @(IsLinkPanelOpen ? "is-open" : "")"
+                    @onclick="() => OnOpenLinkPanel.InvokeAsync(Candidate)"
+                    data-testid="link-indicator"
+                    aria-label="@_linkIndicatorLabel (@(IsLinkPanelOpen ? "collapse" : "expand") links)">
+                @if (Links.Count == 0)
+                {
+                    <span aria-hidden="true">+</span>
+                }
+                else
+                {
+                    @_linkIndicatorLabel
+                }
+            </button>
         </div>
 
         @if (Candidate.SaveState == CandidateSaveState.Saving || Candidate.SaveState == CandidateSaveState.Retrying)
@@ -86,15 +83,6 @@
                 Needs Review
             </button>
         </div>
-
-        @if (_linkPanelOpen)
-        {
-            <CandidateLinkPanel Candidate="Candidate"
-                                Links="Links"
-                                LinkableCandidates="LinkableCandidates"
-                                OnLinkAdded="OnLinkAdded"
-                                OnLinkRemoved="OnLinkRemoved" />
-        }
     </div>
 </div>
 
@@ -103,12 +91,8 @@
     [Parameter] public EventCallback<Guid> OnSelectionToggled { get; set; }
     [Parameter] public EventCallback<CandidateReviewStatus> OnReviewStatusChanged { get; set; }
     [Parameter] public IReadOnlyList<CandidateLinkEntry> Links { get; set; } = [];
-    [Parameter] public IReadOnlyList<ExtractionCandidate> LinkableCandidates { get; set; } = [];
-    [Parameter] public EventCallback<CandidateLinkEntry> OnLinkAdded { get; set; }
-    [Parameter] public EventCallback<CandidateLinkEntry> OnLinkRemoved { get; set; }
-
-    private bool _linkPanelOpen = false;
-    private void ToggleLinkPanel() => _linkPanelOpen = !_linkPanelOpen;
+    [Parameter] public EventCallback<ExtractionCandidate> OnOpenLinkPanel { get; set; }
+    [Parameter] public bool IsLinkPanelOpen { get; set; }
 
     private string _linkIndicatorLabel
     {

@@ -184,6 +184,23 @@ type Mutation {
   Raw pasted specification text must never appear in this mutation's input.
   """
   createScenarios(input: CreateScenariosInput!): CreateScenariosPayload!
+
+  # ---------------------------------------------------------------------------
+  # US-Delete — Single scenario deletion
+  # ---------------------------------------------------------------------------
+
+  """
+  Deletes a scenario by ID.
+
+  Returns:
+    deletedId     — the ID of the deleted Scenario on success; null on failure
+    success       — true on success, false on failure
+    errors        — always a list; non-empty on failure
+    correlationId — always present; use for log correlation and support
+
+  Does not delete associated reviewed_candidates records.
+  """
+  deleteScenario(id: ID!): DeleteScenarioPayload!
 }
 
 
@@ -405,4 +422,41 @@ type CreateScenarioError {
   Examples: "title", "kind", "projectId".
   """
   field: String
+}
+
+
+# =============================================================================
+# US-Delete — Scenario deletion: payload
+# =============================================================================
+
+"""
+Payload returned after a scenario deletion attempt.
+
+Contract:
+  - deletedId is non-null on success; null on failure
+  - success is true on success, false on failure
+  - errors is always a list; non-empty on failure
+  - correlationId is always present for log tracing
+"""
+type DeleteScenarioPayload {
+  """
+  The ID of the deleted Scenario on success; null on failure.
+  """
+  deletedId: ID
+
+  """
+  True when the scenario was successfully deleted; false on any failure.
+  """
+  success: Boolean!
+
+  """
+  Validation or business errors that prevented deletion.
+  Known codes: NOT_FOUND, SERVER_ERROR.
+  """
+  errors: [UserError!]!
+
+  """
+  Correlation identifier for tracing this mutation across log events.
+  """
+  correlationId: String!
 }

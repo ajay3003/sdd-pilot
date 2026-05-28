@@ -43,6 +43,18 @@ type CreateScenariosPayload {
   correlationId: String!
 }
 
+"Payload returned by the deleteScenario mutation."
+type DeleteScenarioPayload {
+  "The ID of the deleted scenario on success; null on failure."
+  deletedId: ID
+  "True when the scenario was successfully deleted."
+  success: Boolean!
+  "Business errors that prevented deletion."
+  errors: [UserError!]!
+  "Correlation ID for tracing this request in logs."
+  correlationId: String!
+}
+
 "Root mutation type."
 type Mutation {
   "Creates a new scenario in the given project."
@@ -51,6 +63,8 @@ type Mutation {
   createScenarios(input: CreateScenariosInput!): CreateScenariosPayload! @cost(weight: "10")
   "Persists the QA review decisions for all candidates in an extraction session."
   saveReviewedCandidates(input: SaveReviewedCandidatesInput!): SaveReviewedCandidatesPayload! @cost(weight: "10")
+  "Deletes a scenario by ID."
+  deleteScenario(id: ID!): DeleteScenarioPayload! @cost(weight: "10")
   "Persists the traceability links between candidates for an extraction session."
   saveCandidateLinks(input: SaveCandidateLinksInput!): SaveCandidateLinksPayload! @cost(weight: "10")
 }

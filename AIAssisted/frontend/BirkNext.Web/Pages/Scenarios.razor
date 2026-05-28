@@ -3,16 +3,10 @@
 @using BirkNext.Web.GraphQL
 @inject IBirkNextClient Client
 
-<PageTitle>Scenarios</PageTitle>
+<PageTitle>Scenario Library</PageTitle>
 
-<h1>Scenarios</h1>
+<h1>Scenario Library</h1>
 <p class="page-lead">Browse and manage all saved scenarios for this project.</p>
-
-<section class="create-section">
-    <h2>Create Scenario</h2>
-    <ScenarioForm OnScenarioCreated="RefreshListAsync" />
-</section>
-
 <section class="scenarios-section">
     <div class="toolbar">
         <span class="toolbar-meta">
@@ -66,7 +60,11 @@
     }
     else
     {
-        <ScenarioList Scenarios="FilteredScenarios" />
+        <ScenarioList
+            Scenarios="FilteredScenarios"
+            OnDeleteRequested="HandleDeleteAsync"
+            DeletingId="_deletingId"
+            DeleteErrors="_deleteErrors" />
     }
 </section>
 
@@ -77,6 +75,8 @@
     private string _searchQuery = string.Empty;
     private string _filterKind = string.Empty;
     private string? _loadError;
+    private string? _deletingId;
+    private Dictionary<string, string> _deleteErrors = [];
 
     private IReadOnlyList<ScenarioListItem> FilteredScenarios =>
         _scenarios
@@ -128,8 +128,34 @@
         }
     }
 
-    private async Task RefreshListAsync()
+    private async Task HandleDeleteAsync(string id)
     {
-        await LoadScenariosAsync();
+        _deletingId = id;
+        _deleteErrors.Remove(id);
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.DeleteScenario.ExecuteAsync(id);
+
+            if (result.Data?.DeleteScenario is { Success: true })
+            {
+                _scenarios = _scenarios.Where(s => s.Id != id).ToList();
+            }
+            else
+            {
+                var errorMsg = result.Data?.DeleteScenario?.Errors?.FirstOrDefault()?.Message
+                    ?? "Something went wrong. Please try again.";
+                _deleteErrors[id] = errorMsg;
+            }
+        }
+        catch (Exception)
+        {
+            _deleteErrors[id] = "Something went wrong. Please try again.";
+        }
+        finally
+        {
+            _deletingId = null;
+        }
     }
 }
