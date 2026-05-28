@@ -3,6 +3,8 @@ type Query {
   scenarios(projectId: String!): [Scenario!]!
   reviewedCandidates(projectId: String!, sessionId: String): [ReviewedCandidate!]!
   candidateLinks(projectId: String!, sessionId: String): [CandidateLink!]!
+  qaDeltaReviews(projectId: String!): [QaDeltaReview!]!
+  qaDeltaReview(id: ID!): QaDeltaReview
 }
 
 type Mutation {
@@ -11,6 +13,8 @@ type Mutation {
   saveReviewedCandidates(input: SaveReviewedCandidatesInput!): SaveReviewedCandidatesPayload!
   saveCandidateLinks(input: SaveCandidateLinksInput!): SaveCandidateLinksPayload!
   deleteScenario(id: ID!): DeleteScenarioPayload!
+  saveQaDeltaReview(input: SaveQaDeltaReviewInput!): SaveQaDeltaReviewPayload!
+  deleteQaDeltaReview(id: ID!): DeleteQaDeltaReviewPayload!
 }
 
 type Scenario {
@@ -154,6 +158,49 @@ type SaveCandidateLinksPayload {
 }
 
 type DeleteScenarioPayload {
+  deletedId: ID
+  success: Boolean!
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type QaDeltaReview {
+  id: ID!
+  title: String!
+  projectId: String!
+  createdAt: DateTime!
+  oldSpecFileName: String
+  newSpecFileName: String
+  oldSpecHash: String
+  newSpecHash: String
+  oldSpecSize: Int
+  newSpecSize: Int
+  analysisProfile: String!
+  summaryJson: String!
+  deltaItemsJson: String!
+}
+
+input SaveQaDeltaReviewInput {
+  title: String!
+  projectId: String!
+  oldSpecFileName: String
+  newSpecFileName: String
+  oldSpecHash: String
+  newSpecHash: String
+  oldSpecSize: Int
+  newSpecSize: Int
+  analysisProfile: String!
+  summaryJson: String!
+  deltaItemsJson: String!
+}
+
+type SaveQaDeltaReviewPayload {
+  review: QaDeltaReview
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type DeleteQaDeltaReviewPayload {
   deletedId: ID
   success: Boolean!
   errors: [UserError!]!

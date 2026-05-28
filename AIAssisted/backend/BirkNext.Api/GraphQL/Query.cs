@@ -39,4 +39,22 @@ public class Query
     {
         return await candidateLinkService.GetByProjectAsync(projectId, sessionId, cancellationToken);
     }
+
+    /// <summary>Returns all delta reviews for the given project, newest first.</summary>
+    public async Task<IReadOnlyList<QaDeltaReview>> QaDeltaReviewsAsync(
+        string projectId,
+        [Service] QaDeltaReviewService qaDeltaReviewService,
+        CancellationToken cancellationToken)
+    {
+        return await qaDeltaReviewService.GetAllAsync(projectId, cancellationToken);
+    }
+
+    /// <summary>Returns a single delta review by ID, or null if not found.</summary>
+    public async Task<QaDeltaReview?> QaDeltaReviewAsync(
+        [ID] string id,
+        [Service] QaDeltaReviewService qaDeltaReviewService,
+        CancellationToken cancellationToken)
+    {
+        return await qaDeltaReviewService.GetByIdAsync(id, cancellationToken);
+    }
 }

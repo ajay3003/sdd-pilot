@@ -1,0 +1,11 @@
+mutation DeleteQaDeltaReview($id: ID!) {
+  deleteQaDeltaReview(id: $id) {
+    deletedId
+    success
+    errors {
+      code
+      message
+    }
+    correlationId
+  }
+}

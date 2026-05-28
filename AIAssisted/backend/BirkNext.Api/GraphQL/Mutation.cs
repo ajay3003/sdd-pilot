@@ -208,4 +208,63 @@ public class Mutation
             CorrelationId = correlationId,
         };
     }
+
+    /// <summary>Saves a QA delta review from a specification comparison.</summary>
+    public async Task<SaveQaDeltaReviewPayload> SaveQaDeltaReviewAsync(
+        SaveQaDeltaReviewInput input,
+        [Service] QaDeltaReviewService qaDeltaReviewService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        [Service] ILogger<Mutation> logger,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var result = await qaDeltaReviewService.CreateAsync(
+            title: input.Title,
+            projectId: input.ProjectId,
+            oldSpecFileName: input.OldSpecFileName,
+            newSpecFileName: input.NewSpecFileName,
+            oldSpecHash: input.OldSpecHash,
+            newSpecHash: input.NewSpecHash,
+            oldSpecSize: input.OldSpecSize,
+            newSpecSize: input.NewSpecSize,
+            analysisProfile: input.AnalysisProfile,
+            summaryJson: input.SummaryJson,
+            deltaItemsJson: input.DeltaItemsJson,
+            correlationId: correlationId,
+            ct: cancellationToken);
+
+        return new SaveQaDeltaReviewPayload
+        {
+            Review = result.Review,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Deletes a QA delta review by ID.</summary>
+    public async Task<DeleteQaDeltaReviewPayload> DeleteQaDeltaReviewAsync(
+        [ID] string id,
+        [Service] QaDeltaReviewService qaDeltaReviewService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var result = await qaDeltaReviewService.DeleteAsync(id, correlationId, cancellationToken);
+
+        return new DeleteQaDeltaReviewPayload
+        {
+            DeletedId = result.DeletedId,
+            Success = result.IsSuccess,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
 }

@@ -1,0 +1,108 @@
+@page "/compare/reviews"
+@using BirkNext.Web.Components
+@using BirkNext.Web.GraphQL
+@inject IBirkNextClient Client
+
+<PageTitle>Delta Reviews</PageTitle>
+
+<h1>Delta Reviews</h1>
+<p class="page-lead">Saved specification comparison results.</p>
+
+<section class="compare-reviews-section">
+    @if (_isLoading)
+    {
+        <p class="loading-state">Loading reviews…</p>
+    }
+    else if (_loadError is not null)
+    {
+        <div class="notification notification-error" role="alert" data-testid="reviews-load-error">
+            @_loadError
+        </div>
+    }
+    else
+    {
+        <QaDeltaReviewList Reviews="_reviews"
+                           OnDeleteRequested="HandleDeleteAsync"
+                           DeletingId="_deletingId"
+                           DeleteErrors="_deleteErrors" />
+    }
+</section>
+
+@code {
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+    private IReadOnlyList<IGetQaDeltaReviews_QaDeltaReviews> _reviews = [];
+    private bool _isLoading;
+    private string? _loadError;
+    private string? _deletingId;
+    private Dictionary<string, string> _deleteErrors = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReviewsAsync();
+    }
+
+    private async Task LoadReviewsAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.GetQaDeltaReviews.ExecuteAsync(ProjectId);
+            if (result.Errors is { Count: > 0 })
+            {
+                _loadError = "We couldn't load delta reviews right now. Please try again later.";
+                return;
+            }
+
+            if (result.Data is { } data)
+            {
+                _reviews = data.QaDeltaReviews.ToList();
+            }
+            else
+            {
+                _loadError = "We couldn't load delta reviews right now. Please try again later.";
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = "We couldn't load delta reviews right now. Please try again later.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task HandleDeleteAsync(string id)
+    {
+        _deletingId = id;
+        _deleteErrors.Remove(id);
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.DeleteQaDeltaReview.ExecuteAsync(id);
+
+            if (result.Data?.DeleteQaDeltaReview is { Success: true })
+            {
+                _reviews = _reviews.Where(r => r.Id != id).ToList();
+            }
+            else
+            {
+                var errorMsg = result.Data?.DeleteQaDeltaReview?.Errors?.FirstOrDefault()?.Message
+                    ?? "Something went wrong. Please try again.";
+                _deleteErrors[id] = errorMsg;
+            }
+        }
+        catch (Exception)
+        {
+            _deleteErrors[id] = "Something went wrong. Please try again.";
+        }
+        finally
+        {
+            _deletingId = null;
+        }
+    }
+}

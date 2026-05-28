@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     public DbSet<Scenario> Scenarios => Set<Scenario>();
     public DbSet<ReviewedCandidate> ReviewedCandidates => Set<ReviewedCandidate>();
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
+    public DbSet<QaDeltaReview> QaDeltaReviews => Set<QaDeltaReview>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -140,6 +141,64 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(l => new { l.ProjectId, l.SessionId })
                 .HasDatabaseName("ix_candidate_links_project_session");
+        });
+
+        modelBuilder.Entity<QaDeltaReview>(entity =>
+        {
+            entity.ToTable("qa_delta_reviews");
+
+            entity.Property(r => r.Id)
+                .HasColumnName("id");
+
+            entity.Property(r => r.Title)
+                .HasColumnName("title")
+                .HasMaxLength(500)
+                .IsRequired();
+
+            entity.Property(r => r.ProjectId)
+                .HasColumnName("project_id")
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(r => r.CreatedAt)
+                .HasColumnName("created_at");
+
+            entity.Property(r => r.OldSpecFileName)
+                .HasColumnName("old_spec_file_name");
+
+            entity.Property(r => r.NewSpecFileName)
+                .HasColumnName("new_spec_file_name");
+
+            entity.Property(r => r.OldSpecHash)
+                .HasColumnName("old_spec_hash");
+
+            entity.Property(r => r.NewSpecHash)
+                .HasColumnName("new_spec_hash");
+
+            entity.Property(r => r.OldSpecSize)
+                .HasColumnName("old_spec_size");
+
+            entity.Property(r => r.NewSpecSize)
+                .HasColumnName("new_spec_size");
+
+            entity.Property(r => r.AnalysisProfile)
+                .HasColumnName("analysis_profile")
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(r => r.SummaryJson)
+                .HasColumnName("summary_json")
+                .HasColumnType("text")
+                .IsRequired();
+
+            entity.Property(r => r.DeltaItemsJson)
+                .HasColumnName("delta_items_json")
+                .HasColumnType("text")
+                .IsRequired();
+
+            entity.HasIndex(r => new { r.ProjectId, r.CreatedAt })
+                .HasDatabaseName("ix_qa_delta_reviews_project_id_created_at")
+                .IsDescending(false, true);
         });
     }
 }

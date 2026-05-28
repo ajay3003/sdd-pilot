@@ -1,0 +1,249 @@
+@using System.Text.RegularExpressions
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using Microsoft.AspNetCore.Components.Rendering
+
+<section class="compare-section compare-section-summary" data-testid="delta-summary-section">
+    <h2 class="compare-section-title">Delta Summary</h2>
+    <div class="delta-dashboard" aria-label="Delta summary" data-testid="delta-dashboard">
+        <button type="button" class="delta-summary-tile delta-added" @onclick="@(() => _activeStatus = SpecDeltaStatus.Added)">
+            <span>@Result.Summary.AddedRequirements</span>
+            <small>Added requirements</small>
+        </button>
+        <button type="button" class="delta-summary-tile delta-modified" @onclick="@(() => _activeStatus = SpecDeltaStatus.Modified)">
+            <span>@Result.Summary.ModifiedRequirements</span>
+            <small>Modified requirements</small>
+        </button>
+        <button type="button" class="delta-summary-tile delta-removed" @onclick="@(() => _activeStatus = SpecDeltaStatus.Removed)">
+            <span>@Result.Summary.RemovedRequirements</span>
+            <small>Removed requirements</small>
+        </button>
+        <div class="delta-summary-tile delta-impacted">
+            <span>@Result.Summary.PotentiallyImpactedTests</span>
+            <small>Impacted tests</small>
+        </div>
+        <div class="delta-summary-tile delta-impacted">
+            <span>@Result.Summary.UncoveredRequirements</span>
+            <small>Uncovered requirements</small>
+        </div>
+        <div class="delta-summary-tile delta-impacted">
+            <span>@Result.Summary.NewClarificationRisks</span>
+            <small>New clarifications</small>
+        </div>
+    </div>
+</section>
+
+<section class="compare-section compare-section-explorer" data-testid="change-explorer-section">
+    <h2 class="compare-section-title">Change Explorer</h2>
+    <div class="delta-filter-row" role="toolbar" aria-label="Delta filters">
+        <span class="filter-group-label" aria-hidden="true">Type</span>
+        <button type="button"
+                class="filter-chip @(_activeKind is null ? "is-active" : "")"
+                aria-pressed="@(_activeKind is null ? "true" : "false")"
+                data-testid="filter-all-types"
+                @onclick="@(() => _activeKind = null)">All</button>
+        <button type="button"
+                class="filter-chip @(_activeKind == ScenarioKind.Requirement ? "is-active" : "")"
+                aria-pressed="@(_activeKind == ScenarioKind.Requirement ? "true" : "false")"
+                data-testid="filter-requirements"
+                @onclick="@(() => _activeKind = ScenarioKind.Requirement)">Requirements</button>
+        <button type="button"
+                class="filter-chip @(_activeKind == ScenarioKind.Test ? "is-active" : "")"
+                aria-pressed="@(_activeKind == ScenarioKind.Test ? "true" : "false")"
+                data-testid="filter-tests"
+                @onclick="@(() => _activeKind = ScenarioKind.Test)">Tests</button>
+        <button type="button"
+                class="filter-chip @(_activeKind == ScenarioKind.NeedsClarification ? "is-active" : "")"
+                aria-pressed="@(_activeKind == ScenarioKind.NeedsClarification ? "true" : "false")"
+                data-testid="filter-clarifications"
+                @onclick="@(() => _activeKind = ScenarioKind.NeedsClarification)">Clarifications</button>
+
+        <span class="filter-group-divider" aria-hidden="true"></span>
+
+        <span class="filter-group-label" aria-hidden="true">Delta</span>
+        <button type="button"
+                class="filter-chip @(_activeStatus is null ? "is-active" : "")"
+                aria-pressed="@(_activeStatus is null ? "true" : "false")"
+                data-testid="filter-all-deltas"
+                @onclick="@(() => _activeStatus = null)">All</button>
+        <button type="button"
+                class="filter-chip @(_activeStatus == SpecDeltaStatus.Added ? "is-active" : "")"
+                aria-pressed="@(_activeStatus == SpecDeltaStatus.Added ? "true" : "false")"
+                data-testid="filter-added"
+                @onclick="@(() => _activeStatus = SpecDeltaStatus.Added)">Added</button>
+        <button type="button"
+                class="filter-chip @(_activeStatus == SpecDeltaStatus.Modified ? "is-active" : "")"
+                aria-pressed="@(_activeStatus == SpecDeltaStatus.Modified ? "true" : "false")"
+                data-testid="filter-modified"
+                @onclick="@(() => _activeStatus = SpecDeltaStatus.Modified)">Modified</button>
+        <button type="button"
+                class="filter-chip @(_activeStatus == SpecDeltaStatus.Removed ? "is-active" : "")"
+                aria-pressed="@(_activeStatus == SpecDeltaStatus.Removed ? "true" : "false")"
+                data-testid="filter-removed"
+                @onclick="@(() => _activeStatus = SpecDeltaStatus.Removed)">Removed</button>
+    </div>
+
+    @if (!HasFilteredResults)
+    {
+        <div class="change-explorer-empty" data-testid="change-explorer-empty">
+            <p>No changes match the current filters.</p>
+        </div>
+    }
+    else
+    {
+        <div class="delta-section-grid">
+            @RenderDeltaSection("Requirements", ScenarioKind.Requirement, Result.RequirementDeltas)
+            @RenderDeltaSection("Tests", ScenarioKind.Test, Result.TestDeltas)
+            @RenderDeltaSection("Clarifications", ScenarioKind.NeedsClarification, Result.ClarificationDeltas)
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public required SpecComparisonResult Result { get; set; }
+
+    private ScenarioKind? _activeKind;
+    private SpecDeltaStatus? _activeStatus;
+
+    private bool HasFilteredResults =>
+        SectionHasResults(ScenarioKind.Requirement, Result.RequirementDeltas) ||
+        SectionHasResults(ScenarioKind.Test, Result.TestDeltas) ||
+        SectionHasResults(ScenarioKind.NeedsClarification, Result.ClarificationDeltas);
+
+    private bool SectionHasResults(ScenarioKind kind, IReadOnlyList<SpecDeltaItem> deltas) =>
+        (_activeKind is null || _activeKind == kind) &&
+        deltas.Any(d => _activeStatus is null || d.Status == _activeStatus);
+
+    private RenderFragment RenderDeltaSection(string title, ScenarioKind kind, IReadOnlyList<SpecDeltaItem> deltas) => builder =>
+    {
+        if (_activeKind is not null && _activeKind != kind)
+            return;
+
+        var filtered = deltas
+            .Where(d => _activeStatus is null || d.Status == _activeStatus)
+            .ToList();
+
+        if (filtered.Count == 0)
+            return;
+
+        var seq = 0;
+        builder.OpenElement(seq++, "section");
+        builder.AddAttribute(seq++, "class", "delta-section");
+        builder.OpenElement(seq++, "h3");
+        builder.AddContent(seq++, title);
+        builder.OpenElement(seq++, "span");
+        builder.AddAttribute(seq++, "class", "delta-section-count");
+        builder.AddContent(seq++, filtered.Count);
+        builder.CloseElement();
+        builder.CloseElement();
+
+        foreach (var delta in filtered)
+        {
+            builder.OpenElement(seq++, "article");
+            builder.AddAttribute(seq++, "class", $"delta-card delta-card-{delta.Status.ToString().ToLowerInvariant()}");
+            builder.AddAttribute(seq++, "data-testid", "delta-card");
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "delta-card-header");
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", $"delta-badge delta-badge-{delta.Status.ToString().ToLowerInvariant()}");
+            builder.AddContent(seq++, delta.Status.ToString());
+            builder.CloseElement();
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "delta-kind");
+            builder.AddContent(seq++, FormatKind(delta.Classification));
+            builder.CloseElement();
+            builder.CloseElement();
+
+            if (delta.Status == SpecDeltaStatus.Modified)
+            {
+                builder.OpenElement(seq++, "div");
+                builder.AddAttribute(seq++, "class", "delta-diff-grid");
+                RenderSide(builder, ref seq, "Old", delta.OldCandidate?.Title, delta.NewCandidate?.Title);
+                RenderSide(builder, ref seq, "New", delta.NewCandidate?.Title, delta.OldCandidate?.Title);
+                builder.CloseElement();
+            }
+            else
+            {
+                builder.OpenElement(seq++, "p");
+                builder.AddAttribute(seq++, "class", "delta-single-text");
+                builder.AddContent(seq++, delta.NewCandidate?.Title ?? delta.OldCandidate?.Title);
+                builder.CloseElement();
+            }
+
+            var context = delta.NewCandidate?.ContextHeading ?? delta.OldCandidate?.ContextHeading;
+            if (!string.IsNullOrWhiteSpace(context))
+            {
+                builder.OpenElement(seq++, "p");
+                builder.AddAttribute(seq++, "class", "delta-context");
+                builder.AddContent(seq++, context);
+                builder.CloseElement();
+            }
+
+            if (delta.ImpactHints.Count > 0)
+            {
+                builder.OpenElement(seq++, "ul");
+                builder.AddAttribute(seq++, "class", "delta-impact-list");
+                foreach (var hint in delta.ImpactHints)
+                {
+                    builder.OpenElement(seq++, "li");
+                    builder.AddContent(seq++, hint);
+                    builder.CloseElement();
+                }
+                builder.CloseElement();
+            }
+
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private static void RenderSide(RenderTreeBuilder builder, ref int seq, string label, string? text, string? otherText)
+    {
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "delta-diff-side");
+        builder.OpenElement(seq++, "strong");
+        builder.AddContent(seq++, label);
+        builder.CloseElement();
+        builder.OpenElement(seq++, "p");
+        builder.AddContent(seq++, RenderChangedText(text ?? string.Empty, otherText ?? string.Empty));
+        builder.CloseElement();
+        builder.CloseElement();
+    }
+
+    private static RenderFragment RenderChangedText(string text, string otherText) => builder =>
+    {
+        var otherTokens = WordRegex.Matches(otherText)
+            .Select(m => m.Value.ToUpperInvariant())
+            .ToHashSet(StringComparer.Ordinal);
+        var matches = TokenRegex.Matches(text);
+
+        var seq = 0;
+        foreach (Match match in matches)
+        {
+            var token = match.Value;
+            if (WordRegex.IsMatch(token) && !otherTokens.Contains(token.ToUpperInvariant()))
+            {
+                builder.OpenElement(seq++, "mark");
+                builder.AddContent(seq++, token);
+                builder.CloseElement();
+            }
+            else
+            {
+                builder.AddContent(seq++, token);
+            }
+        }
+    };
+
+    private static string FormatKind(ScenarioKind kind) => kind switch
+    {
+        ScenarioKind.Requirement => "REQUIREMENT",
+        ScenarioKind.Test => "TEST",
+        ScenarioKind.NeedsClarification => "NEEDS_CLARIFICATION",
+        _ => kind.ToString().ToUpperInvariant(),
+    };
+
+    private static readonly Regex TokenRegex = new(@"\w+|\W+", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private static readonly Regex WordRegex = new(@"\w+", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+}

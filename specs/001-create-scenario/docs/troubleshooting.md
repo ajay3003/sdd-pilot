@@ -162,6 +162,37 @@ Save Review persists reviewed QA artifacts.
 
 Saving selected TEST artifacts creates test scenarios where supported.
 
+## Claude/Codex Updated plan.md Unexpectedly
+
+This can happen when a command is interpreted as an architectural evolution rather than a small implementation task.
+
+Common triggers:
+
+- new persistence model
+- GraphQL schema changes
+- new domain concept
+- new workflow lifecycle
+- review/history/audit behavior
+- major UI/workflow restructuring
+
+Example:
+
+```text
+Implement persistent QA Delta Reviews
+```
+
+This may update `plan.md` because it affects architecture, backend persistence, GraphQL, and QA workflow.
+
+Recommended response:
+
+1. Review the updated `plan.md`
+2. Confirm the architectural direction is correct
+3. Adjust manually if needed
+4. Only then continue implementation
+
+For small UI fixes, Claude/Codex should normally not update `spec.md` or `plan.md`.
+
+
 ## UI Looks Old or Broken
 
 Check:

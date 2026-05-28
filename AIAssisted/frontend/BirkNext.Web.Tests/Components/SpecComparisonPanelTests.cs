@@ -6,6 +6,7 @@ using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using StrawberryShake;
 
 namespace BirkNext.Web.Tests.Components;
 
@@ -18,9 +19,14 @@ public class SpecComparisonPanelTests : BunitContext
         var config = new Mock<IExtractionConfiguration>();
         config.Setup(c => c.MaxInputLengthChars).Returns(50_000);
 
+        var mockSaveMutation = new Mock<ISaveQaDeltaReviewMutation>();
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.SaveQaDeltaReview).Returns(mockSaveMutation.Object);
+
         Services.AddSingleton(config.Object);
         Services.AddSingleton(_extractionService.Object);
         Services.AddSingleton<ISpecComparisonService, SpecComparisonService>();
+        Services.AddSingleton(mockClient.Object);
         JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
     }
 

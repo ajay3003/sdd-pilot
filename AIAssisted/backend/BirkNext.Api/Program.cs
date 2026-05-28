@@ -32,6 +32,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ScenarioService>();
 builder.Services.AddScoped<ReviewedCandidateService>();
 builder.Services.AddScoped<CandidateLinkService>();
+builder.Services.AddScoped<QaDeltaReviewService>();
 
 builder.Services
     .AddGraphQLServer()
@@ -42,6 +43,7 @@ builder.Services
     .AddType<DeleteScenarioPayloadObjectType>()
     .AddType<ReviewedCandidateObjectType>()
     .AddType<CandidateLinkObjectType>()
+    .AddType<QaDeltaReviewObjectType>()
     .AddDiagnosticEventListener<OperationDiagnosticEventListener>()
     .ConfigureSchema(b => b.ModifyOptions(o => o.UseXmlDocumentation = true));
 

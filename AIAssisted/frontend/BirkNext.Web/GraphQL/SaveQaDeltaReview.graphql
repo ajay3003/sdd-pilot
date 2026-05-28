@@ -1,0 +1,15 @@
+mutation SaveQaDeltaReview($input: SaveQaDeltaReviewInput!) {
+  saveQaDeltaReview(input: $input) {
+    review {
+      id
+      title
+      createdAt
+    }
+    errors {
+      code
+      message
+      field
+    }
+    correlationId
+  }
+}

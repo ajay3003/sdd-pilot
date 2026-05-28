@@ -120,6 +120,19 @@ podman machine init
 podman machine start
 ```
 
+## AI-Assisted SDD Workflow Note
+
+For larger architectural changes, Claude/Codex may update `plan.md` as part of implementation planning.
+
+Before continuing after such updates:
+
+1. Review `plan.md`
+2. Confirm the architecture still matches the intended direction
+3. Continue with implementation only after review
+
+Small UI fixes should normally not require `spec.md` or `plan.md` updates.
+
+
 ## Run Tests
 
 Backend:

@@ -215,6 +215,69 @@ GraphQL supports persistence of:
 
 GraphQL does not need a USER_STORY artifact type unless the product explicitly decides to persist user stories as first-class artifacts.
 
+## AI-Assisted SDD Governance
+
+QA Review Studio was initially bootstrapped using Speckit/AI-assisted development, where `spec.md`, `plan.md`, and `tasks.md` may be generated together.
+
+As the project matures, these artifacts should be treated with different governance levels.
+
+| Artifact | Purpose | Recommended AI Role |
+|---|---|---|
+| `spec.md` | Defines WHAT the product should do | Suggest/draft changes, but human approval required |
+| `plan.md` | Defines HOW the architecture and implementation approach should evolve | May be updated for significant architectural changes, but human review required |
+| `tasks.md` | Defines implementation steps | Can be generated or updated more freely |
+| code/tests | Implements and verifies behavior | AI-assisted implementation is appropriate |
+
+### Why Claude/Codex May Update `plan.md`
+
+Large implementation prompts can cause Claude/Codex to update `plan.md` even if the prompt does not explicitly say “update plan”.
+
+This is most likely when the requested change affects:
+
+- persistence model
+- GraphQL schema
+- workflow lifecycle
+- domain model
+- architecture boundaries
+- major UX flow
+- review or traceability behavior
+
+Example:
+
+```text
+Implement persistent QA Delta Reviews
+```
+
+This is not just a UI change. It introduces a new persistent review concept, backend/GraphQL changes, saved comparison lifecycle, and QA evidence workflow. In that case, updating `plan.md` is reasonable.
+
+### Practical Rule
+
+| Change Type | Expected Documentation Behavior |
+|---|---|
+| Small UI fix | Code/tests only |
+| Bug fix | Code/tests, maybe troubleshooting notes |
+| New feature | Code/tests, maybe tasks |
+| Architectural evolution | Update `plan.md` with human review |
+| Product behavior or scope change | Update `spec.md` with human approval |
+| Implementation breakdown | Update `tasks.md` |
+
+### Governance Principle
+
+The project is moving from:
+
+```text
+AI-generated prototype
+```
+
+toward:
+
+```text
+AI-assisted governed platform
+```
+
+That means humans should increasingly own product intent, terminology, domain boundaries, and architecture decisions, while AI accelerates implementation, tests, and task decomposition.
+
+
 ## Key Quality Attributes
 
 - deterministic behavior

@@ -23,6 +23,10 @@ builder.Services.AddSingleton<ISaveReviewedCandidatesMutation>(sp =>
     sp.GetRequiredService<SaveReviewedCandidatesMutation>());
 builder.Services.AddSingleton<ISaveCandidateLinksMutation>(sp =>
     sp.GetRequiredService<SaveCandidateLinksMutation>());
+builder.Services.AddSingleton<ISaveQaDeltaReviewMutation>(sp =>
+    sp.GetRequiredService<SaveQaDeltaReviewMutation>());
+builder.Services.AddSingleton<IDeleteQaDeltaReviewMutation>(sp =>
+    sp.GetRequiredService<DeleteQaDeltaReviewMutation>());
 
 builder.Services.AddSingleton<IExtractionConfiguration, ExtractionConfiguration>();
 builder.Services.Configure<ExtractionRuleConfiguration>(

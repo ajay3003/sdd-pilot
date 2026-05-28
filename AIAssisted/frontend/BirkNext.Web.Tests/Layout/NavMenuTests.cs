@@ -26,12 +26,15 @@ public class NavMenuTests : BunitContext
         navText.IndexOf("Specification Review", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("QA Artifact Library", StringComparison.Ordinal));
         navText.IndexOf("QA Artifact Library", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("New Test Scenario", StringComparison.Ordinal));
         navText.IndexOf("New Test Scenario", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Compare Specs", StringComparison.Ordinal));
+        navText.IndexOf("Compare Specs", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Delta Reviews", StringComparison.Ordinal));
+        navText.Should().Contain("Delta Reviews");
 
         cut.Find("a[href='dashboard']").Should().NotBeNull();
         cut.Find("a[href='extract']").Should().NotBeNull();
         cut.Find("a[href='scenarios']").Should().NotBeNull();
         cut.Find("a[href='scenarios/new']").Should().NotBeNull();
         cut.Find("a[href='compare']").Should().NotBeNull();
+        cut.Find("a[href='compare/reviews']").Should().NotBeNull();
         cut.Find("a[href='dashboard'] .nav-icon-dashboard").Should().NotBeNull();
         cut.Find("a[href='compare'] .nav-icon-compare").Should().NotBeNull();
     }

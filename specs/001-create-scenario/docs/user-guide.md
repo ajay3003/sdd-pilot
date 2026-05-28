@@ -128,6 +128,19 @@ The session may restore:
 
 This is temporary working-session continuity, not permanent spec storage.
 
+## Working With Speckit/AI-Generated Artifacts
+
+In early project phases, Speckit and AI can generate `spec.md`, `plan.md`, and `tasks.md` quickly.
+
+Later, when the product becomes more stable:
+
+- `spec.md` should be treated as the human-approved source of product intent
+- `plan.md` should describe architectural direction and should be reviewed when updated
+- `tasks.md` can change more often as implementation evolves
+
+If a large feature such as persistent QA Delta Reviews is implemented, the plan may be updated because the architecture has changed.
+
+
 ## Important Principles
 
 - Nothing is auto-saved

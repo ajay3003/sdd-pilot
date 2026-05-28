@@ -147,6 +147,22 @@ What did QA decide about this artifact?
 
 This separation should always be preserved.
 
+## AI-Assisted SDD Artifact Updates
+
+In early Speckit/AI-assisted development, `spec.md`, `plan.md`, and `tasks.md` may all be generated quickly.
+
+As QA Review Studio matures:
+
+- `spec.md` should be human-owned because it defines product intent and scope
+- `plan.md` may be updated for significant architectural changes, but should be reviewed
+- `tasks.md` can be generated and updated more freely
+- code and tests can be implemented with AI assistance
+
+Claude/Codex may update `plan.md` even when not explicitly asked if the command introduces major architectural changes such as persistence, GraphQL schema changes, new review lifecycle concepts, or workflow redesign.
+
+This is expected for large changes, but humans should review the resulting plan before treating it as authoritative.
+
+
 ## Safe Configuration Principles
 
 Configuration should:

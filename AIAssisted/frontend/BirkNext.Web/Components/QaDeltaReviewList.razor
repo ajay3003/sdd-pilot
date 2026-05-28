@@ -1,0 +1,119 @@
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@if (Reviews.Count == 0)
+{
+    <div class="review-list-empty" data-testid="review-list-empty">
+        <p>No delta reviews saved yet.</p>
+    </div>
+}
+else
+{
+    <div class="review-list">
+        @foreach (var review in Reviews)
+        {
+            var summary = TryParseSummary(review.SummaryJson);
+            <div class="review-card" data-testid="review-card">
+                <div class="review-card-header">
+                    <div class="review-card-meta">
+                        <span class="review-card-title">@review.Title</span>
+                        <span class="review-card-date">@review.CreatedAt.LocalDateTime.ToString("MMM d, yyyy")</span>
+                    </div>
+                    <div class="review-card-profile">@review.AnalysisProfile</div>
+                </div>
+
+                @if (review.OldSpecFileName is not null || review.NewSpecFileName is not null)
+                {
+                    <div class="review-card-files">
+                        @if (review.OldSpecFileName is not null)
+                        {
+                            <span class="review-file-label">Old: @review.OldSpecFileName</span>
+                        }
+                        @if (review.NewSpecFileName is not null)
+                        {
+                            <span class="review-file-label">New: @review.NewSpecFileName</span>
+                        }
+                    </div>
+                }
+
+                @if (summary is not null)
+                {
+                    <div class="review-card-metrics">
+                        <span class="review-metric review-metric-added">+@summary.AddedRequirements req</span>
+                        <span class="review-metric review-metric-modified">~@summary.ModifiedRequirements req</span>
+                        <span class="review-metric review-metric-removed">-@summary.RemovedRequirements req</span>
+                        <span class="review-metric">@summary.PotentiallyImpactedTests tests</span>
+                    </div>
+                }
+
+                <div class="review-card-actions">
+                    <a class="btn-secondary btn-sm" href="compare/reviews/@review.Id" data-testid="review-open-btn-@review.Id">Open</a>
+
+                    @if (_confirmingDeleteId == review.Id)
+                    {
+                        <div class="delete-confirm" role="alert" data-testid="delete-confirm-@review.Id">
+                            <span>Delete this review?</span>
+                            <button type="button" class="btn-danger btn-sm" @onclick="() => ConfirmDeleteAsync(review.Id)" data-testid="delete-confirm-btn">Confirm</button>
+                            <button type="button" class="btn-sm" @onclick="CancelDelete">Cancel</button>
+                        </div>
+                    }
+                    else if (DeletingId == review.Id)
+                    {
+                        <span class="review-deleting">Deleting…</span>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn-danger btn-sm"
+                                @onclick="() => RequestDelete(review.Id)"
+                                data-testid="delete-btn-@review.Id">Delete</button>
+                    }
+
+                    @if (DeleteErrors is not null && DeleteErrors.TryGetValue(review.Id, out var deleteError))
+                    {
+                        <span class="review-delete-error" data-testid="delete-error-@review.Id">@deleteError</span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<IGetQaDeltaReviews_QaDeltaReviews> Reviews { get; set; } = [];
+    [Parameter] public EventCallback<string> OnDeleteRequested { get; set; }
+    [Parameter] public string? DeletingId { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, string>? DeleteErrors { get; set; }
+
+    private string? _confirmingDeleteId;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
+
+    private static DeltaSummaryDto? TryParseSummary(string summaryJson)
+    {
+        try { return JsonSerializer.Deserialize<DeltaSummaryDto>(summaryJson, JsonOptions); }
+        catch { return null; }
+    }
+
+    private void RequestDelete(string id)
+    {
+        _confirmingDeleteId = id;
+    }
+
+    private void CancelDelete()
+    {
+        _confirmingDeleteId = null;
+    }
+
+    private async Task ConfirmDeleteAsync(string id)
+    {
+        _confirmingDeleteId = null;
+        await OnDeleteRequested.InvokeAsync(id);
+    }
+}
