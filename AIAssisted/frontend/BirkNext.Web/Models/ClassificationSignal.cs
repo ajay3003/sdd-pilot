@@ -20,5 +20,9 @@ public enum ClassificationSignal
     // Fired when a heading-context rule matches the block's preceding section heading.
     // Used by profile-specific rules to boost classification based on document section.
     HeadingContext,
+    // Fired when a block is identified as narrative/documentation context (business rationale,
+    // user story prose, section labels) rather than a verifiable scenario or open question.
+    // Blocks with this signal are suppressed at Stage 6.5 before deduplication.
+    NarrativeContext,
     Default,
 }

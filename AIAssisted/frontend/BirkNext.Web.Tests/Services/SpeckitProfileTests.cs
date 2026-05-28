@@ -251,10 +251,10 @@ public sealed class SpeckitProfileTests
 
         var result = await ExtractSpeckit(input);
 
-        result.Candidates.Should().ContainSingle();
-        result.Candidates[0].Classification.Should().Be(ScenarioKind.NeedsClarification,
-            "narrative labels are documentation structure, not executable scenarios");
-        result.Candidates[0].Classification.Should().NotBe(ScenarioKind.Test);
+        // NarrativeDocumentationLabel (priority 18) wins over TestSection (priority 16),
+        // then Stage 6.5 suppresses the NarrativeContext block entirely.
+        result.Candidates.Should().BeEmpty(
+            "narrative labels are documentation structure and must be suppressed, not classified as TEST");
     }
 
     [Fact]
@@ -268,9 +268,10 @@ public sealed class SpeckitProfileTests
 
         var result = await ExtractSpeckit(input);
 
-        result.Candidates.Should().ContainSingle();
-        result.Candidates[0].Classification.Should().Be(ScenarioKind.NeedsClarification);
-        result.Candidates[0].Title.Should().Be("Why this priority");
+        // NarrativeDocumentationLabel (priority 18) wins over TestSection (priority 16),
+        // then Stage 6.5 suppresses it — no candidate reaches the result set.
+        result.Candidates.Should().BeEmpty(
+            "Why this priority is a narrative label and must be suppressed");
     }
 
     [Fact]
@@ -317,6 +318,84 @@ public sealed class SpeckitProfileTests
 
         result.Candidates.Should().HaveCount(1);
         result.Candidates[0].ContextHeading.Should().Be("Acceptance Criteria");
+    }
+
+    // ── Speckit:NarrativeSuppression ────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("User Stories")]
+    [InlineData("Business Value")]
+    [InlineData("Goals")]
+    [InlineData("Non-Goals")]
+    [InlineData("Why")]
+    [InlineData("Summary")]
+    [InlineData("Scope")]
+    [InlineData("Assumptions")]
+    [InlineData("Future Evolution")]
+    public async Task Speckit_narrative_heading_suppresses_plain_prose(string heading)
+    {
+        var input = $"""
+## {heading}
+
+- Users navigate to the login page to access their account.
+""";
+
+        var result = await ExtractSpeckit(input);
+
+        result.Candidates.Should().BeEmpty(
+            $"blocks under a '{heading}' section heading are narrative context and must be suppressed");
+    }
+
+    [Fact]
+    public async Task Speckit_AcceptanceCriteria_heading_not_suppressed_by_NarrativeSuppression()
+    {
+        const string input = """
+## Acceptance Criteria
+
+- User can log in with valid credentials.
+""";
+
+        var result = await ExtractSpeckit(input);
+
+        result.Candidates.Should().ContainSingle();
+        result.Candidates[0].Classification.Should().Be(ScenarioKind.Test,
+            "Acceptance Criteria heading must not be matched by the narrative suppression rule");
+    }
+
+    [Fact]
+    public async Task Speckit_NarrativeSuppression_does_not_apply_in_Default_profile()
+    {
+        const string input = """
+## User Stories
+
+- Users navigate to the login page to access their account.
+""";
+
+        var defaultResult = await ExtractDefault(input);
+        var speckitResult = await ExtractSpeckit(input);
+
+        defaultResult.Candidates.Should().ContainSingle(
+            "Default profile has no narrative heading suppression rule");
+        speckitResult.Candidates.Should().BeEmpty(
+            "Speckit profile suppresses content under User Stories heading");
+    }
+
+    [Fact]
+    public async Task Speckit_narrative_section_explicit_requirement_language_still_wins()
+    {
+        // RequirementLanguage (priority 15) > NarrativeSuppression (priority 5),
+        // so explicit "should" text under a Goals heading produces a REQUIREMENT not suppressed.
+        const string input = """
+## Goals
+
+- The system should allow users to reset their password.
+""";
+
+        var result = await ExtractSpeckit(input);
+
+        result.Candidates.Should().ContainSingle();
+        result.Candidates[0].Classification.Should().Be(ScenarioKind.Requirement,
+            "RequirementLanguage (priority 15) beats NarrativeSuppression (priority 5)");
     }
 
     // ── Profile isolation ────────────────────────────────────────────────────────

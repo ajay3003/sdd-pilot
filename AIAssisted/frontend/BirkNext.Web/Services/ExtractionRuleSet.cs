@@ -95,9 +95,10 @@ public sealed class ExtractionRuleSet
             // Priority 18: Narrative/rationale labels are documentation structure, not executable
             // scenarios. Placed above RequirementLanguage (15) and profile heading-context rules
             // (10/16) so lines like "Why this priority" never become TEST through section context.
+            // NarrativeContext signal causes Stage 6.5 to suppress these blocks from results.
             new("Classify:NarrativeDocumentationLabel", 18,
                 new PatternMatchCondition(NarrativeDocumentationLabelPattern),
-                new ClassificationOutcome(ScenarioKind.NeedsClarification, ClassificationSignal.ClarificationSignal)),
+                new ClassificationOutcome(ScenarioKind.NeedsClarification, ClassificationSignal.NarrativeContext)),
 
             // Priority 15: Requirement-language words ("should", "can") that did not match a
             // stronger signal. Lower than QuestionTerminator (30) and DeferralMarker (20) so
@@ -186,6 +187,14 @@ public sealed class ExtractionRuleSet
             new HeadingContextCondition(SpeckitRequirementHeadingPattern),
             new ClassificationOutcome(ScenarioKind.Requirement, ClassificationSignal.HeadingContext)));
 
+        // Priority 5: Narrative section headings → suppress with NarrativeContext signal.
+        // Blocks under User Stories, Goals, Background, etc. are prose context, not scenarios.
+        // Below RequirementLanguage (15) so explicit requirement language in these sections
+        // still wins, but plain narrative text under these headings is suppressed.
+        classificationRules.Add(new ClassificationRule("Speckit:NarrativeSuppression", 5,
+            new HeadingContextCondition(SpeckitNarrativeHeadingPattern),
+            new ClassificationOutcome(ScenarioKind.NeedsClarification, ClassificationSignal.NarrativeContext)));
+
         // Extend IgnorePrefixes with Speckit-specific metadata lines.
         // "Input:" appears as a metadata label in some Speckit spec.md files.
         // "Non-Functional Requirements" appears as a bold inline label (not an ATX heading) in some docs.
@@ -236,7 +245,7 @@ public sealed class ExtractionRuleSet
     // Priority 55 — above Rfc2119Lowercase (50) so "how should we handle X" resolves to
     // NeedsClarification rather than REQUIREMENT via the "should" keyword.
     private static readonly Regex ClarificationPattern = new(
-        @"\b(clarify|unresolved|needs decision|what happens if|how should|should we)\b",
+        @"\b(clarify|unresolved|needs decision|what happens if|what happens when|how should|should we|unclear|not defined|not yet defined)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     // Requirement-language words ("should", "can") that signal probable intent without a
@@ -247,10 +256,11 @@ public sealed class ExtractionRuleSet
         @"\b(should|can)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    // Standalone narrative/rationale labels that commonly appear inside acceptance or priority
-    // sections. These headings are not executable/verifiable scenarios by themselves.
+    // Standalone narrative/rationale labels and "Label: content" lines that are documentation
+    // structure, not executable scenarios. The pattern matches both the bare label form
+    // ("Why this priority") and the inline-content form ("Why this priority: because X").
     private static readonly Regex NarrativeDocumentationLabelPattern = new(
-        @"^(?:Why this priority|Business value|Goals?|Summary|Future evolution|Non-goals?|Background|Context|Assumptions?|Scope|User Workflow Impact|Determinism Guarantees|Configuration Boundaries|Fallback and Default Behavior)\s*:?\s*$",
+        @"^(?:Why this priority|Business value|Goals?|Summary|Future evolution|Non-goals?|Background|Context|Assumptions?|Scope|User Workflow Impact|Determinism Guarantees|Configuration Boundaries|Fallback and Default Behavior)\s*(?::\s*.*)?$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     // ── Speckit profile patterns ─────────────────────────────────────────────
@@ -279,5 +289,12 @@ public sealed class ExtractionRuleSet
     // Heading context → REQUIREMENT: Functional/Non-Functional Requirements, Observability, etc.
     private static readonly Regex SpeckitRequirementHeadingPattern = new(
         @"\b(?:Functional Requirements?|Non-Functional Requirements?|Observability|Security|Performance|Measurable Outcomes?|Key Entities|Business Rules?|Constraints?|System Requirements?|Background)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    // Heading context → NarrativeContext (suppressed): pure narrative/context sections.
+    // Matches section headings that contain user stories, goals, rationale, or background
+    // prose that is not directly verifiable.
+    private static readonly Regex SpeckitNarrativeHeadingPattern = new(
+        @"^(?:User Stories?|Business Value|Goals?|Non-Goals?|Why|Summary|Scope|Assumptions?|Future Evolution|Determinism Guarantees?|Configuration Boundaries|Fallback and Default Behavior|User Workflow Impact)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 }

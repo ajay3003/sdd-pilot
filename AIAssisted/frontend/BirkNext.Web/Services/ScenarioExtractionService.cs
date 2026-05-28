@@ -114,6 +114,14 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
                 .ToList();
 
         var classified = ClassifyContent(contents, summary, engine);    // Stage 6
+
+        // Stage 6.5 — NarrativeContext suppression
+        // Drop blocks classified as narrative/documentation context (business rationale,
+        // user story prose, section labels) before deduplication.
+        var narrativeDropped = classified.Count(c => c.Signal == ClassificationSignal.NarrativeContext);
+        if (narrativeDropped > 0)
+            classified = classified.Where(c => c.Signal != ClassificationSignal.NarrativeContext).ToList();
+
         var deduplicated = Deduplicate(classified, summary);            // Stage 7
 
         sw.Stop();

@@ -1080,6 +1080,26 @@ public sealed class ScenarioExtractionServiceTests
         result.TestCount.Should().BeGreaterThan(0,
             "BDD acceptance-criteria lines must be classified as TEST");
     }
+
+    // =========================================================================
+    // Stage 6.5 — NarrativeContext suppression
+    // =========================================================================
+
+    [Theory]
+    [InlineData("- Why this priority")]
+    [InlineData("- Why this priority: because it reduces user friction")]
+    [InlineData("- Business value: improves conversion rates")]
+    [InlineData("- Goals")]
+    [InlineData("- Summary")]
+    [InlineData("- Background")]
+    [InlineData("- Context")]
+    public async Task NarrativeDocumentationLabel_is_suppressed_from_pipeline_output(string input)
+    {
+        var result = await ExtractAsync(input);
+
+        result.NeedsClarificationCount.Should().Be(0,
+            "narrative documentation labels must be suppressed by Stage 6.5 (NarrativeContext signal)");
+    }
 }
 
 // T093 ─────────────────────────────────────────────────────────────────────────

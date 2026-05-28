@@ -528,6 +528,7 @@ public sealed class ExtractionRuleEngineTests
         result.Classification.Should().Be(ScenarioKind.NeedsClarification);
         result.Classification.Should().NotBe(ScenarioKind.Test);
         result.WinningRuleName.Should().Be("Classify:NarrativeDocumentationLabel");
+        result.Signal.Should().Be(ClassificationSignal.NarrativeContext);
     }
 
     [Fact]
@@ -540,6 +541,41 @@ public sealed class ExtractionRuleEngineTests
 
         result.Classification.Should().Be(ScenarioKind.NeedsClarification);
         result.WinningRuleName.Should().Be("Classify:NarrativeDocumentationLabel");
+        result.Signal.Should().Be(ClassificationSignal.NarrativeContext);
+    }
+
+    [Theory]
+    [InlineData("Why this priority: improves user trust")]
+    [InlineData("Business value: reduces support calls")]
+    [InlineData("Goals: enable single sign-on")]
+    [InlineData("Summary: this feature allows users to log in")]
+    [InlineData("Background: the current system uses cookie-based auth")]
+    [InlineData("Context: the product is used by enterprise customers")]
+    public void Narrative_label_with_content_also_classifies_as_NarrativeContext(string text)
+    {
+        var engine = DefaultEngine();
+
+        var result = engine.Evaluate(MakeBlock(text, BlockType.ParagraphLine), text);
+
+        result.Classification.Should().Be(ScenarioKind.NeedsClarification);
+        result.WinningRuleName.Should().Be("Classify:NarrativeDocumentationLabel");
+        result.Signal.Should().Be(ClassificationSignal.NarrativeContext);
+    }
+
+    [Theory]
+    [InlineData("This behaviour is unclear")]
+    [InlineData("The timeout value is not defined")]
+    [InlineData("The retry limit is not yet defined")]
+    [InlineData("What happens when the user disconnects mid-upload")]
+    public void New_clarification_signals_classify_as_ClarificationSignal(string text)
+    {
+        var engine = DefaultEngine();
+
+        var result = engine.Evaluate(MakeBlock(text, BlockType.ParagraphLine), text);
+
+        result.Classification.Should().Be(ScenarioKind.NeedsClarification);
+        result.Signal.Should().Be(ClassificationSignal.ClarificationSignal);
+        result.WinningRuleName.Should().Be("Classify:ClarificationSignal");
     }
 
     // =========================================================================
