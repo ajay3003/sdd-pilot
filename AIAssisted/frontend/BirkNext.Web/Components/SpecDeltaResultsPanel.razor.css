@@ -1,3 +1,21 @@
+/* ── Section cards (defined here because SpecDeltaResultsPanel renders its own sections) */
+
+.compare-section {
+    padding: 1rem 1.125rem;
+    background: white;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-lg, 8px);
+}
+
+.compare-section-title {
+    margin: 0 0 0.875rem;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--clr-text-muted, #475569);
+}
+
 /* ── Delta Summary section ──────────────────────────────────────────────── */
 
 .delta-dashboard {
@@ -12,7 +30,7 @@
     align-items: flex-start;
     gap: 0.2rem;
     min-height: 3.6rem;
-    padding: 0.65rem 0.75rem;
+    padding: 0.65rem 0.875rem;
     background: white;
     border: 1px solid var(--clr-border, #e2e8f0);
     border-left: 3px solid var(--clr-border-hover, #cbd5e1);
@@ -23,7 +41,7 @@
 
 button.delta-summary-tile {
     cursor: pointer;
-    transition: box-shadow 0.12s ease, border-color 0.12s ease;
+    transition: box-shadow 0.12s ease, border-left-color 0.12s ease;
 }
 
 button.delta-summary-tile:hover {
@@ -36,50 +54,62 @@ button.delta-summary-tile:hover {
 }
 
 .delta-summary-tile span {
-    font-size: 1.25rem;
+    font-size: 1.35rem;
     font-weight: 800;
     line-height: 1;
     color: var(--clr-text-heading, #0f172a);
 }
 
 .delta-summary-tile small {
-    font-size: 0.66rem;
+    font-size: 0.63rem;
     font-weight: 700;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--clr-text-subtle, #64748b);
 }
 
 .delta-added {
-    border-left-color: var(--clr-review-accepted-text, #047857);
+    border-left-color: #059669;
+}
+
+button.delta-added:hover {
+    border-left-color: #047857;
 }
 
 .delta-modified {
-    border-left-color: var(--clr-review-needsreview-text, #b45309);
+    border-left-color: #d97706;
+}
+
+button.delta-modified:hover {
+    border-left-color: #b45309;
 }
 
 .delta-removed {
-    border-left-color: var(--clr-review-rejected-text, #b91c1c);
+    border-left-color: #dc2626;
+}
+
+button.delta-removed:hover {
+    border-left-color: #b91c1c;
 }
 
 .delta-impacted {
     border-left-color: #c2410c;
 }
 
-/* ── Change Explorer section ────────────────────────────────────────────── */
+/* ── Change Explorer filter toolbar ────────────────────────────────────── */
 
 .delta-filter-row {
     display: flex;
     align-items: center;
     gap: 0.375rem;
     flex-wrap: wrap;
-    margin-bottom: 0.875rem;
+    margin-bottom: 1rem;
 }
 
 .filter-group-label {
-    font-size: 0.65rem;
+    font-size: 0.62rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
     color: var(--clr-text-subtle, #64748b);
     padding: 0 0.1rem;
@@ -94,6 +124,43 @@ button.delta-summary-tile:hover {
     flex-shrink: 0;
     align-self: center;
 }
+
+/* ── Filter chips ───────────────────────────────────────────────────────── */
+
+.filter-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-pill, 999px);
+    background: white;
+    color: var(--clr-text-subtle, #64748b);
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+    white-space: nowrap;
+}
+
+.filter-chip:hover:not(.is-active) {
+    border-color: var(--clr-border-hover, #cbd5e1);
+    background: var(--clr-surface, #f8fafc);
+    color: var(--clr-text-body, #1e293b);
+}
+
+.filter-chip.is-active {
+    background: var(--clr-text-heading, #0f172a);
+    color: white;
+    border-color: var(--clr-text-heading, #0f172a);
+}
+
+.filter-chip:focus-visible {
+    outline: 2px solid var(--clr-primary-focus, #3b82f6);
+    outline-offset: 2px;
+}
+
+/* ── Change Explorer empty state ────────────────────────────────────────── */
 
 .change-explorer-empty {
     display: flex;
@@ -111,11 +178,11 @@ button.delta-summary-tile:hover {
     margin: 0;
 }
 
-/* ── Delta sections and cards ───────────────────────────────────────────── */
+/* ── Delta sections ─────────────────────────────────────────────────────── */
 
 .delta-section-grid {
     display: grid;
-    gap: 0.75rem;
+    gap: 1rem;
 }
 
 .delta-section {
@@ -123,14 +190,15 @@ button.delta-summary-tile:hover {
     gap: 0.5rem;
 }
 
-.delta-section h3 {
+.delta-section-heading {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    margin: 0;
-    font-size: 0.86rem;
+    margin: 0 0 0.25rem;
+    font-size: 0.82rem;
     font-weight: 800;
     color: var(--clr-text-heading, #0f172a);
+    letter-spacing: 0.01em;
 }
 
 .delta-section-count {
@@ -140,140 +208,20 @@ button.delta-summary-tile:hover {
     min-width: 1.35rem;
     min-height: 1.1rem;
     padding: 0 0.35rem;
-    font-size: 0.68rem;
+    font-size: 0.65rem;
     font-weight: 800;
     color: var(--clr-text-subtle, #64748b);
     background: var(--clr-surface, #f8fafc);
     border: 1px solid var(--clr-border, #e2e8f0);
-    border-radius: var(--radius-pill, 999px);
-}
-
-.delta-card {
-    padding: 0.75rem;
-    background: white;
-    border: 1px solid var(--clr-border, #e2e8f0);
-    border-left: 3px solid var(--clr-border-hover, #cbd5e1);
-    border-radius: var(--radius-md, 6px);
-}
-
-.delta-card-added {
-    border-left-color: var(--clr-review-accepted-text, #047857);
-}
-
-.delta-card-modified {
-    border-left-color: var(--clr-review-needsreview-text, #b45309);
-}
-
-.delta-card-removed {
-    border-left-color: var(--clr-review-rejected-text, #b91c1c);
-}
-
-.delta-card-header {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    flex-wrap: wrap;
-    margin-bottom: 0.5rem;
-}
-
-.delta-badge,
-.delta-kind {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.12rem 0.45rem;
-    font-size: 0.66rem;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    border-radius: var(--radius-pill, 999px);
-}
-
-.delta-badge-added {
-    color: var(--clr-review-accepted-text, #047857);
-    background: var(--clr-review-accepted-bg, #ecfdf5);
-}
-
-.delta-badge-modified {
-    color: var(--clr-review-needsreview-text, #b45309);
-    background: var(--clr-review-needsreview-bg, #fffbeb);
-}
-
-.delta-badge-removed {
-    color: var(--clr-review-rejected-text, #b91c1c);
-    background: var(--clr-review-rejected-bg, #fef2f2);
-}
-
-.delta-kind {
-    color: var(--clr-text-subtle, #64748b);
-    background: var(--clr-surface, #f8fafc);
-}
-
-.delta-single-text,
-.delta-diff-side p {
-    margin: 0;
-    font-size: 0.86rem;
-    line-height: 1.5;
-    color: var(--clr-text-body, #1e293b);
-    overflow-wrap: anywhere;
-}
-
-.delta-diff-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 0.5rem;
-}
-
-.delta-diff-side {
-    padding: 0.55rem;
-    background: var(--clr-surface, #f8fafc);
-    border: 1px solid var(--clr-border-subtle, #f1f5f9);
-    border-radius: var(--radius-md, 6px);
-}
-
-.delta-diff-side strong {
-    display: block;
-    margin-bottom: 0.35rem;
-    font-size: 0.68rem;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--clr-text-subtle, #64748b);
-}
-
-.delta-diff-side mark {
-    padding: 0 0.08rem;
-    color: inherit;
-    background: rgb(245 158 11 / 0.22);
-    border-radius: 2px;
-}
-
-.delta-context {
-    margin: 0.5rem 0 0;
-    font-size: 0.72rem;
-    color: var(--clr-text-subtle, #64748b);
-}
-
-.delta-impact-list {
-    display: flex;
-    gap: 0.35rem;
-    flex-wrap: wrap;
-    padding: 0;
-    margin: 0.55rem 0 0;
-    list-style: none;
-}
-
-.delta-impact-list li {
-    padding: 0.14rem 0.45rem;
-    font-size: 0.68rem;
-    font-weight: 700;
-    color: var(--clr-review-needsreview-text, #b45309);
-    background: var(--clr-review-needsreview-bg, #fffbeb);
-    border: 1px solid rgb(245 158 11 / 0.25);
     border-radius: var(--radius-pill, 999px);
 }
 
 @media (max-width: 640px) {
     .delta-filter-row {
         gap: 0.3rem;
+    }
+
+    .delta-dashboard {
+        grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
     }
 }

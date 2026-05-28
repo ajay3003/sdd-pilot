@@ -1,0 +1,116 @@
+@using System.Text.RegularExpressions
+@using BirkNext.Web.Models
+@using BirkNext.Web.GraphQL
+
+<article class="delta-card delta-card-@StatusClass" data-testid="delta-card">
+    <div class="delta-card-header">
+        <span class="delta-badge delta-badge-@StatusClass" data-testid="delta-status-badge">@StatusLabel</span>
+        <span class="delta-kind" data-testid="delta-kind-badge">@KindLabel</span>
+        @if (!string.IsNullOrWhiteSpace(Delta.MatchKey))
+        {
+            <span class="delta-match-key" data-testid="delta-match-key">@Delta.MatchKey</span>
+        }
+    </div>
+
+    @if (Delta.Status == SpecDeltaStatus.Modified)
+    {
+        <div class="delta-diff-grid">
+            <div class="delta-diff-side" data-testid="delta-before">
+                <strong>Before</strong>
+                <p>@foreach (var token in GetDiffTokens(Delta.OldCandidate?.Title ?? string.Empty, Delta.NewCandidate?.Title ?? string.Empty))
+                   {
+                       if (token.IsChanged)
+                       {
+                           <mark>@token.Text</mark>
+                       }
+                       else
+                       {
+                           @token.Text
+                       }
+                   }
+                </p>
+            </div>
+            <div class="delta-diff-side" data-testid="delta-after">
+                <strong>After</strong>
+                <p>@foreach (var token in GetDiffTokens(Delta.NewCandidate?.Title ?? string.Empty, Delta.OldCandidate?.Title ?? string.Empty))
+                   {
+                       if (token.IsChanged)
+                       {
+                           <mark>@token.Text</mark>
+                       }
+                       else
+                       {
+                           @token.Text
+                       }
+                   }
+                </p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <p class="delta-single-text">@(Delta.NewCandidate?.Title ?? Delta.OldCandidate?.Title)</p>
+    }
+
+    @{
+        var context = Delta.NewCandidate?.ContextHeading ?? Delta.OldCandidate?.ContextHeading;
+    }
+    @if (!string.IsNullOrWhiteSpace(context))
+    {
+        <p class="delta-context" data-testid="delta-context">@context</p>
+    }
+
+    @if (Delta.ImpactHints.Count > 0)
+    {
+        <ul class="delta-impact-list">
+            @foreach (var hint in Delta.ImpactHints)
+            {
+                <li>@hint</li>
+            }
+        </ul>
+    }
+</article>
+
+@code {
+    [Parameter] public required SpecDeltaItem Delta { get; set; }
+
+    private string StatusClass => Delta.Status.ToString().ToLowerInvariant();
+
+    private string StatusLabel => Delta.Status switch
+    {
+        SpecDeltaStatus.Added    => "+ Added",
+        SpecDeltaStatus.Modified => "~ Modified",
+        SpecDeltaStatus.Removed  => "− Removed",
+        SpecDeltaStatus.Unchanged => "Unchanged",
+        _ => Delta.Status.ToString(),
+    };
+
+    private string KindLabel => Delta.Classification switch
+    {
+        ScenarioKind.Requirement       => "Requirement",
+        ScenarioKind.Test              => "Test",
+        ScenarioKind.NeedsClarification => "Needs Clarification",
+        _ => Delta.Classification.ToString(),
+    };
+
+    private static readonly Regex TokenRegex =
+        new(@"\w+|\W+", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private static readonly Regex WordRegex =
+        new(@"\w+", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private record DiffToken(string Text, bool IsChanged);
+
+    private static IEnumerable<DiffToken> GetDiffTokens(string text, string otherText)
+    {
+        var otherWords = WordRegex.Matches(otherText)
+            .Select(m => m.Value.ToUpperInvariant())
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (Match match in TokenRegex.Matches(text))
+        {
+            yield return new DiffToken(
+                match.Value,
+                WordRegex.IsMatch(match.Value) && !otherWords.Contains(match.Value.ToUpperInvariant()));
+        }
+    }
+}

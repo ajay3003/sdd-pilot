@@ -1,0 +1,175 @@
+/* ── Delta result card ──────────────────────────────────────────────────── */
+
+.delta-card {
+    padding: 0.875rem 1rem;
+    background: white;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-left: 3px solid var(--clr-border-hover, #cbd5e1);
+    border-radius: var(--radius-md, 6px);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+    transition: box-shadow 0.12s ease, border-left-color 0.12s ease;
+}
+
+.delta-card:hover {
+    box-shadow: 0 3px 8px rgb(15 23 42 / 0.08);
+}
+
+.delta-card-added {
+    border-left-color: #059669;
+    background: #f0fdf4;
+}
+
+.delta-card-modified {
+    border-left-color: #d97706;
+    background: #fffbeb;
+}
+
+.delta-card-removed {
+    border-left-color: #dc2626;
+    background: #fef2f2;
+}
+
+/* ── Badge row ──────────────────────────────────────────────────────────── */
+
+.delta-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.6rem;
+}
+
+.delta-badge,
+.delta-kind,
+.delta-match-key {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.55rem;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    border-radius: var(--radius-pill, 999px);
+    white-space: nowrap;
+    line-height: 1.4;
+}
+
+.delta-badge {
+    text-transform: uppercase;
+}
+
+.delta-badge-added {
+    color: #065f46;
+    background: #d1fae5;
+}
+
+.delta-badge-modified {
+    color: #92400e;
+    background: #fef3c7;
+}
+
+.delta-badge-removed {
+    color: #991b1b;
+    background: #fee2e2;
+}
+
+.delta-badge-unchanged {
+    color: #1e40af;
+    background: #dbeafe;
+}
+
+.delta-kind {
+    color: var(--clr-text-subtle, #64748b);
+    background: var(--clr-surface, #f8fafc);
+    border: 1px solid var(--clr-border, #e2e8f0);
+    text-transform: none;
+    font-weight: 600;
+}
+
+.delta-match-key {
+    color: var(--clr-text-subtle, #64748b);
+    background: transparent;
+    border: 1px dashed var(--clr-border-hover, #cbd5e1);
+    font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+    font-size: 0.63rem;
+    letter-spacing: 0;
+}
+
+/* ── Card body ──────────────────────────────────────────────────────────── */
+
+.delta-single-text {
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--clr-text-body, #1e293b);
+    overflow-wrap: anywhere;
+}
+
+/* ── Before / After diff ────────────────────────────────────────────────── */
+
+.delta-diff-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.5rem;
+}
+
+.delta-diff-side {
+    padding: 0.625rem 0.75rem;
+    background: white;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-md, 6px);
+}
+
+.delta-diff-side strong {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--clr-text-subtle, #64748b);
+}
+
+.delta-diff-side p {
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--clr-text-body, #1e293b);
+    overflow-wrap: anywhere;
+}
+
+.delta-diff-side mark {
+    padding: 0.05rem 0.1rem;
+    color: inherit;
+    background: rgb(245 158 11 / 0.28);
+    border-radius: 3px;
+}
+
+/* ── Context ────────────────────────────────────────────────────────────── */
+
+.delta-context {
+    margin: 0.5rem 0 0;
+    font-size: 0.75rem;
+    color: var(--clr-text-muted, #475569);
+    font-style: italic;
+}
+
+/* ── Impact hints ───────────────────────────────────────────────────────── */
+
+.delta-impact-list {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    padding: 0;
+    margin: 0.55rem 0 0;
+    list-style: none;
+}
+
+.delta-impact-list li {
+    padding: 0.15rem 0.5rem;
+    font-size: 0.66rem;
+    font-weight: 700;
+    color: #92400e;
+    background: #fef3c7;
+    border: 1px solid rgb(245 158 11 / 0.3);
+    border-radius: var(--radius-pill, 999px);
+}

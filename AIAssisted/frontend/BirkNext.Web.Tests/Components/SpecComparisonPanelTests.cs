@@ -236,6 +236,54 @@ public class SpecComparisonPanelTests : BunitContext
             .Should().NotBeNullOrEmpty();
     }
 
+    // ── Badge and heading structure ──────────────────────────────────────────
+
+    [Fact]
+    public async Task DeltaCard_StatusAndKindBadges_AreRenderedAsSeparateElements()
+    {
+        SetupModifiedRequirement();
+        var cut = await RenderWithResultAsync();
+
+        var card = cut.Find("[data-testid='delta-card']");
+        card.QuerySelector("[data-testid='delta-status-badge']").Should().NotBeNull();
+        card.QuerySelector("[data-testid='delta-kind-badge']").Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task DeltaCard_Markup_DoesNotContainConcatenatedBadgeText()
+    {
+        SetupModifiedRequirement();
+        var cut = await RenderWithResultAsync();
+
+        // None of the "concatenated" patterns that appear when CSS isolation fails
+        cut.Markup.Should().NotContain("ModifiedREQUIREMENT");
+        cut.Markup.Should().NotContain("AddedREQUIREMENT");
+        cut.Markup.Should().NotContain("RemovedREQUIREMENT");
+        cut.Markup.Should().NotContain("MODIFIEDREQUIREMENT");
+    }
+
+    [Fact]
+    public async Task ChangeExplorer_SectionHeading_HasSeparateCountElement()
+    {
+        SetupModifiedRequirement();
+        var cut = await RenderWithResultAsync();
+
+        // The heading and count are separate elements (h3 text + span)
+        var section = cut.Find(".delta-section");
+        section.QuerySelector(".delta-section-count").Should().NotBeNull(
+            "section count must be in a separate element for proper styling");
+    }
+
+    [Fact]
+    public async Task ChangeExplorer_SectionHeading_ContainsRequirementsText()
+    {
+        SetupModifiedRequirement();
+        var cut = await RenderWithResultAsync();
+
+        var heading = cut.Find(".delta-section-heading");
+        heading.TextContent.Should().Contain("Requirements");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private void SetupModifiedRequirement()
