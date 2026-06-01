@@ -16,7 +16,7 @@
             <div class="health-score-panel">
                 <span class="health-score-number">@(IsEmpty ? "--" : Metrics.QaHealthScore)</span>
                 <div class="health-status-row">
-                    <span class="health-status-label">Status</span>
+                    <span class="health-status-label">QA Status</span>
                     <span class="health-score-badge health-score-badge-@HealthState">@(IsEmpty ? "No Data" : HealthStateLabel)</span>
                 </div>
             </div>
@@ -167,12 +167,12 @@
     private bool IsEmpty => Metrics.TotalCandidates == 0;
 
     private string HealthState => IsEmpty ? "empty"
-        : Metrics.QaHealthScore >= 90 ? "healthy"
-        : Metrics.QaHealthScore >= 70 ? "attention"
+        : Metrics.QaHealthScore >= 80 ? "healthy"
+        : Metrics.QaHealthScore >= 60 ? "attention"
         : "risk";
 
-    private string HealthStateLabel => Metrics.QaHealthScore >= 90 ? "Healthy"
-        : Metrics.QaHealthScore >= 70 ? "Attention"
+    private string HealthStateLabel => Metrics.QaHealthScore >= 80 ? "Healthy"
+        : Metrics.QaHealthScore >= 60 ? "Attention"
         : "At Risk";
 
     private string HeroState => IsEmpty ? "empty" : HealthState;
@@ -222,7 +222,7 @@
                 actions.Add("Link tests to uncovered requirements");
 
             if (Metrics.UnresolvedClarifications > 0)
-                actions.Add("Resolve open clarification items");
+                actions.Add("Resolve clarification items");
 
             if (Metrics.UnreviewedCount > 0)
                 actions.Add("Review pending extracted candidates");
@@ -239,9 +239,9 @@
         {
             var risks = new List<RiskItem>();
 
-            if (Metrics.RequirementCount > 0 && Metrics.RequirementsWithTests == 0)
+            if (Metrics.RequirementsWithoutTests > 0)
                 risks.Add(new(
-                    $"{Metrics.RequirementCount} requirement{(Metrics.RequirementCount == 1 ? "" : "s")} {(Metrics.RequirementCount == 1 ? "has" : "have")} no linked tests",
+                    $"{Metrics.RequirementsWithoutTests} requirement{(Metrics.RequirementsWithoutTests == 1 ? "" : "s")} missing tests",
                     "high"));
 
             if (Metrics.RequirementCount > 0 && Metrics.RequirementsCoveredPercent < 70 && Metrics.RequirementsWithTests > 0)
@@ -251,10 +251,10 @@
 
             if (Metrics.UnresolvedClarifications > 0)
                 risks.Add(new(
-                    $"{Metrics.UnresolvedClarifications} clarification item{(Metrics.UnresolvedClarifications == 1 ? "" : "s")} remain{(Metrics.UnresolvedClarifications == 1 ? "s" : "")} unresolved",
+                    $"{Metrics.UnresolvedClarifications} unresolved clarification{(Metrics.UnresolvedClarifications == 1 ? "" : "s")}",
                     "medium"));
 
-            if (Metrics.TotalCandidates > 0 && Metrics.ReviewedPercent < 80)
+            if (Metrics.UnreviewedCount > 0 && Metrics.ReviewedPercent < 80)
                 risks.Add(new(
                     $"{Metrics.UnreviewedCount} candidate{(Metrics.UnreviewedCount == 1 ? "" : "s")} still require{(Metrics.UnreviewedCount == 1 ? "s" : "")} review",
                     "medium"));

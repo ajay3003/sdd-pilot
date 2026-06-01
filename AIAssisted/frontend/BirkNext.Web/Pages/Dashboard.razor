@@ -4,6 +4,7 @@
 @using BirkNext.Web.Services
 @inject IBirkNextClient Client
 @inject IDashboardMetricsService MetricsService
+@inject NavigationManager Navigation
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -36,6 +37,12 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (IsPreviewMode)
+        {
+            _metrics = PreviewMetrics;
+            return;
+        }
+
         _isLoading = true;
         _loadError = null;
 
@@ -69,4 +76,53 @@ else
             _isLoading = false;
         }
     }
+
+    private bool IsPreviewMode
+    {
+        get
+        {
+#if DEBUG
+            var query = Navigation.ToAbsoluteUri(Navigation.Uri).Query;
+            return query.Contains("demo=populated", StringComparison.OrdinalIgnoreCase)
+                || query.Contains("preview=populated", StringComparison.OrdinalIgnoreCase);
+#else
+            return false;
+#endif
+        }
+    }
+
+    private static DashboardMetrics PreviewMetrics => new(
+        TotalCandidates: 92,
+        RequirementCount: 24,
+        TestCount: 68,
+        ClarificationCount: 4,
+        ReviewedCount: 72,
+        ReviewedPercent: 78,
+        AcceptedCount: 74,
+        RejectedCount: 18,
+        NeedsReviewCount: 0,
+        UnreviewedCount: 0,
+        AcceptanceRatio: 80,
+        RejectionRatio: 20,
+        RequirementsWithTests: 22,
+        RequirementsWithoutTests: 3,
+        RequirementsCoveredPercent: 91,
+        RequirementsWithoutTestsPercent: 13,
+        TestsWithoutRequirements: 6,
+        TestsLinkedToRequirementsPercent: 88,
+        RequirementsWithUnresolvedClarifications: 2,
+        UnresolvedClarifications: 2,
+        ClarificationsWithoutRequirements: 0,
+        PendingRequirements: 3,
+        PendingTests: 0,
+        PendingClarifications: 2,
+        FunctionalTests: 30,
+        NegativeTests: 12,
+        EdgeCaseTests: 8,
+        PerformanceTests: 2,
+        SecurityTests: 1,
+        OtherTests: 5,
+        TraceabilityPercent: 87,
+        QaHealthScore: 82,
+        OpenRisksCount: 3);
 }
