@@ -5,7 +5,8 @@ namespace BirkNext.Web.Services;
 public sealed record DashboardCandidate(
     string Id,
     ScenarioKind Classification,
-    CandidateReviewStatus ReviewStatus);
+    CandidateReviewStatus ReviewStatus,
+    string Title = "");
 
 public sealed record DashboardCandidateLink(
     string SourceCandidateRef,
@@ -36,7 +37,16 @@ public sealed record DashboardMetrics(
     int ClarificationsWithoutRequirements,
     int PendingRequirements,
     int PendingTests,
-    int PendingClarifications);
+    int PendingClarifications,
+    int FunctionalTests,
+    int NegativeTests,
+    int EdgeCaseTests,
+    int PerformanceTests,
+    int SecurityTests,
+    int OtherTests,
+    int TraceabilityPercent,
+    int QaHealthScore,
+    int OpenRisksCount);
 
 public interface IDashboardMetricsService
 {
@@ -86,13 +96,42 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
 
         var testsWithRequirements = tests.Count - testsWithoutRequirements;
 
+        ClassifyTests(tests, out var functional, out var negative, out var edge, out var performance, out var security, out var other);
+
+        var unresolvedClarifications = clarifications.Count(IsUnresolved);
+        var reviewedPct = Percent(reviewed, candidates.Count);
+        var coveredPct = Percent(requirementsWithTests, requirements.Count);
+        var testsLinkedPct = Percent(testsWithRequirements, tests.Count);
+        var clarificationsLinkedPct = Percent(clarifications.Count - clarificationsWithoutRequirements, clarifications.Count);
+
+        var traceabilityPercent = AverageNonEmpty(
+            (requirements.Count, coveredPct),
+            (tests.Count, testsLinkedPct),
+            (clarifications.Count, clarificationsLinkedPct));
+
+        var qaBaseComponents = new List<int>();
+        if (candidates.Count > 0) qaBaseComponents.Add(reviewedPct);
+        if (requirements.Count > 0) qaBaseComponents.Add(coveredPct);
+        if (tests.Count + clarifications.Count > 0) qaBaseComponents.Add(traceabilityPercent);
+        var qaBase = qaBaseComponents.Count > 0
+            ? (int)Math.Round(qaBaseComponents.Average(), MidpointRounding.AwayFromZero)
+            : 0;
+        var clarificationPenalty = Math.Min(unresolvedClarifications * 5, 20);
+        var qaHealthScore = Math.Max(0, qaBase - clarificationPenalty);
+
+        var openRisksCount = 0;
+        if (requirements.Count > 0 && requirementsWithTests == 0) openRisksCount++;
+        if (requirements.Count > 0 && coveredPct < 70 && requirementsWithTests > 0) openRisksCount++;
+        if (unresolvedClarifications > 0) openRisksCount++;
+        if (candidates.Count > 0 && reviewedPct < 80) openRisksCount++;
+
         return new DashboardMetrics(
             TotalCandidates: candidates.Count,
             RequirementCount: requirements.Count,
             TestCount: tests.Count,
             ClarificationCount: clarifications.Count,
             ReviewedCount: reviewed,
-            ReviewedPercent: Percent(reviewed, candidates.Count),
+            ReviewedPercent: reviewedPct,
             AcceptedCount: accepted,
             RejectedCount: rejected,
             NeedsReviewCount: needsReview,
@@ -101,17 +140,57 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
             RejectionRatio: Percent(rejected, candidates.Count),
             RequirementsWithTests: requirementsWithTests,
             RequirementsWithoutTests: requirementsWithoutTests,
-            RequirementsCoveredPercent: Percent(requirementsWithTests, requirements.Count),
+            RequirementsCoveredPercent: coveredPct,
             RequirementsWithoutTestsPercent: Percent(requirementsWithoutTests, requirements.Count),
             TestsWithoutRequirements: testsWithoutRequirements,
-            TestsLinkedToRequirementsPercent: Percent(testsWithRequirements, tests.Count),
+            TestsLinkedToRequirementsPercent: testsLinkedPct,
             RequirementsWithUnresolvedClarifications: requirementsWithUnresolvedClarifications,
-            UnresolvedClarifications: clarifications.Count(IsUnresolved),
+            UnresolvedClarifications: unresolvedClarifications,
             ClarificationsWithoutRequirements: clarificationsWithoutRequirements,
             PendingRequirements: requirements.Count(IsUnresolved),
             PendingTests: tests.Count(IsUnresolved),
-            PendingClarifications: clarifications.Count(IsUnresolved));
+            PendingClarifications: clarifications.Count(IsUnresolved),
+            FunctionalTests: functional,
+            NegativeTests: negative,
+            EdgeCaseTests: edge,
+            PerformanceTests: performance,
+            SecurityTests: security,
+            OtherTests: other,
+            TraceabilityPercent: traceabilityPercent,
+            QaHealthScore: qaHealthScore,
+            OpenRisksCount: openRisksCount);
     }
+
+    private static int AverageNonEmpty(params (int Total, int Percent)[] values)
+    {
+        var nonEmpty = values.Where(v => v.Total > 0).Select(v => v.Percent).ToList();
+        return nonEmpty.Count == 0 ? 0 : (int)Math.Round(nonEmpty.Average(), MidpointRounding.AwayFromZero);
+    }
+
+    private static void ClassifyTests(
+        IReadOnlyList<DashboardCandidate> tests,
+        out int functional, out int negative, out int edge,
+        out int performance, out int security, out int other)
+    {
+        functional = 0; negative = 0; edge = 0; performance = 0; security = 0; other = 0;
+        foreach (var test in tests)
+        {
+            var t = (test.Title ?? "").ToLowerInvariant();
+            if (ContainsAny(t, "error", "invalid", "fail", "exception", "not allowed", "unauthorized"))
+                negative++;
+            else if (ContainsAny(t, "boundary", "edge", "empty", "null", "max", "min"))
+                edge++;
+            else if (ContainsAny(t, "performance", "load", "response time", "latency", "timeout"))
+                performance++;
+            else if (ContainsAny(t, "security", "role", "permission", "authentication", "access"))
+                security++;
+            else
+                functional++;
+        }
+    }
+
+    private static bool ContainsAny(string text, params string[] keywords) =>
+        keywords.Any(k => text.Contains(k, StringComparison.Ordinal));
 
     private static bool Touches(DashboardCandidateLink link, string candidateId, HashSet<string> counterpartIds) =>
         string.Equals(link.SourceCandidateRef, candidateId, StringComparison.Ordinal)

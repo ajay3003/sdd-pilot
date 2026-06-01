@@ -41,17 +41,19 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var dashboard = cut.Find("[data-testid='coverage-dashboard']").TextContent;
-            dashboard.Should().Contain("Health summary");
-            dashboard.Should().Contain("Saved items");
-            dashboard.Should().Contain("Reviewed candidates");
-            dashboard.Should().Contain("No active QA risks");
-            dashboard.Should().Contain("No QA metrics yet");
-            dashboard.Should().Contain("Analyze a specification and save reviews to populate QA metrics.");
-            dashboard.Should().Contain("0%");
+            dashboard.Should().Contain("QA Health Score");
+            dashboard.Should().Contain("No Data");
+            dashboard.Should().Contain("Run a specification review to generate QA health, coverage, risk, and traceability metrics.");
+            dashboard.Should().Contain("--");
+            dashboard.Should().Contain("Coverage");
+            dashboard.Should().Contain("Review Progress");
+            dashboard.Should().Contain("Open Risks");
+            dashboard.Should().Contain("Traceability");
+            dashboard.Should().Contain("Top QA Risks");
+            dashboard.Should().Contain("Quality Overview");
+            dashboard.Should().Contain("Test Coverage Breakdown");
             cut.Find("[data-testid='dashboard-empty-state'] a[href='extract']").Should().NotBeNull();
             cut.FindAll("[data-testid='dashboard-health-card']").Should().HaveCount(4);
-            cut.FindAll("[role='progressbar']").Should().HaveCount(4);
-            cut.FindAll(".progress-fill").Should().OnlyContain(fill => fill.GetAttribute("style") == "width: 0%;");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -78,22 +80,17 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var dashboard = cut.Find("[data-testid='coverage-dashboard']").TextContent;
-            dashboard.Should().Contain("Coverage Health");
+            dashboard.Should().Contain("QA Health Score");
+            dashboard.Should().Contain("Coverage");
             dashboard.Should().Contain("Review Progress");
-            dashboard.Should().Contain("Clarification Risk");
-            dashboard.Should().Contain("Traceability Health");
-            dashboard.Should().Contain("Progress checks");
-            dashboard.Should().Contain("Linked requirements/tests");
-            dashboard.Should().Contain("Top QA risks");
-            dashboard.Should().Contain("Requirements without tests");
-            dashboard.Should().Contain("Orphan tests");
-            dashboard.Should().Contain("Unresolved clarifications");
-            dashboard.Should().Contain("Activity summary");
+            dashboard.Should().Contain("Traceability");
+            dashboard.Should().Contain("Top QA Risks");
+            dashboard.Should().Contain("Test coverage below 70%");
+            dashboard.Should().Contain("clarification item");
+            dashboard.Should().Contain("Quality Overview");
             dashboard.Should().Contain("Accepted");
             dashboard.Should().Contain("Rejected");
             cut.FindAll("[data-testid='dashboard-health-card']").Should().HaveCount(4);
-            cut.FindAll("[role='progressbar']").Should().HaveCount(4);
-            cut.FindAll(".health-progress").Should().HaveCount(4);
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -117,7 +114,7 @@ public class DashboardPageTests : BunitContext
         {
             cut.Find("[data-testid='dashboard-load-error']")
                 .TextContent.Should().Contain("couldn't load dashboard data");
-            cut.Find("[data-testid='coverage-dashboard']").TextContent.Should().Contain("No QA metrics yet");
+            cut.Find("[data-testid='coverage-dashboard']").TextContent.Should().Contain("No Data");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -168,10 +165,12 @@ public class DashboardPageTests : BunitContext
     private static IGetReviewedCandidates_ReviewedCandidates MakeReviewedCandidate(
         string id,
         ScenarioKind classification,
-        CandidateReviewStatus reviewStatus)
+        CandidateReviewStatus reviewStatus,
+        string title = "")
     {
         var candidate = new Mock<IGetReviewedCandidates_ReviewedCandidates>();
         candidate.Setup(c => c.Id).Returns(id);
+        candidate.Setup(c => c.Title).Returns(title);
         candidate.Setup(c => c.Classification).Returns(classification);
         candidate.Setup(c => c.ReviewStatus).Returns(reviewStatus);
         return candidate.Object;

@@ -32,7 +32,7 @@ else
     private const string ProjectId = "00000000-0000-0000-0000-000000000001";
     private bool _isLoading;
     private string? _loadError;
-    private DashboardMetrics _metrics = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    private DashboardMetrics _metrics = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
     protected override async Task OnInitializedAsync()
     {
@@ -51,7 +51,7 @@ else
             }
 
             var candidates = candidatesResult.Data?.ReviewedCandidates
-                .Select(c => new DashboardCandidate(c.Id, c.Classification, c.ReviewStatus))
+                .Select(c => new DashboardCandidate(c.Id, c.Classification, c.ReviewStatus, c.Title ?? ""))
                 .ToList() ?? [];
 
             var links = linksResult.Data?.CandidateLinks

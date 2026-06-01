@@ -165,7 +165,7 @@ public class ScenariosQueryTests : IAsyncLifetime
             .Select(i => new Scenario
             {
                 Title = $"Scenario {i:D3}",
-                Kind = i % 2 == 0 ? ScenarioKind.Requirement : ScenarioKind.Test,
+                Kind = ScenarioKind.Requirement, // uniform kind so CreatedAt DESC ordering applies
                 ProjectId = projectId,
                 CreatedAt = baseTime.AddMinutes(i)
             })
