@@ -7,56 +7,97 @@
 @inject IBirkNextClient Client
 
 <section class="spec-comparison-panel" aria-label="Specification Comparison" data-testid="spec-comparison-panel">
-
     <section class="compare-section compare-section-inputs" data-testid="spec-inputs-section">
         <div class="comparison-header">
-            <h2 class="compare-section-title">Spec Inputs</h2>
+            <div>
+                <p class="section-kicker">Delta Inputs</p>
+                <h2>Specification Versions</h2>
+                <span>Load the approved baseline and the updated draft, then run deterministic delta analysis.</span>
+            </div>
+        </div>
+
+        <div class="comparison-profile-panel">
+            <div class="comparison-profile-heading">
+                <p class="section-kicker">Document Profile</p>
+                <h3>Choose Analysis Profile</h3>
+            </div>
             <div class="comparison-profile" role="radiogroup" aria-label="Comparison analysis profile">
-                <label>
+                <label class="profile-card @(_profile == ExtractionProfile.Speckit ? "is-selected" : "")">
                     <input type="radio" name="comparison-profile"
                            checked="@(_profile == ExtractionProfile.Speckit)"
                            @onchange="@(() => _profile = ExtractionProfile.Speckit)" />
-                    Speckit Structured Spec
+                    <span>Speckit Structured Spec</span>
+                    <small>Best for spec.md files and structured SDD workflows.</small>
                 </label>
-                <label>
+                <label class="profile-card @(_profile == ExtractionProfile.Default ? "is-selected" : "")">
                     <input type="radio" name="comparison-profile"
                            checked="@(_profile == ExtractionProfile.Default)"
                            @onchange="@(() => _profile = ExtractionProfile.Default)" />
-                    Generic Document
+                    <span>Generic Document</span>
+                    <small>Best for markdown, meeting notes, or plain text requirements.</small>
                 </label>
             </div>
         </div>
 
         <div class="comparison-input-grid">
-            <div class="comparison-input-card">
-                <h3>Old Spec</h3>
+            <div class="comparison-input-card baseline-card">
+                <div class="input-card-heading">
+                    <p class="section-kicker">Baseline</p>
+                    <h3>Baseline Specification</h3>
+                    <span>Previously reviewed or approved version.</span>
+                </div>
                 <SpecificationImport InputId="old-spec-file-input"
                                      OnFileImported="HandleOldImported"
                                      OnFileRemoved="HandleOldRemoved"
                                      IsDisabled="_isComparing" />
-                <textarea rows="8"
-                          placeholder="Paste the old spec.md or .txt content"
+                <label for="old-spec-textarea">Paste baseline text</label>
+                <textarea id="old-spec-textarea"
+                          rows="10"
+                          placeholder="Paste the baseline spec.md or .txt content"
                           @bind="_oldSpecText"
                           @bind:event="oninput"
                           disabled="@_isComparing"
                           aria-label="Old specification text"
                           data-testid="old-spec-textarea"></textarea>
+                <p class="input-helper">Use the last approved text so added, removed, and changed items are measured against the right source.</p>
             </div>
 
-            <div class="comparison-input-card">
-                <h3>New Spec</h3>
+            <div class="comparison-input-card updated-card">
+                <div class="input-card-heading">
+                    <p class="section-kicker">Updated</p>
+                    <h3>Updated Specification</h3>
+                    <span>New version to compare against the baseline.</span>
+                </div>
                 <SpecificationImport InputId="new-spec-file-input"
                                      OnFileImported="HandleNewImported"
                                      OnFileRemoved="HandleNewRemoved"
                                      IsDisabled="_isComparing" />
-                <textarea rows="8"
-                          placeholder="Paste the new spec.md or .txt content"
+                <label for="new-spec-textarea">Paste updated text</label>
+                <textarea id="new-spec-textarea"
+                          rows="10"
+                          placeholder="Paste the updated spec.md or .txt content"
                           @bind="_newSpecText"
                           @bind:event="oninput"
                           disabled="@_isComparing"
                           aria-label="New specification text"
                           data-testid="new-spec-textarea"></textarea>
+                <p class="input-helper">Use the proposed revision to surface QA coverage and traceability impact before accepting changes.</p>
             </div>
+        </div>
+
+        <div class="comparison-workflow-card" aria-label="What happens after comparison">
+            <div>
+                <p class="section-kicker">After Comparison</p>
+                <h3>What happens after comparison?</h3>
+            </div>
+            <ol>
+                <li>Review added requirements</li>
+                <li>Review changed requirements</li>
+                <li>Check removed requirements</li>
+                <li>Identify new clarification risks</li>
+                <li>Assess test coverage impact</li>
+                <li>Save delta review</li>
+            </ol>
         </div>
 
         @if (_validationMessage is not null)
@@ -65,13 +106,20 @@
         }
 
         <div class="comparison-actions">
-            <button type="button"
-                    class="btn-secondary"
-                    @onclick="RunComparison"
-                    disabled="@_isComparing"
-                    data-testid="run-comparison-button">
-                @(_isComparing ? "Comparing..." : "Run Comparison")
-            </button>
+            <div class="comparison-safety-note">
+                <strong>Safe comparison</strong>
+                <span>Comparison does not modify saved QA artifacts until a delta review is accepted or saved.</span>
+            </div>
+            <div class="comparison-action-buttons">
+                <a href="compare/reviews" class="btn-secondary">Cancel</a>
+                <button type="button"
+                        class="btn-primary"
+                        @onclick="RunComparison"
+                        disabled="@_isComparing"
+                        data-testid="run-comparison-button">
+                    @(_isComparing ? "Comparing..." : "Run Comparison")
+                </button>
+            </div>
         </div>
 
         @if (_comparisonError is not null)
@@ -85,11 +133,17 @@
         <SpecDeltaResultsPanel Result="_comparisonResult" />
 
         <section class="compare-section compare-section-save" data-testid="save-review-section">
-            <h2 class="compare-section-title">Save Delta Review</h2>
+            <div class="save-review-header">
+                <div>
+                    <p class="section-kicker">Delta Review</p>
+                    <h2>Save Delta Review</h2>
+                    <span>Persist this comparison after the QA impact has been reviewed.</span>
+                </div>
+            </div>
             @if (_saveSuccess)
             {
                 <p class="save-review-success" data-testid="save-review-success">
-                    Saved. <a href="compare/reviews">View all delta reviews →</a>
+                    Saved. <a href="compare/reviews">View all delta reviews -></a>
                 </p>
             }
             else
@@ -109,7 +163,7 @@
                     }
                     <div class="save-review-actions">
                         <button type="button"
-                                class="btn-secondary"
+                                class="btn-primary"
                                 @onclick="SaveReviewAsync"
                                 disabled="@_isSaving"
                                 data-testid="save-review-button">
@@ -122,6 +176,37 @@
                     }
                 </div>
             }
+        </section>
+    }
+    else
+    {
+        <section class="compare-section compare-section-empty-results" data-testid="delta-empty-state">
+            <div class="delta-results-heading">
+                <div>
+                    <p class="section-kicker">Analysis Results</p>
+                    <h2>Delta Results</h2>
+                </div>
+                <span>Baseline -> Updated -> Delta Review -> QA Impact</span>
+            </div>
+            <div class="delta-placeholder-dashboard" aria-label="Delta summary placeholders">
+                <div><strong>0</strong><span>Added</span></div>
+                <div><strong>0</strong><span>Changed</span></div>
+                <div><strong>0</strong><span>Removed</span></div>
+                <div><strong>0</strong><span>Clarifications</span></div>
+                <div><strong>0</strong><span>Coverage Impact</span></div>
+                <div><strong>0</strong><span>Traceability Impact</span></div>
+            </div>
+            <div class="delta-empty-message">
+                <h3>No delta review yet</h3>
+                <p>Run a comparison to identify:</p>
+                <ul>
+                    <li>Added items</li>
+                    <li>Removed items</li>
+                    <li>Changed items</li>
+                    <li>Coverage impact</li>
+                    <li>Traceability impact</li>
+                </ul>
+            </div>
         </section>
     }
 </section>

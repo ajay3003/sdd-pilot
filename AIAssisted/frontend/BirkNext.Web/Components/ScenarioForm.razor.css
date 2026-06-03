@@ -1,7 +1,77 @@
 .scenario-form {
     display: flex;
     flex-direction: column;
-    gap: 0.875rem;
+    gap: 0.9rem;
+}
+
+.scenario-authoring-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(18rem, 3fr);
+    gap: 0.9rem;
+    align-items: start;
+}
+
+.scenario-authoring-main,
+.scenario-authoring-aside {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+.scenario-form-card,
+.scenario-guidance-card {
+    padding: 1rem 1.08rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-lg, 8px);
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.055);
+}
+
+.scenario-card-heading {
+    margin-bottom: 0.82rem;
+    padding-bottom: 0.65rem;
+    border-bottom: 1px solid var(--clr-border, #e2e8f0);
+}
+
+.scenario-card-heading h2 {
+    margin: 0;
+    color: var(--clr-text-heading, #0f172a);
+    font-size: 1.04rem;
+    font-weight: 900;
+}
+
+.scenario-card-heading span,
+.scenario-guidance-card p,
+.field-example {
+    color: var(--clr-text-muted, #475569);
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
+.scenario-card-heading span {
+    display: block;
+    margin-top: 0.32rem;
+}
+
+.section-kicker {
+    margin: 0 0 0.35rem;
+    color: var(--clr-primary, #2563eb);
+    font-size: 0.66rem;
+    font-weight: 850;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.classification-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.82rem;
+}
+
+.form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
 }
 
 label {
@@ -11,7 +81,6 @@ label {
     color: #374151;
 }
 
-/* Delta rules for specific control types — base styles come from global .form-control */
 .form-textarea {
     resize: vertical;
 }
@@ -20,7 +89,102 @@ label {
     cursor: pointer;
 }
 
-/* Error blocks — kept scoped because <ul> needs extra left padding for list bullets */
+.field-example {
+    margin: 0.1rem 0 0;
+}
+
+.priority-select {
+    margin-bottom: 0.2rem;
+}
+
+.priority-badge {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.55rem;
+    padding: 0.18rem 0.52rem;
+    border-radius: var(--radius-md, 6px);
+    font-size: 0.68rem;
+    font-weight: 850;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.priority-critical {
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+}
+
+.priority-high {
+    background: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fed7aa;
+}
+
+.priority-medium {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+}
+
+.priority-low {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+}
+
+.impact-list,
+.quality-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.42rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.scenario-guidance-card p {
+    margin: 0 0 0.62rem;
+}
+
+.scenario-guidance-card h3 {
+    margin: 0.82rem 0 0.45rem;
+    color: var(--clr-text-heading, #0f172a);
+    font-size: 0.82rem;
+    font-weight: 900;
+}
+
+.impact-list li,
+.quality-list li {
+    position: relative;
+    padding: 0.48rem 0.58rem 0.48rem 1.8rem;
+    border: 1px solid var(--clr-border-subtle, #f1f5f9);
+    border-radius: var(--radius-md, 6px);
+    background: #ffffff;
+    color: var(--clr-text-body, #1e293b);
+    font-size: 0.78rem;
+    font-weight: 750;
+    line-height: 1.35;
+}
+
+.impact-list li::before,
+.quality-list.good li::before {
+    position: absolute;
+    left: 0.62rem;
+    color: var(--clr-success, #15803d);
+    font-weight: 950;
+    content: "\2713";
+}
+
+.quality-list.avoid li::before {
+    position: absolute;
+    left: 0.62rem;
+    color: #dc2626;
+    font-weight: 950;
+    content: "\2717";
+}
+
 .form-errors {
     margin: 0;
     padding: 0.625rem 0.875rem 0.625rem 1.5rem;
@@ -39,4 +203,41 @@ label {
     border: 1px solid var(--clr-danger-border, #fecaca);
     border-radius: var(--radius-md, 6px);
     font-size: 0.875rem;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.55rem;
+    padding: 1rem 1.08rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-lg, 8px);
+    background: #ffffff;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.045);
+}
+
+.form-actions .btn-secondary,
+.form-actions .btn-primary {
+    min-height: 2.3rem;
+    text-decoration: none;
+}
+
+@media (max-width: 980px) {
+    .scenario-authoring-grid,
+    .classification-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .form-actions {
+        align-items: stretch;
+        flex-direction: column-reverse;
+    }
+
+    .form-actions .btn-secondary,
+    .form-actions .btn-primary {
+        width: 100%;
+        text-align: center;
+    }
 }

@@ -1,7 +1,7 @@
 @if (Scenarios.Count == 0)
 {
     <div class="empty-state empty-state-dashed">
-        <p data-testid="empty-state">No artifacts in this group. <a href="scenarios/new">Create a test scenario</a> or use <a href="/extract">Specification Review</a> to identify and save artifacts from your specification text.</p>
+        <p data-testid="empty-state">No artifacts in this group. <a href="scenarios/new">Create Test Scenario</a> or use <a href="/extract">Specification Review</a> to identify and save artifacts from your specification text.</p>
     </div>
 }
 else
@@ -12,6 +12,7 @@ else
         var index = i;
         var isDragTarget = _dragTargetIndex == index && _dragSourceIndex != index;
         var isDragSource = _dragSourceIndex == index;
+        var relationship = GetRelationshipSummary(scenario.Id);
         <div class="scenario-card @(isDragSource ? "drag-source" : "") @(isDragTarget ? "drag-over-above" : "")"
              data-testid="scenario-row"
              draggable="@(IsDraggable ? "true" : "false")"
@@ -28,7 +29,10 @@ else
                           data-testid="drag-handle-@scenario.Id"
                           role="img">⠿</span>
                 }
-                <span class="badge badge-@scenario.Kind.ToLowerInvariant()">@scenario.Kind</span>
+                <div class="artifact-card-identity">
+                    <span class="badge badge-@scenario.Kind.ToLowerInvariant()">@scenario.Kind</span>
+                    <span class="artifact-state-pill state-@relationship.StateTone">@relationship.StateLabel</span>
+                </div>
                 <div class="scenario-card-actions">
                     @if (IsDraggable)
                     {
@@ -58,11 +62,32 @@ else
                     }
                 </div>
             </div>
-            <div class="scenario-card-title">@scenario.Title</div>
+            <div class="scenario-card-body">
+                <div class="scenario-card-title">@scenario.Title</div>
+                <p class="artifact-card-context">@relationship.CoverageLabel</p>
+            </div>
             @if (scenario.Description is not null)
             {
                 <div class="scenario-card-description">@scenario.Description</div>
             }
+            @if (!string.IsNullOrWhiteSpace(relationship.RecommendedAction))
+            {
+                <div class="artifact-recommended-action">
+                    <span>Recommended action</span>
+                    <strong>@relationship.RecommendedAction</strong>
+                </div>
+            }
+            <div class="artifact-relationship-row" aria-label="Artifact relationships">
+                <span class="relationship-slot relationship-requirement @(relationship.LinkedRequirements > 0 ? "slot-filled" : "slot-empty")">
+                    <strong>@relationship.LinkedRequirements</strong> Requirements
+                </span>
+                <span class="relationship-slot relationship-test @(relationship.LinkedTests > 0 ? "slot-filled" : "slot-empty")">
+                    <strong>@relationship.LinkedTests</strong> Tests
+                </span>
+                <span class="relationship-slot relationship-clarification @(relationship.LinkedClarifications > 0 ? "slot-filled" : "slot-empty")">
+                    <strong>@relationship.LinkedClarifications</strong> Clarifications
+                </span>
+            </div>
             @if (_pendingDeleteId == scenario.Id)
             {
                 <div class="delete-confirm" role="alert" data-testid="delete-confirm-@scenario.Id">
@@ -86,10 +111,19 @@ else
     [Parameter] public IReadOnlyDictionary<string, string>? DeleteErrors { get; set; }
     [Parameter] public bool IsDraggable { get; set; }
     [Parameter] public EventCallback<List<ScenarioListItem>> OnReordered { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, ArtifactRelationshipSummary> RelationshipSummaries { get; set; }
+        = new Dictionary<string, ArtifactRelationshipSummary>();
 
     private string? _pendingDeleteId;
     private int? _dragSourceIndex;
     private int? _dragTargetIndex;
+
+    private ArtifactRelationshipSummary GetRelationshipSummary(string id) =>
+        RelationshipSummaries.TryGetValue(id, out var summary)
+            ? summary
+            : new ArtifactRelationshipSummary();
+
+    private static string Plural(int count) => count == 1 ? string.Empty : "s";
 
     private void RequestDelete(string id) => _pendingDeleteId = id;
 

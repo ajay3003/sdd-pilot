@@ -46,8 +46,8 @@ public class CompareSpecsPageTests : BunitContext
 
         cut.Find("[data-testid='old-spec-textarea']").Should().NotBeNull();
         cut.Find("[data-testid='new-spec-textarea']").Should().NotBeNull();
-        cut.Markup.Should().Contain("Old Spec");
-        cut.Markup.Should().Contain("New Spec");
+        cut.Markup.Should().Contain("Baseline Specification");
+        cut.Markup.Should().Contain("Updated Specification");
     }
 
     [Fact]
@@ -71,7 +71,7 @@ public class CompareSpecsPageTests : BunitContext
             timeout: TimeSpan.FromSeconds(1));
 
         var dashboard = cut.Find("[data-testid='delta-dashboard']").TextContent;
-        dashboard.Should().Contain("Modified requirements");
+        dashboard.Should().Contain("Changed");
         dashboard.Should().Contain("1");
     }
 

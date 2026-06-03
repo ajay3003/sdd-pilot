@@ -610,7 +610,7 @@ Default filtering behavior should prioritize TEST artifacts because testers prim
 
 Manual creation workflows are restricted to TEST scenarios only.
 
-The “New Test Scenario” workflow is intended for:
+The “Create Test Scenario” workflow is intended for:
 - exploratory testing
 - regression scenarios
 - bug reproduction flows

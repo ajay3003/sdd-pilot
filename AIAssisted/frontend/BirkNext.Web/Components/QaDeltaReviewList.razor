@@ -7,76 +7,113 @@
 @if (Reviews.Count == 0)
 {
     <div class="review-list-empty" data-testid="review-list-empty">
-        <p>No delta reviews saved yet.</p>
+        <div>
+            <p class="section-kicker">Delta Review History</p>
+            <h3>No Delta Reviews Yet</h3>
+            <p>Create your first comparison to begin tracking specification change history.</p>
+        </div>
+        <ol>
+            <li>Open Compare Specs</li>
+            <li>Compare baseline and updated specifications</li>
+            <li>Review detected changes</li>
+            <li>Save Delta Review</li>
+            <li>Track impact here</li>
+        </ol>
+        <div class="empty-review-actions">
+            <a class="btn-primary" href="compare">Compare Specifications</a>
+            <a class="btn-secondary" href="compare">Learn About Delta Reviews</a>
+        </div>
+        <p class="empty-review-note">Delta Reviews are generated from Compare Specs and help QA teams track specification evolution over time.</p>
     </div>
 }
 else
 {
-    <div class="review-list">
-        @foreach (var review in Reviews)
+    <div class="review-timeline" aria-label="Saved delta review timeline">
+        @foreach (var review in Reviews.OrderByDescending(r => r.CreatedAt))
         {
             var summary = TryParseSummary(review.SummaryJson);
-            <div class="review-card" data-testid="review-card">
-                <div class="review-card-header">
-                    <div class="review-card-meta">
-                        <span class="review-card-title">@review.Title</span>
-                        <span class="review-card-date">@review.CreatedAt.LocalDateTime.ToString("MMM d, yyyy")</span>
+            var status = GetRiskStatus(summary);
+            <article class="review-card status-@status.Tone" data-testid="review-card">
+                <div class="timeline-marker" aria-hidden="true"></div>
+                <div class="review-card-main">
+                    <div class="review-card-header">
+                        <div>
+                            <p class="section-kicker">@review.AnalysisProfile</p>
+                            <h3>@review.Title</h3>
+                            <span class="review-card-date">@review.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd")</span>
+                        </div>
+                        <span class="risk-badge risk-@status.Tone">@status.Label</span>
                     </div>
-                    <div class="review-card-profile">@review.AnalysisProfile</div>
-                </div>
 
-                @if (review.OldSpecFileName is not null || review.NewSpecFileName is not null)
-                {
-                    <div class="review-card-files">
-                        @if (review.OldSpecFileName is not null)
-                        {
-                            <span class="review-file-label">Old: @review.OldSpecFileName</span>
-                        }
-                        @if (review.NewSpecFileName is not null)
-                        {
-                            <span class="review-file-label">New: @review.NewSpecFileName</span>
-                        }
+                    <div class="review-preview-grid">
+                        <section>
+                            <h4>Compared Versions</h4>
+                            <p>@VersionLabel(review.OldSpecFileName, "Baseline") -> @VersionLabel(review.NewSpecFileName, "Updated")</p>
+                        </section>
+                        <section>
+                            <h4>Summary</h4>
+                            @if (summary is not null)
+                            {
+                                <p><strong>+@summary.AddedRequirements</strong> Requirements <strong>~@summary.ModifiedRequirements</strong> Modified <strong>-@summary.RemovedRequirements</strong> Removed</p>
+                            }
+                            else
+                            {
+                                <p>Summary unavailable</p>
+                            }
+                        </section>
+                        <section>
+                            <h4>QA Impact</h4>
+                            <p>@status.Detail</p>
+                        </section>
+                        <section>
+                            <h4>Coverage Impact</h4>
+                            <p>@CoverageImpact(summary) item@(Plural(CoverageImpact(summary)))</p>
+                        </section>
+                        <section>
+                            <h4>Traceability Impact</h4>
+                            <p>0 links affected</p>
+                        </section>
                     </div>
-                }
 
-                @if (summary is not null)
-                {
-                    <div class="review-card-metrics">
-                        <span class="review-metric review-metric-added">+@summary.AddedRequirements req</span>
-                        <span class="review-metric review-metric-modified">~@summary.ModifiedRequirements req</span>
-                        <span class="review-metric review-metric-removed">-@summary.RemovedRequirements req</span>
-                        <span class="review-metric">@summary.PotentiallyImpactedTests tests</span>
-                    </div>
-                }
-
-                <div class="review-card-actions">
-                    <a class="btn-secondary btn-sm" href="compare/reviews/@review.Id" data-testid="review-open-btn-@review.Id">Open</a>
-
-                    @if (_confirmingDeleteId == review.Id)
+                    @if (summary is not null)
                     {
-                        <div class="delete-confirm" role="alert" data-testid="delete-confirm-@review.Id">
-                            <span>Delete this review?</span>
-                            <button type="button" class="btn-danger btn-sm" @onclick="() => ConfirmDeleteAsync(review.Id)" data-testid="delete-confirm-btn">Confirm</button>
-                            <button type="button" class="btn-sm" @onclick="CancelDelete">Cancel</button>
+                        <div class="review-card-metrics" aria-label="Review change metrics">
+                            <span class="review-metric review-metric-added">+@summary.AddedRequirements Requirements</span>
+                            <span class="review-metric review-metric-modified">~@summary.ModifiedRequirements Modified</span>
+                            <span class="review-metric review-metric-removed">-@summary.RemovedRequirements Removed</span>
+                            <span class="review-metric review-metric-coverage">@CoverageImpact(summary) Coverage Impact</span>
                         </div>
                     }
-                    else if (DeletingId == review.Id)
-                    {
-                        <span class="review-deleting">Deleting…</span>
-                    }
-                    else
-                    {
-                        <button type="button" class="btn-danger btn-sm"
-                                @onclick="() => RequestDelete(review.Id)"
-                                data-testid="delete-btn-@review.Id">Delete</button>
-                    }
 
-                    @if (DeleteErrors is not null && DeleteErrors.TryGetValue(review.Id, out var deleteError))
-                    {
-                        <span class="review-delete-error" data-testid="delete-error-@review.Id">@deleteError</span>
-                    }
+                    <div class="review-card-actions">
+                        <a class="btn-primary btn-sm" href="compare/reviews/@review.Id" data-testid="review-open-btn-@review.Id">View Details</a>
+
+                        @if (_confirmingDeleteId == review.Id)
+                        {
+                            <div class="delete-confirm" role="alert" data-testid="delete-confirm-@review.Id">
+                                <span>Delete this review?</span>
+                                <button type="button" class="btn-danger btn-sm" @onclick="() => ConfirmDeleteAsync(review.Id)" data-testid="delete-confirm-btn">Confirm</button>
+                                <button type="button" class="btn-secondary btn-sm" @onclick="CancelDelete">Cancel</button>
+                            </div>
+                        }
+                        else if (DeletingId == review.Id)
+                        {
+                            <span class="review-deleting">Deleting...</span>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn-danger btn-sm"
+                                    @onclick="() => RequestDelete(review.Id)"
+                                    data-testid="delete-btn-@review.Id">Delete</button>
+                        }
+
+                        @if (DeleteErrors is not null && DeleteErrors.TryGetValue(review.Id, out var deleteError))
+                        {
+                            <span class="review-delete-error" data-testid="delete-error-@review.Id">@deleteError</span>
+                        }
+                    </div>
                 </div>
-            </div>
+            </article>
         }
     </div>
 }
@@ -101,6 +138,34 @@ else
         catch { return null; }
     }
 
+    private static ReviewRiskStatus GetRiskStatus(DeltaSummaryDto? summary)
+    {
+        if (summary is null)
+        {
+            return new("Attention", "attention", "Summary data could not be parsed.");
+        }
+
+        if (summary.RemovedRequirements > 0 && summary.PotentiallyImpactedTests == 0)
+        {
+            return new("At Risk", "risk", "Requirements removed without traceability updates.");
+        }
+
+        if (summary.PotentiallyImpactedTests > 0 || summary.UncoveredRequirements > 0 || summary.NewClarificationRisks > 0)
+        {
+            return new("Attention", "attention", "Coverage impact detected.");
+        }
+
+        return new("Ready", "ready", "No uncovered requirements introduced.");
+    }
+
+    private static int CoverageImpact(DeltaSummaryDto? summary) =>
+        summary is null ? 0 : summary.PotentiallyImpactedTests + summary.UncoveredRequirements;
+
+    private static string VersionLabel(string? fileName, string fallback) =>
+        string.IsNullOrWhiteSpace(fileName) ? fallback : fileName;
+
+    private static string Plural(int count) => count == 1 ? string.Empty : "s";
+
     private void RequestDelete(string id)
     {
         _confirmingDeleteId = id;
@@ -116,4 +181,6 @@ else
         _confirmingDeleteId = null;
         await OnDeleteRequested.InvokeAsync(id);
     }
+
+    private sealed record ReviewRiskStatus(string Label, string Tone, string Detail);
 }

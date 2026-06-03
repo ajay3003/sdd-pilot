@@ -52,6 +52,21 @@ public class ScenarioFormTests : BunitContext
     }
 
     [Fact]
+    public void ScenarioForm_Renders_ClassificationPriorityAndExpectedResultDefaults()
+    {
+        Services.AddSingleton(new Mock<IBirkNextClient>().Object);
+
+        var cut = Render<ScenarioForm>();
+
+        cut.Find("select[id='scenario-type']").GetAttribute("value").Should().Be("Functional");
+        cut.Find("select[id='priority']").GetAttribute("value").Should().Be("Medium");
+        cut.Find("textarea[id='expected-result']").Should().NotBeNull();
+        cut.Markup.Should().Contain("Traceability Impact");
+        cut.Markup.Should().Contain("QA Scenario Quality Tips");
+        cut.Find("button[type='submit']").TextContent.Should().Contain("Save Scenario");
+    }
+
+    [Fact]
     public async Task ScenarioForm_SubmitButton_DisabledWhileMutationInFlight()
     {
         var tcs = new TaskCompletionSource<IOperationResult<ICreateScenarioResult>>();

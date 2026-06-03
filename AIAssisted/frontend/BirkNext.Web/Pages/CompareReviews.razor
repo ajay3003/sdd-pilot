@@ -1,32 +1,103 @@
 @page "/compare/reviews"
+@using System.Text.Json
+@using System.Text.Json.Serialization
 @using BirkNext.Web.Components
 @using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
 @inject IBirkNextClient Client
 
 <PageTitle>Delta Reviews</PageTitle>
 
-<h1>Delta Reviews</h1>
-<p class="page-lead">Saved specification comparison results.</p>
-
-<section class="compare-reviews-section">
-    @if (_isLoading)
-    {
-        <p class="loading-state">Loading reviews…</p>
-    }
-    else if (_loadError is not null)
-    {
-        <div class="notification notification-error" role="alert" data-testid="reviews-load-error">
-            @_loadError
+<div class="delta-reviews-shell">
+    <section class="delta-reviews-hero" aria-label="Delta review history overview">
+        <div>
+            <p class="section-kicker">Change Impact History</p>
+            <h1>Delta Review History</h1>
+            <p class="page-lead">Review saved specification comparisons and track QA impact across versions.</p>
+            <p class="hero-description">Delta reviews capture the difference between specification versions and help QA teams understand change impact before releases.</p>
         </div>
-    }
-    else
-    {
-        <QaDeltaReviewList Reviews="_reviews"
-                           OnDeleteRequested="HandleDeleteAsync"
-                           DeletingId="_deletingId"
-                           DeleteErrors="_deleteErrors" />
-    }
-</section>
+        <div class="delta-hero-benefits" aria-label="Delta review benefits">
+            <span>Track requirement changes</span>
+            <span>Detect coverage impact</span>
+            <span>Identify traceability gaps</span>
+            <span>Monitor release risk</span>
+            <span>Maintain specification history</span>
+        </div>
+    </section>
+
+    <section class="delta-kpi-grid" aria-label="Delta review executive summary">
+        <div class="delta-kpi-card">
+            <strong>@_reviews.Count</strong>
+            <span>Saved Delta Reviews</span>
+        </div>
+        <div class="delta-kpi-card kpi-added">
+            <strong>@AddedRequirements</strong>
+            <span>Added Requirements</span>
+        </div>
+        <div class="delta-kpi-card kpi-changed">
+            <strong>@ChangedRequirements</strong>
+            <span>Changed Requirements</span>
+        </div>
+        <div class="delta-kpi-card kpi-removed">
+            <strong>@RemovedRequirements</strong>
+            <span>Removed Requirements</span>
+        </div>
+        <div class="delta-kpi-card kpi-coverage">
+            <strong>@CoverageImpactItems</strong>
+            <span>Coverage Impact Items</span>
+        </div>
+        <div class="delta-kpi-card kpi-traceability">
+            <strong>@TraceabilityImpactItems</strong>
+            <span>Traceability Impact Items</span>
+        </div>
+    </section>
+
+    <section class="impact-overview-panel" aria-label="Impact overview">
+        <div class="impact-overview-header">
+            <div>
+                <p class="section-kicker">Impact Overview</p>
+                <h2>Change Impact Summary</h2>
+            </div>
+            <span>@RiskReviewCount review@(Plural(RiskReviewCount)) needing attention</span>
+        </div>
+        <div class="impact-overview-grid">
+            <div class="impact-item impact-added"><strong>@AddedRequirements</strong><span>Requirements Added</span></div>
+            <div class="impact-item impact-changed"><strong>@ChangedRequirements</strong><span>Requirements Changed</span></div>
+            <div class="impact-item impact-removed"><strong>@RemovedRequirements</strong><span>Requirements Removed</span></div>
+            <div class="impact-item impact-clarification"><strong>@ClarificationsAdded</strong><span>Clarifications Added</span></div>
+            <div class="impact-item impact-coverage"><strong>@CoverageGapsIntroduced</strong><span>Coverage Gaps Introduced</span></div>
+            <div class="impact-item impact-traceability"><strong>@TraceabilityImpactItems</strong><span>Traceability Links Affected</span></div>
+        </div>
+    </section>
+
+    <section class="compare-reviews-section">
+        <div class="reviews-section-header">
+            <div>
+                <p class="section-kicker">Review Timeline</p>
+                <h2>Delta Reviews</h2>
+            </div>
+            <a class="btn-primary" href="compare">Compare Specifications</a>
+        </div>
+        @if (_isLoading)
+        {
+            <p class="loading-state">Loading reviews...</p>
+        }
+        else if (_loadError is not null)
+        {
+            <div class="notification notification-error" role="alert" data-testid="reviews-load-error">
+                @_loadError
+            </div>
+        }
+        else
+        {
+            <QaDeltaReviewList Reviews="_reviews"
+                               OnDeleteRequested="HandleDeleteAsync"
+                               DeletingId="_deletingId"
+                               DeleteErrors="_deleteErrors" />
+        }
+    </section>
+</div>
 
 @code {
     private const string ProjectId = "00000000-0000-0000-0000-000000000001";
@@ -35,6 +106,27 @@
     private string? _loadError;
     private string? _deletingId;
     private Dictionary<string, string> _deleteErrors = [];
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
+
+    private IReadOnlyList<DeltaSummaryDto> Summaries => _reviews
+        .Select(r => TryParseSummary(r.SummaryJson))
+        .Where(s => s is not null)
+        .Cast<DeltaSummaryDto>()
+        .ToList();
+
+    private int AddedRequirements => Summaries.Sum(s => s.AddedRequirements);
+    private int ChangedRequirements => Summaries.Sum(s => s.ModifiedRequirements);
+    private int RemovedRequirements => Summaries.Sum(s => s.RemovedRequirements);
+    private int CoverageImpactItems => Summaries.Sum(s => s.PotentiallyImpactedTests + s.UncoveredRequirements);
+    private int TraceabilityImpactItems => 0;
+    private int ClarificationsAdded => Summaries.Sum(s => s.AddedClarifications + s.NewClarificationRisks);
+    private int CoverageGapsIntroduced => Summaries.Sum(s => s.UncoveredRequirements);
+    private int RiskReviewCount => Summaries.Count(s => s.RemovedRequirements > 0 || s.UncoveredRequirements > 0 || s.PotentiallyImpactedTests > 0);
 
     protected override async Task OnInitializedAsync()
     {
@@ -105,4 +197,12 @@
             _deletingId = null;
         }
     }
+
+    private static DeltaSummaryDto? TryParseSummary(string summaryJson)
+    {
+        try { return JsonSerializer.Deserialize<DeltaSummaryDto>(summaryJson, JsonOptions); }
+        catch { return null; }
+    }
+
+    private static string Plural(int count) => count == 1 ? string.Empty : "s";
 }

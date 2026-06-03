@@ -5,128 +5,403 @@
 
 <PageTitle>QA Artifact Library</PageTitle>
 
-<h1>QA Artifact Library</h1>
-<p class="page-lead">Browse and manage all QA artifacts for this project.</p>
-<section class="scenarios-section">
-    <div class="toolbar">
-        <span class="toolbar-meta">
-            @if (_isLoading)
-            {
-                <span>Loading…</span>
-            }
-            else if (_loadError is not null)
-            {
-                <span>Artifacts unavailable</span>
-            }
-            else if (string.IsNullOrEmpty(_searchQuery) && string.IsNullOrEmpty(_filterKind))
-            {
-                <span>@_scenarios.Count artifact@(_scenarios.Count == 1 ? "" : "s")</span>
-            }
-            else
-            {
-                <span>@FilteredScenarios.Count shown of @_scenarios.Count</span>
-            }
-        </span>
-        <div class="filter-bar">
-            <input
-                type="search"
-                class="filter-search"
-                placeholder="Search artifacts…"
-                value="@_searchQuery"
-                @oninput="e => _searchQuery = e.Value?.ToString() ?? string.Empty"
-                aria-label="Search scenarios" />
-            <select
-                class="filter-kind"
-                value="@_filterKind"
-                @onchange="e => _filterKind = e.Value?.ToString() ?? string.Empty"
-                aria-label="Filter by type">
-                <option value="">All types</option>
-                <option value="Requirement">Requirement</option>
-                <option value="Test">Test</option>
-                <option value="NeedsClarification">Needs Clarification</option>
-            </select>
+<div class="artifact-library-shell">
+    <section class="artifact-hero" aria-label="QA artifact library summary">
+        <div>
+            <p class="section-kicker">QA Knowledge Base</p>
+            <h1>QA Artifact Library</h1>
+            <p class="page-lead">Store, review, and trace requirements, tests, clarifications, and their relationships.</p>
         </div>
-    </div>
+        <div class="artifact-hero-metrics" aria-label="Knowledge base health">
+            <div class="artifact-health-panel qa-status-panel status-@QaStatusTone">
+                <span class="qa-status-label">@QaStatus</span>
+                <span>QA status</span>
+            </div>
+            <div class="artifact-health-panel">
+                <span class="artifact-health-score">@_scenarios.Count</span>
+                <span>Total artifacts</span>
+            </div>
+            <div class="artifact-health-panel">
+                <span class="artifact-health-score">@CoveragePercent%</span>
+                <span>Requirement coverage</span>
+            </div>
+            <div class="artifact-health-panel artifact-health-attention">
+                <span class="artifact-health-score">@AttentionCount</span>
+                <span>Quality risks</span>
+            </div>
+        </div>
+    </section>
 
-    @if (_isLoading)
-    {
-        <p class="loading-state">Loading scenarios…</p>
-    }
-    else if (_loadError is not null)
-    {
-        <div class="scenario-load-error" role="alert" data-testid="scenario-load-error">
-            @_loadError
+    <section class="traceability-health-strip health-@QaStatusTone" aria-label="Traceability health">
+        <div>
+            <p class="section-kicker">Traceability Health</p>
+            <h2>@TraceabilityPercent% Covered</h2>
+            <span>Requirements Covered: @CoveredRequirementCount/@RequirementCount</span>
         </div>
-    }
-    else
-    {
-        var isDragEnabled = _filterKind == "Test" && string.IsNullOrEmpty(_searchQuery);
-        var testItems  = FilteredScenarios.Where(s => s.Kind == "Test").ToList();
-        var reqItems   = FilteredScenarios.Where(s => s.Kind == "Requirement").ToList();
-        var clrItems   = FilteredScenarios.Where(s => s.Kind == "NeedsClarification").ToList();
-        var anyVisible = testItems.Count > 0 || reqItems.Count > 0 || clrItems.Count > 0;
-        @if (!anyVisible)
+        <div class="health-bar" aria-hidden="true">
+            <span style="width: @TraceabilityPercent%"></span>
+        </div>
+    </section>
+
+    <section class="artifact-metrics-grid" aria-label="Artifact summary metrics">
+        <div class="artifact-metric metric-total">
+            <strong>@_scenarios.Count</strong>
+            <span>Total Artifacts</span>
+        </div>
+        <div class="artifact-metric metric-requirements">
+            <strong>@RequirementCount</strong>
+            <span>Requirements</span>
+        </div>
+        <div class="artifact-metric metric-tests">
+            <strong>@TestCount</strong>
+            <span>Tests</span>
+        </div>
+        <div class="artifact-metric metric-clarifications">
+            <strong>@ClarificationCount</strong>
+            <span>Clarifications</span>
+        </div>
+        <div class="artifact-metric metric-traceability">
+            <strong>@TraceabilityPercent%</strong>
+            <span>Traceability</span>
+        </div>
+    </section>
+
+    <section class="traceability-panel" aria-label="Traceability overview">
+        <div>
+            <p class="section-kicker">Relationships</p>
+            <h2>Coverage Map</h2>
+        </div>
+        <div class="traceability-stats">
+            <div>
+                <strong>@CoveredRequirementCount</strong>
+                <span>covered requirements</span>
+            </div>
+            <div>
+                <strong>@RequirementsWithoutTests</strong>
+                <span>requirements without tests</span>
+            </div>
+            <div>
+                <strong>@RelationshipCount</strong>
+                <span>saved relationships</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="release-readiness-card release-@ReleaseReadinessTone" aria-label="Release readiness summary">
+        <div>
+            <p class="section-kicker">Release Readiness</p>
+            <h2>@ReleaseReadiness</h2>
+            <p>@ReleaseReadinessDetail</p>
+        </div>
+        <ul class="release-reason-list" aria-label="Release readiness reasons">
+            @foreach (var reason in ReleaseReasons)
+            {
+                <li>@reason</li>
+            }
+        </ul>
+    </section>
+
+    <section class="recommended-actions-panel" aria-label="Recommended actions">
+        <div class="recommended-actions-header">
+            <div>
+                <p class="section-kicker">Recommended Actions</p>
+                <h2>What should be fixed next?</h2>
+            </div>
+            <span>@RecommendedActions.Count action@(Plural(RecommendedActions.Count))</span>
+        </div>
+        @if (RecommendedActions.Count == 0)
         {
-            <div class="empty-state empty-state-dashed" data-testid="empty-state">
-                <p>No QA artifacts found. <a href="scenarios/new">Create a test scenario</a> or use <a href="/extract">Specification Review</a> to identify and save artifacts from your specification text.</p>
+            <div class="recommended-action-empty">No immediate action required.</div>
+        }
+        else
+        {
+            <ol class="recommended-action-list">
+                @foreach (var action in RecommendedActions)
+                {
+                    <li>
+                        <strong>@action.Title</strong>
+                        <span>@action.Detail</span>
+                    </li>
+                }
+            </ol>
+        }
+    </section>
+
+    <section class="traceability-breakdown-panel" aria-label="Traceability breakdown">
+        <div class="traceability-breakdown-item">
+            <strong>@CoveredRequirementCount / @RequirementCount</strong>
+            <span>Requirements covered</span>
+        </div>
+        <div class="traceability-breakdown-item risk">
+            <strong>@RequirementsWithoutTests</strong>
+            <span>Uncovered requirements</span>
+        </div>
+        <div class="traceability-breakdown-item">
+            <strong>@TestsWithRequirements / @TestCount</strong>
+            <span>Tests mapped</span>
+        </div>
+        <div class="traceability-breakdown-item risk">
+            <strong>@UnmappedTestCount</strong>
+            <span>Unmapped tests</span>
+        </div>
+        <div class="traceability-breakdown-item">
+            <strong>@LinkedClarificationCount / @ClarificationCount</strong>
+            <span>Clarifications linked</span>
+        </div>
+        <div class="traceability-breakdown-item risk">
+            <strong>@UnlinkedClarificationCount</strong>
+            <span>Unlinked clarifications</span>
+        </div>
+    </section>
+
+    <section class="coverage-gap-card @(RequiresCoverageAttention ? "coverage-gap-attention" : "coverage-gap-clear")" aria-label="Traceability gaps summary">
+        <div class="coverage-gap-main">
+            <p class="section-kicker">Traceability Gaps</p>
+            <h2>@TraceabilityGapHeadline</h2>
+            <p>@CoverageGapDetail</p>
+        </div>
+        <div class="coverage-gap-metrics">
+            <div>
+                <strong>@RequirementsWithoutTests</strong>
+                <span>uncovered requirements</span>
+            </div>
+            <div>
+                <strong>@UnmappedTestCount</strong>
+                <span>unmapped tests</span>
+            </div>
+            <div>
+                <strong>@UnlinkedClarificationCount</strong>
+                <span>unlinked clarifications</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="requirement-map-panel" aria-label="Requirement to test mapping">
+        <div class="requirement-map-header">
+            <div>
+                <p class="section-kicker">Requirement to Test Map</p>
+                <h2>Requirement -> Test Coverage</h2>
+            </div>
+            <span>@CoveredRequirementCount of @RequirementCount covered</span>
+        </div>
+        @if (RequirementItems.Count == 0)
+        {
+            <div class="mapping-empty">No requirements saved yet.</div>
+        }
+        else
+        {
+            <div class="mapping-list">
+                @foreach (var requirement in RequirementItems)
+                {
+                    var linkedTests = GetLinkedArtifacts(requirement.Id, "Test");
+                    <div class="mapping-row @(linkedTests.Count > 0 ? "mapping-covered" : "mapping-uncovered")">
+                        <div class="mapping-requirement">
+                            <strong>@requirement.Title</strong>
+                            @if (linkedTests.Count == 0)
+                            {
+                                <span>No linked tests</span>
+                                <p>Create or link at least one test scenario.</p>
+                            }
+                            else
+                            {
+                                <span>@linkedTests.Count linked test@Plural(linkedTests.Count)</span>
+                            }
+                        </div>
+                        <div class="mapping-tests">
+                            @if (linkedTests.Count == 0)
+                            {
+                                <span class="mapping-test-empty">No tests mapped</span>
+                            }
+                            else
+                            {
+                                @foreach (var test in linkedTests)
+                                {
+                                    <span class="mapping-test-pill">@test.Title</span>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="scenarios-section">
+        <div class="toolbar knowledge-toolbar">
+            <span class="toolbar-meta">
+                @if (_isLoading)
+                {
+                    <span>Loading...</span>
+                }
+                else if (_loadError is not null)
+                {
+                    <span>Artifacts unavailable</span>
+                }
+                else
+                {
+                    <span>@FilteredScenarios.Count shown of @_scenarios.Count</span>
+                }
+            </span>
+            <div class="filter-bar">
+                <input
+                    type="search"
+                    class="filter-search"
+                    placeholder="Search artifacts..."
+                    value="@_searchQuery"
+                    @oninput="e => _searchQuery = e.Value?.ToString() ?? string.Empty"
+                    aria-label="Search scenarios" />
+                <select
+                    class="filter-kind"
+                    value="@_filterKind"
+                    @onchange="e => _filterKind = e.Value?.ToString() ?? string.Empty"
+                    aria-label="Filter by type">
+                    <option value="">All types</option>
+                    <option value="Requirement">Requirement</option>
+                    <option value="Test">Test</option>
+                    <option value="NeedsClarification">Needs Clarification</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="filter-chip-grid" aria-label="Artifact filters">
+            <button type="button" class="library-filter-chip @(IsTypeFilter("") && IsRelationshipFilter("") ? "is-active" : "")" @onclick='ClearAllFilters'>
+                All <span>@_scenarios.Count</span>
+            </button>
+            <button type="button" class="library-filter-chip chip-requirement @(IsTypeFilter("Requirement") ? "is-active" : "")" @onclick='() => SetTypeFilter("Requirement")'>
+                Requirements <span>@RequirementCount</span>
+            </button>
+            <button type="button" class="library-filter-chip chip-test @(IsTypeFilter("Test") ? "is-active" : "")" @onclick='() => SetTypeFilter("Test")'>
+                Tests <span>@TestCount</span>
+            </button>
+            <button type="button" class="library-filter-chip chip-clarification @(IsTypeFilter("NeedsClarification") ? "is-active" : "")" @onclick='() => SetTypeFilter("NeedsClarification")'>
+                Clarifications <span>@ClarificationCount</span>
+            </button>
+            <button type="button" class="library-filter-chip @(IsRelationshipFilter("linked") ? "is-active" : "")" @onclick='() => SetRelationshipFilter("linked")'>
+                Linked <span>@LinkedArtifactCount</span>
+            </button>
+            <button type="button" class="library-filter-chip @(IsRelationshipFilter("gaps") ? "is-active" : "")" @onclick='() => SetRelationshipFilter("gaps")'>
+                Coverage Gaps <span>@AttentionCount</span>
+            </button>
+        </div>
+
+        @if (_linksUnavailable)
+        {
+            <p class="relationship-load-note" role="status">Traceability links are unavailable right now; artifact counts are still current.</p>
+        }
+
+        @if (_isLoading)
+        {
+            <p class="loading-state">Loading scenarios...</p>
+        }
+        else if (_loadError is not null)
+        {
+            <div class="scenario-load-error" role="alert" data-testid="scenario-load-error">
+                @_loadError
             </div>
         }
         else
         {
-            @if (testItems.Count > 0)
+            var isDragEnabled = _filterKind == "Test" && string.IsNullOrEmpty(_searchQuery) && string.IsNullOrEmpty(_relationshipFilter);
+            var testItems = FilteredScenarios.Where(s => s.Kind == "Test").ToList();
+            var reqItems = FilteredScenarios.Where(s => s.Kind == "Requirement").ToList();
+            var clrItems = FilteredScenarios.Where(s => s.Kind == "NeedsClarification").ToList();
+            var anyVisible = testItems.Count > 0 || reqItems.Count > 0 || clrItems.Count > 0;
+            @if (!anyVisible)
             {
-                <section class="artifact-group" data-testid="group-tests">
-                    <h2 class="artifact-group-header">Tests</h2>
-                    @if (isDragEnabled)
+                <div class="empty-state empty-state-dashed" data-testid="empty-state">
+                    @if (_scenarios.Count == 0)
                     {
-                        <p class="drag-hint" data-testid="drag-hint">Drag tests to define execution order.</p>
+                        <h3>Why create scenarios?</h3>
+                        <p>Scenarios improve:</p>
+                        <ol>
+                            <li>Requirement coverage</li>
+                            <li>Traceability</li>
+                            <li>QA Health Score</li>
+                            <li>Release readiness</li>
+                        </ol>
+                        <div class="empty-state-actions">
+                            <a href="/extract">Analyze Specification</a>
+                            <a href="scenarios/new">Create Test Scenario</a>
+                        </div>
                     }
-                    <ScenarioList
-                        Scenarios="testItems"
-                        OnDeleteRequested="HandleDeleteAsync"
-                        DeletingId="_deletingId"
-                        DeleteErrors="_deleteErrors"
-                        IsDraggable="@isDragEnabled"
-                        OnReordered="HandleReorderAsync" />
-                </section>
+                    else
+                    {
+                        <p>No QA artifacts match the current filters.</p>
+                    }
+                </div>
             }
-            @if (_reorderError is not null)
+            else
             {
-                <div class="reorder-error" role="alert" data-testid="reorder-error">@_reorderError</div>
-            }
-            @if (reqItems.Count > 0)
-            {
-                <section class="artifact-group" data-testid="group-requirements">
-                    <h2 class="artifact-group-header">Requirements</h2>
-                    <ScenarioList
-                        Scenarios="reqItems"
-                        OnDeleteRequested="HandleDeleteAsync"
-                        DeletingId="_deletingId"
-                        DeleteErrors="_deleteErrors" />
-                </section>
-            }
-            @if (clrItems.Count > 0)
-            {
-                <section class="artifact-group" data-testid="group-clarifications">
-                    <h2 class="artifact-group-header">Needs Clarification</h2>
-                    <ScenarioList
-                        Scenarios="clrItems"
-                        OnDeleteRequested="HandleDeleteAsync"
-                        DeletingId="_deletingId"
-                        DeleteErrors="_deleteErrors" />
-                </section>
+                @if (reqItems.Count > 0)
+                {
+                    <section class="artifact-group" data-testid="group-requirements">
+                        <div class="artifact-group-heading">
+                            <h2 class="artifact-group-header">Requirements</h2>
+                            <span>@CoveredRequirementCount of @RequirementCount covered</span>
+                        </div>
+                        <ScenarioList
+                            Scenarios="reqItems"
+                            OnDeleteRequested="HandleDeleteAsync"
+                            DeletingId="_deletingId"
+                            DeleteErrors="_deleteErrors"
+                            RelationshipSummaries="RelationshipSummaries" />
+                    </section>
+                }
+                @if (testItems.Count > 0)
+                {
+                    <section class="artifact-group" data-testid="group-tests">
+                        <div class="artifact-group-heading">
+                            <h2 class="artifact-group-header">Tests</h2>
+                            <span>@TestsWithRequirements of @TestCount traced</span>
+                        </div>
+                        @if (isDragEnabled)
+                        {
+                            <p class="drag-hint" data-testid="drag-hint">Drag tests to define execution order.</p>
+                        }
+                        <ScenarioList
+                            Scenarios="testItems"
+                            OnDeleteRequested="HandleDeleteAsync"
+                            DeletingId="_deletingId"
+                            DeleteErrors="_deleteErrors"
+                            IsDraggable="@isDragEnabled"
+                            OnReordered="HandleReorderAsync"
+                            RelationshipSummaries="RelationshipSummaries" />
+                    </section>
+                }
+                @if (_reorderError is not null)
+                {
+                    <div class="reorder-error" role="alert" data-testid="reorder-error">@_reorderError</div>
+                }
+                @if (clrItems.Count > 0)
+                {
+                    <section class="artifact-group" data-testid="group-clarifications">
+                        <div class="artifact-group-heading">
+                            <h2 class="artifact-group-header">Needs Clarification</h2>
+                            <span>@clrItems.Count open question@Plural(clrItems.Count)</span>
+                        </div>
+                        <ScenarioList
+                            Scenarios="clrItems"
+                            OnDeleteRequested="HandleDeleteAsync"
+                            DeletingId="_deletingId"
+                            DeleteErrors="_deleteErrors"
+                            RelationshipSummaries="RelationshipSummaries" />
+                    </section>
+                }
             }
         }
-    }
-</section>
+    </section>
+</div>
 
 @code {
     private const string ProjectId = "00000000-0000-0000-0000-000000000001";
     private IReadOnlyList<ScenarioListItem> _scenarios = [];
+    private IReadOnlyList<ArtifactLink> _links = [];
     private bool _isLoading;
     private string _searchQuery = string.Empty;
-    private string _filterKind = "Test";
+    private string _filterKind = string.Empty;
+    private string _relationshipFilter = string.Empty;
     private string? _loadError;
+    private bool _linksUnavailable;
     private string? _deletingId;
     private Dictionary<string, string> _deleteErrors = [];
     private string? _reorderError;
@@ -135,10 +410,117 @@
         _scenarios
             .Where(s =>
                 (string.IsNullOrEmpty(_filterKind) || s.Kind == _filterKind) &&
+                MatchesRelationshipFilter(s) &&
                 (string.IsNullOrEmpty(_searchQuery) ||
                  s.Title.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
                  (s.Description?.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ?? false)))
             .ToList();
+
+    private int RequirementCount => CountKind("Requirement");
+    private int TestCount => CountKind("Test");
+    private int ClarificationCount => CountKind("NeedsClarification");
+    private int RelationshipCount => _links.Count;
+    private IReadOnlyList<ScenarioListItem> RequirementItems => _scenarios.Where(s => s.Kind == "Requirement").ToList();
+    private int CoveredRequirementCount => _scenarios.Count(s => s.Kind == "Requirement" && GetRelationshipSummary(s.Id).LinkedTests > 0);
+    private int RequirementsWithoutTests => Math.Max(0, RequirementCount - CoveredRequirementCount);
+    private int TestsWithRequirements => _scenarios.Count(s => s.Kind == "Test" && GetRelationshipSummary(s.Id).LinkedRequirements > 0);
+    private int UnmappedTestCount => Math.Max(0, TestCount - TestsWithRequirements);
+    private int LinkedClarificationCount => _scenarios.Count(s => s.Kind == "NeedsClarification" && GetRelationshipSummary(s.Id).HasTraceability);
+    private int UnlinkedClarificationCount => _scenarios.Count(s => s.Kind == "NeedsClarification" && !GetRelationshipSummary(s.Id).HasTraceability);
+    private int AttentionCount => _scenarios.Count(s => GetRelationshipSummary(s.Id).RequiresAttention);
+    private int LinkedArtifactCount => _scenarios.Count(s => GetRelationshipSummary(s.Id).HasTraceability);
+    private bool RequiresCoverageAttention => RequirementsWithoutTests > 0 || UnmappedTestCount > 0 || UnlinkedClarificationCount > 0;
+    private int CoveragePercent => Percent(CoveredRequirementCount, RequirementCount);
+    private int TraceabilityPercent => Percent(_scenarios.Count(s => GetRelationshipSummary(s.Id).HasTraceability), _scenarios.Count);
+    private string QaStatus => _scenarios.Count == 0
+        ? "No Data"
+        : TraceabilityPercent == 0 || RequirementsWithoutTests > 0
+            ? "At Risk"
+            : AttentionCount > 0
+                ? "Attention"
+                : "Healthy";
+    private string QaStatusTone => QaStatus switch
+    {
+        "Healthy" => "healthy",
+        "Attention" => "attention",
+        "At Risk" => "risk",
+        _ => "empty",
+    };
+    private string ReleaseReadiness => _scenarios.Count == 0
+        ? "Not Ready"
+        : QaStatus == "Healthy"
+            ? "Ready"
+            : QaStatus == "Attention"
+                ? "Needs Review"
+                : "Not Ready";
+    private string ReleaseReadinessTone => ReleaseReadiness switch
+    {
+        "Ready" => "ready",
+        "Needs Review" => "review",
+        _ => "not-ready",
+    };
+    private string ReleaseReadinessDetail => ReleaseReadiness switch
+    {
+        "Ready" => "Traceability is connected and no quality risks are currently visible.",
+        "Needs Review" => "Some traceability items need review before release confidence is clear.",
+        _ => "Traceability gaps must be resolved before this library is release-ready.",
+    };
+    private IReadOnlyList<string> ReleaseReasons
+    {
+        get
+        {
+            var reasons = new List<string>();
+            if (RequirementsWithoutTests > 0) reasons.Add($"{RequirementsWithoutTests} uncovered requirement{Plural(RequirementsWithoutTests)}");
+            if (UnmappedTestCount > 0) reasons.Add($"{UnmappedTestCount} unmapped test{Plural(UnmappedTestCount)}");
+            if (UnlinkedClarificationCount > 0) reasons.Add($"{UnlinkedClarificationCount} unlinked clarification{Plural(UnlinkedClarificationCount)}");
+            if (_scenarios.Count > 0 && TraceabilityPercent == 0) reasons.Add("0% traceability");
+            if (_scenarios.Count == 0) reasons.Add("No saved artifacts");
+            if (reasons.Count == 0) reasons.Add("No release blockers visible");
+            return reasons;
+        }
+    }
+    private IReadOnlyList<RecommendedAction> RecommendedActions
+    {
+        get
+        {
+            var actions = new List<RecommendedAction>();
+
+            foreach (var requirement in RequirementItems.Where(r => GetRelationshipSummary(r.Id).LinkedTests == 0).Take(3))
+            {
+                actions.Add(new RecommendedAction($"Create test coverage for {ShortTitle(requirement.Title)}", "Create or link at least one test scenario."));
+            }
+
+            foreach (var test in _scenarios.Where(s => s.Kind == "Test" && GetRelationshipSummary(s.Id).LinkedRequirements == 0).Take(3))
+            {
+                actions.Add(new RecommendedAction($"Link test to requirement: {ShortTitle(test.Title)}", "Create a traceability relationship to the requirement it validates."));
+            }
+
+            var openClarifications = _scenarios.Count(s => s.Kind == "NeedsClarification" && !GetRelationshipSummary(s.Id).HasTraceability);
+            if (openClarifications > 0)
+            {
+                actions.Add(new RecommendedAction($"Resolve {openClarifications} open clarification{Plural(openClarifications)}", "Link clarifications to the requirement or test they affect."));
+            }
+
+            if (_scenarios.Count > 0 && RelationshipCount == 0)
+            {
+                actions.Add(new RecommendedAction("Create traceability relationships", "Connect saved requirements and tests so release readiness can be assessed."));
+            }
+
+            return actions.Take(5).ToList();
+        }
+    }
+    private string TraceabilityGapHeadline => RequiresCoverageAttention
+        ? "Traceability needs attention"
+        : "Coverage is clear";
+    private string CoverageGapDetail => RequirementsWithoutTests > 0
+        ? $"{RequirementsWithoutTests} requirement{Plural(RequirementsWithoutTests)} need test coverage before the library is traceability-ready."
+        : UnmappedTestCount > 0
+            ? $"{UnmappedTestCount} test{Plural(UnmappedTestCount)} are not mapped to requirements yet."
+            : UnlinkedClarificationCount > 0
+                ? $"{UnlinkedClarificationCount} clarification{Plural(UnlinkedClarificationCount)} are not connected to source artifacts."
+                : "Requirements, tests, and clarification relationships are connected.";
+    private IReadOnlyDictionary<string, ArtifactRelationshipSummary> RelationshipSummaries =>
+        _scenarios.ToDictionary(s => s.Id, s => GetRelationshipSummary(s.Id), StringComparer.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {
@@ -177,7 +559,42 @@
         }
         finally
         {
+            if (_loadError is null)
+            {
+                await LoadLinksAsync();
+            }
+
             _isLoading = false;
+        }
+    }
+
+    private async Task LoadLinksAsync()
+    {
+        _linksUnavailable = false;
+
+        if (Client.GetCandidateLinks is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var linksResult = await Client.GetCandidateLinks.ExecuteAsync(ProjectId, null);
+            if (linksResult.Errors is { Count: > 0 })
+            {
+                _linksUnavailable = true;
+                _links = [];
+                return;
+            }
+
+            _links = linksResult.Data?.CandidateLinks
+                .Select(l => new ArtifactLink(l.SourceCandidateRef, l.TargetCandidateRef, l.LinkType))
+                .ToList() ?? [];
+        }
+        catch
+        {
+            _linksUnavailable = true;
+            _links = [];
         }
     }
 
@@ -194,6 +611,7 @@
             if (result.Data?.DeleteScenario is { Success: true })
             {
                 _scenarios = _scenarios.Where(s => s.Id != id).ToList();
+                _links = _links.Where(l => l.SourceId != id && l.TargetId != id).ToList();
             }
             else
             {
@@ -216,7 +634,6 @@
     {
         _reorderError = null;
 
-        // Optimistic update
         var nonTest = _scenarios.Where(s => s.Kind != "Test").ToList();
         _scenarios = reorderedTests
             .Select((s, i) => s with { DisplayOrder = i })
@@ -244,4 +661,122 @@
             _reorderError = "Couldn't save the new order. Please try again.";
         }
     }
+
+    private int CountKind(string kind) => _scenarios.Count(s => s.Kind == kind);
+
+    private bool IsTypeFilter(string kind) => _filterKind == kind;
+    private bool IsRelationshipFilter(string filter) => _relationshipFilter == filter;
+    private void SetTypeFilter(string kind) => _filterKind = kind;
+    private void SetRelationshipFilter(string filter) => _relationshipFilter = filter;
+    private void ClearAllFilters()
+    {
+        _filterKind = string.Empty;
+        _relationshipFilter = string.Empty;
+    }
+
+    private bool MatchesRelationshipFilter(ScenarioListItem scenario)
+    {
+        if (string.IsNullOrEmpty(_relationshipFilter))
+        {
+            return true;
+        }
+
+        var summary = GetRelationshipSummary(scenario.Id);
+        return _relationshipFilter switch
+        {
+            "linked" => summary.HasTraceability,
+            "gaps" => scenario.Kind switch
+            {
+                "Requirement" => summary.LinkedTests == 0,
+                "Test" => summary.LinkedRequirements == 0,
+                "NeedsClarification" => !summary.HasTraceability,
+                _ => !summary.HasTraceability,
+            },
+            _ => true,
+        };
+    }
+
+    private ArtifactRelationshipSummary GetRelationshipSummary(string scenarioId)
+    {
+        var linkedIds = _links
+            .Where(l => l.SourceId == scenarioId || l.TargetId == scenarioId)
+            .Select(l => l.SourceId == scenarioId ? l.TargetId : l.SourceId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var linkedRequirements = linkedIds.Count(id => KindOf(id) == "Requirement");
+        var linkedTests = linkedIds.Count(id => KindOf(id) == "Test");
+        var linkedClarifications = linkedIds.Count(id => KindOf(id) == "NeedsClarification");
+        var scenarioKind = KindOf(scenarioId);
+        var hasTraceability = linkedIds.Count > 0;
+
+        var label = scenarioKind switch
+        {
+            "Requirement" => linkedTests > 0 ? "Covered" : "Not Covered",
+            "Test" => linkedRequirements > 0 ? "Linked" : "Unmapped",
+            "NeedsClarification" => hasTraceability ? "Linked" : "Unmapped",
+            _ => hasTraceability ? "Linked" : "Unmapped",
+        };
+
+        var stateTone = scenarioKind switch
+        {
+            "Requirement" => linkedTests > 0 ? "covered" : "uncovered",
+            "Test" => linkedRequirements > 0 ? "linked" : "unmapped",
+            "NeedsClarification" => hasTraceability ? "linked" : "unmapped",
+            _ => hasTraceability ? "linked" : "unmapped",
+        };
+
+        var stateLabel = scenarioKind switch
+        {
+            "Requirement" => linkedTests > 0 ? "Covered" : "Not Covered",
+            "Test" => linkedRequirements > 0 ? "Linked" : "Unmapped",
+            "NeedsClarification" => hasTraceability ? "Linked" : "Unmapped",
+            _ => hasTraceability ? "Linked" : "Unmapped",
+        };
+
+        var requiresAttention = stateTone is "uncovered" or "unmapped";
+        var recommendedAction = scenarioKind switch
+        {
+            "Requirement" when linkedTests == 0 => "Create or link a test.",
+            "Test" when linkedRequirements == 0 => "Link this test to a requirement.",
+            "NeedsClarification" when !hasTraceability => "Link clarification to a requirement or test.",
+            _ => null,
+        };
+
+        return new ArtifactRelationshipSummary(
+            linkedRequirements,
+            linkedTests,
+            linkedClarifications,
+            hasTraceability,
+            label,
+            stateLabel,
+            stateTone,
+            requiresAttention,
+            recommendedAction);
+    }
+
+    private IReadOnlyList<ScenarioListItem> GetLinkedArtifacts(string scenarioId, string kind)
+    {
+        var linkedIds = _links
+            .Where(l => l.SourceId == scenarioId || l.TargetId == scenarioId)
+            .Select(l => l.SourceId == scenarioId ? l.TargetId : l.SourceId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return _scenarios
+            .Where(s => s.Kind == kind && linkedIds.Contains(s.Id))
+            .ToList();
+    }
+
+    private string? KindOf(string scenarioId) =>
+        _scenarios.FirstOrDefault(s => string.Equals(s.Id, scenarioId, StringComparison.OrdinalIgnoreCase))?.Kind;
+
+    private static int Percent(int numerator, int denominator) =>
+        denominator == 0 ? 0 : (int)Math.Round(numerator * 100.0 / denominator);
+
+    private static string Plural(int count) => count == 1 ? string.Empty : "s";
+    private static string ShortTitle(string title) => title.Length <= 52 ? title : $"{title[..49]}...";
+
+    private sealed record ArtifactLink(string SourceId, string TargetId, CandidateLinkType LinkType);
+    private sealed record RecommendedAction(string Title, string Detail);
 }

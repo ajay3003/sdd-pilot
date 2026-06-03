@@ -2,37 +2,48 @@
 @using BirkNext.Web.GraphQL
 
 <section class="compare-section compare-section-summary" data-testid="delta-summary-section">
-    <h2 class="compare-section-title">Delta Summary</h2>
+    <div class="delta-results-heading">
+        <div>
+            <p class="section-kicker">Analysis Results</p>
+            <h2>Delta Results</h2>
+        </div>
+        <span>Baseline -> Updated -> Delta Review -> QA Impact</span>
+    </div>
     <div class="delta-dashboard" aria-label="Delta summary" data-testid="delta-dashboard">
         <button type="button" class="delta-summary-tile delta-added" @onclick="@(() => _activeStatus = SpecDeltaStatus.Added)">
-            <span>@Result.Summary.AddedRequirements</span>
-            <small>Added requirements</small>
+            <span>@AddedCount</span>
+            <small>Added</small>
         </button>
         <button type="button" class="delta-summary-tile delta-modified" @onclick="@(() => _activeStatus = SpecDeltaStatus.Modified)">
-            <span>@Result.Summary.ModifiedRequirements</span>
-            <small>Modified requirements</small>
+            <span>@ChangedCount</span>
+            <small>Changed</small>
         </button>
         <button type="button" class="delta-summary-tile delta-removed" @onclick="@(() => _activeStatus = SpecDeltaStatus.Removed)">
-            <span>@Result.Summary.RemovedRequirements</span>
-            <small>Removed requirements</small>
+            <span>@RemovedCount</span>
+            <small>Removed</small>
         </button>
-        <div class="delta-summary-tile delta-impacted">
-            <span>@Result.Summary.PotentiallyImpactedTests</span>
-            <small>Impacted tests</small>
+        <div class="delta-summary-tile delta-clarifications">
+            <span>@ClarificationImpactCount</span>
+            <small>Clarifications</small>
         </div>
-        <div class="delta-summary-tile delta-impacted">
-            <span>@Result.Summary.UncoveredRequirements</span>
-            <small>Uncovered requirements</small>
+        <div class="delta-summary-tile delta-coverage">
+            <span>@CoverageImpactCount</span>
+            <small>Coverage Impact</small>
         </div>
-        <div class="delta-summary-tile delta-impacted">
-            <span>@Result.Summary.NewClarificationRisks</span>
-            <small>New clarifications</small>
+        <div class="delta-summary-tile delta-traceability">
+            <span>0</span>
+            <small>Traceability Impact</small>
         </div>
     </div>
 </section>
 
 <section class="compare-section compare-section-explorer" data-testid="change-explorer-section">
-    <h2 class="compare-section-title">Change Explorer</h2>
+    <div class="change-explorer-heading">
+        <div>
+            <p class="section-kicker">Review Changes</p>
+            <h2>Change Explorer</h2>
+        </div>
+    </div>
     <div class="delta-filter-row" role="toolbar" aria-label="Delta filters">
         <span class="filter-group-label" aria-hidden="true">Type</span>
         <button type="button"
@@ -73,7 +84,7 @@
                 class="filter-chip @(_activeStatus == SpecDeltaStatus.Modified ? "is-active" : "")"
                 aria-pressed="@(_activeStatus == SpecDeltaStatus.Modified ? "true" : "false")"
                 data-testid="filter-modified"
-                @onclick="@(() => _activeStatus = SpecDeltaStatus.Modified)">Modified</button>
+                @onclick="@(() => _activeStatus = SpecDeltaStatus.Modified)">Changed</button>
         <button type="button"
                 class="filter-chip @(_activeStatus == SpecDeltaStatus.Removed ? "is-active" : "")"
                 aria-pressed="@(_activeStatus == SpecDeltaStatus.Removed ? "true" : "false")"
@@ -141,6 +152,12 @@
 
     private ScenarioKind? _activeKind;
     private SpecDeltaStatus? _activeStatus;
+
+    private int AddedCount => Result.Summary.AddedRequirements + Result.Summary.AddedTests + Result.Summary.AddedClarifications;
+    private int ChangedCount => Result.Summary.ModifiedRequirements;
+    private int RemovedCount => Result.Summary.RemovedRequirements + Result.Summary.RemovedTests + Result.Summary.RemovedClarifications;
+    private int ClarificationImpactCount => Result.Summary.NewClarificationRisks + Result.Summary.AddedClarifications + Result.Summary.RemovedClarifications;
+    private int CoverageImpactCount => Result.Summary.PotentiallyImpactedTests + Result.Summary.UncoveredRequirements;
 
     private IReadOnlyList<SpecDeltaItem> GetVisibleDeltas(ScenarioKind kind, IReadOnlyList<SpecDeltaItem> deltas)
     {

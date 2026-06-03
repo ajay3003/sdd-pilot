@@ -14,7 +14,7 @@ QA Review Studio consists of:
 - local file import workflow
 - review workflow
 - QA Artifact Library
-- manual New Test Scenario workflow
+- manual Create Test Scenario workflow
 - traceability links
 - dashboard/coverage metrics
 
@@ -184,7 +184,7 @@ It may show separate sections or filters for:
 
 The default view should prioritize TEST artifacts for testers.
 
-## New Test Scenario
+## Create Test Scenario
 
 Manual scenario creation is a separate workflow for creating TEST artifacts.
 

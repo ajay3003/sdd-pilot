@@ -31,17 +31,17 @@ public class NewScenarioPageTests : BunitContext
         var cut = Render<NewScenario>();
 
         cut.FindAll("select[id='kind']").Should().BeEmpty(
-            "type selector must not appear on New Test Scenario page");
+            "backend artifact kind selector must not appear on Create Test Scenario page");
     }
 
     [Fact]
-    public void NewScenarioPage_PageTitle_IsNewTestScenario()
+    public void NewScenarioPage_PageTitle_IsCreateTestScenario()
     {
         Services.AddSingleton(new Mock<IBirkNextClient>().Object);
 
         var cut = Render<NewScenario>();
 
-        cut.Find("h1").TextContent.Should().Be("New Test Scenario");
+        cut.Find("h1").TextContent.Should().Be("Create Test Scenario");
     }
 
     [Fact]

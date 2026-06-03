@@ -43,7 +43,7 @@ public class ScenariosPageTests : BunitContext
 
         cut.FindAll("[data-testid='scenario-row']").Should().ContainSingle();
         cut.Markup.Should().Contain("Checkout test");
-        cut.Markup.Should().NotContain("Login requirement");
+        cut.FindAll("[data-testid='scenario-row']")[0].TextContent.Should().NotContain("Login requirement");
     }
 
     [Fact]
@@ -252,7 +252,7 @@ public class ScenariosPageTests : BunitContext
     }
 
     [Fact]
-    public void ScenariosPage_DefaultFilter_ShowsOnlyTestArtifacts()
+    public void ScenariosPage_DefaultFilter_ShowsAllArtifactTypes()
     {
         var mockQuery = new Mock<IGetScenariosQuery>();
         mockQuery
@@ -273,13 +273,13 @@ public class ScenariosPageTests : BunitContext
             cut.Markup.Should().NotContain("Loading scenarios"),
             timeout: TimeSpan.FromSeconds(1));
 
-        // Default filter is TEST — only the Tests group should be visible
+        // Default view is the knowledge base: all artifact groups are visible.
         cut.FindAll("[data-testid='group-tests']").Should().HaveCount(1,
             "Tests section must be shown by default");
-        cut.FindAll("[data-testid='group-requirements']").Should().BeEmpty(
-            "Requirements section must be hidden when default TEST filter is active");
-        cut.FindAll("[data-testid='scenario-row']").Should().ContainSingle(
-            "only the Test artifact should be visible by default");
+        cut.FindAll("[data-testid='group-requirements']").Should().HaveCount(1,
+            "Requirements section must be shown by default");
+        cut.FindAll("[data-testid='scenario-row']").Should().HaveCount(2,
+            "all saved artifacts should be visible by default");
     }
 
     [Fact]
@@ -394,6 +394,12 @@ public class ScenariosPageTests : BunitContext
         var cut = Render<Scenarios>();
 
         cut.WaitForAssertion(() =>
+            cut.Markup.Should().NotContain("Loading scenarios"),
+            timeout: TimeSpan.FromSeconds(1));
+
+        cut.Find("select[aria-label='Filter by type']").Change("Test");
+
+        cut.WaitForAssertion(() =>
         {
             cut.Find("[data-testid='drag-hint']").Should().NotBeNull();
             cut.Find("[data-testid='drag-handle-sc-1']").Should().NotBeNull();
@@ -493,6 +499,8 @@ public class ScenariosPageTests : BunitContext
         cut.WaitForAssertion(() =>
             cut.FindAll("[data-testid='scenario-row']").Should().HaveCount(2),
             timeout: TimeSpan.FromSeconds(1));
+
+        cut.Find("select[aria-label='Filter by type']").Change("Test");
 
         cut.Find("[data-testid='move-up-btn-sc-2']").Click();
 

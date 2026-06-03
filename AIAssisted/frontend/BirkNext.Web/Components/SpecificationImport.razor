@@ -37,7 +37,9 @@
     else
     {
         <InputFile id="@InputId" accept=".md,.txt" OnChange="HandleFileSelected"
-                   class="import-file-input-hidden" disabled="@IsDisabled"
+                   class="import-file-input-hidden"
+                   style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none;"
+                   disabled="@IsDisabled"
                    data-testid="import-file-input" />
         <label for="@InputId" class="import-dropzone-label">
             <span class="import-icon" aria-hidden="true">&#128194;</span>

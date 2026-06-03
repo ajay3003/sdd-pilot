@@ -6,25 +6,83 @@
 
 <PageTitle>Analyze Specification</PageTitle>
 
-<h1>Analyze Specification</h1>
-<p class="page-lead">Paste a specification document and review requirements, test cases, and items needing clarification.</p>
-
-<ExtractionInput OnExtractionCompleted="HandleExtractionCompleted" />
-
-@if (_pipelineResult is null)
-{
-    <div class="extract-pre-state" data-testid="extract-pre-state">
-        <p>Specification review candidates will appear here.</p>
+<div class="review-page-shell">
+    <div class="review-wizard-hero">
+        <div class="review-step-badge">Step 1</div>
+        <div class="review-hero-content">
+            <h1>Analyze Specification</h1>
+            <p class="review-hero-lead">Upload or paste a specification document and generate review candidates for QA analysis.</p>
+            <div class="review-extract-list" aria-label="Extracted review candidate types">
+                <span>Extract:</span>
+                <ul>
+                    <li>Requirements</li>
+                    <li>Test Scenarios</li>
+                    <li>Clarifications</li>
+                    <li>Traceability Candidates</li>
+                </ul>
+            </div>
+        </div>
     </div>
-}
-else
-{
-    <ExtractionReviewList PipelineResult="_pipelineResult" InitialSession="_sessionSnapshot" />
-}
+
+    <ExtractionInput OnExtractionCompleted="HandleExtractionCompleted" />
+
+    <section class="review-results-panel" aria-label="Specification review results">
+        <div class="review-results-header">
+            <div class="review-results-title">
+                <p class="section-kicker">Review Candidates</p>
+                <h2>Analysis Results</h2>
+                <p>This is where extracted candidates appear for review, acceptance, and saving.</p>
+            </div>
+            <div class="review-summary-strip" aria-label="Analysis summary metrics">
+                <div class="summary-slot">
+                    <span>@RequirementMetric</span>
+                    <small>Requirements</small>
+                </div>
+                <div class="summary-slot">
+                    <span>@TestMetric</span>
+                    <small>Tests</small>
+                </div>
+                <div class="summary-slot">
+                    <span>@ClarificationMetric</span>
+                    <small>Clarifications</small>
+                </div>
+                <div class="summary-slot">
+                    <span>@CandidateMetric</span>
+                    <small>Candidates</small>
+                </div>
+            </div>
+        </div>
+
+        @if (_pipelineResult is null)
+        {
+            <div class="extract-pre-state" data-testid="extract-pre-state">
+                <div class="empty-state-icon" aria-hidden="true"></div>
+                <h3>No review candidates yet</h3>
+                <p>Analyze a specification to generate:</p>
+                <ul>
+                    <li>Requirements</li>
+                    <li>Test Cases</li>
+                    <li>Clarifications</li>
+                    <li>Review Suggestions</li>
+                </ul>
+                <p class="empty-state-flow">Review &rarr; Accept &rarr; Save &rarr; Track on Dashboard</p>
+            </div>
+        }
+        else
+        {
+            <ExtractionReviewList PipelineResult="_pipelineResult" InitialSession="_sessionSnapshot" />
+        }
+    </section>
+</div>
 
 @code {
     private ExtractionPipelineResult? _pipelineResult;
     private ExtractionSessionSnapshot? _sessionSnapshot;
+
+    private int RequirementMetric => _pipelineResult?.RequirementCount ?? 0;
+    private int TestMetric => _pipelineResult?.TestCount ?? 0;
+    private int ClarificationMetric => _pipelineResult?.NeedsClarificationCount ?? 0;
+    private int CandidateMetric => _pipelineResult?.Candidates.Count ?? 0;
 
     protected override async Task OnInitializedAsync()
     {

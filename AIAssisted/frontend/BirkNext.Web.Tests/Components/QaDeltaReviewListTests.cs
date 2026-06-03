@@ -21,6 +21,8 @@ public class QaDeltaReviewListTests : BunitContext
             .Add(x => x.DeleteErrors, null));
 
         cut.Find("[data-testid='review-list-empty']").Should().NotBeNull();
+        cut.Find("[data-testid='review-list-empty']").TextContent.Should().Contain("No Delta Reviews Yet");
+        cut.Find("[data-testid='review-list-empty']").TextContent.Should().Contain("Open Compare Specs");
         cut.FindAll("[data-testid='review-card']").Should().BeEmpty();
     }
 
@@ -59,6 +61,21 @@ public class QaDeltaReviewListTests : BunitContext
         cardText.Should().Contain("+3");
         cardText.Should().Contain("~1");
         cardText.Should().Contain("-2");
+    }
+
+    [Fact]
+    public void Review_WithCoverageImpact_ShowsAttentionStatus()
+    {
+        var review = MakeReview("rev-1", "My Review", impactedTests: 2);
+
+        var cut = Render<QaDeltaReviewList>(p => p
+            .Add(x => x.Reviews, new[] { review })
+            .Add(x => x.OnDeleteRequested, EventCallback.Factory.Create<string>(this, (string _) => { }))
+            .Add(x => x.DeletingId, (string?)null)
+            .Add(x => x.DeleteErrors, null));
+
+        cut.Find("[data-testid='review-card']").TextContent.Should().Contain("Attention");
+        cut.Find("[data-testid='review-card']").TextContent.Should().Contain("Coverage impact detected");
     }
 
     [Fact]
@@ -114,12 +131,12 @@ public class QaDeltaReviewListTests : BunitContext
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static IGetQaDeltaReviews_QaDeltaReviews MakeReview(
-        string id, string title, int addedReq = 0, int modifiedReq = 0, int removedReq = 0)
+        string id, string title, int addedReq = 0, int modifiedReq = 0, int removedReq = 0, int impactedTests = 0)
     {
         var summaryDto = new DeltaSummaryDto(
             AddedRequirements: addedReq, ModifiedRequirements: modifiedReq,
             RemovedRequirements: removedReq, UnchangedRequirements: 0,
-            AddedTests: 0, RemovedTests: 0, PotentiallyImpactedTests: 0,
+            AddedTests: 0, RemovedTests: 0, PotentiallyImpactedTests: impactedTests,
             AddedClarifications: 0, RemovedClarifications: 0, StillUnresolvedClarifications: 0,
             UncoveredRequirements: 0, NewClarificationRisks: 0);
         var summaryJson = System.Text.Json.JsonSerializer.Serialize(summaryDto,

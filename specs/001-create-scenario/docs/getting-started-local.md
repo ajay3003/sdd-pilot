@@ -74,7 +74,7 @@ UI labels may show:
 Dashboard
 Specification Review
 QA Artifact Library
-New Test Scenario
+Create Test Scenario
 Compare Specs
 ```
 
@@ -97,10 +97,10 @@ Compare Specs
 3. Confirm artifacts are grouped or filterable by type
 4. Confirm requirements, tests, and clarification items are distinct
 
-## Verify New Test Scenario
+## Verify Create Test Scenario
 
 1. Open `/scenarios/new`
-2. Confirm page title is **New Test Scenario**
+2. Confirm page title is **Create Test Scenario**
 3. Confirm there is no artifact type selector
 4. Create a manual test scenario
 5. Confirm it appears as TEST in QA Artifact Library

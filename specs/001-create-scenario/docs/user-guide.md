@@ -100,11 +100,11 @@ It may contain:
 
 The default library filter should prioritize **TEST** artifacts because testers usually want executable scenarios first.
 
-## New Test Scenario
+## Create Test Scenario
 
 The manual creation flow is for TEST scenarios only.
 
-Use **New Test Scenario** for:
+Use **Create Test Scenario** for:
 
 - exploratory testing
 - regression scenarios

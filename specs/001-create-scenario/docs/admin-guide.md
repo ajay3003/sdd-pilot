@@ -11,7 +11,7 @@ QA Review Studio supports:
 - review workflow
 - reviewed candidate persistence
 - QA Artifact Library
-- manual New Test Scenario workflow
+- manual Create Test Scenario workflow
 - traceability links
 - coverage/dashboard metrics
 - local developer startup scripts
@@ -29,7 +29,7 @@ Administrators or maintainers should:
 - maintain startup scripts
 - verify review persistence
 - verify QA Artifact Library behavior
-- verify New Test Scenario behavior
+- verify Create Test Scenario behavior
 - verify dashboard and traceability metrics
 
 ## Local Startup
@@ -70,7 +70,7 @@ They should not become new GraphQL artifact types unless the product explicitly 
 
 Manual creation is intended for TEST scenarios only.
 
-The manual creation page should be named **New Test Scenario** and should not ask the user to choose Requirement/Test/Clarification.
+The manual creation page should be named **Create Test Scenario** and should not ask the user to choose Requirement/Test/Clarification.
 
 ## Specification Source of Truth
 
@@ -182,7 +182,7 @@ Verify:
 8. Save Review persists reviewed artifacts
 9. QA Artifact Library loads
 10. TEST filter is default in library if implemented
-11. New Test Scenario creates TEST artifacts only
+11. Create Test Scenario creates TEST artifacts only
 12. dashboard metrics load
 13. traceability links work
 14. no browser console errors appear

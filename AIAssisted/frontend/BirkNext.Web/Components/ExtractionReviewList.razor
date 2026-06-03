@@ -17,7 +17,16 @@
 @if (PipelineResult.Status == PipelineStatus.NoResults)
 {
     <div class="empty-state-container">
-        <p data-testid="empty-state">No review candidates were found in the pasted text.</p>
+        <div class="review-empty-icon" aria-hidden="true"></div>
+        <h3>No review candidates yet</h3>
+        <p data-testid="empty-state">Analyze a specification to generate review-ready QA candidates.</p>
+        <ul>
+            <li>Requirements</li>
+            <li>Test Cases</li>
+            <li>Clarifications</li>
+            <li>Review Suggestions</li>
+        </ul>
+        <p class="empty-state-flow">Review &rarr; Accept &rarr; Save &rarr; Track on Dashboard</p>
     </div>
 }
 else
