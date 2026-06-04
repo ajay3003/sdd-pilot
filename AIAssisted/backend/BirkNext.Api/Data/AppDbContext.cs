@@ -11,6 +11,7 @@ public class AppDbContext : DbContext
     public DbSet<ReviewedCandidate> ReviewedCandidates => Set<ReviewedCandidate>();
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
     public DbSet<QaDeltaReview> QaDeltaReviews => Set<QaDeltaReview>();
+    public DbSet<TraceLink> TraceLinks => Set<TraceLink>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -203,6 +204,59 @@ public class AppDbContext : DbContext
             entity.HasIndex(r => new { r.ProjectId, r.CreatedAt })
                 .HasDatabaseName("ix_qa_delta_reviews_project_id_created_at")
                 .IsDescending(false, true);
+        });
+
+        modelBuilder.Entity<TraceLink>(entity =>
+        {
+            entity.ToTable("trace_links");
+
+            entity.Property(t => t.Id)
+                .HasColumnName("id");
+
+            entity.Property(t => t.ProjectId)
+                .HasColumnName("project_id")
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(t => t.SourceId)
+                .HasColumnName("source_id")
+                .IsRequired();
+
+            entity.Property(t => t.SourceKind)
+                .HasColumnName("source_kind")
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(t => t.TargetId)
+                .HasColumnName("target_id")
+                .IsRequired();
+
+            entity.Property(t => t.TargetKind)
+                .HasColumnName("target_kind")
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(t => t.LinkType)
+                .HasColumnName("link_type")
+                .HasMaxLength(50)
+                .IsRequired()
+                .HasConversion<string>();
+
+            entity.Property(t => t.CreatedAt)
+                .HasColumnName("created_at");
+
+            entity.Property(t => t.CreatedBy)
+                .HasColumnName("created_by")
+                .HasMaxLength(200);
+
+            entity.Property(t => t.Notes)
+                .HasColumnName("notes");
+
+            entity.HasIndex(t => new { t.ProjectId, t.TargetKind, t.TargetId })
+                .HasDatabaseName("ix_trace_links_project_target");
+
+            entity.HasIndex(t => new { t.ProjectId, t.SourceKind, t.SourceId })
+                .HasDatabaseName("ix_trace_links_project_source");
         });
     }
 }
