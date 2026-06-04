@@ -9,6 +9,7 @@ type Query {
   coverageSummary(projectId: String!): CoverageSummary!
   requirementImpact(projectId: String!, requirementId: ID!): RequirementImpact
   impactSummary(projectId: String!): ImpactSummary!
+  specDriftReport(projectId: String!): SpecDriftReport!
 }
 
 type Mutation {
@@ -375,4 +376,30 @@ type AuditAffectedRequirement {
 type AuditAffectedTest {
   test: Scenario!
   aiRelevanceReason: String!
+}
+
+type SpecDriftReport {
+  overallDriftRisk: RiskLevel!
+  totalRequirements: Int!
+  requirementsAtRisk: Int!
+  coverageGaps: Int!
+  orphanTestCount: Int!
+  coveragePercent: Float!
+  requirementsAtRiskList: [DriftRequirement!]!
+  orphanTests: [Scenario!]!
+  findings: [DriftFinding!]!
+  recommendedActions: [String!]!
+}
+
+type DriftRequirement {
+  requirement: Scenario!
+  driftRisk: RiskLevel!
+  linkedTestCount: Int!
+  driftReason: String!
+}
+
+type DriftFinding {
+  category: String!
+  description: String!
+  severity: RiskLevel!
 }

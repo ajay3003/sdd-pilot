@@ -1,0 +1,295 @@
+@page "/spec-drift"
+@using BirkNext.Web.GraphQL
+@inject IBirkNextClient Client
+
+<PageTitle>Spec Drift Detection</PageTitle>
+
+<div class="drift-page">
+    <section class="traceability-hero">
+        <p class="section-kicker">Deterministic Analysis</p>
+        <h1>Spec Drift Detection</h1>
+        <p class="page-lead">Detect where implementation has drifted away from the specification — coverage gaps, orphan tests, and unvalidated requirements — using live traceability data.</p>
+    </section>
+
+    @if (_isLoading)
+    {
+        <p class="loading-state">Analysing traceability data…</p>
+    }
+    else if (_loadError is not null)
+    {
+        <div class="notification notification-error" role="alert">@_loadError</div>
+    }
+    else if (_report is not null)
+    {
+        var report = _report;
+
+        <div class="kpi-row" aria-label="Drift summary">
+            <div class="kpi-card @DriftKpiClass(report.OverallDriftRisk)">
+                <span class="kpi-marker" aria-hidden="true"></span>
+                <span class="kpi-value">@RiskLabel(report.OverallDriftRisk)</span>
+                <span class="kpi-label">Drift Risk</span>
+                <span class="kpi-hint">overall health</span>
+            </div>
+            <div class="kpi-card kpi-card-risks">
+                <span class="kpi-marker" aria-hidden="true"></span>
+                <span class="kpi-value">@report.TotalRequirements</span>
+                <span class="kpi-label">Total Requirements</span>
+            </div>
+            <div class="kpi-card @(report.RequirementsAtRisk > 0 ? "kpi-card-risks" : "kpi-card-coverage")">
+                <span class="kpi-marker" aria-hidden="true"></span>
+                <span class="kpi-value">@report.RequirementsAtRisk</span>
+                <span class="kpi-label">Requirements at Risk</span>
+                <span class="kpi-hint">uncovered or partial</span>
+            </div>
+            <div class="kpi-card @(report.CoverageGaps > 0 ? "kpi-card-risks" : "kpi-card-traceability")">
+                <span class="kpi-marker" aria-hidden="true"></span>
+                <span class="kpi-value">@report.CoverageGaps</span>
+                <span class="kpi-label">Coverage Gaps</span>
+                <span class="kpi-hint">no tests linked</span>
+            </div>
+            <div class="kpi-card @(report.OrphanTestCount > 0 ? "kpi-card-risks" : "kpi-card-traceability")">
+                <span class="kpi-marker" aria-hidden="true"></span>
+                <span class="kpi-value">@report.OrphanTestCount</span>
+                <span class="kpi-label">Orphan Tests</span>
+                <span class="kpi-hint">not linked to any req</span>
+            </div>
+            <div class="kpi-card kpi-card-coverage">
+                <span class="kpi-marker" aria-hidden="true"></span>
+                <span class="kpi-value">@report.CoveragePercent.ToString("F0")%</span>
+                <span class="kpi-label">Coverage</span>
+                <span class="kpi-hint">reqs with ≥1 test</span>
+            </div>
+        </div>
+
+        @if (report.Findings.Count > 0)
+        {
+            <section class="drift-findings-section" aria-label="Drift findings">
+                <div class="drift-section-header">
+                    <p class="section-kicker">Active rules</p>
+                    <h2>Drift Findings</h2>
+                </div>
+                <div class="drift-findings-list">
+                    @foreach (var finding in report.Findings)
+                    {
+                        <div class="drift-finding @DriftFindingClass(finding.Severity)">
+                            <div class="drift-finding-header">
+                                <span class="drift-finding-badge @DriftBadgeClass(finding.Severity)">@FindingLabel(finding.Category)</span>
+                                <span class="impact-risk-badge impact-risk-@finding.Severity.ToString().ToLower()">@RiskLabel(finding.Severity)</span>
+                            </div>
+                            <p class="drift-finding-desc">@finding.Description</p>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+
+        <div class="drift-detail-grid">
+
+            @* ── Left column: requirements at risk ──────────────────────────── *@
+            <div>
+                <section class="drift-card" aria-label="Coverage drift">
+                    <div class="drift-card-header">
+                        <p class="section-kicker">Coverage drift</p>
+                        <h2>Requirements at Risk</h2>
+                        <span class="drift-count-badge">@report.RequirementsAtRisk</span>
+                    </div>
+
+                    @if (report.RequirementsAtRiskList.Count == 0)
+                    {
+                        <div class="drift-empty">
+                            <span class="drift-empty-icon">✓</span>
+                            <p>All requirements have adequate test coverage.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <ul class="drift-req-list" aria-label="At-risk requirements">
+                            @foreach (var r in report.RequirementsAtRiskList)
+                            {
+                                <li class="drift-req-item @DriftReqClass(r.DriftRisk)">
+                                    <div class="drift-req-header">
+                                        <span class="impact-risk-badge impact-risk-@r.DriftRisk.ToString().ToLower()">@RiskLabel(r.DriftRisk)</span>
+                                        <span class="drift-test-count">@r.LinkedTestCount test@(r.LinkedTestCount == 1 ? "" : "s")</span>
+                                    </div>
+                                    <p class="drift-req-title">@r.Requirement.Title</p>
+                                    <p class="drift-req-reason">@r.DriftReason</p>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </section>
+
+                <section class="drift-card" aria-label="Traceability drift">
+                    <div class="drift-card-header">
+                        <p class="section-kicker">Traceability drift</p>
+                        <h2>Orphan Tests</h2>
+                        <span class="drift-count-badge">@report.OrphanTestCount</span>
+                    </div>
+
+                    @if (report.OrphanTests.Count == 0)
+                    {
+                        <div class="drift-empty">
+                            <span class="drift-empty-icon">✓</span>
+                            <p>All tests are linked to at least one requirement.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <ul class="drift-orphan-list" aria-label="Orphan tests">
+                            @foreach (var test in report.OrphanTests)
+                            {
+                                <li class="drift-orphan-item">
+                                    <span class="badge badge-test">Test</span>
+                                    <span class="drift-orphan-title">@test.Title</span>
+                                </li>
+                            }
+                        </ul>
+                        <p class="drift-orphan-hint">
+                            Link these tests to requirements in <a href="/traceability">Traceability &amp; Coverage</a>.
+                        </p>
+                    }
+                </section>
+            </div>
+
+            @* ── Right column: recommended actions ──────────────────────────── *@
+            <div>
+                <section class="drift-card drift-card-actions" aria-label="Recommended actions">
+                    <div class="drift-card-header">
+                        <p class="section-kicker">Deterministic from your trace links</p>
+                        <h2>Recommended Actions</h2>
+                    </div>
+                    <ol class="drift-action-list" aria-label="Actions to address drift">
+                        @foreach (var action in report.RecommendedActions)
+                        {
+                            <li class="drift-action-item">@action</li>
+                        }
+                    </ol>
+                    <div class="drift-action-links">
+                        <a href="/traceability" class="drift-link-btn">Go to Traceability &amp; Coverage</a>
+                        <a href="/impact-analysis" class="drift-link-btn">Go to Impact Analysis</a>
+                        <a href="/ai-change-auditor" class="drift-link-btn">Go to AI Change Auditor</a>
+                    </div>
+                </section>
+
+                @if (report.TotalRequirements == 0)
+                {
+                    <section class="drift-card" aria-label="Getting started">
+                        <div class="drift-card-header">
+                            <p class="section-kicker">Nothing to analyse yet</p>
+                            <h2>No Requirements Found</h2>
+                        </div>
+                        <div class="drift-empty drift-empty-padded">
+                            <p>Add requirement scenarios to the QA Artifact Library and link them to tests via the Traceability page.</p>
+                            <div class="empty-state-actions">
+                                <a href="/scenarios">Go to QA Artifact Library</a>
+                                <a href="/extract">Go to Specification Review</a>
+                            </div>
+                        </div>
+                    </section>
+                }
+            </div>
+
+        </div>
+
+        <div class="drift-feature-chain">
+            <p class="section-kicker">Feature chain</p>
+            <div class="drift-chain-row" aria-label="Feature dependency chain">
+                <span class="drift-chain-node">Specification</span>
+                <span class="drift-chain-arrow">↓</span>
+                <span class="drift-chain-node">Traceability</span>
+                <span class="drift-chain-arrow">↓</span>
+                <span class="drift-chain-node">Coverage</span>
+                <span class="drift-chain-arrow">↓</span>
+                <span class="drift-chain-node">Impact Analysis</span>
+                <span class="drift-chain-arrow">↓</span>
+                <span class="drift-chain-node">AI Change Auditor</span>
+                <span class="drift-chain-arrow">↓</span>
+                <span class="drift-chain-node drift-chain-node-active">Spec Drift Detection</span>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+
+    private bool _isLoading = true;
+    private string? _loadError;
+    private IGetSpecDriftReport_SpecDriftReport? _report;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.GetSpecDriftReport.ExecuteAsync(ProjectId);
+
+            if (result.Errors is { Count: > 0 })
+            {
+                _loadError = "Could not load drift data. Please try again later.";
+                return;
+            }
+
+            _report = result.Data?.SpecDriftReport;
+        }
+        catch (Exception)
+        {
+            _loadError = "An unexpected error occurred. Check that the backend is running.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static string RiskLabel(RiskLevel risk) => risk switch
+    {
+        RiskLevel.High => "High Risk",
+        RiskLevel.Medium => "Medium Risk",
+        RiskLevel.Low => "Low Risk",
+        _ => risk.ToString(),
+    };
+
+    private static string DriftKpiClass(RiskLevel risk) => risk switch
+    {
+        RiskLevel.High => "kpi-card-risks drift-kpi-high",
+        RiskLevel.Medium => "kpi-card-risks drift-kpi-medium",
+        RiskLevel.Low => "kpi-card-coverage drift-kpi-low",
+        _ => string.Empty,
+    };
+
+    private static string DriftFindingClass(RiskLevel severity) => severity switch
+    {
+        RiskLevel.High => "drift-finding-high",
+        RiskLevel.Medium => "drift-finding-medium",
+        _ => string.Empty,
+    };
+
+    private static string DriftBadgeClass(RiskLevel severity) => severity switch
+    {
+        RiskLevel.High => "drift-category-badge-high",
+        RiskLevel.Medium => "drift-category-badge-medium",
+        _ => "drift-category-badge-low",
+    };
+
+    private static string DriftReqClass(RiskLevel risk) => risk switch
+    {
+        RiskLevel.High => "drift-req-high",
+        RiskLevel.Medium => "drift-req-medium",
+        _ => string.Empty,
+    };
+
+    private static string FindingLabel(string category) => category switch
+    {
+        "CoverageGap" => "Coverage Gap",
+        "PartialCoverage" => "Partial Coverage",
+        "OrphanTest" => "Orphan Test",
+        "LowCoverage" => "Low Coverage",
+        _ => category,
+    };
+}

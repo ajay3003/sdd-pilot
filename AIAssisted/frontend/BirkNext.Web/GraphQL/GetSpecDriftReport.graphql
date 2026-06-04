@@ -1,0 +1,30 @@
+query GetSpecDriftReport($projectId: String!) {
+    specDriftReport(projectId: $projectId) {
+        overallDriftRisk
+        totalRequirements
+        requirementsAtRisk
+        coverageGaps
+        orphanTestCount
+        coveragePercent
+        requirementsAtRiskList {
+            requirement {
+                id
+                title
+                description
+            }
+            driftRisk
+            linkedTestCount
+            driftReason
+        }
+        orphanTests {
+            id
+            title
+        }
+        findings {
+            category
+            description
+            severity
+        }
+        recommendedActions
+    }
+}

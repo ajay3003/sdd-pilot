@@ -101,4 +101,17 @@ public class Query
     {
         return await impactAnalysisService.GetImpactSummaryAsync(projectId, cancellationToken);
     }
+
+    /// <summary>
+    /// Returns a deterministic spec drift report: coverage gaps, orphan tests,
+    /// at-risk requirements, and recommended actions. Reuses ImpactAnalysisService
+    /// for risk levels; adds orphan test detection.
+    /// </summary>
+    public async Task<SpecDriftReport> SpecDriftReportAsync(
+        string projectId,
+        [Service] SpecDriftDetectionService driftService,
+        CancellationToken cancellationToken)
+    {
+        return await driftService.GetSpecDriftReportAsync(projectId, cancellationToken);
+    }
 }
