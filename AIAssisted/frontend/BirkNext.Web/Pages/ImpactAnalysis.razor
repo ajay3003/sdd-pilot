@@ -25,7 +25,7 @@
             <div class="kpi-card impact-kpi-high @(_riskFilter == "High" ? "kpi-card-active" : "")"
                  role="button" tabindex="0"
                  @onclick='() => ToggleRiskFilter("High")'
-                 @onkeydown='e => { if (e.Key == "Enter" || e.Key == " ") ToggleRiskFilter("High"); }'>
+                 @onkeydown='async e => { if (e.Key == "Enter" || e.Key == " ") await ToggleRiskFilter("High"); }'>
                 <span class="kpi-marker" aria-hidden="true"></span>
                 <span class="kpi-value">@_summary.HighRiskCount</span>
                 <span class="kpi-label">High Risk</span>
@@ -34,7 +34,7 @@
             <div class="kpi-card impact-kpi-medium @(_riskFilter == "Medium" ? "kpi-card-active" : "")"
                  role="button" tabindex="0"
                  @onclick='() => ToggleRiskFilter("Medium")'
-                 @onkeydown='e => { if (e.Key == "Enter" || e.Key == " ") ToggleRiskFilter("Medium"); }'>
+                 @onkeydown='async e => { if (e.Key == "Enter" || e.Key == " ") await ToggleRiskFilter("Medium"); }'>
                 <span class="kpi-marker" aria-hidden="true"></span>
                 <span class="kpi-value">@_summary.MediumRiskCount</span>
                 <span class="kpi-label">Medium Risk</span>
@@ -43,16 +43,20 @@
             <div class="kpi-card impact-kpi-low @(_riskFilter == "Low" ? "kpi-card-active" : "")"
                  role="button" tabindex="0"
                  @onclick='() => ToggleRiskFilter("Low")'
-                 @onkeydown='e => { if (e.Key == "Enter" || e.Key == " ") ToggleRiskFilter("Low"); }'>
+                 @onkeydown='async e => { if (e.Key == "Enter" || e.Key == " ") await ToggleRiskFilter("Low"); }'>
                 <span class="kpi-marker" aria-hidden="true"></span>
                 <span class="kpi-value">@_summary.LowRiskCount</span>
                 <span class="kpi-label">Low Risk</span>
                 <span class="kpi-hint">2+ tests linked</span>
             </div>
-            <div class="kpi-card kpi-card-traceability">
+            <div class="kpi-card kpi-card-traceability @(string.IsNullOrEmpty(_riskFilter) ? "kpi-card-active" : "")"
+                 role="button" tabindex="0"
+                 @onclick='() => ToggleRiskFilter("")'
+                 @onkeydown='async e => { if (e.Key == "Enter" || e.Key == " ") await ToggleRiskFilter(""); }'>
                 <span class="kpi-marker" aria-hidden="true"></span>
                 <span class="kpi-value">@_summary.TotalRequirements</span>
                 <span class="kpi-label">Total Requirements</span>
+                <span class="kpi-hint">show all</span>
             </div>
         </div>
 
@@ -118,9 +122,15 @@
                 else if (_detail is null)
                 {
                     <div class="impact-detail-placeholder">
-                        <p class="section-kicker">Nothing selected</p>
-                        <h3>Select a requirement</h3>
-                        <p>Click any requirement in the list on the left to see its impact analysis and regression recommendation.</p>
+                        @if (_summary.TotalRequirements == 0)
+                        {
+                            <h3>No requirements yet</h3>
+                            <p>Add requirement scenarios to the QA Artifact Library to begin impact analysis.</p>
+                        }
+                        else
+                        {
+                            <p>Loading analysis&hellip;</p>
+                        }
                     </div>
                 }
                 else
@@ -234,11 +244,18 @@
         _ => string.Empty,
     };
 
-    private void ToggleRiskFilter(string risk)
+    private async Task ToggleRiskFilter(string risk)
     {
         _riskFilter = _riskFilter == risk ? string.Empty : risk;
-        _selectedRequirementId = null;
-        _detail = null;
+        var first = FilteredRequirements.FirstOrDefault(r => r.Id != _selectedRequirementId)
+                 ?? FilteredRequirements.FirstOrDefault();
+        if (first is not null)
+            await SelectRequirementAsync(first.Id);
+        else
+        {
+            _selectedRequirementId = null;
+            _detail = null;
+        }
     }
 
     protected override async Task OnInitializedAsync() => await LoadSummaryAsync();
@@ -297,6 +314,14 @@
             _testLabels = testsOrdered
                 .Select((t, i) => (t.Id, Label: $"TEST-{i + 1:D3}"))
                 .ToDictionary(x => x.Id, x => x.Label);
+
+            // Auto-select the highest-risk requirement so the detail panel
+            // is populated immediately without requiring a manual click.
+            var autoSelect = _requirements
+                .OrderBy(r => r.RiskLevel switch { "High" => 0, "Medium" => 1, _ => 2 })
+                .FirstOrDefault();
+            if (autoSelect is not null)
+                await SelectRequirementAsync(autoSelect.Id);
         }
         catch (Exception)
         {

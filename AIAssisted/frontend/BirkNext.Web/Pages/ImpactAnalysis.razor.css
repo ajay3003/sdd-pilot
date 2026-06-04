@@ -71,8 +71,8 @@
 
 .impact-layout {
     display: grid;
-    grid-template-columns: 380px 1fr;
-    gap: 1.5rem;
+    grid-template-columns: 440px 1fr;
+    gap: 1.25rem;
     align-items: start;
 }
 
@@ -110,7 +110,7 @@
     display: flex;
     flex-direction: column;
     gap: 0;
-    max-height: 520px;
+    max-height: 600px;
     overflow-y: auto;
 }
 
@@ -177,7 +177,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 220px;
+    max-width: 265px;
 }
 
 .impact-test-count {
