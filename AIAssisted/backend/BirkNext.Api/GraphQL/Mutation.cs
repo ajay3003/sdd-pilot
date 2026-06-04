@@ -293,4 +293,84 @@ public class Mutation
             CorrelationId = correlationId,
         };
     }
+
+    /// <summary>Creates a trace link between two artifacts in the given project.</summary>
+    public async Task<CreateTraceLinkPayload> CreateTraceLinkAsync(
+        CreateTraceLinkInput input,
+        [Service] TraceLinkService traceLinkService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        if (!Guid.TryParse(input.SourceId, out var sourceGuid))
+            return new CreateTraceLinkPayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Source ID is not a valid identifier.", "sourceId")],
+                CorrelationId = correlationId,
+            };
+
+        if (!Guid.TryParse(input.TargetId, out var targetGuid))
+            return new CreateTraceLinkPayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Target ID is not a valid identifier.", "targetId")],
+                CorrelationId = correlationId,
+            };
+
+        var result = await traceLinkService.CreateAsync(
+            projectId: input.ProjectId,
+            sourceId: sourceGuid,
+            sourceKind: input.SourceKind,
+            targetId: targetGuid,
+            targetKind: input.TargetKind,
+            linkType: input.LinkType,
+            createdBy: input.CreatedBy,
+            notes: input.Notes,
+            correlationId: correlationId,
+            ct: cancellationToken);
+
+        return new CreateTraceLinkPayload
+        {
+            TraceLink = result.TraceLink,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Deletes a trace link by ID. ProjectId is required for safety scoping.</summary>
+    public async Task<DeleteTraceLinkPayload> DeleteTraceLinkAsync(
+        DeleteTraceLinkInput input,
+        [Service] TraceLinkService traceLinkService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        if (!Guid.TryParse(input.Id, out var guid))
+            return new DeleteTraceLinkPayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Trace link ID is not a valid identifier.")],
+                CorrelationId = correlationId,
+            };
+
+        var result = await traceLinkService.DeleteAsync(
+            id: guid,
+            projectId: input.ProjectId,
+            correlationId: correlationId,
+            ct: cancellationToken);
+
+        return new DeleteTraceLinkPayload
+        {
+            DeletedId = result.DeletedId,
+            Success = result.IsSuccess,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
 }

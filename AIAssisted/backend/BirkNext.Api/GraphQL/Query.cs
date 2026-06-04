@@ -2,6 +2,7 @@ using BirkNext.Api.Models;
 using BirkNext.Api.Services;
 using HotChocolate;
 using HotChocolate.Types;
+using HotChocolate.Types.Relay;
 
 namespace BirkNext.Api.GraphQL;
 
@@ -56,5 +57,23 @@ public class Query
         CancellationToken cancellationToken)
     {
         return await qaDeltaReviewService.GetByIdAsync(id, cancellationToken);
+    }
+
+    /// <summary>Returns the traceability matrix for the given project. Only Requirement and Test scenarios are included.</summary>
+    public async Task<IReadOnlyList<TraceabilityMatrixRow>> TraceabilityMatrixAsync(
+        string projectId,
+        [Service] TraceLinkService traceLinkService,
+        CancellationToken cancellationToken)
+    {
+        return await traceLinkService.GetTraceabilityMatrixAsync(projectId, cancellationToken);
+    }
+
+    /// <summary>Returns aggregate coverage statistics for the given project.</summary>
+    public async Task<CoverageSummary> CoverageSummaryAsync(
+        string projectId,
+        [Service] TraceLinkService traceLinkService,
+        CancellationToken cancellationToken)
+    {
+        return await traceLinkService.GetCoverageSummaryAsync(projectId, cancellationToken);
     }
 }
