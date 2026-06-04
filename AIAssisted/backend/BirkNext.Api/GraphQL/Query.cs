@@ -76,4 +76,29 @@ public class Query
     {
         return await traceLinkService.GetCoverageSummaryAsync(projectId, cancellationToken);
     }
+
+    /// <summary>
+    /// Returns the full impact analysis for a single requirement, or null when not found.
+    /// Includes linked tests, risk level, and regression recommendation.
+    /// </summary>
+    public async Task<RequirementImpact?> RequirementImpactAsync(
+        string projectId,
+        [ID] string requirementId,
+        [Service] ImpactAnalysisService impactAnalysisService,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(requirementId, out var guid))
+            return null;
+
+        return await impactAnalysisService.GetRequirementImpactAsync(projectId, guid, cancellationToken);
+    }
+
+    /// <summary>Returns the project-wide impact summary with all requirements ranked by risk level.</summary>
+    public async Task<ImpactSummary> ImpactSummaryAsync(
+        string projectId,
+        [Service] ImpactAnalysisService impactAnalysisService,
+        CancellationToken cancellationToken)
+    {
+        return await impactAnalysisService.GetImpactSummaryAsync(projectId, cancellationToken);
+    }
 }

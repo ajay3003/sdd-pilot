@@ -34,6 +34,7 @@ builder.Services.AddScoped<ReviewedCandidateService>();
 builder.Services.AddScoped<CandidateLinkService>();
 builder.Services.AddScoped<QaDeltaReviewService>();
 builder.Services.AddScoped<TraceLinkService>();
+builder.Services.AddScoped<ImpactAnalysisService>();
 
 builder.Services
     .AddGraphQLServer()
@@ -49,6 +50,12 @@ builder.Services
     .AddType<TraceLinkWithTestObjectType>()
     .AddType<TraceabilityMatrixRowObjectType>()
     .AddType<CoverageSummaryObjectType>()
+    .AddType<ImpactedTestObjectType>()
+    .AddType<RegressionItemObjectType>()
+    .AddType<RequirementImpactSummaryObjectType>()
+    .AddType<RequirementImpactObjectType>()
+    .AddType<RequirementRiskItemObjectType>()
+    .AddType<ImpactSummaryObjectType>()
     .AddDiagnosticEventListener<OperationDiagnosticEventListener>()
     .ConfigureSchema(b => b.ModifyOptions(o => o.UseXmlDocumentation = true));
 
