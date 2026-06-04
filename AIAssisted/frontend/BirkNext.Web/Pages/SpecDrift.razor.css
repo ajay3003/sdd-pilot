@@ -367,6 +367,193 @@
     font-size: 0.75rem;
 }
 
+/* ─── Top-level empty state (no requirements) ────────────────────────────── */
+
+.drift-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 2rem 2.25rem 2.25rem;
+    background: var(--clr-surface, #f8fafc);
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-lg, 8px);
+}
+
+.drift-empty-state-heading {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--clr-text-heading, #0f172a);
+}
+
+.drift-empty-state-desc {
+    margin: 0;
+    font-size: 0.86rem;
+    color: var(--clr-text-muted, #475569);
+    line-height: 1.55;
+    max-width: 50ch;
+}
+
+.drift-empty-state-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.drift-link-btn--primary {
+    background: var(--clr-primary, #2563eb);
+    color: #fff !important;
+    border-color: var(--clr-primary, #2563eb);
+}
+
+.drift-link-btn--primary:hover {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+}
+
+/* ─── Interactive findings ───────────────────────────────────────────────── */
+
+.drift-finding-clickable {
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    font-family: inherit;
+    transition: box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.drift-finding-clickable:hover {
+    box-shadow: 0 0 0 2px var(--clr-primary, #2563eb);
+    border-radius: var(--radius-md, 6px);
+}
+
+.drift-finding-active {
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    font-family: inherit;
+    box-shadow: 0 0 0 2px var(--clr-primary, #2563eb);
+    outline: none;
+}
+
+.drift-finding-filter-hint {
+    margin-left: auto;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--clr-primary, #2563eb);
+    opacity: 0.7;
+    white-space: nowrap;
+}
+
+.drift-finding-active .drift-finding-filter-hint {
+    opacity: 1;
+}
+
+/* ─── Filter controls ────────────────────────────────────────────────────── */
+
+.drift-section-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.25rem;
+}
+
+.drift-section-header > div { flex: 1; }
+
+.drift-filter-clear {
+    padding: 0.2rem 0.55rem;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: var(--radius-sm, 4px);
+    color: var(--clr-primary, #2563eb);
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s ease;
+}
+
+.drift-filter-clear:hover { background: #dbeafe; }
+
+.drift-filter-hint-global {
+    font-size: 0.7rem;
+    color: var(--clr-text-subtle, #94a3b8);
+    white-space: nowrap;
+    font-style: italic;
+    align-self: flex-end;
+    padding-bottom: 0.1rem;
+}
+
+/* ─── Filter active banner inside card ───────────────────────────────────── */
+
+.drift-filter-banner {
+    padding: 0.35rem 1rem;
+    background: #eff6ff;
+    border-bottom: 1px solid #bfdbfe;
+    font-size: 0.72rem;
+    color: var(--clr-primary, #2563eb);
+    font-weight: 600;
+}
+
+/* ─── Highlighted card (orphan tests when filter active) ─────────────────── */
+
+.drift-card-highlighted {
+    box-shadow: 0 0 0 2px var(--clr-primary, #2563eb);
+}
+
+/* ─── Action navigation buttons ──────────────────────────────────────────── */
+
+.drift-action-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.85rem 1rem 1rem;
+    border-top: 1px solid var(--clr-border, #f1f5f9);
+    margin-top: 0.25rem;
+}
+
+.drift-action-btn {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.55rem 0.85rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-md, 6px);
+    background: var(--clr-surface, #f8fafc);
+    text-decoration: none;
+    color: var(--clr-text-heading, #0f172a);
+    transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.drift-action-btn:hover {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    box-shadow: 0 1px 4px rgba(37, 99, 235, 0.1);
+}
+
+.drift-action-btn--primary {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+}
+
+.drift-action-btn--primary:hover {
+    background: #dbeafe;
+    border-color: var(--clr-primary, #2563eb);
+}
+
+.drift-action-btn-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--clr-primary, #2563eb);
+}
+
+.drift-action-btn-hint {
+    font-size: 0.7rem;
+    color: var(--clr-text-muted, #64748b);
+}
+
 /* ─── Responsive ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 860px) {
