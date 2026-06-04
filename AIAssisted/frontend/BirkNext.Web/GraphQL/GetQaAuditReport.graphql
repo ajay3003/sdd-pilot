@@ -1,0 +1,38 @@
+query GetQaAuditReport($projectId: String!, $includeAiSummary: Boolean!) {
+    qaAuditReport(projectId: $projectId, includeAiSummary: $includeAiSummary) {
+        qualityScore
+        readinessStatus
+        aiExecutiveSummary
+        aiConcerns
+        aiRecommendedActions
+        coveragePercent
+        totalRequirements
+        requirementsAtRisk
+        highRiskRequirements
+        driftFindingsCount
+        highRiskDriftFindings
+        orphanTestCount
+        totalCodeFiles
+        unlinkedCodeFiles
+        driftFindings {
+            category
+            description
+            severity
+        }
+        topRisks {
+            requirement {
+                id
+                title
+            }
+            driftRisk
+            linkedTestCount
+            driftReason
+        }
+        recommendedActions
+        scoreDeductions {
+            category
+            reason
+            points
+        }
+    }
+}

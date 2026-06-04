@@ -146,4 +146,19 @@ public class Query
     {
         return await driftService.GetSpecDriftReportAsync(projectId, cancellationToken);
     }
+
+    /// <summary>
+    /// Returns the AI QA Auditor report: deterministic quality score (0–100),
+    /// readiness status, aggregated metrics from all quality signals, and an
+    /// optional AI-generated executive summary (requires includeAiSummary=true
+    /// and a configured Anthropic API key).
+    /// </summary>
+    public async Task<QaAuditReport> QaAuditReportAsync(
+        string projectId,
+        bool includeAiSummary,
+        [Service] AIQaAuditorService auditorService,
+        CancellationToken cancellationToken)
+    {
+        return await auditorService.GetQaAuditReportAsync(projectId, includeAiSummary, cancellationToken);
+    }
 }

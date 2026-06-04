@@ -1,0 +1,352 @@
+@page "/ai-qa-auditor"
+@using BirkNext.Web.GraphQL
+@inject IBirkNextClient Client
+
+<div class="qa-auditor-page">
+
+    <div class="qa-hero traceability-hero">
+        <h1 class="page-title">AI QA Auditor</h1>
+        <p class="page-subtitle">Executive quality dashboard — aggregates coverage, spec drift, impact analysis, and code traceability into a single quality score.</p>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Calculating quality score&hellip;</p>
+        </div>
+    }
+    else if (_error != null)
+    {
+        <div class="error-banner">
+            <strong>Error:</strong> @_error
+            <button class="btn-secondary" style="margin-left:1rem;" @onclick='() => LoadReportAsync(false)'>Retry</button>
+        </div>
+    }
+    else if (_report != null)
+    {
+        <!-- Quality Score Banner -->
+        <div class="qa-score-banner qa-score-banner--@ReadinessClass">
+            <div class="qa-score-gauge qa-score-gauge--@ReadinessClass">
+                <span class="qa-score-number">@_report.QualityScore</span>
+                <span class="qa-score-unit">/ 100</span>
+            </div>
+            <div class="qa-score-info">
+                <div class="qa-readiness-badge qa-readiness--@ReadinessClass">@ReadinessLabel</div>
+                <p class="qa-score-subtitle">
+                    Quality score computed from @_report.TotalRequirements requirement(s) across @_report.ScoreDeductions.Count deduction category(ies).
+                </p>
+                @if (_report.ScoreDeductions.Any())
+                {
+                    <div class="qa-deduction-pills">
+                        @foreach (var d in _report.ScoreDeductions)
+                        {
+                            <span class="qa-deduction-pill">@d.Category &minus;@d.Points</span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="qa-score-perfect">No deductions — full score.</p>
+                }
+            </div>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="qa-kpi-grid">
+            <div class="kpi-card kpi-card--@CoverageKpiClass">
+                <div class="kpi-label">Requirement Coverage</div>
+                <div class="kpi-value">@_report.CoveragePercent.ToString("F0")%</div>
+                <div class="kpi-sublabel">@_report.TotalRequirements requirement(s)</div>
+            </div>
+            <div class="kpi-card kpi-card--@RiskKpiClass">
+                <div class="kpi-label">Requirements at Risk</div>
+                <div class="kpi-value">@_report.RequirementsAtRisk</div>
+                <div class="kpi-sublabel">@_report.HighRiskRequirements with zero tests</div>
+            </div>
+            <div class="kpi-card kpi-card--@DriftKpiClass">
+                <div class="kpi-label">Drift Findings</div>
+                <div class="kpi-value">@_report.DriftFindingsCount</div>
+                <div class="kpi-sublabel">@_report.HighRiskDriftFindings high-risk</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Orphan Tests</div>
+                <div class="kpi-value kpi-value--@(_report.OrphanTestCount > 0 ? "warn" : "ok")">@_report.OrphanTestCount</div>
+                <div class="kpi-sublabel">not linked to any requirement</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Unlinked Code Files</div>
+                <div class="kpi-value kpi-value--@(_report.UnlinkedCodeFiles > 0 ? "warn" : "ok")">@_report.UnlinkedCodeFiles</div>
+                <div class="kpi-sublabel">of @_report.TotalCodeFiles registered</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">High-Risk Requirements</div>
+                <div class="kpi-value kpi-value--@(_report.HighRiskRequirements > 0 ? "danger" : "ok")">@_report.HighRiskRequirements</div>
+                <div class="kpi-sublabel">no tests linked</div>
+            </div>
+        </div>
+
+        <!-- AI Executive Summary -->
+        <div class="qa-section">
+            <div class="qa-section-header">
+                <h2 class="qa-section-title">
+                    <span class="nav-icon nav-icon-ai-auditor qa-section-icon" aria-hidden="true"></span>
+                    AI Executive Summary
+                </h2>
+                @if (_report.AiExecutiveSummary == null && !_aiRequested)
+                {
+                    <button class="btn-primary btn-sm" @onclick="GenerateAiSummaryAsync" disabled="@_generatingAi">
+                        @if (_generatingAi)
+                        {
+                            <span class="spinner-sm"></span>
+                        }
+                        Generate Summary
+                    </button>
+                }
+                else if (_report.AiExecutiveSummary != null)
+                {
+                    <button class="btn-secondary btn-sm" @onclick="GenerateAiSummaryAsync" disabled="@_generatingAi">
+                        @if (_generatingAi)
+                        {
+                            <span class="spinner-sm"></span>
+                        }
+                        Regenerate
+                    </button>
+                }
+            </div>
+
+            @if (_generatingAi)
+            {
+                <div class="qa-ai-loading">
+                    <div class="spinner-sm"></div>
+                    <span>Generating AI summary&hellip;</span>
+                </div>
+            }
+            else if (_report.AiExecutiveSummary != null)
+            {
+                <p class="qa-exec-summary">@_report.AiExecutiveSummary</p>
+
+                @if (_report.AiConcerns.Any())
+                {
+                    <h3 class="qa-ai-subheading">Key Concerns</h3>
+                    <ul class="qa-ai-list">
+                        @foreach (var concern in _report.AiConcerns)
+                        {
+                            <li>@concern</li>
+                        }
+                    </ul>
+                }
+
+                @if (_report.AiRecommendedActions.Any())
+                {
+                    <h3 class="qa-ai-subheading">AI Recommended Actions</h3>
+                    <ul class="qa-ai-list qa-ai-list--actions">
+                        @foreach (var action in _report.AiRecommendedActions)
+                        {
+                            <li>@action</li>
+                        }
+                    </ul>
+                }
+            }
+            else if (_aiRequested)
+            {
+                <p class="qa-ai-unavailable">AI summary unavailable — check that <code>Anthropic:ApiKey</code> is configured in <code>appsettings.json</code>.</p>
+            }
+            else
+            {
+                <p class="qa-ai-placeholder">Click <strong>Generate Summary</strong> to get an AI-written executive overview, specific concerns, and additional recommended actions based on the quality data above.</p>
+            }
+        </div>
+
+        <!-- Drift Findings -->
+        @if (_report.DriftFindings.Any())
+        {
+            <div class="qa-section">
+                <h2 class="qa-section-title">Spec Drift Findings</h2>
+                <div class="qa-findings-list">
+                    @foreach (var finding in _report.DriftFindings)
+                    {
+                        <div class="qa-finding-item qa-finding--@finding.Severity.ToString().ToLowerInvariant()">
+                            <span class="impact-risk-badge impact-risk-badge--@finding.Severity.ToString().ToLowerInvariant()">@finding.Severity</span>
+                            <span class="qa-finding-cat">@finding.Category</span>
+                            <span class="qa-finding-desc">@finding.Description</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Top Requirements at Risk -->
+        @if (_report.TopRisks.Any())
+        {
+            <div class="qa-section">
+                <h2 class="qa-section-title">Top Requirements at Risk</h2>
+                <div class="qa-risks-list">
+                    @foreach (var risk in _report.TopRisks)
+                    {
+                        <div class="qa-risk-row">
+                            <span class="impact-risk-badge impact-risk-badge--@risk.DriftRisk.ToString().ToLowerInvariant()">@risk.DriftRisk</span>
+                            <span class="qa-risk-title">@risk.Requirement.Title</span>
+                            <span class="qa-risk-meta">@risk.LinkedTestCount test(s) — @risk.DriftReason</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Recommended Actions -->
+        @if (_report.RecommendedActions.Any())
+        {
+            <div class="qa-section">
+                <h2 class="qa-section-title">Recommended Actions</h2>
+                <ol class="qa-actions-list">
+                    @foreach (var action in _report.RecommendedActions)
+                    {
+                        <li>@action</li>
+                    }
+                </ol>
+            </div>
+        }
+
+        <!-- Score Deductions Detail -->
+        @if (_report.ScoreDeductions.Any())
+        {
+            <div class="qa-section">
+                <h2 class="qa-section-title">Score Deductions</h2>
+                <div class="qa-deductions-table">
+                    <div class="qa-deductions-header">
+                        <span>Category</span>
+                        <span>Reason</span>
+                        <span>Points</span>
+                    </div>
+                    @foreach (var d in _report.ScoreDeductions)
+                    {
+                        <div class="qa-deductions-row">
+                            <span class="qa-ded-cat">@d.Category</span>
+                            <span class="qa-ded-reason">@d.Reason</span>
+                            <span class="qa-ded-pts">&minus;@d.Points</span>
+                        </div>
+                    }
+                    <div class="qa-deductions-footer">
+                        <span></span>
+                        <span>Final score</span>
+                        <span class="qa-ded-total">@_report.QualityScore / 100</span>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- Feature Chain Diagram -->
+        <div class="qa-feature-chain">
+            <h2 class="qa-section-title">Data Sources</h2>
+            <div class="feature-chain-diagram">
+                <div class="chain-item chain-item--active">
+                    <span class="nav-icon nav-icon-traceability" aria-hidden="true"></span>
+                    Traceability
+                </div>
+                <div class="chain-arrow">&rarr;</div>
+                <div class="chain-item chain-item--active">
+                    <span class="nav-icon nav-icon-impact-analysis" aria-hidden="true"></span>
+                    Impact Analysis
+                </div>
+                <div class="chain-arrow">&rarr;</div>
+                <div class="chain-item chain-item--active">
+                    <span class="nav-icon nav-icon-spec-drift" aria-hidden="true"></span>
+                    Spec Drift
+                </div>
+                <div class="chain-arrow">&rarr;</div>
+                <div class="chain-item chain-item--active">
+                    <span class="nav-icon nav-icon-code-trace" aria-hidden="true"></span>
+                    Code Traceability
+                </div>
+                <div class="chain-arrow">&rarr;</div>
+                <div class="chain-item chain-item--current">
+                    <span class="nav-icon nav-icon-qa-auditor" aria-hidden="true"></span>
+                    QA Auditor
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="empty-state-actions">
+            <p>No data found. Make sure there are requirements and tests in the QA Artifact Library.</p>
+        </div>
+    }
+
+</div>
+
+@code {
+    private const string ProjectId = "birknext-demo";
+
+    private bool _loading = true;
+    private string? _error;
+    private IGetQaAuditReport_QaAuditReport? _report;
+    private bool _generatingAi;
+    private bool _aiRequested;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReportAsync(false);
+    }
+
+    private async Task LoadReportAsync(bool includeAiSummary)
+    {
+        if (!includeAiSummary) _loading = true;
+        _error = null;
+        try
+        {
+            var result = await Client.GetQaAuditReport.ExecuteAsync(ProjectId, includeAiSummary);
+            if (result.Errors?.Any() == true)
+                _error = result.Errors[0].Message;
+            else
+                _report = result.Data?.QaAuditReport;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task GenerateAiSummaryAsync()
+    {
+        _generatingAi = true;
+        _aiRequested = true;
+        StateHasChanged();
+        try
+        {
+            await LoadReportAsync(true);
+        }
+        finally
+        {
+            _generatingAi = false;
+        }
+    }
+
+    private string ReadinessClass => _report?.ReadinessStatus switch
+    {
+        QaReadinessStatus.Ready => "ready",
+        QaReadinessStatus.ReviewNeeded => "review",
+        _ => "high-risk",
+    };
+
+    private string ReadinessLabel => _report?.ReadinessStatus switch
+    {
+        QaReadinessStatus.Ready => "Ready",
+        QaReadinessStatus.ReviewNeeded => "Review Needed",
+        _ => "High Risk",
+    };
+
+    private string CoverageKpiClass => (_report?.CoveragePercent ?? 0) >= 80 ? "good"
+        : (_report?.CoveragePercent ?? 0) >= 50 ? "warn" : "danger";
+
+    private string RiskKpiClass => (_report?.RequirementsAtRisk ?? 0) == 0 ? "good"
+        : (_report?.HighRiskRequirements ?? 0) > 0 ? "danger" : "warn";
+
+    private string DriftKpiClass => (_report?.DriftFindingsCount ?? 0) == 0 ? "good"
+        : (_report?.HighRiskDriftFindings ?? 0) > 0 ? "danger" : "warn";
+}

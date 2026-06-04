@@ -13,6 +13,7 @@ type Query {
   codeFiles(projectId: String!): [CodeFile!]!
   codeSummary(projectId: String!): CodeSummary!
   codeImpact(projectId: String!, codeFileId: ID!): CodeImpact
+  qaAuditReport(projectId: String!, includeAiSummary: Boolean!): QaAuditReport!
 }
 
 type Mutation {
@@ -489,4 +490,37 @@ type DeleteCodeLinkPayload {
   deletedId: ID
   success: Boolean!
   errors: [UserError!]!
+}
+
+enum QaReadinessStatus {
+  READY
+  REVIEW_NEEDED
+  HIGH_RISK
+}
+
+type QaScoreDeduction {
+  category: String!
+  reason: String!
+  points: Int!
+}
+
+type QaAuditReport {
+  qualityScore: Int!
+  readinessStatus: QaReadinessStatus!
+  aiExecutiveSummary: String
+  aiConcerns: [String!]!
+  aiRecommendedActions: [String!]!
+  coveragePercent: Float!
+  totalRequirements: Int!
+  requirementsAtRisk: Int!
+  highRiskRequirements: Int!
+  driftFindingsCount: Int!
+  highRiskDriftFindings: Int!
+  orphanTestCount: Int!
+  totalCodeFiles: Int!
+  unlinkedCodeFiles: Int!
+  driftFindings: [DriftFinding!]!
+  topRisks: [DriftRequirement!]!
+  recommendedActions: [String!]!
+  scoreDeductions: [QaScoreDeduction!]!
 }
