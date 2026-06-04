@@ -170,82 +170,115 @@
                 }
                 else
                 {
-                    <div class="mapping-list">
-                        @foreach (var row in FilteredMatrix)
-                        {
-                            var reqLabel = ReqLabel(row.Id);
-                            var isLinking = _linkingRequirementId == row.Id;
-                            <div class="mapping-row @(row.CoverageStatus == "Covered" ? "mapping-covered" : "mapping-uncovered")">
-                                <div class="mapping-requirement">
-                                    <div class="mapping-req-identity">
-                                        <span class="artifact-display-label">@reqLabel</span>
-                                        <span class="badge badge-requirement">Requirement</span>
-                                        <span class="artifact-state-pill @(row.CoverageStatus == "Covered" ? "state-covered" : "state-uncovered")">
-                                            @(row.CoverageStatus == "Covered" ? "Covered" : "Missing Test Coverage")
-                                        </span>
-                                    </div>
-                                    <strong class="mapping-req-title">@row.Title</strong>
-                                </div>
-                                <div class="mapping-tests">
-                                    @if (row.LinkedTests.Count == 0)
-                                    {
-                                        <span class="mapping-test-empty">No tests linked</span>
-                                    }
-                                    else
-                                    {
-                                        @foreach (var linked in row.LinkedTests)
-                                        {
-                                            <span class="mapping-test-pill">
-                                                <span class="test-pill-label">@(TestLabel(linked.TestId))</span>
-                                                @linked.TestTitle
-                                                <button class="trace-unlink-btn"
-                                                        title="Remove link to @linked.TestTitle"
-                                                        disabled="@(_unlinkingId == linked.LinkId)"
-                                                        @onclick="() => HandleUnlinkAsync(linked.LinkId)"
-                                                        aria-label="Remove link between @reqLabel and @(TestLabel(linked.TestId))">
-                                                    @if (_unlinkingId == linked.LinkId) {<span>…</span>} else {<span aria-hidden="true">×</span>}
-                                                </button>
-                                            </span>
-                                            @if (_unlinkErrors.TryGetValue(linked.LinkId, out var unlinkErr))
+                    <div class="trace-table-wrapper">
+                        <table class="trace-table" aria-label="Requirement coverage matrix">
+                            <thead>
+                                <tr>
+                                    <th class="trace-col-id">ID</th>
+                                    <th class="trace-col-title">Requirement</th>
+                                    <th class="trace-col-coverage">Coverage</th>
+                                    <th class="trace-col-count">Tests</th>
+                                    <th class="trace-col-risk">Risk</th>
+                                    <th class="trace-col-actions">Linked Tests &amp; Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in FilteredMatrix)
+                                {
+                                    var reqLabel = ReqLabel(row.Id);
+                                    var isLinking = _linkingRequirementId == row.Id;
+                                    var isExpanded = _expandedRows.Contains(row.Id);
+                                    var needsTruncate = row.Title.Length > TitleLimit;
+                                    <tr class="trace-row trace-row--@(row.CoverageStatus == "Covered" ? "covered" : "missing")">
+                                        <td class="trace-col-id">
+                                            <span class="artifact-display-label">@reqLabel</span>
+                                        </td>
+                                        <td class="trace-col-title">
+                                            @if (needsTruncate && !isExpanded)
                                             {
-                                                <span class="trace-inline-error">@unlinkErr</span>
+                                                <span>@(row.Title[..TitleLimit])</span><span class="trace-ellipsis">&hellip;</span>
+                                                <button class="trace-show-more" @onclick="() => ToggleExpand(row.Id)">Show more</button>
                                             }
-                                        }
-                                    }
-
-                                    @if (!isLinking)
-                                    {
-                                        <button class="trace-matrix-action" @onclick="() => BeginLinking(row.Id)"
-                                                aria-label="Link a test to @reqLabel">
-                                            + Link Test
-                                        </button>
-                                    }
-                                    else
-                                    {
-                                        <div class="link-select-row">
-                                            <select class="trace-test-select" @bind="_selectedTestId"
-                                                    aria-label="Select a test to link to @reqLabel">
-                                                <option value="">— select a test —</option>
-                                                @foreach (var t in AvailableTestsFor(row))
+                                            else
+                                            {
+                                                <span>@row.Title</span>
+                                                @if (needsTruncate)
                                                 {
-                                                    <option value="@t.Id">@(TestLabel(t.Id)) — @t.Title</option>
+                                                    <button class="trace-show-more" @onclick="() => ToggleExpand(row.Id)">Show less</button>
                                                 }
-                                            </select>
-                                            <button class="btn-primary btn-sm"
-                                                    disabled="@(string.IsNullOrEmpty(_selectedTestId) || _isLinking)"
-                                                    @onclick="() => HandleLinkAsync(row.Id)">
-                                                @if (_isLinking) {<span>Linking…</span>} else {<span>Link</span>}
-                                            </button>
-                                            <button class="btn-secondary btn-sm" @onclick="CancelLinking">Cancel</button>
-                                        </div>
-                                        @if (_linkError is not null)
-                                        {
-                                            <span class="trace-inline-error">@_linkError</span>
-                                        }
-                                    }
-                                </div>
-                            </div>
-                        }
+                                            }
+                                        </td>
+                                        <td class="trace-col-coverage">
+                                            <span class="trace-badge @(row.CoverageStatus == "Covered" ? "trace-badge--covered" : "trace-badge--missing")">
+                                                @(row.CoverageStatus == "Covered" ? "Covered" : "Missing Coverage")
+                                            </span>
+                                        </td>
+                                        <td class="trace-col-count">@row.LinkedTests.Count</td>
+                                        <td class="trace-col-risk">
+                                            <span class="trace-badge trace-badge--@RiskClass(row)">@RiskLabel(row)</span>
+                                        </td>
+                                        <td class="trace-col-actions">
+                                            @if (row.LinkedTests.Count == 0 && !isLinking)
+                                            {
+                                                <span class="mapping-test-empty">No tests linked</span>
+                                            }
+                                            else
+                                            {
+                                                @foreach (var linked in row.LinkedTests)
+                                                {
+                                                    <span class="mapping-test-pill">
+                                                        <span class="test-pill-label">@(TestLabel(linked.TestId))</span>
+                                                        @linked.TestTitle
+                                                        <button class="trace-unlink-btn"
+                                                                title="Remove link to @linked.TestTitle"
+                                                                disabled="@(_unlinkingId == linked.LinkId)"
+                                                                @onclick="() => HandleUnlinkAsync(linked.LinkId)"
+                                                                aria-label="Remove link between @reqLabel and @(TestLabel(linked.TestId))">
+                                                            @if (_unlinkingId == linked.LinkId) {<span>…</span>} else {<span aria-hidden="true">×</span>}
+                                                        </button>
+                                                    </span>
+                                                    @if (_unlinkErrors.TryGetValue(linked.LinkId, out var unlinkErr))
+                                                    {
+                                                        <span class="trace-inline-error">@unlinkErr</span>
+                                                    }
+                                                }
+                                            }
+
+                                            @if (!isLinking)
+                                            {
+                                                <button class="trace-matrix-action" @onclick="() => BeginLinking(row.Id)"
+                                                        aria-label="Link a test to @reqLabel">
+                                                    + Link Test
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <div class="link-select-row">
+                                                    <select class="trace-test-select" @bind="_selectedTestId"
+                                                            aria-label="Select a test to link to @reqLabel">
+                                                        <option value="">— select a test —</option>
+                                                        @foreach (var t in AvailableTestsFor(row))
+                                                        {
+                                                            <option value="@t.Id">@(TestLabel(t.Id)) — @t.Title</option>
+                                                        }
+                                                    </select>
+                                                    <button class="btn-primary btn-sm"
+                                                            disabled="@(string.IsNullOrEmpty(_selectedTestId) || _isLinking)"
+                                                            @onclick="() => HandleLinkAsync(row.Id)">
+                                                        @if (_isLinking) {<span>Linking…</span>} else {<span>Link</span>}
+                                                    </button>
+                                                    <button class="btn-secondary btn-sm" @onclick="CancelLinking">Cancel</button>
+                                                </div>
+                                                @if (_linkError is not null)
+                                                {
+                                                    <span class="trace-inline-error">@_linkError</span>
+                                                }
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
                     </div>
                 }
             </section>
@@ -266,6 +299,16 @@
     // Display labels (REQ-001, TEST-001 etc. — UI only, not persisted)
     private Dictionary<string, string> _requirementLabels = new();
     private Dictionary<string, string> _testLabels = new();
+
+    // Title truncation
+    private const int TitleLimit = 80;
+    private HashSet<string> _expandedRows = new();
+
+    private void ToggleExpand(string id)
+    {
+        if (!_expandedRows.Add(id))
+            _expandedRows.Remove(id);
+    }
 
     // Matrix link state
     private string? _linkingRequirementId;
@@ -605,6 +648,20 @@
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private static string Plural(int count) => count == 1 ? string.Empty : "s";
+
+    private static string RiskLabel(RequirementRow row) => row.LinkedTests.Count switch
+    {
+        0 => "High",
+        1 => "Medium",
+        _ => "Low",
+    };
+
+    private static string RiskClass(RequirementRow row) => row.LinkedTests.Count switch
+    {
+        0 => "high",
+        1 => "medium",
+        _ => "low",
+    };
 
     private sealed record RequirementRow(
         string Id,
