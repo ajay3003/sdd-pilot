@@ -22,6 +22,7 @@ type Mutation {
   reorderTestScenarios(input: ReorderTestScenariosInput!): ReorderTestScenariosPayload!
   createTraceLink(input: CreateTraceLinkInput!): CreateTraceLinkPayload!
   deleteTraceLink(input: DeleteTraceLinkInput!): DeleteTraceLinkPayload!
+  analyzeChange(input: AnalyzeChangeInput!): AnalyzeChangePayload!
 }
 
 type Scenario {
@@ -342,3 +343,36 @@ type ImpactSummary {
 }
 
 scalar DateTime
+
+input AnalyzeChangeInput {
+  projectId: String!
+  changeDescription: String!
+}
+
+type AnalyzeChangePayload {
+  report: ChangeAuditReport
+  errors: [UserError!]!
+}
+
+type ChangeAuditReport {
+  changeDescription: String!
+  overallRiskLevel: RiskLevel!
+  aiReasoning: String!
+  regressionScope: String!
+  coverageGaps: [String!]!
+  affectedRequirements: [AuditAffectedRequirement!]!
+  affectedTests: [AuditAffectedTest!]!
+  recommendedRegressionTests: [RegressionItem!]!
+}
+
+type AuditAffectedRequirement {
+  requirement: Scenario!
+  riskLevel: RiskLevel!
+  linkedTestCount: Int!
+  aiRelevanceReason: String!
+}
+
+type AuditAffectedTest {
+  test: Scenario!
+  aiRelevanceReason: String!
+}

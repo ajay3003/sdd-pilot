@@ -35,6 +35,13 @@ builder.Services.AddScoped<CandidateLinkService>();
 builder.Services.AddScoped<QaDeltaReviewService>();
 builder.Services.AddScoped<TraceLinkService>();
 builder.Services.AddScoped<ImpactAnalysisService>();
+builder.Services.AddScoped<AIChangeAuditService>();
+builder.Services.AddHttpClient("Anthropic", client =>
+{
+    client.DefaultRequestHeaders.Add("x-api-key", builder.Configuration["Anthropic:ApiKey"] ?? string.Empty);
+    client.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+    client.Timeout = TimeSpan.FromSeconds(60);
+});
 
 builder.Services
     .AddGraphQLServer()
@@ -56,6 +63,9 @@ builder.Services
     .AddType<RequirementImpactObjectType>()
     .AddType<RequirementRiskItemObjectType>()
     .AddType<ImpactSummaryObjectType>()
+    .AddType<AuditAffectedRequirementObjectType>()
+    .AddType<AuditAffectedTestObjectType>()
+    .AddType<ChangeAuditReportObjectType>()
     .AddDiagnosticEventListener<OperationDiagnosticEventListener>()
     .ConfigureSchema(b => b.ModifyOptions(o => o.UseXmlDocumentation = true));
 

@@ -340,6 +340,40 @@ public class Mutation
         };
     }
 
+    /// <summary>
+    /// Runs the AI Change Auditor: identifies affected requirements and tests,
+    /// computes formal risk levels via ImpactAnalysisService, and returns a
+    /// human-readable audit report. Requires ANTHROPIC_API_KEY to be configured.
+    /// </summary>
+    public async Task<AnalyzeChangePayload> AnalyzeChangeAsync(
+        AnalyzeChangeInput input,
+        [Service] AIChangeAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(input.ChangeDescription))
+            return new AnalyzeChangePayload
+            {
+                Errors = [new Services.UserError("EMPTY_DESCRIPTION", "Change description must not be empty.")],
+            };
+
+        var report = await auditService.AnalyzeChangeAsync(
+            new Models.ChangeAuditRequest
+            {
+                ProjectId = input.ProjectId,
+                ChangeDescription = input.ChangeDescription.Trim(),
+            },
+            cancellationToken);
+
+        if (report is null)
+            return new AnalyzeChangePayload
+            {
+                Errors = [new Services.UserError("AUDIT_FAILED",
+                    "The AI analysis could not be completed. Verify that Anthropic:ApiKey is configured and try again.")],
+            };
+
+        return new AnalyzeChangePayload { Report = report };
+    }
+
     /// <summary>Deletes a trace link by ID. ProjectId is required for safety scoping.</summary>
     public async Task<DeleteTraceLinkPayload> DeleteTraceLinkAsync(
         DeleteTraceLinkInput input,
