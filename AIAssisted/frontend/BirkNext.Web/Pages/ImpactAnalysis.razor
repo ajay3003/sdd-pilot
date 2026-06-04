@@ -1,0 +1,393 @@
+@page "/impact-analysis"
+@using BirkNext.Web.GraphQL
+@inject IBirkNextClient Client
+
+<PageTitle>Impact Analysis</PageTitle>
+
+<div class="impact-page">
+    <section class="traceability-hero">
+        <p class="section-kicker">Regression Planning</p>
+        <h1>Impact Analysis</h1>
+        <p class="page-lead">Understand what needs testing before you accept a change. Select a requirement to see its risk level and regression recommendation.</p>
+    </section>
+
+    @if (_isLoading)
+    {
+        <p class="loading-state">Loading impact data...</p>
+    }
+    else if (_loadError is not null)
+    {
+        <div class="notification notification-error" role="alert">@_loadError</div>
+    }
+    else
+    {
+        <div class="kpi-row" aria-label="Risk summary">
+            <div class="kpi-card impact-kpi-high @(_riskFilter == "High" ? "kpi-card-active" : "")"
+                 role="button" tabindex="0"
+                 @onclick='() => ToggleRiskFilter("High")'
+                 @onkeydown='e => { if (e.Key == "Enter" || e.Key == " ") ToggleRiskFilter("High"); }'>
+                <span class="kpi-marker" aria-hidden="true"></span>
+                <span class="kpi-value">@_summary.HighRiskCount</span>
+                <span class="kpi-label">High Risk</span>
+                <span class="kpi-hint">no tests linked</span>
+            </div>
+            <div class="kpi-card impact-kpi-medium @(_riskFilter == "Medium" ? "kpi-card-active" : "")"
+                 role="button" tabindex="0"
+                 @onclick='() => ToggleRiskFilter("Medium")'
+                 @onkeydown='e => { if (e.Key == "Enter" || e.Key == " ") ToggleRiskFilter("Medium"); }'>
+                <span class="kpi-marker" aria-hidden="true"></span>
+                <span class="kpi-value">@_summary.MediumRiskCount</span>
+                <span class="kpi-label">Medium Risk</span>
+                <span class="kpi-hint">one test linked</span>
+            </div>
+            <div class="kpi-card impact-kpi-low @(_riskFilter == "Low" ? "kpi-card-active" : "")"
+                 role="button" tabindex="0"
+                 @onclick='() => ToggleRiskFilter("Low")'
+                 @onkeydown='e => { if (e.Key == "Enter" || e.Key == " ") ToggleRiskFilter("Low"); }'>
+                <span class="kpi-marker" aria-hidden="true"></span>
+                <span class="kpi-value">@_summary.LowRiskCount</span>
+                <span class="kpi-label">Low Risk</span>
+                <span class="kpi-hint">2+ tests linked</span>
+            </div>
+            <div class="kpi-card kpi-card-traceability">
+                <span class="kpi-marker" aria-hidden="true"></span>
+                <span class="kpi-value">@_summary.TotalRequirements</span>
+                <span class="kpi-label">Total Requirements</span>
+            </div>
+        </div>
+
+        <div class="impact-layout">
+            <section class="impact-matrix-panel" aria-label="Requirements by risk">
+                <div class="requirement-map-header">
+                    <div>
+                        <p class="section-kicker">Click a requirement to analyse it</p>
+                        <h2>Requirements by Risk</h2>
+                    </div>
+                    <span>@FilteredRequirements.Count shown</span>
+                </div>
+
+                @if (_summary.TotalRequirements == 0)
+                {
+                    <div class="empty-state empty-state-dashed">
+                        <h3>No requirements yet</h3>
+                        <p>Add requirement scenarios to the library to see their risk profile here.</p>
+                        <div class="empty-state-actions">
+                            <a href="/scenarios">Go to QA Artifact Library</a>
+                        </div>
+                    </div>
+                }
+                else if (FilteredRequirements.Count == 0)
+                {
+                    <div class="mapping-empty">No requirements match the current risk filter.</div>
+                }
+                else
+                {
+                    <div class="impact-requirement-list">
+                        @foreach (var item in FilteredRequirements)
+                        {
+                            var label = ReqLabel(item.Id);
+                            var isSelected = _selectedRequirementId == item.Id;
+                            <button type="button"
+                                    class="impact-req-row @RiskClass(item.RiskLevel) @(isSelected ? "impact-req-row-selected" : "")"
+                                    @onclick="() => SelectRequirementAsync(item.Id)"
+                                    aria-selected="@isSelected"
+                                    aria-label="Analyse @label — @item.Title">
+                                <div class="impact-req-left">
+                                    <span class="artifact-display-label">@label</span>
+                                    <span class="impact-req-title">@item.Title</span>
+                                </div>
+                                <div class="impact-req-right">
+                                    <span class="impact-risk-badge impact-risk-@item.RiskLevel.ToLower()">@RiskLabel(item.RiskLevel)</span>
+                                    <span class="impact-test-count">@item.LinkedTestCount test@(Plural(item.LinkedTestCount))</span>
+                                </div>
+                            </button>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="impact-detail-panel" aria-label="Requirement impact detail" aria-live="polite">
+                @if (_isLoadingDetail)
+                {
+                    <p class="loading-state">Loading impact detail...</p>
+                }
+                else if (_detailError is not null)
+                {
+                    <div class="notification notification-error" role="alert">@_detailError</div>
+                }
+                else if (_detail is null)
+                {
+                    <div class="impact-detail-placeholder">
+                        <p class="section-kicker">Nothing selected</p>
+                        <h3>Select a requirement</h3>
+                        <p>Click any requirement in the list on the left to see its impact analysis and regression recommendation.</p>
+                    </div>
+                }
+                else
+                {
+                    var reqLabel = ReqLabel(_detail.RequirementId);
+                    <div class="impact-detail-content">
+                        <div class="impact-detail-header">
+                            <span class="artifact-display-label">@reqLabel</span>
+                            <span class="badge badge-requirement">Requirement</span>
+                            <span class="impact-risk-badge impact-risk-@_detail.RiskLevel.ToLower()">@RiskLabel(_detail.RiskLevel)</span>
+                        </div>
+                        <h2 class="impact-detail-title">@_detail.RequirementTitle</h2>
+                        @if (!string.IsNullOrWhiteSpace(_detail.RequirementDescription))
+                        {
+                            <p class="impact-detail-desc">@_detail.RequirementDescription</p>
+                        }
+
+                        <div class="kpi-row impact-detail-kpis" aria-label="Impact metrics">
+                            <div class="kpi-card @(_detail.TotalLinkedTests > 0 ? "kpi-card-coverage" : "kpi-card-risks")">
+                                <span class="kpi-value">@_detail.TotalLinkedTests</span>
+                                <span class="kpi-label">Linked Tests</span>
+                            </div>
+                            <div class="kpi-card kpi-card-coverage">
+                                <span class="kpi-value">@_detail.AcceptedTests</span>
+                                <span class="kpi-label">Accepted Tests</span>
+                            </div>
+                            <div class="kpi-card @(_detail.MissingCoverage > 0 ? "kpi-card-risks" : "kpi-card-traceability")">
+                                <span class="kpi-value">@_detail.MissingCoverage</span>
+                                <span class="kpi-label">Missing Coverage</span>
+                            </div>
+                        </div>
+
+                        <div class="impact-regression-section">
+                            <div class="impact-regression-header">
+                                <p class="section-kicker">Deterministic — no AI involved</p>
+                                <h3>Regression Recommendation</h3>
+                            </div>
+                            @if (_detail.RegressionItems.Count == 0)
+                            {
+                                <div class="impact-regression-empty">
+                                    <span class="impact-risk-badge impact-risk-high">High Risk</span>
+                                    <p>No tests are linked to this requirement.</p>
+                                    <p>Manual testing is required before accepting any change to this requirement.</p>
+                                    <a href="/traceability" class="btn-primary">Go to Traceability &amp; Coverage to add tests</a>
+                                </div>
+                            }
+                            else
+                            {
+                                <ul class="impact-regression-list" aria-label="Tests to run for regression">
+                                    @foreach (var item in _detail.RegressionItems)
+                                    {
+                                        var testLabel = TestLabel(item.TestId);
+                                        <li class="impact-regression-item">
+                                            <div class="impact-regression-item-header">
+                                                <span class="impact-check" aria-hidden="true">✓</span>
+                                                <span class="artifact-display-label">@testLabel</span>
+                                                <span class="badge badge-test">Test</span>
+                                                <strong>@item.TestTitle</strong>
+                                            </div>
+                                            <p class="impact-regression-reason">@item.Reason</p>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    </div>
+                }
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+
+    private bool _isLoading = true;
+    private string? _loadError;
+    private SummaryViewModel _summary = new();
+    private IReadOnlyList<RequirementRiskViewModel> _requirements = [];
+    private string _riskFilter = string.Empty;
+
+    private string? _selectedRequirementId;
+    private bool _isLoadingDetail;
+    private string? _detailError;
+    private ImpactDetailViewModel? _detail;
+
+    // Display labels shared with Traceability page (same alphabetical ordering)
+    private Dictionary<string, string> _requirementLabels = new();
+    private Dictionary<string, string> _testLabels = new();
+
+    private IReadOnlyList<RequirementRiskViewModel> FilteredRequirements => string.IsNullOrEmpty(_riskFilter)
+        ? _requirements
+        : _requirements.Where(r => r.RiskLevel == _riskFilter).ToList();
+
+    private string ReqLabel(string id) => _requirementLabels.TryGetValue(id, out var l) ? l : id[..Math.Min(8, id.Length)];
+    private string TestLabel(string id) => _testLabels.TryGetValue(id, out var l) ? l : id[..Math.Min(8, id.Length)];
+
+    private static string RiskLabel(string riskLevel) => riskLevel switch
+    {
+        "High" => "High Risk",
+        "Medium" => "Medium Risk",
+        "Low" => "Low Risk",
+        _ => riskLevel,
+    };
+
+    private static string RiskClass(string riskLevel) => riskLevel switch
+    {
+        "High" => "impact-req-high",
+        "Medium" => "impact-req-medium",
+        "Low" => "impact-req-low",
+        _ => string.Empty,
+    };
+
+    private void ToggleRiskFilter(string risk)
+    {
+        _riskFilter = _riskFilter == risk ? string.Empty : risk;
+        _selectedRequirementId = null;
+        _detail = null;
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadSummaryAsync();
+
+    private async Task LoadSummaryAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            var summaryTask = Client.GetImpactSummary.ExecuteAsync(ProjectId);
+            var scenariosTask = Client.GetScenarios.ExecuteAsync(ProjectId);
+            await Task.WhenAll(summaryTask, scenariosTask);
+
+            var summaryResult = summaryTask.Result;
+            if (summaryResult.Errors is { Count: > 0 })
+            {
+                _loadError = "We couldn't load impact data right now. Please try again later.";
+                return;
+            }
+
+            if (summaryResult.Data is { } sd)
+            {
+                _summary = new SummaryViewModel
+                {
+                    TotalRequirements = sd.ImpactSummary.TotalRequirements,
+                    HighRiskCount = sd.ImpactSummary.HighRiskCount,
+                    MediumRiskCount = sd.ImpactSummary.MediumRiskCount,
+                    LowRiskCount = sd.ImpactSummary.LowRiskCount,
+                };
+
+                _requirements = sd.ImpactSummary.Requirements
+                    .Select(r => new RequirementRiskViewModel(
+                        r.Requirement.Id,
+                        r.Requirement.Title,
+                        r.RiskLevel.ToString(),
+                        r.LinkedTestCount))
+                    .ToList();
+            }
+
+            // Load all scenarios to compute stable display labels
+            var scenarios = scenariosTask.Result.Data?.Scenarios ?? [];
+            var reqsOrdered = _requirements
+                .OrderBy(r => r.Title, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _requirementLabels = reqsOrdered
+                .Select((r, i) => (r.Id, Label: $"REQ-{i + 1:D3}"))
+                .ToDictionary(x => x.Id, x => x.Label);
+
+            var testsOrdered = scenarios
+                .Where(s => s.Kind == ScenarioKind.Test)
+                .OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _testLabels = testsOrdered
+                .Select((t, i) => (t.Id, Label: $"TEST-{i + 1:D3}"))
+                .ToDictionary(x => x.Id, x => x.Label);
+        }
+        catch (Exception)
+        {
+            _loadError = "We couldn't load impact data right now. Please try again later.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SelectRequirementAsync(string requirementId)
+    {
+        if (_selectedRequirementId == requirementId) return;
+
+        _selectedRequirementId = requirementId;
+        _isLoadingDetail = true;
+        _detailError = null;
+        _detail = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.GetRequirementImpact.ExecuteAsync(ProjectId, requirementId);
+
+            if (result.Errors is { Count: > 0 })
+            {
+                _detailError = "We couldn't load impact details right now. Please try again.";
+                return;
+            }
+
+            var impact = result.Data?.RequirementImpact;
+            if (impact is null)
+            {
+                _detailError = "Requirement not found.";
+                return;
+            }
+
+            _detail = new ImpactDetailViewModel
+            {
+                RequirementId = impact.Requirement.Id,
+                RequirementTitle = impact.Requirement.Title,
+                RequirementDescription = impact.Requirement.Description,
+                TotalLinkedTests = impact.Summary.TotalLinkedTests,
+                AcceptedTests = impact.Summary.AcceptedTests,
+                MissingCoverage = impact.Summary.MissingCoverage,
+                RiskLevel = impact.Summary.RiskLevel.ToString(),
+                RegressionItems = impact.RegressionRecommendation
+                    .Select(r => new RegressionItemViewModel(r.Test.Id, r.Test.Title, r.Reason))
+                    .ToList(),
+            };
+        }
+        catch (Exception)
+        {
+            _detailError = "We couldn't load impact details right now. Please try again.";
+        }
+        finally
+        {
+            _isLoadingDetail = false;
+        }
+    }
+
+    private static string Plural(int count) => count == 1 ? string.Empty : "s";
+
+    // ─── View models ─────────────────────────────────────────────────────────
+
+    private sealed class SummaryViewModel
+    {
+        public int TotalRequirements { get; init; }
+        public int HighRiskCount { get; init; }
+        public int MediumRiskCount { get; init; }
+        public int LowRiskCount { get; init; }
+    }
+
+    private sealed record RequirementRiskViewModel(
+        string Id,
+        string Title,
+        string RiskLevel,
+        int LinkedTestCount);
+
+    private sealed class ImpactDetailViewModel
+    {
+        public string RequirementId { get; init; } = string.Empty;
+        public string RequirementTitle { get; init; } = string.Empty;
+        public string? RequirementDescription { get; init; }
+        public int TotalLinkedTests { get; init; }
+        public int AcceptedTests { get; init; }
+        public int MissingCoverage { get; init; }
+        public string RiskLevel { get; init; } = string.Empty;
+        public IReadOnlyList<RegressionItemViewModel> RegressionItems { get; init; } = [];
+    }
+
+    private sealed record RegressionItemViewModel(string TestId, string TestTitle, string Reason);
+}

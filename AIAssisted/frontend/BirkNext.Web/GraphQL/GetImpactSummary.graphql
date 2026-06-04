@@ -1,0 +1,17 @@
+query GetImpactSummary($projectId: String!) {
+    impactSummary(projectId: $projectId) {
+        totalRequirements
+        highRiskCount
+        mediumRiskCount
+        lowRiskCount
+        requirements {
+            requirement {
+                id
+                title
+                kind
+            }
+            riskLevel
+            linkedTestCount
+        }
+    }
+}

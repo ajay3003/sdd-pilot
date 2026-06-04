@@ -1,0 +1,36 @@
+query GetRequirementImpact($projectId: String!, $requirementId: ID!) {
+    requirementImpact(projectId: $projectId, requirementId: $requirementId) {
+        requirement {
+            id
+            title
+            kind
+            description
+        }
+        linkedTests {
+            test {
+                id
+                title
+                kind
+            }
+            link {
+                id
+                linkType
+                createdAt
+            }
+        }
+        regressionRecommendation {
+            test {
+                id
+                title
+                kind
+            }
+            reason
+        }
+        summary {
+            totalLinkedTests
+            acceptedTests
+            missingCoverage
+            riskLevel
+        }
+    }
+}
