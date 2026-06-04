@@ -10,14 +10,103 @@
     padding-bottom: 0.5rem;
 }
 
-/* Orphan test state pill */
+/* ─── Clickable KPI cards ───────────────────────────────────────────────── */
+
+.kpi-row button.kpi-card {
+    cursor: pointer;
+    text-align: left;
+    border: 1px solid #e2e8f0;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.kpi-row button.kpi-card:hover {
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.10);
+    border-color: var(--clr-border-hover, #94a3b8);
+}
+
+.kpi-row button.kpi-card:focus-visible {
+    outline: 2px solid var(--clr-primary, #2563eb);
+    outline-offset: 2px;
+}
+
+.kpi-card-active {
+    box-shadow: 0 0 0 2px var(--clr-primary, #2563eb) !important;
+    border-color: var(--clr-primary, #2563eb) !important;
+}
+
+/* Suppress the "active" highlight on the percentage card which just resets to All */
+.trace-kpi-percent.kpi-card-active {
+    box-shadow: none !important;
+    border-color: #e2e8f0 !important;
+}
+
+/* ─── Display labels (REQ-001, TEST-001) ────────────────────────────────── */
+
+.artifact-display-label {
+    display: inline-block;
+    padding: 0.08rem 0.36rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--clr-surface, #f8fafc);
+    color: var(--clr-text-muted, #475569);
+    font-size: 0.65rem;
+    font-weight: 700;
+    font-family: ui-monospace, "Cascadia Code", monospace;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    user-select: all;
+}
+
+/* Label inside a test pill */
+.test-pill-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    font-family: ui-monospace, monospace;
+    color: var(--clr-text-subtle, #94a3b8);
+    margin-right: 0.25rem;
+    text-transform: uppercase;
+}
+
+/* ─── Requirement row identity row ──────────────────────────────────────── */
+
+.mapping-req-identity {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-bottom: 0.3rem;
+}
+
+.mapping-req-title {
+    display: block;
+    font-size: 0.9rem;
+    line-height: 1.35;
+    color: var(--clr-text-heading, #0f172a);
+}
+
+/* Short description in orphan test rows */
+.mapping-description {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.75rem;
+    color: var(--clr-text-muted, #475569);
+    line-height: 1.4;
+    max-width: 42ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ─── Orphan test state pill ────────────────────────────────────────────── */
+
 .state-orphan {
     border-color: #fed7aa;
     background: #fff7ed;
     color: #9a3412;
 }
 
-/* Inline link/unlink controls */
+/* ─── Inline link/unlink controls ──────────────────────────────────────── */
+
 .trace-unlink-btn {
     display: inline-flex;
     align-items: center;
@@ -28,11 +117,11 @@
     border: none;
     cursor: pointer;
     color: inherit;
-    opacity: 0.6;
-    font-size: 0.8rem;
+    opacity: 0.55;
+    font-size: 0.82rem;
     line-height: 1;
     border-radius: 2px;
-    transition: opacity var(--transition, 0.15s ease);
+    transition: opacity 0.15s ease;
 }
 
 .trace-unlink-btn:hover:not(:disabled) {
@@ -47,7 +136,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    padding: 0.25rem 0.5rem;
+    padding: 0.25rem 0.55rem;
     background: transparent;
     border: 1px dashed var(--clr-border, #e2e8f0);
     border-radius: var(--radius-sm, 4px);
@@ -55,7 +144,7 @@
     font-size: 0.72rem;
     font-weight: 600;
     cursor: pointer;
-    transition: border-color var(--transition, 0.15s ease), background var(--transition, 0.15s ease);
+    transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .trace-matrix-action:hover {
@@ -78,10 +167,13 @@
     font-size: 0.78rem;
     background: #fff;
     color: var(--clr-text-body, #1e293b);
-    min-width: 200px;
+    min-width: 220px;
+    max-width: 340px;
 }
 
 .trace-inline-error {
+    display: block;
+    margin-top: 0.25rem;
     font-size: 0.72rem;
     color: var(--clr-danger, #dc2626);
 }

@@ -8,7 +8,7 @@
     <section class="traceability-hero">
         <p class="section-kicker">QA Risk Assessment</p>
         <h1>Traceability &amp; Coverage</h1>
-        <p class="page-lead">See which requirements are covered by tests, identify coverage gaps, and spot tests that are not connected to any requirement.</p>
+        <p class="page-lead">Coverage helps you see which requirements are tested and where QA risk exists.</p>
     </section>
 
     @if (_isLoading)
@@ -21,33 +21,40 @@
     }
     else
     {
-        <div class="kpi-row" aria-label="Coverage summary">
-            <div class="kpi-card kpi-card-traceability">
+        <div class="kpi-row" aria-label="Coverage summary — click a card to filter">
+            <button type="button" class="kpi-card kpi-card-traceability @(_filter == "" ? "kpi-card-active" : "")"
+                    @onclick='() => _filter = ""' aria-pressed='@(_filter == "")'>
                 <span class="kpi-marker" aria-hidden="true"></span>
                 <span class="kpi-value">@_summary.TotalRequirements</span>
                 <span class="kpi-label">Total Requirements</span>
-            </div>
-            <div class="kpi-card kpi-card-coverage">
+            </button>
+            <button type="button" class="kpi-card kpi-card-coverage @(_filter == "Covered" ? "kpi-card-active" : "")"
+                    @onclick='() => _filter = "Covered"' aria-pressed='@(_filter == "Covered")'>
                 <span class="kpi-marker" aria-hidden="true"></span>
                 <span class="kpi-value">@_summary.CoveredRequirements</span>
                 <span class="kpi-label">Covered</span>
-            </div>
-            <div class="kpi-card @(_summary.NotCoveredRequirements > 0 ? "kpi-card-risks" : "kpi-card-coverage")">
+                <span class="kpi-hint">requirements with at least one linked test</span>
+            </button>
+            <button type="button" class="kpi-card @(_summary.NotCoveredRequirements > 0 ? "kpi-card-risks" : "kpi-card-coverage") @(_filter == "NotCovered" ? "kpi-card-active" : "")"
+                    @onclick='() => _filter = "NotCovered"' aria-pressed='@(_filter == "NotCovered")'>
                 <span class="kpi-marker" aria-hidden="true"></span>
                 <span class="kpi-value">@_summary.NotCoveredRequirements</span>
                 <span class="kpi-label">Missing Test Coverage</span>
-            </div>
-            <div class="kpi-card kpi-card-progress">
+                <span class="kpi-hint">requirements with no linked test</span>
+            </button>
+            <button type="button" class="kpi-card kpi-card-progress @(_filter == "" ? "kpi-card-active" : "") trace-kpi-percent"
+                    @onclick='() => _filter = ""' aria-label="@_summary.CoveragePercent% coverage — show all requirements">
                 <span class="kpi-marker" aria-hidden="true"></span>
                 <span class="kpi-value">@_summary.CoveragePercent%</span>
                 <span class="kpi-label">Coverage</span>
-            </div>
-            <div class="kpi-card @(_summary.OrphanTests > 0 ? "kpi-card-risks" : "kpi-card-traceability")">
+            </button>
+            <button type="button" class="kpi-card @(_summary.OrphanTests > 0 ? "kpi-card-risks" : "kpi-card-traceability") @(_filter == "Orphan" ? "kpi-card-active" : "")"
+                    @onclick='() => _filter = "Orphan"' aria-pressed='@(_filter == "Orphan")'>
                 <span class="kpi-marker" aria-hidden="true"></span>
                 <span class="kpi-value">@_summary.OrphanTests</span>
                 <span class="kpi-label">Orphan Tests</span>
                 <span class="kpi-hint">tests not linked to any requirement</span>
-            </div>
+            </button>
         </div>
 
         <div class="filter-chip-grid" aria-label="Coverage filters">
@@ -55,10 +62,10 @@
                 All <span>@_matrix.Count</span>
             </button>
             <button type="button" class="library-filter-chip @(_filter == "Covered" ? "is-active" : "")" @onclick='() => _filter = "Covered"'>
-                Covered <span>@_matrix.Count(r => r.CoverageStatus == "Covered")</span>
+                Covered <span>@CoveredCount</span>
             </button>
             <button type="button" class="library-filter-chip @(_filter == "NotCovered" ? "is-active" : "")" @onclick='() => _filter = "NotCovered"'>
-                Missing Coverage <span>@_matrix.Count(r => r.CoverageStatus == "NotCovered")</span>
+                Missing Coverage <span>@NotCoveredCount</span>
             </button>
             <button type="button" class="library-filter-chip @(_filter == "Orphan" ? "is-active" : "")" @onclick='() => _filter = "Orphan"'>
                 Orphan Tests <span>@OrphanTests.Count</span>
@@ -70,10 +77,10 @@
             <section class="requirement-map-panel" aria-label="Orphan tests">
                 <div class="requirement-map-header">
                     <div>
-                        <p class="section-kicker">Not connected to any requirement</p>
+                        <p class="section-kicker">Tests not linked to any requirement</p>
                         <h2>Orphan Tests</h2>
                     </div>
-                    <span>@OrphanTests.Count test@Plural(OrphanTests.Count)</span>
+                    <span>@OrphanTests.Count test@(Plural(OrphanTests.Count))</span>
                 </div>
                 @if (OrphanTests.Count == 0)
                 {
@@ -84,14 +91,51 @@
                     <div class="mapping-list">
                         @foreach (var test in OrphanTests)
                         {
+                            var label = TestLabel(test.Id);
+                            var isLinking = _orphanLinkingTestId == test.Id;
                             <div class="mapping-row mapping-uncovered">
                                 <div class="mapping-requirement">
+                                    <span class="artifact-display-label">@label</span>
                                     <span class="badge badge-test">Test</span>
                                     <strong>@test.Title</strong>
+                                    @if (!string.IsNullOrWhiteSpace(test.Description))
+                                    {
+                                        <span class="mapping-description">@test.Description</span>
+                                    }
                                     <span class="artifact-state-pill state-orphan">Orphan Test</span>
                                 </div>
                                 <div class="mapping-tests">
-                                    <span class="mapping-test-empty">Not linked to any requirement</span>
+                                    @if (!isLinking)
+                                    {
+                                        <span class="mapping-test-empty">Not linked to any requirement</span>
+                                        <button class="trace-matrix-action" @onclick="() => BeginOrphanLinking(test.Id)"
+                                                aria-label="Link @label to a requirement">
+                                            + Link to Requirement
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <div class="link-select-row">
+                                            <select class="trace-test-select" @bind="_selectedOrphanRequirementId"
+                                                    aria-label="Select a requirement to link this test to">
+                                                <option value="">— select a requirement —</option>
+                                                @foreach (var row in _matrix)
+                                                {
+                                                    <option value="@row.Id">@(ReqLabel(row.Id)) — @row.Title</option>
+                                                }
+                                            </select>
+                                            <button class="btn-primary btn-sm"
+                                                    disabled="@(string.IsNullOrEmpty(_selectedOrphanRequirementId) || _isOrphanLinking)"
+                                                    @onclick="() => HandleOrphanLinkAsync(test.Id)">
+                                                @if (_isOrphanLinking) {<span>Linking…</span>} else {<span>Link</span>}
+                                            </button>
+                                            <button class="btn-secondary btn-sm" @onclick="CancelOrphanLinking">Cancel</button>
+                                        </div>
+                                        @if (_orphanLinkError is not null)
+                                        {
+                                            <span class="trace-inline-error">@_orphanLinkError</span>
+                                        }
+                                    }
                                 </div>
                             </div>
                         }
@@ -107,14 +151,14 @@
                         <p class="section-kicker">Requirement → Test Traceability</p>
                         <h2>Coverage Matrix</h2>
                     </div>
-                    <span>@FilteredMatrix.Count requirement@Plural(FilteredMatrix.Count) shown</span>
+                    <span>@FilteredMatrix.Count requirement@(Plural(FilteredMatrix.Count)) shown</span>
                 </div>
 
                 @if (FilteredMatrix.Count == 0 && _matrix.Count == 0)
                 {
                     <div class="empty-state empty-state-dashed">
                         <h3>No requirements yet</h3>
-                        <p>Add accepted requirement scenarios to the library to see their coverage status here.</p>
+                        <p>Add requirement scenarios to the library to see their coverage status here.</p>
                         <div class="empty-state-actions">
                             <a href="/scenarios">Go to QA Artifact Library</a>
                         </div>
@@ -129,14 +173,18 @@
                     <div class="mapping-list">
                         @foreach (var row in FilteredMatrix)
                         {
+                            var reqLabel = ReqLabel(row.Id);
                             var isLinking = _linkingRequirementId == row.Id;
                             <div class="mapping-row @(row.CoverageStatus == "Covered" ? "mapping-covered" : "mapping-uncovered")">
                                 <div class="mapping-requirement">
-                                    <span class="badge badge-requirement">Requirement</span>
-                                    <strong>@row.Title</strong>
-                                    <span class="artifact-state-pill @(row.CoverageStatus == "Covered" ? "state-covered" : "state-uncovered")">
-                                        @(row.CoverageStatus == "Covered" ? "Covered" : "Missing Test Coverage")
-                                    </span>
+                                    <div class="mapping-req-identity">
+                                        <span class="artifact-display-label">@reqLabel</span>
+                                        <span class="badge badge-requirement">Requirement</span>
+                                        <span class="artifact-state-pill @(row.CoverageStatus == "Covered" ? "state-covered" : "state-uncovered")">
+                                            @(row.CoverageStatus == "Covered" ? "Covered" : "Missing Test Coverage")
+                                        </span>
+                                    </div>
+                                    <strong class="mapping-req-title">@row.Title</strong>
                                 </div>
                                 <div class="mapping-tests">
                                     @if (row.LinkedTests.Count == 0)
@@ -148,17 +196,14 @@
                                         @foreach (var linked in row.LinkedTests)
                                         {
                                             <span class="mapping-test-pill">
+                                                <span class="test-pill-label">@(TestLabel(linked.TestId))</span>
                                                 @linked.TestTitle
-                                                <button
-                                                    class="trace-unlink-btn"
-                                                    title="Remove this link"
-                                                    disabled="@(_unlinkingId == linked.LinkId)"
-                                                    @onclick="() => HandleUnlinkAsync(linked.LinkId)"
-                                                    aria-label="Remove link to @linked.TestTitle">
-                                                    @if (_unlinkingId == linked.LinkId)
-                                                    {<span>…</span>}
-                                                    else
-                                                    {<span aria-hidden="true">×</span>}
+                                                <button class="trace-unlink-btn"
+                                                        title="Remove link to @linked.TestTitle"
+                                                        disabled="@(_unlinkingId == linked.LinkId)"
+                                                        @onclick="() => HandleUnlinkAsync(linked.LinkId)"
+                                                        aria-label="Remove link between @reqLabel and @(TestLabel(linked.TestId))">
+                                                    @if (_unlinkingId == linked.LinkId) {<span>…</span>} else {<span aria-hidden="true">×</span>}
                                                 </button>
                                             </span>
                                             @if (_unlinkErrors.TryGetValue(linked.LinkId, out var unlinkErr))
@@ -170,21 +215,24 @@
 
                                     @if (!isLinking)
                                     {
-                                        <button class="trace-matrix-action" @onclick="() => BeginLinking(row.Id)" aria-label="Link a test to this requirement">
+                                        <button class="trace-matrix-action" @onclick="() => BeginLinking(row.Id)"
+                                                aria-label="Link a test to @reqLabel">
                                             + Link Test
                                         </button>
                                     }
                                     else
                                     {
                                         <div class="link-select-row">
-                                            <select class="trace-test-select" @bind="_selectedTestId" aria-label="Select a test to link">
+                                            <select class="trace-test-select" @bind="_selectedTestId"
+                                                    aria-label="Select a test to link to @reqLabel">
                                                 <option value="">— select a test —</option>
                                                 @foreach (var t in AvailableTestsFor(row))
                                                 {
-                                                    <option value="@t.Id">@t.Title</option>
+                                                    <option value="@t.Id">@(TestLabel(t.Id)) — @t.Title</option>
                                                 }
                                             </select>
-                                            <button class="btn-primary btn-sm" disabled="@(string.IsNullOrEmpty(_selectedTestId) || _isLinking)"
+                                            <button class="btn-primary btn-sm"
+                                                    disabled="@(string.IsNullOrEmpty(_selectedTestId) || _isLinking)"
                                                     @onclick="() => HandleLinkAsync(row.Id)">
                                                 @if (_isLinking) {<span>Linking…</span>} else {<span>Link</span>}
                                             </button>
@@ -215,13 +263,28 @@
     private IReadOnlyList<TestScenarioItem> _allTests = [];
     private string _filter = string.Empty;
 
+    // Display labels (REQ-001, TEST-001 etc. — UI only, not persisted)
+    private Dictionary<string, string> _requirementLabels = new();
+    private Dictionary<string, string> _testLabels = new();
+
+    // Matrix link state
     private string? _linkingRequirementId;
     private string _selectedTestId = string.Empty;
     private bool _isLinking;
     private string? _linkError;
 
+    // Orphan link state
+    private string? _orphanLinkingTestId;
+    private string _selectedOrphanRequirementId = string.Empty;
+    private bool _isOrphanLinking;
+    private string? _orphanLinkError;
+
+    // Unlink state
     private string? _unlinkingId;
     private Dictionary<string, string> _unlinkErrors = new();
+
+    private int CoveredCount => _matrix.Count(r => r.CoverageStatus == "Covered");
+    private int NotCoveredCount => _matrix.Count(r => r.CoverageStatus == "NotCovered");
 
     private IReadOnlyList<RequirementRow> FilteredMatrix => _filter switch
     {
@@ -248,6 +311,9 @@
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return _allTests.Where(t => !alreadyLinked.Contains(t.Id)).ToList();
     }
+
+    private string ReqLabel(string id) => _requirementLabels.TryGetValue(id, out var l) ? l : id[..8];
+    private string TestLabel(string id) => _testLabels.TryGetValue(id, out var l) ? l : id[..8];
 
     protected override async Task OnInitializedAsync() => await LoadDataAsync();
 
@@ -301,8 +367,10 @@
 
             _allTests = scenariosResult.Data?.Scenarios
                 .Where(s => s.Kind == ScenarioKind.Test)
-                .Select(s => new TestScenarioItem(s.Id, s.Title))
+                .Select(s => new TestScenarioItem(s.Id, s.Title, s.Description))
                 .ToList() ?? [];
+
+            ComputeLabels();
         }
         catch (Exception)
         {
@@ -313,6 +381,21 @@
             _isLoading = false;
         }
     }
+
+    private void ComputeLabels()
+    {
+        _requirementLabels = _matrix
+            .Select((r, i) => (r.Id, Label: $"REQ-{i + 1:D3}"))
+            .ToDictionary(x => x.Id, x => x.Label);
+
+        // Order tests alphabetically for stable REQ/TEST numbering
+        _testLabels = _allTests
+            .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase)
+            .Select((t, i) => (t.Id, Label: $"TEST-{i + 1:D3}"))
+            .ToDictionary(x => x.Id, x => x.Label);
+    }
+
+    // ─── Matrix link ─────────────────────────────────────────────────────────
 
     private void BeginLinking(string requirementId)
     {
@@ -338,7 +421,7 @@
 
         try
         {
-            var input = new CreateTraceLinkInput
+            var result = await Client.CreateTraceLink.ExecuteAsync(new CreateTraceLinkInput
             {
                 ProjectId = ProjectId,
                 SourceId = _selectedTestId,
@@ -346,9 +429,7 @@
                 TargetId = requirementId,
                 TargetKind = "Scenario",
                 LinkType = TraceLinkType.Covers,
-            };
-
-            var result = await Client.CreateTraceLink.ExecuteAsync(input);
+            });
 
             if (result.Errors is { Count: > 0 })
             {
@@ -363,10 +444,9 @@
                 return;
             }
 
-            if (payload?.TraceLink is { } created)
+            if (payload?.TraceLink is not null)
             {
-                _linkingRequirementId = null;
-                _selectedTestId = string.Empty;
+                CancelLinking();
                 await RefreshMatrixAsync();
             }
         }
@@ -380,6 +460,73 @@
         }
     }
 
+    // ─── Orphan link ─────────────────────────────────────────────────────────
+
+    private void BeginOrphanLinking(string testId)
+    {
+        _orphanLinkingTestId = testId;
+        _selectedOrphanRequirementId = string.Empty;
+        _orphanLinkError = null;
+    }
+
+    private void CancelOrphanLinking()
+    {
+        _orphanLinkingTestId = null;
+        _selectedOrphanRequirementId = string.Empty;
+        _orphanLinkError = null;
+    }
+
+    private async Task HandleOrphanLinkAsync(string testId)
+    {
+        if (string.IsNullOrEmpty(_selectedOrphanRequirementId)) return;
+
+        _isOrphanLinking = true;
+        _orphanLinkError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.CreateTraceLink.ExecuteAsync(new CreateTraceLinkInput
+            {
+                ProjectId = ProjectId,
+                SourceId = testId,
+                SourceKind = "Scenario",
+                TargetId = _selectedOrphanRequirementId,
+                TargetKind = "Scenario",
+                LinkType = TraceLinkType.Covers,
+            });
+
+            if (result.Errors is { Count: > 0 })
+            {
+                _orphanLinkError = "Something went wrong. Please try again.";
+                return;
+            }
+
+            var payload = result.Data?.CreateTraceLink;
+            if (payload?.Errors is { Count: > 0 })
+            {
+                _orphanLinkError = payload.Errors[0].Message;
+                return;
+            }
+
+            if (payload?.TraceLink is not null)
+            {
+                CancelOrphanLinking();
+                await RefreshMatrixAsync();
+            }
+        }
+        catch (Exception)
+        {
+            _orphanLinkError = "Something went wrong. Please try again.";
+        }
+        finally
+        {
+            _isOrphanLinking = false;
+        }
+    }
+
+    // ─── Unlink ───────────────────────────────────────────────────────────────
+
     private async Task HandleUnlinkAsync(string linkId)
     {
         _unlinkingId = linkId;
@@ -388,13 +535,11 @@
 
         try
         {
-            var input = new DeleteTraceLinkInput
+            var result = await Client.DeleteTraceLink.ExecuteAsync(new DeleteTraceLinkInput
             {
                 Id = linkId,
                 ProjectId = ProjectId,
-            };
-
-            var result = await Client.DeleteTraceLink.ExecuteAsync(input);
+            });
 
             if (result.Data?.DeleteTraceLink is { Success: true })
             {
@@ -402,9 +547,8 @@
             }
             else
             {
-                var msg = result.Data?.DeleteTraceLink?.Errors?.FirstOrDefault()?.Message
+                _unlinkErrors[linkId] = result.Data?.DeleteTraceLink?.Errors?.FirstOrDefault()?.Message
                     ?? "Something went wrong. Please try again.";
-                _unlinkErrors[linkId] = msg;
             }
         }
         catch (Exception)
@@ -417,6 +561,8 @@
         }
     }
 
+    // ─── Refresh ──────────────────────────────────────────────────────────────
+
     private async Task RefreshMatrixAsync()
     {
         try
@@ -425,10 +571,7 @@
             var summaryTask = Client.GetCoverageSummary.ExecuteAsync(ProjectId);
             await Task.WhenAll(matrixTask, summaryTask);
 
-            var matrixResult = matrixTask.Result;
-            var summaryResult = summaryTask.Result;
-
-            if (matrixResult.Data is { } md)
+            if (matrixTask.Result.Data is { } md)
             {
                 _matrix = md.TraceabilityMatrix
                     .Select(r => new RequirementRow(
@@ -441,9 +584,10 @@
                             l.Test.Title,
                             l.Link.LinkType.ToString())).ToList()))
                     .ToList();
+                ComputeLabels();
             }
 
-            if (summaryResult.Data is { } sd)
+            if (summaryTask.Result.Data is { } sd)
             {
                 _summary = new SummaryData
                 {
@@ -457,6 +601,8 @@
         }
         catch { /* silently preserve last known state */ }
     }
+
+    // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private static string Plural(int count) => count == 1 ? string.Empty : "s";
 
@@ -472,7 +618,7 @@
         string TestTitle,
         string LinkType);
 
-    private sealed record TestScenarioItem(string Id, string Title);
+    private sealed record TestScenarioItem(string Id, string Title, string? Description);
 
     private sealed class SummaryData
     {

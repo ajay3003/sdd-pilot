@@ -96,20 +96,20 @@ Inputs: all accepted Scenarios + all TraceLinks for a project (both filtered to 
 Covered requirement:
   ∃ TraceLink: target_id = req.Id
              ∧ link_type = Covers
-             ∧ source scenario exists
+             ∧ source scenario exists in project
              ∧ source scenario.Kind = Test
-             ∧ source scenario.ReviewStatus = Accepted
 
 Orphan test:
   ∄ TraceLink: source_id = test.Id
              ∧ link_type = Covers
-             ∧ target scenario exists
+             ∧ target scenario exists in project
              ∧ target scenario.Kind = Requirement
-             ∧ target scenario.ReviewStatus = Accepted
 
 Excluded from all calculations:
-  - Scenarios where ReviewStatus ≠ Accepted
   - Scenarios where Kind = NeedsClarification
+
+Note: The Scenario entity has no acceptance/rejection status in v1.
+All persisted Scenarios are implicitly valid artifacts.
 ```
 
 ---
@@ -142,6 +142,19 @@ public enum CoverageStatus { Covered, NotCovered }
 
 ## Future Evolution Path
 
+The `trace_links` table is the shared foundation for all planned traceability features. The `SourceKind`/`TargetKind` discriminators mean any new artifact type can be wired in without touching the schema.
+
+### Planned features and the link kinds they will use
+
+| Feature | Link kind added |
+|---|---|
+| **Delta Impact Analysis** | `Requirement → CodeChange` — shows which requirements are affected when code changes |
+| **AI Change Auditor** | `Requirement → AiSession` — records which AI sessions touched a requirement |
+| **Spec Drift Detection** | `Requirement → Commit` — flags requirements whose spec wording diverged from accepted tests |
+| **AI QA Auditor** | reads existing `Covers` links, adds `AiSession → Requirement` audit entries |
+
+### Migration path for each new artifact type
+
 When "Requirement → Commit" is needed:
 1. Create a `Commit` entity (Guid PK, CommitSha, ProjectId, etc.)
 2. Create a `CommitTraceLinkService` that creates TraceLinks with `SourceKind="Commit"`
@@ -149,3 +162,10 @@ When "Requirement → Commit" is needed:
 4. **Zero schema changes required.**
 
 When "Requirement → AiSession" is needed — same pattern with `SourceKind="AiSession"`.
+
+### What must NOT change to preserve this path
+
+- `trace_links` table structure and indexes must remain stable
+- `TraceLinkType` enum additions (new values) are safe; removals are breaking
+- `TraceLinkArtifactKind` string constants are additive-only
+- Coverage calculations must continue to filter `source_kind='Scenario' AND target_kind='Scenario'` so that future link kinds don't pollute the coverage matrix
