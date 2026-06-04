@@ -5,6 +5,8 @@ type Query {
   candidateLinks(projectId: String!, sessionId: String): [CandidateLink!]!
   qaDeltaReviews(projectId: String!): [QaDeltaReview!]!
   qaDeltaReview(id: ID!): QaDeltaReview
+  traceabilityMatrix(projectId: String!): [TraceabilityMatrixRow!]!
+  coverageSummary(projectId: String!): CoverageSummary!
 }
 
 type Mutation {
@@ -16,6 +18,8 @@ type Mutation {
   saveQaDeltaReview(input: SaveQaDeltaReviewInput!): SaveQaDeltaReviewPayload!
   deleteQaDeltaReview(id: ID!): DeleteQaDeltaReviewPayload!
   reorderTestScenarios(input: ReorderTestScenariosInput!): ReorderTestScenariosPayload!
+  createTraceLink(input: CreateTraceLinkInput!): CreateTraceLinkPayload!
+  deleteTraceLink(input: DeleteTraceLinkInput!): DeleteTraceLinkPayload!
 }
 
 type Scenario {
@@ -215,6 +219,77 @@ input ReorderTestScenariosInput {
 }
 
 type ReorderTestScenariosPayload {
+  success: Boolean!
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+enum TraceLinkType {
+  COVERS
+  RELATED_TO
+}
+
+enum CoverageStatus {
+  COVERED
+  NOT_COVERED
+}
+
+type TraceLink {
+  id: ID!
+  projectId: String!
+  sourceId: ID!
+  sourceKind: String!
+  targetId: ID!
+  targetKind: String!
+  linkType: TraceLinkType!
+  createdAt: DateTime!
+  createdBy: String
+  notes: String
+}
+
+type TraceLinkWithTest {
+  link: TraceLink!
+  test: Scenario!
+}
+
+type TraceabilityMatrixRow {
+  requirement: Scenario!
+  linkedTests: [TraceLinkWithTest!]!
+  coverageStatus: CoverageStatus!
+}
+
+type CoverageSummary {
+  totalRequirements: Int!
+  coveredRequirements: Int!
+  notCoveredRequirements: Int!
+  coveragePercent: Float!
+  orphanTests: Int!
+}
+
+input CreateTraceLinkInput {
+  projectId: String!
+  sourceId: ID!
+  sourceKind: String!
+  targetId: ID!
+  targetKind: String!
+  linkType: TraceLinkType!
+  createdBy: String
+  notes: String
+}
+
+input DeleteTraceLinkInput {
+  id: ID!
+  projectId: String!
+}
+
+type CreateTraceLinkPayload {
+  traceLink: TraceLink
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type DeleteTraceLinkPayload {
+  deletedId: ID
   success: Boolean!
   errors: [UserError!]!
   correlationId: String!

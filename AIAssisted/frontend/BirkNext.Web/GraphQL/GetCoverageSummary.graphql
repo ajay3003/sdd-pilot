@@ -1,0 +1,9 @@
+query GetCoverageSummary($projectId: String!) {
+    coverageSummary(projectId: $projectId) {
+        totalRequirements
+        coveredRequirements
+        notCoveredRequirements
+        coveragePercent
+        orphanTests
+    }
+}

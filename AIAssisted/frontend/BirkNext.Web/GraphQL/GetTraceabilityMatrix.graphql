@@ -1,0 +1,23 @@
+query GetTraceabilityMatrix($projectId: String!) {
+    traceabilityMatrix(projectId: $projectId) {
+        requirement {
+            id
+            title
+            kind
+            projectId
+        }
+        linkedTests {
+            link {
+                id
+                linkType
+                createdAt
+            }
+            test {
+                id
+                title
+                kind
+            }
+        }
+        coverageStatus
+    }
+}
