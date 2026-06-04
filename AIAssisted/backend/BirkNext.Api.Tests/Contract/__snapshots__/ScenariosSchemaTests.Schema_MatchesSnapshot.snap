@@ -13,6 +13,15 @@ type CandidateLink {
   createdAt: DateTime!
 }
 
+"Aggregate coverage statistics for a project."
+type CoverageSummary {
+  totalRequirements: Int!
+  coveredRequirements: Int!
+  notCoveredRequirements: Int!
+  coveragePercent: Float!
+  orphanTests: Int!
+}
+
 "Indicates that creation of a single batch item failed."
 type CreateScenarioError {
   code: String!
@@ -43,6 +52,16 @@ type CreateScenariosPayload {
   correlationId: String!
 }
 
+"Payload returned by the createTraceLink mutation."
+type CreateTraceLinkPayload {
+  "The created trace link, or null if validation failed."
+  traceLink: TraceLink
+  "Validation errors that prevented the link from being created."
+  errors: [UserError!]!
+  "Correlation ID for tracing this request in logs."
+  correlationId: String!
+}
+
 type DeleteQaDeltaReviewPayload {
   deletedId: String
   success: Boolean!
@@ -57,6 +76,18 @@ type DeleteScenarioPayload {
   "True when the scenario was successfully deleted."
   success: Boolean!
   "Business errors that prevented deletion."
+  errors: [UserError!]!
+  "Correlation ID for tracing this request in logs."
+  correlationId: String!
+}
+
+"Payload returned by the deleteTraceLink mutation."
+type DeleteTraceLinkPayload {
+  "The ID of the deleted trace link, or null if deletion failed."
+  deletedId: String
+  "True when the trace link was successfully deleted."
+  success: Boolean!
+  "Errors that prevented deletion."
   errors: [UserError!]!
   "Correlation ID for tracing this request in logs."
   correlationId: String!
@@ -80,6 +111,10 @@ type Mutation {
   reorderTestScenarios(input: ReorderTestScenariosInput!): ReorderTestScenariosPayload! @cost(weight: "10")
   "Deletes a QA delta review by ID."
   deleteQaDeltaReview(id: ID!): DeleteQaDeltaReviewPayload! @cost(weight: "10")
+  "Creates a trace link between two artifacts in the given project."
+  createTraceLink(input: CreateTraceLinkInput!): CreateTraceLinkPayload! @cost(weight: "10")
+  "Deletes a trace link by ID. ProjectId is required for safety scoping."
+  deleteTraceLink(input: DeleteTraceLinkInput!): DeleteTraceLinkPayload! @cost(weight: "10")
 }
 
 "Represents a saved QA delta review from a specification comparison."
@@ -113,6 +148,10 @@ type Query {
   qaDeltaReviews(projectId: String!): [QaDeltaReview!]! @cost(weight: "10")
   "Returns a single delta review by ID, or null if not found."
   qaDeltaReview(id: ID!): QaDeltaReview @cost(weight: "10")
+  "Returns the traceability matrix for the given project. Only Requirement and Test scenarios are included."
+  traceabilityMatrix(projectId: String!): [TraceabilityMatrixRow!]! @cost(weight: "10")
+  "Returns aggregate coverage statistics for the given project."
+  coverageSummary(projectId: String!): CoverageSummary! @cost(weight: "10")
 }
 
 type ReorderTestScenariosPayload {
@@ -163,6 +202,37 @@ type Scenario {
   displayOrder: Int!
 }
 
+"A directional link between two artifacts in BirkNext."
+type TraceLink {
+  id: ID!
+  projectId: String!
+  "The artifact that covers or links (v1: a Test Scenario's Id)."
+  sourceId: ID!
+  "Discriminates the source artifact type. See TraceLinkArtifactKind."
+  sourceKind: String!
+  "The artifact being covered or linked (v1: a Requirement Scenario's Id)."
+  targetId: ID!
+  "Discriminates the target artifact type. See TraceLinkArtifactKind."
+  targetKind: String!
+  linkType: TraceLinkType!
+  createdAt: DateTime!
+  createdBy: String
+  notes: String
+}
+
+"A test scenario paired with the trace link that connects it to a requirement."
+type TraceLinkWithTest {
+  link: TraceLink!
+  test: Scenario!
+}
+
+"A single row in the traceability matrix: one requirement and all tests that cover it."
+type TraceabilityMatrixRow {
+  requirement: Scenario!
+  linkedTests: [TraceLinkWithTest!]!
+  coverageStatus: CoverageStatus!
+}
+
 type UserError {
   code: String!
   message: String!
@@ -187,6 +257,24 @@ Raw pasted specification text must not appear in any field of this input.
 input CreateScenariosInput {
   items: [CreateScenarioInput!]!
   extractionMetadata: ExtractionMetadataInput
+}
+
+"Input for the createTraceLink mutation."
+input CreateTraceLinkInput {
+  projectId: String!
+  sourceId: String!
+  sourceKind: String!
+  targetId: String!
+  targetKind: String!
+  linkType: TraceLinkType!
+  createdBy: String
+  notes: String
+}
+
+"Input for the deleteTraceLink mutation."
+input DeleteTraceLinkInput {
+  id: String!
+  projectId: String!
 }
 
 """
@@ -262,10 +350,20 @@ enum CandidateReviewStatus {
   NEEDS_REVIEW
 }
 
+enum CoverageStatus {
+  COVERED
+  NOT_COVERED
+}
+
 enum ScenarioKind {
   REQUIREMENT
   TEST
   NEEDS_CLARIFICATION
+}
+
+enum TraceLinkType {
+  COVERS
+  RELATED_TO
 }
 
 "The purpose of the `cost` directive is to define a `weight` for GraphQL types, fields, and arguments. Static analysis can use these weights when calculating the overall cost of a query or response."

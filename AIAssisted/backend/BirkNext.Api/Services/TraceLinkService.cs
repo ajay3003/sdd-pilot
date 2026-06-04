@@ -40,9 +40,9 @@ public enum CoverageStatus { Covered, NotCovered }
 public sealed class TraceLinkService
 {
     private readonly AppDbContext _db;
-    private readonly ILogger<TraceLinkService> _logger;
+    private readonly ILogger<TraceLinkService>? _logger;
 
-    public TraceLinkService(AppDbContext db, ILogger<TraceLinkService> logger)
+    public TraceLinkService(AppDbContext db, ILogger<TraceLinkService>? logger = null)
     {
         _db = db;
         _logger = logger;
@@ -66,7 +66,7 @@ public sealed class TraceLinkService
 
         if (sourceId == targetId)
         {
-            _logger.LogWarning(
+            _logger?.LogWarning(
                 "TraceLinkValidationFailed {CorrelationId} {ProjectId} {ErrorCodes}",
                 correlationId, projectId, "SELF_LINK");
             return new TraceLinkResult
@@ -95,7 +95,7 @@ public sealed class TraceLinkService
 
         if (errors.Count > 0)
         {
-            _logger.LogWarning(
+            _logger?.LogWarning(
                 "TraceLinkValidationFailed {CorrelationId} {ProjectId} {ErrorCodes}",
                 correlationId, projectId, string.Join(",", errors.Select(e => e.Code)));
             return new TraceLinkResult { Errors = errors };
@@ -110,7 +110,7 @@ public sealed class TraceLinkService
 
         if (duplicate)
         {
-            _logger.LogWarning(
+            _logger?.LogWarning(
                 "TraceLinkDuplicateRejected {CorrelationId} {ProjectId}",
                 correlationId, projectId);
             return new TraceLinkResult
@@ -134,7 +134,7 @@ public sealed class TraceLinkService
         _db.TraceLinks.Add(link);
         await _db.SaveChangesAsync(ct);
 
-        _logger.LogInformation(
+        _logger?.LogInformation(
             "TraceLinkCreated {CorrelationId} {ProjectId} {TraceLinkId}",
             correlationId, projectId, link.Id);
 
@@ -153,7 +153,7 @@ public sealed class TraceLinkService
 
         if (link is null)
         {
-            _logger.LogWarning(
+            _logger?.LogWarning(
                 "TraceLinkDeleteNotFound {CorrelationId} {TraceLinkId} {ProjectId}",
                 correlationId, id, projectId);
             return new DeleteTraceLinkResult
@@ -165,7 +165,7 @@ public sealed class TraceLinkService
         _db.TraceLinks.Remove(link);
         await _db.SaveChangesAsync(ct);
 
-        _logger.LogInformation(
+        _logger?.LogInformation(
             "TraceLinkDeleted {CorrelationId} {ProjectId} {TraceLinkId}",
             correlationId, projectId, id);
 
