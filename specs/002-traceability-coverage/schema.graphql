@@ -1,0 +1,118 @@
+# GraphQL Schema Additions — Traceability & Coverage
+# Extends the existing BirkNext schema
+
+# ─── New Enum ───────────────────────────────────────────────────────────────
+
+enum TraceLinkType {
+  COVERS
+  RELATED_TO
+}
+
+enum CoverageStatus {
+  COVERED
+  NOT_COVERED
+}
+
+# ─── New Object Types ────────────────────────────────────────────────────────
+
+"""A directional link between two artifacts in BirkNext."""
+type TraceLink {
+  id: ID!
+  projectId: String!
+  """The artifact that covers or links (v1: always a Test Scenario)."""
+  sourceId: ID!
+  """Discriminator for the source artifact type (e.g. 'Scenario', future: 'Commit', 'AiSession')."""
+  sourceKind: String!
+  """The artifact being covered or linked (v1: always a Requirement Scenario)."""
+  targetId: ID!
+  """Discriminator for the target artifact type."""
+  targetKind: String!
+  linkType: TraceLinkType!
+  createdAt: DateTime!
+  createdBy: String
+  notes: String
+}
+
+"""A test scenario paired with the trace link that connects it to a requirement."""
+type TraceLinkWithTest {
+  link: TraceLink!
+  test: Scenario!
+}
+
+"""A single row in the traceability matrix: one requirement and all tests that cover it."""
+type TraceabilityMatrixRow {
+  requirement: Scenario!
+  linkedTests: [TraceLinkWithTest!]!
+  coverageStatus: CoverageStatus!
+}
+
+"""Aggregate coverage statistics for a project."""
+type CoverageSummary {
+  totalRequirements: Int!
+  coveredRequirements: Int!
+  notCoveredRequirements: Int!
+  coveragePercent: Float!
+  orphanTests: Int!
+}
+
+# ─── New Queries ─────────────────────────────────────────────────────────────
+
+extend type Query {
+  """Returns the traceability matrix for the given project.
+  Only accepted requirements and accepted tests are included.
+  Rejected scenarios are excluded from all calculations."""
+  traceabilityMatrix(projectId: String!): [TraceabilityMatrixRow!]!
+
+  """Returns aggregate coverage statistics for the given project."""
+  coverageSummary(projectId: String!): CoverageSummary!
+}
+
+# ─── New Mutations ───────────────────────────────────────────────────────────
+
+extend type Mutation {
+  """Creates a trace link between two artifacts."""
+  createTraceLink(input: CreateTraceLinkInput!): CreateTraceLinkPayload!
+
+  """Deletes a trace link by ID. ProjectId is required for safety scoping."""
+  deleteTraceLink(input: DeleteTraceLinkInput!): DeleteTraceLinkPayload!
+}
+
+# ─── Input Types ─────────────────────────────────────────────────────────────
+
+input CreateTraceLinkInput {
+  projectId: String!
+  sourceId: ID!
+  sourceKind: String!
+  targetId: ID!
+  targetKind: String!
+  linkType: TraceLinkType!
+  createdBy: String
+  notes: String
+}
+
+input DeleteTraceLinkInput {
+  id: ID!
+  projectId: String!
+}
+
+# ─── Payload Types ───────────────────────────────────────────────────────────
+
+type CreateTraceLinkPayload {
+  traceLink: TraceLink
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type DeleteTraceLinkPayload {
+  deletedId: ID
+  success: Boolean!
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+# ─── Referenced (existing) Types ─────────────────────────────────────────────
+
+# UserError is already defined in the existing schema:
+# type UserError { code: String!, message: String!, field: String }
+
+# Scenario is already defined in the existing schema.
