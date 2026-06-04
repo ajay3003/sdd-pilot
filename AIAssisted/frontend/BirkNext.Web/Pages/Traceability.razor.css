@@ -1,0 +1,87 @@
+.traceability-page {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    padding: 1.5rem 2rem 3rem;
+    max-width: 1100px;
+}
+
+.traceability-hero {
+    padding-bottom: 0.5rem;
+}
+
+/* Orphan test state pill */
+.state-orphan {
+    border-color: #fed7aa;
+    background: #fff7ed;
+    color: #9a3412;
+}
+
+/* Inline link/unlink controls */
+.trace-unlink-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.3rem;
+    padding: 0 0.3rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.6;
+    font-size: 0.8rem;
+    line-height: 1;
+    border-radius: 2px;
+    transition: opacity var(--transition, 0.15s ease);
+}
+
+.trace-unlink-btn:hover:not(:disabled) {
+    opacity: 1;
+}
+
+.trace-unlink-btn:disabled {
+    cursor: not-allowed;
+}
+
+.trace-matrix-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    background: transparent;
+    border: 1px dashed var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-sm, 4px);
+    color: var(--clr-primary, #2563eb);
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color var(--transition, 0.15s ease), background var(--transition, 0.15s ease);
+}
+
+.trace-matrix-action:hover {
+    border-color: var(--clr-primary, #2563eb);
+    background: #eff6ff;
+}
+
+.link-select-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.4rem;
+}
+
+.trace-test-select {
+    padding: 0.28rem 0.5rem;
+    border: 1px solid var(--clr-border-input, #d1d5db);
+    border-radius: var(--radius-sm, 4px);
+    font-size: 0.78rem;
+    background: #fff;
+    color: var(--clr-text-body, #1e293b);
+    min-width: 200px;
+}
+
+.trace-inline-error {
+    font-size: 0.72rem;
+    color: var(--clr-danger, #dc2626);
+}
