@@ -25,23 +25,23 @@
             <div class="kpi-card kpi-card-traceability">
                 <span class="kpi-marker" aria-hidden="true"></span>
                 <span class="kpi-value">@_totalFiles</span>
-                <span class="kpi-label">Code Files</span>
+                <span class="kpi-label">Tracked Files</span>
             </div>
             <div class="kpi-card kpi-card-coverage">
                 <span class="kpi-marker" aria-hidden="true"></span>
                 <span class="kpi-value">@_linkedRequirements</span>
-                <span class="kpi-label">Linked Requirements</span>
+                <span class="kpi-label">Requirements Implemented</span>
             </div>
             <div class="kpi-card kpi-card-coverage">
                 <span class="kpi-marker" aria-hidden="true"></span>
                 <span class="kpi-value">@_linkedTests</span>
-                <span class="kpi-label">Linked Tests</span>
+                <span class="kpi-label">Tests Implemented</span>
             </div>
             <div class="kpi-card @(_unlinkedFiles > 0 ? "kpi-card-risks" : "kpi-card-traceability")">
                 <span class="kpi-marker" aria-hidden="true"></span>
                 <span class="kpi-value">@_unlinkedFiles</span>
-                <span class="kpi-label">Unlinked Files</span>
-                <span class="kpi-hint">no QA links</span>
+                <span class="kpi-label">Files Missing Links</span>
+                <span class="kpi-hint">no QA links yet</span>
             </div>
         </div>
 
@@ -52,12 +52,12 @@
                 <div class="code-panel-header">
                     <div>
                         <p class="section-kicker">Source files</p>
-                        <h2>Code File Registry</h2>
+                        <h2>Tracked Source Files</h2>
                     </div>
                     <button class="code-register-toggle"
                             @onclick="ToggleRegisterForm"
                             aria-expanded="@_showRegisterForm">
-                        @(_showRegisterForm ? "Cancel" : "+ Register File")
+                        @(_showRegisterForm ? "Cancel" : "+ Track File")
                     </button>
                 </div>
 
@@ -95,8 +95,15 @@
                 @if (_files.Count == 0)
                 {
                     <div class="code-file-empty">
-                        <p>No code files registered yet.</p>
-                        <p>Click <strong>+ Register File</strong> to add your first file.</p>
+                        <p>Register your first source file to begin linking requirements and tests to implementation.</p>
+                        <div class="code-getting-started">
+                            <p class="code-gs-label">Example file paths to track:</p>
+                            <div class="code-gs-examples">
+                                <span class="code-gs-example">ScenarioService.cs</span>
+                                <span class="code-gs-example">ScenarioValidator.cs</span>
+                                <span class="code-gs-example">TraceabilityPage.razor</span>
+                            </div>
+                        </div>
                     </div>
                 }
                 else
@@ -143,10 +150,57 @@
                 }
                 else if (_impact is null)
                 {
-                    <div class="code-impact-placeholder">
-                        <p class="section-kicker">Nothing selected</p>
-                        <h3>Select a file</h3>
-                        <p>Click any code file on the left to see which requirements and tests are linked to it.</p>
+                    <div class="code-onboarding">
+                        <div class="code-ob-intro">
+                            <h3 class="code-ob-heading">What is Code Traceability?</h3>
+                            <p class="code-ob-lead">Connect your QA artefacts to your implementation. Track which source files implement each requirement and which tests validate them — so you always know what to retest when code changes.</p>
+                        </div>
+
+                        <div class="code-ob-diagram" aria-label="Traceability diagram: Requirement to Test to Code File">
+                            <div class="ob-node ob-node--req">
+                                <span class="ob-node-label">Requirement</span>
+                                <span class="ob-node-example">FR-001: Validate input</span>
+                            </div>
+                            <div class="ob-connector">
+                                <span class="ob-connector-line"></span>
+                                <span class="ob-connector-label">tested by</span>
+                                <span class="ob-connector-line"></span>
+                            </div>
+                            <div class="ob-node ob-node--test">
+                                <span class="ob-node-label">Test</span>
+                                <span class="ob-node-example">Validates input rejection</span>
+                            </div>
+                            <div class="ob-connector">
+                                <span class="ob-connector-line"></span>
+                                <span class="ob-connector-label">implemented in</span>
+                                <span class="ob-connector-line"></span>
+                            </div>
+                            <div class="ob-node ob-node--code">
+                                <span class="ob-node-label">Code File</span>
+                                <span class="ob-node-example">ScenarioValidator.cs</span>
+                            </div>
+                        </div>
+
+                        <div class="code-ob-why">
+                            <div class="code-ob-why-card">
+                                <strong>Change impact</strong>
+                                <p>When a file changes, instantly see which requirements and tests are affected — no guesswork.</p>
+                            </div>
+                            <div class="code-ob-why-card">
+                                <strong>Implementation coverage</strong>
+                                <p>Confirm every requirement is backed by registered code, not just described in a document.</p>
+                            </div>
+                        </div>
+
+                        <div class="code-ob-steps">
+                            <h4 class="code-ob-steps-heading">How to get started</h4>
+                            <ol class="code-ob-steps-list">
+                                <li><strong>Track a file</strong> — click <em>+ Track File</em> in the left panel and enter a file path.</li>
+                                <li><strong>Select the file</strong> — click it in the list to open the impact panel here.</li>
+                                <li><strong>Link requirements</strong> — choose which requirements this file implements.</li>
+                                <li><strong>Link tests</strong> — choose which tests validate this file.</li>
+                            </ol>
+                        </div>
                     </div>
                 }
                 else
@@ -165,7 +219,7 @@
                         @* Linked Requirements *@
                         <div class="code-link-section">
                             <div class="code-link-section-header">
-                                <h3>Linked Requirements <span class="code-link-count">@impact.LinkedRequirements.Count</span></h3>
+                                <h3>Requirements Implemented <span class="code-link-count">@impact.LinkedRequirements.Count</span></h3>
                             </div>
                             <div class="code-link-add-row">
                                 <select class="code-link-select"
@@ -212,7 +266,7 @@
                         @* Linked Tests *@
                         <div class="code-link-section">
                             <div class="code-link-section-header">
-                                <h3>Linked Tests <span class="code-link-count">@impact.LinkedTests.Count</span></h3>
+                                <h3>Tests Implemented <span class="code-link-count">@impact.LinkedTests.Count</span></h3>
                             </div>
                             <div class="code-link-add-row">
                                 <select class="code-link-select"

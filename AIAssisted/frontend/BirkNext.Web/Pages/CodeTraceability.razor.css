@@ -399,6 +399,199 @@
     color: #dc2626;
 }
 
+/* ─── Getting Started (left-panel empty state) ───────────────────────────── */
+
+.code-getting-started {
+    margin-top: 0.75rem;
+    padding: 0.7rem 0.85rem;
+    background: var(--clr-surface, #f8fafc);
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-md, 6px);
+    text-align: left;
+}
+
+.code-gs-label {
+    margin: 0 0 0.4rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--clr-text-muted, #64748b);
+}
+
+.code-gs-examples {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.code-gs-example {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-family: ui-monospace, "Cascadia Code", monospace;
+    color: var(--clr-text-muted, #475569);
+    padding: 0.15rem 0;
+}
+
+.code-gs-example::before {
+    content: "·";
+    margin-right: 0.4rem;
+    color: var(--clr-text-subtle, #94a3b8);
+}
+
+/* ─── Onboarding panel (right-panel empty state) ─────────────────────────── */
+
+.code-onboarding {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.75rem 1.75rem 2rem;
+    min-height: 420px;
+}
+
+.code-ob-heading {
+    margin: 0 0 0.4rem;
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--clr-text-heading, #0f172a);
+}
+
+.code-ob-lead {
+    margin: 0;
+    font-size: 0.86rem;
+    color: var(--clr-text-muted, #475569);
+    line-height: 1.6;
+    max-width: 46ch;
+}
+
+/* ─── Diagram ────────────────────────────────────────────────────────────── */
+
+.code-ob-diagram {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    padding: 1rem 1.25rem;
+    background: var(--clr-surface, #f8fafc);
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-lg, 8px);
+}
+
+.ob-node {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.55rem 0.85rem;
+    border-radius: var(--radius-md, 6px);
+    border: 1px solid;
+    min-width: 200px;
+}
+
+.ob-node--req  { background: #eff6ff; border-color: #bfdbfe; }
+.ob-node--test { background: #f0fdf4; border-color: #86efac; }
+.ob-node--code { background: #faf5ff; border-color: #d8b4fe; }
+
+.ob-node-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-muted, #64748b);
+}
+
+.ob-node--req  .ob-node-label  { color: #1d4ed8; }
+.ob-node--test .ob-node-label  { color: #15803d; }
+.ob-node--code .ob-node-label  { color: #7c3aed; }
+
+.ob-node-example {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--clr-text-heading, #0f172a);
+    font-family: ui-monospace, "Cascadia Code", monospace;
+}
+
+.ob-connector {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding-left: 1.25rem;
+    height: 2rem;
+}
+
+.ob-connector-line {
+    display: block;
+    width: 1px;
+    height: 0.75rem;
+    background: var(--clr-border, #cbd5e1);
+}
+
+.ob-connector-label {
+    font-size: 0.65rem;
+    color: var(--clr-text-subtle, #94a3b8);
+    font-style: italic;
+}
+
+/* ─── Why it matters cards ───────────────────────────────────────────────── */
+
+.code-ob-why {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.code-ob-why-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-md, 6px);
+    background: #fff;
+}
+
+.code-ob-why-card strong {
+    font-size: 0.82rem;
+    color: var(--clr-text-heading, #0f172a);
+}
+
+.code-ob-why-card p {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--clr-text-muted, #475569);
+    line-height: 1.5;
+}
+
+/* ─── Steps list ─────────────────────────────────────────────────────────── */
+
+.code-ob-steps-heading {
+    margin: 0 0 0.5rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--clr-text-muted, #64748b);
+}
+
+.code-ob-steps-list {
+    margin: 0;
+    padding-left: 1.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.code-ob-steps-list li {
+    font-size: 0.84rem;
+    color: var(--clr-text-body, #1e293b);
+    line-height: 1.5;
+}
+
+.code-ob-steps-list em {
+    font-style: normal;
+    font-weight: 700;
+    color: var(--clr-primary, #2563eb);
+}
+
 /* ─── Responsive ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 860px) {
@@ -408,5 +601,9 @@
 
     .code-file-list {
         max-height: 280px;
+    }
+
+    .code-ob-why {
+        grid-template-columns: 1fr;
     }
 }
