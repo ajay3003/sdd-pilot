@@ -87,6 +87,28 @@ public sealed class AIQaAuditorService
         var drift = await _driftService.GetSpecDriftReportAsync(projectId, ct);
         var code = await _codeService.GetCodeSummaryAsync(projectId, ct);
 
+        // Guard: no requirements → scoring is meaningless; return a dedicated empty-state report
+        // so the UI can display "--" instead of a misleading 100/100 Ready.
+        if (drift.TotalRequirements == 0)
+        {
+            return new QaAuditReport
+            {
+                QualityScore = 0,
+                ReadinessStatus = QaReadinessStatus.InsufficientData,
+                CoveragePercent = 0,
+                TotalRequirements = 0,
+                TotalCodeFiles = code.TotalFiles,
+                UnlinkedCodeFiles = code.UnlinkedFiles,
+                RecommendedActions =
+                [
+                    "Create requirements via the QA Artifact Library.",
+                    "Create tests and link them to requirements via Traceability & Coverage.",
+                    "Run Traceability & Coverage to verify your links.",
+                    "Return to QA Readiness once requirements and tests are in place.",
+                ],
+            };
+        }
+
         var (score, deductions) = ComputeScore(drift, code);
         var readiness = DetermineReadiness(score, drift.CoveragePercent, drift);
         var actions = BuildRecommendedActions(drift, code, readiness);

@@ -30,26 +30,40 @@
         <!-- Quality Score Banner -->
         <div class="qa-score-banner qa-score-banner--@ReadinessClass">
             <div class="qa-score-gauge qa-score-gauge--@ReadinessClass">
-                <span class="qa-score-number">@_report.QualityScore</span>
-                <span class="qa-score-unit">/ 100</span>
-            </div>
-            <div class="qa-score-info">
-                <div class="qa-readiness-badge qa-readiness--@ReadinessClass">@ReadinessLabel</div>
-                <p class="qa-score-subtitle">
-                    Quality score computed from @_report.TotalRequirements requirement(s) across @_report.ScoreDeductions.Count deduction category(ies).
-                </p>
-                @if (_report.ScoreDeductions.Any())
+                @if (_report.ReadinessStatus == QaReadinessStatus.InsufficientData)
                 {
-                    <div class="qa-deduction-pills">
-                        @foreach (var d in _report.ScoreDeductions)
-                        {
-                            <span class="qa-deduction-pill">@d.Category &minus;@d.Points</span>
-                        }
-                    </div>
+                    <span class="qa-score-number qa-score-number--empty">--</span>
                 }
                 else
                 {
-                    <p class="qa-score-perfect">No deductions — full score.</p>
+                    <span class="qa-score-number">@_report.QualityScore</span>
+                    <span class="qa-score-unit">/ 100</span>
+                }
+            </div>
+            <div class="qa-score-info">
+                <div class="qa-readiness-badge qa-readiness--@ReadinessClass">@ReadinessLabel</div>
+                @if (_report.ReadinessStatus == QaReadinessStatus.InsufficientData)
+                {
+                    <p class="qa-score-subtitle">Add requirements, tests, and traceability links before QA readiness can be calculated.</p>
+                }
+                else
+                {
+                    <p class="qa-score-subtitle">
+                        Quality score computed from @_report.TotalRequirements requirement(s) across @_report.ScoreDeductions.Count deduction category(ies).
+                    </p>
+                    @if (_report.ScoreDeductions.Any())
+                    {
+                        <div class="qa-deduction-pills">
+                            @foreach (var d in _report.ScoreDeductions)
+                            {
+                                <span class="qa-deduction-pill">@d.Category &minus;@d.Points</span>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="qa-score-perfect">No deductions — full score.</p>
+                    }
                 }
             </div>
         </div>
@@ -95,7 +109,8 @@
                     <span class="nav-icon nav-icon-ai-auditor qa-section-icon" aria-hidden="true"></span>
                     AI Executive Summary
                 </h2>
-                @if (_report.AiExecutiveSummary == null && !_aiRequested)
+                @if (_report.AiExecutiveSummary == null && !_aiRequested
+                     && _report.ReadinessStatus != QaReadinessStatus.InsufficientData)
                 {
                     <button class="btn-primary btn-sm" @onclick="GenerateAiSummaryAsync" disabled="@_generatingAi">
                         @if (_generatingAi)
@@ -333,6 +348,7 @@
     {
         QaReadinessStatus.Ready => "ready",
         QaReadinessStatus.ReviewNeeded => "review",
+        QaReadinessStatus.InsufficientData => "insufficient",
         _ => "high-risk",
     };
 
@@ -340,6 +356,7 @@
     {
         QaReadinessStatus.Ready => "Ready",
         QaReadinessStatus.ReviewNeeded => "Review Needed",
+        QaReadinessStatus.InsufficientData => "Insufficient Data",
         _ => "High Risk",
     };
 

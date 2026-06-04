@@ -496,6 +496,7 @@ enum QaReadinessStatus {
   READY
   REVIEW_NEEDED
   HIGH_RISK
+  INSUFFICIENT_DATA
 }
 
 type QaScoreDeduction {

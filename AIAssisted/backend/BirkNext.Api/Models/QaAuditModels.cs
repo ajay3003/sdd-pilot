@@ -5,6 +5,8 @@ public enum QaReadinessStatus
     Ready,
     ReviewNeeded,
     HighRisk,
+    /// <summary>No requirements exist — score is meaningless and should not be displayed.</summary>
+    InsufficientData,
 }
 
 /// <summary>A single deduction from the deterministic quality score.</summary>

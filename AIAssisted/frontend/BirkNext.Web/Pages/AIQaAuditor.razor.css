@@ -36,6 +36,11 @@
     border-color: #fca5a5;
 }
 
+.qa-score-banner--insufficient {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+}
+
 /* ─── Score Gauge ─────────────────────────────────────────────────────────── */
 
 .qa-score-gauge {
@@ -50,15 +55,22 @@
     justify-content: center;
 }
 
-.qa-score-gauge--ready   { color: #16a34a; }
-.qa-score-gauge--review  { color: #d97706; }
-.qa-score-gauge--high-risk { color: #dc2626; }
+.qa-score-gauge--ready        { color: #16a34a; }
+.qa-score-gauge--review       { color: #d97706; }
+.qa-score-gauge--high-risk    { color: #dc2626; }
+.qa-score-gauge--insufficient { color: #94a3b8; }
 
 .qa-score-number {
     font-size: 2.2rem;
     font-weight: 900;
     line-height: 1;
     color: inherit;
+}
+
+.qa-score-number--empty {
+    font-size: 1.8rem;
+    color: #94a3b8;
+    letter-spacing: 0.05em;
 }
 
 .qa-score-unit {
@@ -86,9 +98,10 @@
     letter-spacing: 0.02em;
 }
 
-.qa-readiness--ready     { background: #dcfce7; color: #15803d; }
-.qa-readiness--review    { background: #fef9c3; color: #a16207; }
-.qa-readiness--high-risk { background: #fee2e2; color: #b91c1c; }
+.qa-readiness--ready        { background: #dcfce7; color: #15803d; }
+.qa-readiness--review       { background: #fef9c3; color: #a16207; }
+.qa-readiness--high-risk    { background: #fee2e2; color: #b91c1c; }
+.qa-readiness--insufficient { background: #f1f5f9; color: #475569; }
 
 .qa-score-subtitle {
     margin: 0;
