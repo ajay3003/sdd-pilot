@@ -407,4 +407,82 @@ public class Mutation
             CorrelationId = correlationId,
         };
     }
+
+    /// <summary>Registers a new code file in the project's code traceability registry.</summary>
+    public async Task<RegisterCodeFilePayload> RegisterCodeFileAsync(
+        RegisterCodeFileInput input,
+        [Service] CodeTraceabilityService codeService,
+        CancellationToken cancellationToken)
+    {
+        var result = await codeService.RegisterCodeFileAsync(
+            input.ProjectId, input.FilePath, input.Description, cancellationToken);
+
+        return new RegisterCodeFilePayload { File = result.File, Errors = result.Errors };
+    }
+
+    /// <summary>Removes a code file and all its code links from the registry.</summary>
+    public async Task<DeleteCodeFilePayload> DeleteCodeFileAsync(
+        DeleteCodeFileInput input,
+        [Service] CodeTraceabilityService codeService,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(input.Id, out var guid))
+            return new DeleteCodeFilePayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Code file ID is not valid.")],
+            };
+
+        var result = await codeService.DeleteCodeFileAsync(guid, input.ProjectId, cancellationToken);
+        return new DeleteCodeFilePayload
+        {
+            DeletedId = result.DeletedId,
+            Success = result.IsSuccess,
+            Errors = result.Errors,
+        };
+    }
+
+    /// <summary>Creates a link between a code file and a requirement or test.</summary>
+    public async Task<CreateCodeLinkPayload> CreateCodeLinkAsync(
+        CreateCodeLinkInput input,
+        [Service] CodeTraceabilityService codeService,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(input.CodeFileId, out var fileGuid))
+            return new CreateCodeLinkPayload
+            {
+                Errors = [new Services.UserError("INVALID_FILE_ID", "Code file ID is not valid.")],
+            };
+
+        if (!Guid.TryParse(input.ScenarioId, out var scenarioGuid))
+            return new CreateCodeLinkPayload
+            {
+                Errors = [new Services.UserError("INVALID_SCENARIO_ID", "Scenario ID is not valid.")],
+            };
+
+        var result = await codeService.CreateCodeLinkAsync(
+            input.ProjectId, fileGuid, scenarioGuid, cancellationToken);
+
+        return new CreateCodeLinkPayload { Link = result.Link, Errors = result.Errors };
+    }
+
+    /// <summary>Removes a code link by ID.</summary>
+    public async Task<DeleteCodeLinkPayload> DeleteCodeLinkAsync(
+        DeleteCodeLinkInput input,
+        [Service] CodeTraceabilityService codeService,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(input.Id, out var guid))
+            return new DeleteCodeLinkPayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Code link ID is not valid.")],
+            };
+
+        var result = await codeService.DeleteCodeLinkAsync(guid, input.ProjectId, cancellationToken);
+        return new DeleteCodeLinkPayload
+        {
+            DeletedId = result.DeletedId,
+            Success = result.IsSuccess,
+            Errors = result.Errors,
+        };
+    }
 }

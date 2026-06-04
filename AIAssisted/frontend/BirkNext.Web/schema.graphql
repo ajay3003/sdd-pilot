@@ -10,6 +10,9 @@ type Query {
   requirementImpact(projectId: String!, requirementId: ID!): RequirementImpact
   impactSummary(projectId: String!): ImpactSummary!
   specDriftReport(projectId: String!): SpecDriftReport!
+  codeFiles(projectId: String!): [CodeFile!]!
+  codeSummary(projectId: String!): CodeSummary!
+  codeImpact(projectId: String!, codeFileId: ID!): CodeImpact
 }
 
 type Mutation {
@@ -24,6 +27,10 @@ type Mutation {
   createTraceLink(input: CreateTraceLinkInput!): CreateTraceLinkPayload!
   deleteTraceLink(input: DeleteTraceLinkInput!): DeleteTraceLinkPayload!
   analyzeChange(input: AnalyzeChangeInput!): AnalyzeChangePayload!
+  registerCodeFile(input: RegisterCodeFileInput!): RegisterCodeFilePayload!
+  deleteCodeFile(input: DeleteCodeFileInput!): DeleteCodeFilePayload!
+  createCodeLink(input: CreateCodeLinkInput!): CreateCodeLinkPayload!
+  deleteCodeLink(input: DeleteCodeLinkInput!): DeleteCodeLinkPayload!
 }
 
 type Scenario {
@@ -402,4 +409,84 @@ type DriftFinding {
   category: String!
   description: String!
   severity: RiskLevel!
+}
+
+type CodeFile {
+  id: ID!
+  projectId: String!
+  filePath: String!
+  fileName: String!
+  description: String
+  createdAt: DateTime!
+}
+
+type CodeLink {
+  id: ID!
+  projectId: String!
+  codeFileId: ID!
+  scenarioId: ID!
+  scenarioKind: String!
+  createdAt: DateTime!
+}
+
+type CodeLinkWithScenario {
+  link: CodeLink!
+  scenario: Scenario!
+}
+
+type CodeImpact {
+  file: CodeFile!
+  linkedRequirements: [CodeLinkWithScenario!]!
+  linkedTests: [CodeLinkWithScenario!]!
+}
+
+type CodeSummary {
+  totalFiles: Int!
+  linkedRequirements: Int!
+  linkedTests: Int!
+  unlinkedFiles: Int!
+}
+
+input RegisterCodeFileInput {
+  projectId: String!
+  filePath: String!
+  description: String
+}
+
+input DeleteCodeFileInput {
+  id: String!
+  projectId: String!
+}
+
+input CreateCodeLinkInput {
+  projectId: String!
+  codeFileId: String!
+  scenarioId: String!
+}
+
+input DeleteCodeLinkInput {
+  id: String!
+  projectId: String!
+}
+
+type RegisterCodeFilePayload {
+  file: CodeFile
+  errors: [UserError!]!
+}
+
+type DeleteCodeFilePayload {
+  deletedId: ID
+  success: Boolean!
+  errors: [UserError!]!
+}
+
+type CreateCodeLinkPayload {
+  link: CodeLink
+  errors: [UserError!]!
+}
+
+type DeleteCodeLinkPayload {
+  deletedId: ID
+  success: Boolean!
+  errors: [UserError!]!
 }

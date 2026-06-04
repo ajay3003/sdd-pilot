@@ -1,0 +1,16 @@
+mutation RegisterCodeFile($projectId: String!, $filePath: String!, $description: String) {
+    registerCodeFile(input: {
+        projectId: $projectId,
+        filePath: $filePath,
+        description: $description
+    }) {
+        file {
+            id
+            filePath
+            fileName
+            description
+            createdAt
+        }
+        errors { code message }
+    }
+}

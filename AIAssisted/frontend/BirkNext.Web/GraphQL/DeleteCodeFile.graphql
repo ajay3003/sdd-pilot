@@ -1,0 +1,7 @@
+mutation DeleteCodeFile($id: String!, $projectId: String!) {
+    deleteCodeFile(input: { id: $id, projectId: $projectId }) {
+        deletedId
+        success
+        errors { code message }
+    }
+}

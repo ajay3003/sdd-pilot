@@ -37,6 +37,7 @@ builder.Services.AddScoped<TraceLinkService>();
 builder.Services.AddScoped<ImpactAnalysisService>();
 builder.Services.AddScoped<AIChangeAuditService>();
 builder.Services.AddScoped<SpecDriftDetectionService>();
+builder.Services.AddScoped<CodeTraceabilityService>();
 builder.Services.AddHttpClient("Anthropic", client =>
 {
     client.DefaultRequestHeaders.Add("x-api-key", builder.Configuration["Anthropic:ApiKey"] ?? string.Empty);
@@ -70,6 +71,11 @@ builder.Services
     .AddType<DriftRequirementObjectType>()
     .AddType<DriftFindingObjectType>()
     .AddType<SpecDriftReportObjectType>()
+    .AddType<CodeFileObjectType>()
+    .AddType<CodeLinkObjectType>()
+    .AddType<CodeLinkWithScenarioObjectType>()
+    .AddType<CodeImpactObjectType>()
+    .AddType<CodeSummaryObjectType>()
     .AddDiagnosticEventListener<OperationDiagnosticEventListener>()
     .ConfigureSchema(b => b.ModifyOptions(o => o.UseXmlDocumentation = true));
 

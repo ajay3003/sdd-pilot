@@ -102,6 +102,38 @@ public class Query
         return await impactAnalysisService.GetImpactSummaryAsync(projectId, cancellationToken);
     }
 
+    /// <summary>Returns all registered code files for the given project.</summary>
+    public async Task<IReadOnlyList<CodeFile>> CodeFilesAsync(
+        string projectId,
+        [Service] CodeTraceabilityService codeService,
+        CancellationToken cancellationToken)
+    {
+        return await codeService.GetCodeFilesAsync(projectId, cancellationToken);
+    }
+
+    /// <summary>Returns project-wide code traceability summary counts.</summary>
+    public async Task<CodeSummary> CodeSummaryAsync(
+        string projectId,
+        [Service] CodeTraceabilityService codeService,
+        CancellationToken cancellationToken)
+    {
+        return await codeService.GetCodeSummaryAsync(projectId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Returns the full code impact for a single file: all linked requirements and tests.
+    /// Returns null if the file is not found.
+    /// </summary>
+    public async Task<CodeImpact?> CodeImpactAsync(
+        string projectId,
+        [ID] string codeFileId,
+        [Service] CodeTraceabilityService codeService,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(codeFileId, out var guid)) return null;
+        return await codeService.GetCodeImpactAsync(projectId, guid, cancellationToken);
+    }
+
     /// <summary>
     /// Returns a deterministic spec drift report: coverage gaps, orphan tests,
     /// at-risk requirements, and recommended actions. Reuses ImpactAnalysisService

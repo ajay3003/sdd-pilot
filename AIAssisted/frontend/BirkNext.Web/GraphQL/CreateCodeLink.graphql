@@ -1,0 +1,10 @@
+mutation CreateCodeLink($projectId: String!, $codeFileId: String!, $scenarioId: String!) {
+    createCodeLink(input: {
+        projectId: $projectId,
+        codeFileId: $codeFileId,
+        scenarioId: $scenarioId
+    }) {
+        link { id scenarioId scenarioKind }
+        errors { code message }
+    }
+}

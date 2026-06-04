@@ -12,6 +12,8 @@ public class AppDbContext : DbContext
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
     public DbSet<QaDeltaReview> QaDeltaReviews => Set<QaDeltaReview>();
     public DbSet<TraceLink> TraceLinks => Set<TraceLink>();
+    public DbSet<CodeFile> CodeFiles => Set<CodeFile>();
+    public DbSet<CodeLink> CodeLinks => Set<CodeLink>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -257,6 +259,78 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(t => new { t.ProjectId, t.SourceKind, t.SourceId })
                 .HasDatabaseName("ix_trace_links_project_source");
+        });
+
+        modelBuilder.Entity<CodeFile>(entity =>
+        {
+            entity.ToTable("code_files");
+
+            entity.Property(f => f.Id).HasColumnName("id");
+
+            entity.Property(f => f.ProjectId)
+                .HasColumnName("project_id")
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(f => f.FilePath)
+                .HasColumnName("file_path")
+                .HasMaxLength(1000)
+                .IsRequired();
+
+            entity.Property(f => f.FileName)
+                .HasColumnName("file_name")
+                .HasMaxLength(255)
+                .IsRequired();
+
+            entity.Property(f => f.Description)
+                .HasColumnName("description")
+                .HasColumnType("text");
+
+            entity.Property(f => f.CreatedAt).HasColumnName("created_at");
+
+            entity.HasIndex(f => new { f.ProjectId, f.FilePath })
+                .HasDatabaseName("ix_code_files_project_path")
+                .IsUnique();
+
+            entity.HasIndex(f => new { f.ProjectId, f.CreatedAt })
+                .HasDatabaseName("ix_code_files_project_created");
+        });
+
+        modelBuilder.Entity<CodeLink>(entity =>
+        {
+            entity.ToTable("code_links");
+
+            entity.Property(l => l.Id).HasColumnName("id");
+
+            entity.Property(l => l.ProjectId)
+                .HasColumnName("project_id")
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(l => l.CodeFileId)
+                .HasColumnName("code_file_id")
+                .IsRequired();
+
+            entity.Property(l => l.ScenarioId)
+                .HasColumnName("scenario_id")
+                .IsRequired();
+
+            entity.Property(l => l.ScenarioKind)
+                .HasColumnName("scenario_kind")
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(l => l.CreatedAt).HasColumnName("created_at");
+
+            entity.HasIndex(l => new { l.CodeFileId, l.ScenarioId })
+                .HasDatabaseName("ix_code_links_file_scenario")
+                .IsUnique();
+
+            entity.HasIndex(l => new { l.ProjectId, l.CodeFileId })
+                .HasDatabaseName("ix_code_links_project_file");
+
+            entity.HasIndex(l => new { l.ProjectId, l.ScenarioId })
+                .HasDatabaseName("ix_code_links_project_scenario");
         });
     }
 }
