@@ -709,8 +709,91 @@ function Start-DotNetProjectWindow {
         throw "$Name runnable target not found: $($Runnable.Path)"
     }
 
-    if ($Runnable.Kind -eq "Dll") {
-        # Downloaded pipeline artifact mode: run the published DLL directly.
+    if ($Runnable.Kind -eq "StaticWeb") {
+        # Blazor WebAssembly artifact mode.
+        # BirkNext.Web is not a runnable server DLL. It is static content under wwwroot.
+        $escapedRoot = Escape-PowerShellSingleQuotedString -Value $Runnable.Path
+
+        $runCommand = @"
+`$root = '$escapedRoot'
+`$port = 5173
+`$prefix = "http://localhost:`$port/"
+
+function Get-MimeType([string]`$path) {
+    switch ([System.IO.Path]::GetExtension(`$path).ToLowerInvariant()) {
+        ".html" { "text/html"; break }
+        ".htm"  { "text/html"; break }
+        ".js"   { "application/javascript"; break }
+        ".mjs"  { "application/javascript"; break }
+        ".css"  { "text/css"; break }
+        ".json" { "application/json"; break }
+        ".wasm" { "application/wasm"; break }
+        ".dll"  { "application/octet-stream"; break }
+        ".dat"  { "application/octet-stream"; break }
+        ".pdb"  { "application/octet-stream"; break }
+        ".png"  { "image/png"; break }
+        ".jpg"  { "image/jpeg"; break }
+        ".jpeg" { "image/jpeg"; break }
+        ".gif"  { "image/gif"; break }
+        ".svg"  { "image/svg+xml"; break }
+        ".ico"  { "image/x-icon"; break }
+        ".woff" { "font/woff"; break }
+        ".woff2"{ "font/woff2"; break }
+        default { "application/octet-stream"; break }
+    }
+}
+
+`$listener = [System.Net.HttpListener]::new()
+`$listener.Prefixes.Add(`$prefix)
+`$listener.Start()
+
+Write-Host "Serving Blazor WebAssembly frontend from: `$root" -ForegroundColor Cyan
+Write-Host "Frontend URL: `$prefix" -ForegroundColor Green
+Write-Host ""
+Write-Host "Keep this window open while testing." -ForegroundColor Yellow
+
+Start-Process `$prefix
+
+while (`$listener.IsListening) {
+    `$context = `$listener.GetContext()
+    `$requestPath = [System.Uri]::UnescapeDataString(`$context.Request.Url.AbsolutePath.TrimStart('/'))
+
+    if ([string]::IsNullOrWhiteSpace(`$requestPath)) {
+        `$requestPath = "index.html"
+    }
+
+    `$candidate = Join-Path `$root `$requestPath
+
+    if ((Test-Path `$candidate -PathType Container)) {
+        `$candidate = Join-Path `$candidate "index.html"
+    }
+
+    if (-not (Test-Path `$candidate -PathType Leaf)) {
+        # SPA fallback for Blazor routes like /extract or /scenarios.
+        `$candidate = Join-Path `$root "index.html"
+    }
+
+    try {
+        `$bytes = [System.IO.File]::ReadAllBytes(`$candidate)
+        `$context.Response.StatusCode = 200
+        `$context.Response.ContentType = Get-MimeType `$candidate
+        `$context.Response.ContentLength64 = `$bytes.Length
+        `$context.Response.OutputStream.Write(`$bytes, 0, `$bytes.Length)
+    }
+    catch {
+        `$message = [System.Text.Encoding]::UTF8.GetBytes(`$_.Exception.Message)
+        `$context.Response.StatusCode = 500
+        `$context.Response.ContentType = "text/plain"
+        `$context.Response.OutputStream.Write(`$message, 0, `$message.Length)
+    }
+    finally {
+        `$context.Response.OutputStream.Close()
+    }
+}
+"@
+    }
+    elseif ($Runnable.Kind -eq "Dll") {
+        # Downloaded pipeline artifact mode: run the published backend DLL directly.
         $runCommand = "dotnet `"$($Runnable.Path)`""
     }
     elseif ($Fast) {
@@ -743,8 +826,6 @@ Set-Location '$WorkingPath'
 Write-Host 'Starting BirkNext $Name...' -ForegroundColor Cyan
 Write-Host 'Target: $($Runnable.Path)' -ForegroundColor DarkGray
 Write-Host 'Mode: $($Runnable.Kind)' -ForegroundColor DarkGray
-Write-Host ''
-Write-Host 'When startup is complete, copy the shown localhost URL from this window.' -ForegroundColor Yellow
 Write-Host ''
 $environmentCommand
 $runCommand
@@ -789,11 +870,27 @@ if (-not (Test-Path $frontendPath)) {
 $backendRunnable = Find-DotNetRunnable -BasePath $backendPath -PreferredName "BirkNext.Api"
 $frontendRunnable = Find-DotNetRunnable -BasePath $frontendPath -PreferredName "BirkNext.Web"
 
+# Blazor WebAssembly artifact mode:
+# Published BirkNext.Web contains static files and may also contain BirkNext.Web.dll.
+# That DLL is not a runnable server app, so prefer wwwroot/index.html when no source .csproj is present.
+if ($frontendRunnable.Kind -eq "Dll") {
+    $frontendIndex = Get-ChildItem -Path $frontendPath -Recurse -Filter "index.html" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match "\\wwwroot\\index\.html$" -or $_.DirectoryName -eq $frontendPath } |
+        Select-Object -First 1
+
+    if ($frontendIndex) {
+        $frontendRunnable = [PSCustomObject]@{
+            Kind = "StaticWeb"
+            Path = $frontendIndex.Directory.FullName
+        }
+    }
+}
+
 Ok "Backend target:  $($backendRunnable.Path) [$($backendRunnable.Kind)]"
 Ok "Frontend target: $($frontendRunnable.Path) [$($frontendRunnable.Kind)]"
 
 $backendPort = if ($backendRunnable.Kind -eq "Project") { Get-ProjectLaunchPort -ProjectFile $backendRunnable.Path } else { $null }
-$frontendPort = if ($frontendRunnable.Kind -eq "Project") { Get-ProjectLaunchPort -ProjectFile $frontendRunnable.Path } else { $null }
+$frontendPort = if ($frontendRunnable.Kind -eq "Project") { Get-ProjectLaunchPort -ProjectFile $frontendRunnable.Path } elseif ($frontendRunnable.Kind -eq "StaticWeb") { 5173 } else { $null }
 
 if ($null -ne $backendPort) {
     Info "Backend port:    $backendPort"
@@ -852,9 +949,10 @@ try {
     Ok "Startup triggered."
     Write-Host ""
     Write-Host "How to access the frontend:" -ForegroundColor Cyan
-    Write-Host "  1. Look in the 'BirkNext Frontend' window."
-    Write-Host "  2. Find: Now listening on: https://localhost:xxxx"
-    Write-Host "  3. Open that URL in your browser."
+    Write-Host "  Source mode:"
+    Write-Host "    Look in the 'BirkNext Frontend' window for the listening URL."
+    Write-Host "  Downloaded tester package mode:"
+    Write-Host "    Open http://localhost:5173/"
     Write-Host ""
     Write-Host "Useful paths:" -ForegroundColor Cyan
     Write-Host "  /extract"

@@ -81,6 +81,10 @@ steps:
   displayName: 'Wait for PostgreSQL'
   workingDirectory: AIAssisted
 
+# -------------------------
+# Backend
+# -------------------------
+
 - script: dotnet restore BirkNext.sln
   displayName: 'Restore backend solution'
   workingDirectory: AIAssisted/backend
@@ -103,12 +107,32 @@ steps:
   continueOnError: true
 
 - script: |
-    dotnet publish BirkNext.sln \
+    dotnet publish BirkNext.Api/BirkNext.Api.csproj \
       --configuration Release \
       --output $(Build.ArtifactStagingDirectory)/tester-package/AIAssisted/backend
   displayName: 'Publish backend app'
   workingDirectory: AIAssisted/backend
   condition: eq(variables['BUILD_BACKEND'], 'true')
+
+- bash: |
+    set -e
+    echo "Backend published files:"
+    ls -la "$(Build.ArtifactStagingDirectory)/tester-package/AIAssisted/backend"
+
+    echo "Checking backend runnable DLL..."
+    test -f "$(Build.ArtifactStagingDirectory)/tester-package/AIAssisted/backend/BirkNext.Api.dll"
+
+    echo "Checking backend runtimeconfig..."
+    test -f "$(Build.ArtifactStagingDirectory)/tester-package/AIAssisted/backend/BirkNext.Api.runtimeconfig.json"
+
+    echo "Backend publish verification OK"
+  displayName: 'Verify backend publish'
+  condition: eq(variables['BUILD_BACKEND'], 'true')
+
+# -------------------------
+# Frontend
+# Blazor WebAssembly is static output, not a runnable dotnet server app.
+# -------------------------
 
 - script: dotnet restore BirkNext.sln
   displayName: 'Restore frontend solution'
@@ -132,12 +156,37 @@ steps:
   continueOnError: true
 
 - script: |
-    dotnet publish BirkNext.sln \
+    dotnet publish BirkNext.Web/BirkNext.Web.csproj \
       --configuration Release \
       --output $(Build.ArtifactStagingDirectory)/tester-package/AIAssisted/frontend
-  displayName: 'Publish frontend app'
+  displayName: 'Publish frontend Blazor WebAssembly app'
   workingDirectory: AIAssisted/frontend
   condition: eq(variables['BUILD_FRONTEND'], 'true')
+
+- bash: |
+    set -e
+    FRONTEND_DIR="$(Build.ArtifactStagingDirectory)/tester-package/AIAssisted/frontend"
+
+    echo "Frontend published files:"
+    find "$FRONTEND_DIR" -maxdepth 3 -type f -print | sort
+
+    echo "Checking Blazor WebAssembly static output..."
+    if [ -f "$FRONTEND_DIR/wwwroot/index.html" ]; then
+      echo "Found wwwroot/index.html"
+    elif [ -f "$FRONTEND_DIR/index.html" ]; then
+      echo "Found index.html"
+    else
+      echo "ERROR: No Blazor index.html found in published frontend output"
+      exit 1
+    fi
+
+    echo "Frontend publish verification OK"
+  displayName: 'Verify frontend Blazor WebAssembly publish'
+  condition: eq(variables['BUILD_FRONTEND'], 'true')
+
+# -------------------------
+# Test results
+# -------------------------
 
 - task: PublishTestResults@2
   displayName: 'Publish test results'
@@ -147,6 +196,10 @@ steps:
     testResultsFiles: '**/*.trx'
     searchFolder: '$(Agent.TempDirectory)/test-results'
     failTaskOnFailedTests: false
+
+# -------------------------
+# Tester package
+# -------------------------
 
 - bash: |
     set -e
@@ -182,34 +235,53 @@ steps:
     cp scripts/start-local.ps1 "$PACKAGE_DIR/scripts/"
 
     echo "Copying test results if available..."
-    cp -r $(Agent.TempDirectory)/test-results/* "$PACKAGE_DIR/test-results/" || echo "No test results found, skipping"
+    cp -r "$(Agent.TempDirectory)/test-results"/* "$PACKAGE_DIR/test-results/" || echo "No test results found, skipping"
 
     cat > "$PACKAGE_DIR/README.md" << 'EOF'
-    # BirkNext Studio Tester Package
+# BirkNext Studio Tester Package
 
-    Download and unzip this artifact.
+Download and unzip this artifact.
 
-    ## Start locally
+## Start locally
 
-    Run:
+Run:
 
-    scripts/start-local.bat
+```text
+scripts/start-local.bat
+```
 
-    or:
+or:
 
-    scripts/start-local.ps1
+```text
+scripts/start-local.ps1
+```
 
-    ## Expected structure
+## Expected structure
 
-    - AIAssisted/backend
-    - AIAssisted/frontend
-    - AIAssisted/docker-compose.yml
-    - scripts/start-local.bat
-    - scripts/start-local.ps1
-    EOF
+```text
+AIAssisted/
+  backend/
+    BirkNext.Api.dll
+    BirkNext.Api.runtimeconfig.json
+  frontend/
+    wwwroot/index.html
+  docker-compose.yml
+
+scripts/
+  start-local.bat
+  start-local.ps1
+```
+
+## Important
+
+- Backend is a runnable ASP.NET Core app.
+- Frontend is Blazor WebAssembly static output.
+- Do not run `dotnet BirkNext.Web.dll`.
+- The local script should serve the frontend static files and start the backend.
+EOF
 
     echo "Final tester package contents:"
-    find "$PACKAGE_DIR" -maxdepth 4 -type f -print
+    find "$PACKAGE_DIR" -maxdepth 5 -type f -print | sort
   displayName: 'Prepare tester package'
   condition: eq(variables['PUBLISH_TESTER_PACKAGE'], 'true')
 
@@ -228,6 +300,10 @@ steps:
     PathtoPublish: '$(Agent.TempDirectory)/test-results'
     ArtifactName: 'test-results'
     publishLocation: Container
+
+# -------------------------
+# Cleanup
+# -------------------------
 
 - bash: |
     docker compose down -v
