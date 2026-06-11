@@ -238,47 +238,47 @@ steps:
     cp -r "$(Agent.TempDirectory)/test-results"/* "$PACKAGE_DIR/test-results/" || echo "No test results found, skipping"
 
     cat > "$PACKAGE_DIR/README.md" << 'EOF'
-# BirkNext Studio Tester Package
+    # BirkNext Studio Tester Package
 
-Download and unzip this artifact.
+    Download and unzip this artifact.
 
-## Start locally
+    ## Start locally
 
-Run:
+    Run:
 
-```text
-scripts/start-local.bat
-```
+    ```text
+    scripts/start-local.bat
+    ```
 
-or:
+    or:
 
-```text
-scripts/start-local.ps1
-```
+    ```text
+    scripts/start-local.ps1
+    ```
 
-## Expected structure
+    ## Expected structure
 
-```text
-AIAssisted/
-  backend/
-    BirkNext.Api.dll
-    BirkNext.Api.runtimeconfig.json
-  frontend/
-    wwwroot/index.html
-  docker-compose.yml
+    ```text
+    AIAssisted/
+      backend/
+        BirkNext.Api.dll
+        BirkNext.Api.runtimeconfig.json
+      frontend/
+        wwwroot/index.html
+      docker-compose.yml
 
-scripts/
-  start-local.bat
-  start-local.ps1
-```
+    scripts/
+      start-local.bat
+      start-local.ps1
+    ```
 
-## Important
+    ## Important
 
-- Backend is a runnable ASP.NET Core app.
-- Frontend is Blazor WebAssembly static output.
-- Do not run `dotnet BirkNext.Web.dll`.
-- The local script should serve the frontend static files and start the backend.
-EOF
+    - Backend is a runnable ASP.NET Core app.
+    - Frontend is Blazor WebAssembly static output.
+    - Do not run `dotnet BirkNext.Web.dll`.
+    - The local script should serve the frontend static files and start the backend.
+    EOF
 
     echo "Final tester package contents:"
     find "$PACKAGE_DIR" -maxdepth 5 -type f -print | sort
