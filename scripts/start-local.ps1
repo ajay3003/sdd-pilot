@@ -634,51 +634,92 @@ function Start-ContainerServices {
     }
 }
 
-function Find-ProjectFile {
+function Find-DotNetRunnable {
     param(
         [string]$BasePath,
         [string]$PreferredName
     )
 
-    $preferred = Get-ChildItem -Path $BasePath -Recurse -Filter "$PreferredName.csproj" -ErrorAction SilentlyContinue | Select-Object -First 1
+    # Source repository mode: prefer .csproj and use dotnet run.
+    $preferredProject = Get-ChildItem -Path $BasePath -Recurse -Filter "$PreferredName.csproj" -ErrorAction SilentlyContinue | Select-Object -First 1
 
-    if ($preferred) {
-        return $preferred.FullName
+    if ($preferredProject) {
+        return [PSCustomObject]@{
+            Kind = "Project"
+            Path = $preferredProject.FullName
+        }
     }
 
     $allProjects = Get-ChildItem -Path $BasePath -Recurse -Filter "*.csproj" -ErrorAction SilentlyContinue
 
-    $nonTest = $allProjects |
+    $nonTestProject = $allProjects |
         Where-Object { $_.FullName -notmatch "\.Tests\.csproj$" } |
         Select-Object -First 1
 
-    if ($nonTest) {
-        return $nonTest.FullName
+    if ($nonTestProject) {
+        return [PSCustomObject]@{
+            Kind = "Project"
+            Path = $nonTestProject.FullName
+        }
     }
 
-    throw "No runnable project file found under $BasePath"
+    # Pipeline artifact mode: published output contains DLLs, not .csproj files.
+    # Prefer the expected app DLL first, then fall back to the first non-test DLL.
+    $preferredDll = Get-ChildItem -Path $BasePath -Recurse -Filter "$PreferredName.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+
+    if ($preferredDll) {
+        return [PSCustomObject]@{
+            Kind = "Dll"
+            Path = $preferredDll.FullName
+        }
+    }
+
+    $allDlls = Get-ChildItem -Path $BasePath -Recurse -Filter "*.dll" -ErrorAction SilentlyContinue
+
+    $nonTestDll = $allDlls |
+        Where-Object {
+            $_.Name -notmatch "\.Tests\.dll$" -and
+            $_.Name -notmatch "^Microsoft\." -and
+            $_.Name -notmatch "^System\."
+        } |
+        Select-Object -First 1
+
+    if ($nonTestDll) {
+        return [PSCustomObject]@{
+            Kind = "Dll"
+            Path = $nonTestDll.FullName
+        }
+    }
+
+    throw "No runnable project file or published DLL found under $BasePath"
 }
 
 function Start-DotNetProjectWindow {
     param(
         [string]$Name,
         [string]$WorkingPath,
-        [string]$ProjectFile
+        [object]$Runnable
     )
 
     if (-not (Test-Path $WorkingPath)) {
         throw "$Name folder not found: $WorkingPath"
     }
 
-    if (-not (Test-Path $ProjectFile)) {
-        throw "$Name project file not found: $ProjectFile"
+    if (-not $Runnable -or -not (Test-Path $Runnable.Path)) {
+        throw "$Name runnable target not found: $($Runnable.Path)"
     }
 
-    if ($Fast) {
-        $runCommand = "dotnet run --no-build --project `"$ProjectFile`""
+    if ($Runnable.Kind -eq "Dll") {
+        # Downloaded pipeline artifact mode: run the published DLL directly.
+        $runCommand = "dotnet `"$($Runnable.Path)`""
+    }
+    elseif ($Fast) {
+        # Source repository mode, fast startup.
+        $runCommand = "dotnet run --no-build --project `"$($Runnable.Path)`""
     }
     else {
-        $runCommand = "dotnet restore `"$ProjectFile`"; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }; dotnet build `"$ProjectFile`"; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }; dotnet run --project `"$ProjectFile`""
+        # Source repository mode, safe startup.
+        $runCommand = "dotnet restore `"$($Runnable.Path)`"; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }; dotnet build `"$($Runnable.Path)`"; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }; dotnet run --project `"$($Runnable.Path)`""
     }
 
     $environmentCommand = ""
@@ -700,7 +741,8 @@ Write-Host 'Database: $(Get-SanitizedConnectionString -PostgresConfig $script:Po
 `$host.UI.RawUI.WindowTitle = 'BirkNext $Name'
 Set-Location '$WorkingPath'
 Write-Host 'Starting BirkNext $Name...' -ForegroundColor Cyan
-Write-Host 'Project: $ProjectFile' -ForegroundColor DarkGray
+Write-Host 'Target: $($Runnable.Path)' -ForegroundColor DarkGray
+Write-Host 'Mode: $($Runnable.Kind)' -ForegroundColor DarkGray
 Write-Host ''
 Write-Host 'When startup is complete, copy the shown localhost URL from this window.' -ForegroundColor Yellow
 Write-Host ''
@@ -744,14 +786,14 @@ if (-not (Test-Path $frontendPath)) {
     throw "Frontend folder not found: $frontendPath"
 }
 
-$backendProject = Find-ProjectFile -BasePath $backendPath -PreferredName "BirkNext.Api"
-$frontendProject = Find-ProjectFile -BasePath $frontendPath -PreferredName "BirkNext.Web"
+$backendRunnable = Find-DotNetRunnable -BasePath $backendPath -PreferredName "BirkNext.Api"
+$frontendRunnable = Find-DotNetRunnable -BasePath $frontendPath -PreferredName "BirkNext.Web"
 
-Ok "Backend project:  $backendProject"
-Ok "Frontend project: $frontendProject"
+Ok "Backend target:  $($backendRunnable.Path) [$($backendRunnable.Kind)]"
+Ok "Frontend target: $($frontendRunnable.Path) [$($frontendRunnable.Kind)]"
 
-$backendPort = Get-ProjectLaunchPort -ProjectFile $backendProject
-$frontendPort = Get-ProjectLaunchPort -ProjectFile $frontendProject
+$backendPort = if ($backendRunnable.Kind -eq "Project") { Get-ProjectLaunchPort -ProjectFile $backendRunnable.Path } else { $null }
+$frontendPort = if ($frontendRunnable.Kind -eq "Project") { Get-ProjectLaunchPort -ProjectFile $frontendRunnable.Path } else { $null }
 
 if ($null -ne $backendPort) {
     Info "Backend port:    $backendPort"
@@ -773,11 +815,11 @@ try {
     $canStart = $true
 
     if (-not $FrontendOnly -and $null -ne $backendPort) {
-        $canStart = (Stop-PortOwnerIfAllowed -Name "Backend" -Port $backendPort -RepoRoot $repoRoot -ProjectFile $backendProject) -and $canStart
+        $canStart = (Stop-PortOwnerIfAllowed -Name "Backend" -Port $backendPort -RepoRoot $repoRoot -ProjectFile $backendRunnable.Path) -and $canStart
     }
 
     if (-not $BackendOnly -and $null -ne $frontendPort) {
-        $canStart = (Stop-PortOwnerIfAllowed -Name "Frontend" -Port $frontendPort -RepoRoot $repoRoot -ProjectFile $frontendProject) -and $canStart
+        $canStart = (Stop-PortOwnerIfAllowed -Name "Frontend" -Port $frontendPort -RepoRoot $repoRoot -ProjectFile $frontendRunnable.Path) -and $canStart
     }
 
     if (-not $canStart) {
@@ -788,7 +830,7 @@ try {
     Start-ContainerServices
 
     if (-not $FrontendOnly) {
-        Start-DotNetProjectWindow -Name "Backend" -WorkingPath $backendPath -ProjectFile $backendProject
+        Start-DotNetProjectWindow -Name "Backend" -WorkingPath $backendPath -Runnable $backendRunnable
 
         if (-not $BackendOnly -and $BackendDelaySeconds -gt 0) {
             Info "Waiting $BackendDelaySeconds seconds before starting frontend..."
@@ -800,7 +842,7 @@ try {
     }
 
     if (-not $BackendOnly) {
-        Start-DotNetProjectWindow -Name "Frontend" -WorkingPath $frontendPath -ProjectFile $frontendProject
+        Start-DotNetProjectWindow -Name "Frontend" -WorkingPath $frontendPath -Runnable $frontendRunnable
     }
     else {
         Warn "BackendOnly selected. Frontend will not be started."
