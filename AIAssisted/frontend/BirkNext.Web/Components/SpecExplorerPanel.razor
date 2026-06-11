@@ -1,3 +1,4 @@
+@using BirkNext.Web.GraphQL
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 
@@ -126,9 +127,7 @@
                        aria-label="Search spec explorer" />
                 @if (!string.IsNullOrWhiteSpace(_searchQuery))
                 {
-                    @{
-                        var matchCount = _flatCache.Count(r => r.IsMatch);
-                    }
+                    var matchCount = _flatCache.Count(r => r.IsMatch);
                     <span class="se-search-count">@matchCount match@(matchCount != 1 ? "es" : "")</span>
                 }
             </div>
