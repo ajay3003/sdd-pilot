@@ -24,6 +24,16 @@ steps:
 - checkout: self
   clean: true
 
+- bash: |
+    echo "Branch: $(Build.SourceBranch)"
+    echo "Commit: $(Build.SourceVersion)"
+    echo "Agent: $(Agent.Name)"
+    echo "RUN_TESTS=$(RUN_TESTS)"
+    echo "BUILD_BACKEND=$(BUILD_BACKEND)"
+    echo "BUILD_FRONTEND=$(BUILD_FRONTEND)"
+    echo "PUBLISH_TESTER_PACKAGE=$(PUBLISH_TESTER_PACKAGE)"
+  displayName: 'Pipeline configuration'
+
 - task: UseDotNet@2
   displayName: 'Install .NET SDK'
   inputs:
@@ -31,30 +41,33 @@ steps:
     version: '8.0.x'
 
 - bash: |
+    set -e
     cat > AIAssisted/.env << EOF
     POSTGRES_DB=$(POSTGRES_DB)
     POSTGRES_USER=$(POSTGRES_USER)
     POSTGRES_PASSWORD=$(POSTGRES_PASSWORD)
     EOF
+    echo "Created AIAssisted/.env"
   displayName: 'Create CI .env'
 
 - bash: |
+    set -e
     docker compose up -d
+    docker compose ps
   displayName: 'Start PostgreSQL container'
   workingDirectory: AIAssisted
 
 - bash: |
+    set -e
     echo "Waiting for PostgreSQL healthcheck..."
 
     for i in {1..30}; do
-      docker compose ps
-
       HEALTH=$(docker inspect --format='{{.State.Health.Status}}' $(docker compose ps -q postgres) 2>/dev/null || echo "unknown")
-
-      echo "PostgreSQL health: $HEALTH"
+      echo "Attempt $i: PostgreSQL health = $HEALTH"
 
       if [ "$HEALTH" = "healthy" ]; then
         echo "PostgreSQL is healthy"
+        docker compose ps
         exit 0
       fi
 
@@ -72,15 +85,15 @@ steps:
 # Backend
 # -------------------------
 
-- script: |
-    dotnet restore BirkNext.sln
+- script: dotnet restore BirkNext.sln
   displayName: 'Restore backend solution'
   workingDirectory: AIAssisted/backend
+  condition: eq(variables['BUILD_BACKEND'], 'true')
 
-- script: |
-    dotnet build BirkNext.sln --configuration Release --no-restore
+- script: dotnet build BirkNext.sln --configuration Release --no-restore
   displayName: 'Build backend solution'
   workingDirectory: AIAssisted/backend
+  condition: eq(variables['BUILD_BACKEND'], 'true')
 
 - script: |
     dotnet test BirkNext.sln \
@@ -90,7 +103,7 @@ steps:
       --results-directory $(Agent.TempDirectory)/test-results/backend
   displayName: 'Run backend tests'
   workingDirectory: AIAssisted/backend
-  condition: eq(variables['RUN_TESTS'], 'true')
+  condition: and(eq(variables['BUILD_BACKEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
   continueOnError: true
 
 - script: |
@@ -99,20 +112,21 @@ steps:
       --output $(Build.ArtifactStagingDirectory)/tester-package/backend
   displayName: 'Publish backend app'
   workingDirectory: AIAssisted/backend
+  condition: eq(variables['BUILD_BACKEND'], 'true')
 
 # -------------------------
 # Frontend
 # -------------------------
 
-- script: |
-    dotnet restore BirkNext.sln
+- script: dotnet restore BirkNext.sln
   displayName: 'Restore frontend solution'
   workingDirectory: AIAssisted/frontend
+  condition: eq(variables['BUILD_FRONTEND'], 'true')
 
-- script: |
-    dotnet build BirkNext.sln --configuration Release --no-restore
+- script: dotnet build BirkNext.sln --configuration Release --no-restore
   displayName: 'Build frontend solution'
   workingDirectory: AIAssisted/frontend
+  condition: eq(variables['BUILD_FRONTEND'], 'true')
 
 - script: |
     dotnet test BirkNext.sln \
@@ -122,7 +136,7 @@ steps:
       --results-directory $(Agent.TempDirectory)/test-results/frontend
   displayName: 'Run frontend tests'
   workingDirectory: AIAssisted/frontend
-  condition: eq(variables['RUN_TESTS'], 'true')
+  condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
   continueOnError: true
 
 - script: |
@@ -131,6 +145,7 @@ steps:
       --output $(Build.ArtifactStagingDirectory)/tester-package/frontend
   displayName: 'Publish frontend app'
   workingDirectory: AIAssisted/frontend
+  condition: eq(variables['BUILD_FRONTEND'], 'true')
 
 # -------------------------
 # Test results
@@ -150,29 +165,63 @@ steps:
 # -------------------------
 
 - bash: |
-    mkdir -p $(Build.ArtifactStagingDirectory)/tester-package/scripts
-    mkdir -p $(Build.ArtifactStagingDirectory)/tester-package/container
-    mkdir -p $(Build.ArtifactStagingDirectory)/tester-package/test-results
+    set -e
 
-    cp AIAssisted/docker-compose.yml $(Build.ArtifactStagingDirectory)/tester-package/container/
-    cp AIAssisted/.env.example $(Build.ArtifactStagingDirectory)/tester-package/container/ || true
-    cp AIAssisted/scripts/start-local.bat $(Build.ArtifactStagingDirectory)/tester-package/scripts/ || true
-    cp AIAssisted/scripts/start-local.ps1 $(Build.ArtifactStagingDirectory)/tester-package/scripts/ || true
-    cp -r $(Agent.TempDirectory)/test-results/* $(Build.ArtifactStagingDirectory)/tester-package/test-results/ || true
+    PACKAGE_DIR="$(Build.ArtifactStagingDirectory)/tester-package"
 
-    cat > $(Build.ArtifactStagingDirectory)/tester-package/README.md << 'EOF'
+    echo "Preparing tester package at: $PACKAGE_DIR"
+
+    mkdir -p "$PACKAGE_DIR/scripts"
+    mkdir -p "$PACKAGE_DIR/container"
+    mkdir -p "$PACKAGE_DIR/test-results"
+
+    echo "Repository root:"
+    pwd
+
+    echo "Repository root contents:"
+    ls -la
+
+    echo "AIAssisted contents:"
+    ls -la AIAssisted
+
+    echo "Scripts folder contents:"
+    ls -la scripts
+
+    echo "Copying docker-compose.yml..."
+    cp AIAssisted/docker-compose.yml "$PACKAGE_DIR/container/"
+
+    echo "Copying .env.example if available..."
+    cp AIAssisted/.env.example "$PACKAGE_DIR/container/" || echo ".env.example not found, skipping"
+
+    echo "Copying local start scripts..."
+    cp scripts/start-local.bat "$PACKAGE_DIR/scripts/"
+    cp scripts/start-local.ps1 "$PACKAGE_DIR/scripts/"
+
+    echo "Copying test results if available..."
+    cp -r $(Agent.TempDirectory)/test-results/* "$PACKAGE_DIR/test-results/" || echo "No test results found, skipping"
+
+    echo "Creating README..."
+    cat > "$PACKAGE_DIR/README.md" << 'EOF'
     # BirkNext Studio Tester Package
 
     Download this artifact and unzip it.
 
     ## Included
-    - Published backend app
-    - Published frontend app
-    - Docker Compose file for PostgreSQL
-    - Local start scripts
-    - Test results, if available
+
+    - backend/
+    - frontend/
+    - container/docker-compose.yml
+    - scripts/start-local.bat
+    - scripts/start-local.ps1
+    - test-results/, if tests were run
+
+    ## Requirements
+
+    - Docker Desktop or Podman Desktop
+    - .NET 8 runtime, if running the published apps directly
 
     ## Start locally
+
     Use:
 
     scripts/start-local.bat
@@ -182,13 +231,18 @@ steps:
     scripts/start-local.ps1
 
     ## Notes
+
     Do not commit real .env values.
     EOF
+
+    echo "Final tester package contents:"
+    find "$PACKAGE_DIR" -maxdepth 4 -type f -print
   displayName: 'Prepare tester package'
+  condition: eq(variables['PUBLISH_TESTER_PACKAGE'], 'true')
 
 - task: PublishPipelineArtifact@1
   displayName: 'Publish tester package'
-  condition: always()
+  condition: eq(variables['PUBLISH_TESTER_PACKAGE'], 'true')
   inputs:
     targetPath: '$(Build.ArtifactStagingDirectory)/tester-package'
     artifact: 'birknext-tester-package'
