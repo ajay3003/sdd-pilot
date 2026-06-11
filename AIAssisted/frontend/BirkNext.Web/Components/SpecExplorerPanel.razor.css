@@ -659,6 +659,67 @@
     gap: 0.3rem;
 }
 
+/* ── Table node styles ───────────────────────────────────────────────────── */
+
+.se-table-kind-badge {
+    font-size: 0.6rem;
+    font-weight: 600;
+    padding: 0.1rem 0.4rem;
+    border-radius: 0.2rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.se-tkind-traceability   { background: rgba(244, 114, 182, 0.12); color: #f9a8d4; }
+.se-tkind-requirementmap { background: rgba(96,  165, 250, 0.12); color: #93c5fd; }
+.se-tkind-userstorymap   { background: rgba(167, 139, 250, 0.12); color: #c4b5fd; }
+.se-tkind-testmapping    { background: rgba(52,  211, 153, 0.12); color: #6ee7b7; }
+.se-tkind-entitymodel    { background: rgba(45,  212, 191, 0.12); color: #5eead4; }
+.se-tkind-apispec        { background: rgba(251, 191,  36, 0.12); color: #fcd34d; }
+.se-tkind-dependencymap  { background: rgba(248, 113, 113, 0.12); color: #fca5a5; }
+.se-tkind-generic        { background: rgba(100, 116, 139, 0.12); color: #94a3b8; }
+
+.se-ref-chips {
+    display: flex;
+    gap: 0.2rem;
+    flex-shrink: 0;
+}
+
+.se-ref-chip {
+    font-size: 0.6rem;
+    font-weight: 600;
+    font-family: monospace;
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.2rem;
+    background: rgba(99, 102, 241, 0.1);
+    color: rgba(129, 140, 248, 0.85);
+    white-space: nowrap;
+}
+
+.se-table-refs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.se-table-ref-item {
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.4;
+}
+
+.se-table-ref-source {
+    font-weight: 600;
+    color: rgba(244, 114, 182, 0.8);
+    margin-right: 0.25rem;
+}
+
+.se-table-ref-row {
+    font-style: italic;
+}
+
+.se-hcard-tbl .se-health-value { color: #a78bfa; }
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
 @media (max-width: 768px) {

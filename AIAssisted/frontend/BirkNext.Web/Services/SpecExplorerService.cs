@@ -24,6 +24,16 @@ public static class SpecExplorerService
         @"\b([A-Z][a-z]{2,}(?:[A-Z][a-z]{2,})+)\b",
         RegexOptions.Compiled);
 
+    private static readonly Regex TableRowRe = new(
+        @"^\|(.+)\|$", RegexOptions.Compiled);
+
+    private static readonly Regex TableSepRe = new(
+        @"^\|[\s\-\|:]+\|$", RegexOptions.Compiled);
+
+    private static readonly Regex SpecRefRe = new(
+        @"\b(FR|NFR|SC|US|UC|AC|TS|REQ|TC)-?\s*(\d{1,4})\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     // ── Public API ────────────────────────────────────────────────────────
 
     public static SpecTree Parse(string markdown)
@@ -37,16 +47,20 @@ public static class SpecExplorerService
         // Counts for health summary
         var hHeadings = 0;
         var hReq = 0; var hUs = 0; var hTest = 0;
-        var hClr = 0; var hSc = 0; var hEnt = 0; var hDomain = 0;
+        var hClr = 0; var hSc = 0; var hEnt = 0; var hDomain = 0; var hTables = 0;
 
         // Current excerpt accumulator (per heading section)
         var excerptLines = new List<string>();
+
+        // Table line buffer — flushed when a non-table line is encountered
+        var tableBuffer = new List<string>();
 
         foreach (var line in lines)
         {
             var hm = HeadingRe.Match(line);
             if (hm.Success)
             {
+                FlushTableBuffer(tableBuffer, headingStack, roots, ref hTables);
                 FlushExcerpt(headingStack, excerptLines);
                 excerptLines.Clear();
 
@@ -74,6 +88,16 @@ public static class SpecExplorerService
                 headingStack.Add((level, node));
                 continue;
             }
+
+            // Table lines: buffer them; flush on any non-table line
+            if (TableRowRe.IsMatch(line))
+            {
+                tableBuffer.Add(line);
+                continue;
+            }
+
+            if (tableBuffer.Count > 0)
+                FlushTableBuffer(tableBuffer, headingStack, roots, ref hTables);
 
             if (string.IsNullOrWhiteSpace(line)) continue;
 
@@ -154,6 +178,7 @@ public static class SpecExplorerService
                 excerptLines.Add(line);
         }
 
+        FlushTableBuffer(tableBuffer, headingStack, roots, ref hTables);
         FlushExcerpt(headingStack, excerptLines);
 
         // Post-process: propagate descendant counts up the tree
@@ -170,6 +195,7 @@ public static class SpecExplorerService
             SuccessCriteria = hSc,
             Entities = hEnt,
             DomainItems = hDomain,
+            TablesDetected = hTables,
         };
 
         return new SpecTree { Roots = roots, Health = health };
@@ -185,6 +211,108 @@ public static class SpecExplorerService
             node.Excerpt = string.Join(" ", lines.Take(5)).Trim();
     }
 
+    private static void FlushTableBuffer(
+        List<string> buffer,
+        List<(int Level, SpecNode Node)> stack,
+        List<SpecNode> roots,
+        ref int hTables)
+    {
+        if (buffer.Count < 2) { buffer.Clear(); return; }
+        var tableNode = ParseTable(buffer, ref hTables);
+        if (tableNode is not null)
+        {
+            if (stack.Count > 0)
+                stack[^1].Node.Children.Add(tableNode);
+            else
+                roots.Add(tableNode);
+        }
+        buffer.Clear();
+    }
+
+    private static SpecNode? ParseTable(List<string> lines, ref int tableCount)
+    {
+        if (lines.Count < 2) return null;
+
+        var headers = SplitCells(lines[0]);
+        if (headers.Count == 0) return null;
+
+        // Validate and skip separator row (line[1])
+        var dataStart = TableSepRe.IsMatch(lines[1]) ? 2 : 1;
+        if (dataStart >= lines.Count) return null;
+
+        var tableKind = ClassifyTable(headers);
+        var title = "Table: " + string.Join(" | ", headers.Take(3));
+
+        var tableNode = new SpecNode
+        {
+            Title = title,
+            NodeType = SpecNodeType.TableSection,
+            HeadingLevel = 0,
+            TableKind = tableKind,
+            ColumnHeaders = headers,
+        };
+
+        for (var i = dataStart; i < lines.Count; i++)
+        {
+            var cells = SplitCells(lines[i]);
+            if (cells.Count == 0) continue;
+
+            var cellText = string.Join(" ", cells);
+            var specRefs = ExtractSpecRefs(cellText);
+            var rowTitle = cells[0].Length > 120 ? cells[0][..120] : cells[0];
+            if (string.IsNullOrWhiteSpace(rowTitle)) rowTitle = cellText.Length > 120 ? cellText[..120] : cellText;
+
+            tableNode.Children.Add(new SpecNode
+            {
+                Title = rowTitle,
+                NodeType = SpecNodeType.TableRow,
+                HeadingLevel = 0,
+                CellValues = cells,
+                LinkedSpecItemIds = specRefs,
+            });
+        }
+
+        if (tableNode.Children.Count == 0) return null;
+
+        tableCount++;
+        return tableNode;
+    }
+
+    private static TableType ClassifyTable(List<string> headers)
+    {
+        var joined = string.Join(" ", headers).ToLowerInvariant();
+        if (Regex.IsMatch(joined, @"\bsc\b|success criteria|criterion")) return TableType.Traceability;
+        if (Regex.IsMatch(joined, @"\bfr\b|requirement")) return TableType.RequirementMap;
+        if (Regex.IsMatch(joined, @"\bus\b|user stor")) return TableType.UserStoryMap;
+        if (Regex.IsMatch(joined, @"\bts\b|\btc\b|test case|expected")) return TableType.TestMapping;
+        if (Regex.IsMatch(joined, @"entity|field|\btype\b|attribute|property")) return TableType.EntityModel;
+        if (Regex.IsMatch(joined, @"endpoint|\bmethod\b|\bpath\b|operation")) return TableType.ApiSpec;
+        if (Regex.IsMatch(joined, @"depend|prerequisite|blocking")) return TableType.DependencyMap;
+        return TableType.Generic;
+    }
+
+    private static List<string> ExtractSpecRefs(string text)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+        foreach (Match m in SpecRefRe.Matches(text))
+        {
+            var prefix = m.Groups[1].Value.ToUpperInvariant();
+            var num = m.Groups[2].Value.PadLeft(3, '0');
+            var key = $"{prefix}-{num}";
+            if (seen.Add(key)) result.Add(key);
+        }
+        return result;
+    }
+
+    private static List<string> SplitCells(string line)
+    {
+        var trimmed = line.Trim();
+        if (trimmed.StartsWith('|')) trimmed = trimmed[1..];
+        if (trimmed.EndsWith('|')) trimmed = trimmed[..^1];
+        return [.. trimmed.Split('|').Select(c => c.Trim()).Where(c => c.Length > 0)];
+    }
+
     private static void PropagateStats(SpecNode node)
     {
         node.ReqCount = 0;
@@ -196,9 +324,10 @@ public static class SpecExplorerService
 
         foreach (var child in node.Children)
         {
-            if (child.HeadingLevel == 0)
+            // TableSection has HeadingLevel=0 but HAS children — must recurse into it
+            if (child.HeadingLevel == 0 && child.Children.Count == 0)
             {
-                // Leaf spec item
+                // Leaf spec item or table row
                 switch (child.NodeType)
                 {
                     case SpecNodeType.Requirement: node.ReqCount++; break;
@@ -217,7 +346,7 @@ public static class SpecExplorerService
                 node.TestCount += child.TestCount;
                 node.ClarCount += child.ClarCount;
                 node.ScCount += child.ScCount;
-                node.TotalDescendants += child.TotalDescendants + 1; // +1 for the heading itself
+                node.TotalDescendants += child.TotalDescendants + 1; // +1 for the node itself
             }
         }
     }

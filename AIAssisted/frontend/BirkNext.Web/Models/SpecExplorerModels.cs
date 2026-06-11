@@ -13,6 +13,20 @@ public enum SpecNodeType
     Clarification,     // detected clarification
     Entity,            // CamelCase / domain term
     DomainItem,        // Assumption / Dependency / Event / Operation / API
+    TableSection,      // markdown table block
+    TableRow,          // one data row of a table
+}
+
+public enum TableType
+{
+    Generic,
+    RequirementMap,
+    UserStoryMap,
+    TestMapping,
+    Traceability,
+    EntityModel,
+    ApiSpec,
+    DependencyMap,
 }
 
 public enum CoverageState { Unknown, Covered, Partial, Missing }
@@ -27,6 +41,12 @@ public sealed class SpecNode
     public string Excerpt { get; set; } = string.Empty;
     public List<SpecNode> Children { get; } = [];
     public CoverageState Coverage { get; set; } = CoverageState.Unknown;
+
+    // Table-specific fields (populated on TableSection / TableRow nodes)
+    public TableType TableKind { get; init; } = TableType.Generic;
+    public List<string> ColumnHeaders { get; init; } = [];
+    public List<string> CellValues { get; init; } = [];
+    public List<string> LinkedSpecItemIds { get; init; } = [];
 
     // Descendant counts — populated by SpecExplorerService after tree build
     public int ReqCount { get; set; }
@@ -47,6 +67,7 @@ public sealed class SpecHealth
     public int SuccessCriteria { get; init; }
     public int Entities { get; init; }
     public int DomainItems { get; init; }
+    public int TablesDetected { get; init; }
     public int TotalItems => Requirements + UserStories + Tests + Clarifications + SuccessCriteria + Entities + DomainItems;
 }
 

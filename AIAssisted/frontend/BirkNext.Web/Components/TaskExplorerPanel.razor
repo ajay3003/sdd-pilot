@@ -1,0 +1,750 @@
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+<div class="te-panel">
+
+    @if (_tree is null)
+    {
+        <!-- ── Empty / input state ───────────────────────────────────────── -->
+        <div class="te-empty-state">
+            <div class="te-empty-icon" aria-hidden="true">🗂</div>
+            <h3 class="te-empty-title">Task Explorer</h3>
+            <p class="te-empty-desc">Transform tasks.md into a navigable hierarchy of phases, user stories, task groups, and tables. Paste, import, or drag a tasks.md file.</p>
+
+            <div class="te-input-area">
+                <div class="te-input-header">
+                    <span class="te-input-label">tasks.md</span>
+                </div>
+                <SpecificationImport
+                    @ref="_importRef"
+                    InputId="te-file-input"
+                    OnFileImported="OnFileImported"
+                    OnFileRemoved="OnFileRemoved"
+                    IsDisabled="false" />
+                <textarea
+                    class="te-textarea"
+                    placeholder="Or paste tasks.md content here..."
+                    rows="12"
+                    @bind="_localTasksText"></textarea>
+                @if (!string.IsNullOrWhiteSpace(_localTasksText))
+                {
+                    var lineCount = CountLines(_localTasksText);
+                    <div class="te-input-footer">
+                        <span class="te-input-stat">@lineCount lines · @_localTasksText.Length chars</span>
+                        <button class="te-clear-btn" @onclick="ClearInput">Clear</button>
+                    </div>
+                }
+            </div>
+
+            <button
+                class="te-build-btn"
+                disabled="@(!CanBuild)"
+                @onclick="BuildTree">
+                Build Task Explorer
+            </button>
+        </div>
+    }
+    else
+    {
+        <!-- ── Explorer state ────────────────────────────────────────────── -->
+
+        <!-- Header bar -->
+        <div class="te-header">
+            <div class="te-header-left">
+                <span class="te-header-title">Task Explorer</span>
+                <span class="te-header-stat">@_health.TotalTasks tasks · @_health.TotalPhases phases</span>
+            </div>
+            <div class="te-header-right">
+                <div class="te-view-toggle" role="group" aria-label="View mode">
+                    <button class='te-view-btn @(!_isMapView ? "is-active" : "")' @onclick='() => _isMapView = false'>
+                        Tree View
+                    </button>
+                    <button class='te-view-btn @(_isMapView ? "is-active" : "")' @onclick='() => _isMapView = true'>
+                        Map View
+                    </button>
+                </div>
+                <button class="te-reset-btn" @onclick="Reset">← New Tasks</button>
+            </div>
+        </div>
+
+        <!-- Health summary cards -->
+        @if (HasHealthData)
+        {
+            <div class="te-health-row">
+                @if (_health.TotalTasks > 0)
+                {
+                    <div class="te-health-card">
+                        <div class="te-health-value">@_health.TotalTasks</div>
+                        <div class="te-health-label">Tasks</div>
+                    </div>
+                }
+                @if (_health.CompletedTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-done">
+                        <div class="te-health-value">@_health.CompletedTasks</div>
+                        <div class="te-health-label">Done</div>
+                    </div>
+                }
+                @if (_health.OpenTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-open">
+                        <div class="te-health-value">@_health.OpenTasks</div>
+                        <div class="te-health-label">Open</div>
+                    </div>
+                }
+                @if (_health.SpecLinked > 0)
+                {
+                    <div class="te-health-card te-hcard-linked">
+                        <div class="te-health-value">@_health.SpecLinked</div>
+                        <div class="te-health-label">Spec Linked</div>
+                    </div>
+                }
+                @if (_health.TechnicalOnly > 0)
+                {
+                    <div class="te-health-card te-hcard-tech">
+                        <div class="te-health-value">@_health.TechnicalOnly</div>
+                        <div class="te-health-label">Technical</div>
+                    </div>
+                }
+                @if (_health.NeedsReview > 0)
+                {
+                    <div class="te-health-card te-hcard-review">
+                        <div class="te-health-value">@_health.NeedsReview</div>
+                        <div class="te-health-label">Needs Review</div>
+                    </div>
+                }
+                @if (_health.PossibleDeviations > 0)
+                {
+                    <div class="te-health-card te-hcard-dev">
+                        <div class="te-health-value">@_health.PossibleDeviations</div>
+                        <div class="te-health-label">Deviations</div>
+                    </div>
+                }
+                @if (_health.HighRisk > 0)
+                {
+                    <div class="te-health-card te-hcard-risk">
+                        <div class="te-health-value">@_health.HighRisk</div>
+                        <div class="te-health-label">High Risk</div>
+                    </div>
+                }
+                @if (_health.RegressionCandidates > 0)
+                {
+                    <div class="te-health-card te-hcard-reg">
+                        <div class="te-health-value">@_health.RegressionCandidates</div>
+                        <div class="te-health-label">Regression</div>
+                    </div>
+                }
+                @if (_health.TablesDetected > 0)
+                {
+                    <div class="te-health-card te-hcard-table">
+                        <div class="te-health-value">@_health.TablesDetected</div>
+                        <div class="te-health-label">Tables</div>
+                    </div>
+                }
+                @if (_health.TraceabilityRows > 0)
+                {
+                    <div class="te-health-card te-hcard-trace">
+                        <div class="te-health-value">@_health.TraceabilityRows</div>
+                        <div class="te-health-label">Trace Rows</div>
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- Controls bar -->
+        <div class="te-controls">
+            <div class="te-search-wrap">
+                <input type="search"
+                       class="te-search"
+                       placeholder="Search tasks, IDs, phases, SC/FR refs..."
+                       value="@_searchQuery"
+                       @oninput="HandleSearchInput"
+                       aria-label="Search Task Explorer" />
+                @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                {
+                    var matchCount = _flatCache.Count(r => r.IsMatch);
+                    <span class="te-search-count">@matchCount match@(matchCount != 1 ? "es" : "")</span>
+                }
+            </div>
+            <button class="te-ctrl-btn" @onclick="ExpandAll">Expand All</button>
+            <button class="te-ctrl-btn" @onclick="CollapseAll">Collapse All</button>
+        </div>
+
+        <!-- Filter strip -->
+        <div class="te-filter-strip" role="group" aria-label="Filter tasks">
+            <button class='te-filter-chip @(_activeFilter is null ? "is-active" : "")' @onclick='() => SetFilter(null)'>All</button>
+            <button class='te-filter-chip @(_activeFilter == "Completed" ? "is-active" : "")' @onclick='() => SetFilter("Completed")'>✓ Completed</button>
+            <button class='te-filter-chip @(_activeFilter == "Open" ? "is-active" : "")' @onclick='() => SetFilter("Open")'>○ Open</button>
+            @if (HasEnrichmentData)
+            {
+                <button class='te-filter-chip te-fc-linked @(_activeFilter == "SpecLinked" ? "is-active" : "")' @onclick='() => SetFilter("SpecLinked")'>Spec Linked</button>
+                <button class='te-filter-chip te-fc-tech @(_activeFilter == "TechnicalOnly" ? "is-active" : "")' @onclick='() => SetFilter("TechnicalOnly")'>Technical Only</button>
+                <button class='te-filter-chip te-fc-review @(_activeFilter == "NeedsReview" ? "is-active" : "")' @onclick='() => SetFilter("NeedsReview")'>Needs Review</button>
+                <button class='te-filter-chip te-fc-dev @(_activeFilter == "PossibleDeviation" ? "is-active" : "")' @onclick='() => SetFilter("PossibleDeviation")'>Possible Deviation</button>
+                <button class='te-filter-chip te-fc-risk @(_activeFilter == "HighRisk" ? "is-active" : "")' @onclick='() => SetFilter("HighRisk")'>High Risk</button>
+                <button class='te-filter-chip te-fc-reg @(_activeFilter == "RegressionCandidate" ? "is-active" : "")' @onclick='() => SetFilter("RegressionCandidate")'>Regression</button>
+            }
+            <button class='te-filter-chip @(_activeFilter == "HasTableLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasTableLinks")'>Has Table Links</button>
+            <button class='te-filter-chip @(_activeFilter == "HasScLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasScLinks")'>Has SC Links</button>
+            <button class='te-filter-chip @(_activeFilter == "HasFrLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasFrLinks")'>Has FR Links</button>
+        </div>
+
+        <!-- Main layout: tree/map + details panel -->
+        <div class="te-main @(_selectedNodeId is not null ? "has-details" : "")">
+
+            <div class="@(_isMapView ? "te-map" : "te-tree")" role="tree">
+                @if (_flatCache.Count == 0)
+                {
+                    <div class="te-no-results">
+                        @if (!string.IsNullOrWhiteSpace(_searchQuery) || _activeFilter is not null)
+                        {
+                            <span>No tasks match the current search or filter.</span>
+                        }
+                        else if (_tree.Roots.Count == 0)
+                        {
+                            <span>No tasks detected. Task Explorer expects headings and task IDs such as T001, T002 in tasks.md.</span>
+                        }
+                        else
+                        {
+                            <span>No results.</span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    @foreach (var (node, depth, isMatch) in _flatCache)
+                    {
+                        var hasChildren = node.Children.Count > 0;
+                        var isExpanded = _expandedIds.Contains(node.Id);
+                        var isSelected = _selectedNodeId == node.Id;
+                        var isHeading = node.HeadingLevel > 0;
+
+                        <div class="te-row @(isSelected ? "is-selected" : "") @(isMatch ? "is-match" : "") @(isHeading || node.NodeType == TaskNodeType.TableSection ? "is-heading" : "is-item") @(_isMapView ? "te-row-map" : "")"
+                             style="padding-left: @(depth * (_isMapView ? 24 : 16) + 6)px"
+                             role="treeitem"
+                             aria-selected="@isSelected.ToString().ToLower()"
+                             @onclick="() => HandleNodeClick(node)">
+
+                            <span class="te-expand-cell">
+                                @if (hasChildren)
+                                {
+                                    <button class="te-expand-btn"
+                                            aria-label="@(isExpanded ? "Collapse" : "Expand")"
+                                            @onclick:stopPropagation="true"
+                                            @onclick="() => ToggleExpand(node.Id)">
+                                        @(isExpanded ? "▼" : "▶")
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="te-expand-leaf">•</span>
+                                }
+                            </span>
+
+                            <span class="te-node-icon" aria-hidden="true">@GetIcon(node.NodeType)</span>
+
+                            @if (node.NodeType == TaskNodeType.Task)
+                            {
+                                <span class="te-task-check @(node.IsCompleted ? "is-done" : "")">@(node.IsCompleted ? "✓" : "○")</span>
+                            }
+
+                            <span class="te-node-title @(node.NodeType == TaskNodeType.Task && node.IsCompleted ? "is-done" : "")">
+                                @node.Title
+                                @if (node.TaskId is not null && node.NodeType == TaskNodeType.Task)
+                                {
+                                    <span class="te-task-id">@node.TaskId</span>
+                                }
+                            </span>
+
+                            @if (!isExpanded && hasChildren && node.TotalDescendants > 0)
+                            {
+                                <span class="te-child-count">(@node.TotalDescendants)</span>
+                            }
+
+                            <!-- Task chips -->
+                            @if (node.NodeType == TaskNodeType.Task)
+                            {
+                                <span class="te-chips">
+                                    @if (node.UserStoryTag is not null)
+                                    {
+                                        <span class="te-chip te-chip-us">@node.UserStoryTag</span>
+                                    }
+                                    @if (node.IsParallel)
+                                    {
+                                        <span class="te-chip te-chip-parallel">P</span>
+                                    }
+                                    @if (node.Status.HasValue)
+                                    {
+                                        <span class="te-chip te-chip-status te-chip-status-@StatusKey(node.Status.Value)">@StatusLabel(node.Status.Value)</span>
+                                    }
+                                    @if (node.Risk == AlignmentRisk.High)
+                                    {
+                                        <span class="te-chip te-chip-risk">High Risk</span>
+                                    }
+                                    @if (node.IsRegressionCandidate)
+                                    {
+                                        <span class="te-chip te-chip-reg">Regression</span>
+                                    }
+                                </span>
+                            }
+
+                            <!-- Heading task counts -->
+                            @if (isHeading && node.TaskCount > 0)
+                            {
+                                <span class="te-meta-chips">
+                                    <span class="te-meta-chip">@node.TaskCount tasks</span>
+                                    @if (node.CompletedCount > 0)
+                                    {
+                                        <span class="te-meta-chip te-mc-done">@node.CompletedCount done</span>
+                                    }
+                                </span>
+                            }
+
+                            <!-- FR/SC ref chips on task rows -->
+                            @if (node.NodeType == TaskNodeType.Task && (node.ReferencedFrIds.Count > 0 || node.ReferencedScIds.Count > 0))
+                            {
+                                <span class="te-ref-chips">
+                                    @foreach (var fr in node.ReferencedFrIds.Take(2))
+                                    {
+                                        <span class="te-ref-chip te-ref-fr">@fr</span>
+                                    }
+                                    @foreach (var sc in node.ReferencedScIds.Take(2))
+                                    {
+                                        <span class="te-ref-chip te-ref-sc">@sc</span>
+                                    }
+                                </span>
+                            }
+
+                            <!-- TableRow linked task preview -->
+                            @if (node.NodeType == TaskNodeType.TableRow && node.LinkedTaskIds.Count > 0)
+                            {
+                                <span class="te-table-link-count">@node.LinkedTaskIds.Count task ref@(node.LinkedTaskIds.Count != 1 ? "s" : "")</span>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+
+            <!-- ── Details Panel ──────────────────────────────────────────── -->
+            @if (_selectedNodeId is not null)
+            {
+                var selected = TaskExplorerService.FindNode(_tree.Roots, _selectedNodeId);
+                @if (selected is not null)
+                {
+                    <div class="te-details">
+                        <div class="te-details-header">
+                            <span class="te-details-type">@NodeTypeLabel(selected.NodeType)</span>
+                            <button class="te-details-close" @onclick='() => _selectedNodeId = null' aria-label="Close details">×</button>
+                        </div>
+
+                        @if (selected.TaskId is not null)
+                        {
+                            <div class="te-details-task-id">@selected.TaskId</div>
+                        }
+
+                        <h3 class="te-details-title">@selected.Title</h3>
+
+                        @if (selected.NodeType == TaskNodeType.Task)
+                        {
+                            <div class="te-details-section">
+                                <div class="te-details-label">Status</div>
+                                <div class="te-details-status-row">
+                                    <span class="te-completion-badge @(selected.IsCompleted ? "is-done" : "is-open")">
+                                        @(selected.IsCompleted ? "✓ Completed" : "○ Open")
+                                    </span>
+                                    @if (selected.IsParallel)
+                                    {
+                                        <span class="te-chip te-chip-parallel">[P] Parallel</span>
+                                    }
+                                    @if (selected.UserStoryTag is not null)
+                                    {
+                                        <span class="te-chip te-chip-us">@selected.UserStoryTag</span>
+                                    }
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(selected.RawText))
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Original Text</div>
+                                    <div class="te-details-raw">@selected.RawText</div>
+                                </div>
+                            }
+
+                            @if (selected.Status.HasValue)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Spec Alignment</div>
+                                    <span class="te-status-badge te-status-@StatusKey(selected.Status.Value)">@StatusLabel(selected.Status.Value)</span>
+                                </div>
+                            }
+
+                            @if (selected.Risk.HasValue)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Risk Level</div>
+                                    <span class="te-risk-badge te-risk-@selected.Risk.Value.ToString().ToLower()">@selected.Risk.Value</span>
+                                    @if (selected.IsRegressionCandidate)
+                                    {
+                                        <span class="te-chip te-chip-reg" style="margin-left:0.4rem">Regression Candidate</span>
+                                    }
+                                </div>
+                            }
+
+                            @if (selected.SpecMatches.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Matched Spec Items (@selected.SpecMatches.Count)</div>
+                                    <ul class="te-details-list">
+                                        @foreach (var m in selected.SpecMatches.Take(6))
+                                        {
+                                            <li>
+                                                <span class="te-match-type te-match-@m.MatchType.ToString().ToLower()">@m.MatchType</span>
+                                                @m.ItemId @m.Title
+                                            </li>
+                                        }
+                                        @if (selected.SpecMatches.Count > 6)
+                                        {
+                                            <li class="te-list-more">+@(selected.SpecMatches.Count - 6) more</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+
+                            @if (selected.AffectedAreas.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Affected Areas</div>
+                                    <div class="te-area-chips">
+                                        @foreach (var area in selected.AffectedAreas)
+                                        {
+                                            <span class="te-area-chip">@area</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            @if (selected.ReferencedFrIds.Count > 0 || selected.ReferencedScIds.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Inline References</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var fr in selected.ReferencedFrIds)
+                                        {
+                                            <span class="te-ref-chip te-ref-fr">@fr</span>
+                                        }
+                                        @foreach (var sc in selected.ReferencedScIds)
+                                        {
+                                            <span class="te-ref-chip te-ref-sc">@sc</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            var tableRels = GetTableRelationships(selected.TaskId);
+                            @if (tableRels.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Table Relationships</div>
+                                    <ul class="te-details-list">
+                                        @foreach (var rel in tableRels)
+                                        {
+                                            <li>
+                                                <span class="te-table-rel-source">@rel.TableTitle</span>
+                                                <span class="te-table-rel-row">→ @rel.RowTitle</span>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        }
+
+                        @if (selected.NodeType == TaskNodeType.TableRow)
+                        {
+                            @if (selected.LinkedTaskIds.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Linked Tasks</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var tid in selected.LinkedTaskIds)
+                                        {
+                                            <span class="te-ref-chip te-ref-task">@tid</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (selected.ReferencedScIds.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">SC References</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var sc in selected.ReferencedScIds)
+                                        {
+                                            <span class="te-ref-chip te-ref-sc">@sc</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (selected.CellValues.Count > 1)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">All Columns</div>
+                                    <ul class="te-details-list">
+                                        @for (int ci = 0; ci < selected.CellValues.Count; ci++)
+                                        {
+                                            <li>@selected.CellValues[ci]</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        }
+
+                        @if (selected.HeadingLevel > 0 && selected.TotalDescendants > 0)
+                        {
+                            <div class="te-details-section">
+                                <div class="te-details-label">Contents</div>
+                                <div class="te-details-counts">
+                                    @if (selected.TaskCount > 0)
+                                    {
+                                        <span class="te-det-chip">@selected.TaskCount tasks</span>
+                                    }
+                                    @if (selected.CompletedCount > 0)
+                                    {
+                                        <span class="te-det-chip te-mc-done">@selected.CompletedCount completed</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string TasksText { get; set; } = string.Empty;
+    [Parameter] public AlignmentReport? Report { get; set; }
+
+    private SpecificationImport? _importRef;
+    private string _localTasksText = string.Empty;
+    private TaskTree? _tree;
+    private TaskHealth _health = new();
+    private HashSet<string> _expandedIds = [];
+    private string? _selectedNodeId;
+    private string _searchQuery = string.Empty;
+    private string? _activeFilter;
+    private bool _isMapView;
+    private List<(TaskNode Node, int Depth, bool IsMatch)> _flatCache = [];
+    private string _lastBuiltText = string.Empty;
+    private HashSet<string> _tableLinkedTaskIds = [];
+
+    private string EffectiveText => !string.IsNullOrWhiteSpace(_localTasksText) ? _localTasksText : TasksText;
+    private bool CanBuild => !string.IsNullOrWhiteSpace(EffectiveText);
+    private bool HasHealthData => _health.TotalTasks > 0 || _health.TotalPhases > 0 || _health.TablesDetected > 0;
+    private bool HasEnrichmentData => Report is not null || _health.SpecLinked + _health.HighRisk > 0;
+
+    protected override void OnParametersSet()
+    {
+        var text = EffectiveText;
+        if (!string.IsNullOrWhiteSpace(text) && text != _lastBuiltText && string.IsNullOrEmpty(_localTasksText))
+            RebuildTree(text);
+        else if (_tree is not null && Report is not null)
+            RefreshEnrichment();
+    }
+
+    private void OnFileImported(string content)
+    {
+        _localTasksText = content;
+        RebuildTree(content);
+    }
+
+    private void OnFileRemoved()
+    {
+        _localTasksText = string.Empty;
+        if (!string.IsNullOrWhiteSpace(TasksText))
+            RebuildTree(TasksText);
+        else
+            Reset();
+    }
+
+    private void ClearInput()
+    {
+        _localTasksText = string.Empty;
+        _importRef?.Reset();
+    }
+
+    private void BuildTree()
+    {
+        if (!CanBuild) return;
+        RebuildTree(EffectiveText);
+    }
+
+    private void RebuildTree(string text)
+    {
+        _tree = TaskExplorerService.Parse(text);
+        _lastBuiltText = text;
+        if (Report is not null)
+            TaskExplorerService.EnrichWithReport(_tree, Report);
+        _health = TaskExplorerService.ComputeEnrichedHealth(_tree);
+        _tableLinkedTaskIds = TaskExplorerService.BuildTableLinkedTaskIds(_tree.Roots);
+        _expandedIds = TaskExplorerService.GetDefaultExpanded(_tree.Roots);
+        _selectedNodeId = null;
+        _searchQuery = string.Empty;
+        _activeFilter = null;
+        _isMapView = false;
+        RefreshFlatCache();
+    }
+
+    private void RefreshEnrichment()
+    {
+        if (_tree is null || Report is null) return;
+        TaskExplorerService.EnrichWithReport(_tree, Report);
+        _health = TaskExplorerService.ComputeEnrichedHealth(_tree);
+        RefreshFlatCache();
+    }
+
+    private void Reset()
+    {
+        _tree = null;
+        _health = new();
+        _localTasksText = string.Empty;
+        _expandedIds = [];
+        _selectedNodeId = null;
+        _searchQuery = string.Empty;
+        _activeFilter = null;
+        _isMapView = false;
+        _flatCache = [];
+        _lastBuiltText = string.Empty;
+        _tableLinkedTaskIds = [];
+        _importRef?.Reset();
+    }
+
+    private void RefreshFlatCache()
+    {
+        if (_tree is null) { _flatCache = []; return; }
+        _flatCache = TaskExplorerService.GetFlatVisible(
+            _tree.Roots, _expandedIds, _searchQuery, _activeFilter, _tableLinkedTaskIds);
+    }
+
+    private void HandleSearchInput(ChangeEventArgs e)
+    {
+        _searchQuery = e.Value?.ToString() ?? string.Empty;
+        RefreshFlatCache();
+    }
+
+    private void SetFilter(string? filter)
+    {
+        _activeFilter = filter;
+        RefreshFlatCache();
+    }
+
+    private void HandleNodeClick(TaskNode node)
+    {
+        _selectedNodeId = _selectedNodeId == node.Id ? null : node.Id;
+    }
+
+    private void ToggleExpand(string id)
+    {
+        if (!_expandedIds.Add(id)) _expandedIds.Remove(id);
+        RefreshFlatCache();
+    }
+
+    private void ExpandAll()
+    {
+        if (_tree is null) return;
+        ExpandAllNodes(_tree.Roots);
+        RefreshFlatCache();
+    }
+
+    private void ExpandAllNodes(IEnumerable<TaskNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Children.Count > 0) _expandedIds.Add(node.Id);
+            ExpandAllNodes(node.Children);
+        }
+    }
+
+    private void CollapseAll()
+    {
+        _expandedIds.Clear();
+        RefreshFlatCache();
+    }
+
+    private static int CountLines(string text) => text.Split('\n').Length;
+
+    // Table relationship lookup
+    private record TableRelationship(string TableTitle, string RowTitle);
+
+    private List<TableRelationship> GetTableRelationships(string? taskId)
+    {
+        if (taskId is null || _tree is null) return [];
+        var result = new List<TableRelationship>();
+        CollectTableRels(_tree.Roots, taskId, null, result);
+        return result;
+    }
+
+    private static void CollectTableRels(
+        IEnumerable<TaskNode> nodes, string taskId,
+        string? parentTableTitle, List<TableRelationship> result)
+    {
+        foreach (var node in nodes)
+        {
+            var tableTitle = node.NodeType == TaskNodeType.TableSection ? node.Title : parentTableTitle;
+            if (node.NodeType == TaskNodeType.TableRow &&
+                node.LinkedTaskIds.Any(t => string.Equals(t, taskId, StringComparison.OrdinalIgnoreCase)))
+            {
+                result.Add(new TableRelationship(tableTitle ?? "Table", node.Title));
+            }
+            CollectTableRels(node.Children, taskId, tableTitle, result);
+        }
+    }
+
+    // ── Labels and icons ──────────────────────────────────────────────────
+
+    private static string GetIcon(TaskNodeType type) => type switch
+    {
+        TaskNodeType.Phase         => "🗂",
+        TaskNodeType.UserStoryGroup => "👤",
+        TaskNodeType.TaskGroup     => "📋",
+        TaskNodeType.DeepGroup     => "📄",
+        TaskNodeType.Task          => "  ",
+        TaskNodeType.TableSection  => "📊",
+        TaskNodeType.TableRow      => "↔",
+        TaskNodeType.TableTaskRef  => "↩",
+        _ => "•",
+    };
+
+    private static string NodeTypeLabel(TaskNodeType type) => type switch
+    {
+        TaskNodeType.Phase         => "Phase",
+        TaskNodeType.UserStoryGroup => "User Story Group",
+        TaskNodeType.TaskGroup     => "Task Group",
+        TaskNodeType.DeepGroup     => "Section",
+        TaskNodeType.Task          => "Task",
+        TaskNodeType.TableSection  => "Table",
+        TaskNodeType.TableRow      => "Table Row",
+        TaskNodeType.TableTaskRef  => "Task Reference",
+        _ => type.ToString(),
+    };
+
+    private static string StatusKey(AlignmentStatus s) => s switch
+    {
+        AlignmentStatus.Linked            => "linked",
+        AlignmentStatus.TechnicalOnly     => "technicalonly",
+        AlignmentStatus.NeedsReview       => "needsreview",
+        AlignmentStatus.PossibleDeviation => "possibledeviation",
+        _ => "unknown",
+    };
+
+    private static string StatusLabel(AlignmentStatus s) => s switch
+    {
+        AlignmentStatus.Linked            => "Spec Linked",
+        AlignmentStatus.TechnicalOnly     => "Technical Only",
+        AlignmentStatus.NeedsReview       => "Needs Review",
+        AlignmentStatus.PossibleDeviation => "Possible Deviation",
+        _ => s.ToString(),
+    };
+}

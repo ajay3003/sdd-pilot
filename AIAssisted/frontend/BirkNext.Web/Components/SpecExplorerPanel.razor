@@ -113,6 +113,13 @@
                         <div class="se-health-label">Success Criteria</div>
                     </div>
                 }
+                @if (_tree.Health.TablesDetected > 0)
+                {
+                    <div class="se-health-card se-hcard-tbl">
+                        <div class="se-health-value">@_tree.Health.TablesDetected</div>
+                        <div class="se-health-label">Tables</div>
+                    </div>
+                }
             </div>
         }
 
@@ -197,6 +204,23 @@
                                 }
                             </span>
 
+                            @if (node.NodeType == SpecNodeType.TableSection)
+                            {
+                                <span class="se-table-kind-badge se-tkind-@node.TableKind.ToString().ToLower()">
+                                    @TableKindLabel(node.TableKind)
+                                </span>
+                            }
+
+                            @if (node.NodeType == SpecNodeType.TableRow && node.LinkedSpecItemIds.Count > 0)
+                            {
+                                <span class="se-ref-chips">
+                                    @foreach (var rid in node.LinkedSpecItemIds.Take(3))
+                                    {
+                                        <span class="se-ref-chip">@rid</span>
+                                    }
+                                </span>
+                            }
+
                             @if (!isExpanded && hasChildren && node.TotalDescendants > 0)
                             {
                                 <span class="se-child-count">(@node.TotalDescendants)</span>
@@ -278,6 +302,99 @@
                                 <div class="se-details-label">Coverage</div>
                                 <span class="se-coverage-none">No coverage data — run extraction for full analysis.</span>
                             </div>
+                        }
+
+                        @if (selected.NodeType == SpecNodeType.TableSection)
+                        {
+                            <div class="se-details-section">
+                                <div class="se-details-label">Table Type</div>
+                                <span class="se-table-kind-badge se-tkind-@selected.TableKind.ToString().ToLower()">
+                                    @TableKindLabel(selected.TableKind)
+                                </span>
+                            </div>
+                            @if (selected.ColumnHeaders.Count > 0)
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Columns (@selected.ColumnHeaders.Count)</div>
+                                    <div class="se-details-excerpt">@string.Join(" · ", selected.ColumnHeaders)</div>
+                                </div>
+                            }
+                            <div class="se-details-section">
+                                <div class="se-details-label">Rows</div>
+                                <div class="se-details-excerpt">@selected.Children.Count data rows</div>
+                            </div>
+                            var allRefs = selected.Children
+                                .SelectMany(r => r.LinkedSpecItemIds)
+                                .Distinct(StringComparer.OrdinalIgnoreCase)
+                                .ToList();
+                            @if (allRefs.Count > 0)
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Spec References</div>
+                                    <div class="se-ref-chips" style="flex-wrap: wrap; gap: 0.3rem;">
+                                        @foreach (var refId in allRefs.Take(12))
+                                        {
+                                            <span class="se-ref-chip">@refId</span>
+                                        }
+                                        @if (allRefs.Count > 12)
+                                        {
+                                            <span class="se-ref-chip" style="opacity:0.5">+@(allRefs.Count - 12) more</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+
+                        @if (selected.NodeType == SpecNodeType.TableRow)
+                        {
+                            @if (selected.CellValues.Count > 0)
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Cells</div>
+                                    <div class="se-table-refs">
+                                        @foreach (var cell in selected.CellValues)
+                                        {
+                                            <div class="se-table-ref-item">@cell</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (selected.LinkedSpecItemIds.Count > 0)
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Spec References</div>
+                                    <div class="se-ref-chips" style="flex-wrap: wrap; gap: 0.3rem;">
+                                        @foreach (var refId in selected.LinkedSpecItemIds)
+                                        {
+                                            <span class="se-ref-chip">@refId</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+
+                        @if (selected.SpecItemId is not null)
+                        {
+                            var tableRefs = GetTableRefs(selected.SpecItemId);
+                            @if (tableRefs.Count > 0)
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Referenced in Tables (@tableRefs.Count)</div>
+                                    <div class="se-table-refs">
+                                        @foreach (var tr in tableRefs)
+                                        {
+                                            <div class="se-table-ref-item">
+                                                <span class="se-table-ref-source">@TableKindLabel(tr.TableKind)</span>
+                                                <span>@tr.TableTitle</span>
+                                                @if (!string.IsNullOrWhiteSpace(tr.RowTitle))
+                                                {
+                                                    <span class="se-table-ref-row"> — @tr.RowTitle</span>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
                         }
 
                         @if (Candidates?.Count > 0)
@@ -470,6 +587,33 @@
 
     private static int CountLines(string text) => text.Split('\n').Length;
 
+    // ── Table cross-reference lookup ──────────────────────────────────────
+
+    private record TableRef(string TableTitle, TableType TableKind, string RowTitle);
+
+    private List<TableRef> GetTableRefs(string? specItemId)
+    {
+        if (specItemId is null || _tree is null) return [];
+        var result = new List<TableRef>();
+        CollectTableRefs(_tree.Roots, specItemId, null, null, result);
+        return result;
+    }
+
+    private static void CollectTableRefs(
+        IEnumerable<SpecNode> nodes, string specItemId,
+        string? tableTitle, TableType? tableKind, List<TableRef> result)
+    {
+        foreach (var node in nodes)
+        {
+            var title = node.NodeType == SpecNodeType.TableSection ? node.Title : tableTitle;
+            var kind  = node.NodeType == SpecNodeType.TableSection ? node.TableKind : tableKind;
+            if (node.NodeType == SpecNodeType.TableRow &&
+                node.LinkedSpecItemIds.Any(id => id.Equals(specItemId, StringComparison.OrdinalIgnoreCase)))
+                result.Add(new TableRef(title ?? "Table", kind ?? TableType.Generic, node.Title));
+            CollectTableRefs(node.Children, specItemId, title, kind, result);
+        }
+    }
+
     // ── Labels and icons ──────────────────────────────────────────────────
 
     private static string GetIcon(SpecNodeType type, int level) => type switch
@@ -485,6 +629,8 @@
         SpecNodeType.Clarification => "❓",
         SpecNodeType.Entity => "🔷",
         SpecNodeType.DomainItem => "🔗",
+        SpecNodeType.TableSection => "📊",
+        SpecNodeType.TableRow => "↔",
         _ => level == 1 ? "📦" : level == 2 ? "📂" : "📄",
     };
 
@@ -501,7 +647,21 @@
         SpecNodeType.Clarification => "Clarification",
         SpecNodeType.Entity => "Entity",
         SpecNodeType.DomainItem => "Domain Item",
+        SpecNodeType.TableSection => "Table",
+        SpecNodeType.TableRow => "Table Row",
         _ => type.ToString(),
+    };
+
+    private static string TableKindLabel(TableType t) => t switch
+    {
+        TableType.RequirementMap => "Requirements",
+        TableType.UserStoryMap   => "User Stories",
+        TableType.TestMapping    => "Test Mapping",
+        TableType.Traceability   => "Traceability",
+        TableType.EntityModel    => "Entity Model",
+        TableType.ApiSpec        => "API Spec",
+        TableType.DependencyMap  => "Dependencies",
+        _                        => "Table",
     };
 
     private static string CoverageIcon(CoverageState s) => s switch

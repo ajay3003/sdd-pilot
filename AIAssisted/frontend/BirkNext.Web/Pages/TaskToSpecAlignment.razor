@@ -196,6 +196,12 @@
                         <span class="align-tab-badge">@report.HighImpactTasks high risk</span>
                     }
                 </button>
+                <button type="button"
+                        class="align-page-tab @(_activePageTab == "explorer" ? "is-active" : "")"
+                        @onclick='() => _activePageTab = "explorer"'
+                        role="tab" aria-selected="@(_activePageTab == "explorer")">
+                    Task Explorer
+                </button>
             </div>
 
             @if (_activePageTab == "alignment")
@@ -385,7 +391,7 @@
                     </section>
                 }
             }
-            else
+            else if (_activePageTab == "impact")
             {
                 @* ── Risk & Testing tab ── *@
                 var impactFiltered = GetFilteredImpact(report.Findings);
@@ -606,6 +612,11 @@
                         }
                     </section>
                 }
+            }
+            else if (_activePageTab == "explorer")
+            {
+                @* ── Task Explorer tab ── *@
+                <TaskExplorerPanel TasksText="@_tasksText" Report="@_report" />
             }
         }
 
