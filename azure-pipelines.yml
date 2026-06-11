@@ -81,10 +81,6 @@ steps:
   displayName: 'Wait for PostgreSQL'
   workingDirectory: AIAssisted
 
-# -------------------------
-# Backend
-# -------------------------
-
 - script: dotnet restore BirkNext.sln
   displayName: 'Restore backend solution'
   workingDirectory: AIAssisted/backend
@@ -109,14 +105,10 @@ steps:
 - script: |
     dotnet publish BirkNext.sln \
       --configuration Release \
-      --output $(Build.ArtifactStagingDirectory)/tester-package/backend
+      --output $(Build.ArtifactStagingDirectory)/tester-package/AIAssisted/backend
   displayName: 'Publish backend app'
   workingDirectory: AIAssisted/backend
   condition: eq(variables['BUILD_BACKEND'], 'true')
-
-# -------------------------
-# Frontend
-# -------------------------
 
 - script: dotnet restore BirkNext.sln
   displayName: 'Restore frontend solution'
@@ -142,14 +134,10 @@ steps:
 - script: |
     dotnet publish BirkNext.sln \
       --configuration Release \
-      --output $(Build.ArtifactStagingDirectory)/tester-package/frontend
+      --output $(Build.ArtifactStagingDirectory)/tester-package/AIAssisted/frontend
   displayName: 'Publish frontend app'
   workingDirectory: AIAssisted/frontend
   condition: eq(variables['BUILD_FRONTEND'], 'true')
-
-# -------------------------
-# Test results
-# -------------------------
 
 - task: PublishTestResults@2
   displayName: 'Publish test results'
@@ -160,10 +148,6 @@ steps:
     searchFolder: '$(Agent.TempDirectory)/test-results'
     failTaskOnFailedTests: false
 
-# -------------------------
-# Tester package
-# -------------------------
-
 - bash: |
     set -e
 
@@ -172,7 +156,7 @@ steps:
     echo "Preparing tester package at: $PACKAGE_DIR"
 
     mkdir -p "$PACKAGE_DIR/scripts"
-    mkdir -p "$PACKAGE_DIR/container"
+    mkdir -p "$PACKAGE_DIR/AIAssisted"
     mkdir -p "$PACKAGE_DIR/test-results"
 
     echo "Repository root:"
@@ -187,11 +171,11 @@ steps:
     echo "Scripts folder contents:"
     ls -la scripts
 
-    echo "Copying docker-compose.yml..."
-    cp AIAssisted/docker-compose.yml "$PACKAGE_DIR/container/"
+    echo "Copying docker-compose.yml to AIAssisted..."
+    cp AIAssisted/docker-compose.yml "$PACKAGE_DIR/AIAssisted/"
 
     echo "Copying .env.example if available..."
-    cp AIAssisted/.env.example "$PACKAGE_DIR/container/" || echo ".env.example not found, skipping"
+    cp AIAssisted/.env.example "$PACKAGE_DIR/AIAssisted/" || echo ".env.example not found, skipping"
 
     echo "Copying local start scripts..."
     cp scripts/start-local.bat "$PACKAGE_DIR/scripts/"
@@ -200,29 +184,14 @@ steps:
     echo "Copying test results if available..."
     cp -r $(Agent.TempDirectory)/test-results/* "$PACKAGE_DIR/test-results/" || echo "No test results found, skipping"
 
-    echo "Creating README..."
     cat > "$PACKAGE_DIR/README.md" << 'EOF'
     # BirkNext Studio Tester Package
 
-    Download this artifact and unzip it.
-
-    ## Included
-
-    - backend/
-    - frontend/
-    - container/docker-compose.yml
-    - scripts/start-local.bat
-    - scripts/start-local.ps1
-    - test-results/, if tests were run
-
-    ## Requirements
-
-    - Docker Desktop or Podman Desktop
-    - .NET 8 runtime, if running the published apps directly
+    Download and unzip this artifact.
 
     ## Start locally
 
-    Use:
+    Run:
 
     scripts/start-local.bat
 
@@ -230,9 +199,13 @@ steps:
 
     scripts/start-local.ps1
 
-    ## Notes
+    ## Expected structure
 
-    Do not commit real .env values.
+    - AIAssisted/backend
+    - AIAssisted/frontend
+    - AIAssisted/docker-compose.yml
+    - scripts/start-local.bat
+    - scripts/start-local.ps1
     EOF
 
     echo "Final tester package contents:"
@@ -255,10 +228,6 @@ steps:
     PathtoPublish: '$(Agent.TempDirectory)/test-results'
     ArtifactName: 'test-results'
     publishLocation: Container
-
-# -------------------------
-# Cleanup
-# -------------------------
 
 - bash: |
     docker compose down -v
