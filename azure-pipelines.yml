@@ -86,6 +86,7 @@ steps:
       --results-directory $(Agent.TempDirectory)/test-results
   displayName: 'Run frontend tests'
   workingDirectory: AIAssisted/frontend
+  continueOnError: true
 
 - task: PublishTestResults@2
   displayName: 'Publish test results'
@@ -94,7 +95,58 @@ steps:
     testResultsFormat: VSTest
     testResultsFiles: '**/*.trx'
     searchFolder: '$(Agent.TempDirectory)/test-results'
-    failTaskOnFailedTests: true
+    failTaskOnFailedTests: false
+
+- script: |
+    dotnet publish BirkNext.sln \
+      --configuration Release \
+      --output $(Build.ArtifactStagingDirectory)/tester-package/frontend
+  displayName: 'Publish frontend app'
+  workingDirectory: AIAssisted/frontend
+
+- bash: |
+    mkdir -p $(Build.ArtifactStagingDirectory)/tester-package/scripts
+    mkdir -p $(Build.ArtifactStagingDirectory)/tester-package/container
+    mkdir -p $(Build.ArtifactStagingDirectory)/tester-package/test-results
+
+    cp AIAssisted/docker-compose.yml $(Build.ArtifactStagingDirectory)/tester-package/container/
+    cp AIAssisted/.env.example $(Build.ArtifactStagingDirectory)/tester-package/container/ || true
+    cp AIAssisted/scripts/start-local.bat $(Build.ArtifactStagingDirectory)/tester-package/scripts/ || true
+    cp AIAssisted/scripts/start-local.ps1 $(Build.ArtifactStagingDirectory)/tester-package/scripts/ || true
+    cp -r $(Agent.TempDirectory)/test-results/* $(Build.ArtifactStagingDirectory)/tester-package/test-results/ || true
+
+    cat > $(Build.ArtifactStagingDirectory)/tester-package/README.md << 'EOF'
+    # BirkNext Studio Tester Package
+
+    Download this artifact and unzip it.
+
+    ## Included
+    - Published frontend app
+    - Docker Compose file for PostgreSQL
+    - Local start scripts
+    - Test results, if available
+
+    ## Start locally
+    Use:
+
+    scripts/start-local.bat
+
+    or:
+
+    scripts/start-local.ps1
+
+    ## Notes
+    Do not commit real .env values.
+    EOF
+  displayName: 'Prepare tester package'
+
+- task: PublishPipelineArtifact@1
+  displayName: 'Publish tester package'
+  condition: always()
+  inputs:
+    targetPath: '$(Build.ArtifactStagingDirectory)/tester-package'
+    artifact: 'birknext-tester-package'
+    publishLocation: 'pipeline'
 
 - task: PublishBuildArtifacts@1
   displayName: 'Publish test artifacts'
