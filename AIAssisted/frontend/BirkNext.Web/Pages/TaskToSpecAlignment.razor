@@ -361,32 +361,6 @@
                                                 </div>
                                             </div>
                                         }
-                                        @if (finding.AffectedAreas.Count > 0)
-                                        {
-                                            <div class="align-detail-row">
-                                                <span class="align-detail-label">Affected areas</span>
-                                                <div class="align-area-chips-row">
-                                                    @foreach (var area in finding.AffectedAreas)
-                                                    {
-                                                        <span class="align-area-chip-lg align-area-@area.ToString().ToLowerInvariant()">
-                                                            @AreaLabel(area)
-                                                        </span>
-                                                    }
-                                                </div>
-                                            </div>
-                                        }
-                                        @if (finding.RecommendedTests.Count > 0)
-                                        {
-                                            <div class="align-detail-row">
-                                                <span class="align-detail-label">Recommended testing</span>
-                                                <ul class="align-test-list">
-                                                    @foreach (var test in finding.RecommendedTests)
-                                                    {
-                                                        <li>@test</li>
-                                                    }
-                                                </ul>
-                                            </div>
-                                        }
                                         <div class="align-detail-row">
                                             <span class="align-detail-label">Reason</span>
                                             <p class="align-detail-text">@finding.Reason</p>
@@ -554,14 +528,11 @@
                                         <span class="align-impact-badge align-impact-@finding.ImpactLevel.ToString().ToLowerInvariant()">
                                             @ImpactLabel(finding.ImpactLevel)
                                         </span>
-                                        <span class="align-status-badge align-status-@finding.Status.ToString().ToLowerInvariant()">
-                                            @StatusLabel(finding.Status)
-                                        </span>
-                                        @foreach (var sm in finding.Matches.Take(2))
+                                        @if (finding.IsRegressionCandidate)
                                         {
-                                            <span class="align-match-chip">@sm.ItemId</span>
+                                            <span class="align-rt-regression-badge" title="Regression candidate — needs targeted regression testing">↺ Regression</span>
                                         }
-                                        @foreach (var area in finding.AffectedAreas.Take(3))
+                                        @foreach (var area in finding.AffectedAreas.Take(4))
                                         {
                                             <span class="align-area-chip">@AreaShortLabel(area)</span>
                                         }
@@ -593,21 +564,6 @@
                                                 <p class="align-detail-text align-detail-risk-reason">@finding.RiskReason</p>
                                             </div>
                                         }
-                                        @if (finding.Matches.Count > 0)
-                                        {
-                                            <div class="align-detail-row">
-                                                <span class="align-detail-label">Linked spec items</span>
-                                                <div class="align-matches">
-                                                    @foreach (var specMatch in finding.Matches)
-                                                    {
-                                                        <span class="align-match-item">
-                                                            <span class="align-match-id">@specMatch.ItemId</span>
-                                                            <span class="align-match-type">@SpecMatchTypeLabel(specMatch.MatchType)</span>
-                                                        </span>
-                                                    }
-                                                </div>
-                                            </div>
-                                        }
                                         @if (finding.RecommendedTests.Count > 0)
                                         {
                                             <div class="align-detail-row">
@@ -625,8 +581,23 @@
                                             <div class="align-detail-row">
                                                 <span class="align-detail-label">Recommended testing</span>
                                                 <p class="align-detail-text align-no-tests">
-                                                    No specific test recommendations — review alignment tab for guidance.
+                                                    No specific test recommendations — check the Spec Alignment tab for context.
                                                 </p>
+                                            </div>
+                                        }
+                                        @if (finding.Matches.Count > 0)
+                                        {
+                                            <div class="align-detail-row">
+                                                <span class="align-detail-label">Linked spec items</span>
+                                                <div class="align-matches">
+                                                    @foreach (var specMatch in finding.Matches)
+                                                    {
+                                                        <span class="align-match-item">
+                                                            <span class="align-match-id">@specMatch.ItemId</span>
+                                                            <span class="align-match-type">@SpecMatchTypeLabel(specMatch.MatchType)</span>
+                                                        </span>
+                                                    }
+                                                </div>
                                             </div>
                                         }
                                     </div>

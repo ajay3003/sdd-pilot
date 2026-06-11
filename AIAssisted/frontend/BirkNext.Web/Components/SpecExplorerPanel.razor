@@ -1,0 +1,523 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+<div class="se-panel">
+
+    @if (_tree is null)
+    {
+        <!-- ── Empty / input state ──────────────────────────────────────── -->
+        <div class="se-empty-state">
+            <div class="se-empty-icon" aria-hidden="true">🌳</div>
+            <h3 class="se-empty-title">Spec Explorer</h3>
+            <p class="se-empty-desc">Transform a specification into a navigable hierarchy. Paste, import, or drag a spec.md file to build the explorer.</p>
+
+            <div class="se-input-area">
+                <div class="se-input-header">
+                    <span class="se-input-label">specification</span>
+                </div>
+                <SpecificationImport
+                    @ref="_importRef"
+                    InputId="se-file-input"
+                    OnFileImported="OnFileImported"
+                    OnFileRemoved="OnFileRemoved"
+                    IsDisabled="false" />
+                <textarea
+                    class="se-textarea"
+                    placeholder="Or paste spec.md content here..."
+                    rows="12"
+                    @bind="_specText"></textarea>
+                @if (!string.IsNullOrWhiteSpace(_specText))
+                {
+                    <div class="se-input-footer">
+                        <span class="se-input-stat">@CountLines(_specText) lines · @_specText.Length chars</span>
+                        <button class="se-clear-btn" @onclick="ClearInput">Clear</button>
+                    </div>
+                }
+            </div>
+
+            <button
+                class="se-build-btn"
+                disabled="@(!CanBuild)"
+                @onclick="BuildTree">
+                Build Spec Explorer
+            </button>
+        </div>
+    }
+    else
+    {
+        <!-- ── Explorer state ───────────────────────────────────────────── -->
+
+        <!-- Header bar -->
+        <div class="se-header">
+            <div class="se-header-left">
+                <span class="se-header-title">Spec Explorer</span>
+                <span class="se-header-stat">@_tree.Health.TotalHeadings headings · @_tree.Health.TotalItems items</span>
+            </div>
+            <div class="se-header-right">
+                <div class="se-view-toggle" role="group" aria-label="View mode">
+                    <button class='se-view-btn @(!_isMapView ? "is-active" : "")' @onclick='() => _isMapView = false'>
+                        Tree View
+                    </button>
+                    <button class='se-view-btn @(_isMapView ? "is-active" : "")' @onclick='() => _isMapView = true'>
+                        Map View
+                    </button>
+                </div>
+                <button class="se-reset-btn" @onclick="Reset">← New Spec</button>
+            </div>
+        </div>
+
+        <!-- Health summary -->
+        @if (HasHealthData)
+        {
+            <div class="se-health-row">
+                @if (_tree.Health.TotalHeadings > 0)
+                {
+                    <div class="se-health-card">
+                        <div class="se-health-value">@_tree.Health.TotalHeadings</div>
+                        <div class="se-health-label">Headings</div>
+                    </div>
+                }
+                @if (_tree.Health.UserStories > 0)
+                {
+                    <div class="se-health-card se-hcard-us">
+                        <div class="se-health-value">@_tree.Health.UserStories</div>
+                        <div class="se-health-label">User Stories</div>
+                    </div>
+                }
+                @if (_tree.Health.Requirements > 0)
+                {
+                    <div class="se-health-card se-hcard-req">
+                        <div class="se-health-value">@_tree.Health.Requirements</div>
+                        <div class="se-health-label">Requirements</div>
+                    </div>
+                }
+                @if (_tree.Health.Tests > 0)
+                {
+                    <div class="se-health-card se-hcard-test">
+                        <div class="se-health-value">@_tree.Health.Tests</div>
+                        <div class="se-health-label">Tests</div>
+                    </div>
+                }
+                @if (_tree.Health.Clarifications > 0)
+                {
+                    <div class="se-health-card se-hcard-clr">
+                        <div class="se-health-value">@_tree.Health.Clarifications</div>
+                        <div class="se-health-label">Clarifications</div>
+                    </div>
+                }
+                @if (_tree.Health.SuccessCriteria > 0)
+                {
+                    <div class="se-health-card se-hcard-sc">
+                        <div class="se-health-value">@_tree.Health.SuccessCriteria</div>
+                        <div class="se-health-label">Success Criteria</div>
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- Controls bar -->
+        <div class="se-controls">
+            <div class="se-search-wrap">
+                <input type="search"
+                       class="se-search"
+                       placeholder="Search headings, IDs, items..."
+                       value="@_searchQuery"
+                       @oninput="HandleSearchInput"
+                       aria-label="Search spec explorer" />
+                @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                {
+                    @{
+                        var matchCount = _flatCache.Count(r => r.IsMatch);
+                    }
+                    <span class="se-search-count">@matchCount match@(matchCount != 1 ? "es" : "")</span>
+                }
+            </div>
+            <button class="se-ctrl-btn" @onclick="ExpandAll">Expand All</button>
+            <button class="se-ctrl-btn" @onclick="CollapseAll">Collapse All</button>
+        </div>
+
+        <!-- Main layout: tree/map + details panel -->
+        <div class="se-main @(_selectedNodeId is not null ? "has-details" : "")">
+
+            <div class="@(_isMapView ? "se-map" : "se-tree")" role="tree">
+                @if (_flatCache.Count == 0)
+                {
+                    <div class="se-no-results">
+                        @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                        {
+                            <span>No matches for "<strong>@_searchQuery</strong>".</span>
+                        }
+                        else if (_tree.Roots.Count == 0)
+                        {
+                            <span>No markdown headings found. Spec Explorer requires # headings to build the hierarchy.</span>
+                        }
+                        else
+                        {
+                            <span>No results.</span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    @foreach (var (node, depth, isMatch) in _flatCache)
+                    {
+                        var hasChildren = node.Children.Count > 0;
+                        var isExpanded = _expandedIds.Contains(node.Id);
+                        var isSelected = _selectedNodeId == node.Id;
+                        var isHeading = node.HeadingLevel > 0;
+
+                        <div class="se-row @(isSelected ? "is-selected" : "") @(isMatch ? "is-match" : "") @(isHeading ? "is-heading" : "is-item") @(_isMapView ? "se-row-map" : "")"
+                             style="padding-left: @(depth * (_isMapView ? 24 : 16) + 6)px"
+                             role="treeitem"
+                             aria-selected="@isSelected.ToString().ToLower()"
+                             @onclick="() => HandleNodeClick(node)">
+
+                            <span class="se-expand-cell">
+                                @if (hasChildren)
+                                {
+                                    <button class="se-expand-btn"
+                                            aria-label="@(isExpanded ? "Collapse" : "Expand")"
+                                            @onclick:stopPropagation="true"
+                                            @onclick="() => ToggleExpand(node.Id)">
+                                        @(isExpanded ? "▼" : "▶")
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="se-expand-leaf">•</span>
+                                }
+                            </span>
+
+                            <span class="se-node-icon" aria-hidden="true">@GetIcon(node.NodeType, node.HeadingLevel)</span>
+
+                            <span class="se-node-title">
+                                @node.Title
+                                @if (node.SpecItemId is not null)
+                                {
+                                    <span class="se-spec-id">@node.SpecItemId</span>
+                                }
+                            </span>
+
+                            @if (!isExpanded && hasChildren && node.TotalDescendants > 0)
+                            {
+                                <span class="se-child-count">(@node.TotalDescendants)</span>
+                            }
+
+                            @if (isHeading && (node.ReqCount > 0 || node.TestCount > 0 || node.ClarCount > 0))
+                            {
+                                <span class="se-meta-chips">
+                                    @if (node.ReqCount > 0) { <span class="se-meta-chip se-mc-req">@node.ReqCount req</span> }
+                                    @if (node.TestCount > 0) { <span class="se-meta-chip se-mc-test">@node.TestCount tests</span> }
+                                    @if (node.ClarCount > 0) { <span class="se-meta-chip se-mc-clr">@node.ClarCount clr</span> }
+                                </span>
+                            }
+
+                            @if (node.Coverage != CoverageState.Unknown)
+                            {
+                                <span class="se-coverage se-cov-@node.Coverage.ToString().ToLower()" title="@CoverageTitle(node.Coverage)">
+                                    @CoverageIcon(node.Coverage)
+                                </span>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+
+            <!-- ── Details Panel ─────────────────────────────────────────── -->
+            @if (_selectedNodeId is not null)
+            {
+                var selected = SpecExplorerService.FindNode(_tree.Roots, _selectedNodeId);
+                @if (selected is not null)
+                {
+                    <div class="se-details">
+                        <div class="se-details-header">
+                            <span class="se-details-type">@NodeTypeLabel(selected.NodeType)</span>
+                            <button class="se-details-close" @onclick='() => _selectedNodeId = null' aria-label="Close details">×</button>
+                        </div>
+
+                        <h3 class="se-details-title">@selected.Title</h3>
+
+                        @if (selected.SpecItemId is not null)
+                        {
+                            <div class="se-details-id">@selected.SpecItemId</div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(selected.Excerpt))
+                        {
+                            <div class="se-details-section">
+                                <div class="se-details-label">Excerpt</div>
+                                <div class="se-details-excerpt">@selected.Excerpt</div>
+                            </div>
+                        }
+
+                        @if (selected.HeadingLevel > 0 && selected.TotalDescendants > 0)
+                        {
+                            <div class="se-details-section">
+                                <div class="se-details-label">Contents</div>
+                                <div class="se-details-counts">
+                                    @if (selected.ReqCount > 0) { <span class="se-det-chip se-mc-req">@selected.ReqCount req</span> }
+                                    @if (selected.UserStoryCount > 0) { <span class="se-det-chip se-mc-us">@selected.UserStoryCount user stories</span> }
+                                    @if (selected.TestCount > 0) { <span class="se-det-chip se-mc-test">@selected.TestCount tests</span> }
+                                    @if (selected.ClarCount > 0) { <span class="se-det-chip se-mc-clr">@selected.ClarCount clarifications</span> }
+                                    @if (selected.ScCount > 0) { <span class="se-det-chip se-mc-sc">@selected.ScCount success criteria</span> }
+                                </div>
+                            </div>
+                        }
+
+                        @if (selected.Coverage != CoverageState.Unknown)
+                        {
+                            <div class="se-details-section">
+                                <div class="se-details-label">Coverage</div>
+                                <span class="se-coverage-badge se-cov-@selected.Coverage.ToString().ToLower()">
+                                    @CoverageIcon(selected.Coverage) @CoverageTitle(selected.Coverage)
+                                </span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="se-details-section">
+                                <div class="se-details-label">Coverage</div>
+                                <span class="se-coverage-none">No coverage data — run extraction for full analysis.</span>
+                            </div>
+                        }
+
+                        @if (Candidates?.Count > 0)
+                        {
+                            var linked = GetLinkedCandidates(selected);
+                            @if (linked.Count > 0)
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Linked Extraction Results (@linked.Count)</div>
+                                    <ul class="se-details-linked">
+                                        @foreach (var c in linked.Take(6))
+                                        {
+                                            <li><span class="se-linked-tag se-linked-@c.Classification.ToString().ToLower()">@c.Classification</span> @c.Title</li>
+                                        }
+                                        @if (linked.Count > 6)
+                                        {
+                                            <li class="se-linked-more">+@(linked.Count - 6) more</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        }
+
+                        <div class="se-details-actions">
+                            <a href="/traceability" class="se-action-link">Traceability</a>
+                            <a href="/impact-analysis" class="se-action-link">Impact Analysis</a>
+                            <a href="/spec-drift" class="se-action-link">Spec Drift</a>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        @if (_tree.Roots.Count == 0 && string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            <div class="se-no-headings">
+                <strong>No markdown headings found.</strong> Spec Explorer requires #, ##, ### headings to build a hierarchy.
+            </div>
+        }
+
+        @if (HasCoverageData)
+        {
+            <div class="se-legend">
+                <span class="se-legend-item"><span>✅</span> Covered</span>
+                <span class="se-legend-item"><span>⚠</span> Partial</span>
+                <span class="se-legend-item"><span>❌</span> Missing</span>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ExtractionCandidate>? Candidates { get; set; }
+
+    private SpecificationImport? _importRef;
+    private string _specText = string.Empty;
+    private SpecTree? _tree;
+    private HashSet<string> _expandedIds = [];
+    private string? _selectedNodeId;
+    private string _searchQuery = string.Empty;
+    private bool _isMapView;
+    private List<(SpecNode Node, int Depth, bool IsMatch)> _flatCache = [];
+
+    private bool CanBuild => !string.IsNullOrWhiteSpace(_specText);
+
+    private bool HasHealthData =>
+        _tree is not null && (_tree.Health.TotalItems > 0 || _tree.Health.TotalHeadings > 0);
+
+    private bool HasCoverageData =>
+        _tree is not null && _flatCache.Any(r => r.Node.Coverage != CoverageState.Unknown);
+
+    private void OnFileImported(string content)
+    {
+        _specText = content;
+    }
+
+    private void OnFileRemoved()
+    {
+        _specText = string.Empty;
+    }
+
+    private void ClearInput()
+    {
+        _specText = string.Empty;
+        _importRef?.Reset();
+    }
+
+    private void BuildTree()
+    {
+        if (!CanBuild) return;
+        _tree = SpecExplorerService.Parse(_specText);
+        _expandedIds = SpecExplorerService.GetDefaultExpanded(_tree.Roots);
+        _selectedNodeId = null;
+        _searchQuery = string.Empty;
+        _isMapView = false;
+        ApplyCoverageOverlay();
+        RefreshFlatCache();
+    }
+
+    private void Reset()
+    {
+        _tree = null;
+        _specText = string.Empty;
+        _expandedIds = [];
+        _selectedNodeId = null;
+        _searchQuery = string.Empty;
+        _isMapView = false;
+        _flatCache = [];
+        _importRef?.Reset();
+    }
+
+    private void RefreshFlatCache()
+    {
+        if (_tree is null) { _flatCache = []; return; }
+        _flatCache = SpecExplorerService.GetFlatVisible(_tree.Roots, _expandedIds, _searchQuery);
+    }
+
+    private void ApplyCoverageOverlay()
+    {
+        if (_tree is null || Candidates is null || Candidates.Count == 0) return;
+        var allNodes = GetAllNodes(_tree.Roots);
+        foreach (var node in allNodes)
+        {
+            if (node.HeadingLevel > 0)
+            {
+                var linked = GetLinkedCandidates(node);
+                if (linked.Count == 0) { node.Coverage = CoverageState.Unknown; continue; }
+                var accepted = linked.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted);
+                node.Coverage = accepted == linked.Count ? CoverageState.Covered
+                              : accepted > 0 ? CoverageState.Partial
+                              : CoverageState.Missing;
+            }
+            else if (node.SpecItemId is not null)
+            {
+                var match = Candidates.FirstOrDefault(c =>
+                    c.Title.Contains(node.SpecItemId, StringComparison.OrdinalIgnoreCase));
+                if (match is null) { node.Coverage = CoverageState.Unknown; continue; }
+                node.Coverage = match.ReviewStatus == CandidateReviewStatus.Accepted ? CoverageState.Covered
+                              : match.ReviewStatus == CandidateReviewStatus.Rejected ? CoverageState.Missing
+                              : CoverageState.Partial;
+            }
+        }
+    }
+
+    private List<ExtractionCandidate> GetLinkedCandidates(SpecNode node)
+    {
+        if (Candidates is null || Candidates.Count == 0) return [];
+        return Candidates.Where(c =>
+            string.Equals(c.ContextHeading, node.Title, StringComparison.OrdinalIgnoreCase)
+            || (node.SpecItemId is not null && c.Title.Contains(node.SpecItemId, StringComparison.OrdinalIgnoreCase))).ToList();
+    }
+
+    private static List<SpecNode> GetAllNodes(IEnumerable<SpecNode> nodes)
+    {
+        var result = new List<SpecNode>();
+        foreach (var node in nodes) { result.Add(node); result.AddRange(GetAllNodes(node.Children)); }
+        return result;
+    }
+
+    private void HandleSearchInput(ChangeEventArgs e)
+    {
+        _searchQuery = e.Value?.ToString() ?? string.Empty;
+        RefreshFlatCache();
+    }
+
+    private void HandleNodeClick(SpecNode node)
+    {
+        _selectedNodeId = _selectedNodeId == node.Id ? null : node.Id;
+    }
+
+    private void ToggleExpand(string id)
+    {
+        if (!_expandedIds.Add(id)) _expandedIds.Remove(id);
+        RefreshFlatCache();
+    }
+
+    private void ExpandAll()
+    {
+        if (_tree is null) return;
+        foreach (var node in GetAllNodes(_tree.Roots))
+            if (node.Children.Count > 0) _expandedIds.Add(node.Id);
+        RefreshFlatCache();
+    }
+
+    private void CollapseAll()
+    {
+        _expandedIds.Clear();
+        RefreshFlatCache();
+    }
+
+    private static int CountLines(string text) => text.Split('\n').Length;
+
+    // ── Labels and icons ──────────────────────────────────────────────────
+
+    private static string GetIcon(SpecNodeType type, int level) => type switch
+    {
+        SpecNodeType.Module => "📦",
+        SpecNodeType.Section => "📂",
+        SpecNodeType.SubSection => "📁",
+        SpecNodeType.DeepSection => "📄",
+        SpecNodeType.Requirement => "📋",
+        SpecNodeType.UserStory => "👤",
+        SpecNodeType.SuccessCriterion => "✓",
+        SpecNodeType.AcceptanceTest => "🧪",
+        SpecNodeType.Clarification => "❓",
+        SpecNodeType.Entity => "🔷",
+        SpecNodeType.DomainItem => "🔗",
+        _ => level == 1 ? "📦" : level == 2 ? "📂" : "📄",
+    };
+
+    private static string NodeTypeLabel(SpecNodeType type) => type switch
+    {
+        SpecNodeType.Module => "Module",
+        SpecNodeType.Section => "Section",
+        SpecNodeType.SubSection => "Sub-section",
+        SpecNodeType.DeepSection => "Section",
+        SpecNodeType.Requirement => "Requirement",
+        SpecNodeType.UserStory => "User Story",
+        SpecNodeType.SuccessCriterion => "Success Criterion",
+        SpecNodeType.AcceptanceTest => "Acceptance Test",
+        SpecNodeType.Clarification => "Clarification",
+        SpecNodeType.Entity => "Entity",
+        SpecNodeType.DomainItem => "Domain Item",
+        _ => type.ToString(),
+    };
+
+    private static string CoverageIcon(CoverageState s) => s switch
+    {
+        CoverageState.Covered => "✅",
+        CoverageState.Partial => "⚠",
+        CoverageState.Missing => "❌",
+        _ => "",
+    };
+
+    private static string CoverageTitle(CoverageState s) => s switch
+    {
+        CoverageState.Covered => "Covered",
+        CoverageState.Partial => "Partial",
+        CoverageState.Missing => "Missing",
+        _ => "Unknown",
+    };
+}

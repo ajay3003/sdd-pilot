@@ -1,0 +1,501 @@
+@page "/task-deltas"
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using BirkNext.Web.Components
+
+<PageTitle>Task Deltas</PageTitle>
+
+<div class="delta-page">
+
+    @if (_report is null)
+    {
+        <div class="delta-hero">
+            <h1 class="delta-hero-title">Task Deltas</h1>
+            <p class="delta-hero-sub">Compare two versions of a tasks.md file to surface added, removed, and modified tasks — with scope analysis and risk classification.</p>
+        </div>
+
+        <div class="delta-info-panel">
+            <strong>Best for:</strong>
+            <span class="delta-bestfor-badge">Sprint planning reviews</span>
+            <span class="delta-bestfor-badge">Scope change tracking</span>
+            <span class="delta-bestfor-badge">Regression risk assessment</span>
+            <span class="delta-scope-note">Supports T001-format and checkbox task lists. Scope changes are detected from keywords and line additions.</span>
+        </div>
+
+        <div class="delta-inputs-row">
+            <div class="delta-input-panel">
+                <div class="delta-input-header">
+                    <span class="delta-input-label delta-label-old">Previous (tasks-v1.md)</span>
+                </div>
+                <SpecificationImport
+                    @ref="_oldImportRef"
+                    InputId="old-tasks-input"
+                    OnFileImported="OnOldFileImported"
+                    OnFileRemoved="OnOldFileRemoved"
+                    IsDisabled="false" />
+                <textarea
+                    class="delta-textarea"
+                    placeholder="Or paste old tasks.md content here..."
+                    rows="10"
+                    @bind="_oldTasksText"></textarea>
+                @if (!string.IsNullOrWhiteSpace(_oldTasksText))
+                {
+                    <div class="delta-input-footer">
+                        <span class="delta-line-count">@CountLines(_oldTasksText) lines</span>
+                        <button class="delta-clear-btn" @onclick="ClearOldTasks">Clear</button>
+                    </div>
+                }
+            </div>
+
+            <div class="delta-separator" aria-hidden="true">→</div>
+
+            <div class="delta-input-panel">
+                <div class="delta-input-header">
+                    <span class="delta-input-label delta-label-new">Updated (tasks-v2.md)</span>
+                </div>
+                <SpecificationImport
+                    @ref="_newImportRef"
+                    InputId="new-tasks-input"
+                    OnFileImported="OnNewFileImported"
+                    OnFileRemoved="OnNewFileRemoved"
+                    IsDisabled="false" />
+                <textarea
+                    class="delta-textarea"
+                    placeholder="Or paste new tasks.md content here..."
+                    rows="10"
+                    @bind="_newTasksText"></textarea>
+                @if (!string.IsNullOrWhiteSpace(_newTasksText))
+                {
+                    <div class="delta-input-footer">
+                        <span class="delta-line-count">@CountLines(_newTasksText) lines</span>
+                        <button class="delta-clear-btn" @onclick="ClearNewTasks">Clear</button>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="delta-analyse-row">
+            <button
+                class="delta-analyse-btn"
+                disabled="@(!CanAnalyse)"
+                @onclick="RunAnalysis">
+                Compare Tasks
+            </button>
+            @if (!CanAnalyse)
+            {
+                <span class="delta-analyse-hint">Paste or import both versions to compare</span>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="delta-results-header">
+            <div>
+                <h1 class="delta-results-title">Task Deltas</h1>
+                <p class="delta-results-sub">
+                    @if (_report.TotalChanges == 0)
+                    {
+                        <span>No changes detected — both versions appear identical.</span>
+                    }
+                    else
+                    {
+                        <span>@_report.TotalChanges task change@(_report.TotalChanges != 1 ? "s" : "") detected.</span>
+                    }
+                </p>
+            </div>
+            <button class="delta-back-btn" @onclick="Reset">← New Comparison</button>
+        </div>
+
+        @if (_report.TotalChanges == 0)
+        {
+            <div class="delta-no-changes">
+                <strong>No changes found.</strong> Both task files contain the same tasks with identical content.
+            </div>
+        }
+        else
+        {
+            <div class="delta-kpi-row">
+                <div class="delta-kpi-card">
+                    <div class="delta-kpi-value">@_report.TotalChanges</div>
+                    <div class="delta-kpi-label">Total Changes</div>
+                </div>
+                <div class="delta-kpi-card delta-kpi-added">
+                    <div class="delta-kpi-value">@_report.AddedTasks</div>
+                    <div class="delta-kpi-label">Added</div>
+                </div>
+                <div class="delta-kpi-card delta-kpi-removed">
+                    <div class="delta-kpi-value">@_report.RemovedTasks</div>
+                    <div class="delta-kpi-label">Removed</div>
+                </div>
+                <div class="delta-kpi-card delta-kpi-modified">
+                    <div class="delta-kpi-value">@_report.ModifiedTasks</div>
+                    <div class="delta-kpi-label">Modified</div>
+                </div>
+                <div class="delta-kpi-card delta-kpi-expansion @(_report.ScopeExpansions > 0 ? "delta-kpi-alert" : "")">
+                    <div class="delta-kpi-value">@_report.ScopeExpansions</div>
+                    <div class="delta-kpi-label">Scope Expansions</div>
+                </div>
+                <div class="delta-kpi-card delta-kpi-reduction @(_report.ScopeReductions > 0 ? "delta-kpi-alert-blue" : "")">
+                    <div class="delta-kpi-value">@_report.ScopeReductions</div>
+                    <div class="delta-kpi-label">Scope Reductions</div>
+                </div>
+            </div>
+
+            <div class="delta-filter-strip">
+                <button class='delta-filter-chip @(_activeFilter is null ? "active" : "")'
+                        @onclick='() => _activeFilter = null'>
+                    All <span class="delta-filter-count">@_report.TotalChanges</span>
+                </button>
+                <button class='delta-filter-chip delta-fc-added @(_activeFilter == "Added" ? "active" : "")'
+                        @onclick='() => _activeFilter = "Added"'>
+                    Added <span class="delta-filter-count">@_report.AddedTasks</span>
+                </button>
+                <button class='delta-filter-chip delta-fc-removed @(_activeFilter == "Removed" ? "active" : "")'
+                        @onclick='() => _activeFilter = "Removed"'>
+                    Removed <span class="delta-filter-count">@_report.RemovedTasks</span>
+                </button>
+                <button class='delta-filter-chip delta-fc-modified @(_activeFilter == "Modified" ? "active" : "")'
+                        @onclick='() => _activeFilter = "Modified"'>
+                    Modified <span class="delta-filter-count">@_report.ModifiedTasks</span>
+                </button>
+                @if (_report.ScopeExpansions > 0)
+                {
+                    <button class='delta-filter-chip delta-fc-expansion @(_activeFilter == "ScopeExpansion" ? "active" : "")'
+                            @onclick='() => _activeFilter = "ScopeExpansion"'>
+                        Scope Expansion <span class="delta-filter-count">@_report.ScopeExpansions</span>
+                    </button>
+                }
+                @if (_report.ScopeReductions > 0)
+                {
+                    <button class='delta-filter-chip delta-fc-reduction @(_activeFilter == "ScopeReduction" ? "active" : "")'
+                            @onclick='() => _activeFilter = "ScopeReduction"'>
+                        Scope Reduction <span class="delta-filter-count">@_report.ScopeReductions</span>
+                    </button>
+                }
+                @{
+                    var highRiskCount = _report.Findings.Count(f => f.RiskLevel == ImpactLevel.High);
+                }
+                @if (highRiskCount > 0)
+                {
+                    <button class='delta-filter-chip delta-fc-highrisk @(_activeFilter == "HighRisk" ? "active" : "")'
+                            @onclick='() => _activeFilter = "HighRisk"'>
+                        High Risk <span class="delta-filter-count">@highRiskCount</span>
+                    </button>
+                }
+            </div>
+
+            <div class="delta-findings">
+                @{
+                    var filtered = GetFiltered();
+                }
+                @if (filtered.Count == 0)
+                {
+                    <div class="delta-empty">No findings match the selected filter.</div>
+                }
+                else
+                {
+                    foreach (var finding in filtered)
+                    {
+                        var isExpanded = _expanded.Contains(finding.TaskId);
+                        <div class="delta-finding-card @DeltaTypeClass(finding) @(isExpanded ? "is-expanded" : "")">
+                            <div class="delta-card-compact" @onclick="() => ToggleFinding(finding.TaskId)">
+                                <span class="delta-task-id">@finding.TaskId</span>
+                                <span class="delta-task-title">@finding.Title</span>
+                                <div class="delta-card-badges">
+                                    <span class="delta-type-badge delta-type-@finding.DeltaType.ToString().ToLower()">@DeltaTypeLabel(finding.DeltaType)</span>
+                                    @if (finding.ScopeChange != ScopeChangeKind.None)
+                                    {
+                                        <span class="delta-scope-badge delta-scope-@finding.ScopeChange.ToString().ToLower()">@ScopeLabel(finding.ScopeChange)</span>
+                                    }
+                                    @if (finding.RiskLevel != ImpactLevel.Unknown)
+                                    {
+                                        <span class="delta-risk-badge delta-risk-@finding.RiskLevel.ToString().ToLower()">@RiskLabel(finding.RiskLevel)</span>
+                                    }
+                                    @foreach (var area in finding.AffectedAreas.Take(3))
+                                    {
+                                        <span class="delta-area-chip delta-area-@AreaGroup(area)">@AreaShortLabel(area)</span>
+                                    }
+                                    @if (finding.AffectedAreas.Count > 3)
+                                    {
+                                        <span class="delta-area-chip delta-area-more">+@(finding.AffectedAreas.Count - 3)</span>
+                                    }
+                                </div>
+                                <button class="delta-expand-btn" aria-expanded="@isExpanded.ToString().ToLower()">@(isExpanded ? "▲" : "▼")</button>
+                            </div>
+
+                            @if (isExpanded)
+                            {
+                                <div class="delta-card-body">
+                                    @if (finding.DeltaType == DeltaType.Modified)
+                                    {
+                                        <div class="delta-diff-row">
+                                            <div class="delta-diff-panel delta-diff-before">
+                                                <div class="delta-diff-label">Before</div>
+                                                <pre class="delta-diff-text">@finding.BeforeText</pre>
+                                            </div>
+                                            <div class="delta-diff-panel delta-diff-after">
+                                                <div class="delta-diff-label">After</div>
+                                                <pre class="delta-diff-text">@finding.AfterText</pre>
+                                            </div>
+                                        </div>
+                                    }
+                                    else if (finding.DeltaType == DeltaType.Added)
+                                    {
+                                        <div class="delta-diff-row">
+                                            <div class="delta-diff-panel delta-diff-after delta-diff-full">
+                                                <div class="delta-diff-label">New Task</div>
+                                                <pre class="delta-diff-text">@finding.AfterText</pre>
+                                            </div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="delta-diff-row">
+                                            <div class="delta-diff-panel delta-diff-before delta-diff-full">
+                                                <div class="delta-diff-label">Removed Task</div>
+                                                <pre class="delta-diff-text">@finding.BeforeText</pre>
+                                            </div>
+                                        </div>
+                                    }
+
+                                    <div class="delta-detail-section">
+                                        <div class="delta-detail-label">Delta Summary</div>
+                                        <div class="delta-detail-value">@finding.DeltaSummary</div>
+                                    </div>
+
+                                    @if (finding.AffectedAreas.Count > 0)
+                                    {
+                                        <div class="delta-detail-section">
+                                            <div class="delta-detail-label">Affected Areas</div>
+                                            <div class="delta-detail-chips">
+                                                @foreach (var area in finding.AffectedAreas)
+                                                {
+                                                    <span class="delta-area-chip delta-area-@AreaGroup(area)">@AreaLabel(area)</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrEmpty(finding.RiskReason))
+                                    {
+                                        <div class="delta-detail-section delta-risk-reason-row">
+                                            <div class="delta-detail-label">Why this risk?</div>
+                                            <div class="delta-detail-risk-reason">@finding.RiskReason</div>
+                                        </div>
+                                    }
+
+                                    @if (finding.RecommendedTests.Count > 0)
+                                    {
+                                        <div class="delta-detail-section">
+                                            <div class="delta-detail-label">Recommended Testing</div>
+                                            <ul class="delta-tests-list">
+                                                @foreach (var test in finding.RecommendedTests)
+                                                {
+                                                    <li>@test</li>
+                                                }
+                                            </ul>
+                                        </div>
+                                    }
+
+                                    <div class="delta-detail-section">
+                                        <div class="delta-detail-label">Spec Coverage <span class="delta-coverage-estimated">(estimated without a spec file)</span></div>
+                                        <span class="delta-coverage-badge delta-cov-@finding.SpecCoverage.ToString().ToLower()">@CoverageLabel(finding.SpecCoverage)</span>
+                                        <span class="delta-coverage-note">Use Implementation Review for precise spec alignment.</span>
+                                    </div>
+
+                                    <div class="delta-detail-section delta-action-section">
+                                        <div class="delta-detail-label">Recommended Action</div>
+                                        <div class="delta-detail-action">@finding.RecommendedAction</div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        }
+
+        <div class="delta-chain-footer">
+            <span class="delta-chain-step delta-chain-file">tasks-v1.md</span>
+            <span class="delta-chain-arrow">→</span>
+            <span class="delta-chain-step delta-chain-file">tasks-v2.md</span>
+            <span class="delta-chain-arrow">→</span>
+            <span class="delta-chain-step delta-chain-active">Task Deltas</span>
+            <span class="delta-chain-arrow">→</span>
+            <NavLink href="task-alignment" class="delta-chain-step delta-chain-link">Implementation Review</NavLink>
+            <span class="delta-chain-arrow">→</span>
+            <NavLink href="impact-analysis" class="delta-chain-step delta-chain-link">Impact Analysis</NavLink>
+        </div>
+    }
+</div>
+
+@code {
+    private TaskDeltaReport? _report;
+    private string _oldTasksText = string.Empty;
+    private string _newTasksText = string.Empty;
+    private string? _activeFilter;
+    private readonly HashSet<string> _expanded = [];
+
+    private SpecificationImport? _oldImportRef;
+    private SpecificationImport? _newImportRef;
+
+    private bool CanAnalyse =>
+        !string.IsNullOrWhiteSpace(_oldTasksText) && !string.IsNullOrWhiteSpace(_newTasksText);
+
+    private void OnOldFileImported(string content) => _oldTasksText = content;
+    private void OnOldFileRemoved() => _oldTasksText = string.Empty;
+    private void OnNewFileImported(string content) => _newTasksText = content;
+    private void OnNewFileRemoved() => _newTasksText = string.Empty;
+
+    private void ClearOldTasks()
+    {
+        _oldTasksText = string.Empty;
+        _oldImportRef?.Reset();
+    }
+
+    private void ClearNewTasks()
+    {
+        _newTasksText = string.Empty;
+        _newImportRef?.Reset();
+    }
+
+    private void RunAnalysis()
+    {
+        if (!CanAnalyse) return;
+        _activeFilter = null;
+        _expanded.Clear();
+        _report = TaskDeltaService.Analyse(_oldTasksText, _newTasksText);
+    }
+
+    private void Reset()
+    {
+        _report = null;
+        _oldTasksText = string.Empty;
+        _newTasksText = string.Empty;
+        _activeFilter = null;
+        _expanded.Clear();
+        _oldImportRef?.Reset();
+        _newImportRef?.Reset();
+    }
+
+    private void ToggleFinding(string taskId)
+    {
+        if (!_expanded.Add(taskId))
+            _expanded.Remove(taskId);
+    }
+
+    private List<TaskDeltaFinding> GetFiltered()
+    {
+        if (_report is null) return [];
+        return _activeFilter switch
+        {
+            "Added" => _report.Findings.Where(f => f.DeltaType == DeltaType.Added).ToList(),
+            "Removed" => _report.Findings.Where(f => f.DeltaType == DeltaType.Removed).ToList(),
+            "Modified" => _report.Findings.Where(f => f.DeltaType == DeltaType.Modified).ToList(),
+            "ScopeExpansion" => _report.Findings.Where(f => f.ScopeChange == ScopeChangeKind.Expansion).ToList(),
+            "ScopeReduction" => _report.Findings.Where(f => f.ScopeChange == ScopeChangeKind.Reduction).ToList(),
+            "HighRisk" => _report.Findings.Where(f => f.RiskLevel == ImpactLevel.High).ToList(),
+            _ => _report.Findings,
+        };
+    }
+
+    private static int CountLines(string text) => text.Split('\n').Length;
+
+    private static string DeltaTypeLabel(DeltaType t) => t switch
+    {
+        DeltaType.Added => "+ Added",
+        DeltaType.Removed => "− Removed",
+        DeltaType.Modified => "~ Modified",
+        _ => t.ToString(),
+    };
+
+    private static string ScopeLabel(ScopeChangeKind s) => s switch
+    {
+        ScopeChangeKind.Expansion => "↑ Scope Expansion",
+        ScopeChangeKind.Reduction => "↓ Scope Reduction",
+        _ => string.Empty,
+    };
+
+    private static string RiskLabel(ImpactLevel l) => l switch
+    {
+        ImpactLevel.High => "High Risk",
+        ImpactLevel.Medium => "Medium Risk",
+        ImpactLevel.Low => "Low Risk",
+        ImpactLevel.Unknown => "Unknown Risk",
+        _ => l.ToString(),
+    };
+
+    private static string CoverageLabel(DeltaSpecCoverage c) => c switch
+    {
+        DeltaSpecCoverage.Linked => "Spec Linked",
+        DeltaSpecCoverage.NeedsReview => "Needs Review",
+        DeltaSpecCoverage.PossibleDeviation => "Possible Deviation",
+        DeltaSpecCoverage.NotApplicable => "Technical Only",
+        _ => c.ToString(),
+    };
+
+    private static string DeltaTypeClass(TaskDeltaFinding f) => f switch
+    {
+        { DeltaType: DeltaType.Added } => "delta-card-added",
+        { DeltaType: DeltaType.Removed } => "delta-card-removed",
+        { DeltaType: DeltaType.Modified, ScopeChange: ScopeChangeKind.Expansion } => "delta-card-expansion",
+        { DeltaType: DeltaType.Modified, ScopeChange: ScopeChangeKind.Reduction } => "delta-card-reduction",
+        { DeltaType: DeltaType.Modified } => "delta-card-modified",
+        _ => string.Empty,
+    };
+
+    private static string AreaGroup(AffectedArea area) => area switch
+    {
+        AffectedArea.Security or AffectedArea.Authorization or AffectedArea.Audit
+            or AffectedArea.DomainEvents or AffectedArea.OperationRegistration => "red",
+        AffectedArea.Search or AffectedArea.Profile or AffectedArea.AccessManagement
+            or AffectedArea.ReferenceData or AffectedArea.Ingestion
+            or AffectedArea.HealthMonitoring or AffectedArea.BusinessRules
+            or AffectedArea.Workflow => "blue",
+        _ => "gray",
+    };
+
+    private static string AreaShortLabel(AffectedArea area) => area switch
+    {
+        AffectedArea.Security => "Sec",
+        AffectedArea.Authorization => "Auth",
+        AffectedArea.Search => "Search",
+        AffectedArea.Profile => "Profile",
+        AffectedArea.AccessManagement => "Access",
+        AffectedArea.ReferenceData => "RefData",
+        AffectedArea.Ingestion => "Ingest",
+        AffectedArea.DomainEvents => "Events",
+        AffectedArea.Audit => "Audit",
+        AffectedArea.OperationRegistration => "OpReg",
+        AffectedArea.HealthMonitoring => "Health",
+        AffectedArea.Infrastructure => "Infra",
+        AffectedArea.BusinessRules => "BizRules",
+        AffectedArea.Workflow => "Workflow",
+        AffectedArea.Validation => "Validate",
+        AffectedArea.Testing => "Tests",
+        AffectedArea.ExceptionHandling => "Errors",
+        _ => area.ToString(),
+    };
+
+    private static string AreaLabel(AffectedArea area) => area switch
+    {
+        AffectedArea.Security => "Security",
+        AffectedArea.Authorization => "Authorization",
+        AffectedArea.Search => "Search",
+        AffectedArea.Profile => "Profile",
+        AffectedArea.AccessManagement => "Access Management",
+        AffectedArea.ReferenceData => "Reference Data",
+        AffectedArea.Ingestion => "Ingestion",
+        AffectedArea.DomainEvents => "Domain Events",
+        AffectedArea.Audit => "Audit",
+        AffectedArea.OperationRegistration => "Operation Registration",
+        AffectedArea.HealthMonitoring => "Health Monitoring",
+        AffectedArea.Infrastructure => "Infrastructure",
+        AffectedArea.BusinessRules => "Business Rules",
+        AffectedArea.Workflow => "Workflow",
+        AffectedArea.Validation => "Validation",
+        AffectedArea.Testing => "Testing",
+        AffectedArea.ExceptionHandling => "Exception Handling",
+        _ => area.ToString(),
+    };
+}

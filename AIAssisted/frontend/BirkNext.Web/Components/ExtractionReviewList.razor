@@ -110,8 +110,17 @@ else
                     @onclick="() => SetViewMode(ExtractionViewMode.Architecture)">
                 <span class="tab-icon" aria-hidden="true">🏗</span>Architecture View
             </button>
+            <button type="button" role="tab"
+                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.SpecExplorer ? "is-active" : "")"
+                    aria-selected="@(_activeViewMode == ExtractionViewMode.SpecExplorer)"
+                    title="Navigable hierarchical tree of the full specification."
+                    @onclick="() => SetViewMode(ExtractionViewMode.SpecExplorer)">
+                <span class="tab-icon" aria-hidden="true">🌳</span>Spec Explorer
+            </button>
         </div>
 
+        @if (_activeViewMode != ExtractionViewMode.SpecExplorer)
+        {
         <div class="filter-toolbar">
             <div class="filter-chips" role="group" aria-label="Filter by type" hidden="@(_activeViewMode == ExtractionViewMode.Traceability ? "hidden" : null)">
                 <button type="button"
@@ -255,6 +264,7 @@ else
                 }
             </div>
         }
+        } @* end @if (_activeViewMode != ExtractionViewMode.SpecExplorer) *@
 
         @{
             // In Traceability View the type chip filter is bypassed so threads always have all three kinds.
@@ -271,6 +281,8 @@ else
             var anyVisible          = visibleRequirements.Count > 0 || visibleTests.Count > 0 || visibleNeeds.Count > 0;
         }
 
+        @if (_activeViewMode != ExtractionViewMode.SpecExplorer)
+        {
         @if (_reviewPersistState == ReviewPersistState.Saved)
         {
             <p class="notification notification-success" data-testid="review-saved" role="status">Review saved successfully.</p>
@@ -337,6 +349,7 @@ else
                 }
             </div>
         }
+        } @* end @if (_activeViewMode != ExtractionViewMode.SpecExplorer) *@
 
         @if (_activeViewMode == ExtractionViewMode.Extraction)
         {
@@ -656,13 +669,20 @@ else
             }
         }
 
-        @if (!anyVisible && _activeViewMode != ExtractionViewMode.Traceability)
+        @if (_activeViewMode == ExtractionViewMode.SpecExplorer)
+        {
+            <SpecExplorerPanel Candidates="@PipelineResult.Candidates" />
+        }
+
+        @if (!anyVisible && _activeViewMode != ExtractionViewMode.Traceability && _activeViewMode != ExtractionViewMode.SpecExplorer)
         {
             <div class="filter-empty-state" data-testid="filter-empty-state">
                 <p>No candidates match@(_searchTerm.Length > 0 ? " your search" : " the selected filter").</p>
             </div>
         }
 
+        @if (_activeViewMode != ExtractionViewMode.SpecExplorer)
+        {
         <div class="review-action-bar">
             <button type="button"
                     class="btn-save-review"
@@ -734,6 +754,7 @@ else
                     OnClose="CloseDrawer" />
             </div>
         }
+        } @* end @if (_activeViewMode != ExtractionViewMode.SpecExplorer) for action bar *@
     </div>
 }
 

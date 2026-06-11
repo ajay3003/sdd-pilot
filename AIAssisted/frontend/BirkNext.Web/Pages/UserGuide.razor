@@ -1,0 +1,650 @@
+@page "/user-guide"
+
+<PageTitle>User Guide — QA Review Studio</PageTitle>
+
+<div class="ug-page">
+
+    <!-- ── Hero ────────────────────────────────────────────────────────── -->
+    <div class="ug-hero">
+        <div class="ug-hero-eyebrow">📖 User Guide</div>
+        <h1 class="ug-hero-title">QA Review Studio</h1>
+        <p class="ug-hero-sub">Everything you need to understand, use, and get value from every feature in the platform — from onboarding to advanced analysis workflows.</p>
+        <div class="ug-hero-audience">
+            For: Testers · Test Leads · Scrum Masters · Product Owners · Developers · Architects · New Team Members
+        </div>
+    </div>
+
+    <!-- ── Table of Contents ────────────────────────────────────────────── -->
+    <nav class="ug-toc" aria-label="Page contents">
+        <a href="#overview" class="ug-toc-link">Overview</a>
+        <span class="ug-toc-sep">·</span>
+        <a href="#features" class="ug-toc-link">Feature Matrix</a>
+        <span class="ug-toc-sep">·</span>
+        <a href="#workflow" class="ug-toc-link">Core Workflow</a>
+        <span class="ug-toc-sep">·</span>
+        <a href="#workflows" class="ug-toc-link">Typical Workflows</a>
+        <span class="ug-toc-sep">·</span>
+        <a href="#feature-details" class="ug-toc-link">Feature Details</a>
+        <span class="ug-toc-sep">·</span>
+        <a href="#ai-dev" class="ug-toc-link">AI-Assisted Dev</a>
+        <span class="ug-toc-sep">·</span>
+        <a href="#faq" class="ug-toc-link">FAQ</a>
+        <span class="ug-toc-sep">·</span>
+        <a href="#ecosystem" class="ug-toc-link">Ecosystem</a>
+        <span class="ug-toc-sep">·</span>
+        <a href="#about" class="ug-toc-link">About</a>
+    </nav>
+
+    <!-- ── Section 1: Overview ─────────────────────────────────────────── -->
+    <section id="overview" class="ug-section">
+        <h2 class="ug-section-title">Overview</h2>
+        <p class="ug-section-lead">QA Review Studio is a quality engineering platform focused on <strong>Specification Driven Development (SDD)</strong> — connecting requirements, tasks, implementation, and testing in a single traceable workflow that spans the entire delivery lifecycle.</p>
+
+        <div class="ug-cap-grid">
+            @foreach (var cap in CoreCapabilities)
+            {
+                <div class="ug-cap-card">
+                    <div class="ug-cap-icon" aria-hidden="true">@cap.Icon</div>
+                    <div class="ug-cap-name">@cap.Name</div>
+                    <div class="ug-cap-desc">@cap.Desc</div>
+                </div>
+            }
+        </div>
+
+        <h3 class="ug-subsection-title">Who uses it?</h3>
+        <div class="ug-audience-grid">
+            @foreach (var (Role, Desc) in Audiences)
+            {
+                <div class="ug-audience-card">
+                    <div class="ug-audience-role">@Role</div>
+                    <div class="ug-audience-desc">@Desc</div>
+                </div>
+            }
+        </div>
+    </section>
+
+    <!-- ── Section 2: Feature Matrix ───────────────────────────────────── -->
+    <section id="features" class="ug-section">
+        <h2 class="ug-section-title">Full Feature Matrix</h2>
+        <p class="ug-section-lead">Every feature at a glance — what it does, what it takes, what it produces, and when to reach for it.</p>
+
+        <div class="ug-table-scroll">
+            <table class="ug-table">
+                <thead>
+                    <tr>
+                        <th>Area</th>
+                        <th>Feature</th>
+                        <th>Purpose</th>
+                        <th>Input</th>
+                        <th>Output</th>
+                        <th>When To Use</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var f in AllFeatures)
+                    {
+                        <tr>
+                            <td><span class="ug-area-badge ug-area-@f.AreaKey">@f.Area</span></td>
+                            <td class="ug-td-feature"><a href="@f.Route" class="ug-inline-link">@f.Name</a></td>
+                            <td>@f.Purpose</td>
+                            <td class="ug-td-mono">@f.Input</td>
+                            <td>@f.Output</td>
+                            <td>@f.WhenToUse</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- ── Section 3: Core Workflow ────────────────────────────────────── -->
+    <section id="workflow" class="ug-section">
+        <h2 class="ug-section-title">Core Workflow</h2>
+        <p class="ug-section-lead">The primary path from specification to release — and where each Analysis feature fits in.</p>
+
+        <div class="ug-core-flow-layout">
+            <div class="ug-core-flow">
+                <div class="ug-flow-node ug-flow-primary">Specification Review</div>
+                <div class="ug-flow-conn">↓</div>
+                <div class="ug-flow-node ug-flow-primary">QA Artifact Library</div>
+                <div class="ug-flow-conn">↓</div>
+                <div class="ug-flow-node ug-flow-primary">Traceability &amp; Coverage</div>
+                <div class="ug-flow-conn">↓</div>
+                <div class="ug-flow-node ug-flow-primary">Implementation Review</div>
+                <div class="ug-flow-conn">↓</div>
+                <div class="ug-flow-node ug-flow-primary">Impact Analysis</div>
+                <div class="ug-flow-conn">↓</div>
+                <div class="ug-flow-node ug-flow-primary">Spec Drift</div>
+                <div class="ug-flow-conn">↓</div>
+                <div class="ug-flow-node ug-flow-terminal">QA Readiness</div>
+            </div>
+
+            <div class="ug-flow-branches">
+                <h4 class="ug-branches-title">Optional branches</h4>
+                <div class="ug-branch-item">
+                    <span class="ug-branch-badge">Specification Deltas</span>
+                    <span class="ug-branch-when">When specification changes between versions</span>
+                </div>
+                <div class="ug-branch-item">
+                    <span class="ug-branch-badge">Task Deltas</span>
+                    <span class="ug-branch-when">When the implementation plan changes</span>
+                </div>
+                <div class="ug-branch-item">
+                    <span class="ug-branch-badge">Code Traceability</span>
+                    <span class="ug-branch-when">When implementation evidence exists</span>
+                </div>
+                <div class="ug-branch-item">
+                    <span class="ug-branch-badge">AI Change Review</span>
+                    <span class="ug-branch-when">When AI-generated changes need review</span>
+                </div>
+                <div class="ug-branch-item">
+                    <span class="ug-branch-badge">Spec Comparison</span>
+                    <span class="ug-branch-when">When comparing two specification documents</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── Section 4: Typical Workflows ────────────────────────────────── -->
+    <section id="workflows" class="ug-section">
+        <h2 class="ug-section-title">Typical Workflows</h2>
+        <p class="ug-section-lead">Common delivery scenarios and the features that support each one.</p>
+
+        <div class="ug-workflow-grid">
+            @foreach (var wf in TypicalWorkflows)
+            {
+                <div class="ug-workflow-card">
+                    <div class="ug-workflow-title">@wf.Title</div>
+                    <div class="ug-workflow-flow">
+                        @for (var i = 0; i < wf.Steps.Length; i++)
+                        {
+                            <span class="ug-wf-step">@wf.Steps[i]</span>
+                            @if (i < wf.Steps.Length - 1)
+                            {
+                                <span class="ug-wf-arrow">→</span>
+                            }
+                        }
+                    </div>
+                    <div class="ug-workflow-desc">@wf.Desc</div>
+                </div>
+            }
+        </div>
+    </section>
+
+    <!-- ── Section 5: Feature Details ──────────────────────────────────── -->
+    <section id="feature-details" class="ug-section">
+        <h2 class="ug-section-title">Feature Details</h2>
+        <p class="ug-section-lead">Expand any feature for full details — purpose, inputs, outputs, recommended users, and when to use or avoid it.</p>
+
+        <div class="ug-feature-grid">
+            @foreach (var f in AllFeatures)
+            {
+                var isOpen = _openFeature.Contains(f.Id);
+                <div class="ug-feature-card ug-fcard-@f.AreaKey @(isOpen ? "is-open" : "")">
+                    <div class="ug-feature-header" @onclick="() => ToggleFeature(f.Id)">
+                        <div>
+                            <span class="ug-area-badge ug-area-@f.AreaKey">@f.Area</span>
+                            <div class="ug-feature-name">@f.Name</div>
+                            <div class="ug-feature-purpose">@f.Purpose</div>
+                        </div>
+                        <button class="ug-expand-btn" aria-expanded="@isOpen.ToString().ToLower()">@(isOpen ? "▲" : "▼")</button>
+                    </div>
+                    @if (isOpen)
+                    {
+                        <div class="ug-feature-body">
+                            <div class="ug-fd-row">
+                                <div class="ug-fd-item">
+                                    <div class="ug-fd-label">Input</div>
+                                    <div class="ug-fd-value ug-fd-mono">@f.Input</div>
+                                </div>
+                                <div class="ug-fd-item">
+                                    <div class="ug-fd-label">Output</div>
+                                    <div class="ug-fd-value">@f.Output</div>
+                                </div>
+                            </div>
+                            <div class="ug-fd-item">
+                                <div class="ug-fd-label">Best Used By</div>
+                                <div class="ug-fd-roles">
+                                    @foreach (var role in f.BestUsedBy)
+                                    {
+                                        <span class="ug-role-badge">@role</span>
+                                    }
+                                </div>
+                            </div>
+                            <div class="ug-fd-item">
+                                <div class="ug-fd-label">Use When</div>
+                                <ul class="ug-fd-list">
+                                    @foreach (var when in f.UseWhen)
+                                    {
+                                        <li>@when</li>
+                                    }
+                                </ul>
+                            </div>
+                            <div class="ug-fd-item">
+                                <div class="ug-fd-label">Avoid When</div>
+                                <ul class="ug-fd-list ug-fd-list-avoid">
+                                    @foreach (var avoid in f.AvoidWhen)
+                                    {
+                                        <li>@avoid</li>
+                                    }
+                                </ul>
+                            </div>
+                            <a href="@f.Route" class="ug-feature-link-btn">Open @f.Name →</a>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
+    <!-- ── Section 6: AI-Assisted Development ──────────────────────────── -->
+    <section id="ai-dev" class="ug-section">
+        <h2 class="ug-section-title">AI-Assisted Development</h2>
+        <p class="ug-section-lead">QA Review Studio is built for teams using AI to accelerate implementation. The platform helps you maintain quality, traceability, and governance even when velocity is high.</p>
+
+        <div class="ug-ai-flow-row">
+            <div class="ug-ai-flow">
+                <div class="ug-ai-node">
+                    <div class="ug-ai-node-label">Specification</div>
+                    <div class="ug-ai-node-desc">Requirements, user stories, acceptance criteria</div>
+                </div>
+                <div class="ug-ai-arrow">↓</div>
+                <div class="ug-ai-node">
+                    <div class="ug-ai-node-label">Tasks</div>
+                    <div class="ug-ai-node-desc">Implementation plan aligned to spec</div>
+                </div>
+                <div class="ug-ai-arrow">↓</div>
+                <div class="ug-ai-node">
+                    <div class="ug-ai-node-label">Code</div>
+                    <div class="ug-ai-node-desc">AI or human implementation</div>
+                </div>
+                <div class="ug-ai-arrow">↓</div>
+                <div class="ug-ai-node ug-ai-node-terminal">
+                    <div class="ug-ai-node-label">Testing &amp; Release</div>
+                    <div class="ug-ai-node-desc">Risk-informed test execution and governance</div>
+                </div>
+            </div>
+            <div class="ug-ai-concepts">
+                <div class="ug-ai-concept">
+                    <div class="ug-ai-concept-title">Specification-First Development</div>
+                    <p>Every task and implementation decision traces back to a requirement. QA Review Studio enforces this by surfacing alignment gaps early.</p>
+                </div>
+                <div class="ug-ai-concept">
+                    <div class="ug-ai-concept-title">Traceability</div>
+                    <p>Maintain a complete chain from requirement to test. Use Traceability &amp; Coverage and Code Traceability to build and verify this chain.</p>
+                </div>
+                <div class="ug-ai-concept">
+                    <div class="ug-ai-concept-title">Regression Awareness</div>
+                    <p>Implementation Review identifies Regression Candidates — tasks touching high-sensitivity areas like Security, Authorization, Domain Events, and Audit.</p>
+                </div>
+                <div class="ug-ai-concept">
+                    <div class="ug-ai-concept-title">Governance</div>
+                    <p>Spec Drift and QA Readiness ensure that as code evolves, the specification remains the source of truth and coverage is maintained.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="ug-callout ug-callout-tip">
+            <strong>Tip:</strong> When using AI to generate tasks from a spec, run Implementation Review immediately after to catch any tasks that introduce undocumented behavior.
+        </div>
+    </section>
+
+    <!-- ── Section 7: FAQ ───────────────────────────────────────────────── -->
+    <section id="faq" class="ug-section">
+        <h2 class="ug-section-title">Frequently Asked Questions</h2>
+
+        <div class="ug-faq">
+            @foreach (var faq in AllFaq)
+            {
+                var isOpen = _openFaq.Contains(faq.Id);
+                <div class="ug-faq-item @(isOpen ? "is-open" : "")">
+                    <button class="ug-faq-q" @onclick="() => ToggleFaq(faq.Id)">
+                        <span>@faq.Question</span>
+                        <span class="ug-faq-chevron" aria-hidden="true">@(isOpen ? "▲" : "▼")</span>
+                    </button>
+                    @if (isOpen)
+                    {
+                        <div class="ug-faq-a">@((MarkupString)faq.Answer)</div>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
+    <!-- ── Section 8: Analysis Ecosystem ───────────────────────────────── -->
+    <section id="ecosystem" class="ug-section">
+        <h2 class="ug-section-title">Analysis Ecosystem</h2>
+        <p class="ug-section-lead">How the Analysis features relate to each other and to the broader delivery workflow.</p>
+
+        <div class="ug-ecosystem-layout">
+            <div class="ug-ecosystem-main">
+                <h4 class="ug-ecosystem-subtitle">Primary Analysis Chain</h4>
+                <div class="ug-eco-flow">
+                    <div class="ug-eco-node">Specification Review</div>
+                    <div class="ug-eco-conn">↓</div>
+                    <div class="ug-eco-node">Specification Deltas</div>
+                    <div class="ug-eco-conn">↓</div>
+                    <div class="ug-eco-node">Task Deltas</div>
+                    <div class="ug-eco-conn">↓</div>
+                    <div class="ug-eco-node">Implementation Review</div>
+                    <div class="ug-eco-conn">↓</div>
+                    <div class="ug-eco-node">Impact Analysis</div>
+                    <div class="ug-eco-conn">↓</div>
+                    <div class="ug-eco-node">Testing</div>
+                    <div class="ug-eco-conn">↓</div>
+                    <div class="ug-eco-node ug-eco-terminal">QA Readiness</div>
+                </div>
+            </div>
+            <div class="ug-ecosystem-support">
+                <h4 class="ug-ecosystem-subtitle">Supporting Capabilities</h4>
+                <div class="ug-support-list">
+                    <div class="ug-support-item">
+                        <div class="ug-support-name">Traceability &amp; Coverage</div>
+                        <div class="ug-support-desc">Links requirements to tests and clarifications throughout the lifecycle.</div>
+                    </div>
+                    <div class="ug-support-item">
+                        <div class="ug-support-name">Code Traceability</div>
+                        <div class="ug-support-desc">Connects implementation evidence to requirements for deeper coverage analysis.</div>
+                    </div>
+                    <div class="ug-support-item">
+                        <div class="ug-support-name">Spec Drift</div>
+                        <div class="ug-support-desc">Detects coverage gaps, orphan tests, and drift indicators as the codebase evolves.</div>
+                    </div>
+                    <div class="ug-support-item">
+                        <div class="ug-support-name">AI Change Review</div>
+                        <div class="ug-support-desc">Reviews AI-generated implementation changes for alignment and quality concerns.</div>
+                    </div>
+                    <div class="ug-support-item">
+                        <div class="ug-support-name">Spec Comparison</div>
+                        <div class="ug-support-desc">Side-by-side comparison of two specification versions to identify differences.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── Section 9: About ─────────────────────────────────────────────── -->
+    <section id="about" class="ug-section ug-about-section">
+        <h2 class="ug-section-title">About</h2>
+        <div class="ug-about-content">
+            <div class="ug-about-block">
+                <p class="ug-about-lead">QA Review Studio is a quality engineering platform focused on:</p>
+                <ul class="ug-about-list">
+                    <li>Specification Driven Development (SDD)</li>
+                    <li>Traceability from requirement to test</li>
+                    <li>Impact Analysis and risk-based testing</li>
+                    <li>AI-Assisted Quality Review</li>
+                    <li>Governance across the full delivery lifecycle</li>
+                </ul>
+            </div>
+            <div class="ug-about-meta">
+                <div class="ug-about-row">
+                    <span class="ug-about-label">Initial concept and implementation</span>
+                    <span class="ug-about-value">Ajay Anand</span>
+                </div>
+                <div class="ug-about-row">
+                    <span class="ug-about-label">Version</span>
+                    <span class="ug-about-value">Preview</span>
+                </div>
+                <div class="ug-about-row">
+                    <span class="ug-about-label">Platform</span>
+                    <span class="ug-about-value">Blazor WebAssembly · .NET 8</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── Footer ───────────────────────────────────────────────────────── -->
+    <footer class="ug-footer">
+        QA Review Studio · Initial concept and implementation by Ajay Anand
+    </footer>
+
+</div>
+
+@code {
+    private readonly HashSet<string> _openFaq = [];
+    private readonly HashSet<string> _openFeature = [];
+
+    private void ToggleFaq(string id)
+    {
+        if (!_openFaq.Add(id)) _openFaq.Remove(id);
+    }
+
+    private void ToggleFeature(string id)
+    {
+        if (!_openFeature.Add(id)) _openFeature.Remove(id);
+    }
+
+    // ── Core capabilities ─────────────────────────────────────────────────
+
+    private sealed record Capability(string Icon, string Name, string Desc);
+
+    private static readonly Capability[] CoreCapabilities =
+    [
+        new("📋", "Specification Driven Development",
+            "Use the specification as the single source of truth for requirements, tasks, and tests."),
+        new("🔗", "Traceability",
+            "Maintain a complete chain from requirements through implementation to test execution."),
+        new("📊", "Coverage Analysis",
+            "Identify what is tested, what is not, and where gaps exist across the specification."),
+        new("⚡", "Impact Analysis",
+            "Estimate regression scope and identify high-risk changes before they reach production."),
+        new("🎯", "Risk-Based Testing",
+            "Prioritise test effort using area classification, regression candidates, and risk levels."),
+        new("🤖", "AI-Assisted Quality Review",
+            "Analyse AI-generated implementation changes for alignment, coverage, and governance."),
+    ];
+
+    // ── Audiences ─────────────────────────────────────────────────────────
+
+    private static readonly (string Role, string Desc)[] Audiences =
+    [
+        ("Tester", "Use Spec Review, Traceability, Implementation Review and QA Readiness to plan and execute test coverage."),
+        ("Test Lead", "Orchestrate analysis workflows, track regression candidates, and sign off on release readiness."),
+        ("Scrum Master", "Monitor delivery quality, spot scope changes with Task Deltas, and track QA health on the Dashboard."),
+        ("Product Owner", "Review spec alignment, verify requirements are covered, and assess impact of change requests."),
+        ("Developer", "Validate implementation plans against the spec using Implementation Review before writing code."),
+        ("Architect", "Use Code Traceability and Impact Analysis to understand systemic effects of architectural changes."),
+    ];
+
+    // ── Feature matrix ────────────────────────────────────────────────────
+
+    private sealed record Feature(
+        string Id, string Name, string Area, string AreaKey, string Route,
+        string Purpose, string Input, string Output, string WhenToUse,
+        string[] BestUsedBy, string[] UseWhen, string[] AvoidWhen);
+
+    private static readonly Feature[] AllFeatures =
+    [
+        new("dashboard", "Dashboard", "Review", "review", "/dashboard",
+            "Overall QA and analysis status overview.",
+            "No input",
+            "KPI summary, status indicators",
+            "Starting any QA session or sprint review.",
+            ["All roles", "Test Leads", "Scrum Masters"],
+            ["Checking project-wide QA health", "Starting a sprint review"],
+            ["Deep feature analysis — use the specific feature page"]),
+
+        new("spec-review", "Specification Review", "Review", "review", "/extract",
+            "Upload and review a spec.md file; extract and classify candidates.",
+            "spec.md",
+            "Extracted requirements, tests, and clarifications",
+            "When starting work on a new feature or reviewing an updated spec.",
+            ["Testers", "Test Leads", "Product Owners"],
+            ["Starting a new feature", "Reviewing a spec update"],
+            ["When you have no specification document"]),
+
+        new("artifact-library", "QA Artifact Library", "Library", "library", "/scenarios",
+            "Browse and manage all accepted QA artifacts — requirements, tests, and clarifications.",
+            "Accepted candidates from Specification Review",
+            "Organised artifact library with filters",
+            "Managing existing QA artifacts across features.",
+            ["Testers", "Test Leads"],
+            ["Reviewing existing artifacts", "Planning test coverage"],
+            ["Creating net-new test scenarios — use Create Test Scenario"]),
+
+        new("create-scenario", "Create Test Scenario", "Library", "library", "/scenarios/new",
+            "Manually create or refine structured test scenarios.",
+            "Manual input",
+            "A new test scenario added to the library",
+            "When you need to author a test case that is not captured by extraction.",
+            ["Testers", "Test Leads"],
+            ["Creating exploratory or regression test cases", "Refining extracted candidates"],
+            ["Bulk extraction — use Specification Review"]),
+
+        new("traceability", "Traceability & Coverage", "Traceability", "traceability", "/traceability",
+            "Link requirements to tests and clarifications; measure coverage.",
+            "Accepted artifacts",
+            "Coverage map, requirement-to-test threads",
+            "Understanding what is covered and what is missing.",
+            ["Testers", "Test Leads", "Product Owners"],
+            ["Planning test coverage", "Sprint retrospective quality reviews"],
+            ["Implementation-level analysis — use Implementation Review"]),
+
+        new("code-trace", "Code Traceability", "Traceability", "traceability", "/code-traceability",
+            "Connect implementation evidence (code references) to requirements.",
+            "Code references + requirements",
+            "Implementation coverage evidence",
+            "When implementation has started and you want to link code to spec.",
+            ["Developers", "Architects", "Test Leads"],
+            ["Post-implementation review", "Coverage evidence for compliance"],
+            ["Pre-implementation planning — use Implementation Review"]),
+
+        new("spec-compare", "Spec Comparison", "Analysis", "analysis", "/compare",
+            "Side-by-side comparison of two specification documents.",
+            "Two spec.md files",
+            "Diff view of specification changes",
+            "Comparing two versions of the same specification.",
+            ["Product Owners", "Test Leads", "Architects"],
+            ["Reviewing spec changes across sprints", "Change management reviews"],
+            ["Task-level changes — use Task Deltas"]),
+
+        new("spec-deltas", "Specification Deltas", "Analysis", "analysis", "/compare/reviews",
+            "Identify added, removed, and modified requirements between spec versions.",
+            "Two spec.md files",
+            "Delta report with Added, Removed, Modified items",
+            "When a specification changes and you need to understand the impact.",
+            ["Product Owners", "Test Leads", "Scrum Masters"],
+            ["Sprint-to-sprint spec changes", "Change request reviews"],
+            ["Implementation-level changes — use Task Deltas"]),
+
+        new("task-deltas", "Task Deltas", "Analysis", "analysis", "/task-deltas",
+            "Compare two versions of a tasks.md file to surface scope changes and risk.",
+            "Two tasks.md files",
+            "Delta report with scope expansion, risk, and spec coverage estimates",
+            "When the implementation plan changes and you need to understand risk.",
+            ["Developers", "Test Leads", "Scrum Masters"],
+            ["Sprint scope change reviews", "Implementation plan updates"],
+            ["Specification-level changes — use Specification Deltas"]),
+
+        new("impact", "Impact Analysis", "Analysis", "analysis", "/impact-analysis",
+            "Estimate the regression impact and risk footprint of a change.",
+            "spec.md + tasks.md",
+            "Impact assessment with affected areas and risk classification",
+            "Before a release or when a significant change is introduced.",
+            ["Test Leads", "Architects", "Product Owners"],
+            ["Pre-release regression scoping", "Significant change reviews"],
+            ["Quick implementation plan review — use Implementation Review"]),
+
+        new("spec-drift", "Spec Drift", "Analysis", "analysis", "/spec-drift",
+            "Detect coverage gaps, orphan tests, and drift indicators.",
+            "spec.md + implementation evidence",
+            "Drift indicators, orphaned tests, uncovered requirements",
+            "Periodically throughout the project to prevent specification drift.",
+            ["Test Leads", "Architects"],
+            ["Mid-sprint quality checks", "Pre-release coverage validation"],
+            ["Initial implementation planning — use Implementation Review"]),
+
+        new("impl-review", "Implementation Review", "Analysis", "analysis", "/task-alignment",
+            "Validate a tasks.md against spec.md for alignment, risk, and test coverage.",
+            "spec.md + tasks.md",
+            "Spec alignment report, risk classification, regression candidates",
+            "Before implementing or reviewing an implementation plan.",
+            ["Test Leads", "Developers", "Architects"],
+            ["Reviewing implementation plans", "Sprint planning QA gate"],
+            ["Comparing specification versions — use Specification Deltas"]),
+
+        new("ai-review", "AI Change Review", "AI Review", "ai", "/ai-change-auditor",
+            "Review AI-generated implementation changes for alignment and quality.",
+            "AI-generated change description or diff",
+            "Review findings, risk indicators, alignment assessment",
+            "After using AI to generate or modify implementation.",
+            ["Developers", "Test Leads", "Architects"],
+            ["Post-AI-generation review", "AI-assisted sprint work"],
+            ["Manual implementation review — use Implementation Review"]),
+
+        new("qa-readiness", "QA Readiness", "AI Review", "ai", "/ai-qa-auditor",
+            "Assess release or test readiness based on analysis results.",
+            "Accumulated analysis results",
+            "Readiness score, blockers, and recommendations",
+            "Before a release or major milestone to assess overall QA health.",
+            ["Test Leads", "Scrum Masters", "Product Owners"],
+            ["Pre-release readiness gates", "Sprint QA sign-off"],
+            ["Early-stage feature planning — start with Specification Review"]),
+    ];
+
+    // ── Typical workflows ─────────────────────────────────────────────────
+
+    private sealed record Workflow(string Title, string[] Steps, string Desc);
+
+    private static readonly Workflow[] TypicalWorkflows =
+    [
+        new("New Feature",
+            ["Specification Review", "Accept Artifacts", "Traceability & Coverage", "Implementation Review", "Impact Analysis", "QA Readiness"],
+            "End-to-end quality validation for a new feature from spec to release."),
+        new("Bug Fix",
+            ["Implementation Review", "Risk & Testing", "Regression Candidates", "QA Readiness"],
+            "Fast-path quality check for a targeted bug fix with regression scope."),
+        new("Requirement Change",
+            ["Spec Comparison", "Specification Deltas", "Task Deltas", "Impact Analysis", "Implementation Review"],
+            "When a requirement changes — trace from spec delta to implementation impact."),
+        new("Production Incident",
+            ["Root Cause", "Task Update", "Implementation Review", "Impact Analysis", "Regression Scope"],
+            "After a production incident — scope the regression and identify related tasks."),
+        new("AI Generated Change",
+            ["AI Change Review", "Code Traceability", "Spec Drift", "Impact Analysis"],
+            "After AI generates implementation — review alignment, coverage, and risk."),
+        new("Test Planning",
+            ["Traceability & Coverage", "Spec Drift", "Implementation Review", "QA Readiness"],
+            "For sprint test planning — ensure all requirements are covered and risks are known."),
+    ];
+
+    // ── FAQ ───────────────────────────────────────────────────────────────
+
+    private sealed record FaqItem(string Id, string Question, string Answer);
+
+    private static readonly FaqItem[] AllFaq =
+    [
+        new("drift-vs-review",
+            "What is the difference between Spec Drift and Implementation Review?",
+            "<p><strong>Implementation Review</strong> analyses your <em>implementation plan</em> (tasks.md) against the <em>specification</em> to surface alignment gaps, risk, and recommended tests. It answers: <em>Is my task list aligned to the spec?</em></p><p><strong>Spec Drift</strong> analyses the broader gap between what the <em>specification says</em> and what the <em>implementation covers</em> over time. It answers: <em>Has my codebase drifted away from the spec?</em></p>"),
+
+        new("impact-vs-risk",
+            "What is the difference between Impact Analysis and Risk & Testing?",
+            "<p><strong>Impact Analysis</strong> is a standalone feature that estimates the systemic regression impact of a change — which areas, components, and requirements are affected across the whole project.</p><p><strong>Risk &amp; Testing</strong> is the second tab within <strong>Implementation Review</strong> — it classifies each individual task by its change risk and suggests tests for it specifically. The scope is per-task, not project-wide.</p>"),
+
+        new("task-deltas",
+            "When should I use Task Deltas?",
+            "<p>Use <strong>Task Deltas</strong> when your implementation plan changes between sprints or planning iterations — for example when new tasks are added, existing tasks are expanded in scope, or tasks are removed.</p><p>It helps you answer: <em>What changed in our implementation plan, and what is the risk?</em> It is especially useful when AI generates or rewrites a tasks.md and you want to understand what shifted.</p>"),
+
+        new("spec-linked",
+            "What does Spec Linked mean?",
+            "<p><strong>Spec Linked</strong> (shown in Implementation Review's Spec Alignment tab) means the analysis found a strong connection between the task and one or more items in the specification — through direct spec ID references (FR-001, US-03), matching CamelCase entity names, or significant keyword overlap.</p><p>A score of 6 or higher is required for Linked status. It does not guarantee complete coverage — it means the task appears to be working on documented requirements.</p>"),
+
+        new("needs-review",
+            "What does Needs Review mean?",
+            "<p><strong>Needs Review</strong> means the analysis found <em>some</em> connection to the specification (score 2–5) but not enough to confidently classify the task as Linked. There may be partial keyword or entity matches, or behavioral signals without direct spec references.</p><p>This is a prompt to manually verify coverage — link the task to an existing requirement, or add a new user story if the behavior is undocumented.</p>"),
+
+        new("regression-candidate",
+            "What is a Regression Candidate?",
+            "<p>A <strong>Regression Candidate</strong> is a task flagged as likely to require regression testing before release. A task becomes a Regression Candidate if it:</p><ul><li>Has <strong>High Risk</strong> classification, or</li><li>Touches a high-sensitivity area: <strong>Security, Authorization, Audit, or Domain Events</strong>, or</li><li>Has <strong>Medium Risk</strong> and the analysis has recommended tests for it.</li></ul><p>The Regression Candidates KPI card and filter chip in the Risk &amp; Testing tab give you a focused list to include in your regression suite.</p>"),
+
+        new("technical-only",
+            "Why are Technical Only tasks valid?",
+            "<p>Not every development task needs a specification item. <strong>Technical Only</strong> tasks are infrastructure, scaffolding, configuration, refactoring, or tooling tasks that do not introduce externally visible behaviour.</p><p>Examples: adding a NuGet package, setting up CI/CD, configuring appsettings.json. These are valid tasks — they just do not need spec coverage. Low Risk Technical Only tasks require no action.</p><p>Important configuration tasks (auth URLs, service bus connections, external APIs) are still classified as Technical Only but get <strong>Medium Risk</strong> — because incorrect configuration can affect runtime behaviour.</p>"),
+
+        new("qa-readiness-chain",
+            "How does QA Readiness use previous analysis?",
+            "<p><strong>QA Readiness</strong> is designed to be used at the end of the analysis chain after other features have been run. It synthesises findings from:</p><ul><li>Specification Review (extraction coverage)</li><li>Traceability &amp; Coverage (requirement-to-test links)</li><li>Implementation Review (alignment, risk, regression candidates)</li><li>Spec Drift (coverage gaps)</li><li>Impact Analysis (systemic risk)</li></ul><p>Use it as your final release gate check. The more analysis you have completed, the more accurate the readiness assessment.</p>"),
+    ];
+}

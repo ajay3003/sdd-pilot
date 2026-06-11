@@ -1,0 +1,911 @@
+/* ── Page wrapper ────────────────────────────────────────────────────────── */
+
+.ug-page {
+    padding: 1.5rem 2rem 3rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* ── Hero ────────────────────────────────────────────────────────────────── */
+
+.ug-hero {
+    text-align: center;
+    padding: 2.5rem 1rem 2rem;
+    border-bottom: 1px solid var(--clr-border);
+    margin-bottom: 1.5rem;
+}
+
+.ug-hero-eyebrow {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--clr-text-subtle);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 0.6rem;
+}
+
+.ug-hero-title {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--clr-text-primary);
+    margin: 0 0 0.6rem;
+    letter-spacing: -0.02em;
+}
+
+.ug-hero-sub {
+    font-size: 0.95rem;
+    color: var(--clr-text-subtle);
+    max-width: 600px;
+    margin: 0 auto 1rem;
+    line-height: 1.6;
+}
+
+.ug-hero-audience {
+    font-size: 0.78rem;
+    color: var(--clr-text-subtle);
+    opacity: 0.75;
+}
+
+/* ── Table of contents ───────────────────────────────────────────────────── */
+
+.ug-toc {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0;
+    margin-bottom: 2rem;
+    padding: 0.65rem 1rem;
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.5rem;
+    font-size: 0.8rem;
+}
+
+.ug-toc-link {
+    color: rgba(99, 102, 241, 0.85);
+    text-decoration: none;
+    padding: 0.15rem 0.4rem;
+    border-radius: 0.25rem;
+    transition: background 0.12s, color 0.12s;
+    white-space: nowrap;
+}
+
+.ug-toc-link:hover {
+    background: rgba(99, 102, 241, 0.1);
+    color: rgba(129, 140, 248, 1);
+}
+
+.ug-toc-sep {
+    color: var(--clr-text-subtle);
+    opacity: 0.4;
+    padding: 0 0.1rem;
+    user-select: none;
+}
+
+/* ── Section scaffolding ─────────────────────────────────────────────────── */
+
+.ug-section {
+    margin-bottom: 3rem;
+    scroll-margin-top: 1rem;
+}
+
+.ug-section-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--clr-text-primary);
+    margin: 0 0 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid rgba(99, 102, 241, 0.25);
+}
+
+.ug-section-lead {
+    font-size: 0.875rem;
+    color: var(--clr-text-subtle);
+    margin: 0 0 1.5rem;
+    max-width: 760px;
+    line-height: 1.6;
+}
+
+.ug-subsection-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--clr-text-primary);
+    margin: 1.5rem 0 0.75rem;
+}
+
+/* ── Section 1: Capabilities grid ───────────────────────────────────────── */
+
+.ug-cap-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+.ug-cap-card {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.5rem;
+    padding: 1rem;
+}
+
+.ug-cap-icon {
+    font-size: 1.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.ug-cap-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--clr-text-primary);
+    margin-bottom: 0.3rem;
+}
+
+.ug-cap-desc {
+    font-size: 0.78rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.5;
+}
+
+/* ── Audience grid ───────────────────────────────────────────────────────── */
+
+.ug-audience-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.6rem;
+}
+
+.ug-audience-card {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+}
+
+.ug-audience-role {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: rgba(99, 102, 241, 0.9);
+    margin-bottom: 0.3rem;
+}
+
+.ug-audience-desc {
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.5;
+}
+
+/* ── Section 2: Feature Matrix table ────────────────────────────────────── */
+
+.ug-table-scroll {
+    overflow-x: auto;
+    border-radius: 0.5rem;
+    border: 1px solid var(--clr-border);
+}
+
+.ug-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+    min-width: 800px;
+}
+
+.ug-table thead tr {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.ug-table th {
+    text-align: left;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-subtle);
+    border-bottom: 1px solid var(--clr-border);
+    white-space: nowrap;
+}
+
+.ug-table td {
+    padding: 0.6rem 0.85rem;
+    color: var(--clr-text-primary);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    vertical-align: top;
+    line-height: 1.45;
+}
+
+.ug-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.ug-table tbody tr:hover td {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.ug-td-feature {
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.ug-td-mono {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle);
+    white-space: nowrap;
+}
+
+.ug-inline-link {
+    color: rgba(99, 102, 241, 0.85);
+    text-decoration: none;
+}
+
+.ug-inline-link:hover {
+    text-decoration: underline;
+    color: rgba(129, 140, 248, 1);
+}
+
+/* ── Area badges ─────────────────────────────────────────────────────────── */
+
+.ug-area-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 0.25rem;
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.ug-area-review { background: rgba(139, 92, 246, 0.15); color: #c4b5fd; }
+.ug-area-library { background: rgba(20, 184, 166, 0.15); color: #5eead4; }
+.ug-area-traceability { background: rgba(34, 197, 94, 0.15); color: #86efac; }
+.ug-area-analysis { background: rgba(245, 158, 11, 0.15); color: #fcd34d; }
+.ug-area-ai { background: rgba(168, 85, 247, 0.15); color: #d8b4fe; }
+
+/* ── Section 3: Core workflow ────────────────────────────────────────────── */
+
+.ug-core-flow-layout {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2.5rem;
+    align-items: start;
+}
+
+.ug-core-flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+}
+
+.ug-flow-node {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.375rem;
+    padding: 0.5rem 1.25rem;
+    font-size: 0.83rem;
+    font-weight: 500;
+    color: var(--clr-text-primary);
+    white-space: nowrap;
+    text-align: center;
+    min-width: 180px;
+}
+
+.ug-flow-primary {
+    border-color: rgba(99, 102, 241, 0.4);
+}
+
+.ug-flow-terminal {
+    border-color: rgba(34, 197, 94, 0.4);
+    color: #86efac;
+    background: rgba(34, 197, 94, 0.06);
+}
+
+.ug-flow-conn {
+    font-size: 1.1rem;
+    color: var(--clr-text-subtle);
+    opacity: 0.5;
+    line-height: 1.4;
+}
+
+.ug-flow-branches {
+    padding-top: 0.25rem;
+}
+
+.ug-branches-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-subtle);
+    margin: 0 0 0.75rem;
+}
+
+.ug-branch-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    margin-bottom: 0.5rem;
+}
+
+.ug-branch-badge {
+    background: rgba(99, 102, 241, 0.12);
+    color: rgba(129, 140, 248, 0.9);
+    border-radius: 999px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.ug-branch-when {
+    font-size: 0.78rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.5;
+    padding-top: 0.1rem;
+}
+
+/* ── Section 4: Typical workflows ───────────────────────────────────────── */
+
+.ug-workflow-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+}
+
+.ug-workflow-card {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.5rem;
+    padding: 0.875rem 1rem;
+}
+
+.ug-workflow-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--clr-text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.ug-workflow-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.ug-wf-step {
+    font-size: 0.72rem;
+    background: rgba(99, 102, 241, 0.1);
+    color: rgba(129, 140, 248, 0.9);
+    padding: 0.15rem 0.45rem;
+    border-radius: 0.25rem;
+    white-space: nowrap;
+}
+
+.ug-wf-arrow {
+    font-size: 0.7rem;
+    color: var(--clr-text-subtle);
+    opacity: 0.5;
+}
+
+.ug-workflow-desc {
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.5;
+}
+
+/* ── Section 5: Feature details ──────────────────────────────────────────── */
+
+.ug-feature-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.6rem;
+}
+
+.ug-feature-card {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+.ug-fcard-review { border-top: 2px solid rgba(139, 92, 246, 0.4); }
+.ug-fcard-library { border-top: 2px solid rgba(20, 184, 166, 0.4); }
+.ug-fcard-traceability { border-top: 2px solid rgba(34, 197, 94, 0.4); }
+.ug-fcard-analysis { border-top: 2px solid rgba(245, 158, 11, 0.4); }
+.ug-fcard-ai { border-top: 2px solid rgba(168, 85, 247, 0.4); }
+
+.ug-feature-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.75rem 0.875rem;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+.ug-feature-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.ug-feature-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--clr-text-primary);
+    margin-top: 0.3rem;
+    margin-bottom: 0.2rem;
+}
+
+.ug-feature-purpose {
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.5;
+}
+
+.ug-expand-btn {
+    background: transparent;
+    border: none;
+    color: var(--clr-text-subtle);
+    font-size: 0.65rem;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    margin-top: 0.1rem;
+}
+
+.ug-expand-btn:hover { color: var(--clr-text-primary); }
+
+.ug-feature-body {
+    padding: 0 0.875rem 0.875rem;
+    border-top: 1px solid var(--clr-border);
+}
+
+.ug-fd-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin-bottom: 0;
+}
+
+.ug-fd-item {
+    padding-top: 0.6rem;
+}
+
+.ug-fd-label {
+    font-size: 0.67rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-subtle);
+    margin-bottom: 0.25rem;
+}
+
+.ug-fd-value {
+    font-size: 0.8rem;
+    color: var(--clr-text-primary);
+    line-height: 1.4;
+}
+
+.ug-fd-mono {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle);
+}
+
+.ug-fd-roles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.ug-role-badge {
+    font-size: 0.68rem;
+    font-weight: 500;
+    background: rgba(99, 102, 241, 0.12);
+    color: rgba(129, 140, 248, 0.9);
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+}
+
+.ug-fd-list {
+    margin: 0;
+    padding: 0 0 0 1rem;
+    font-size: 0.78rem;
+    color: var(--clr-text-primary);
+    line-height: 1.7;
+}
+
+.ug-fd-list-avoid {
+    color: var(--clr-text-subtle);
+}
+
+.ug-feature-link-btn {
+    display: inline-block;
+    margin-top: 0.75rem;
+    font-size: 0.78rem;
+    color: rgba(99, 102, 241, 0.85);
+    text-decoration: none;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    border-radius: 0.375rem;
+    padding: 0.3rem 0.75rem;
+    transition: background 0.12s, color 0.12s;
+}
+
+.ug-feature-link-btn:hover {
+    background: rgba(99, 102, 241, 0.1);
+    color: rgba(129, 140, 248, 1);
+}
+
+/* ── Section 6: AI-Assisted dev ──────────────────────────────────────────── */
+
+.ug-ai-flow-row {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2.5rem;
+    align-items: start;
+    margin-bottom: 1.25rem;
+}
+
+.ug-ai-flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+}
+
+.ug-ai-node {
+    background: var(--clr-bg-card);
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    border-radius: 0.5rem;
+    padding: 0.6rem 1rem;
+    min-width: 200px;
+    text-align: center;
+}
+
+.ug-ai-node-terminal {
+    border-color: rgba(34, 197, 94, 0.4);
+    background: rgba(34, 197, 94, 0.05);
+}
+
+.ug-ai-node-label {
+    font-size: 0.83rem;
+    font-weight: 600;
+    color: var(--clr-text-primary);
+    margin-bottom: 0.2rem;
+}
+
+.ug-ai-node-desc {
+    font-size: 0.72rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.4;
+}
+
+.ug-ai-arrow {
+    font-size: 1.1rem;
+    color: var(--clr-text-subtle);
+    opacity: 0.5;
+    line-height: 1.4;
+}
+
+.ug-ai-concepts {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.ug-ai-concept {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.375rem;
+    padding: 0.75rem 0.875rem;
+}
+
+.ug-ai-concept-title {
+    font-size: 0.83rem;
+    font-weight: 600;
+    color: var(--clr-text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.ug-ai-concept p {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.5;
+}
+
+.ug-callout {
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.82rem;
+    line-height: 1.55;
+}
+
+.ug-callout-tip {
+    background: rgba(20, 184, 166, 0.07);
+    border: 1px solid rgba(20, 184, 166, 0.25);
+    color: var(--clr-text-primary);
+}
+
+.ug-callout-tip strong {
+    color: #5eead4;
+}
+
+/* ── Section 7: FAQ ──────────────────────────────────────────────────────── */
+
+.ug-faq {
+    border: 1px solid var(--clr-border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+.ug-faq-item {
+    border-bottom: 1px solid var(--clr-border);
+}
+
+.ug-faq-item:last-child {
+    border-bottom: none;
+}
+
+.ug-faq-q {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.875rem 1rem;
+    background: transparent;
+    border: none;
+    color: var(--clr-text-primary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s;
+    line-height: 1.5;
+}
+
+.ug-faq-q:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.ug-faq-item.is-open .ug-faq-q {
+    background: rgba(99, 102, 241, 0.05);
+    color: rgba(129, 140, 248, 0.95);
+}
+
+.ug-faq-chevron {
+    font-size: 0.65rem;
+    flex-shrink: 0;
+    color: var(--clr-text-subtle);
+}
+
+.ug-faq-a {
+    padding: 0 1rem 1rem;
+    font-size: 0.83rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.65;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.ug-faq-a p {
+    margin: 0.5rem 0;
+}
+
+.ug-faq-a p:first-child {
+    margin-top: 0.75rem;
+}
+
+.ug-faq-a strong {
+    color: var(--clr-text-primary);
+}
+
+.ug-faq-a em {
+    color: rgba(129, 140, 248, 0.9);
+    font-style: normal;
+}
+
+.ug-faq-a ul {
+    margin: 0.25rem 0;
+    padding-left: 1.25rem;
+    line-height: 1.7;
+}
+
+/* ── Section 8: Ecosystem ────────────────────────────────────────────────── */
+
+.ug-ecosystem-layout {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2.5rem;
+    align-items: start;
+}
+
+.ug-ecosystem-subtitle {
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-subtle);
+    margin: 0 0 0.75rem;
+}
+
+.ug-eco-flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.ug-eco-node {
+    background: var(--clr-bg-card);
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    border-radius: 0.375rem;
+    padding: 0.45rem 1.1rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--clr-text-primary);
+    white-space: nowrap;
+    text-align: center;
+    min-width: 170px;
+}
+
+.ug-eco-terminal {
+    border-color: rgba(34, 197, 94, 0.4);
+    color: #86efac;
+    background: rgba(34, 197, 94, 0.06);
+}
+
+.ug-eco-conn {
+    font-size: 0.9rem;
+    color: var(--clr-text-subtle);
+    opacity: 0.5;
+    line-height: 1.4;
+}
+
+.ug-support-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.ug-support-item {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.375rem;
+    padding: 0.65rem 0.875rem;
+}
+
+.ug-support-name {
+    font-size: 0.83rem;
+    font-weight: 600;
+    color: var(--clr-text-primary);
+    margin-bottom: 0.2rem;
+}
+
+.ug-support-desc {
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.5;
+}
+
+/* ── Section 9: About ────────────────────────────────────────────────────── */
+
+.ug-about-section {
+    border-top: 1px solid var(--clr-border);
+    padding-top: 1.5rem;
+}
+
+.ug-about-content {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2rem;
+    align-items: start;
+}
+
+.ug-about-lead {
+    font-size: 0.875rem;
+    color: var(--clr-text-subtle);
+    margin: 0 0 0.75rem;
+    line-height: 1.6;
+}
+
+.ug-about-list {
+    margin: 0;
+    padding-left: 1.25rem;
+    font-size: 0.83rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.8;
+}
+
+.ug-about-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.5rem;
+    padding: 1rem 1.25rem;
+    min-width: 240px;
+}
+
+.ug-about-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.ug-about-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-subtle);
+}
+
+.ug-about-value {
+    font-size: 0.83rem;
+    color: var(--clr-text-primary);
+    font-weight: 500;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+.ug-footer {
+    border-top: 1px solid var(--clr-border);
+    padding: 1.25rem 0 0;
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle);
+    opacity: 0.65;
+    text-align: center;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 960px) {
+    .ug-core-flow-layout,
+    .ug-ai-flow-row,
+    .ug-ecosystem-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .ug-core-flow,
+    .ug-ai-flow,
+    .ug-eco-flow {
+        margin-bottom: 1rem;
+    }
+
+    .ug-feature-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ug-about-content {
+        grid-template-columns: 1fr;
+    }
+
+    .ug-about-meta {
+        min-width: unset;
+    }
+}
+
+@media (max-width: 680px) {
+    .ug-page {
+        padding: 1rem 1rem 2rem;
+    }
+
+    .ug-cap-grid,
+    .ug-audience-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ug-workflow-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ug-fd-row {
+        grid-template-columns: 1fr;
+    }
+}

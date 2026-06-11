@@ -893,6 +893,21 @@ button.kpi-card:focus-visible {
 
 .align-chip-regression.align-chip-active { background: #7c3aed; border-color: #6d28d9; }
 
+/* Compact regression indicator badge inside Risk & Testing task row */
+.align-rt-regression-badge {
+    display: inline-block;
+    padding: 0.08rem 0.42rem;
+    font-size: 0.60rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #5b21b6;
+    background: #ede9fe;
+    border: 1px solid #c4b5fd;
+    border-radius: 999px;
+    white-space: nowrap;
+    cursor: default;
+}
+
 /* ─── Why this risk? row ─────────────────────────────────────────────────── */
 
 .align-risk-reason-row {

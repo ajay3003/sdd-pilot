@@ -6,4 +6,5 @@ public enum ExtractionViewMode
     Capability    = 1,  // rendered as "Flow View"
     Traceability  = 2,
     Architecture  = 3,
+    SpecExplorer  = 4,
 }
