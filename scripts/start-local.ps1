@@ -40,15 +40,25 @@ function Require-Command($command, $hint) {
 function Invoke-PodmanMachineCommand {
     param([string[]]$Arguments)
 
+    # Important: do not let podman stdout/stderr become part of the function return value.
+    # PowerShell returns every pipeline output from a function, not only the value after `return`.
+    # Without this, messages like `Machine "podman-machine-default" started successfully`
+    # are captured together with $LASTEXITCODE, and callers may treat the command as failed.
     $savedEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        & podman @Arguments
-    } finally {
+        $output = & podman @Arguments 2>&1
+        $exitCode = [int]$LASTEXITCODE
+
+        if ($null -ne $output) {
+            $output | ForEach-Object { Write-Host $_ }
+        }
+
+        return $exitCode
+    }
+    finally {
         $ErrorActionPreference = $savedEAP
     }
-
-    return $LASTEXITCODE
 }
 
 function Invoke-NativeCommand {

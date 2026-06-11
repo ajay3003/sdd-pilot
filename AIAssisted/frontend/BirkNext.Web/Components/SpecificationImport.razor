@@ -21,6 +21,12 @@
                     @onclick="HandleRemove" data-testid="import-remove"
                     disabled="@IsDisabled">Remove</button>
             <span class="import-file-subtitle">Content loaded &#8212; edit the text below if needed</span>
+            @if (_showMultipleFilesWarning)
+            {
+                <span class="import-multi-warn" role="status" aria-live="polite">
+                    &#9888; Multiple files detected &#8212; only the first was used.
+                </span>
+            }
         </div>
     }
     else if (_state == ImportState.Error)
@@ -69,6 +75,7 @@
     private string? _fileName;
     private long _fileSize;
     private string? _errorMessage;
+    private bool _showMultipleFilesWarning;
     private ElementReference _dropZoneRef;
     private DotNetObjectReference<SpecificationImport>? _dotNetRef;
 
@@ -114,6 +121,7 @@
     private async Task HandleFileSelected(InputFileChangeEventArgs e)
     {
         _dragCounter = 0;
+        _showMultipleFilesWarning = e.FileCount > 1;
         var file = e.File;
         try
         {
@@ -197,6 +205,7 @@
         _fileName = null;
         _fileSize = 0;
         _dragCounter = 0;
+        _showMultipleFilesWarning = false;
         await OnFileRemoved.InvokeAsync();
     }
 
@@ -205,6 +214,17 @@
         _state = ImportState.Idle;
         _errorMessage = null;
         _dragCounter = 0;
+        _showMultipleFilesWarning = false;
+    }
+
+    public void Reset()
+    {
+        _state = ImportState.Idle;
+        _fileName = null;
+        _fileSize = 0;
+        _dragCounter = 0;
+        _errorMessage = null;
+        _showMultipleFilesWarning = false;
     }
 
     private void ShowError(string msg)

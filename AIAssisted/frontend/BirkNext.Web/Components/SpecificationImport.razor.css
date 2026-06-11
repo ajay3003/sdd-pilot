@@ -156,6 +156,18 @@
     color: var(--clr-text-body, #1e293b);
 }
 
+/* Multiple-files warning */
+.import-multi-warn {
+    font-size: 0.72rem;
+    color: #92400e;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 4px;
+    padding: 0.15rem 0.5rem;
+    flex-basis: 100%;
+    margin-top: 0.125rem;
+}
+
 /* Reading state */
 .import-reading {
     display: flex;

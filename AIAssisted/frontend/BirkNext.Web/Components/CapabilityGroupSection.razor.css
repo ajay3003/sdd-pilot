@@ -1,0 +1,190 @@
+/* ── Container ── */
+.capability-section {
+    margin-bottom: 0.875rem;
+    border: 1px solid var(--clr-border);
+    border-left: 3px solid var(--clr-primary, #2563eb);
+    border-radius: var(--radius-lg);
+    overflow: visible;
+    background: var(--clr-surface-white, #ffffff);
+}
+
+.capability-section-unmapped {
+    border-left-color: var(--clr-border-hover);
+    opacity: 0.82;
+}
+
+/* ── Toggle button ── */
+.capability-toggle {
+    width: 100%;
+    min-height: 3.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 0.875rem;
+    background: var(--clr-surface);
+    border: 0;
+    border-bottom: 1px solid transparent;
+    border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color var(--transition), border-color var(--transition);
+}
+
+.capability-toggle:hover {
+    background: var(--clr-border-subtle);
+}
+
+.capability-toggle.is-open {
+    border-bottom-color: var(--clr-border-subtle);
+}
+
+/* ── Chevron ── */
+.capability-chevron {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--clr-text-subtle);
+    transform: rotate(-90deg);
+    transition: transform var(--transition);
+    margin-top: 0.15rem;
+}
+
+.capability-chevron.is-open {
+    transform: rotate(0deg);
+}
+
+/* ── Toggle content layout ── */
+.capability-toggle-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.capability-toggle-main {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+/* ── Title stack ── */
+.capability-title-stack {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.capability-heading {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--clr-text-heading);
+    margin: 0;
+}
+
+.capability-subtitle {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--clr-text-subtle);
+    font-style: italic;
+}
+
+/* ── Badges ── */
+.capability-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+    margin-left: auto;
+}
+
+.capability-count-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem 0.4rem;
+    font-size: 0.63rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    border-radius: var(--radius-pill);
+    white-space: nowrap;
+}
+
+.capability-count-req {
+    background: var(--clr-badge-req-bg);
+    color: var(--clr-badge-req-text);
+}
+
+.capability-count-test {
+    background: var(--clr-badge-test-bg);
+    color: var(--clr-badge-test-text);
+}
+
+.capability-count-clr {
+    background: var(--clr-badge-clr-bg);
+    color: var(--clr-badge-clr-text);
+}
+
+.capability-count-filtered {
+    font-size: 0.63rem;
+    font-weight: 500;
+    color: var(--clr-text-subtle);
+    white-space: nowrap;
+}
+
+/* ── Status line ── */
+.capability-status-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.cap-status-micro {
+    font-size: 0.62rem;
+    font-weight: 600;
+    padding: 0.08rem 0.32rem;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+}
+
+.cap-status-accepted {
+    background: var(--clr-review-accepted-bg);
+    color: var(--clr-review-accepted-text);
+}
+
+.cap-status-rejected {
+    background: var(--clr-review-rejected-bg);
+    color: var(--clr-review-rejected-text);
+    border: 1px solid var(--clr-border);
+}
+
+.cap-status-needsreview {
+    background: var(--clr-review-needsreview-bg);
+    color: var(--clr-review-needsreview-text);
+}
+
+/* ── Expand / collapse animation ── */
+.capability-body {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transition: grid-template-rows 0.22s ease, opacity 0.18s ease;
+}
+
+.capability-body.is-collapsed {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transition: grid-template-rows 0.22s ease, opacity 0.18s ease, visibility 0s linear 0.22s;
+}
+
+.capability-body-inner {
+    overflow: hidden;
+    min-height: 0;
+    padding: 0 0 0.5rem;
+    background: var(--clr-surface-white, #ffffff);
+}
+
+.capability-body.is-expanded .capability-body-inner {
+    overflow: visible;
+}
