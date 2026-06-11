@@ -162,6 +162,13 @@ public static class TaskExplorerService
         foreach (var root in roots)
             PropagateStats(root);
 
+        // Post-processing: mark unresolved table task refs
+        var taskIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        CollectTaskIds(roots, taskIds);
+        var hUnresolved = 0;
+        MarkUnresolvedTableRefs(roots, taskIds, ref hUnresolved);
+        var linkedTaskIds = BuildTableLinkedTaskIds(roots);
+
         var health = new TaskHealth
         {
             TotalTasks = hTasks,
@@ -169,6 +176,8 @@ public static class TaskExplorerService
             TotalPhases = hPhases,
             TablesDetected = hTables,
             TraceabilityRows = hRows,
+            TasksLinkedFromTables = linkedTaskIds.Count,
+            UnresolvedTableRefs = hUnresolved,
         };
 
         return new TaskTree { Roots = roots, Health = health };
@@ -249,6 +258,9 @@ public static class TaskExplorerService
         var tables = all.Where(n => n.NodeType == TaskNodeType.TableSection).Count();
         var rows   = all.Where(n => n.NodeType == TaskNodeType.TableRow).Count();
 
+        var unresolved = all.Count(n => n.NodeType == TaskNodeType.TableTaskRef && n.IsUnresolved);
+        var linkedIds = BuildTableLinkedTaskIds(tree.Roots);
+
         return new TaskHealth
         {
             TotalTasks = tree.Health.TotalTasks,
@@ -256,6 +268,8 @@ public static class TaskExplorerService
             TotalPhases = tree.Health.TotalPhases,
             TablesDetected = tables > 0 ? tables : tree.Health.TablesDetected,
             TraceabilityRows = rows > 0 ? rows : tree.Health.TraceabilityRows,
+            TasksLinkedFromTables = linkedIds.Count > 0 ? linkedIds.Count : tree.Health.TasksLinkedFromTables,
+            UnresolvedTableRefs = unresolved,
             SpecLinked = tasks.Count(t => t.Status == AlignmentStatus.Linked),
             TechnicalOnly = tasks.Count(t => t.Status == AlignmentStatus.TechnicalOnly),
             NeedsReview = tasks.Count(t => t.Status == AlignmentStatus.NeedsReview),
@@ -354,6 +368,7 @@ public static class TaskExplorerService
             NodeType = TaskNodeType.TableSection,
             HeadingLevel = 0,
             TableHeaders = headers,
+            TableKind = ClassifyTableKind(headers),
         };
 
         // Find separator row index
@@ -569,6 +584,8 @@ public static class TaskExplorerService
         if (node.ReferencedScIds.Any(id => id.Contains(q, ci))) return true;
         if (node.CellValues.Any(c => c.Contains(q, ci))) return true;
         if (node.LinkedTaskIds.Any(t => t.Contains(q, ci))) return true;
+        if (node.NodeType == TaskNodeType.TableSection && node.TableKind != TaskTableType.Generic &&
+            node.TableKind.ToString().Contains(q, ci)) return true;
         return false;
     }
 
@@ -592,8 +609,48 @@ public static class TaskExplorerService
             "HasFrLinks"        => node.ReferencedFrIds.Count > 0 ||
                                    (node.NodeType == TaskNodeType.Task && node.SpecMatches
                                        .Any(m => m.MatchType == SpecMatchType.Requirement)),
+            "Unresolved"        => node.NodeType == TaskNodeType.TableTaskRef && node.IsUnresolved,
             _ => true,
         };
+    }
+
+    private static TaskTableType ClassifyTableKind(List<string> headers)
+    {
+        var joined = string.Join(" ", headers).ToLowerInvariant();
+        if (Regex.IsMatch(joined, @"\bcriterion\b|\bsc\b|success criteria|traceability"))
+            return TaskTableType.Traceability;
+        if (Regex.IsMatch(joined, @"\bfr\b|\breq\b|requirement"))
+            return TaskTableType.RequirementMapping;
+        if (Regex.IsMatch(joined, @"depend|prerequisite|blocking"))
+            return TaskTableType.DependencyTable;
+        if (Regex.IsMatch(joined, @"parallel|concurrent|simultaneous"))
+            return TaskTableType.ParallelExecution;
+        return TaskTableType.Generic;
+    }
+
+    private static void CollectTaskIds(IEnumerable<TaskNode> nodes, HashSet<string> ids)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.NodeType == TaskNodeType.Task && node.TaskId is not null)
+                ids.Add(node.TaskId);
+            CollectTaskIds(node.Children, ids);
+        }
+    }
+
+    private static void MarkUnresolvedTableRefs(
+        IEnumerable<TaskNode> nodes, HashSet<string> taskIds, ref int unresolvedCount)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.NodeType == TaskNodeType.TableTaskRef && node.TaskId is not null
+                && !taskIds.Contains(node.TaskId))
+            {
+                node.IsUnresolved = true;
+                unresolvedCount++;
+            }
+            MarkUnresolvedTableRefs(node.Children, taskIds, ref unresolvedCount);
+        }
     }
 
     private static string StripMarkdown(string s) =>

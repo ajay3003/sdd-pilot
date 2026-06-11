@@ -1,0 +1,111 @@
+name: qa-review-studio-ci
+
+trigger:
+  branches:
+    include:
+      - main
+      - feature/*
+      - bugfix/*
+
+pr:
+  branches:
+    include:
+      - main
+      - feature/*
+      - bugfix/*
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+- group: birknext-ci
+
+steps:
+- checkout: self
+  clean: true
+
+- task: UseDotNet@2
+  displayName: 'Install .NET SDK'
+  inputs:
+    packageType: sdk
+    version: '8.0.x'
+
+- bash: |
+    cat > AIAssisted/.env << EOF
+    POSTGRES_DB=$(POSTGRES_DB)
+    POSTGRES_USER=$(POSTGRES_USER)
+    POSTGRES_PASSWORD=$(POSTGRES_PASSWORD)
+    EOF
+  displayName: 'Create CI .env'
+
+- bash: |
+    docker compose up -d
+  displayName: 'Start PostgreSQL container'
+  workingDirectory: AIAssisted
+
+- bash: |
+    echo "Waiting for PostgreSQL healthcheck..."
+
+    for i in {1..30}; do
+      docker compose ps
+
+      HEALTH=$(docker inspect --format='{{.State.Health.Status}}' $(docker compose ps -q postgres) 2>/dev/null || echo "unknown")
+
+      echo "PostgreSQL health: $HEALTH"
+
+      if [ "$HEALTH" = "healthy" ]; then
+        echo "PostgreSQL is healthy"
+        exit 0
+      fi
+
+      sleep 5
+    done
+
+    echo "PostgreSQL did not become healthy in time"
+    docker compose logs postgres
+    docker compose ps
+    exit 1
+  displayName: 'Wait for PostgreSQL'
+  workingDirectory: AIAssisted
+
+- script: |
+    dotnet restore BirkNext.sln
+  displayName: 'Restore frontend solution'
+  workingDirectory: AIAssisted/frontend
+
+- script: |
+    dotnet build BirkNext.sln --configuration Release --no-restore
+  displayName: 'Build frontend solution'
+  workingDirectory: AIAssisted/frontend
+
+- script: |
+    dotnet test BirkNext.sln \
+      --configuration Release \
+      --no-build \
+      --logger trx \
+      --results-directory $(Agent.TempDirectory)/test-results
+  displayName: 'Run frontend tests'
+  workingDirectory: AIAssisted/frontend
+
+- task: PublishTestResults@2
+  displayName: 'Publish test results'
+  condition: always()
+  inputs:
+    testResultsFormat: VSTest
+    testResultsFiles: '**/*.trx'
+    searchFolder: '$(Agent.TempDirectory)/test-results'
+    failTaskOnFailedTests: true
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish test artifacts'
+  condition: always()
+  inputs:
+    PathtoPublish: '$(Agent.TempDirectory)/test-results'
+    ArtifactName: 'test-results'
+    publishLocation: Container
+
+- bash: |
+    docker compose down -v
+  displayName: 'Cleanup containers'
+  condition: always()
+  workingDirectory: AIAssisted

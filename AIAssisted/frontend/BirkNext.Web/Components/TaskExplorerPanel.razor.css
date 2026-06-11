@@ -763,6 +763,132 @@
     color: var(--clr-text-subtle);
 }
 
+/* ── Table kind badge ────────────────────────────────────────────────────── */
+
+.te-table-kind-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.2rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+}
+
+.te-tkind-traceability {
+    background: rgba(244,114,182,0.12);
+    color: #f9a8d4;
+}
+
+.te-tkind-requirements {
+    background: rgba(96,165,250,0.12);
+    color: #93c5fd;
+}
+
+.te-tkind-dependency {
+    background: rgba(248,113,113,0.12);
+    color: #fca5a5;
+}
+
+.te-tkind-parallel {
+    background: rgba(251,191,36,0.12);
+    color: #fcd34d;
+}
+
+.te-tkind-generic {
+    background: rgba(100,116,139,0.12);
+    color: #94a3b8;
+}
+
+/* ── Unresolved indicators ───────────────────────────────────────────────── */
+
+.te-unresolved-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.2rem;
+    background: rgba(248,113,113,0.15);
+    color: #fca5a5;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.te-ref-unresolved {
+    font-size: 0.65rem;
+    font-weight: 600;
+    font-family: monospace;
+    padding: 0.15rem 0.4rem;
+    border-radius: 0.25rem;
+    background: rgba(248,113,113,0.12);
+    color: #fca5a5;
+    border: 1px solid rgba(248,113,113,0.25);
+    white-space: nowrap;
+}
+
+.te-unresolved-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.2rem;
+    padding: 0.05rem 0.3rem;
+    border-radius: 0.7rem;
+    background: rgba(248,113,113,0.2);
+    color: #fca5a5;
+    font-size: 0.65rem;
+    font-weight: 700;
+    margin-left: 0.3rem;
+}
+
+/* ── New health card accents ─────────────────────────────────────────────── */
+
+.te-hcard-linked-tasks .te-health-value { color: #6ee7b7; }
+
+.te-hcard-unresolved .te-health-value { color: #fca5a5; }
+
+/* ── Unresolved filter chip ──────────────────────────────────────────────── */
+
+.te-fc-unresolved.is-active {
+    background: rgba(248,113,113,0.15);
+    color: #fca5a5;
+    border-color: rgba(248,113,113,0.4);
+}
+
+/* ── Table section detail panel ──────────────────────────────────────────── */
+
+.te-details-col-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.2rem;
+}
+
+.te-col-chip {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.15rem 0.4rem;
+    border-radius: 0.25rem;
+    background: rgba(45,212,191,0.1);
+    color: #5eead4;
+    white-space: nowrap;
+}
+
+.te-col-name {
+    font-weight: 600;
+    color: var(--clr-text-subtle);
+    margin-right: 0.15rem;
+}
+
+.te-ref-more {
+    font-size: 0.65rem;
+    font-weight: 600;
+    font-family: monospace;
+    padding: 0.15rem 0.4rem;
+    border-radius: 0.25rem;
+    background: rgba(100,116,139,0.1);
+    color: #94a3b8;
+    white-space: nowrap;
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
 @media (max-width: 860px) {

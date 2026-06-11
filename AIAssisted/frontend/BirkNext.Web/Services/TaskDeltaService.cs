@@ -11,7 +11,11 @@ public static class TaskDeltaService
         string FullText,
         IReadOnlyList<string> BodyLines,
         IReadOnlyList<string> SpecRefs,
-        string MatchKey);
+        IReadOnlyList<string> FrRefs,
+        IReadOnlyList<string> ScRefs,
+        string MatchKey,
+        bool IsCompleted,
+        string? UserStoryTag);
 
     private const StringComparison OIC = StringComparison.OrdinalIgnoreCase;
 
@@ -22,6 +26,12 @@ public static class TaskDeltaService
     private static readonly Regex CheckboxRe = new(
         @"^\s*[-*]\s+\[[ xX]\]\s+(.+)$",
         RegexOptions.Compiled | RegexOptions.Multiline);
+
+    private static readonly Regex CompletedTaskRe = new(
+        @"^\s*[-*]\s+\[[xX]\]\s+", RegexOptions.Compiled);
+
+    private static readonly Regex UserStoryTagRe = new(
+        @"\[US(\d+)\]|\bUS(\d+)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex SpecIdRe = new(
         @"\b(FR|NFR|US|SC|AC|UC|TS|REQ)-?(\d{1,4})\b",
@@ -106,31 +116,42 @@ public static class TaskDeltaService
         var oldTasks = ParseTasksWithBlocks(oldText);
         var newTasks = ParseTasksWithBlocks(newText);
 
+        // Parse table metadata from the new version for task cross-referencing
+        var newTree = TaskExplorerService.Parse(newText);
+        var tableLinkedIds = TaskExplorerService.BuildTableLinkedTaskIds(newTree.Roots);
+        var tableRelMap = BuildTableRelMap(newTree.Roots);
+
         var oldByKey = oldTasks.ToDictionary(t => t.MatchKey, StringComparer.OrdinalIgnoreCase);
         var newByKey = newTasks.ToDictionary(t => t.MatchKey, StringComparer.OrdinalIgnoreCase);
 
         var findings = new List<TaskDeltaFinding>();
 
         foreach (var task in newTasks.Where(t => !oldByKey.ContainsKey(t.MatchKey)))
-            findings.Add(BuildAddedFinding(task));
+            findings.Add(BuildAddedFinding(task, tableLinkedIds, tableRelMap));
 
         foreach (var task in oldTasks.Where(t => !newByKey.ContainsKey(t.MatchKey)))
-            findings.Add(BuildRemovedFinding(task));
+            findings.Add(BuildRemovedFinding(task, tableLinkedIds, tableRelMap));
 
         foreach (var newTask in newTasks.Where(t => oldByKey.ContainsKey(t.MatchKey)))
         {
             var oldTask = oldByKey[newTask.MatchKey];
             if (!string.Equals(oldTask.FullText, newTask.FullText, OIC))
-                findings.Add(BuildModifiedFinding(oldTask, newTask));
+            {
+                if (IsStatusOnlyChange(oldTask, newTask))
+                    findings.Add(BuildStatusChangedFinding(oldTask, newTask, tableLinkedIds, tableRelMap));
+                else
+                    findings.Add(BuildModifiedFinding(oldTask, newTask, tableLinkedIds, tableRelMap));
+            }
         }
 
         var ordered = findings
             .OrderBy(f => f.DeltaType switch
             {
                 DeltaType.Added => 0,
-                DeltaType.Modified => 1,
-                DeltaType.Removed => 2,
-                _ => 3,
+                DeltaType.StatusChanged => 1,
+                DeltaType.Modified => 2,
+                DeltaType.Removed => 3,
+                _ => 4,
             })
             .ThenBy(f => f.TaskId)
             .ToList();
@@ -141,8 +162,15 @@ public static class TaskDeltaService
             AddedTasks = ordered.Count(f => f.DeltaType == DeltaType.Added),
             RemovedTasks = ordered.Count(f => f.DeltaType == DeltaType.Removed),
             ModifiedTasks = ordered.Count(f => f.DeltaType == DeltaType.Modified),
+            StatusChanges = ordered.Count(f => f.DeltaType == DeltaType.StatusChanged),
             ScopeExpansions = ordered.Count(f => f.ScopeChange == ScopeChangeKind.Expansion),
             ScopeReductions = ordered.Count(f => f.ScopeChange == ScopeChangeKind.Reduction),
+            HighRiskCount = ordered.Count(f => f.RiskLevel == ImpactLevel.High),
+            RegressionCandidates = ordered.Count(f => f.IsRegressionCandidate),
+            NeedsReview = ordered.Count(f => f.SpecCoverage == DeltaSpecCoverage.NeedsReview),
+            PossibleDeviations = ordered.Count(f => f.SpecCoverage == DeltaSpecCoverage.PossibleDeviation),
+            TablesDetected = newTree.Health.TablesDetected,
+            TraceabilityRows = newTree.Health.TraceabilityRows,
             Findings = ordered,
         };
     }
@@ -155,7 +183,7 @@ public static class TaskDeltaService
         var tasks = new List<ParsedTask>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        var headers = new List<(int Idx, string Id, string Title, bool IsCheckbox)>();
+        var headers = new List<(int Idx, string Id, string Title, bool IsCheckbox, bool IsCompleted)>();
 
         for (var i = 0; i < lines.Length; i++)
         {
@@ -163,17 +191,20 @@ public static class TaskDeltaService
             if (m.Success)
             {
                 var id = $"T{m.Groups[1].Value.PadLeft(3, '0')}";
-                headers.Add((i, id, m.Groups[2].Value.Trim(), false));
+                headers.Add((i, id, m.Groups[2].Value.Trim(), false, false));
                 continue;
             }
             var cm = CheckboxRe.Match(lines[i]);
             if (cm.Success)
-                headers.Add((i, $"T{(headers.Count + 1):D3}", cm.Groups[1].Value.Trim(), true));
+            {
+                var isCompleted = CompletedTaskRe.IsMatch(lines[i]);
+                headers.Add((i, $"T{(headers.Count + 1):D3}", cm.Groups[1].Value.Trim(), true, isCompleted));
+            }
         }
 
         for (var h = 0; h < headers.Count; h++)
         {
-            var (headerIdx, id, title, isCheckbox) = headers[h];
+            var (headerIdx, id, title, isCheckbox, isCompleted) = headers[h];
             var matchKey = isCheckbox ? NormalizeTitle(title) : id;
             if (!seen.Add(matchKey)) continue;
 
@@ -192,8 +223,13 @@ public static class TaskDeltaService
             var fullText = string.Join("\n", block);
             var bodyLines = block.Skip(1).ToList();
             var specRefs = ExtractSpecRefs(fullText);
+            var frRefs = specRefs
+                .Where(r => r.StartsWith("FR-", OIC) || r.StartsWith("NFR-", OIC) || r.StartsWith("REQ-", OIC))
+                .ToList();
+            var scRefs = specRefs.Where(r => r.StartsWith("SC-", OIC)).ToList();
+            var userStoryTag = ExtractUserStoryTag(title + " " + fullText);
 
-            tasks.Add(new ParsedTask(id, title, fullText, bodyLines, specRefs, matchKey));
+            tasks.Add(new ParsedTask(id, title, fullText, bodyLines, specRefs, frRefs, scRefs, matchKey, isCompleted, userStoryTag));
         }
 
         return tasks;
@@ -213,9 +249,20 @@ public static class TaskDeltaService
         return refs;
     }
 
+    private static string? ExtractUserStoryTag(string text)
+    {
+        var m = UserStoryTagRe.Match(text);
+        if (!m.Success) return null;
+        var num = m.Groups[1].Value.Length > 0 ? m.Groups[1].Value : m.Groups[2].Value;
+        return string.IsNullOrEmpty(num) ? null : $"US{num}";
+    }
+
     // ── Finding builders ──────────────────────────────────────────────────────
 
-    private static TaskDeltaFinding BuildAddedFinding(ParsedTask task)
+    private static TaskDeltaFinding BuildAddedFinding(
+        ParsedTask task,
+        HashSet<string> tableLinkedIds,
+        Dictionary<string, List<TableRelationship>> tableRelMap)
     {
         var lower = task.FullText.ToLowerInvariant();
         var areas = DetectAreas(lower);
@@ -232,6 +279,7 @@ public static class TaskDeltaService
             ScopeChange = ScopeChangeKind.None,
             BeforeText = string.Empty,
             AfterText = task.FullText,
+            NewIsCompleted = task.IsCompleted,
             DeltaSummary = "New task — not present in previous version.",
             RecommendedAction = coverage switch
             {
@@ -248,10 +296,18 @@ public static class TaskDeltaService
             IsRegressionCandidate = isReg,
             RecommendedTests = tests,
             RiskReason = BuildRiskReason(risk, areas, false),
+            UserStoryTag = task.UserStoryTag,
+            ReferencedFrIds = [.. task.FrRefs],
+            ReferencedScIds = [.. task.ScRefs],
+            HasTableLinks = tableLinkedIds.Contains(task.TaskId),
+            TableRelationships = tableRelMap.GetValueOrDefault(task.TaskId, []),
         };
     }
 
-    private static TaskDeltaFinding BuildRemovedFinding(ParsedTask task)
+    private static TaskDeltaFinding BuildRemovedFinding(
+        ParsedTask task,
+        HashSet<string> tableLinkedIds,
+        Dictionary<string, List<TableRelationship>> tableRelMap)
     {
         var lower = task.FullText.ToLowerInvariant();
         var areas = DetectAreas(lower);
@@ -267,6 +323,7 @@ public static class TaskDeltaService
             ScopeChange = ScopeChangeKind.None,
             BeforeText = task.FullText,
             AfterText = string.Empty,
+            OldIsCompleted = task.IsCompleted,
             DeltaSummary = "Task dropped — was present in the previous version.",
             RecommendedAction = coverage == DeltaSpecCoverage.Linked
                 ? "Verify the linked requirement is still fully implemented by another task."
@@ -277,10 +334,18 @@ public static class TaskDeltaService
             IsRegressionCandidate = isReg,
             RecommendedTests = [],
             RiskReason = BuildRiskReason(risk, areas, false),
+            UserStoryTag = task.UserStoryTag,
+            ReferencedFrIds = [.. task.FrRefs],
+            ReferencedScIds = [.. task.ScRefs],
+            HasTableLinks = tableLinkedIds.Contains(task.TaskId),
+            TableRelationships = tableRelMap.GetValueOrDefault(task.TaskId, []),
         };
     }
 
-    private static TaskDeltaFinding BuildModifiedFinding(ParsedTask oldTask, ParsedTask newTask)
+    private static TaskDeltaFinding BuildModifiedFinding(
+        ParsedTask oldTask, ParsedTask newTask,
+        HashSet<string> tableLinkedIds,
+        Dictionary<string, List<TableRelationship>> tableRelMap)
     {
         var lower = newTask.FullText.ToLowerInvariant();
         var areas = DetectAreas(lower);
@@ -289,6 +354,7 @@ public static class TaskDeltaService
         var scopeChange = DetectScopeChange(oldTask, newTask);
         var tests = BuildTests(areas);
         var isReg = IsRegressionCandidate(risk, areas) || scopeChange == ScopeChangeKind.Expansion;
+        var isStatusChange = oldTask.IsCompleted != newTask.IsCompleted;
 
         var deltaSummary = scopeChange switch
         {
@@ -319,6 +385,9 @@ public static class TaskDeltaService
             ScopeChange = scopeChange,
             BeforeText = oldTask.FullText,
             AfterText = newTask.FullText,
+            IsStatusChange = isStatusChange,
+            OldIsCompleted = oldTask.IsCompleted,
+            NewIsCompleted = newTask.IsCompleted,
             DeltaSummary = deltaSummary,
             RecommendedAction = action,
             AffectedAreas = areas,
@@ -327,7 +396,101 @@ public static class TaskDeltaService
             IsRegressionCandidate = isReg,
             RecommendedTests = tests,
             RiskReason = BuildRiskReason(risk, areas, scopeChange == ScopeChangeKind.Expansion),
+            UserStoryTag = newTask.UserStoryTag,
+            ReferencedFrIds = [.. newTask.FrRefs],
+            ReferencedScIds = [.. newTask.ScRefs],
+            HasTableLinks = tableLinkedIds.Contains(newTask.TaskId),
+            TableRelationships = tableRelMap.GetValueOrDefault(newTask.TaskId, []),
         };
+    }
+
+    private static TaskDeltaFinding BuildStatusChangedFinding(
+        ParsedTask oldTask, ParsedTask newTask,
+        HashSet<string> tableLinkedIds,
+        Dictionary<string, List<TableRelationship>> tableRelMap)
+    {
+        var lower = newTask.FullText.ToLowerInvariant();
+        var areas = DetectAreas(lower);
+        var risk = ComputeRisk(areas, newTask.SpecRefs.Count > 0);
+        var coverage = EstimateSpecCoverage(newTask, lower);
+        var isReg = IsRegressionCandidate(risk, areas);
+        var statusDescription = newTask.IsCompleted ? "marked as completed" : "reopened";
+
+        return new TaskDeltaFinding
+        {
+            TaskId = newTask.TaskId,
+            Title = newTask.Title,
+            DeltaType = DeltaType.StatusChanged,
+            ScopeChange = ScopeChangeKind.None,
+            BeforeText = oldTask.FullText,
+            AfterText = newTask.FullText,
+            IsStatusChange = true,
+            OldIsCompleted = oldTask.IsCompleted,
+            NewIsCompleted = newTask.IsCompleted,
+            DeltaSummary = $"Task {statusDescription} — no content changes.",
+            RecommendedAction = newTask.IsCompleted
+                ? "Verify all acceptance criteria are satisfied before closing."
+                : "Task reopened — confirm reason and update test coverage if needed.",
+            AffectedAreas = areas,
+            RiskLevel = risk,
+            SpecCoverage = coverage,
+            IsRegressionCandidate = isReg,
+            RecommendedTests = [],
+            RiskReason = BuildRiskReason(risk, areas, false),
+            UserStoryTag = newTask.UserStoryTag,
+            ReferencedFrIds = [.. newTask.FrRefs],
+            ReferencedScIds = [.. newTask.ScRefs],
+            HasTableLinks = tableLinkedIds.Contains(newTask.TaskId),
+            TableRelationships = tableRelMap.GetValueOrDefault(newTask.TaskId, []),
+        };
+    }
+
+    // ── Status-only change detection ──────────────────────────────────────────
+
+    private static bool IsStatusOnlyChange(ParsedTask oldTask, ParsedTask newTask)
+    {
+        if (oldTask.IsCompleted == newTask.IsCompleted) return false;
+        if (!string.Equals(oldTask.Title, newTask.Title, OIC)) return false;
+        if (oldTask.BodyLines.Count != newTask.BodyLines.Count) return false;
+        for (var i = 0; i < oldTask.BodyLines.Count; i++)
+            if (!string.Equals(oldTask.BodyLines[i], newTask.BodyLines[i], OIC)) return false;
+        return true;
+    }
+
+    // ── Table relationship extraction ─────────────────────────────────────────
+
+    private static Dictionary<string, List<TableRelationship>> BuildTableRelMap(IEnumerable<TaskNode> roots)
+    {
+        var result = new Dictionary<string, List<TableRelationship>>(StringComparer.OrdinalIgnoreCase);
+        CollectTableRels(roots, null, result);
+        return result;
+    }
+
+    private static void CollectTableRels(
+        IEnumerable<TaskNode> nodes,
+        string? tableTitle,
+        Dictionary<string, List<TableRelationship>> result)
+    {
+        foreach (var node in nodes)
+        {
+            var tTitle = node.NodeType == TaskNodeType.TableSection ? node.Title : tableTitle;
+
+            if (node.NodeType == TaskNodeType.TableRow && node.LinkedTaskIds.Count > 0)
+            {
+                var rowSummary = node.CellValues.Count > 0
+                    ? string.Join(" → ", node.CellValues.Take(2))
+                    : node.Title;
+                var rel = new TableRelationship(tTitle ?? "Table", rowSummary, [.. node.LinkedTaskIds]);
+                foreach (var taskId in node.LinkedTaskIds)
+                {
+                    if (!result.TryGetValue(taskId, out var list))
+                        result[taskId] = list = [];
+                    list.Add(rel);
+                }
+            }
+
+            CollectTableRels(node.Children, tTitle, result);
+        }
     }
 
     // ── Scope change detection ────────────────────────────────────────────────

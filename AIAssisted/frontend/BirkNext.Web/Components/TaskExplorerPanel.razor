@@ -149,6 +149,20 @@
                         <div class="te-health-label">Trace Rows</div>
                     </div>
                 }
+                @if (_health.TasksLinkedFromTables > 0)
+                {
+                    <div class="te-health-card te-hcard-linked-tasks">
+                        <div class="te-health-value">@_health.TasksLinkedFromTables</div>
+                        <div class="te-health-label">Tbl Linked</div>
+                    </div>
+                }
+                @if (_health.UnresolvedTableRefs > 0)
+                {
+                    <div class="te-health-card te-hcard-unresolved">
+                        <div class="te-health-value">@_health.UnresolvedTableRefs</div>
+                        <div class="te-health-label">Unresolved</div>
+                    </div>
+                }
             </div>
         }
 
@@ -188,6 +202,10 @@
             <button class='te-filter-chip @(_activeFilter == "HasTableLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasTableLinks")'>Has Table Links</button>
             <button class='te-filter-chip @(_activeFilter == "HasScLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasScLinks")'>Has SC Links</button>
             <button class='te-filter-chip @(_activeFilter == "HasFrLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasFrLinks")'>Has FR Links</button>
+            @if (_health.UnresolvedTableRefs > 0)
+            {
+                <button class='te-filter-chip te-fc-unresolved @(_activeFilter == "Unresolved" ? "is-active" : "")' @onclick='() => SetFilter("Unresolved")'>⚠ Unresolved Refs <span class="te-unresolved-count">@_health.UnresolvedTableRefs</span></button>
+            }
         </div>
 
         <!-- Main layout: tree/map + details panel -->
@@ -314,6 +332,16 @@
                                         <span class="te-ref-chip te-ref-sc">@sc</span>
                                     }
                                 </span>
+                            }
+
+                            @if (node.NodeType == TaskNodeType.TableSection && node.TableKind != TaskTableType.Generic)
+                            {
+                                <span class="te-table-kind-badge te-tkind-@TableKindName(node.TableKind)">@TableKindLabel(node.TableKind)</span>
+                            }
+
+                            @if (node.NodeType == TaskNodeType.TableTaskRef && node.IsUnresolved)
+                            {
+                                <span class="te-unresolved-badge">unresolved</span>
                             }
 
                             <!-- TableRow linked task preview -->
@@ -460,6 +488,86 @@
                             }
                         }
 
+                        @if (selected.NodeType == TaskNodeType.TableSection)
+                        {
+                            <div class="te-details-section">
+                                <div class="te-details-label">Table Type</div>
+                                <span class="te-table-kind-badge te-tkind-@TableKindName(selected.TableKind)">@TableKindLabel(selected.TableKind)</span>
+                            </div>
+                            @if (selected.TableHeaders.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Columns (@selected.TableHeaders.Count)</div>
+                                    <div class="te-details-col-list">
+                                        @foreach (var h in selected.TableHeaders)
+                                        {
+                                            <span class="te-col-chip">@h</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            var tsRows = selected.Children.Where(c => c.NodeType == TaskNodeType.TableRow).ToList();
+                            var tsLinkedIds = tsRows.SelectMany(r => r.LinkedTaskIds).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                            var tsScRefs = tsRows.SelectMany(r => r.ReferencedScIds).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                            var tsFrRefs = tsRows.SelectMany(r => r.ReferencedFrIds).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                            @if (tsRows.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Rows (@tsRows.Count)</div>
+                                    <ul class="te-details-list">
+                                        @foreach (var row in tsRows.Take(8))
+                                        {
+                                            <li>@row.Title</li>
+                                        }
+                                        @if (tsRows.Count > 8)
+                                        {
+                                            <li class="te-list-more">+@(tsRows.Count - 8) more</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                            @if (tsLinkedIds.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Linked Tasks (@tsLinkedIds.Count)</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var tid in tsLinkedIds.Take(10))
+                                        {
+                                            <span class="te-ref-chip te-ref-task">@tid</span>
+                                        }
+                                        @if (tsLinkedIds.Count > 10)
+                                        {
+                                            <span class="te-ref-chip te-ref-more">+@(tsLinkedIds.Count - 10)</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (tsScRefs.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">SC References</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var sc in tsScRefs)
+                                        {
+                                            <span class="te-ref-chip te-ref-sc">@sc</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (tsFrRefs.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">FR References</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var fr in tsFrRefs)
+                                        {
+                                            <span class="te-ref-chip te-ref-fr">@fr</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+
                         @if (selected.NodeType == TaskNodeType.TableRow)
                         {
                             @if (selected.LinkedTaskIds.Count > 0)
@@ -469,7 +577,20 @@
                                     <div class="te-ref-chips">
                                         @foreach (var tid in selected.LinkedTaskIds)
                                         {
-                                            <span class="te-ref-chip te-ref-task">@tid</span>
+                                            var isUnres = IsTaskRefUnresolved(selected, tid);
+                                            <span class="te-ref-chip @(isUnres ? "te-ref-unresolved" : "te-ref-task")">@tid@(isUnres ? " ?" : "")</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (selected.ReferencedFrIds.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">FR References</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var fr in selected.ReferencedFrIds)
+                                        {
+                                            <span class="te-ref-chip te-ref-fr">@fr</span>
                                         }
                                     </div>
                                 </div>
@@ -486,14 +607,18 @@
                                     </div>
                                 </div>
                             }
-                            @if (selected.CellValues.Count > 1)
+                            @if (selected.CellValues.Count > 0)
                             {
+                                var parentSection = FindParentTableSection(_tree.Roots, selected.Id);
                                 <div class="te-details-section">
                                     <div class="te-details-label">All Columns</div>
                                     <ul class="te-details-list">
                                         @for (int ci = 0; ci < selected.CellValues.Count; ci++)
                                         {
-                                            <li>@selected.CellValues[ci]</li>
+                                            var colName = parentSection is not null && ci < parentSection.TableHeaders.Count
+                                                ? parentSection.TableHeaders[ci] + ": "
+                                                : "";
+                                            <li><span class="te-col-name">@colName</span>@selected.CellValues[ci]</li>
                                         }
                                     </ul>
                                 </div>
@@ -542,7 +667,7 @@
 
     private string EffectiveText => !string.IsNullOrWhiteSpace(_localTasksText) ? _localTasksText : TasksText;
     private bool CanBuild => !string.IsNullOrWhiteSpace(EffectiveText);
-    private bool HasHealthData => _health.TotalTasks > 0 || _health.TotalPhases > 0 || _health.TablesDetected > 0;
+    private bool HasHealthData => _health.TotalTasks > 0 || _health.TotalPhases > 0 || _health.TablesDetected > 0 || _health.UnresolvedTableRefs > 0;
     private bool HasEnrichmentData => Report is not null || _health.SpecLinked + _health.HighRisk > 0;
 
     protected override void OnParametersSet()
@@ -700,6 +825,45 @@
             }
             CollectTableRels(node.Children, taskId, tableTitle, result);
         }
+    }
+
+    // ── Table helpers ─────────────────────────────────────────────────────
+
+    private static string TableKindLabel(TaskTableType t) => t switch
+    {
+        TaskTableType.Traceability      => "Traceability",
+        TaskTableType.RequirementMapping => "Requirements",
+        TaskTableType.DependencyTable   => "Dependencies",
+        TaskTableType.ParallelExecution => "Parallel",
+        _                               => "Table",
+    };
+
+    private static string TableKindName(TaskTableType t) => t switch
+    {
+        TaskTableType.Traceability      => "traceability",
+        TaskTableType.RequirementMapping => "requirements",
+        TaskTableType.DependencyTable   => "dependency",
+        TaskTableType.ParallelExecution => "parallel",
+        _                               => "generic",
+    };
+
+    private static bool IsTaskRefUnresolved(TaskNode rowNode, string taskId) =>
+        rowNode.Children.Any(c =>
+            c.NodeType == TaskNodeType.TableTaskRef &&
+            string.Equals(c.TaskId, taskId, StringComparison.OrdinalIgnoreCase) &&
+            c.IsUnresolved);
+
+    private static TaskNode? FindParentTableSection(IEnumerable<TaskNode> nodes, string childId)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.NodeType == TaskNodeType.TableSection &&
+                node.Children.Any(c => c.Id == childId))
+                return node;
+            var found = FindParentTableSection(node.Children, childId);
+            if (found is not null) return found;
+        }
+        return null;
     }
 
     // ── Labels and icons ──────────────────────────────────────────────────

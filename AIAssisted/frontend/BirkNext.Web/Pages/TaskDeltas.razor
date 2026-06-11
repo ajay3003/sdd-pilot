@@ -139,6 +139,55 @@
                     <div class="delta-kpi-value">@_report.ScopeReductions</div>
                     <div class="delta-kpi-label">Scope Reductions</div>
                 </div>
+                @if (_report.StatusChanges > 0)
+                {
+                    <div class="delta-kpi-card delta-kpi-status">
+                        <div class="delta-kpi-value">@_report.StatusChanges</div>
+                        <div class="delta-kpi-label">Status Changed</div>
+                    </div>
+                }
+                @if (_report.HighRiskCount > 0)
+                {
+                    <div class="delta-kpi-card delta-kpi-highrisk">
+                        <div class="delta-kpi-value">@_report.HighRiskCount</div>
+                        <div class="delta-kpi-label">High Risk</div>
+                    </div>
+                }
+                @if (_report.RegressionCandidates > 0)
+                {
+                    <div class="delta-kpi-card delta-kpi-regression">
+                        <div class="delta-kpi-value">@_report.RegressionCandidates</div>
+                        <div class="delta-kpi-label">Regression Risk</div>
+                    </div>
+                }
+                @if (_report.NeedsReview > 0)
+                {
+                    <div class="delta-kpi-card delta-kpi-review">
+                        <div class="delta-kpi-value">@_report.NeedsReview</div>
+                        <div class="delta-kpi-label">Needs Review</div>
+                    </div>
+                }
+                @if (_report.PossibleDeviations > 0)
+                {
+                    <div class="delta-kpi-card delta-kpi-deviation">
+                        <div class="delta-kpi-value">@_report.PossibleDeviations</div>
+                        <div class="delta-kpi-label">Deviations</div>
+                    </div>
+                }
+                @if (_report.TablesDetected > 0)
+                {
+                    <div class="delta-kpi-card delta-kpi-tables">
+                        <div class="delta-kpi-value">@_report.TablesDetected</div>
+                        <div class="delta-kpi-label">Tables</div>
+                    </div>
+                }
+                @if (_report.TraceabilityRows > 0)
+                {
+                    <div class="delta-kpi-card delta-kpi-tracerows">
+                        <div class="delta-kpi-value">@_report.TraceabilityRows</div>
+                        <div class="delta-kpi-label">Trace Rows</div>
+                    </div>
+                }
             </div>
 
             <div class="delta-filter-strip">
@@ -174,6 +223,18 @@
                 }
                 @{
                     var highRiskCount = _report.Findings.Count(f => f.RiskLevel == ImpactLevel.High);
+                    var specLinkedCount = _report.Findings.Count(f => f.SpecCoverage == DeltaSpecCoverage.Linked);
+                    var techOnlyCount = _report.Findings.Count(f => f.SpecCoverage == DeltaSpecCoverage.NotApplicable);
+                    var frLinkedCount = _report.Findings.Count(f => f.ReferencedFrIds.Count > 0);
+                    var scLinkedCount = _report.Findings.Count(f => f.ReferencedScIds.Count > 0);
+                    var tableLinkedCount = _report.Findings.Count(f => f.HasTableLinks);
+                }
+                @if (_report.StatusChanges > 0)
+                {
+                    <button class='delta-filter-chip delta-fc-statuschanged @(_activeFilter == "StatusChanged" ? "active" : "")'
+                            @onclick='() => _activeFilter = "StatusChanged"'>
+                        Status Changed <span class="delta-filter-count">@_report.StatusChanges</span>
+                    </button>
                 }
                 @if (highRiskCount > 0)
                 {
@@ -182,6 +243,70 @@
                         High Risk <span class="delta-filter-count">@highRiskCount</span>
                     </button>
                 }
+                @if (_report.RegressionCandidates > 0)
+                {
+                    <button class='delta-filter-chip delta-fc-regression @(_activeFilter == "RegressionCandidate" ? "active" : "")'
+                            @onclick='() => _activeFilter = "RegressionCandidate"'>
+                        Regression Risk <span class="delta-filter-count">@_report.RegressionCandidates</span>
+                    </button>
+                }
+                @if (_report.NeedsReview > 0)
+                {
+                    <button class='delta-filter-chip delta-fc-needsreview @(_activeFilter == "NeedsReview" ? "active" : "")'
+                            @onclick='() => _activeFilter = "NeedsReview"'>
+                        Needs Review <span class="delta-filter-count">@_report.NeedsReview</span>
+                    </button>
+                }
+                @if (_report.PossibleDeviations > 0)
+                {
+                    <button class='delta-filter-chip delta-fc-deviation @(_activeFilter == "PossibleDeviation" ? "active" : "")'
+                            @onclick='() => _activeFilter = "PossibleDeviation"'>
+                        Possible Deviation <span class="delta-filter-count">@_report.PossibleDeviations</span>
+                    </button>
+                }
+                @if (specLinkedCount > 0)
+                {
+                    <button class='delta-filter-chip delta-fc-speclinked @(_activeFilter == "SpecLinked" ? "active" : "")'
+                            @onclick='() => _activeFilter = "SpecLinked"'>
+                        Spec Linked <span class="delta-filter-count">@specLinkedCount</span>
+                    </button>
+                }
+                @if (techOnlyCount > 0)
+                {
+                    <button class='delta-filter-chip delta-fc-technical @(_activeFilter == "TechnicalOnly" ? "active" : "")'
+                            @onclick='() => _activeFilter = "TechnicalOnly"'>
+                        Technical Only <span class="delta-filter-count">@techOnlyCount</span>
+                    </button>
+                }
+                @if (frLinkedCount > 0)
+                {
+                    <button class='delta-filter-chip delta-fc-fr @(_activeFilter == "HasFrLinks" ? "active" : "")'
+                            @onclick='() => _activeFilter = "HasFrLinks"'>
+                        FR Linked <span class="delta-filter-count">@frLinkedCount</span>
+                    </button>
+                }
+                @if (scLinkedCount > 0)
+                {
+                    <button class='delta-filter-chip delta-fc-sc @(_activeFilter == "HasScLinks" ? "active" : "")'
+                            @onclick='() => _activeFilter = "HasScLinks"'>
+                        SC Linked <span class="delta-filter-count">@scLinkedCount</span>
+                    </button>
+                }
+                @if (tableLinkedCount > 0)
+                {
+                    <button class='delta-filter-chip delta-fc-table @(_activeFilter == "HasTableLinks" ? "active" : "")'
+                            @onclick='() => _activeFilter = "HasTableLinks"'>
+                        In Tables <span class="delta-filter-count">@tableLinkedCount</span>
+                    </button>
+                }
+            </div>
+
+            <div class="delta-action-bar">
+                <button class="delta-open-impl-btn" disabled
+                        title="Deep-link prefill not yet implemented — open Implementation Review from the footer and paste tasks-v2.md manually.">
+                    Open Changed Tasks in Implementation Review
+                </button>
+                <span class="delta-action-note">Use the Implementation Review link below to analyse the updated tasks.md with full spec alignment.</span>
             </div>
 
             <div class="delta-findings">
@@ -226,7 +351,7 @@
                             @if (isExpanded)
                             {
                                 <div class="delta-card-body">
-                                    @if (finding.DeltaType == DeltaType.Modified)
+                                    @if (finding.DeltaType == DeltaType.Modified || finding.DeltaType == DeltaType.StatusChanged)
                                     {
                                         <div class="delta-diff-row">
                                             <div class="delta-diff-panel delta-diff-before">
@@ -263,6 +388,26 @@
                                         <div class="delta-detail-value">@finding.DeltaSummary</div>
                                     </div>
 
+                                    @if (finding.IsStatusChange || finding.DeltaType == DeltaType.StatusChanged)
+                                    {
+                                        <div class="delta-detail-section">
+                                            <div class="delta-detail-label">Status Change</div>
+                                            <div class="delta-status-change">
+                                                <span class="delta-status-@(finding.OldIsCompleted ? "done" : "open")">@(finding.OldIsCompleted ? "✓ Completed" : "☐ Open")</span>
+                                                <span class="delta-status-arrow"> → </span>
+                                                <span class="delta-status-@(finding.NewIsCompleted ? "done" : "open")">@(finding.NewIsCompleted ? "✓ Completed" : "☐ Reopened")</span>
+                                            </div>
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrEmpty(finding.UserStoryTag))
+                                    {
+                                        <div class="delta-detail-section">
+                                            <div class="delta-detail-label">User Story</div>
+                                            <span class="delta-us-badge">@finding.UserStoryTag</span>
+                                        </div>
+                                    }
+
                                     @if (finding.AffectedAreas.Count > 0)
                                     {
                                         <div class="delta-detail-section">
@@ -276,11 +421,35 @@
                                         </div>
                                     }
 
+                                    @if (finding.IsRegressionCandidate)
+                                    {
+                                        <div class="delta-detail-section">
+                                            <div class="delta-regression-badge">⚠ Regression Candidate — include in regression suite before release</div>
+                                        </div>
+                                    }
+
                                     @if (!string.IsNullOrEmpty(finding.RiskReason))
                                     {
                                         <div class="delta-detail-section delta-risk-reason-row">
                                             <div class="delta-detail-label">Why this risk?</div>
                                             <div class="delta-detail-risk-reason">@finding.RiskReason</div>
+                                        </div>
+                                    }
+
+                                    @if (finding.ReferencedFrIds.Count > 0 || finding.ReferencedScIds.Count > 0)
+                                    {
+                                        <div class="delta-detail-section">
+                                            <div class="delta-detail-label">Spec References</div>
+                                            <div class="delta-detail-chips">
+                                                @foreach (var fr in finding.ReferencedFrIds)
+                                                {
+                                                    <span class="delta-ref-chip delta-ref-fr">@fr</span>
+                                                }
+                                                @foreach (var sc in finding.ReferencedScIds)
+                                                {
+                                                    <span class="delta-ref-chip delta-ref-sc">@sc</span>
+                                                }
+                                            </div>
                                         </div>
                                     }
 
@@ -307,6 +476,22 @@
                                         <div class="delta-detail-label">Recommended Action</div>
                                         <div class="delta-detail-action">@finding.RecommendedAction</div>
                                     </div>
+
+                                    @if (finding.TableRelationships.Count > 0)
+                                    {
+                                        <div class="delta-detail-section">
+                                            <div class="delta-detail-label">Table Relationships</div>
+                                            <div class="delta-table-rels">
+                                                @foreach (var tr in finding.TableRelationships)
+                                                {
+                                                    <div class="delta-table-rel-item">
+                                                        <span class="delta-table-rel-source">@tr.TableTitle</span>
+                                                        <span class="delta-table-rel-row"> → @tr.RowSummary</span>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
                                 </div>
                             }
                         </div>
@@ -392,9 +577,18 @@
             "Added" => _report.Findings.Where(f => f.DeltaType == DeltaType.Added).ToList(),
             "Removed" => _report.Findings.Where(f => f.DeltaType == DeltaType.Removed).ToList(),
             "Modified" => _report.Findings.Where(f => f.DeltaType == DeltaType.Modified).ToList(),
+            "StatusChanged" => _report.Findings.Where(f => f.DeltaType == DeltaType.StatusChanged).ToList(),
             "ScopeExpansion" => _report.Findings.Where(f => f.ScopeChange == ScopeChangeKind.Expansion).ToList(),
             "ScopeReduction" => _report.Findings.Where(f => f.ScopeChange == ScopeChangeKind.Reduction).ToList(),
             "HighRisk" => _report.Findings.Where(f => f.RiskLevel == ImpactLevel.High).ToList(),
+            "RegressionCandidate" => _report.Findings.Where(f => f.IsRegressionCandidate).ToList(),
+            "NeedsReview" => _report.Findings.Where(f => f.SpecCoverage == DeltaSpecCoverage.NeedsReview).ToList(),
+            "PossibleDeviation" => _report.Findings.Where(f => f.SpecCoverage == DeltaSpecCoverage.PossibleDeviation).ToList(),
+            "SpecLinked" => _report.Findings.Where(f => f.SpecCoverage == DeltaSpecCoverage.Linked).ToList(),
+            "TechnicalOnly" => _report.Findings.Where(f => f.SpecCoverage == DeltaSpecCoverage.NotApplicable).ToList(),
+            "HasFrLinks" => _report.Findings.Where(f => f.ReferencedFrIds.Count > 0).ToList(),
+            "HasScLinks" => _report.Findings.Where(f => f.ReferencedScIds.Count > 0).ToList(),
+            "HasTableLinks" => _report.Findings.Where(f => f.HasTableLinks).ToList(),
             _ => _report.Findings,
         };
     }
@@ -406,6 +600,7 @@
         DeltaType.Added => "+ Added",
         DeltaType.Removed => "− Removed",
         DeltaType.Modified => "~ Modified",
+        DeltaType.StatusChanged => "✓ Status Changed",
         _ => t.ToString(),
     };
 
@@ -441,6 +636,7 @@
         { DeltaType: DeltaType.Modified, ScopeChange: ScopeChangeKind.Expansion } => "delta-card-expansion",
         { DeltaType: DeltaType.Modified, ScopeChange: ScopeChangeKind.Reduction } => "delta-card-reduction",
         { DeltaType: DeltaType.Modified } => "delta-card-modified",
+        { DeltaType: DeltaType.StatusChanged } => "delta-card-status",
         _ => string.Empty,
     };
 

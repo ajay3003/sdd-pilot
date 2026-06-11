@@ -14,6 +14,15 @@ public enum TaskNodeType
     TableTaskRef,    // a task ID referenced inside a table row
 }
 
+public enum TaskTableType
+{
+    Generic,
+    Traceability,
+    RequirementMapping,
+    DependencyTable,
+    ParallelExecution,
+}
+
 public sealed class TaskNode
 {
     public string Id { get; } = Guid.NewGuid().ToString("N")[..10];
@@ -34,12 +43,14 @@ public sealed class TaskNode
     public List<string> TableHeaders { get; init; } = [];   // column names on TableSection
     public List<string> CellValues { get; init; } = [];     // raw cells for TableRow
     public List<string> LinkedTaskIds { get; init; } = [];  // task IDs in a TableRow
+    public TaskTableType TableKind { get; init; } = TaskTableType.Generic;
 
     // Enrichment from AlignmentReport (populated by EnrichWithReport)
     public AlignmentStatus? Status { get; set; }
     public AlignmentRisk? Risk { get; set; }
     public ImpactLevel? Impact { get; set; }
     public bool IsRegressionCandidate { get; set; }
+    public bool IsUnresolved { get; set; }
     public List<string> AffectedAreas { get; set; } = [];
     public List<SpecMatch> SpecMatches { get; set; } = [];
 
@@ -60,6 +71,8 @@ public sealed class TaskHealth
     public int TotalPhases { get; init; }
     public int TablesDetected { get; init; }
     public int TraceabilityRows { get; init; }
+    public int TasksLinkedFromTables { get; init; }
+    public int UnresolvedTableRefs { get; init; }
 
     // Populated after enrichment
     public int SpecLinked { get; init; }

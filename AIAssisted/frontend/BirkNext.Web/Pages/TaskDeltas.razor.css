@@ -255,7 +255,7 @@
 
 .delta-kpi-row {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
     gap: 0.75rem;
     margin-bottom: 1.25rem;
 }
@@ -296,6 +296,14 @@
     border-color: rgba(59, 130, 246, 0.35);
 }
 .delta-kpi-reduction.delta-kpi-alert-blue .delta-kpi-value { color: #60a5fa; }
+
+.delta-kpi-status .delta-kpi-value { color: #a78bfa; }
+.delta-kpi-highrisk .delta-kpi-value { color: #f87171; }
+.delta-kpi-regression .delta-kpi-value { color: #fb923c; }
+.delta-kpi-review .delta-kpi-value { color: #fbbf24; }
+.delta-kpi-deviation .delta-kpi-value { color: #f87171; }
+.delta-kpi-tables .delta-kpi-value { color: #34d399; }
+.delta-kpi-tracerows .delta-kpi-value { color: #5eead4; }
 
 /* ── Filter strip ────────────────────────────────────────────────────────── */
 
@@ -344,6 +352,15 @@
 .delta-fc-expansion.active { border-color: rgba(251, 146, 60, 0.5); background: rgba(251, 146, 60, 0.08); }
 .delta-fc-reduction.active { border-color: rgba(96, 165, 250, 0.5); background: rgba(96, 165, 250, 0.08); }
 .delta-fc-highrisk.active { border-color: rgba(248, 113, 113, 0.5); background: rgba(248, 113, 113, 0.08); }
+.delta-fc-statuschanged.active { border-color: rgba(167, 139, 250, 0.5); background: rgba(167, 139, 250, 0.08); }
+.delta-fc-regression.active { border-color: rgba(251, 146, 60, 0.5); background: rgba(251, 146, 60, 0.08); }
+.delta-fc-needsreview.active { border-color: rgba(251, 191, 36, 0.5); background: rgba(251, 191, 36, 0.08); }
+.delta-fc-deviation.active { border-color: rgba(248, 113, 113, 0.5); background: rgba(248, 113, 113, 0.08); }
+.delta-fc-speclinked.active { border-color: rgba(74, 222, 128, 0.5); background: rgba(74, 222, 128, 0.08); }
+.delta-fc-technical.active { border-color: rgba(100, 116, 139, 0.5); background: rgba(100, 116, 139, 0.08); }
+.delta-fc-fr.active { border-color: rgba(96, 165, 250, 0.5); background: rgba(96, 165, 250, 0.08); }
+.delta-fc-sc.active { border-color: rgba(52, 211, 153, 0.5); background: rgba(52, 211, 153, 0.08); }
+.delta-fc-table.active { border-color: rgba(45, 212, 191, 0.5); background: rgba(45, 212, 191, 0.08); }
 
 /* ── Finding cards ───────────────────────────────────────────────────────── */
 
@@ -361,6 +378,7 @@
 .delta-card-modified { border-left-color: #fbbf24; }
 .delta-card-expansion { border-left-color: #fb923c; }
 .delta-card-reduction { border-left-color: #60a5fa; }
+.delta-card-status { border-left-color: #a78bfa; }
 
 .delta-card-compact {
     display: flex;
@@ -428,6 +446,11 @@
 .delta-type-modified {
     background: rgba(251, 191, 36, 0.15);
     color: #fbbf24;
+}
+
+.delta-type-statuschanged {
+    background: rgba(167, 139, 250, 0.15);
+    color: #a78bfa;
 }
 
 /* ── Scope badges ────────────────────────────────────────────────────────── */
@@ -710,12 +733,6 @@
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
-@media (max-width: 900px) {
-    .delta-kpi-row {
-        grid-template-columns: repeat(3, 1fr);
-    }
-}
-
 @media (max-width: 680px) {
     .delta-inputs-row {
         grid-template-columns: 1fr;
@@ -726,7 +743,7 @@
     }
 
     .delta-kpi-row {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
     }
 
     .delta-diff-row {
@@ -736,4 +753,141 @@
     .delta-diff-full {
         grid-column: 1;
     }
+}
+
+/* ── Status change ───────────────────────────────────────────────────────── */
+
+.delta-status-change {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+
+.delta-status-done {
+    color: #4ade80;
+}
+
+.delta-status-open {
+    color: var(--clr-text-subtle);
+}
+
+.delta-status-arrow {
+    color: var(--clr-text-subtle);
+    opacity: 0.5;
+}
+
+/* ── User story badge ────────────────────────────────────────────────────── */
+
+.delta-us-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    font-family: monospace;
+    background: rgba(167, 139, 250, 0.12);
+    color: #c4b5fd;
+    border-radius: 0.25rem;
+    padding: 0.15rem 0.5rem;
+    border: 1px solid rgba(167, 139, 250, 0.2);
+}
+
+/* ── Regression candidate badge ──────────────────────────────────────────── */
+
+.delta-regression-badge {
+    font-size: 0.77rem;
+    font-weight: 600;
+    color: #fb923c;
+    background: rgba(251, 146, 60, 0.08);
+    border: 1px solid rgba(251, 146, 60, 0.25);
+    border-radius: 0.375rem;
+    padding: 0.4rem 0.75rem;
+}
+
+/* ── Spec reference chips ────────────────────────────────────────────────── */
+
+.delta-detail-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.15rem;
+}
+
+.delta-ref-chip {
+    font-size: 0.7rem;
+    font-weight: 600;
+    font-family: monospace;
+    padding: 0.15rem 0.45rem;
+    border-radius: 0.25rem;
+    white-space: nowrap;
+}
+
+.delta-ref-fr {
+    background: rgba(96, 165, 250, 0.12);
+    color: #93c5fd;
+    border: 1px solid rgba(96, 165, 250, 0.2);
+}
+
+.delta-ref-sc {
+    background: rgba(52, 211, 153, 0.12);
+    color: #6ee7b7;
+    border: 1px solid rgba(52, 211, 153, 0.2);
+}
+
+/* ── Table relationships ─────────────────────────────────────────────────── */
+
+.delta-table-rels {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-top: 0.15rem;
+}
+
+.delta-table-rel-item {
+    font-size: 0.78rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.4;
+}
+
+.delta-table-rel-source {
+    font-weight: 600;
+    color: rgba(45, 212, 191, 0.8);
+    margin-right: 0.1rem;
+}
+
+.delta-table-rel-row {
+    font-style: italic;
+}
+
+/* ── Action bar ──────────────────────────────────────────────────────────── */
+
+.delta-action-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+    padding: 0.6rem 0.9rem;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.5rem;
+}
+
+.delta-open-impl-btn {
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: 0.375rem;
+    color: rgba(129, 140, 248, 0.5);
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.4rem 0.9rem;
+    cursor: not-allowed;
+    white-space: nowrap;
+    opacity: 0.6;
+}
+
+.delta-action-note {
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle);
+    font-style: italic;
 }
