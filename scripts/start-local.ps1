@@ -848,11 +848,14 @@ function Find-DotNetRunnable {
     throw "No runnable project file or published DLL found under $BasePath"
 }
 
-function Start-DotNetProjectWindow {
+function Start-DotNetProcessLogged {
     param(
         [string]$Name,
         [string]$WorkingPath,
-        [object]$Runnable
+        [object]$Runnable,
+        [string]$StdoutLog,
+        [string]$StderrLog,
+        [string]$LauncherLogFile
     )
 
     if (-not (Test-Path $WorkingPath)) {
@@ -863,70 +866,66 @@ function Start-DotNetProjectWindow {
         throw "$Name runnable target not found: $($Runnable.Path)"
     }
 
-    if ($Runnable.Kind -eq "StaticWeb") {
-        # Blazor WebAssembly artifact mode.
-        # BirkNext.Web is not a runnable server DLL. Serve wwwroot using dotnet-serve.
-        $runCommand = @"
-`$env:PATH += ';' + `$env:USERPROFILE + '\.dotnet\tools'
-`$serveInstalled = dotnet tool list -g 2>&1 | Select-String 'dotnet-serve'
-if (-not `$serveInstalled) {
-    Write-Host 'dotnet-serve not found. Installing...' -ForegroundColor Yellow
-    dotnet tool install --global dotnet-serve
-    if (`$LASTEXITCODE -ne 0) {
-        Write-Host 'Install failed. Run manually: dotnet tool install --global dotnet-serve' -ForegroundColor Red
-        pause
-        exit 1
+    # Set backend environment variables — inherited by the child process
+    if ($Name -eq "Backend" -and -not [string]::IsNullOrWhiteSpace($script:BackendConnectionString)) {
+        $env:ConnectionStrings__Default = $script:BackendConnectionString
+        $env:POSTGRES_DB                = $script:PostgresConfig.Database
+        $env:POSTGRES_USER              = $script:PostgresConfig.User
+        $env:POSTGRES_PASSWORD          = $script:PostgresConfig.Password
+        Info "Database: $(Get-SanitizedConnectionString -PostgresConfig $script:PostgresConfig)"
     }
-}
-Write-Host 'Frontend URL: http://localhost:5173/' -ForegroundColor Green
-Write-Host ''
-Write-Host 'Keep this window open while testing.' -ForegroundColor Yellow
-dotnet serve --directory "$($Runnable.Path)" --port 5173
-"@
+
+    $argString = ""
+
+    if ($Runnable.Kind -eq "StaticWeb") {
+        # Blazor WASM artifact: serve wwwroot with dotnet-serve
+        $toolsPath = "$env:USERPROFILE\.dotnet\tools"
+        if ($env:PATH -notlike "*$toolsPath*") { $env:PATH += ";$toolsPath" }
+
+        $toolCheck = Invoke-NativeCommand -Executable "dotnet" -Arguments @("tool", "list", "-g")
+        if ($toolCheck.Stdout -notmatch "dotnet-serve") {
+            Info "Installing dotnet-serve..."
+            $null = Invoke-NativeCommand -Executable "dotnet" -Arguments @("tool", "install", "--global", "dotnet-serve") -ShowOutput -ThrowOnError
+        }
+        $argString = "serve --directory `"$($Runnable.Path)`" --port 5173"
     }
     elseif ($Runnable.Kind -eq "Dll") {
-        # Downloaded pipeline artifact mode: run the published backend DLL directly.
-        $runCommand = "dotnet `"$($Runnable.Path)`""
+        $argString = "`"$($Runnable.Path)`""
     }
     elseif ($Fast) {
-        # Source repository mode, fast startup.
-        $runCommand = "dotnet run --no-build --project `"$($Runnable.Path)`""
+        $argString = "run --no-build --project `"$($Runnable.Path)`""
     }
     else {
-        # Source repository mode, safe startup.
-        $runCommand = "dotnet restore `"$($Runnable.Path)`"; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }; dotnet build `"$($Runnable.Path)`"; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }; dotnet run --project `"$($Runnable.Path)`""
+        # Source mode: restore and build synchronously in the launcher window, then run in background
+        Info "Restoring $Name..."
+        Add-Content -Path $LauncherLogFile -Value "[$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))] Restoring $Name"
+        $null = Invoke-NativeCommand -Executable "dotnet" -Arguments @("restore", $Runnable.Path) -ShowOutput -ThrowOnError
+
+        Info "Building $Name..."
+        Add-Content -Path $LauncherLogFile -Value "[$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))] Building $Name"
+        $null = Invoke-NativeCommand -Executable "dotnet" -Arguments @("build", $Runnable.Path, "--no-restore") -ShowOutput -ThrowOnError
+
+        Ok "$Name built successfully."
+        $argString = "run --no-build --project `"$($Runnable.Path)`""
     }
 
-    $environmentCommand = ""
-    if ($Name -eq "Backend" -and -not [string]::IsNullOrWhiteSpace($script:BackendConnectionString)) {
-        $escapedConnectionString = Escape-PowerShellSingleQuotedString -Value $script:BackendConnectionString
-        $escapedPostgresDb = Escape-PowerShellSingleQuotedString -Value $script:PostgresConfig.Database
-        $escapedPostgresUser = Escape-PowerShellSingleQuotedString -Value $script:PostgresConfig.User
-        $escapedPostgresPassword = Escape-PowerShellSingleQuotedString -Value $script:PostgresConfig.Password
-        $environmentCommand = @"
-`$env:ConnectionStrings__Default = '$escapedConnectionString'
-`$env:POSTGRES_DB = '$escapedPostgresDb'
-`$env:POSTGRES_USER = '$escapedPostgresUser'
-`$env:POSTGRES_PASSWORD = '$escapedPostgresPassword'
-Write-Host 'Database: $(Get-SanitizedConnectionString -PostgresConfig $script:PostgresConfig)' -ForegroundColor DarkGray
-"@
-    }
+    Add-Content -Path $LauncherLogFile -Value "[$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))] Starting ${Name}: dotnet $argString"
+    Info "Starting $Name..."
+    Info "  stdout → $StdoutLog"
+    Info "  stderr → $StderrLog"
 
-    $command = @"
-`$host.UI.RawUI.WindowTitle = 'BirkNext $Name'
-Set-Location '$WorkingPath'
-Write-Host 'Starting BirkNext $Name...' -ForegroundColor Cyan
-Write-Host 'Target: $($Runnable.Path)' -ForegroundColor DarkGray
-Write-Host 'Mode: $($Runnable.Kind)' -ForegroundColor DarkGray
-Write-Host ''
-$environmentCommand
-$runCommand
-"@
+    $process = Start-Process `
+        -FilePath "dotnet" `
+        -ArgumentList $argString `
+        -WorkingDirectory $WorkingPath `
+        -RedirectStandardOutput $StdoutLog `
+        -RedirectStandardError  $StderrLog `
+        -NoNewWindow `
+        -PassThru
 
-    Info "Opening $Name window..."
-
-    $encodedCommand = [System.Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($command))
-    Start-Process powershell.exe -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encodedCommand
+    Add-Content -Path $LauncherLogFile -Value "[$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))] $Name started PID $($process.Id)"
+    Ok "$Name started (PID $($process.Id))."
+    return $process
 }
 
 Write-Host ""
@@ -955,6 +954,29 @@ Info "Backend delay:   $BackendDelaySeconds seconds"
 Info "Port cleanup:    $(if ($ForceKillPorts) { 'Force stale local dotnet processes' } else { 'Safe warning only' })"
 Info "Compose Project: birknext-studio-local"
 Info "Database Volume: birknext-studio-local_postgres_data"
+
+# ── Log directory ─────────────────────────────────────────────────────────────
+$logsDir         = Join-Path $repoRoot "logs"
+$launcherLogFile = Join-Path $logsDir "launcher.log"
+$backendOutLog   = Join-Path $logsDir "backend.out.log"
+$backendErrLog   = Join-Path $logsDir "backend.err.log"
+$frontendOutLog  = Join-Path $logsDir "frontend.out.log"
+$frontendErrLog  = Join-Path $logsDir "frontend.err.log"
+
+New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
+Set-Content -Path $launcherLogFile -Value "BirkNext Launcher started $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Encoding UTF8
+
+# Tell the backend to write Serilog rolling logs to the shared logs folder
+$env:LoggingSettings__LogPath = $logsDir
+
+Write-Host ""
+Info "Logs folder:     $logsDir"
+Info "Launcher log:    $launcherLogFile"
+Info "Backend stdout:  $backendOutLog"
+Info "Backend stderr:  $backendErrLog"
+Info "Frontend stdout: $frontendOutLog"
+Info "Frontend stderr: $frontendErrLog"
+Write-Host ""
 
 Require-Command "dotnet" "Install .NET SDK 8 or add dotnet to PATH."
 
@@ -1036,12 +1058,32 @@ try {
 
     Start-ContainerServices
 
+    $backendProcess  = $null
+    $frontendProcess = $null
+
     if (-not $FrontendOnly) {
-        Start-DotNetProjectWindow -Name "Backend" -WorkingPath $backendPath -Runnable $backendRunnable
+        $backendProcess = Start-DotNetProcessLogged `
+            -Name "Backend" `
+            -WorkingPath $backendPath `
+            -Runnable $backendRunnable `
+            -StdoutLog $backendOutLog `
+            -StderrLog $backendErrLog `
+            -LauncherLogFile $launcherLogFile
 
         if (-not $BackendOnly -and $BackendDelaySeconds -gt 0) {
-            Info "Waiting $BackendDelaySeconds seconds before starting frontend..."
-            Start-Sleep -Seconds $BackendDelaySeconds
+            Info "Waiting $BackendDelaySeconds seconds for backend to initialize..."
+            for ($i = 1; $i -le $BackendDelaySeconds; $i++) {
+                Start-Sleep -Seconds 1
+                if ($null -ne $backendProcess -and $backendProcess.HasExited) {
+                    Fail "Backend process exited during startup (exit code: $($backendProcess.ExitCode))."
+                    Warn "Check backend logs:"
+                    Write-Host "  $backendErrLog"
+                    Write-Host "  $backendOutLog"
+                    Add-Content -Path $launcherLogFile -Value "[$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))] Backend exited early (code $($backendProcess.ExitCode))"
+                    throw "Backend startup failed. See: $backendErrLog"
+                }
+            }
+            Ok "Backend is still running."
         }
     }
     else {
@@ -1049,14 +1091,30 @@ try {
     }
 
     if (-not $BackendOnly) {
-        Start-DotNetProjectWindow -Name "Frontend" -WorkingPath $frontendPath -Runnable $frontendRunnable
+        $frontendProcess = Start-DotNetProcessLogged `
+            -Name "Frontend" `
+            -WorkingPath $frontendPath `
+            -Runnable $frontendRunnable `
+            -StdoutLog $frontendOutLog `
+            -StderrLog $frontendErrLog `
+            -LauncherLogFile $launcherLogFile
+
+        # Brief check — verify frontend didn't exit immediately
+        Start-Sleep -Seconds 3
+        if ($null -ne $frontendProcess -and $frontendProcess.HasExited) {
+            Fail "Frontend process exited immediately (exit code: $($frontendProcess.ExitCode))."
+            Warn "Check frontend logs:"
+            Write-Host "  $frontendErrLog"
+            Write-Host "  $frontendOutLog"
+            Add-Content -Path $launcherLogFile -Value "[$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))] Frontend exited early (code $($frontendProcess.ExitCode))"
+        }
     }
     else {
         Warn "BackendOnly selected. Frontend will not be started."
     }
 
     Write-Host ""
-    Ok "Startup triggered."
+    Ok "Startup complete."
     Write-Host ""
 
     if (-not $FrontendOnly) {
@@ -1069,6 +1127,19 @@ try {
     }
 
     Write-Host ""
+    Write-Host "Log files:" -ForegroundColor Cyan
+    Write-Host "  $launcherLogFile"
+    if (-not $FrontendOnly) {
+        Write-Host "  $backendOutLog"
+        Write-Host "  $backendErrLog"
+        Write-Host "  $(Join-Path $logsDir "backend-serilog-$(Get-Date -Format 'yyyyMMdd').log") (Serilog rolling)"
+    }
+    if (-not $BackendOnly) {
+        Write-Host "  $frontendOutLog"
+        Write-Host "  $frontendErrLog"
+    }
+
+    Write-Host ""
     Write-Host "Useful paths:" -ForegroundColor Cyan
     Write-Host "  /extract"
     Write-Host "  /scenarios"
@@ -1076,6 +1147,9 @@ try {
 catch {
     Fail $_.Exception.Message
     Write-Host ""
+    if ((Test-Path Variable:launcherLogFile) -and (Test-Path $launcherLogFile)) {
+        Warn "Launcher log: $launcherLogFile"
+    }
     Write-Host "Troubleshooting:" -ForegroundColor Yellow
     Write-Host "  podman machine list"
     Write-Host "  podman machine start"

@@ -141,14 +141,23 @@ public class RuntimeDto
     [JsonPropertyName("runningFromPublishedArtifact")] public bool RunningFromPublishedArtifact { get; set; }
 }
 
+public class LogFileEntryDto
+{
+    [JsonPropertyName("label")] public string Label { get; set; } = "";
+    [JsonPropertyName("path")] public string Path { get; set; } = "";
+    [JsonPropertyName("exists")] public bool Exists { get; set; }
+}
+
 public class LoggingDto
 {
     [JsonPropertyName("provider")] public string Provider { get; set; } = "";
     [JsonPropertyName("minimumLevel")] public string MinimumLevel { get; set; } = "";
     [JsonPropertyName("sinks")] public List<string> Sinks { get; set; } = [];
     [JsonPropertyName("logPath")] public string LogPath { get; set; } = "";
+    [JsonPropertyName("resolvedLogsFolder")] public string ResolvedLogsFolder { get; set; } = "";
     [JsonPropertyName("seqUrl")] public string SeqUrl { get; set; } = "";
     [JsonPropertyName("structuredLogging")] public bool StructuredLogging { get; set; }
+    [JsonPropertyName("logFiles")] public List<LogFileEntryDto> LogFiles { get; set; } = [];
 }
 
 public class MaintenanceDto

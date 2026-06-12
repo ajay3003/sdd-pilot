@@ -342,3 +342,43 @@ Feature visibility is useful for:
 ### After saving
 
 After saving feature visibility changes from the UI, the backend applies the new settings immediately. The sidebar in the frontend will not update until the page is refreshed. A full browser refresh (F5) is required to reload the Blazor application and pick up the updated feature flags.
+
+
+## Troubleshooting
+
+### Logs
+
+All log files are written to the `logs/` folder inside your installation directory.
+
+| File | What it contains |
+|---|---|
+| `logs/launcher.log` | Startup sequence: build steps, process PIDs, early-exit events |
+| `logs/backend.out.log` | Backend (BirkNext.Api) standard output |
+| `logs/backend.err.log` | Backend (BirkNext.Api) standard error — check this first on a crash |
+| `logs/frontend.out.log` | Frontend dev server standard output |
+| `logs/frontend.err.log` | Frontend dev server standard error |
+| `logs/backend-serilog-YYYYMMDD.log` | Backend structured log — includes stack traces, request details, DB errors |
+
+#### Which file to check for a crash
+
+| Symptom | Where to look |
+|---|---|
+| Backend never became available | `backend.err.log` then `backend-serilog-YYYYMMDD.log` |
+| Frontend page blank or fails to load | `frontend.err.log` |
+| Startup script failed and closed | `launcher.log` |
+| Unhandled exception shown in the UI | `backend-serilog-YYYYMMDD.log` |
+
+#### Finding the logs folder
+
+The exact path is shown on **Admin → System Settings** under **Logging → Log Files**. You can copy each path individually using the copy button next to it.
+
+#### Recommended support bundle
+
+When reporting a problem, include:
+
+1. The full contents of `launcher.log`
+2. The full contents of `backend.err.log`
+3. The last 200 lines of the most recent `backend-serilog-YYYYMMDD.log`
+4. A screenshot of **Admin → System Settings** using the **Copy Diagnostics** button output
+
+Do not include `backend.out.log` or connection strings — they may contain sensitive runtime details.

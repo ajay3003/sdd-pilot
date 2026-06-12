@@ -290,6 +290,39 @@ else if (_settings is not null)
                     <tr><td>Seq URL</td><td><span class="mono-chip">@_settings.Logging.SeqUrl</span></td></tr>
                 }
             </table>
+            @if (_settings.Logging.LogFiles?.Count > 0)
+            {
+                <div style="font-size:0.68rem;font-weight:700;color:var(--clr-text-muted);text-transform:uppercase;letter-spacing:0.07em;margin-top:0.875rem;margin-bottom:0.5rem;padding-top:0.5rem;border-top:1px solid var(--clr-border-subtle)">Log Files</div>
+                @if (!string.IsNullOrWhiteSpace(_settings.Logging.ResolvedLogsFolder))
+                {
+                    <p style="font-size:0.79rem;color:var(--clr-text-placeholder);margin:0 0 0.5rem">
+                        <span class="mono-chip">@_settings.Logging.ResolvedLogsFolder</span>
+                        <button class="copy-btn" title="Copy folder path" @onclick="() => CopyAsync(_settings.Logging.ResolvedLogsFolder)">
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                        </button>
+                    </p>
+                }
+                <table class="settings-table">
+                    @foreach (var lf in _settings.Logging.LogFiles)
+                    {
+                        <tr>
+                            <td>@lf.Label</td>
+                            <td>
+                                <div class="copyable-value">
+                                    <span class="mono-chip" style="font-size:0.76rem">@lf.Path</span>
+                                    <button class="copy-btn" title="Copy path" @onclick="() => CopyAsync(lf.Path)">
+                                        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                                    </button>
+                                </div>
+                                @if (!lf.Exists)
+                                {
+                                    <span style="font-size:0.76rem;color:var(--clr-text-placeholder);font-style:italic">Not created yet</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </table>
+            }
             @if (_isEditMode)
             {
                 <p class="edit-field-note">Logging level and Seq URL changes require a backend restart to take effect.</p>
@@ -692,6 +725,8 @@ else if (_settings is not null)
         sb.AppendLine();
         sb.AppendLine($"Logging:         {d(s.Logging.Provider)} / {d(s.Logging.MinimumLevel)}");
         sb.AppendLine($"Log Path:        {d(s.Logging.LogPath)}");
+        if (!string.IsNullOrWhiteSpace(s.Logging.ResolvedLogsFolder) && s.Logging.ResolvedLogsFolder != s.Logging.LogPath)
+            sb.AppendLine($"Logs Folder:     {d(s.Logging.ResolvedLogsFolder)}");
         if (!string.IsNullOrWhiteSpace(s.Logging.SeqUrl))
             sb.AppendLine($"Seq URL:         {s.Logging.SeqUrl}");
 

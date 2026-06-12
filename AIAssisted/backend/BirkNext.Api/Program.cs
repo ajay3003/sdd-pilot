@@ -7,15 +7,38 @@ using HotChocolate.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Serilog;
+using Serilog.Events;
 using Serilog.Formatting.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
-builder.Host.UseSerilog((ctx, lc) => lc
-    .Enrich.FromLogContext()
-    .WriteTo.Console(new JsonFormatter()));
+builder.Host.UseSerilog((ctx, lc) =>
+{
+    var logPath = ctx.Configuration["LoggingSettings:LogPath"] ?? "./logs";
+    var levelStr = ctx.Configuration["LoggingSettings:MinimumLevel"] ?? "Information";
+
+    var level = Enum.TryParse<LogEventLevel>(levelStr, ignoreCase: true, out var parsedLevel)
+        ? parsedLevel
+        : LogEventLevel.Information;
+
+    var absoluteLogPath = System.IO.Path.IsPathRooted(logPath)
+        ? logPath
+        : System.IO.Path.GetFullPath(System.IO.Path.Combine(ctx.HostingEnvironment.ContentRootPath, logPath));
+
+    Directory.CreateDirectory(absoluteLogPath);
+
+    lc.MinimumLevel.Is(level)
+      .Enrich.FromLogContext()
+      .WriteTo.Console(new JsonFormatter())
+      .WriteTo.File(
+          path: System.IO.Path.Combine(absoluteLogPath, "backend-serilog-.log"),
+          rollingInterval: RollingInterval.Day,
+          outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} {Level:u3}] {Message:lj}{NewLine}{Exception}",
+          retainedFileCountLimit: 31,
+          shared: true);
+});
 
 var frontendOrigin = builder.Configuration["FRONTEND_ORIGIN"] ?? "http://localhost:5173";
 

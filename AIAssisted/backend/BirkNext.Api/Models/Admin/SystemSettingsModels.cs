@@ -61,14 +61,23 @@ public class RuntimeInfo
     public bool RunningFromPublishedArtifact { get; set; }
 }
 
+public class LogFileEntry
+{
+    public string Label { get; set; } = "";
+    public string Path { get; set; } = "";
+    public bool Exists { get; set; }
+}
+
 public class LoggingInfo
 {
     public string Provider { get; set; } = "";
     public string MinimumLevel { get; set; } = "";
     public List<string> Sinks { get; set; } = [];
     public string LogPath { get; set; } = "";
+    public string ResolvedLogsFolder { get; set; } = "";
     public string SeqUrl { get; set; } = "";
     public bool StructuredLogging { get; set; }
+    public List<LogFileEntry> LogFiles { get; set; } = [];
 }
 
 public class MaintenanceInfo

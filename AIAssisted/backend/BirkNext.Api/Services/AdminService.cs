@@ -92,6 +92,11 @@ public class AdminService
         var structuredLogging = _config.GetValue<bool>("LoggingSettings:StructuredLogging", true);
         var sinks = ResolveSinks(logPath, seqUrl);
 
+        var absoluteLogPath = System.IO.Path.IsPathRooted(logPath)
+            ? logPath
+            : System.IO.Path.GetFullPath(System.IO.Path.Combine(_env.ContentRootPath, logPath));
+        var logFiles = BuildLogFileEntries(absoluteLogPath);
+
         var resetAllowed = _config.GetValue<bool>("AdminSettings:AllowLocalDatabaseReset", true);
         var isLocalMode = dbMode.Equals("Local", StringComparison.OrdinalIgnoreCase);
         var resetNotAllowedReason = ResolveResetNotAllowedReason(resetAllowed, isLocalMode);
@@ -147,8 +152,10 @@ public class AdminService
                 MinimumLevel = loggingMinLevel,
                 Sinks = sinks,
                 LogPath = logPath,
+                ResolvedLogsFolder = absoluteLogPath,
                 SeqUrl = seqUrl,
-                StructuredLogging = structuredLogging
+                StructuredLogging = structuredLogging,
+                LogFiles = logFiles
             },
             Maintenance = new MaintenanceInfo
             {
@@ -254,7 +261,7 @@ public class AdminService
         var (valid, error) = ValidateSettingsUpdate(request);
         if (!valid) return (false, error);
 
-        var path = Path.Combine(_env.ContentRootPath, "appsettings.Local.json");
+        var path = System.IO.Path.Combine(_env.ContentRootPath, "appsettings.Local.json");
 
         JsonObject root;
         try
@@ -382,6 +389,39 @@ public class AdminService
         if (!string.IsNullOrWhiteSpace(seqUrl))
             sinks.Add("Seq");
         return sinks;
+    }
+
+    private static List<LogFileEntry> BuildLogFileEntries(string absoluteLogPath)
+    {
+        LogFileEntry Entry(string label, string fileName)
+        {
+            var fullPath = System.IO.Path.Combine(absoluteLogPath, fileName);
+            return new LogFileEntry { Label = label, Path = fullPath, Exists = File.Exists(fullPath) };
+        }
+
+        var files = new List<LogFileEntry>
+        {
+            Entry("Launcher Log",    "launcher.log"),
+            Entry("Backend Stdout",  "backend.out.log"),
+            Entry("Backend Stderr",  "backend.err.log"),
+            Entry("Frontend Stdout", "frontend.out.log"),
+            Entry("Frontend Stderr", "frontend.err.log"),
+        };
+
+        var latestSerilog = Directory.Exists(absoluteLogPath)
+            ? Directory.GetFiles(absoluteLogPath, "backend-serilog-*.log")
+                .OrderByDescending(f => f)
+                .FirstOrDefault()
+            : null;
+
+        files.Add(new LogFileEntry
+        {
+            Label = "Backend Serilog",
+            Path = latestSerilog ?? System.IO.Path.Combine(absoluteLogPath, "backend-serilog-<date>.log"),
+            Exists = latestSerilog is not null
+        });
+
+        return files;
     }
 
     private static string ResolveResetNotAllowedReason(bool resetAllowed, bool isLocalMode)
