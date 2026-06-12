@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using BirkNext.Web.GraphQL;
 using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
@@ -461,5 +462,102 @@ public static class SpecExplorerService
                     expanded.Add(l2.Id);                 // level 2 expanded by default
         }
         return expanded;
+    }
+
+    // ── Candidate-based tree (fallback when markdown has no headings) ─────
+
+    public static SpecTree BuildFromCandidates(IReadOnlyList<ExtractionCandidate> candidates)
+    {
+        if (candidates.Count == 0) return new SpecTree();
+
+        var roots = new List<SpecNode>();
+        int reqCount = 0, testCount = 0, clrCount = 0;
+
+        var hasContext = candidates.Any(c => !string.IsNullOrWhiteSpace(c.ContextHeading));
+
+        if (hasContext)
+        {
+            var groups = candidates
+                .GroupBy(c => string.IsNullOrWhiteSpace(c.ContextHeading) ? "(Uncategorized)" : c.ContextHeading!)
+                .OrderBy(g => g.Key == "(Uncategorized)" ? "￿" : g.Key);
+
+            foreach (var g in groups)
+            {
+                var section = new SpecNode { Title = g.Key, NodeType = SpecNodeType.Section, HeadingLevel = 2 };
+                AddKindSubGroups(section.Children, g.ToList(), headingLevel: 3, ref reqCount, ref testCount, ref clrCount);
+                roots.Add(section);
+            }
+        }
+        else
+        {
+            AddKindSubGroups(roots, candidates.ToList(), headingLevel: 2, ref reqCount, ref testCount, ref clrCount);
+        }
+
+        foreach (var root in roots) PropagateStats(root);
+
+        return new SpecTree
+        {
+            Roots = roots,
+            Health = new SpecHealth
+            {
+                TotalHeadings = roots.Count,
+                Requirements = reqCount,
+                Tests = testCount,
+                Clarifications = clrCount,
+            },
+        };
+    }
+
+    private static void AddKindSubGroups(
+        List<SpecNode> target,
+        List<ExtractionCandidate> candidates,
+        int headingLevel,
+        ref int reqCount, ref int testCount, ref int clrCount)
+    {
+        var nodeType = headingLevel <= 2 ? SpecNodeType.Section : SpecNodeType.SubSection;
+        var ordered = candidates
+            .GroupBy(c => c.Classification)
+            .OrderBy(g => g.Key switch
+            {
+                ScenarioKind.Requirement => 0,
+                ScenarioKind.Test => 1,
+                _ => 2,
+            });
+
+        foreach (var kg in ordered)
+        {
+            var label = kg.Key switch
+            {
+                ScenarioKind.Requirement => "Requirements",
+                ScenarioKind.Test => "Tests",
+                _ => "Clarifications",
+            };
+
+            var group = new SpecNode { Title = label, NodeType = nodeType, HeadingLevel = headingLevel };
+
+            foreach (var c in kg)
+            {
+                var itemType = c.Classification switch
+                {
+                    ScenarioKind.Requirement => SpecNodeType.Requirement,
+                    ScenarioKind.Test => SpecNodeType.AcceptanceTest,
+                    _ => SpecNodeType.Clarification,
+                };
+                group.Children.Add(new SpecNode
+                {
+                    Title = c.Title.Length > 200 ? c.Title[..200] : c.Title,
+                    NodeType = itemType,
+                    HeadingLevel = 0,
+                });
+                switch (c.Classification)
+                {
+                    case ScenarioKind.Requirement: reqCount++; break;
+                    case ScenarioKind.Test: testCount++; break;
+                    default: clrCount++; break;
+                }
+            }
+
+            if (group.Children.Count > 0) target.Add(group);
+        }
     }
 }

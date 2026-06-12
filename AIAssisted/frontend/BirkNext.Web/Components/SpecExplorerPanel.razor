@@ -8,11 +8,11 @@
     {
         @if (IsEmbeddedInReview)
         {
-            <!-- ── Embedded: no spec available yet ──────────────────────────── -->
+            <!-- ── Embedded: no spec or candidates available ───────────────── -->
             <div class="se-no-spec-notice">
                 <div class="se-empty-icon" aria-hidden="true">🌳</div>
                 <h3 class="se-empty-title">Spec Explorer</h3>
-                <p class="se-empty-desc">No specification data available. Analyze a specification to populate the explorer.</p>
+                <p class="se-empty-desc">No active review session found.</p>
             </div>
         }
         else
@@ -483,6 +483,18 @@
             _lastBuiltMarkdown = InitialSpecMarkdown;
             _specText = InitialSpecMarkdown;
             BuildTree();
+        }
+
+        // Fallback: build from candidates when markdown tree is absent or empty
+        if ((_tree is null || _tree.Roots.Count == 0) && Candidates is { Count: > 0 })
+        {
+            _tree = SpecExplorerService.BuildFromCandidates(Candidates);
+            _expandedIds = SpecExplorerService.GetDefaultExpanded(_tree.Roots);
+            _selectedNodeId = null;
+            _searchQuery = string.Empty;
+            _isMapView = false;
+            ApplyCoverageOverlay();
+            RefreshFlatCache();
         }
     }
 
