@@ -24,7 +24,7 @@
         </div>
     </div>
 
-    <ExtractionInput OnExtractionCompleted="HandleExtractionCompleted" />
+    <ExtractionInput OnExtractionCompleted="HandleExtractionCompleted" OnSpecMarkdownCaptured="HandleSpecMarkdownCaptured" />
 
     <section class="review-results-panel" aria-label="Specification review results">
         <div class="review-results-header">
@@ -70,7 +70,7 @@
         }
         else
         {
-            <ExtractionReviewList PipelineResult="_pipelineResult" InitialSession="_sessionSnapshot" />
+            <ExtractionReviewList PipelineResult="_pipelineResult" InitialSession="_sessionSnapshot" SpecMarkdown="_specMarkdown" />
         }
     </section>
 </div>
@@ -78,6 +78,7 @@
 @code {
     private ExtractionPipelineResult? _pipelineResult;
     private ExtractionSessionSnapshot? _sessionSnapshot;
+    private string _specMarkdown = string.Empty;
 
     private int RequirementMetric => _pipelineResult?.RequirementCount ?? 0;
     private int TestMetric => _pipelineResult?.TestCount ?? 0;
@@ -94,8 +95,11 @@
         {
             _sessionSnapshot = session;
             _pipelineResult = ExtractionPipelineResult.Restore(session);
+            _specMarkdown = session.SpecMarkdown;
         }
     }
+
+    private void HandleSpecMarkdownCaptured(string markdown) => _specMarkdown = markdown;
 
     private void HandleExtractionCompleted(ExtractionPipelineResult result)
     {

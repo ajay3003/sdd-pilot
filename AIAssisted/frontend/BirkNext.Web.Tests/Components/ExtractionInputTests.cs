@@ -199,6 +199,55 @@ public class ExtractionInputTests : BunitContext
 
         cut.Find("[data-testid='extract-button']").HasAttribute("disabled").Should().BeFalse();
     }
+
+    [Fact]
+    public async Task SuccessfulExtraction_RaisesOnSpecMarkdownCapturedWithRawInput()
+    {
+        const string specText = "The system shall allow login.";
+        _mockExtractionService
+            .Setup(s => s.ExtractAsync(specText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeSuccessResult());
+
+        string? capturedMarkdown = null;
+
+        var cut = Render<ExtractionInput>(p =>
+            p.Add(c => c.OnSpecMarkdownCaptured, (string m) => { capturedMarkdown = m; }));
+
+        cut.Find("[data-testid='spec-textarea']").Input(specText);
+        cut.Find("[data-testid='extract-button']").Click();
+
+        await cut.WaitForStateAsync(
+            () => capturedMarkdown is not null,
+            timeout: TimeSpan.FromSeconds(2));
+
+        capturedMarkdown.Should().Be(specText);
+    }
+
+    [Fact]
+    public async Task SuccessfulExtraction_RaisesMarkdownCaptured_BeforeExtractionCompleted()
+    {
+        const string specText = "The system shall allow login.";
+        _mockExtractionService
+            .Setup(s => s.ExtractAsync(specText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeSuccessResult());
+
+        var order = new List<string>();
+
+        var cut = Render<ExtractionInput>(p =>
+        {
+            p.Add(c => c.OnSpecMarkdownCaptured, (string _) => { order.Add("markdown"); });
+            p.Add(c => c.OnExtractionCompleted, (ExtractionPipelineResult _) => { order.Add("result"); });
+        });
+
+        cut.Find("[data-testid='spec-textarea']").Input(specText);
+        cut.Find("[data-testid='extract-button']").Click();
+
+        await cut.WaitForStateAsync(
+            () => order.Count >= 2,
+            timeout: TimeSpan.FromSeconds(2));
+
+        order.Should().Equal("markdown", "result");
+    }
 }
 
 // ── T085 ─────────────────────────────────────────────────────────────────────

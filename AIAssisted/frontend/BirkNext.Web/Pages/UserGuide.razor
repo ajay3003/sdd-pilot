@@ -26,6 +26,8 @@
         <span class="ug-toc-sep">·</span>
         <a href="#feature-details" class="ug-toc-link">Feature Details</a>
         <span class="ug-toc-sep">·</span>
+        <a href="#discovery" class="ug-toc-link">Feature Discovery</a>
+        <span class="ug-toc-sep">·</span>
         <a href="#ai-dev" class="ug-toc-link">AI-Assisted Dev</a>
         <span class="ug-toc-sep">·</span>
         <a href="#faq" class="ug-toc-link">FAQ</a>
@@ -237,7 +239,134 @@
         </div>
     </section>
 
-    <!-- ── Section 6: AI-Assisted Development ──────────────────────────── -->
+    <!-- ── Section 6: Feature Discovery ──────────────────────────────────── -->
+    <section id="discovery" class="ug-section">
+        <h2 class="ug-section-title">Feature Discovery</h2>
+        <p class="ug-section-lead">Several powerful analysis views are embedded as tabs inside existing workflows — they do not have dedicated menu items. This section tells you exactly where to find each one and how to activate it.</p>
+
+        <div class="ug-callout ug-callout-tip">
+            <strong>Key rule:</strong> Run analysis first, then explore the result tabs. Once analysis completes, switching between tabs does not require re-uploading files — the session is preserved automatically.
+        </div>
+
+        <div class="ug-table-scroll">
+            <table class="ug-table">
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th>Found Inside</th>
+                        <th>Route</th>
+                        <th>How To Access</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Document View</strong></td>
+                        <td>Specification Review</td>
+                        <td class="ug-td-mono">/extract</td>
+                        <td>Analyse a spec → click <strong>Document View</strong> tab in Analysis Results</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Flow View</strong></td>
+                        <td>Specification Review</td>
+                        <td class="ug-td-mono">/extract</td>
+                        <td>Analyse a spec → click <strong>Flow View</strong> tab in Analysis Results</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Traceability View</strong></td>
+                        <td>Specification Review</td>
+                        <td class="ug-td-mono">/extract</td>
+                        <td>Analyse a spec → active by default in Analysis Results</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Architecture View</strong></td>
+                        <td>Specification Review</td>
+                        <td class="ug-td-mono">/extract</td>
+                        <td>Analyse a spec → click <strong>Architecture View</strong> tab in Analysis Results</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Spec Explorer</strong></td>
+                        <td>Specification Review</td>
+                        <td class="ug-td-mono">/extract</td>
+                        <td>Analyse a spec → click <strong>Spec Explorer</strong> tab in Analysis Results</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Task Explorer</strong></td>
+                        <td>Implementation Review</td>
+                        <td class="ug-td-mono">/task-alignment</td>
+                        <td>Analyse spec.md + tasks.md → click <strong>Task Explorer</strong> tab in results</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Risk &amp; Testing</strong></td>
+                        <td>Implementation Review</td>
+                        <td class="ug-td-mono">/task-alignment</td>
+                        <td>Analyse spec.md + tasks.md → click <strong>Risk &amp; Testing</strong> tab in results</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h3 class="ug-subsection-title" id="disc-spec-explorer">Spec Explorer</h3>
+        <p><strong>Purpose:</strong> Transforms the specification into a navigable, filterable hierarchy of sections, requirements, user stories, acceptance tests, and tables. When used alongside extraction results, each section shows its coverage status.</p>
+        <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>, then click the <strong>Spec Explorer</strong> tab in the Analysis Results area. The explorer builds automatically from the analysed spec — no re-upload required.</p>
+        <p><strong>When to use:</strong></p>
+        <ul class="ug-fd-list">
+            <li>Navigating a large or complex specification by structure rather than by extracted item</li>
+            <li>Verifying that all heading sections are covered by extracted candidates</li>
+            <li>Identifying sections with Missing or Partial coverage</li>
+            <li>Exploring the document outline before accepting or rejecting candidates</li>
+        </ul>
+        <div class="ug-callout ug-callout-tip">
+            <strong>Note:</strong> Spec Explorer is not a standalone menu item. It only appears after a successful Specification Review analysis. Refreshing the page will restore the Spec Explorer from the saved session automatically.
+        </div>
+
+        <h3 class="ug-subsection-title" id="disc-flow-view">Flow View</h3>
+        <p><strong>Purpose:</strong> Organises extracted candidates around business flows and user journeys rather than document structure. Flow View groups requirements, tests, and clarifications by capability — helping you see the functional intent behind the spec.</p>
+        <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>, then click the <strong>Flow View</strong> tab in the Analysis Results area.</p>
+        <p><strong>When to use:</strong></p>
+        <ul class="ug-fd-list">
+            <li>Understanding user journeys and business workflows captured in the spec</li>
+            <li>Reviewing candidates grouped by capability or functional area rather than document order</li>
+            <li>Planning test coverage from a feature or journey perspective</li>
+        </ul>
+
+        <h3 class="ug-subsection-title" id="disc-traceability-view">Traceability View (Analysis Tab)</h3>
+        <p><strong>Purpose:</strong> Shows traceability relationships between the requirements, tests, and clarifications extracted in the current analysis session. This is the <em>default</em> view shown after analysis. Use it to identify coverage gaps: requirements without tests, tests without requirements, and unresolved clarification items.</p>
+        <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>. The Traceability View tab is active by default in Analysis Results.</p>
+        <div class="ug-callout ug-callout-tip">
+            <strong>Note:</strong> This is different from the standalone <a href="/traceability" class="ug-inline-link">Traceability &amp; Coverage</a> page. The Traceability View tab shows relationships <em>within a single analysis session</em>. The standalone page covers accepted artifacts across the full project library.
+        </div>
+        <p><strong>When to use:</strong></p>
+        <ul class="ug-fd-list">
+            <li>Identifying requirements that have no test candidates in the current analysis</li>
+            <li>Finding tests that are not linked to any requirement</li>
+            <li>Reviewing unresolved clarification items before accepting candidates</li>
+        </ul>
+
+        <h3 class="ug-subsection-title" id="disc-architecture-view">Architecture View</h3>
+        <p><strong>Purpose:</strong> Organises extracted candidates around technical concerns and architectural boundaries. Architecture View groups items by technical area (Security, API, Integration, Domain, etc.) — helping architects and senior developers assess the systemic scope of the specification.</p>
+        <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>, then click the <strong>Architecture View</strong> tab in the Analysis Results area.</p>
+        <p><strong>When to use:</strong></p>
+        <ul class="ug-fd-list">
+            <li>Reviewing a specification from an architecture or systems perspective</li>
+            <li>Identifying cross-cutting concerns and integration points captured in the spec</li>
+            <li>Assessing technical risk areas before implementation planning</li>
+        </ul>
+
+        <h3 class="ug-subsection-title" id="disc-task-explorer">Task Explorer</h3>
+        <p><strong>Purpose:</strong> Transforms a tasks.md into a navigable hierarchy of phases, user story groups, task groups, and individual tasks. When analysed with spec.md, each task is enriched with alignment status (Spec Linked, Needs Review, Technical Only, Possible Deviation), risk level, and regression candidate flags.</p>
+        <p><strong>How to access:</strong> Upload both spec.md and tasks.md on <a href="/task-alignment" class="ug-inline-link">Implementation Review</a> and run analysis. Then click the <strong>Task Explorer</strong> tab in the results area. The explorer builds automatically — no re-upload required.</p>
+        <p><strong>When to use:</strong></p>
+        <ul class="ug-fd-list">
+            <li>Getting a structural overview of a tasks.md file</li>
+            <li>Exploring spec alignment status, risk, and regression flags per phase or user story group</li>
+            <li>Drilling into individual tasks to see matched spec items and affected areas</li>
+        </ul>
+        <div class="ug-callout ug-callout-tip">
+            <strong>Note:</strong> Task Explorer is not a standalone menu item. It only appears after a successful Implementation Review analysis. The explorer can also be used standalone — without running alignment — by pasting tasks.md content directly.
+        </div>
+    </section>
+
+    <!-- ── Section 7: AI-Assisted Development ──────────────────────────── -->
     <section id="ai-dev" class="ug-section">
         <h2 class="ug-section-title">AI-Assisted Development</h2>
         <p class="ug-section-lead">QA Review Studio is built for teams using AI to accelerate implementation. The platform helps you maintain quality, traceability, and governance even when velocity is high.</p>
@@ -289,7 +418,7 @@
         </div>
     </section>
 
-    <!-- ── Section 7: FAQ ───────────────────────────────────────────────── -->
+    <!-- ── Section 8: FAQ ───────────────────────────────────────────────── -->
     <section id="faq" class="ug-section">
         <h2 class="ug-section-title">Frequently Asked Questions</h2>
 
@@ -311,7 +440,7 @@
         </div>
     </section>
 
-    <!-- ── Section 8: Analysis Ecosystem ───────────────────────────────── -->
+    <!-- ── Section 9: Analysis Ecosystem ───────────────────────────────── -->
     <section id="ecosystem" class="ug-section">
         <h2 class="ug-section-title">Analysis Ecosystem</h2>
         <p class="ug-section-lead">How the Analysis features relate to each other and to the broader delivery workflow.</p>
@@ -363,7 +492,7 @@
         </div>
     </section>
 
-    <!-- ── Section 9: About ─────────────────────────────────────────────── -->
+    <!-- ── Section 10: About ────────────────────────────────────────────── -->
     <section id="about" class="ug-section ug-about-section">
         <h2 class="ug-section-title">About</h2>
         <div class="ug-about-content">
@@ -466,12 +595,12 @@
             ["Deep feature analysis — use the specific feature page"]),
 
         new("spec-review", "Specification Review", "Review", "review", "/extract",
-            "Upload and review a spec.md file; extract and classify candidates.",
+            "Upload and review a spec.md file; extract and classify candidates. Analysis results include Document, Flow, Traceability, Architecture, and Spec Explorer views.",
             "spec.md",
-            "Extracted requirements, tests, and clarifications",
+            "Extracted requirements, tests, and clarifications; Document, Flow, Traceability, Architecture, and Spec Explorer views",
             "When starting work on a new feature or reviewing an updated spec.",
             ["Testers", "Test Leads", "Product Owners"],
-            ["Starting a new feature", "Reviewing a spec update"],
+            ["Starting a new feature", "Reviewing a spec update", "Exploring spec structure or flow with embedded views"],
             ["When you have no specification document"]),
 
         new("artifact-library", "QA Artifact Library", "Library", "library", "/scenarios",
@@ -556,12 +685,12 @@
             ["Initial implementation planning — use Implementation Review"]),
 
         new("impl-review", "Implementation Review", "Analysis", "analysis", "/task-alignment",
-            "Validate a tasks.md against spec.md for alignment, risk, and test coverage.",
+            "Validate a tasks.md against spec.md for alignment, risk, and test coverage. Results include Spec Alignment, Risk & Testing, and Task Explorer tabs.",
             "spec.md + tasks.md",
-            "Spec alignment report, risk classification, regression candidates",
+            "Spec alignment report, risk classification, regression candidates; Task Explorer view",
             "Before implementing or reviewing an implementation plan.",
             ["Test Leads", "Developers", "Architects"],
-            ["Reviewing implementation plans", "Sprint planning QA gate"],
+            ["Reviewing implementation plans", "Sprint planning QA gate", "Exploring task hierarchy with Task Explorer"],
             ["Comparing specification versions — use Specification Deltas"]),
 
         new("ai-review", "AI Change Review", "AI Review", "ai", "/ai-change-auditor",
@@ -615,6 +744,10 @@
 
     private static readonly FaqItem[] AllFaq =
     [
+        new("embedded-views",
+            "Where are Spec Explorer, Task Explorer, Flow View, Traceability View, and Architecture View?",
+            "<p>These features are embedded as <strong>tabs inside existing workflow pages</strong> — they do not appear as separate menu items:</p><ul><li><strong>Spec Explorer, Flow View, Traceability View (tab), Architecture View</strong> — tabs inside <strong>Specification Review</strong> (<a href='/extract'>/extract</a>). They appear automatically after a successful spec analysis.</li><li><strong>Task Explorer</strong> — a tab inside <strong>Implementation Review</strong> (<a href='/task-alignment'>/task-alignment</a>). It appears after analysing spec.md + tasks.md together.</li></ul><p>Once analysis is complete, switching tabs does not require re-uploading files — the session is preserved automatically. See the <a href='#discovery'>Feature Discovery</a> section for full details.</p>"),
+
         new("drift-vs-review",
             "What is the difference between Spec Drift and Implementation Review?",
             "<p><strong>Implementation Review</strong> analyses your <em>implementation plan</em> (tasks.md) against the <em>specification</em> to surface alignment gaps, risk, and recommended tests. It answers: <em>Is my task list aligned to the spec?</em></p><p><strong>Spec Drift</strong> analyses the broader gap between what the <em>specification says</em> and what the <em>implementation covers</em> over time. It answers: <em>Has my codebase drifted away from the spec?</em></p>"),

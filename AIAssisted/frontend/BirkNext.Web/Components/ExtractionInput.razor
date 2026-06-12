@@ -169,6 +169,7 @@
 
 @code {
     [Parameter] public EventCallback<ExtractionPipelineResult> OnExtractionCompleted { get; set; }
+    [Parameter] public EventCallback<string> OnSpecMarkdownCaptured { get; set; }
 
     private string _rawInput = string.Empty;
     private bool _isExtracting;
@@ -263,6 +264,7 @@
                     result.InputLengthChars, reason, sessionId);
             }
 
+            await OnSpecMarkdownCaptured.InvokeAsync(_rawInput);
             await OnExtractionCompleted.InvokeAsync(result);
         }
         finally

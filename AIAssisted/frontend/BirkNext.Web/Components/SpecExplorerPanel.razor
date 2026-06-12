@@ -448,6 +448,7 @@
 
 @code {
     [Parameter] public IReadOnlyList<ExtractionCandidate>? Candidates { get; set; }
+    [Parameter] public string InitialSpecMarkdown { get; set; } = string.Empty;
 
     private SpecificationImport? _importRef;
     private string _specText = string.Empty;
@@ -457,6 +458,15 @@
     private string _searchQuery = string.Empty;
     private bool _isMapView;
     private List<(SpecNode Node, int Depth, bool IsMatch)> _flatCache = [];
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrWhiteSpace(InitialSpecMarkdown) && _tree is null && string.IsNullOrEmpty(_specText))
+        {
+            _specText = InitialSpecMarkdown;
+            BuildTree();
+        }
+    }
 
     private bool CanBuild => !string.IsNullOrWhiteSpace(_specText);
 

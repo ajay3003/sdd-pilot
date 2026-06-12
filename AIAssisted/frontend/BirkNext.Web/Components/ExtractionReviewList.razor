@@ -671,7 +671,7 @@ else
 
         @if (_activeViewMode == ExtractionViewMode.SpecExplorer)
         {
-            <SpecExplorerPanel Candidates="@PipelineResult.Candidates" />
+            <SpecExplorerPanel Candidates="@PipelineResult.Candidates" InitialSpecMarkdown="@SpecMarkdown" />
         }
 
         @if (!anyVisible && _activeViewMode != ExtractionViewMode.Traceability && _activeViewMode != ExtractionViewMode.SpecExplorer)
@@ -761,6 +761,7 @@ else
 @code {
     [Parameter] public ExtractionPipelineResult? PipelineResult { get; set; }
     [Parameter] public ExtractionSessionSnapshot? InitialSession { get; set; }
+    [Parameter] public string SpecMarkdown { get; set; } = string.Empty;
 
     private const string ProjectId = "00000000-0000-0000-0000-000000000001";
 
@@ -1728,6 +1729,7 @@ else
             ActiveLinkFilter = _activeLinkFilter,
             SearchTerm = _searchTerm,
             ActiveViewMode = _activeViewMode,
+            SpecMarkdown = SpecMarkdown,
             SectionExpanded = _sectionExpanded.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
             ReqSubsectionExpanded = new Dictionary<string, bool>(_reqSubsectionExpanded),
             TestSubsectionExpanded = new Dictionary<string, bool>(_testSubsectionExpanded),
