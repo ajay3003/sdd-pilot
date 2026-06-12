@@ -711,97 +711,23 @@ function Start-DotNetProjectWindow {
 
     if ($Runnable.Kind -eq "StaticWeb") {
         # Blazor WebAssembly artifact mode.
-        # BirkNext.Web is not a runnable server DLL. It is static content under wwwroot.
-        $escapedRoot = Escape-PowerShellSingleQuotedString -Value $Runnable.Path
-
+        # BirkNext.Web is not a runnable server DLL. Serve wwwroot using dotnet-serve.
         $runCommand = @"
-`$wwwroot = '$escapedRoot'
-`$port = 5173
-`$prefix = "http://localhost:`$port/"
-
-if (`$null -ne (Get-Command 'dotnet-serve' -ErrorAction SilentlyContinue)) {
-    Write-Host "Serving Blazor WebAssembly frontend with dotnet-serve..." -ForegroundColor Cyan
-    Write-Host "Frontend URL: `$prefix" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "Keep this window open while testing." -ForegroundColor Yellow
-    dotnet-serve --directory "`$wwwroot" --port `$port
-}
-else {
-    Write-Host "NOTE: dotnet-serve not installed. Using built-in static file server." -ForegroundColor Yellow
-    Write-Host "To install dotnet-serve: dotnet tool install --global dotnet-serve" -ForegroundColor Yellow
-    Write-Host ""
-
-    function Get-MimeType([string]`$path) {
-        switch ([System.IO.Path]::GetExtension(`$path).ToLowerInvariant()) {
-            ".html" { "text/html"; break }
-            ".htm"  { "text/html"; break }
-            ".js"   { "application/javascript"; break }
-            ".mjs"  { "application/javascript"; break }
-            ".css"  { "text/css"; break }
-            ".json" { "application/json"; break }
-            ".wasm" { "application/wasm"; break }
-            ".dll"  { "application/octet-stream"; break }
-            ".dat"  { "application/octet-stream"; break }
-            ".pdb"  { "application/octet-stream"; break }
-            ".png"  { "image/png"; break }
-            ".jpg"  { "image/jpeg"; break }
-            ".jpeg" { "image/jpeg"; break }
-            ".gif"  { "image/gif"; break }
-            ".svg"  { "image/svg+xml"; break }
-            ".ico"  { "image/x-icon"; break }
-            ".woff" { "font/woff"; break }
-            ".woff2"{ "font/woff2"; break }
-            default { "application/octet-stream"; break }
-        }
-    }
-
-    `$listener = [System.Net.HttpListener]::new()
-    `$listener.Prefixes.Add(`$prefix)
-    `$listener.Start()
-
-    Write-Host "Serving Blazor WebAssembly frontend from: `$wwwroot" -ForegroundColor Cyan
-    Write-Host "Frontend URL: `$prefix" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "Keep this window open while testing." -ForegroundColor Yellow
-
-    Start-Process `$prefix
-
-    while (`$listener.IsListening) {
-        `$context = `$listener.GetContext()
-        `$requestPath = [System.Uri]::UnescapeDataString(`$context.Request.Url.AbsolutePath.TrimStart('/'))
-
-        if ([string]::IsNullOrWhiteSpace(`$requestPath)) {
-            `$requestPath = "index.html"
-        }
-
-        `$candidate = Join-Path `$wwwroot `$requestPath
-
-        if ((Test-Path `$candidate -PathType Container)) {
-            `$candidate = Join-Path `$candidate "index.html"
-        }
-
-        if (-not (Test-Path `$candidate -PathType Leaf)) {
-            `$candidate = Join-Path `$wwwroot "index.html"
-        }
-
-        try {
-            `$bytes = [System.IO.File]::ReadAllBytes(`$candidate)
-            `$context.Response.StatusCode = 200
-            `$context.Response.ContentType = Get-MimeType `$candidate
-            `$context.Response.ContentLength64 = `$bytes.Length
-            `$context.Response.OutputStream.Write(`$bytes, 0, `$bytes.Length)
-        }
-        catch {
-            `$message = [System.Text.Encoding]::UTF8.GetBytes(`$_.Exception.Message)
-            `$context.Response.StatusCode = 500
-            `$context.Response.ContentType = "text/plain"
-            `$context.Response.OutputStream.Write(`$message, 0, `$message.Length)
-        }
-        finally {
-            `$context.Response.OutputStream.Close()
-        }
+`$env:PATH += ';' + `$env:USERPROFILE + '\.dotnet\tools'
+`$serveInstalled = dotnet tool list -g 2>&1 | Select-String 'dotnet-serve'
+if (-not `$serveInstalled) {
+    Write-Host 'dotnet-serve not found. Installing...' -ForegroundColor Yellow
+    dotnet tool install --global dotnet-serve
+    if (`$LASTEXITCODE -ne 0) {
+        Write-Host 'Install failed. Run manually: dotnet tool install --global dotnet-serve' -ForegroundColor Red
+        pause
+        exit 1
     }
 }
+Write-Host 'Frontend URL: http://localhost:5173/' -ForegroundColor Green
+Write-Host ''
+Write-Host 'Keep this window open while testing.' -ForegroundColor Yellow
+dotnet serve --directory "$($Runnable.Path)" --port 5173
 "@
     }
     elseif ($Runnable.Kind -eq "Dll") {
@@ -845,7 +771,8 @@ $runCommand
 
     Info "Opening $Name window..."
 
-    Start-Process powershell.exe -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", $command
+    $encodedCommand = [System.Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($command))
+    Start-Process powershell.exe -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encodedCommand
 }
 
 Write-Host ""
