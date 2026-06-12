@@ -246,6 +246,7 @@ public class FeatureVisibilityDto
     [JsonPropertyName("impactAnalysis")]       public bool ImpactAnalysis       { get; set; } = true;
     [JsonPropertyName("specDrift")]            public bool SpecDrift            { get; set; } = true;
     [JsonPropertyName("implementationReview")] public bool ImplementationReview { get; set; } = true;
+    [JsonPropertyName("taskExplorer")]         public bool TaskExplorer         { get; set; } = true;
     [JsonPropertyName("aiChangeReview")]       public bool AiChangeReview       { get; set; } = true;
     [JsonPropertyName("qaReadiness")]          public bool QaReadiness          { get; set; } = true;
     [JsonPropertyName("adminSystemSettings")]  public bool AdminSystemSettings  { get; set; } = true;

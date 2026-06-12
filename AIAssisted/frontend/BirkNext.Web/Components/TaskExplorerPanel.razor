@@ -651,6 +651,7 @@
 @code {
     [Parameter] public string TasksText { get; set; } = string.Empty;
     [Parameter] public AlignmentReport? Report { get; set; }
+    [Parameter] public EventCallback<string> OnBuilt { get; set; }
 
     private SpecificationImport? _importRef;
     private string _localTasksText = string.Empty;
@@ -720,6 +721,8 @@
         _activeFilter = null;
         _isMapView = false;
         RefreshFlatCache();
+        if (OnBuilt.HasDelegate)
+            _ = OnBuilt.InvokeAsync(text);
     }
 
     private void RefreshEnrichment()

@@ -697,6 +697,15 @@
             ["Reviewing implementation plans", "Sprint planning QA gate", "Exploring task hierarchy with Task Explorer"],
             ["Comparing specification versions — use Specification Deltas"]),
 
+        new("task-explorer", "Task Explorer", "Analysis", "analysis", "/task-explorer",
+            "Explore a tasks.md implementation plan independently — browse phases, task groups, and tables without running spec alignment.",
+            "tasks.md",
+            "Interactive hierarchy of phases, user stories, task groups, and completion metrics",
+            "When you need to explore or review an implementation plan without a spec alignment workflow.",
+            ["Developers", "Test Leads", "Scrum Masters"],
+            ["Exploring implementation plan structure", "Quick task hierarchy review", "Planning before Implementation Review"],
+            ["Spec-aligned task analysis — use Implementation Review"]),
+
         new("ai-review", "AI Change Review", "AI Review", "ai", "/ai-change-auditor",
             "Review AI-generated implementation changes for alignment and quality.",
             "AI-generated change description or diff",
@@ -750,7 +759,7 @@
     [
         new("embedded-views",
             "Where are Spec Explorer, Task Explorer, Flow View, Traceability View, and Architecture View?",
-            "<p>These features are embedded as <strong>tabs inside existing workflow pages</strong> — they do not appear as separate menu items:</p><ul><li><strong>Spec Explorer, Flow View, Traceability View (tab), Architecture View</strong> — tabs inside <strong>Specification Review</strong> (<a href='/extract'>/extract</a>). They appear automatically after a successful spec analysis.</li><li><strong>Task Explorer</strong> — a tab inside <strong>Implementation Review</strong> (<a href='/task-alignment'>/task-alignment</a>). It appears after analysing spec.md + tasks.md together.</li></ul><p>Once analysis is complete, switching tabs does not require re-uploading files — the session is preserved automatically. See the <a href='#discovery'>Feature Discovery</a> section for full details.</p>"),
+            "<p><strong>Spec Explorer</strong> tabs (Flow View, Traceability View, Architecture View, Spec Explorer) are embedded inside <strong>Specification Review</strong> (<a href='/extract'>/extract</a>) and appear automatically after a successful spec analysis.</p><p><strong>Task Explorer</strong> exists in two forms:</p><ul><li><strong>Standalone Task Explorer</strong> (<a href='/task-explorer'>/task-explorer</a>) — a dedicated menu item in the Analysis section. Upload or paste a tasks.md file to explore the implementation plan independently of any spec alignment.</li><li><strong>Task Explorer tab inside Implementation Review</strong> (<a href='/task-alignment'>/task-alignment</a>) — the same explorer enriched with spec alignment data after a full analysis. Use this when you want to explore tasks in the context of their spec coverage and risk.</li></ul><p>Once analysis is complete, switching tabs does not require re-uploading files — the session is preserved automatically. See the <a href='#discovery'>Feature Discovery</a> section for full details.</p>"),
 
         new("drift-vs-review",
             "What is the difference between Spec Drift and Implementation Review?",

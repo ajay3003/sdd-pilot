@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using BirkNext.Web.GraphQL;
 using BirkNext.Web.Models;
@@ -6,6 +7,8 @@ namespace BirkNext.Web.Services;
 
 public static class SpecExplorerService
 {
+    // ── Regexes ───────────────────────────────────────────────────────────────
+
     private static readonly Regex HeadingRe = new(
         @"^(#{1,6})\s+(.+)$", RegexOptions.Compiled);
 
@@ -13,12 +16,35 @@ public static class SpecExplorerService
         @"\b(FR|NFR|SC|US|UC|AC|TS|REQ)-?\s*(\d{1,4})\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static readonly Regex UserStoryInlinRe = new(
+    private static readonly Regex UserStoryInlineRe = new(
         @"^[-*]\s+(?:User Story|US|Story)\s*[:\-–]\s*(.+)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static readonly Regex ClarificationRe = new(
+    private static readonly Regex UserStoryHeadingRe = new(
+        @"^User\s+Stor(?:y|ies)\s*(?:#?\d+|[:\-–]|$)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex ClarificationInlineRe = new(
         @"^[-*]\s+(?:Clarification|OPEN|TBD|Question)\s*[:\-–]?\s*(.+)$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // Q/A patterns: "Q: text", "**Q:** text", "1. Q: text"
+    private static readonly Regex QaQuestionRe = new(
+        @"^\s*(?:\d+[\.\)]\s*)?\*{0,2}Q[:\.\)]\*{0,2}\s+(.+)$",
+        RegexOptions.Compiled);
+
+    private static readonly Regex QaAnswerRe = new(
+        @"^\s*\*{0,2}A[:\.\)]\*{0,2}\s+(.+)$",
+        RegexOptions.Compiled);
+
+    // BDD scenario header: "**Scenario 1:** title", "Scenario 1: title", "Scenario: title"
+    private static readonly Regex BddScenarioRe = new(
+        @"^\s*(?:[-*]\s*)?\*{0,2}Scenario\s*(?:#?\d+)?[:\*\s–-]*\*{0,2}\s*(.*?)[\*]*\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // BDD step keywords
+    private static readonly Regex BddKeywordRe = new(
+        @"^\s*(?:[-*]\s*)?\*{0,2}(Given|When|Then|And|But)\*{0,2}\s+(.+)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex EntityRe = new(
@@ -35,83 +61,308 @@ public static class SpecExplorerService
         @"\b(FR|NFR|SC|US|UC|AC|TS|REQ|TC)-?\s*(\d{1,4})\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    // ── Public API ────────────────────────────────────────────────────────
+    // ── Public API ────────────────────────────────────────────────────────────
 
     public static SpecTree Parse(string markdown)
     {
         var lines = markdown.Split('\n').Select(l => l.TrimEnd()).ToArray();
         var roots = new List<SpecNode>();
 
-        // headingStack: list of (level, node), ordered from top-level to deepest
-        var headingStack = new List<(int Level, SpecNode Node)>();
+        // headingStack: (level, node, semantics)
+        var headingStack = new List<(int Level, SpecNode Node, SectionSemantics Semantics)>();
 
-        // Counts for health summary
+        // Health counters
         var hHeadings = 0;
-        var hReq = 0; var hUs = 0; var hTest = 0;
+        var hReq = 0; var hUs = 0; var hTest = 0; var hBdd = 0;
         var hClr = 0; var hSc = 0; var hEnt = 0; var hDomain = 0; var hTables = 0;
 
-        // Current excerpt accumulator (per heading section)
-        var excerptLines = new List<string>();
+        // Full content accumulator (no line limit)
+        var contentLines = new List<string>();
 
-        // Table line buffer — flushed when a non-table line is encountered
+        // Table line buffer
         var tableBuffer = new List<string>();
+
+        // Q/A state
+        string? qaQuestion = null;
+        var qaAnswerLines = new List<string>();
+        bool qaInAnswer = false;
+
+        // BDD state
+        string? bddTitle = null;
+        var bddGiven = new List<string>();
+        var bddWhen = new List<string>();
+        var bddThen = new List<string>();
+        int bddPhase = 0; // 0=none, 1=given, 2=when, 3=then
+
+        SectionSemantics ActiveSemantics() =>
+            headingStack.Count > 0 ? headingStack[^1].Semantics : SectionSemantics.Generic;
+
+        bool InClarificationsContext() =>
+            headingStack.Any(h => h.Semantics == SectionSemantics.Clarifications);
+
+        bool InBddContext() =>
+            headingStack.Any(h =>
+                h.Semantics == SectionSemantics.UserStory ||
+                h.Semantics == SectionSemantics.AcceptanceScenarios);
+
+        SpecNode? ActiveParent() =>
+            headingStack.Count > 0 ? headingStack[^1].Node : null;
+
+        void FlushQaPair()
+        {
+            if (qaQuestion == null) { qaAnswerLines.Clear(); qaInAnswer = false; return; }
+            var parent = ActiveParent();
+            if (parent != null)
+            {
+                var answer = string.Join(" ", qaAnswerLines).Trim();
+                var title = StripMarkdown(qaQuestion);
+                if (title.Length > 160) title = title[..160];
+                var content = string.IsNullOrEmpty(answer)
+                    ? $"Q: {qaQuestion}"
+                    : $"Q: {qaQuestion}\nA: {answer}";
+                parent.Children.Add(new SpecNode
+                {
+                    Title = title,
+                    NodeType = SpecNodeType.QaPair,
+                    HeadingLevel = 0,
+                    QuestionText = qaQuestion,
+                    AnswerText = answer.Length > 0 ? answer : null,
+                    FullContent = content,
+                });
+                hClr++;
+            }
+            qaQuestion = null;
+            qaAnswerLines.Clear();
+            qaInAnswer = false;
+        }
+
+        void FlushBddScenario()
+        {
+            if (bddTitle == null && bddGiven.Count == 0 && bddWhen.Count == 0 && bddThen.Count == 0)
+                return;
+            var parent = ActiveParent();
+            if (parent != null)
+            {
+                var title = bddTitle ?? (bddGiven.Count > 0 ? bddGiven[0] : "Scenario");
+                if (title.Length > 200) title = title[..200];
+
+                var given = string.Join("\n", bddGiven);
+                var when = string.Join("\n", bddWhen);
+                var then = string.Join("\n", bddThen);
+
+                var sb = new StringBuilder();
+                if (!string.IsNullOrEmpty(given)) { sb.AppendLine("Given"); foreach (var g in bddGiven) sb.AppendLine($"  {g}"); }
+                if (!string.IsNullOrEmpty(when)) { sb.AppendLine("When"); foreach (var w in bddWhen) sb.AppendLine($"  {w}"); }
+                if (!string.IsNullOrEmpty(then)) { sb.AppendLine("Then"); foreach (var t in bddThen) sb.AppendLine($"  {t}"); }
+
+                parent.Children.Add(new SpecNode
+                {
+                    Title = title,
+                    NodeType = SpecNodeType.BddScenario,
+                    HeadingLevel = 0,
+                    BddGiven = given.Length > 0 ? given : null,
+                    BddWhen = when.Length > 0 ? when : null,
+                    BddThen = then.Length > 0 ? then : null,
+                    FullContent = sb.ToString().Trim(),
+                });
+                hBdd++;
+                hTest++;
+            }
+            bddTitle = null;
+            bddGiven.Clear();
+            bddWhen.Clear();
+            bddThen.Clear();
+            bddPhase = 0;
+        }
+
+        void FlushContent()
+        {
+            if (headingStack.Count == 0 || contentLines.Count == 0) { contentLines.Clear(); return; }
+            var node = headingStack[^1].Node;
+            var relevant = contentLines.Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
+            if (relevant.Count == 0) { contentLines.Clear(); return; }
+            var full = string.Join("\n", contentLines).Trim();
+            if (!string.IsNullOrEmpty(full) && string.IsNullOrEmpty(node.FullContent))
+                node.FullContent = full;
+            if (string.IsNullOrEmpty(node.Excerpt))
+                node.Excerpt = string.Join(" ", relevant.Take(5)).Trim();
+            contentLines.Clear();
+        }
+
+        // ── Main parse loop ──────────────────────────────────────────────────
 
         foreach (var line in lines)
         {
+            // ── Heading ──────────────────────────────────────────────────────
             var hm = HeadingRe.Match(line);
             if (hm.Success)
             {
                 FlushTableBuffer(tableBuffer, headingStack, roots, ref hTables);
-                FlushExcerpt(headingStack, excerptLines);
-                excerptLines.Clear();
+                FlushQaPair();
+                FlushBddScenario();
+                FlushContent();
 
                 var level = hm.Groups[1].Value.Length;
                 var rawTitle = hm.Groups[2].Value.Trim();
                 var title = StripMarkdown(rawTitle);
+                var semantics = DetectSemantics(title);
 
-                var nodeType = level == 1 ? SpecNodeType.Module
+                var nodeType = semantics == SectionSemantics.UserStory ? SpecNodeType.UserStory
+                             : level == 1 ? SpecNodeType.Module
                              : level == 2 ? SpecNodeType.Section
                              : level == 3 ? SpecNodeType.SubSection
                              : SpecNodeType.DeepSection;
 
-                var node = new SpecNode { Title = title, NodeType = nodeType, HeadingLevel = level };
                 hHeadings++;
+                if (nodeType == SpecNodeType.UserStory) hUs++;
 
-                // Pop until we find a heading with a lower level
+                var node = new SpecNode
+                {
+                    Title = title,
+                    NodeType = nodeType,
+                    HeadingLevel = level,
+                    Semantics = semantics,
+                };
+
                 while (headingStack.Count > 0 && headingStack[^1].Level >= level)
                     headingStack.RemoveAt(headingStack.Count - 1);
 
-                if (headingStack.Count == 0)
-                    roots.Add(node);
-                else
-                    headingStack[^1].Node.Children.Add(node);
+                if (headingStack.Count == 0) roots.Add(node);
+                else headingStack[^1].Node.Children.Add(node);
 
-                headingStack.Add((level, node));
+                headingStack.Add((level, node, semantics));
                 continue;
             }
 
-            // Table lines: buffer them; flush on any non-table line
+            // ── Table ────────────────────────────────────────────────────────
             if (TableRowRe.IsMatch(line))
             {
                 tableBuffer.Add(line);
                 continue;
             }
-
             if (tableBuffer.Count > 0)
                 FlushTableBuffer(tableBuffer, headingStack, roots, ref hTables);
 
-            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                // Blank line: flush Q/A pair if we were fully in answer mode
+                if (qaInAnswer && qaAnswerLines.Count > 0)
+                    FlushQaPair();
+                contentLines.Add(line);
+                continue;
+            }
 
-            // Must have an active heading parent to attach items to
             if (headingStack.Count == 0)
             {
-                excerptLines.Add(line);
+                contentLines.Add(line);
                 continue;
             }
 
             var parent = headingStack[^1].Node;
+            var sem = ActiveSemantics();
 
-            // Try spec ID patterns (FR-001, SC-002, etc.)
+            // ── Q/A mode (Clarifications sections) ──────────────────────────
+            if (InClarificationsContext())
+            {
+                var qm = QaQuestionRe.Match(line);
+                var am = QaAnswerRe.Match(line);
+
+                if (qm.Success)
+                {
+                    FlushQaPair();
+                    qaQuestion = qm.Groups[1].Value.Trim();
+                    qaInAnswer = false;
+                    continue;
+                }
+                if (am.Success && qaQuestion != null)
+                {
+                    qaAnswerLines.Add(am.Groups[1].Value.Trim());
+                    qaInAnswer = true;
+                    continue;
+                }
+                if (qaQuestion != null && !qaInAnswer)
+                {
+                    // Multi-line question continuation
+                    qaQuestion += " " + line.Trim();
+                    continue;
+                }
+                if (qaInAnswer)
+                {
+                    // Multi-line answer continuation
+                    qaAnswerLines.Add(line.Trim());
+                    continue;
+                }
+                // Fall through to standard processing if no Q/A state
+            }
+
+            // ── BDD mode (User Story / Acceptance Scenarios sections) ────────
+            if (InBddContext())
+            {
+                var scenarioM = BddScenarioRe.Match(line);
+                if (scenarioM.Success && !string.IsNullOrWhiteSpace(line.Replace("*", "").Replace("-", "").Trim()))
+                {
+                    // Verify it's actually a Scenario line (not just "---")
+                    var rawScenarioTitle = scenarioM.Groups[1].Value.Trim();
+                    if (!string.IsNullOrEmpty(rawScenarioTitle) || Regex.IsMatch(line, @"Scenario", RegexOptions.IgnoreCase))
+                    {
+                        FlushBddScenario();
+                        bddTitle = string.IsNullOrEmpty(rawScenarioTitle)
+                            ? ExtractScenarioTitle(line)
+                            : StripMarkdown(rawScenarioTitle);
+                        bddPhase = 0;
+                        continue;
+                    }
+                }
+
+                if (bddTitle != null)
+                {
+                    var km = BddKeywordRe.Match(line);
+                    if (km.Success)
+                    {
+                        var keyword = km.Groups[1].Value.ToLowerInvariant();
+                        var stepText = km.Groups[2].Value.Trim();
+                        if (keyword == "given")
+                        {
+                            bddGiven.Add(stepText);
+                            bddPhase = 1;
+                        }
+                        else if (keyword == "when")
+                        {
+                            bddWhen.Add(stepText);
+                            bddPhase = 2;
+                        }
+                        else if (keyword == "then")
+                        {
+                            bddThen.Add(stepText);
+                            bddPhase = 3;
+                        }
+                        else // And / But
+                        {
+                            var step = stepText;
+                            if (bddPhase == 1) bddGiven.Add(step);
+                            else if (bddPhase == 2) bddWhen.Add(step);
+                            else if (bddPhase == 3) bddThen.Add(step);
+                            else bddThen.Add(step);
+                        }
+                        continue;
+                    }
+
+                    // Continuation line for current BDD phase
+                    var cleanLine = StripMarkdown(line.TrimStart('-', '*', ' '));
+                    if (!string.IsNullOrWhiteSpace(cleanLine))
+                    {
+                        if (bddPhase == 1) bddGiven.Add(cleanLine);
+                        else if (bddPhase == 2) bddWhen.Add(cleanLine);
+                        else if (bddPhase == 3) bddThen.Add(cleanLine);
+                        else contentLines.Add(line);
+                        continue;
+                    }
+                }
+            }
+
+            // ── Standard item detection ──────────────────────────────────────
+
+            // Spec ID patterns (FR-001, SC-002, etc.)
             var sm = SpecItemRe.Match(line);
             if (sm.Success)
             {
@@ -128,9 +379,7 @@ public static class SpecExplorerService
                     _ => SpecNodeType.Requirement,
                 };
 
-                var rawTitle = line.Trim().TrimStart('-', '*', '>', ' ');
-                rawTitle = StripMarkdown(rawTitle);
-                if (rawTitle.Length > 160) rawTitle = rawTitle[..160];
+                var rawTitle = StripMarkdown(line.Trim().TrimStart('-', '*', '>', ' '));
 
                 parent.Children.Add(new SpecNode
                 {
@@ -138,20 +387,21 @@ public static class SpecExplorerService
                     NodeType = nodeType,
                     HeadingLevel = 0,
                     SpecItemId = itemId,
+                    FullContent = line.Trim(),
                 });
 
                 CountByType(nodeType, ref hReq, ref hUs, ref hTest, ref hClr, ref hSc, ref hEnt, ref hDomain);
                 continue;
             }
 
-            // Try inline user story pattern
-            var um = UserStoryInlinRe.Match(line);
+            // Inline user story pattern
+            var um = UserStoryInlineRe.Match(line);
             if (um.Success)
             {
                 var title = StripMarkdown(um.Groups[1].Value.Trim());
                 parent.Children.Add(new SpecNode
                 {
-                    Title = title.Length > 160 ? title[..160] : title,
+                    Title = title,
                     NodeType = SpecNodeType.UserStory,
                     HeadingLevel = 0,
                 });
@@ -159,14 +409,14 @@ public static class SpecExplorerService
                 continue;
             }
 
-            // Try clarification pattern
-            var cm = ClarificationRe.Match(line);
-            if (cm.Success)
+            // Inline clarification pattern (fallback when not in Q/A mode)
+            var cm = ClarificationInlineRe.Match(line);
+            if (cm.Success && !InClarificationsContext())
             {
                 var title = StripMarkdown(cm.Groups[1].Value.Trim());
                 parent.Children.Add(new SpecNode
                 {
-                    Title = title.Length > 160 ? title[..160] : title,
+                    Title = title,
                     NodeType = SpecNodeType.Clarification,
                     HeadingLevel = 0,
                 });
@@ -174,47 +424,71 @@ public static class SpecExplorerService
                 continue;
             }
 
-            // Accumulate excerpt content
-            if (excerptLines.Count < 8)
-                excerptLines.Add(line);
+            // Accumulate as full content
+            contentLines.Add(line);
         }
 
+        // ── End-of-file flushes ──────────────────────────────────────────────
         FlushTableBuffer(tableBuffer, headingStack, roots, ref hTables);
-        FlushExcerpt(headingStack, excerptLines);
+        FlushQaPair();
+        FlushBddScenario();
+        FlushContent();
 
-        // Post-process: propagate descendant counts up the tree
         foreach (var root in roots)
             PropagateStats(root);
 
-        var health = new SpecHealth
+        return new SpecTree
         {
-            TotalHeadings = hHeadings,
-            Requirements = hReq,
-            UserStories = hUs,
-            Tests = hTest,
-            Clarifications = hClr,
-            SuccessCriteria = hSc,
-            Entities = hEnt,
-            DomainItems = hDomain,
-            TablesDetected = hTables,
+            Roots = roots,
+            Health = new SpecHealth
+            {
+                TotalHeadings = hHeadings,
+                Requirements = hReq,
+                UserStories = hUs,
+                Tests = hTest,
+                BddScenarios = hBdd,
+                Clarifications = hClr,
+                SuccessCriteria = hSc,
+                Entities = hEnt,
+                DomainItems = hDomain,
+                TablesDetected = hTables,
+            },
         };
-
-        return new SpecTree { Roots = roots, Health = health };
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // ── Semantic section detection ────────────────────────────────────────────
 
-    private static void FlushExcerpt(List<(int Level, SpecNode Node)> stack, List<string> lines)
+    private static SectionSemantics DetectSemantics(string title)
     {
-        if (stack.Count == 0 || lines.Count == 0) return;
-        var node = stack[^1].Node;
-        if (string.IsNullOrEmpty(node.Excerpt))
-            node.Excerpt = string.Join(" ", lines.Take(5)).Trim();
+        var t = title.ToLowerInvariant().Trim();
+
+        if (UserStoryHeadingRe.IsMatch(title)) return SectionSemantics.UserStory;
+        if (Regex.IsMatch(t, @"\bclarification")) return SectionSemantics.Clarifications;
+        if (Regex.IsMatch(t, @"\bedge\s+case")) return SectionSemantics.EdgeCases;
+        if (Regex.IsMatch(t, @"\bassumption")) return SectionSemantics.Assumptions;
+        if (Regex.IsMatch(t, @"\bapi\s+surface|\bapi\b.*\binterface|\bapi\b.*\bdesign")) return SectionSemantics.ApiSurface;
+        if (Regex.IsMatch(t, @"\bobservabilit")) return SectionSemantics.Observability;
+        if (Regex.IsMatch(t, @"\bsecurity\b|\baccess\s+control")) return SectionSemantics.Security;
+        if (Regex.IsMatch(t, @"\bperformance\b|\bscalab")) return SectionSemantics.Performance;
+        if (Regex.IsMatch(t, @"\bacceptance\s+scenario|\bscenarios?\b")) return SectionSemantics.AcceptanceScenarios;
+        if (Regex.IsMatch(t, @"\bfunctional\s+req|\brequirements?\s*$")) return SectionSemantics.RequirementsSection;
+        if (Regex.IsMatch(t, @"\bsuccess\s+criteri")) return SectionSemantics.SuccessCriteriaSection;
+
+        return SectionSemantics.Generic;
     }
+
+    private static string ExtractScenarioTitle(string line)
+    {
+        // Extract title from "**Scenario 1:** Happy path" → "Happy path"
+        var m = Regex.Match(line, @"Scenario\s*\d*[:\s–-]+\*{0,2}\s*(.+?)[\*]*\s*$", RegexOptions.IgnoreCase);
+        return m.Success ? StripMarkdown(m.Groups[1].Value.Trim()) : "Scenario";
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static void FlushTableBuffer(
         List<string> buffer,
-        List<(int Level, SpecNode Node)> stack,
+        List<(int Level, SpecNode Node, SectionSemantics Semantics)> stack,
         List<SpecNode> roots,
         ref int hTables)
     {
@@ -222,10 +496,8 @@ public static class SpecExplorerService
         var tableNode = ParseTable(buffer, ref hTables);
         if (tableNode is not null)
         {
-            if (stack.Count > 0)
-                stack[^1].Node.Children.Add(tableNode);
-            else
-                roots.Add(tableNode);
+            if (stack.Count > 0) stack[^1].Node.Children.Add(tableNode);
+            else roots.Add(tableNode);
         }
         buffer.Clear();
     }
@@ -233,17 +505,13 @@ public static class SpecExplorerService
     private static SpecNode? ParseTable(List<string> lines, ref int tableCount)
     {
         if (lines.Count < 2) return null;
-
         var headers = SplitCells(lines[0]);
         if (headers.Count == 0) return null;
-
-        // Validate and skip separator row (line[1])
         var dataStart = TableSepRe.IsMatch(lines[1]) ? 2 : 1;
         if (dataStart >= lines.Count) return null;
 
         var tableKind = ClassifyTable(headers);
         var title = "Table: " + string.Join(" | ", headers.Take(3));
-
         var tableNode = new SpecNode
         {
             Title = title,
@@ -257,11 +525,11 @@ public static class SpecExplorerService
         {
             var cells = SplitCells(lines[i]);
             if (cells.Count == 0) continue;
-
             var cellText = string.Join(" ", cells);
             var specRefs = ExtractSpecRefs(cellText);
             var rowTitle = cells[0].Length > 120 ? cells[0][..120] : cells[0];
-            if (string.IsNullOrWhiteSpace(rowTitle)) rowTitle = cellText.Length > 120 ? cellText[..120] : cellText;
+            if (string.IsNullOrWhiteSpace(rowTitle))
+                rowTitle = cellText.Length > 120 ? cellText[..120] : cellText;
 
             tableNode.Children.Add(new SpecNode
             {
@@ -274,7 +542,6 @@ public static class SpecExplorerService
         }
 
         if (tableNode.Children.Count == 0) return null;
-
         tableCount++;
         return tableNode;
     }
@@ -325,16 +592,16 @@ public static class SpecExplorerService
 
         foreach (var child in node.Children)
         {
-            // TableSection has HeadingLevel=0 but HAS children — must recurse into it
             if (child.HeadingLevel == 0 && child.Children.Count == 0)
             {
-                // Leaf spec item or table row
                 switch (child.NodeType)
                 {
                     case SpecNodeType.Requirement: node.ReqCount++; break;
                     case SpecNodeType.UserStory: node.UserStoryCount++; break;
-                    case SpecNodeType.AcceptanceTest: node.TestCount++; break;
-                    case SpecNodeType.Clarification: node.ClarCount++; break;
+                    case SpecNodeType.AcceptanceTest:
+                    case SpecNodeType.BddScenario: node.TestCount++; break;
+                    case SpecNodeType.Clarification:
+                    case SpecNodeType.QaPair: node.ClarCount++; break;
                     case SpecNodeType.SuccessCriterion: node.ScCount++; break;
                 }
                 node.TotalDescendants++;
@@ -347,7 +614,7 @@ public static class SpecExplorerService
                 node.TestCount += child.TestCount;
                 node.ClarCount += child.ClarCount;
                 node.ScCount += child.ScCount;
-                node.TotalDescendants += child.TotalDescendants + 1; // +1 for the node itself
+                node.TotalDescendants += child.TotalDescendants + 1;
             }
         }
     }
@@ -363,14 +630,15 @@ public static class SpecExplorerService
             case SpecNodeType.Requirement: req++; break;
             case SpecNodeType.UserStory: us++; break;
             case SpecNodeType.AcceptanceTest: test++; break;
-            case SpecNodeType.Clarification: clr++; break;
+            case SpecNodeType.Clarification:
+            case SpecNodeType.QaPair: clr++; break;
             case SpecNodeType.SuccessCriterion: sc++; break;
             case SpecNodeType.Entity: ent++; break;
             case SpecNodeType.DomainItem: domain++; break;
         }
     }
 
-    // ── Tree navigation utilities (used by component) ─────────────────────
+    // ── Tree navigation utilities ─────────────────────────────────────────────
 
     public static SpecNode? FindNode(IEnumerable<SpecNode> nodes, string id)
     {
@@ -415,7 +683,6 @@ public static class SpecExplorerService
         var isMatch = matchIds?.Contains(node.Id) ?? false;
         var isAncestor = ancestorIds?.Contains(node.Id) ?? false;
 
-        // When searching, skip nodes that are neither matches nor ancestors
         if (matchIds is not null && !isMatch && !isAncestor) return;
 
         result.Add((node, depth, isMatch));
@@ -435,7 +702,13 @@ public static class SpecExplorerService
         foreach (var node in nodes)
         {
             var isMatch = node.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
-                       || (node.SpecItemId?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false);
+                       || (node.SpecItemId?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+                       || (node.QuestionText?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+                       || (node.AnswerText?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+                       || (node.FullContent?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+                       || (node.BddGiven?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+                       || (node.BddWhen?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+                       || (node.BddThen?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false);
 
             path.Add(node.Id);
             var childMatch = CollectMatches(node.Children, query, matchIds, ancestorIds, path);
@@ -454,17 +727,32 @@ public static class SpecExplorerService
     public static HashSet<string> GetDefaultExpanded(IEnumerable<SpecNode> roots)
     {
         var expanded = new HashSet<string>();
+        // Sections that should start collapsed
+        var collapseSemantics = new HashSet<SectionSemantics>
+        {
+            SectionSemantics.Clarifications,
+            SectionSemantics.EdgeCases,
+            SectionSemantics.Assumptions,
+            SectionSemantics.ApiSurface,
+            SectionSemantics.Observability,
+            SectionSemantics.Security,
+            SectionSemantics.Performance,
+        };
+
         foreach (var root in roots)
         {
-            expanded.Add(root.Id);                       // level 1 always expanded
+            expanded.Add(root.Id); // level 1 always expanded
             foreach (var l2 in root.Children)
-                if (l2.HeadingLevel > 0)
-                    expanded.Add(l2.Id);                 // level 2 expanded by default
+            {
+                if (l2.HeadingLevel <= 0) continue;
+                if (collapseSemantics.Contains(l2.Semantics)) continue;
+                expanded.Add(l2.Id);
+            }
         }
         return expanded;
     }
 
-    // ── Candidate-based tree (fallback when markdown has no headings) ─────
+    // ── Candidate-based tree (fallback when markdown has no headings) ─────────
 
     public static SpecTree BuildFromCandidates(IReadOnlyList<ExtractionCandidate> candidates)
     {

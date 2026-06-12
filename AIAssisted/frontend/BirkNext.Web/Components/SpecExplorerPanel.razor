@@ -107,11 +107,19 @@
                         <div class="se-health-label">Requirements</div>
                     </div>
                 }
-                @if (_tree.Health.Tests > 0)
+                @if (_tree.Health.Tests > 0 || _tree.Health.BddScenarios > 0)
                 {
+                    var testTotal = _tree.Health.Tests;
                     <div class="se-health-card se-hcard-test">
-                        <div class="se-health-value">@_tree.Health.Tests</div>
+                        <div class="se-health-value">@testTotal</div>
                         <div class="se-health-label">Tests</div>
+                    </div>
+                }
+                @if (_tree.Health.BddScenarios > 0)
+                {
+                    <div class="se-health-card se-hcard-bdd">
+                        <div class="se-health-value">@_tree.Health.BddScenarios</div>
+                        <div class="se-health-label">Scenarios</div>
                     </div>
                 }
                 @if (_tree.Health.Clarifications > 0)
@@ -143,7 +151,7 @@
             <div class="se-search-wrap">
                 <input type="search"
                        class="se-search"
-                       placeholder="Search headings, IDs, items..."
+                       placeholder="Search IDs, headings, Given/When/Then..."
                        value="@_searchQuery"
                        @oninput="HandleSearchInput"
                        aria-label="Search spec explorer" />
@@ -219,6 +227,24 @@
                                 }
                             </span>
 
+                            @* Semantic section badge for headings *@
+                            @if (isHeading && node.Semantics != SectionSemantics.Generic && node.Semantics != SectionSemantics.UserStory)
+                            {
+                                <span class="se-semantic-badge se-sem-@node.Semantics.ToString().ToLower()">
+                                    @SemanticShortLabel(node.Semantics)
+                                </span>
+                            }
+
+                            @* Type badge for leaf items that have no spec-id *@
+                            @if (!isHeading && node.SpecItemId is null)
+                            {
+                                var badge = GetTypeBadge(node.NodeType);
+                                @if (badge is not null)
+                                {
+                                    <span class="se-type-badge se-tbadge-@node.NodeType.ToString().ToLower()">@badge</span>
+                                }
+                            }
+
                             @if (node.NodeType == SpecNodeType.TableSection)
                             {
                                 <span class="se-table-kind-badge se-tkind-@node.TableKind.ToString().ToLower()">
@@ -241,11 +267,13 @@
                                 <span class="se-child-count">(@node.TotalDescendants)</span>
                             }
 
-                            @if (isHeading && (node.ReqCount > 0 || node.TestCount > 0 || node.ClarCount > 0))
+                            @if (isHeading && (node.ReqCount > 0 || node.UserStoryCount > 0 || node.TestCount > 0 || node.ClarCount > 0 || node.ScCount > 0))
                             {
                                 <span class="se-meta-chips">
+                                    @if (node.UserStoryCount > 0) { <span class="se-meta-chip se-mc-us">@node.UserStoryCount us</span> }
                                     @if (node.ReqCount > 0) { <span class="se-meta-chip se-mc-req">@node.ReqCount req</span> }
                                     @if (node.TestCount > 0) { <span class="se-meta-chip se-mc-test">@node.TestCount tests</span> }
+                                    @if (node.ScCount > 0) { <span class="se-meta-chip se-mc-sc">@node.ScCount sc</span> }
                                     @if (node.ClarCount > 0) { <span class="se-meta-chip se-mc-clr">@node.ClarCount clr</span> }
                                 </span>
                             }
@@ -280,21 +308,74 @@
                             <div class="se-details-id">@selected.SpecItemId</div>
                         }
 
-                        @if (!string.IsNullOrEmpty(selected.Excerpt))
+                        @* ── Q/A Clarification ─────────────────────────────────── *@
+                        @if (selected.NodeType == SpecNodeType.QaPair)
                         {
-                            <div class="se-details-section">
-                                <div class="se-details-label">Excerpt</div>
-                                <div class="se-details-excerpt">@selected.Excerpt</div>
-                            </div>
+                            @if (!string.IsNullOrEmpty(selected.QuestionText))
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Question</div>
+                                    <div class="se-qa-block se-qa-question">@selected.QuestionText</div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(selected.AnswerText))
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Answer</div>
+                                    <div class="se-qa-block se-qa-answer">@selected.AnswerText</div>
+                                </div>
+                            }
                         }
 
+                        @* ── BDD Scenario ──────────────────────────────────────── *@
+                        @if (selected.NodeType == SpecNodeType.BddScenario)
+                        {
+                            @if (!string.IsNullOrEmpty(selected.BddGiven))
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label se-bdd-label-given">Given</div>
+                                    <div class="se-bdd-block">
+                                        @foreach (var step in selected.BddGiven.Split('\n'))
+                                        {
+                                            <div class="se-bdd-step">@step</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(selected.BddWhen))
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label se-bdd-label-when">When</div>
+                                    <div class="se-bdd-block">
+                                        @foreach (var step in selected.BddWhen.Split('\n'))
+                                        {
+                                            <div class="se-bdd-step">@step</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(selected.BddThen))
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label se-bdd-label-then">Then</div>
+                                    <div class="se-bdd-block">
+                                        @foreach (var step in selected.BddThen.Split('\n'))
+                                        {
+                                            <div class="se-bdd-step">@step</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+
+                        @* ── Section contents summary ──────────────────────────── *@
                         @if (selected.HeadingLevel > 0 && selected.TotalDescendants > 0)
                         {
                             <div class="se-details-section">
                                 <div class="se-details-label">Contents</div>
                                 <div class="se-details-counts">
-                                    @if (selected.ReqCount > 0) { <span class="se-det-chip se-mc-req">@selected.ReqCount req</span> }
                                     @if (selected.UserStoryCount > 0) { <span class="se-det-chip se-mc-us">@selected.UserStoryCount user stories</span> }
+                                    @if (selected.ReqCount > 0) { <span class="se-det-chip se-mc-req">@selected.ReqCount req</span> }
                                     @if (selected.TestCount > 0) { <span class="se-det-chip se-mc-test">@selected.TestCount tests</span> }
                                     @if (selected.ClarCount > 0) { <span class="se-det-chip se-mc-clr">@selected.ClarCount clarifications</span> }
                                     @if (selected.ScCount > 0) { <span class="se-det-chip se-mc-sc">@selected.ScCount success criteria</span> }
@@ -302,6 +383,27 @@
                             </div>
                         }
 
+                        @* ── Full content (for headings, non-Q/A, non-BDD) ─────── *@
+                        @if (!string.IsNullOrEmpty(selected.FullContent)
+                             && selected.NodeType != SpecNodeType.QaPair
+                             && selected.NodeType != SpecNodeType.BddScenario)
+                        {
+                            <div class="se-details-section">
+                                <div class="se-details-label">Content</div>
+                                <div class="se-details-content">@selected.FullContent</div>
+                            </div>
+                        }
+                        else if (!string.IsNullOrEmpty(selected.Excerpt)
+                                 && selected.NodeType != SpecNodeType.QaPair
+                                 && selected.NodeType != SpecNodeType.BddScenario)
+                        {
+                            <div class="se-details-section">
+                                <div class="se-details-label">Excerpt</div>
+                                <div class="se-details-excerpt">@selected.Excerpt</div>
+                            </div>
+                        }
+
+                        @* ── Coverage ──────────────────────────────────────────── *@
                         @if (selected.Coverage != CoverageState.Unknown)
                         {
                             <div class="se-details-section">
@@ -319,6 +421,7 @@
                             </div>
                         }
 
+                        @* ── Table details ─────────────────────────────────────── *@
                         @if (selected.NodeType == SpecNodeType.TableSection)
                         {
                             <div class="se-details-section">
@@ -388,6 +491,7 @@
                             }
                         }
 
+                        @* ── Cross-reference lookup ────────────────────────────── *@
                         @if (selected.SpecItemId is not null)
                         {
                             var tableRefs = GetTableRefs(selected.SpecItemId);
@@ -412,6 +516,7 @@
                             }
                         }
 
+                        @* ── Linked extraction results ─────────────────────────── *@
                         @if (Candidates?.Count > 0)
                         {
                             var linked = GetLinkedCandidates(selected);
@@ -485,7 +590,6 @@
             BuildTree();
         }
 
-        // Fallback: build from candidates when markdown tree is absent or empty
         if ((_tree is null || _tree.Roots.Count == 0) && Candidates is { Count: > 0 })
         {
             _tree = SpecExplorerService.BuildFromCandidates(Candidates);
@@ -628,7 +732,7 @@
 
     private static int CountLines(string text) => text.Split('\n').Length;
 
-    // ── Table cross-reference lookup ──────────────────────────────────────
+    // ── Table cross-reference lookup ──────────────────────────────────────────
 
     private record TableRef(string TableTitle, TableType TableKind, string RowTitle);
 
@@ -655,42 +759,72 @@
         }
     }
 
-    // ── Labels and icons ──────────────────────────────────────────────────
+    // ── Labels and icons ──────────────────────────────────────────────────────
 
     private static string GetIcon(SpecNodeType type, int level) => type switch
     {
-        SpecNodeType.Module => "📦",
-        SpecNodeType.Section => "📂",
-        SpecNodeType.SubSection => "📁",
-        SpecNodeType.DeepSection => "📄",
-        SpecNodeType.Requirement => "📋",
-        SpecNodeType.UserStory => "👤",
-        SpecNodeType.SuccessCriterion => "✓",
-        SpecNodeType.AcceptanceTest => "🧪",
-        SpecNodeType.Clarification => "❓",
-        SpecNodeType.Entity => "🔷",
-        SpecNodeType.DomainItem => "🔗",
-        SpecNodeType.TableSection => "📊",
-        SpecNodeType.TableRow => "↔",
+        SpecNodeType.Module       => "📦",
+        SpecNodeType.Section      => "📂",
+        SpecNodeType.SubSection   => "📁",
+        SpecNodeType.DeepSection  => "📄",
+        SpecNodeType.Requirement  => "📋",
+        SpecNodeType.UserStory    => "📖",
+        SpecNodeType.SuccessCriterion => "🎯",
+        SpecNodeType.AcceptanceTest   => "🧪",
+        SpecNodeType.BddScenario      => "🧪",
+        SpecNodeType.Clarification    => "💬",
+        SpecNodeType.QaPair           => "💬",
+        SpecNodeType.Entity           => "🔷",
+        SpecNodeType.DomainItem       => "🔗",
+        SpecNodeType.TableSection     => "📊",
+        SpecNodeType.TableRow         => "↔",
         _ => level == 1 ? "📦" : level == 2 ? "📂" : "📄",
+    };
+
+    private static string? GetTypeBadge(SpecNodeType type) => type switch
+    {
+        SpecNodeType.BddScenario      => "TEST",
+        SpecNodeType.QaPair           => "Q/A",
+        SpecNodeType.Clarification    => "CLR",
+        SpecNodeType.SuccessCriterion => "SC",
+        SpecNodeType.UserStory        => "US",
+        SpecNodeType.Entity           => "ENTITY",
+        _ => null,
     };
 
     private static string NodeTypeLabel(SpecNodeType type) => type switch
     {
-        SpecNodeType.Module => "Module",
-        SpecNodeType.Section => "Section",
-        SpecNodeType.SubSection => "Sub-section",
-        SpecNodeType.DeepSection => "Section",
-        SpecNodeType.Requirement => "Requirement",
-        SpecNodeType.UserStory => "User Story",
+        SpecNodeType.Module           => "Module",
+        SpecNodeType.Section          => "Section",
+        SpecNodeType.SubSection       => "Sub-section",
+        SpecNodeType.DeepSection      => "Section",
+        SpecNodeType.Requirement      => "Requirement",
+        SpecNodeType.UserStory        => "User Story",
         SpecNodeType.SuccessCriterion => "Success Criterion",
-        SpecNodeType.AcceptanceTest => "Acceptance Test",
-        SpecNodeType.Clarification => "Clarification",
-        SpecNodeType.Entity => "Entity",
-        SpecNodeType.DomainItem => "Domain Item",
-        SpecNodeType.TableSection => "Table",
-        SpecNodeType.TableRow => "Table Row",
+        SpecNodeType.AcceptanceTest   => "Acceptance Test",
+        SpecNodeType.BddScenario      => "Acceptance Scenario",
+        SpecNodeType.Clarification    => "Clarification",
+        SpecNodeType.QaPair           => "Clarification",
+        SpecNodeType.Entity           => "Entity",
+        SpecNodeType.DomainItem       => "Domain Item",
+        SpecNodeType.TableSection     => "Table",
+        SpecNodeType.TableRow         => "Table Row",
         _ => type.ToString(),
+    };
+
+    private static string SemanticShortLabel(SectionSemantics sem) => sem switch
+    {
+        SectionSemantics.Clarifications      => "Q/A",
+        SectionSemantics.EdgeCases           => "EDGE",
+        SectionSemantics.Assumptions         => "ASSUME",
+        SectionSemantics.ApiSurface          => "API",
+        SectionSemantics.Observability       => "OBS",
+        SectionSemantics.Security            => "SEC",
+        SectionSemantics.Performance         => "PERF",
+        SectionSemantics.AcceptanceScenarios => "BDD",
+        SectionSemantics.RequirementsSection => "REQS",
+        SectionSemantics.SuccessCriteriaSection => "SC",
+        _ => "",
     };
 
     private static string TableKindLabel(TableType t) => t switch

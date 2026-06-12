@@ -377,9 +377,11 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
     line-height: 1.4;
+    word-break: break-word;
 }
 
 .se-spec-id {
@@ -729,6 +731,112 @@
 }
 
 .se-hcard-tbl .se-health-value { color: #a78bfa; }
+.se-hcard-bdd .se-health-value { color: #34d399; }
+
+/* ── Semantic section badges ─────────────────────────────────────────────── */
+
+.se-semantic-badge {
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 0.08rem 0.35rem;
+    border-radius: 0.2rem;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.se-sem-clarifications  { background: rgba(251, 191,  36, 0.12); color: #fcd34d; }
+.se-sem-edgecases       { background: rgba(248, 113, 113, 0.12); color: #fca5a5; }
+.se-sem-assumptions     { background: rgba(100, 116, 139, 0.12); color: #94a3b8; }
+.se-sem-apisurface      { background: rgba(251, 191,  36, 0.12); color: #fcd34d; }
+.se-sem-observability   { background: rgba(45,  212, 191, 0.12); color: #5eead4; }
+.se-sem-security        { background: rgba(248, 113, 113, 0.12); color: #fca5a5; }
+.se-sem-performance     { background: rgba(96,  165, 250, 0.12); color: #93c5fd; }
+.se-sem-acceptancescenarios { background: rgba(52, 211, 153, 0.12); color: #6ee7b7; }
+.se-sem-requirementssection { background: rgba(96, 165, 250, 0.12); color: #93c5fd; }
+.se-sem-successcriteriasection { background: rgba(244, 114, 182, 0.12); color: #f9a8d4; }
+
+/* ── Type badges (leaf nodes without spec-id) ────────────────────────────── */
+
+.se-type-badge {
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 0.08rem 0.35rem;
+    border-radius: 0.2rem;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.se-tbadge-bddscenario  { background: rgba(52,  211, 153, 0.12); color: #6ee7b7; }
+.se-tbadge-qapair       { background: rgba(251, 191,  36, 0.12); color: #fcd34d; }
+.se-tbadge-clarification { background: rgba(251, 191, 36, 0.10); color: #fcd34d; }
+.se-tbadge-successcriterion { background: rgba(244, 114, 182, 0.12); color: #f9a8d4; }
+.se-tbadge-userstory    { background: rgba(167, 139, 250, 0.12); color: #c4b5fd; }
+.se-tbadge-entity       { background: rgba(45,  212, 191, 0.12); color: #5eead4; }
+
+/* ── Q/A clarification display ───────────────────────────────────────────── */
+
+.se-qa-block {
+    font-size: 0.8rem;
+    line-height: 1.6;
+    border-radius: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    word-break: break-word;
+}
+
+.se-qa-question {
+    background: rgba(251, 191, 36, 0.07);
+    border-left: 2px solid rgba(251, 191, 36, 0.4);
+    color: var(--clr-text-primary);
+}
+
+.se-qa-answer {
+    background: rgba(52, 211, 153, 0.07);
+    border-left: 2px solid rgba(52, 211, 153, 0.35);
+    color: var(--clr-text-primary);
+}
+
+/* ── BDD scenario display ────────────────────────────────────────────────── */
+
+.se-bdd-label-given { color: rgba(96, 165, 250, 0.9) !important; }
+.se-bdd-label-when  { color: rgba(167, 139, 250, 0.9) !important; }
+.se-bdd-label-then  { color: rgba(52, 211, 153, 0.9) !important; }
+
+.se-bdd-block {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 0.375rem;
+    padding: 0.4rem 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.se-bdd-step {
+    font-size: 0.79rem;
+    color: var(--clr-text-primary);
+    line-height: 1.5;
+    padding: 0.1rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    word-break: break-word;
+}
+
+.se-bdd-step:last-child { border-bottom: none; }
+
+/* ── Full content display ────────────────────────────────────────────────── */
+
+.se-details-content {
+    font-size: 0.78rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 220px;
+    overflow-y: auto;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 0.375rem;
+    padding: 0.5rem 0.65rem;
+}
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
