@@ -1,0 +1,213 @@
+@page "/getting-started"
+
+<PageTitle>Recommended Workflow — QA Review Studio</PageTitle>
+
+<div class="rw-page">
+
+    <!-- ── Hero ───────────────────────────────────────────────────────────── -->
+    <div class="rw-hero">
+        <div class="rw-hero-eyebrow">Getting Started</div>
+        <h1 class="rw-hero-title">Recommended Workflow</h1>
+        <p class="rw-hero-sub">Follow these six phases in order to get full value from QA Review Studio. Each phase builds on the previous one — complete them in sequence for your first feature, then use individual features as needed.</p>
+    </div>
+
+    <!-- ── Phases ─────────────────────────────────────────────────────────── -->
+    <div class="rw-phases">
+
+        <!-- Phase 1 -->
+        <div class="rw-phase" style="--rw-phase-color: #2563eb;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">1</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Phase 1</div>
+                    <div class="rw-phase-name">Specification Review</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Understand and extract QA candidates from your specification document.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Actions</div>
+                        <ul class="rw-phase-actions">
+                            <li>Open Specification Review and paste or import your spec.md</li>
+                            <li>Run analysis to extract requirements, tests, and clarifications</li>
+                            <li>Review candidates using the Traceability View (default tab)</li>
+                            <li>Explore: Spec Explorer, Flow View, Architecture View</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">A validated set of requirements, test candidates, and clarification items ready for acceptance.</p>
+                    </div>
+                </div>
+                <a href="extract" class="rw-cta">Open Specification Review →</a>
+            </div>
+        </div>
+
+        <div class="rw-phase-connector" aria-hidden="true">↓</div>
+
+        <!-- Phase 2 -->
+        <div class="rw-phase" style="--rw-phase-color: #15803d;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">2</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Phase 2</div>
+                    <div class="rw-phase-name">Build QA Knowledge</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Accept reviewed candidates into the QA Artifact Library to build a reusable knowledge base.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Actions</div>
+                        <ul class="rw-phase-actions">
+                            <li>Accept or reject each candidate in Specification Review</li>
+                            <li>Open the QA Artifact Library to browse saved artifacts</li>
+                            <li>Create additional test scenarios manually if needed</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">A versioned, reusable QA knowledge base of accepted requirements, tests, and clarifications.</p>
+                    </div>
+                </div>
+                <a href="scenarios" class="rw-cta">Open QA Artifact Library →</a>
+            </div>
+        </div>
+
+        <div class="rw-phase-connector" aria-hidden="true">↓</div>
+
+        <!-- Phase 3 -->
+        <div class="rw-phase" style="--rw-phase-color: #7c3aed;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">3</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Phase 3</div>
+                    <div class="rw-phase-name">Traceability &amp; Coverage</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Understand how requirements, tests, and clarifications relate to each other and identify coverage gaps.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Actions</div>
+                        <ul class="rw-phase-actions">
+                            <li>Open Traceability &amp; Coverage</li>
+                            <li>Review requirement-to-test links</li>
+                            <li>Identify requirements without tests and tests without requirements</li>
+                            <li>Resolve or flag unlinked clarification items</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">Full visibility of coverage across saved artifacts — requirements covered, gaps identified, traceability established.</p>
+                    </div>
+                </div>
+                <a href="traceability" class="rw-cta">Open Traceability &amp; Coverage →</a>
+            </div>
+        </div>
+
+        <div class="rw-phase-connector" aria-hidden="true">↓</div>
+
+        <!-- Phase 4 -->
+        <div class="rw-phase" style="--rw-phase-color: #ea580c;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">4</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Phase 4</div>
+                    <div class="rw-phase-name">Implementation Review</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Validate your implementation plan (tasks.md) against the specification to surface alignment gaps, risk, and regression candidates.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Actions</div>
+                        <ul class="rw-phase-actions">
+                            <li>Open Implementation Review</li>
+                            <li>Load spec.md and tasks.md</li>
+                            <li>Run analysis to generate the alignment report</li>
+                            <li>Review Spec Alignment and Risk &amp; Testing tabs</li>
+                            <li>Open the Task Explorer tab to browse the task hierarchy with alignment status</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">A per-task alignment report with risk classification, regression candidates, and recommended tests.</p>
+                    </div>
+                </div>
+                <a href="task-alignment" class="rw-cta">Open Implementation Review →</a>
+            </div>
+        </div>
+
+        <div class="rw-phase-connector" aria-hidden="true">↓</div>
+
+        <!-- Phase 5 -->
+        <div class="rw-phase" style="--rw-phase-color: #475569;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">5</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Phase 5</div>
+                    <div class="rw-phase-name">Change Analysis</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Understand what changed and assess the impact when specifications or implementation plans evolve.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Tools in this phase</div>
+                        <ul class="rw-phase-actions">
+                            <li><a href="compare" class="rw-inline-link">Spec Comparison</a> — Side-by-side view of two spec versions</li>
+                            <li><a href="compare/reviews" class="rw-inline-link">Specification Deltas</a> — Added, removed, and modified requirements</li>
+                            <li><a href="task-deltas" class="rw-inline-link">Task Deltas</a> — Scope changes and risk in tasks.md</li>
+                            <li><a href="impact-analysis" class="rw-inline-link">Impact Analysis</a> — Systemic regression scope</li>
+                            <li><a href="spec-drift" class="rw-inline-link">Spec Drift</a> — Coverage gaps and drift over time</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">A clear picture of what changed, what is at risk, and what needs to be re-tested as the spec or implementation evolves.</p>
+                    </div>
+                </div>
+                <a href="impact-analysis" class="rw-cta">Open Impact Analysis →</a>
+            </div>
+        </div>
+
+        <div class="rw-phase-connector" aria-hidden="true">↓</div>
+
+        <!-- Phase 6 -->
+        <div class="rw-phase" style="--rw-phase-color: #be185d;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">6</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Phase 6</div>
+                    <div class="rw-phase-name">AI Review &amp; Readiness</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Assess AI-generated implementation changes and confirm overall release readiness.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Tools in this phase</div>
+                        <ul class="rw-phase-actions">
+                            <li><a href="ai-change-auditor" class="rw-inline-link">AI Change Review</a> — Review AI-generated changes for alignment and risk</li>
+                            <li><a href="ai-qa-auditor" class="rw-inline-link">QA Readiness</a> — Release gate assessment based on accumulated analysis</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">Risk and readiness assessment — confidence that AI-generated work aligns to the spec and the feature is release-ready.</p>
+                    </div>
+                </div>
+                <a href="ai-qa-auditor" class="rw-cta">Open QA Readiness →</a>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ── Footer note ─────────────────────────────────────────────────────── -->
+    <div class="rw-footer-note">
+        For detailed reference documentation on any feature, see the <a href="user-guide" class="rw-inline-link">User Guide</a>.
+    </div>
+
+</div>

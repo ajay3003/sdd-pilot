@@ -5,3 +5,44 @@
     background: #fef2f2;
     color: #991b1b;
 }
+
+.dashboard-onboarding-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.875rem 1.25rem;
+    margin-bottom: 1.5rem;
+    background: rgba(37, 99, 235, 0.05);
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    border-radius: var(--radius-lg, 8px);
+}
+
+.dashboard-onboarding-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.875rem;
+    color: var(--clr-text-body);
+}
+
+.dashboard-onboarding-text strong {
+    font-weight: 700;
+    color: var(--clr-text-heading);
+}
+
+.dashboard-onboarding-text span {
+    color: var(--clr-text-subtle);
+}
+
+.dashboard-onboarding-btn {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+@media (max-width: 560px) {
+    .dashboard-onboarding-card {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
