@@ -25,7 +25,8 @@ public class AdminService
         ("SpecificationReview",  "Specification Review"),
         ("QaArtifactLibrary",    "QA Artifact Library"),
         ("TraceabilityCoverage", "Traceability & Coverage"),
-        ("ImplementationReview", "Implementation Review")
+        ("ImplementationReview", "Implementation Review"),
+        ("TaskExplorer",         "Task Explorer")
     ];
 
     private static readonly IReadOnlyList<(string Key, string Label)> AdvancedFeatures =
@@ -186,6 +187,7 @@ public class AdminService
             ImpactAnalysis       = s.GetValue("ImpactAnalysis",       true),
             SpecDrift            = s.GetValue("SpecDrift",            true),
             ImplementationReview = s.GetValue("ImplementationReview", true),
+            TaskExplorer         = s.GetValue("TaskExplorer",         true),
             AiChangeReview       = s.GetValue("AiChangeReview",       true),
             QaReadiness          = s.GetValue("QaReadiness",          true),
             AdminSystemSettings  = s.GetValue("AdminSystemSettings",  true)

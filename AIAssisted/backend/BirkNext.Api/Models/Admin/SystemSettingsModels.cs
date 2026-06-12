@@ -103,6 +103,7 @@ public class FeatureVisibilityInfo
     public bool ImpactAnalysis { get; set; } = true;
     public bool SpecDrift { get; set; } = true;
     public bool ImplementationReview { get; set; } = true;
+    public bool TaskExplorer { get; set; } = true;
     public bool AiChangeReview { get; set; } = true;
     public bool QaReadiness { get; set; } = true;
     public bool AdminSystemSettings { get; set; } = true;
