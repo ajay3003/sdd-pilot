@@ -1,0 +1,241 @@
+@page "/admin/system-settings"
+@using BirkNext.Web.Services
+@inject AdminApiService AdminApi
+
+<PageTitle>System Settings — QA Review Studio</PageTitle>
+
+<div class="admin-page-header">
+    <h1>System Settings</h1>
+    <p class="page-lead">Read-only view of application configuration and runtime environment. Secrets are never shown.</p>
+</div>
+
+@if (_isLoading)
+{
+    <p class="loading-state">Loading settings...</p>
+}
+else if (_loadError is not null)
+{
+    <div class="notification notification-error" role="alert">
+        @_loadError
+    </div>
+}
+else if (_settings is not null)
+{
+    <div class="settings-grid">
+
+        <!-- Application -->
+        <div class="settings-card">
+            <div class="settings-card-title">Application</div>
+            <table class="settings-table">
+                <tr><td>Application Name</td><td>@_settings.Application.ApplicationName</td></tr>
+                <tr><td>Environment</td><td>@_settings.Application.Environment</td></tr>
+                <tr><td>Version</td><td>@_settings.Application.Version</td></tr>
+                @if (!string.IsNullOrWhiteSpace(_settings.Application.BuildNumber))
+                {
+                    <tr><td>Build Number</td><td>@_settings.Application.BuildNumber</td></tr>
+                }
+                @if (!string.IsNullOrWhiteSpace(_settings.Application.CommitSha))
+                {
+                    <tr><td>Commit SHA</td><td><code>@_settings.Application.CommitSha</code></td></tr>
+                }
+                <tr><td>Package Mode</td><td><span class="settings-badge">@_settings.Application.PackageMode</span></td></tr>
+            </table>
+        </div>
+
+        <!-- Frontend -->
+        <div class="settings-card">
+            <div class="settings-card-title">Frontend</div>
+            <table class="settings-table">
+                <tr><td>Frontend Base URL</td><td><code>@_settings.Frontend.FrontendBaseUrl</code></td></tr>
+                <tr><td>API Base URL</td><td><code>@_settings.Frontend.ApiBaseUrl</code></td></tr>
+                <tr><td>GraphQL Endpoint</td><td><code>@_settings.Frontend.GraphQlEndpoint</code></td></tr>
+                <tr><td>Environment</td><td>@_settings.Frontend.EnvironmentName</td></tr>
+                <tr><td>Static Hosting Mode</td><td>@(_settings.Frontend.StaticHostingMode ? "Yes (Blazor WASM)" : "No")</td></tr>
+            </table>
+        </div>
+
+        <!-- Backend -->
+        <div class="settings-card">
+            <div class="settings-card-title">Backend</div>
+            <table class="settings-table">
+                <tr><td>Backend Base URL</td><td><code>@_settings.Backend.BackendBaseUrl</code></td></tr>
+                <tr><td>ASPNETCORE_ENVIRONMENT</td><td>@_settings.Backend.AspNetCoreEnvironment</td></tr>
+                <tr><td>Listening URLs</td><td><code>@_settings.Backend.ListeningUrls</code></td></tr>
+                <tr><td>CORS Allowed Origins</td><td><code>@_settings.Backend.CorsAllowedOrigins</code></td></tr>
+            </table>
+        </div>
+
+        <!-- Database -->
+        <div class="settings-card">
+            <div class="settings-card-title">Database</div>
+            <table class="settings-table">
+                <tr><td>Mode</td><td><span class="settings-badge">@_settings.Database.Mode</span></td></tr>
+                <tr><td>Provider</td><td>@_settings.Database.Provider</td></tr>
+                <tr><td>Host</td><td>@_settings.Database.Host</td></tr>
+                <tr><td>Port</td><td>@_settings.Database.Port</td></tr>
+                <tr><td>Database Name</td><td>@_settings.Database.DatabaseName</td></tr>
+                <tr><td>Username</td><td>@_settings.Database.Username</td></tr>
+                <tr><td>Migration Status</td><td>@_settings.Database.MigrationStatus</td></tr>
+                <tr><td>Compose Project Name</td><td><code>@_settings.Database.ComposeProjectName</code></td></tr>
+                <tr><td>Expected Volume</td><td><code>@_settings.Database.ExpectedVolumeName</code></td></tr>
+            </table>
+        </div>
+
+        <!-- Container / Runtime -->
+        <div class="settings-card">
+            <div class="settings-card-title">Container / Runtime</div>
+            <table class="settings-table">
+                <tr><td>Compose Project Name</td><td><code>@_settings.Runtime.ComposeProjectName</code></td></tr>
+                <tr><td>Expected PostgreSQL Volume</td><td><code>@_settings.Runtime.ExpectedDatabaseVolume</code></td></tr>
+                <tr><td>Package Mode</td><td><span class="settings-badge">@_settings.Runtime.PackageMode</span></td></tr>
+                @if (!string.IsNullOrWhiteSpace(_settings.Runtime.LocalPackageRoot))
+                {
+                    <tr><td>Local Package Root</td><td><code>@_settings.Runtime.LocalPackageRoot</code></td></tr>
+                }
+                <tr><td>Published Artifact</td><td>@(_settings.Runtime.RunningFromPublishedArtifact ? "Yes" : "No")</td></tr>
+            </table>
+        </div>
+
+        <!-- Logging -->
+        <div class="settings-card">
+            <div class="settings-card-title">Logging</div>
+            <table class="settings-table">
+                <tr><td>Provider</td><td>@_settings.Logging.Provider</td></tr>
+                <tr><td>Minimum Level</td><td><span class="settings-badge">@_settings.Logging.MinimumLevel</span></td></tr>
+                <tr><td>Sinks</td><td>@string.Join(", ", _settings.Logging.Sinks)</td></tr>
+                <tr><td>Log Path</td><td><code>@_settings.Logging.LogPath</code></td></tr>
+                <tr><td>Structured Logging</td><td>@(_settings.Logging.StructuredLogging ? "Enabled" : "Disabled")</td></tr>
+                @if (!string.IsNullOrWhiteSpace(_settings.Logging.SeqUrl))
+                {
+                    <tr><td>Seq URL</td><td><code>@_settings.Logging.SeqUrl</code></td></tr>
+                }
+            </table>
+        </div>
+
+        <!-- Maintenance -->
+        <div class="settings-card settings-card-maintenance">
+            <div class="settings-card-title">Maintenance</div>
+
+            @if (_resetResultMessage is not null)
+            {
+                <div class="notification @(_resetSuccess ? "notification-success" : "notification-error")" role="alert">
+                    @_resetResultMessage
+                </div>
+            }
+
+            <div class="maintenance-section">
+                <div class="maintenance-action">
+                    <div>
+                        <strong>Reset Local Database</strong>
+                        <p class="maintenance-description">
+                            Deletes all application data from the local database. The database server keeps running.
+                            This cannot be undone.
+                        </p>
+                        @if (!_settings.Maintenance.ResetAllowed && !string.IsNullOrWhiteSpace(_settings.Maintenance.ResetNotAllowedReason))
+                        {
+                            <p class="maintenance-not-allowed">@_settings.Maintenance.ResetNotAllowedReason</p>
+                        }
+                    </div>
+                    <button class="btn-danger-outline"
+                            disabled="@(!_settings.Maintenance.ResetAllowed || _isResetting)"
+                            @onclick="OpenResetModal">
+                        Reset Local Database
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+}
+
+@if (_showResetModal)
+{
+    <div class="modal-backdrop" @onclick="CancelReset" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-panel" @onclick:stopPropagation="true">
+            <h2 id="modal-title" class="modal-title">Reset Local Database</h2>
+            <div class="notification notification-warning">
+                This will permanently delete all application data: scenarios, reviews, traceability links, and code links.
+                The database server will keep running. This action cannot be undone.
+            </div>
+            <p class="modal-body-text">Type <strong>RESET</strong> in the box below to confirm.</p>
+            <input class="modal-confirm-input"
+                   type="text"
+                   placeholder="Type RESET here"
+                   @bind="_resetConfirmText"
+                   @bind:event="oninput"
+                   disabled="@_isResetting"
+                   autofocus />
+            <div class="modal-actions">
+                <button class="btn-secondary" @onclick="CancelReset" disabled="@_isResetting">Cancel</button>
+                <button class="btn-danger"
+                        disabled="@(_resetConfirmText != "RESET" || _isResetting)"
+                        @onclick="ExecuteResetAsync">
+                    @(_isResetting ? "Resetting..." : "Reset Database")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private SystemSettingsDto? _settings;
+    private bool _isLoading = true;
+    private string? _loadError;
+
+    private bool _showResetModal;
+    private string _resetConfirmText = "";
+    private bool _isResetting;
+    private string? _resetResultMessage;
+    private bool _resetSuccess;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _settings = await AdminApi.GetSystemSettingsAsync();
+            if (_settings is null)
+                _loadError = "Could not load system settings. Make sure the backend is running.";
+        }
+        catch
+        {
+            _loadError = "Could not load system settings. Make sure the backend is running.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void OpenResetModal()
+    {
+        _resetConfirmText = "";
+        _resetResultMessage = null;
+        _showResetModal = true;
+    }
+
+    private void CancelReset()
+    {
+        if (_isResetting) return;
+        _showResetModal = false;
+        _resetConfirmText = "";
+    }
+
+    private async Task ExecuteResetAsync()
+    {
+        if (_resetConfirmText != "RESET" || _isResetting) return;
+
+        _isResetting = true;
+        try
+        {
+            var (success, message) = await AdminApi.ResetLocalDatabaseAsync();
+            _resetSuccess = success;
+            _resetResultMessage = message;
+        }
+        finally
+        {
+            _isResetting = false;
+            _showResetModal = false;
+            _resetConfirmText = "";
+        }
+    }
+}

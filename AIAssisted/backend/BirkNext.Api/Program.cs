@@ -23,12 +23,15 @@ builder.Services.AddCors(options =>
         .AllowAnyHeader()
         .AllowAnyMethod()));
 
+builder.Services.AddControllers();
+
 var databaseConnectionString = DatabaseConnection.GetConnectionString(builder.Configuration);
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(databaseConnectionString));
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<ScenarioService>();
 builder.Services.AddScoped<ReviewedCandidateService>();
 builder.Services.AddScoped<CandidateLinkService>();
@@ -100,6 +103,7 @@ catch (PostgresException ex) when (ex.SqlState == "28P01")
 
 app.UseCors("Frontend");
 app.UseMiddleware<CorrelationIdMiddleware>();
+app.MapControllers();
 
 app.MapGraphQL()
    .WithOptions(new GraphQLServerOptions

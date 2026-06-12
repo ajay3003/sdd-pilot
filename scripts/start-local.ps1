@@ -378,6 +378,78 @@ function Get-SanitizedConnectionString {
     return "Host=$($PostgresConfig.Host);Port=$($PostgresConfig.Port);Database=$($PostgresConfig.Database);Username=$($PostgresConfig.User);Password=***"
 }
 
+function Test-PostgresConnection {
+    param(
+        [string]$Host = "localhost",
+        [int]$Port = 5432,
+        [int]$TimeoutMs = 3000
+    )
+
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $asyncResult = $client.BeginConnect($Host, $Port, $null, $null)
+        $connected = $asyncResult.AsyncWaitHandle.WaitOne($TimeoutMs)
+
+        if ($connected -and $client.Connected) {
+            $client.Close()
+            return $true
+        }
+
+        try { $client.Close() } catch {}
+        return $false
+    }
+    catch {
+        return $false
+    }
+}
+
+function Detect-ExistingBirkNextDatabase {
+    param([int]$Port = 5432)
+
+    $projectName = if (-not [string]::IsNullOrWhiteSpace($env:COMPOSE_PROJECT_NAME)) {
+        $env:COMPOSE_PROJECT_NAME
+    }
+    else {
+        "birknext-studio-local"
+    }
+
+    $runtimesToCheck = @()
+    if (Command-Exists "podman") { $runtimesToCheck += "podman" }
+    if (Command-Exists "docker") { $runtimesToCheck += "docker" }
+
+    foreach ($rt in $runtimesToCheck) {
+        try {
+            $filterArg = "label=com.docker.compose.project=$projectName"
+
+            # Check ports of running containers in this compose project
+            $portResult = Invoke-NativeCommand -Executable $rt -Arguments @("ps", "--filter", $filterArg, "--format", "{{.Ports}}")
+
+            if ($portResult.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($portResult.Stdout)) {
+                foreach ($line in ($portResult.Stdout -split "`r?`n")) {
+                    $trimmed = $line.Trim()
+                    if ([string]::IsNullOrWhiteSpace($trimmed)) { continue }
+                    # Port mapping format: "0.0.0.0:5432->5432/tcp" or ":::5432->5432/tcp"
+                    if ($trimmed -match ":${Port}->") {
+                        return $true
+                    }
+                }
+
+                # If containers are running but port format was not matched,
+                # fall back to checking by container name
+                $nameResult = Invoke-NativeCommand -Executable $rt -Arguments @("ps", "--filter", $filterArg, "--format", "{{.Names}}")
+                if ($nameResult.ExitCode -eq 0 -and $nameResult.Stdout -match "postgres") {
+                    return $true
+                }
+            }
+        }
+        catch {
+            # Runtime unavailable or Podman machine offline — try next runtime
+        }
+    }
+
+    return $false
+}
+
 function Test-PodmanReady {
     try {
         $result = Invoke-NativeCommand -Executable "podman" -Arguments @("info")
@@ -557,6 +629,25 @@ function Find-ComposeFile {
     return $null
 }
 
+function Show-PostgresPortConflictHelp {
+    param([int]$Port)
+
+    Write-Host ""
+    Write-Host "Possible causes:" -ForegroundColor Yellow
+    Write-Host "  * Existing BirkNext database container already running"
+    Write-Host "  * Local PostgreSQL installed as a Windows service"
+    Write-Host "  * Docker Desktop or another container using port $Port"
+    Write-Host "  * Another development environment"
+    Write-Host ""
+    Write-Host "Suggested actions:" -ForegroundColor Yellow
+    Write-Host "  1. If a BirkNext container is already running, skip container startup:"
+    Write-Host "     .\scripts\start-local.ps1 -SkipContainers"
+    Write-Host "  2. Stop the conflicting application and retry"
+    Write-Host "  3. Investigate the port owner:"
+    Write-Host "     netstat -ano | findstr :$Port"
+    Write-Host ""
+}
+
 function Start-ContainerServices {
     if ($SkipContainers) {
         $composePath = Find-ComposeFile -Root $repoRoot
@@ -597,6 +688,55 @@ function Start-ContainerServices {
 
     Info "PostgreSQL config: $(Get-SanitizedConnectionString -PostgresConfig $script:PostgresConfig)"
 
+    # ── PostgreSQL port availability check ───────────────────────────────────
+    $pgPort = [int]$script:PostgresConfig.Port
+
+    Info "Checking PostgreSQL port $pgPort..."
+
+    if (Test-PortInUse -Port $pgPort) {
+        Warn "PostgreSQL port $pgPort is already in use."
+
+        $owners = @(Get-PortOwnerProcess -Port $pgPort)
+        foreach ($owner in $owners) {
+            Write-Host "  Owner: PID $($owner.Id) ($($owner.ProcessName))" -ForegroundColor DarkGray
+            if (-not [string]::IsNullOrWhiteSpace($owner.CommandLine)) {
+                Write-Host "  Command: $($owner.CommandLine)" -ForegroundColor DarkGray
+            }
+        }
+        Write-Host ""
+
+        # Check if our own BirkNext container is already running
+        Info "Checking for existing BirkNext database container..."
+        $isBirkNextContainer = Detect-ExistingBirkNextDatabase -Port $pgPort
+
+        if ($isBirkNextContainer) {
+            Info "Existing BirkNext database already running (Compose project: $env:COMPOSE_PROJECT_NAME)."
+            Info "Reusing running PostgreSQL instance."
+            Ok "Database ready."
+            return
+        }
+
+        # Not our container — test whether a reachable PostgreSQL is on that port
+        Info "Testing PostgreSQL connectivity on port $pgPort..."
+        $canConnect = Test-PostgresConnection -Host $script:PostgresConfig.Host -Port $pgPort
+
+        if ($canConnect) {
+            Ok "Existing PostgreSQL instance is reachable on port $pgPort."
+            Info "Continuing startup with existing database instance."
+            Warn "The running database may not be the BirkNext database. Backend connection errors may occur if the database '$($script:PostgresConfig.Database)' or user '$($script:PostgresConfig.User)' does not exist on this instance."
+            return
+        }
+
+        # Port occupied, not our container, and not reachable — fail with diagnostics
+        Fail "Unable to start PostgreSQL container because port $pgPort is already in use and the existing service is not reachable."
+        Show-PostgresPortConflictHelp -Port $pgPort
+        throw "PostgreSQL port $pgPort conflict: port occupied and database not reachable."
+    }
+    else {
+        Ok "PostgreSQL port $pgPort is available."
+    }
+    # ─────────────────────────────────────────────────────────────────────────
+
     if ($ContainerRuntime -eq "podman") {
         Ensure-PodmanReady
 
@@ -610,7 +750,14 @@ function Start-ContainerServices {
         }
 
         if ($composeResult.ExitCode -ne 0) {
-            throw "Podman compose failed."
+            if ($composeResult.Stderr -match "address already in use|port is already allocated|bind:") {
+                Fail "Unable to start PostgreSQL container because port $pgPort is already in use."
+                Show-PostgresPortConflictHelp -Port $pgPort
+            }
+            else {
+                Fail "Podman compose failed (exit code $($composeResult.ExitCode))."
+            }
+            throw "Compose startup failed."
         }
 
         Invoke-NativeCommand -Executable "podman" -Arguments @("ps") -ShowOutput
@@ -622,7 +769,14 @@ function Start-ContainerServices {
         $composeResult = Invoke-NativeCommand -Executable "docker" -Arguments @("compose", "-f", $composePath, "up", "-d") -ShowOutput
 
         if ($composeResult.ExitCode -ne 0) {
-            throw "Docker compose failed."
+            if ($composeResult.Stderr -match "address already in use|port is already allocated|bind:") {
+                Fail "Unable to start PostgreSQL container because port $pgPort is already in use."
+                Show-PostgresPortConflictHelp -Port $pgPort
+            }
+            else {
+                Fail "Docker compose failed (exit code $($composeResult.ExitCode))."
+            }
+            throw "Compose startup failed."
         }
 
         Invoke-NativeCommand -Executable "docker" -Arguments @("ps") -ShowOutput
@@ -787,6 +941,10 @@ $repoRoot = Split-Path -Parent $scriptDir
 $backendPath = Join-Path $repoRoot "AIAssisted\backend"
 $frontendPath = Join-Path $repoRoot "AIAssisted\frontend"
 
+# Fixed Compose project name ensures the PostgreSQL volume persists across
+# tester package upgrades even when installed to a different folder.
+$env:COMPOSE_PROJECT_NAME = "birknext-studio-local"
+
 Info "Repository root: $repoRoot"
 Info "Backend path:    $backendPath"
 Info "Frontend path:   $frontendPath"
@@ -795,6 +953,8 @@ Info "Mode:            $(if ($Fast) { 'Fast' } else { 'Safe' })"
 Info "Container delay: $ContainerDelaySeconds seconds"
 Info "Backend delay:   $BackendDelaySeconds seconds"
 Info "Port cleanup:    $(if ($ForceKillPorts) { 'Force stale local dotnet processes' } else { 'Safe warning only' })"
+Info "Compose Project: birknext-studio-local"
+Info "Database Volume: birknext-studio-local_postgres_data"
 
 Require-Command "dotnet" "Install .NET SDK 8 or add dotnet to PATH."
 

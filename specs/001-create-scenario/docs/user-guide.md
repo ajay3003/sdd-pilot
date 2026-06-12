@@ -149,3 +149,96 @@ If a large feature such as persistent QA Delta Reviews is implemented, the plan 
 - Users review before saving
 - Raw specification text should not be logged
 - QA artifacts and test scenarios are related but not identical
+
+
+## Admin — System Settings
+
+The **Admin → System Settings** page provides a read-only view of how the application is configured and how it is running locally. No sensitive values such as passwords, tokens, or API keys are shown.
+
+### What values are shown
+
+The page is divided into seven sections:
+
+| Section | What it shows |
+|---|---|
+| Application | Name, environment, version, package mode |
+| Frontend | Frontend and API base URLs, GraphQL endpoint, hosting mode |
+| Backend | Listening URLs, ASPNETCORE_ENVIRONMENT, CORS origins |
+| Database | Mode, host, port, database name, username, provider, migration status |
+| Container / Runtime | Compose project name, expected volume name, package mode |
+| Logging | Provider, minimum log level, sinks, log path, structured logging status, Seq URL if configured |
+| Maintenance | Reset Local Database button |
+
+### Local vs shared database mode
+
+QA Review Studio can run in two database modes:
+
+- **Local** — uses a PostgreSQL container started by `start-local.ps1` on your machine
+- **Shared** — uses a centrally-managed PostgreSQL server shared by a team
+
+The System Settings page shows the current database mode under **Database → Mode**.
+
+### Local database persistence and the fixed Compose project name
+
+When running locally, the database is stored in a Docker/Podman named volume. Without a fixed Compose project name, the volume name changes each time the tester package is installed to a different folder.
+
+`start-local.ps1` always sets `COMPOSE_PROJECT_NAME=birknext-studio-local` before starting containers. This ensures the volume is always named:
+
+```
+birknext-studio-local_postgres_data
+```
+
+Your data survives when you:
+
+- Upgrade to a newer tester package version
+- Move the package to a different folder
+- Reinstall the package on the same machine
+
+The **Container / Runtime** section on the System Settings page shows the Compose project name and expected volume name that are in use.
+
+### How local data survives package upgrades
+
+Because the volume name is fixed by the Compose project name, a new package installation will reconnect to the same volume as the previous one. No manual migration or export is required.
+
+No existing user data is deleted automatically at any point by the startup script.
+
+### Reset Local Database
+
+The **Maintenance** section has a **Reset Local Database** button. This action:
+
+- Deletes all application data: scenarios, reviews, traceability links, and code links
+- Keeps the database server running — the container is not stopped or removed
+- Never runs `docker compose down -v` — volumes are preserved at the container level
+- Requires you to type `RESET` in a confirmation dialog before proceeding
+
+The reset button is disabled when:
+
+- The database mode is not **Local** — shared databases cannot be reset from the UI
+- `AdminSettings:AllowLocalDatabaseReset` is set to `false` in the backend configuration
+
+### Logging section
+
+The **Logging** section shows:
+
+- **Provider** — the logging framework in use (Serilog)
+- **Minimum Level** — the lowest log level that will be recorded (e.g. Information, Debug)
+- **Sinks** — where logs are sent (Console, File, Seq)
+- **Log Path** — the folder where log files are written
+- **Structured Logging** — whether logs are written as structured JSON
+- **Seq URL** — the address of a Seq log server, if configured
+
+### Where logs are stored
+
+By default, logs are written to the `./logs` folder relative to the backend working directory and also to the console as structured JSON. If a Seq URL is configured, logs are also forwarded there.
+
+### How logging helps troubleshooting
+
+When the backend reports an error you can open the log files to see:
+
+- The full stack trace of an exception
+- The correlation ID that links a frontend request to a backend entry
+- The sequence of operations that led to the failure
+
+### Secrets are never shown
+
+Passwords, API keys, connection string passwords, and other secrets are never displayed on the System Settings page. If a value is derived from a connection string, only the non-sensitive parts (host, port, username, database name) are shown.
