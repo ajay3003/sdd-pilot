@@ -1,0 +1,38 @@
+<div class="fv-row">
+    <span class="fv-label">@Label</span>
+    @if (IsLocked)
+    {
+        <span class="fv-locked">
+            <svg class="fv-lock-icon" width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+            </svg>
+            Always Enabled
+        </span>
+    }
+    else if (IsEditMode)
+    {
+        <label class="fv-toggle" aria-label="@(Enabled ? "Disable" : "Enable") @Label">
+            <input type="checkbox" checked="@Enabled" @onchange="HandleToggle" />
+            <span class="fv-toggle-track"></span>
+        </label>
+    }
+    else if (Enabled)
+    {
+        <span class="fv-badge fv-badge-enabled">Enabled</span>
+    }
+    else
+    {
+        <span class="fv-badge fv-badge-disabled">Disabled</span>
+    }
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public bool Enabled { get; set; } = true;
+    [Parameter] public bool IsLocked { get; set; }
+    [Parameter] public bool IsEditMode { get; set; }
+    [Parameter] public EventCallback<bool> OnToggle { get; set; }
+
+    private Task HandleToggle(ChangeEventArgs e) =>
+        OnToggle.InvokeAsync(e.Value is bool b ? b : false);
+}

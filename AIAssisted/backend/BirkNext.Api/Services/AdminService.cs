@@ -2,6 +2,8 @@ using BirkNext.Api.Data;
 using BirkNext.Api.Models.Admin;
 using Microsoft.EntityFrameworkCore;
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace BirkNext.Api.Services;
 
@@ -11,6 +13,36 @@ public class AdminService
     private readonly IWebHostEnvironment _env;
     private readonly AppDbContext _db;
     private readonly ILogger<AdminService> _logger;
+
+    private static readonly HashSet<string> PlatformFeatureKeys =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Dashboard", "UserGuide", "RecommendedWorkflow", "AdminSystemSettings"
+        };
+
+    private static readonly IReadOnlyList<(string Key, string Label)> CoreFeatures =
+    [
+        ("SpecificationReview",  "Specification Review"),
+        ("QaArtifactLibrary",    "QA Artifact Library"),
+        ("TraceabilityCoverage", "Traceability & Coverage"),
+        ("ImplementationReview", "Implementation Review")
+    ];
+
+    private static readonly IReadOnlyList<(string Key, string Label)> AdvancedFeatures =
+    [
+        ("CreateTestScenario",  "Create Test Scenario"),
+        ("CodeTraceability",    "Code Traceability"),
+        ("SpecComparison",      "Spec Comparison"),
+        ("SpecificationDeltas", "Specification Deltas"),
+        ("TaskDeltas",          "Task Deltas"),
+        ("ImpactAnalysis",      "Impact Analysis"),
+        ("SpecDrift",           "Spec Drift"),
+        ("AiChangeReview",      "AI Change Review"),
+        ("QaReadiness",         "QA Readiness")
+    ];
+
+    private static readonly string[] ValidLogLevels =
+        ["Verbose", "Debug", "Information", "Warning", "Error", "Fatal"];
 
     public AdminService(IConfiguration config, IWebHostEnvironment env, AppDbContext db, ILogger<AdminService> logger)
     {
@@ -63,6 +95,8 @@ public class AdminService
         var resetAllowed = _config.GetValue<bool>("AdminSettings:AllowLocalDatabaseReset", true);
         var isLocalMode = dbMode.Equals("Local", StringComparison.OrdinalIgnoreCase);
         var resetNotAllowedReason = ResolveResetNotAllowedReason(resetAllowed, isLocalMode);
+
+        var featureVisibility = BuildFeatureVisibility();
 
         return new SystemSettingsResponse
         {
@@ -121,8 +155,158 @@ public class AdminService
                 ResetAllowed = resetAllowed && isLocalMode,
                 DatabaseMode = dbMode,
                 ResetNotAllowedReason = resetNotAllowedReason
+            },
+            FeatureVisibility = featureVisibility
+        };
+    }
+
+    public FeatureVisibilityInfo BuildFeatureVisibility()
+    {
+        var s = _config.GetSection("FeatureVisibility");
+        return new FeatureVisibilityInfo
+        {
+            RecommendedWorkflow  = s.GetValue("RecommendedWorkflow",  true),
+            UserGuide            = s.GetValue("UserGuide",            true),
+            Dashboard            = s.GetValue("Dashboard",            true),
+            SpecificationReview  = s.GetValue("SpecificationReview",  true),
+            QaArtifactLibrary    = s.GetValue("QaArtifactLibrary",    true),
+            CreateTestScenario   = s.GetValue("CreateTestScenario",   true),
+            TraceabilityCoverage = s.GetValue("TraceabilityCoverage", true),
+            CodeTraceability     = s.GetValue("CodeTraceability",     true),
+            SpecComparison       = s.GetValue("SpecComparison",       true),
+            SpecificationDeltas  = s.GetValue("SpecificationDeltas",  true),
+            TaskDeltas           = s.GetValue("TaskDeltas",           true),
+            ImpactAnalysis       = s.GetValue("ImpactAnalysis",       true),
+            SpecDrift            = s.GetValue("SpecDrift",            true),
+            ImplementationReview = s.GetValue("ImplementationReview", true),
+            AiChangeReview       = s.GetValue("AiChangeReview",       true),
+            QaReadiness          = s.GetValue("QaReadiness",          true),
+            AdminSystemSettings  = s.GetValue("AdminSystemSettings",  true)
+        };
+    }
+
+    public EditableSettingsResponse BuildEditableSettings()
+    {
+        var fv = _config.GetSection("FeatureVisibility");
+
+        var platform = new List<FeatureVisibilityEntry>
+        {
+            new() { Key = "Dashboard",             Label = "Dashboard",             Value = true, Locked = true },
+            new() { Key = "UserGuide",             Label = "User Guide",            Value = true, Locked = true },
+            new() { Key = "RecommendedWorkflow",   Label = "Recommended Workflow",  Value = true, Locked = true },
+            new() { Key = "AdminSystemSettings",   Label = "System Settings",       Value = true, Locked = true }
+        };
+
+        var core = CoreFeatures.Select(f => new FeatureVisibilityEntry
+        {
+            Key = f.Key, Label = f.Label,
+            Value = fv.GetValue(f.Key, true), Locked = false
+        }).ToList();
+
+        var advanced = AdvancedFeatures.Select(f => new FeatureVisibilityEntry
+        {
+            Key = f.Key, Label = f.Label,
+            Value = fv.GetValue(f.Key, false), Locked = false
+        }).ToList();
+
+        return new EditableSettingsResponse
+        {
+            FeatureVisibility = new EditableFeatureVisibilitySection
+            {
+                Platform = platform,
+                Core = core,
+                Advanced = advanced
+            },
+            Logging = new EditableLoggingSection
+            {
+                MinimumLevel = _config["LoggingSettings:MinimumLevel"] ?? "Information",
+                SeqUrl = _config["LoggingSettings:SeqUrl"] ?? ""
+            },
+            Admin = new EditableAdminSection
+            {
+                ShowDiagnostics = _config.GetValue("AdminSettings:ShowDiagnostics", true)
             }
         };
+    }
+
+    public (bool Valid, string Error) ValidateSettingsUpdate(SaveSettingsRequest request)
+    {
+        if (request.FeatureVisibility != null)
+        {
+            foreach (var (key, value) in request.FeatureVisibility)
+            {
+                if (PlatformFeatureKeys.Contains(key) && !value)
+                    return (false, $"Platform features cannot be disabled. '{key}' is a platform feature and must always remain enabled.");
+            }
+        }
+
+        if (request.Logging?.MinimumLevel is not null &&
+            !ValidLogLevels.Contains(request.Logging.MinimumLevel, StringComparer.OrdinalIgnoreCase))
+        {
+            return (false, $"Invalid log level '{request.Logging.MinimumLevel}'. Valid levels: {string.Join(", ", ValidLogLevels)}.");
+        }
+
+        return (true, "");
+    }
+
+    public async Task<(bool Success, string Message)> SaveSettingsAsync(SaveSettingsRequest request)
+    {
+        var (valid, error) = ValidateSettingsUpdate(request);
+        if (!valid) return (false, error);
+
+        var path = Path.Combine(_env.ContentRootPath, "appsettings.Local.json");
+
+        JsonObject root;
+        try
+        {
+            root = File.Exists(path)
+                ? JsonNode.Parse(await File.ReadAllTextAsync(path))?.AsObject() ?? new JsonObject()
+                : new JsonObject();
+        }
+        catch
+        {
+            root = new JsonObject();
+        }
+
+        if (request.FeatureVisibility is { Count: > 0 })
+        {
+            var fvNode = root.TryGetPropertyValue("FeatureVisibility", out var existing)
+                && existing is JsonObject obj ? obj : new JsonObject();
+            foreach (var (key, value) in request.FeatureVisibility)
+            {
+                if (!PlatformFeatureKeys.Contains(key))
+                    fvNode[key] = JsonValue.Create(value);
+            }
+            root["FeatureVisibility"] = fvNode;
+        }
+
+        if (request.Logging != null)
+        {
+            var lsNode = root.TryGetPropertyValue("LoggingSettings", out var lsExisting)
+                && lsExisting is JsonObject lsObj ? lsObj : new JsonObject();
+            if (request.Logging.MinimumLevel is not null)
+                lsNode["MinimumLevel"] = JsonValue.Create(request.Logging.MinimumLevel);
+            if (request.Logging.SeqUrl is not null)
+                lsNode["SeqUrl"] = JsonValue.Create(request.Logging.SeqUrl);
+            root["LoggingSettings"] = lsNode;
+        }
+
+        if (request.Admin?.ShowDiagnostics.HasValue == true)
+        {
+            var adminNode = root.TryGetPropertyValue("AdminSettings", out var adminExisting)
+                && adminExisting is JsonObject adminObj ? adminObj : new JsonObject();
+            adminNode["ShowDiagnostics"] = JsonValue.Create(request.Admin.ShowDiagnostics!.Value);
+            root["AdminSettings"] = adminNode;
+        }
+
+        var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(path, json);
+
+        try { ((IConfigurationRoot)_config).Reload(); }
+        catch (Exception ex) { _logger.LogWarning(ex, "IConfiguration reload after settings save encountered an issue"); }
+
+        _logger.LogInformation("Local settings saved to {Path}", path);
+        return (true, "Settings saved. Feature visibility changes apply immediately. Refresh the page to update the navigation sidebar. Logging changes require a backend restart.");
     }
 
     public async Task<(bool Success, string Message)> ResetLocalDatabaseAsync()

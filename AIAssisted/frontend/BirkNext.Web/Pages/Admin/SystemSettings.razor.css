@@ -1,67 +1,223 @@
-.admin-page-header {
+/* ── Page header ── */
+
+.admin-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.admin-header-left h1 {
+    margin-bottom: 0.2rem;
+}
+
+.admin-header-actions {
+    flex-shrink: 0;
+    padding-top: 0.35rem;
+}
+
+/* ── Edit Settings button ── */
+
+.btn-edit-settings {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--clr-text-muted);
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background-color var(--transition), border-color var(--transition), color var(--transition);
+    white-space: nowrap;
+}
+
+.btn-edit-settings:hover:not(:disabled) {
+    background: var(--clr-surface);
+    border-color: var(--clr-border-hover);
+    color: var(--clr-text-body);
+}
+
+.btn-edit-settings:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* ── Save button ── */
+
+.btn-save {
+    padding: 0.45rem 1.1rem;
+    font-size: 0.8rem;
+}
+
+/* ── Edit-mode action row ── */
+
+.admin-header-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+/* ── Copy Diagnostics button ── */
+
+.btn-copy-diag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--clr-text-muted);
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background-color var(--transition), border-color var(--transition), color var(--transition);
+    white-space: nowrap;
+}
+
+.btn-copy-diag:hover:not(:disabled) {
+    background: var(--clr-surface);
+    border-color: var(--clr-border-hover);
+    color: var(--clr-text-body);
+}
+
+.btn-copy-diag:disabled {
+    cursor: default;
+}
+
+.btn-copy-diag-done {
+    color: var(--clr-success);
+    border-color: var(--clr-success-border);
+    background: var(--clr-success-bg-light);
+}
+
+/* ── Status bar ── */
+
+.status-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
     margin-bottom: 1.5rem;
 }
 
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.7rem;
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-pill);
+    font-size: 0.79rem;
+    line-height: 1;
+}
+
+.status-pill-label {
+    color: var(--clr-text-placeholder);
+    font-weight: 500;
+}
+
+.status-pill-label::after {
+    content: ':';
+}
+
+.status-pill-value {
+    color: var(--clr-text-body);
+    font-weight: 600;
+}
+
+.status-pill-mono {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.76rem;
+}
+
+/* ── Settings grid ── */
+
 .settings-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
-    gap: 1.25rem;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+}
+
+@media (max-width: 800px) {
+    .settings-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .settings-card {
     background: var(--clr-surface-white);
     border: 1px solid var(--clr-border);
     border-radius: var(--radius-lg);
-    padding: 1.25rem 1.5rem;
+    padding: 1.125rem 1.25rem;
 }
 
 .settings-card-title {
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 700;
     color: var(--clr-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.07em;
     margin-bottom: 0.875rem;
-    padding-bottom: 0.625rem;
+    padding-bottom: 0.5rem;
     border-bottom: 1px solid var(--clr-border-subtle);
 }
+
+.settings-card-full-width {
+    grid-column: 1 / -1;
+}
+
+.settings-card-note {
+    font-size: 0.83rem;
+    color: var(--clr-text-muted);
+    margin: 0 0 1rem;
+    line-height: 1.55;
+}
+
+.settings-card-note code {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.8rem;
+    background: var(--clr-surface);
+    padding: 0.1rem 0.3rem;
+    border-radius: var(--radius-sm);
+}
+
+/* ── Settings table ── */
 
 .settings-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.875rem;
+    font-size: 0.855rem;
 }
 
 .settings-table td {
-    padding: 0.35rem 0;
+    padding: 0.3rem 0;
     vertical-align: top;
     line-height: 1.5;
 }
 
 .settings-table td:first-child {
     color: var(--clr-text-muted);
-    width: 46%;
+    width: 42%;
     padding-right: 0.75rem;
     white-space: nowrap;
 }
 
 .settings-table td:last-child {
     color: var(--clr-text-body);
-    word-break: break-all;
+    word-break: break-word;
 }
 
-.settings-table code {
-    font-size: 0.82rem;
-    background: var(--clr-surface);
-    padding: 0.1rem 0.3rem;
-    border-radius: var(--radius-sm);
-    color: var(--clr-text-body);
-    word-break: break-all;
-}
+/* ── Settings badges ── */
 
 .settings-badge {
     display: inline-block;
-    font-size: 0.72rem;
+    font-size: 0.7rem;
     font-weight: 600;
     background: var(--clr-surface);
     color: var(--clr-text-muted);
@@ -70,46 +226,186 @@
     border-radius: var(--radius-pill);
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    white-space: nowrap;
 }
 
-/* Maintenance card */
-.settings-card-maintenance {
-    grid-column: 1 / -1;
+.settings-badge-local {
+    background: var(--clr-success-bg);
+    color: var(--clr-success);
+    border-color: var(--clr-success-border);
 }
 
-.maintenance-section {
+.settings-badge-shared {
+    background: var(--clr-warning-bg);
+    color: var(--clr-warning);
+    border-color: var(--clr-warning-border);
+}
+
+/* ── Monospace chip ── */
+
+.mono-chip {
+    display: inline;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.79rem;
+    background: var(--clr-surface);
+    color: var(--clr-text-body);
+    padding: 0.1rem 0.3rem;
+    border-radius: var(--radius-sm);
+    word-break: break-all;
+    line-height: 1.5;
+}
+
+/* ── Copyable value row ── */
+
+.copyable-value {
     display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+    align-items: flex-start;
+    gap: 0.35rem;
 }
 
-.maintenance-action {
+.copy-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    padding: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--clr-text-placeholder);
+    cursor: pointer;
+    transition: color var(--transition), background var(--transition), border-color var(--transition);
+    margin-top: 0.1rem;
+}
+
+.copy-btn:hover {
+    color: var(--clr-text-muted);
+    background: var(--clr-surface);
+    border-color: var(--clr-border);
+}
+
+/* ── Feature visibility tiers ── */
+
+.fv-tiers {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+    gap: 0 1.75rem;
+}
+
+.fv-tier {
+    margin-bottom: 0.875rem;
+}
+
+.fv-tier-header {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+}
+
+.fv-tier-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--clr-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.fv-tier-hint {
+    font-size: 0.7rem;
+    color: var(--clr-text-placeholder);
+}
+
+/* ── Editable fields ── */
+
+.edit-select,
+.edit-input {
+    font-size: 0.855rem;
+    color: var(--clr-text-body);
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border-input);
+    border-radius: var(--radius-md);
+    padding: 0.3rem 0.5rem;
+    width: 100%;
+    max-width: 260px;
+    outline: none;
+    font-family: inherit;
+}
+
+.edit-select:focus,
+.edit-input:focus {
+    border-color: var(--clr-primary);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+}
+
+.edit-select {
+    cursor: pointer;
+    appearance: auto;
+}
+
+.edit-field-note {
+    font-size: 0.79rem;
+    color: var(--clr-text-placeholder);
+    margin: 0.6rem 0 0;
+    line-height: 1.5;
+}
+
+/* ── Danger zone ── */
+
+.danger-zone {
+    border: 1px solid var(--clr-danger-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.danger-zone-header {
+    display: flex;
+    align-items: center;
+    padding: 0.45rem 1rem;
+    background: var(--clr-danger-bg);
+    border-bottom: 1px solid var(--clr-danger-border);
+}
+
+.danger-zone-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--clr-danger);
+}
+
+.danger-zone-action {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 1.5rem;
-    padding: 0.875rem 0;
-    border-bottom: 1px solid var(--clr-border-subtle);
+    padding: 1rem;
+    background: var(--clr-surface-white);
 }
 
-.maintenance-action:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
+.danger-zone-description strong {
+    display: block;
+    font-size: 0.875rem;
+    color: var(--clr-text-heading);
+    margin-bottom: 0.25rem;
 }
 
-.maintenance-description {
-    font-size: 0.85rem;
-    color: var(--clr-text-muted);
-    margin: 0.25rem 0 0;
-}
-
-.maintenance-not-allowed {
+.danger-zone-description p {
     font-size: 0.82rem;
-    color: var(--clr-warning);
-    margin: 0.25rem 0 0;
+    color: var(--clr-text-muted);
+    margin: 0;
+    line-height: 1.55;
 }
 
-/* Danger button */
+.danger-zone-reason {
+    margin-top: 0.375rem !important;
+    color: var(--clr-warning) !important;
+}
+
+/* ── Buttons ── */
+
 .btn-danger {
     padding: 0.55rem 1.25rem;
     font-size: 0.875rem;
@@ -133,8 +429,9 @@
 }
 
 .btn-danger-outline {
+    flex-shrink: 0;
     padding: 0.5rem 1.1rem;
-    font-size: 0.875rem;
+    font-size: 0.855rem;
     font-weight: 600;
     color: var(--clr-danger);
     background: transparent;
@@ -143,7 +440,6 @@
     cursor: pointer;
     transition: background-color var(--transition), border-color var(--transition);
     white-space: nowrap;
-    flex-shrink: 0;
 }
 
 .btn-danger-outline:hover:not(:disabled) {
@@ -156,7 +452,8 @@
     cursor: not-allowed;
 }
 
-/* Modal */
+/* ── Modal ── */
+
 .modal-backdrop {
     position: fixed;
     inset: 0;

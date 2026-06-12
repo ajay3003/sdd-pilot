@@ -380,14 +380,14 @@ function Get-SanitizedConnectionString {
 
 function Test-PostgresConnection {
     param(
-        [string]$Host = "localhost",
+        [string]$DbHost = "localhost",
         [int]$Port = 5432,
         [int]$TimeoutMs = 3000
     )
 
     try {
         $client = New-Object System.Net.Sockets.TcpClient
-        $asyncResult = $client.BeginConnect($Host, $Port, $null, $null)
+        $asyncResult = $client.BeginConnect($DbHost, $Port, $null, $null)
         $connected = $asyncResult.AsyncWaitHandle.WaitOne($TimeoutMs)
 
         if ($connected -and $client.Connected) {
@@ -718,7 +718,7 @@ function Start-ContainerServices {
 
         # Not our container — test whether a reachable PostgreSQL is on that port
         Info "Testing PostgreSQL connectivity on port $pgPort..."
-        $canConnect = Test-PostgresConnection -Host $script:PostgresConfig.Host -Port $pgPort
+        $canConnect = Test-PostgresConnection -DbHost $script:PostgresConfig.Host -Port $pgPort
 
         if ($canConnect) {
             Ok "Existing PostgreSQL instance is reachable on port $pgPort."

@@ -1,12 +1,38 @@
 @inherits LayoutComponentBase
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+@using BirkNext.Web.Services
+@inject FeatureVisibilityService FeatureViz
+@inject AdminApiService AdminApi
 
-    <main>
-        <article class="content px-4">
-            @Body
-        </article>
-    </main>
-</div>
+@if (!_ready)
+{
+    <div class="layout-loading">
+        <svg class="loading-progress" style="width:3rem;height:3rem">
+            <circle r="40%" cx="50%" cy="50%" />
+            <circle r="40%" cx="50%" cy="50%" />
+        </svg>
+    </div>
+}
+else
+{
+    <div class="page">
+        <div class="sidebar">
+            <NavMenu />
+        </div>
+
+        <main>
+            <article class="content px-4">
+                @Body
+            </article>
+        </main>
+    </div>
+}
+
+@code {
+    private bool _ready;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await FeatureViz.LoadAsync(AdminApi);
+        _ready = true;
+    }
+}

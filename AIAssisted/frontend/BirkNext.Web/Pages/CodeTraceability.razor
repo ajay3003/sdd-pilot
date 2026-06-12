@@ -116,7 +116,7 @@
                                 role="button"
                                 tabindex="0"
                                 @onclick="() => SelectFileAsync(file.Id)"
-                                @onkeydown='e => { if (e.Key == "Enter" || e.Key == " ") SelectFileAsync(file.Id); }'
+                                @onkeydown='async e => { if (e.Key == "Enter" || e.Key == " ") await SelectFileAsync(file.Id); }'
                                 aria-selected="@isSelected"
                                 aria-label="Select @file.FileName">
                                 <div class="code-file-row-main">

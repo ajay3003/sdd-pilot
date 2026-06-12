@@ -1,13 +1,67 @@
 @page "/admin/system-settings"
 @using BirkNext.Web.Services
+@using BirkNext.Web.Components
 @inject AdminApiService AdminApi
+@inject IJSRuntime JS
 
 <PageTitle>System Settings — QA Review Studio</PageTitle>
 
-<div class="admin-page-header">
-    <h1>System Settings</h1>
-    <p class="page-lead">Read-only view of application configuration and runtime environment. Secrets are never shown.</p>
+<div class="admin-header">
+    <div class="admin-header-left">
+        <h1>System Settings</h1>
+        <p class="page-lead">Diagnostics and local maintenance. Secrets are never shown.</p>
+    </div>
+    @if (_settings is not null)
+    {
+        <div class="admin-header-actions">
+            @if (_isEditMode)
+            {
+                <button class="btn-secondary"
+                        @onclick="CancelEdit"
+                        disabled="@_isSaving">
+                    Cancel
+                </button>
+                <button class="btn-primary btn-save"
+                        @onclick="SaveAsync"
+                        disabled="@_isSaving">
+                    @(_isSaving ? "Saving…" : "Save Settings")
+                </button>
+            }
+            else
+            {
+                <button class="btn-edit-settings"
+                        @onclick="EnterEditMode"
+                        disabled="@(_editableSettings is null)">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708l-3-3zm.646 6.061L9.793 2.5 3.293 9H3.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.207l6.5-6.5zm-7.468 7.468A.5.5 0 0 1 6 13.5V13h-.5a.5.5 0 0 1-.5-.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.5-.5V10h-.5a.499.499 0 0 1-.175-.032l-.179.178a.5.5 0 0 0-.11.168l-2 5a.5.5 0 0 0 .65.65l5-2a.5.5 0 0 0 .168-.11l.178-.178z"/></svg>
+                    Edit Settings
+                </button>
+                <button class="btn-copy-diag @(_copiedDiag ? "btn-copy-diag-done" : "")"
+                        @onclick="CopyDiagnosticsAsync"
+                        disabled="@_copiedDiag">
+                    @if (_copiedDiag)
+                    {
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg>
+                        <span>Copied!</span>
+                    }
+                    else
+                    {
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                        <span>Copy Diagnostics</span>
+                    }
+                </button>
+            }
+        </div>
+    }
 </div>
+
+@if (_saveSuccess is not null)
+{
+    <div class="notification notification-success" role="status">@_saveSuccess</div>
+}
+@if (_saveError is not null)
+{
+    <div class="notification notification-error" role="alert">@_saveError</div>
+}
 
 @if (_isLoading)
 {
@@ -15,53 +69,51 @@
 }
 else if (_loadError is not null)
 {
-    <div class="notification notification-error" role="alert">
-        @_loadError
-    </div>
+    <div class="notification notification-error" role="alert">@_loadError</div>
 }
 else if (_settings is not null)
 {
+    <div class="status-bar">
+        <div class="status-pill">
+            <span class="status-pill-label">Environment</span>
+            <span class="status-pill-value">@OrUnknown(_settings.Application.Environment)</span>
+        </div>
+        <div class="status-pill">
+            <span class="status-pill-label">Package</span>
+            <span class="status-pill-value">@OrUnknown(_settings.Application.PackageMode)</span>
+        </div>
+        <div class="status-pill">
+            <span class="status-pill-label">Database</span>
+            <span class="status-pill-value">@OrUnknown(_settings.Database.Mode)</span>
+        </div>
+        <div class="status-pill">
+            <span class="status-pill-label">Compose</span>
+            <span class="status-pill-value status-pill-mono">@OrUnknown(_settings.Runtime.ComposeProjectName)</span>
+        </div>
+        <div class="status-pill">
+            <span class="status-pill-label">Logging</span>
+            <span class="status-pill-value">@OrUnknown(_settings.Logging.MinimumLevel)</span>
+        </div>
+    </div>
+
     <div class="settings-grid">
 
         <!-- Application -->
         <div class="settings-card">
             <div class="settings-card-title">Application</div>
             <table class="settings-table">
-                <tr><td>Application Name</td><td>@_settings.Application.ApplicationName</td></tr>
-                <tr><td>Environment</td><td>@_settings.Application.Environment</td></tr>
-                <tr><td>Version</td><td>@_settings.Application.Version</td></tr>
+                <tr><td>Name</td><td>@OrUnknown(_settings.Application.ApplicationName)</td></tr>
+                <tr><td>Environment</td><td>@OrUnknown(_settings.Application.Environment)</td></tr>
+                <tr><td>Version</td><td>@OrUnknown(_settings.Application.Version)</td></tr>
                 @if (!string.IsNullOrWhiteSpace(_settings.Application.BuildNumber))
                 {
-                    <tr><td>Build Number</td><td>@_settings.Application.BuildNumber</td></tr>
+                    <tr><td>Build</td><td>@_settings.Application.BuildNumber</td></tr>
                 }
                 @if (!string.IsNullOrWhiteSpace(_settings.Application.CommitSha))
                 {
-                    <tr><td>Commit SHA</td><td><code>@_settings.Application.CommitSha</code></td></tr>
+                    <tr><td>Commit</td><td><span class="mono-chip">@_settings.Application.CommitSha</span></td></tr>
                 }
-                <tr><td>Package Mode</td><td><span class="settings-badge">@_settings.Application.PackageMode</span></td></tr>
-            </table>
-        </div>
-
-        <!-- Frontend -->
-        <div class="settings-card">
-            <div class="settings-card-title">Frontend</div>
-            <table class="settings-table">
-                <tr><td>Frontend Base URL</td><td><code>@_settings.Frontend.FrontendBaseUrl</code></td></tr>
-                <tr><td>API Base URL</td><td><code>@_settings.Frontend.ApiBaseUrl</code></td></tr>
-                <tr><td>GraphQL Endpoint</td><td><code>@_settings.Frontend.GraphQlEndpoint</code></td></tr>
-                <tr><td>Environment</td><td>@_settings.Frontend.EnvironmentName</td></tr>
-                <tr><td>Static Hosting Mode</td><td>@(_settings.Frontend.StaticHostingMode ? "Yes (Blazor WASM)" : "No")</td></tr>
-            </table>
-        </div>
-
-        <!-- Backend -->
-        <div class="settings-card">
-            <div class="settings-card-title">Backend</div>
-            <table class="settings-table">
-                <tr><td>Backend Base URL</td><td><code>@_settings.Backend.BackendBaseUrl</code></td></tr>
-                <tr><td>ASPNETCORE_ENVIRONMENT</td><td>@_settings.Backend.AspNetCoreEnvironment</td></tr>
-                <tr><td>Listening URLs</td><td><code>@_settings.Backend.ListeningUrls</code></td></tr>
-                <tr><td>CORS Allowed Origins</td><td><code>@_settings.Backend.CorsAllowedOrigins</code></td></tr>
+                <tr><td>Package Mode</td><td><span class="settings-badge">@OrUnknown(_settings.Application.PackageMode)</span></td></tr>
             </table>
         </div>
 
@@ -69,30 +121,117 @@ else if (_settings is not null)
         <div class="settings-card">
             <div class="settings-card-title">Database</div>
             <table class="settings-table">
-                <tr><td>Mode</td><td><span class="settings-badge">@_settings.Database.Mode</span></td></tr>
-                <tr><td>Provider</td><td>@_settings.Database.Provider</td></tr>
-                <tr><td>Host</td><td>@_settings.Database.Host</td></tr>
-                <tr><td>Port</td><td>@_settings.Database.Port</td></tr>
-                <tr><td>Database Name</td><td>@_settings.Database.DatabaseName</td></tr>
-                <tr><td>Username</td><td>@_settings.Database.Username</td></tr>
-                <tr><td>Migration Status</td><td>@_settings.Database.MigrationStatus</td></tr>
-                <tr><td>Compose Project Name</td><td><code>@_settings.Database.ComposeProjectName</code></td></tr>
-                <tr><td>Expected Volume</td><td><code>@_settings.Database.ExpectedVolumeName</code></td></tr>
+                <tr>
+                    <td>Mode</td>
+                    <td>
+                        <span class="settings-badge @(_settings.Database.Mode == "Local" ? "settings-badge-local" : (_settings.Database.Mode == "Shared" ? "settings-badge-shared" : ""))">
+                            @OrUnknown(_settings.Database.Mode)
+                        </span>
+                    </td>
+                </tr>
+                <tr><td>Provider</td><td>@OrUnknown(_settings.Database.Provider)</td></tr>
+                <tr><td>Host</td><td>@OrUnknown(_settings.Database.Host)</td></tr>
+                <tr><td>Port</td><td>@(_settings.Database.Port > 0 ? _settings.Database.Port.ToString() : "—")</td></tr>
+                <tr><td>Database</td><td>@OrUnknown(_settings.Database.DatabaseName)</td></tr>
+                <tr><td>Username</td><td>@OrUnknown(_settings.Database.Username)</td></tr>
+                <tr>
+                    <td>Migrations</td>
+                    <td>
+                        @if (_settings.Database.MigrationStatus == "Up to date")
+                        {
+                            <span class="settings-badge settings-badge-local">Up to date</span>
+                        }
+                        else
+                        {
+                            <span class="settings-badge">@OrUnknown(_settings.Database.MigrationStatus)</span>
+                        }
+                    </td>
+                </tr>
             </table>
         </div>
 
-        <!-- Container / Runtime -->
+        <!-- Backend -->
         <div class="settings-card">
-            <div class="settings-card-title">Container / Runtime</div>
+            <div class="settings-card-title">Backend</div>
             <table class="settings-table">
-                <tr><td>Compose Project Name</td><td><code>@_settings.Runtime.ComposeProjectName</code></td></tr>
-                <tr><td>Expected PostgreSQL Volume</td><td><code>@_settings.Runtime.ExpectedDatabaseVolume</code></td></tr>
-                <tr><td>Package Mode</td><td><span class="settings-badge">@_settings.Runtime.PackageMode</span></td></tr>
-                @if (!string.IsNullOrWhiteSpace(_settings.Runtime.LocalPackageRoot))
-                {
-                    <tr><td>Local Package Root</td><td><code>@_settings.Runtime.LocalPackageRoot</code></td></tr>
-                }
-                <tr><td>Published Artifact</td><td>@(_settings.Runtime.RunningFromPublishedArtifact ? "Yes" : "No")</td></tr>
+                <tr>
+                    <td>Base URL</td>
+                    <td>
+                        <div class="copyable-value">
+                            <span class="mono-chip">@OrUnknown(_settings.Backend.BackendBaseUrl)</span>
+                            @if (!string.IsNullOrWhiteSpace(_settings.Backend.BackendBaseUrl))
+                            {
+                                <button class="copy-btn" title="Copy to clipboard"
+                                        @onclick="() => CopyAsync(_settings.Backend.BackendBaseUrl)">
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                                </button>
+                            }
+                        </div>
+                    </td>
+                </tr>
+                <tr><td>Environment</td><td>@OrUnknown(_settings.Backend.AspNetCoreEnvironment)</td></tr>
+                <tr>
+                    <td>Listening URLs</td>
+                    <td>
+                        <div class="copyable-value">
+                            <span class="mono-chip">@OrUnknown(_settings.Backend.ListeningUrls)</span>
+                            @if (!string.IsNullOrWhiteSpace(_settings.Backend.ListeningUrls))
+                            {
+                                <button class="copy-btn" title="Copy to clipboard"
+                                        @onclick="() => CopyAsync(_settings.Backend.ListeningUrls)">
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                                </button>
+                            }
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>CORS Origins</td>
+                    <td><span class="mono-chip">@OrUnknown(_settings.Backend.CorsAllowedOrigins)</span></td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Frontend -->
+        <div class="settings-card">
+            <div class="settings-card-title">Frontend</div>
+            <table class="settings-table">
+                <tr>
+                    <td>Frontend URL</td>
+                    <td>
+                        <div class="copyable-value">
+                            <span class="mono-chip">@OrUnknown(_settings.Frontend.FrontendBaseUrl)</span>
+                            @if (!string.IsNullOrWhiteSpace(_settings.Frontend.FrontendBaseUrl))
+                            {
+                                <button class="copy-btn" title="Copy to clipboard"
+                                        @onclick="() => CopyAsync(_settings.Frontend.FrontendBaseUrl)">
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                                </button>
+                            }
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>API Base URL</td>
+                    <td>
+                        <div class="copyable-value">
+                            <span class="mono-chip">@OrUnknown(_settings.Frontend.ApiBaseUrl)</span>
+                            @if (!string.IsNullOrWhiteSpace(_settings.Frontend.ApiBaseUrl))
+                            {
+                                <button class="copy-btn" title="Copy to clipboard"
+                                        @onclick="() => CopyAsync(_settings.Frontend.ApiBaseUrl)">
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                                </button>
+                            }
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>GraphQL</td>
+                    <td><span class="mono-chip">@OrUnknown(_settings.Frontend.GraphQlEndpoint)</span></td>
+                </tr>
+                <tr><td>Environment</td><td>@OrUnknown(_settings.Frontend.EnvironmentName)</td></tr>
+                <tr><td>Hosting</td><td>@(_settings.Frontend.StaticHostingMode ? "Blazor WASM" : "Server-side")</td></tr>
             </table>
         </div>
 
@@ -100,20 +239,195 @@ else if (_settings is not null)
         <div class="settings-card">
             <div class="settings-card-title">Logging</div>
             <table class="settings-table">
-                <tr><td>Provider</td><td>@_settings.Logging.Provider</td></tr>
-                <tr><td>Minimum Level</td><td><span class="settings-badge">@_settings.Logging.MinimumLevel</span></td></tr>
-                <tr><td>Sinks</td><td>@string.Join(", ", _settings.Logging.Sinks)</td></tr>
-                <tr><td>Log Path</td><td><code>@_settings.Logging.LogPath</code></td></tr>
-                <tr><td>Structured Logging</td><td>@(_settings.Logging.StructuredLogging ? "Enabled" : "Disabled")</td></tr>
-                @if (!string.IsNullOrWhiteSpace(_settings.Logging.SeqUrl))
+                <tr><td>Provider</td><td>@OrUnknown(_settings.Logging.Provider)</td></tr>
+                <tr>
+                    <td>Level</td>
+                    <td>
+                        @if (_isEditMode)
+                        {
+                            <select class="edit-select" @bind="_editLogLevel">
+                                @foreach (var lvl in new[] { "Verbose", "Debug", "Information", "Warning", "Error", "Fatal" })
+                                {
+                                    <option value="@lvl">@lvl</option>
+                                }
+                            </select>
+                        }
+                        else
+                        {
+                            <span class="settings-badge">@OrUnknown(_settings.Logging.MinimumLevel)</span>
+                        }
+                    </td>
+                </tr>
+                <tr>
+                    <td>Sinks</td>
+                    <td>@((_settings.Logging.Sinks?.Count ?? 0) > 0 ? string.Join(", ", _settings.Logging.Sinks) : "—")</td>
+                </tr>
+                <tr>
+                    <td>Log Path</td>
+                    <td>
+                        <div class="copyable-value">
+                            <span class="mono-chip">@OrUnknown(_settings.Logging.LogPath)</span>
+                            @if (!string.IsNullOrWhiteSpace(_settings.Logging.LogPath))
+                            {
+                                <button class="copy-btn" title="Copy to clipboard"
+                                        @onclick="() => CopyAsync(_settings.Logging.LogPath)">
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                                </button>
+                            }
+                        </div>
+                    </td>
+                </tr>
+                <tr><td>Structured</td><td>@(_settings.Logging.StructuredLogging ? "Enabled" : "Disabled")</td></tr>
+                @if (_isEditMode)
                 {
-                    <tr><td>Seq URL</td><td><code>@_settings.Logging.SeqUrl</code></td></tr>
+                    <tr>
+                        <td>Seq URL</td>
+                        <td><input class="edit-input" type="text" placeholder="http://localhost:5341" @bind="_editSeqUrl" @bind:event="oninput" /></td>
+                    </tr>
                 }
+                else if (!string.IsNullOrWhiteSpace(_settings.Logging.SeqUrl))
+                {
+                    <tr><td>Seq URL</td><td><span class="mono-chip">@_settings.Logging.SeqUrl</span></td></tr>
+                }
+            </table>
+            @if (_isEditMode)
+            {
+                <p class="edit-field-note">Logging level and Seq URL changes require a backend restart to take effect.</p>
+            }
+        </div>
+
+        <!-- Container / Runtime -->
+        <div class="settings-card">
+            <div class="settings-card-title">Container / Runtime</div>
+            <table class="settings-table">
+                <tr>
+                    <td>Compose Project</td>
+                    <td>
+                        <div class="copyable-value">
+                            <span class="mono-chip">@OrUnknown(_settings.Runtime.ComposeProjectName)</span>
+                            @if (!string.IsNullOrWhiteSpace(_settings.Runtime.ComposeProjectName))
+                            {
+                                <button class="copy-btn" title="Copy to clipboard"
+                                        @onclick="() => CopyAsync(_settings.Runtime.ComposeProjectName)">
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                                </button>
+                            }
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Expected Volume</td>
+                    <td>
+                        <div class="copyable-value">
+                            <span class="mono-chip">@OrUnknown(_settings.Runtime.ExpectedDatabaseVolume)</span>
+                            @if (!string.IsNullOrWhiteSpace(_settings.Runtime.ExpectedDatabaseVolume))
+                            {
+                                <button class="copy-btn" title="Copy to clipboard"
+                                        @onclick="() => CopyAsync(_settings.Runtime.ExpectedDatabaseVolume)">
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                                </button>
+                            }
+                        </div>
+                    </td>
+                </tr>
+                <tr><td>Package Mode</td><td><span class="settings-badge">@OrUnknown(_settings.Runtime.PackageMode)</span></td></tr>
+                @if (!string.IsNullOrWhiteSpace(_settings.Runtime.LocalPackageRoot))
+                {
+                    <tr>
+                        <td>Package Root</td>
+                        <td>
+                            <div class="copyable-value">
+                                <span class="mono-chip">@_settings.Runtime.LocalPackageRoot</span>
+                                <button class="copy-btn" title="Copy to clipboard"
+                                        @onclick="() => CopyAsync(_settings.Runtime.LocalPackageRoot!)">
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                <tr><td>Published</td><td>@(_settings.Runtime.RunningFromPublishedArtifact ? "Yes" : "No")</td></tr>
             </table>
         </div>
 
+        <!-- Feature / Menu Visibility -->
+        <div class="settings-card settings-card-full-width">
+            <div class="settings-card-title">Feature / Menu Visibility</div>
+            <p class="settings-card-note">
+                @if (_isEditMode)
+                {
+                    <span>Toggle features on or off. Platform features are always enabled and cannot be changed. After saving, refresh the page to update the sidebar.</span>
+                }
+                else
+                {
+                    <span>Controls which items appear in the left sidebar. Use <strong>Edit Settings</strong> to change, or edit <code>appsettings.Local.json</code> directly. Refresh the page after any change to update the sidebar.</span>
+                }
+            </p>
+
+            @if (_editableSettings is not null)
+            {
+                <div class="fv-tiers">
+                    <div class="fv-tier">
+                        <div class="fv-tier-header">
+                            <span class="fv-tier-label">Platform</span>
+                            <span class="fv-tier-hint">Always enabled</span>
+                        </div>
+                        @foreach (var entry in _editableSettings.FeatureVisibility.Platform)
+                        {
+                            <FeatureRow Label="@entry.Label" Enabled="true" IsLocked="true" IsEditMode="@_isEditMode" />
+                        }
+                    </div>
+
+                    <div class="fv-tier">
+                        <div class="fv-tier-header">
+                            <span class="fv-tier-label">Core</span>
+                            <span class="fv-tier-hint">Enabled by default</span>
+                        </div>
+                        @foreach (var entry in _editableSettings.FeatureVisibility.Core)
+                        {
+                            <FeatureRow Label="@entry.Label"
+                                        Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
+                                        IsLocked="false"
+                                        IsEditMode="@_isEditMode"
+                                        OnToggle="@(v => ToggleFeature(entry.Key, v))" />
+                        }
+                    </div>
+
+                    <div class="fv-tier">
+                        <div class="fv-tier-header">
+                            <span class="fv-tier-label">Advanced</span>
+                            <span class="fv-tier-hint">Hidden by default</span>
+                        </div>
+                        @foreach (var entry in _editableSettings.FeatureVisibility.Advanced)
+                        {
+                            <FeatureRow Label="@entry.Label"
+                                        Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
+                                        IsLocked="false"
+                                        IsEditMode="@_isEditMode"
+                                        OnToggle="@(v => ToggleFeature(entry.Key, v))" />
+                        }
+                    </div>
+
+                    <div class="fv-tier">
+                        <div class="fv-tier-header">
+                            <span class="fv-tier-label">Display</span>
+                        </div>
+                        <FeatureRow Label="Show Diagnostic Information"
+                                    Enabled="@(_isEditMode ? _editShowDiagnostics : _editableSettings.Admin.ShowDiagnostics)"
+                                    IsLocked="false"
+                                    IsEditMode="@_isEditMode"
+                                    OnToggle="@(v => _editShowDiagnostics = v)" />
+                    </div>
+                </div>
+            }
+            else if (_settings.FeatureVisibility is not null)
+            {
+                <p class="settings-card-note">Feature configuration not available. The feature list will appear after a successful backend connection.</p>
+            }
+        </div>
+
         <!-- Maintenance -->
-        <div class="settings-card settings-card-maintenance">
+        <div class="settings-card settings-card-full-width">
             <div class="settings-card-title">Maintenance</div>
 
             @if (_resetResultMessage is not null)
@@ -123,21 +437,21 @@ else if (_settings is not null)
                 </div>
             }
 
-            <div class="maintenance-section">
-                <div class="maintenance-action">
-                    <div>
+            <div class="danger-zone">
+                <div class="danger-zone-header">
+                    <span class="danger-zone-label">Danger Zone</span>
+                </div>
+                <div class="danger-zone-action">
+                    <div class="danger-zone-description">
                         <strong>Reset Local Database</strong>
-                        <p class="maintenance-description">
-                            Deletes all application data from the local database. The database server keeps running.
-                            This cannot be undone.
-                        </p>
+                        <p>Deletes all application data — scenarios, reviews, traceability links, and code links. The database server keeps running. This cannot be undone.</p>
                         @if (!_settings.Maintenance.ResetAllowed && !string.IsNullOrWhiteSpace(_settings.Maintenance.ResetNotAllowedReason))
                         {
-                            <p class="maintenance-not-allowed">@_settings.Maintenance.ResetNotAllowedReason</p>
+                            <p class="danger-zone-reason">@_settings.Maintenance.ResetNotAllowedReason</p>
                         }
                     </div>
                     <button class="btn-danger-outline"
-                            disabled="@(!_settings.Maintenance.ResetAllowed || _isResetting)"
+                            disabled="@(!_settings.Maintenance.ResetAllowed || _isResetting || _isEditMode)"
                             @onclick="OpenResetModal">
                         Reset Local Database
                     </button>
@@ -178,23 +492,45 @@ else if (_settings is not null)
 }
 
 @code {
-    private SystemSettingsDto? _settings;
-    private bool _isLoading = true;
-    private string? _loadError;
+    private SystemSettingsDto?      _settings;
+    private EditableSettingsDto?    _editableSettings;
+    private bool                    _isLoading = true;
+    private string?                 _loadError;
 
-    private bool _showResetModal;
-    private string _resetConfirmText = "";
-    private bool _isResetting;
+    // Edit mode
+    private bool                    _isEditMode;
+    private bool                    _isSaving;
+    private string?                 _saveError;
+    private string?                 _saveSuccess;
+    private Dictionary<string, bool> _editFv = new();
+    private string                  _editLogLevel = "Information";
+    private string                  _editSeqUrl = "";
+    private bool                    _editShowDiagnostics = true;
+
+    // Reset modal
+    private bool    _showResetModal;
+    private string  _resetConfirmText = "";
+    private bool    _isResetting;
     private string? _resetResultMessage;
-    private bool _resetSuccess;
+    private bool    _resetSuccess;
+
+    private bool _copiedDiag;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            _settings = await AdminApi.GetSystemSettingsAsync();
+            var settingsTask  = AdminApi.GetSystemSettingsAsync();
+            var editableTask  = AdminApi.GetEditableSettingsAsync();
+            await Task.WhenAll(settingsTask, editableTask);
+
+            _settings         = settingsTask.Result;
+            _editableSettings = editableTask.Result;
+
             if (_settings is null)
                 _loadError = "Could not load system settings. Make sure the backend is running.";
+
+            InitEditState();
         }
         catch
         {
@@ -206,35 +542,195 @@ else if (_settings is not null)
         }
     }
 
+    private void InitEditState()
+    {
+        if (_editableSettings is null) return;
+        _editFv = _editableSettings.FeatureVisibility.Core
+            .Concat(_editableSettings.FeatureVisibility.Advanced)
+            .ToDictionary(e => e.Key, e => e.Value);
+        _editLogLevel       = _editableSettings.Logging.MinimumLevel;
+        _editSeqUrl         = _editableSettings.Logging.SeqUrl ?? "";
+        _editShowDiagnostics = _editableSettings.Admin.ShowDiagnostics;
+    }
+
+    private void EnterEditMode()
+    {
+        if (_editableSettings is null) return;
+        InitEditState();
+        _saveError  = null;
+        _isEditMode = true;
+    }
+
+    private void CancelEdit()
+    {
+        _isEditMode = false;
+        _saveError  = null;
+    }
+
+    private void ToggleFeature(string key, bool value)
+    {
+        if (_editFv.ContainsKey(key))
+            _editFv[key] = value;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_editableSettings is null || _isSaving) return;
+
+        _isSaving  = true;
+        _saveError = null;
+        StateHasChanged();
+
+        var fvChanges = new Dictionary<string, bool>();
+        foreach (var entry in _editableSettings.FeatureVisibility.Core
+            .Concat(_editableSettings.FeatureVisibility.Advanced))
+        {
+            var newValue = _editFv.GetValueOrDefault(entry.Key, entry.Value);
+            if (newValue != entry.Value)
+                fvChanges[entry.Key] = newValue;
+        }
+
+        var logLevelChanged     = _editLogLevel != _editableSettings.Logging.MinimumLevel;
+        var seqUrlChanged       = _editSeqUrl  != (_editableSettings.Logging.SeqUrl ?? "");
+        var diagChanged         = _editShowDiagnostics != _editableSettings.Admin.ShowDiagnostics;
+
+        if (fvChanges.Count == 0 && !logLevelChanged && !seqUrlChanged && !diagChanged)
+        {
+            _isEditMode = false;
+            _isSaving   = false;
+            return;
+        }
+
+        var request = new SaveSettingsRequest
+        {
+            FeatureVisibility = fvChanges.Count > 0 ? fvChanges : null,
+            Logging = (logLevelChanged || seqUrlChanged) ? new SaveLoggingRequest
+            {
+                MinimumLevel = logLevelChanged ? _editLogLevel : null,
+                SeqUrl       = seqUrlChanged   ? _editSeqUrl  : null
+            } : null,
+            Admin = diagChanged ? new SaveAdminRequest { ShowDiagnostics = _editShowDiagnostics } : null
+        };
+
+        try
+        {
+            var (success, message) = await AdminApi.SaveSettingsAsync(request);
+            if (success)
+            {
+                await RefreshAfterSaveAsync();
+                _isEditMode  = false;
+                _saveSuccess = message;
+                StateHasChanged();
+                await Task.Delay(6000);
+                _saveSuccess = null;
+            }
+            else
+            {
+                _saveError = message;
+            }
+        }
+        catch (Exception ex)
+        {
+            _saveError = $"Save failed: {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task RefreshAfterSaveAsync()
+    {
+        var st = AdminApi.GetSystemSettingsAsync();
+        var et = AdminApi.GetEditableSettingsAsync();
+        await Task.WhenAll(st, et);
+
+        if (st.Result is not null) _settings = st.Result;
+        if (et.Result is not null)
+        {
+            _editableSettings = et.Result;
+            InitEditState();
+        }
+    }
+
+    private static string OrUnknown(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "Not configured" : value;
+
+    private async Task CopyAsync(string text)
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); }
+        catch { }
+    }
+
+    private async Task CopyDiagnosticsAsync()
+    {
+        if (_settings is null) return;
+        var s = _settings;
+        var d = (string? v) => string.IsNullOrWhiteSpace(v) ? "—" : v;
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("QA Review Studio — Diagnostics Summary");
+        sb.AppendLine($"App:             {d(s.Application.ApplicationName)} v{d(s.Application.Version)}");
+        sb.AppendLine($"Environment:     {d(s.Application.Environment)}");
+        sb.AppendLine($"Package Mode:    {d(s.Application.PackageMode)}");
+        if (!string.IsNullOrWhiteSpace(s.Application.CommitSha))
+            sb.AppendLine($"Commit:          {s.Application.CommitSha}");
+        sb.AppendLine();
+        sb.AppendLine($"Backend URL:     {d(s.Backend.BackendBaseUrl)}");
+        sb.AppendLine($"Frontend URL:    {d(s.Frontend.FrontendBaseUrl)}");
+        sb.AppendLine($"GraphQL:         {d(s.Frontend.GraphQlEndpoint)}");
+        sb.AppendLine();
+        sb.AppendLine($"Database Mode:   {d(s.Database.Mode)}");
+        sb.AppendLine($"Host:            {d(s.Database.Host)}:{(s.Database.Port > 0 ? s.Database.Port.ToString() : "—")}");
+        sb.AppendLine($"Database Name:   {d(s.Database.DatabaseName)}");
+        sb.AppendLine($"Username:        {d(s.Database.Username)}");
+        sb.AppendLine($"Provider:        {d(s.Database.Provider)}");
+        sb.AppendLine($"Migration:       {d(s.Database.MigrationStatus)}");
+        sb.AppendLine();
+        sb.AppendLine($"Compose Project: {d(s.Runtime.ComposeProjectName)}");
+        sb.AppendLine($"Expected Volume: {d(s.Runtime.ExpectedDatabaseVolume)}");
+        sb.AppendLine();
+        sb.AppendLine($"Logging:         {d(s.Logging.Provider)} / {d(s.Logging.MinimumLevel)}");
+        sb.AppendLine($"Log Path:        {d(s.Logging.LogPath)}");
+        if (!string.IsNullOrWhiteSpace(s.Logging.SeqUrl))
+            sb.AppendLine($"Seq URL:         {s.Logging.SeqUrl}");
+
+        await CopyAsync(sb.ToString());
+        _copiedDiag = true;
+        StateHasChanged();
+        await Task.Delay(2000);
+        _copiedDiag = false;
+        StateHasChanged();
+    }
+
     private void OpenResetModal()
     {
-        _resetConfirmText = "";
+        _resetConfirmText   = "";
         _resetResultMessage = null;
-        _showResetModal = true;
+        _showResetModal     = true;
     }
 
     private void CancelReset()
     {
         if (_isResetting) return;
-        _showResetModal = false;
+        _showResetModal   = false;
         _resetConfirmText = "";
     }
 
     private async Task ExecuteResetAsync()
     {
         if (_resetConfirmText != "RESET" || _isResetting) return;
-
         _isResetting = true;
         try
         {
             var (success, message) = await AdminApi.ResetLocalDatabaseAsync();
-            _resetSuccess = success;
+            _resetSuccess       = success;
             _resetResultMessage = message;
         }
         finally
         {
-            _isResetting = false;
-            _showResetModal = false;
+            _isResetting      = false;
+            _showResetModal   = false;
             _resetConfirmText = "";
         }
     }

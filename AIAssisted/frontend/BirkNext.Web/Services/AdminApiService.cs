@@ -24,6 +24,44 @@ public class AdminApiService
         }
     }
 
+    public async Task<FeatureVisibilityDto?> GetFeatureVisibilityAsync()
+    {
+        try
+        {
+            return await _client.GetFromJsonAsync<FeatureVisibilityDto>("api/admin/feature-visibility");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<EditableSettingsDto?> GetEditableSettingsAsync()
+    {
+        try
+        {
+            return await _client.GetFromJsonAsync<EditableSettingsDto>("api/admin/editable-settings");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<(bool Success, string Message)> SaveSettingsAsync(SaveSettingsRequest request)
+    {
+        try
+        {
+            var response = await _client.PostAsJsonAsync("api/admin/system-settings", request);
+            var result = await response.Content.ReadFromJsonAsync<SaveSettingsResponse>();
+            return (result?.Success == true, result?.Message ?? (response.IsSuccessStatusCode ? "Saved." : "Save failed."));
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Request failed: {ex.Message}");
+        }
+    }
+
     public async Task<(bool Success, string Message)> ResetLocalDatabaseAsync()
     {
         try
@@ -51,6 +89,7 @@ public class SystemSettingsDto
     [JsonPropertyName("runtime")] public RuntimeDto Runtime { get; set; } = new();
     [JsonPropertyName("logging")] public LoggingDto Logging { get; set; } = new();
     [JsonPropertyName("maintenance")] public MaintenanceDto Maintenance { get; set; } = new();
+    [JsonPropertyName("featureVisibility")] public FeatureVisibilityDto FeatureVisibility { get; set; } = new();
 }
 
 public class ApplicationDto
@@ -123,4 +162,82 @@ public class ResetResponseDto
 {
     [JsonPropertyName("success")] public bool Success { get; set; }
     [JsonPropertyName("message")] public string Message { get; set; } = "";
+}
+
+public class EditableSettingsDto
+{
+    [JsonPropertyName("featureVisibility")] public EditableFeatureVisibilityDto FeatureVisibility { get; set; } = new();
+    [JsonPropertyName("logging")]           public EditableLoggingDto           Logging           { get; set; } = new();
+    [JsonPropertyName("admin")]             public EditableAdminDto             Admin             { get; set; } = new();
+}
+
+public class EditableFeatureVisibilityDto
+{
+    [JsonPropertyName("platform")] public List<FeatureEntryDto> Platform { get; set; } = [];
+    [JsonPropertyName("core")]     public List<FeatureEntryDto> Core     { get; set; } = [];
+    [JsonPropertyName("advanced")] public List<FeatureEntryDto> Advanced { get; set; } = [];
+}
+
+public class FeatureEntryDto
+{
+    [JsonPropertyName("key")]    public string Key    { get; set; } = "";
+    [JsonPropertyName("label")]  public string Label  { get; set; } = "";
+    [JsonPropertyName("value")]  public bool   Value  { get; set; }
+    [JsonPropertyName("locked")] public bool   Locked { get; set; }
+}
+
+public class EditableLoggingDto
+{
+    [JsonPropertyName("minimumLevel")] public string MinimumLevel { get; set; } = "Information";
+    [JsonPropertyName("seqUrl")]       public string SeqUrl       { get; set; } = "";
+}
+
+public class EditableAdminDto
+{
+    [JsonPropertyName("showDiagnostics")] public bool ShowDiagnostics { get; set; } = true;
+}
+
+public class SaveSettingsRequest
+{
+    [JsonPropertyName("featureVisibility")] public Dictionary<string, bool>? FeatureVisibility { get; set; }
+    [JsonPropertyName("logging")]           public SaveLoggingRequest?        Logging           { get; set; }
+    [JsonPropertyName("admin")]             public SaveAdminRequest?          Admin             { get; set; }
+}
+
+public class SaveLoggingRequest
+{
+    [JsonPropertyName("minimumLevel")] public string? MinimumLevel { get; set; }
+    [JsonPropertyName("seqUrl")]       public string? SeqUrl       { get; set; }
+}
+
+public class SaveAdminRequest
+{
+    [JsonPropertyName("showDiagnostics")] public bool? ShowDiagnostics { get; set; }
+}
+
+public class SaveSettingsResponse
+{
+    [JsonPropertyName("success")] public bool   Success { get; set; }
+    [JsonPropertyName("message")] public string Message { get; set; } = "";
+}
+
+public class FeatureVisibilityDto
+{
+    [JsonPropertyName("recommendedWorkflow")]  public bool RecommendedWorkflow  { get; set; } = true;
+    [JsonPropertyName("userGuide")]            public bool UserGuide            { get; set; } = true;
+    [JsonPropertyName("dashboard")]            public bool Dashboard            { get; set; } = true;
+    [JsonPropertyName("specificationReview")]  public bool SpecificationReview  { get; set; } = true;
+    [JsonPropertyName("qaArtifactLibrary")]    public bool QaArtifactLibrary    { get; set; } = true;
+    [JsonPropertyName("createTestScenario")]   public bool CreateTestScenario   { get; set; } = true;
+    [JsonPropertyName("traceabilityCoverage")] public bool TraceabilityCoverage { get; set; } = true;
+    [JsonPropertyName("codeTraceability")]     public bool CodeTraceability     { get; set; } = true;
+    [JsonPropertyName("specComparison")]       public bool SpecComparison       { get; set; } = true;
+    [JsonPropertyName("specificationDeltas")]  public bool SpecificationDeltas  { get; set; } = true;
+    [JsonPropertyName("taskDeltas")]           public bool TaskDeltas           { get; set; } = true;
+    [JsonPropertyName("impactAnalysis")]       public bool ImpactAnalysis       { get; set; } = true;
+    [JsonPropertyName("specDrift")]            public bool SpecDrift            { get; set; } = true;
+    [JsonPropertyName("implementationReview")] public bool ImplementationReview { get; set; } = true;
+    [JsonPropertyName("aiChangeReview")]       public bool AiChangeReview       { get; set; } = true;
+    [JsonPropertyName("qaReadiness")]          public bool QaReadiness          { get; set; } = true;
+    [JsonPropertyName("adminSystemSettings")]  public bool AdminSystemSettings  { get; set; } = true;
 }

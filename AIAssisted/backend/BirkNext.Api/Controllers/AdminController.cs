@@ -25,6 +25,40 @@ public class AdminController : ControllerBase
         return Ok(settings);
     }
 
+    [HttpGet("feature-visibility")]
+    public IActionResult GetFeatureVisibility()
+    {
+        var flags = _adminService.BuildFeatureVisibility();
+        return Ok(flags);
+    }
+
+    [HttpGet("editable-settings")]
+    public IActionResult GetEditableSettings()
+    {
+        if (!_adminService.IsEnabled)
+            return NotFound();
+
+        var settings = _adminService.BuildEditableSettings();
+        return Ok(settings);
+    }
+
+    [HttpPost("system-settings")]
+    public async Task<IActionResult> SaveSystemSettings([FromBody] SaveSettingsRequest request)
+    {
+        if (!_adminService.IsEnabled)
+            return NotFound();
+
+        var (valid, validationError) = _adminService.ValidateSettingsUpdate(request);
+        if (!valid)
+            return BadRequest(new SaveSettingsResponse { Success = false, Message = validationError });
+
+        var (success, message) = await _adminService.SaveSettingsAsync(request);
+
+        return success
+            ? Ok(new SaveSettingsResponse { Success = true, Message = message })
+            : StatusCode(500, new SaveSettingsResponse { Success = false, Message = message });
+    }
+
     [HttpPost("reset-local-database")]
     public async Task<IActionResult> ResetLocalDatabase([FromBody] ResetDatabaseRequest request)
     {

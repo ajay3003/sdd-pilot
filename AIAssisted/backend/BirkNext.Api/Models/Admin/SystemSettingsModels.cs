@@ -9,6 +9,7 @@ public class SystemSettingsResponse
     public RuntimeInfo Runtime { get; set; } = new();
     public LoggingInfo Logging { get; set; } = new();
     public MaintenanceInfo Maintenance { get; set; } = new();
+    public FeatureVisibilityInfo FeatureVisibility { get; set; } = new();
 }
 
 public class ApplicationInfo
@@ -77,6 +78,27 @@ public class MaintenanceInfo
     public string ResetNotAllowedReason { get; set; } = "";
 }
 
+public class FeatureVisibilityInfo
+{
+    public bool RecommendedWorkflow { get; set; } = true;
+    public bool UserGuide { get; set; } = true;
+    public bool Dashboard { get; set; } = true;
+    public bool SpecificationReview { get; set; } = true;
+    public bool QaArtifactLibrary { get; set; } = true;
+    public bool CreateTestScenario { get; set; } = true;
+    public bool TraceabilityCoverage { get; set; } = true;
+    public bool CodeTraceability { get; set; } = true;
+    public bool SpecComparison { get; set; } = true;
+    public bool SpecificationDeltas { get; set; } = true;
+    public bool TaskDeltas { get; set; } = true;
+    public bool ImpactAnalysis { get; set; } = true;
+    public bool SpecDrift { get; set; } = true;
+    public bool ImplementationReview { get; set; } = true;
+    public bool AiChangeReview { get; set; } = true;
+    public bool QaReadiness { get; set; } = true;
+    public bool AdminSystemSettings { get; set; } = true;
+}
+
 public class ResetDatabaseRequest
 {
     public string Confirmation { get; set; } = "";
@@ -86,4 +108,66 @@ public class ResetDatabaseResponse
 {
     public bool Success { get; set; }
     public string Message { get; set; } = "";
+}
+
+// ── Editable Settings ──────────────────────────────────────────────────────
+
+public class EditableSettingsResponse
+{
+    public EditableFeatureVisibilitySection FeatureVisibility { get; set; } = new();
+    public EditableLoggingSection Logging { get; set; } = new();
+    public EditableAdminSection Admin { get; set; } = new();
+}
+
+public class EditableFeatureVisibilitySection
+{
+    public List<FeatureVisibilityEntry> Platform { get; set; } = [];
+    public List<FeatureVisibilityEntry> Core { get; set; } = [];
+    public List<FeatureVisibilityEntry> Advanced { get; set; } = [];
+}
+
+public class FeatureVisibilityEntry
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public bool Value { get; set; }
+    public bool Locked { get; set; }
+}
+
+public class EditableLoggingSection
+{
+    public string MinimumLevel { get; set; } = "Information";
+    public string SeqUrl { get; set; } = "";
+}
+
+public class EditableAdminSection
+{
+    public bool ShowDiagnostics { get; set; } = true;
+}
+
+// ── Save Settings ──────────────────────────────────────────────────────────
+
+public class SaveSettingsRequest
+{
+    public Dictionary<string, bool>? FeatureVisibility { get; set; }
+    public SaveLoggingSettings? Logging { get; set; }
+    public SaveAdminSettings? Admin { get; set; }
+}
+
+public class SaveLoggingSettings
+{
+    public string? MinimumLevel { get; set; }
+    public string? SeqUrl { get; set; }
+}
+
+public class SaveAdminSettings
+{
+    public bool? ShowDiagnostics { get; set; }
+}
+
+public class SaveSettingsResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = "";
+    public List<string> Errors { get; set; } = [];
 }

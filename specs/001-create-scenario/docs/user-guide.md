@@ -153,7 +153,17 @@ If a large feature such as persistent QA Delta Reviews is implemented, the plan 
 
 ## Admin — System Settings
 
-The **Admin → System Settings** page provides a read-only view of how the application is configured and how it is running locally. No sensitive values such as passwords, tokens, or API keys are shown.
+The **Admin → System Settings** page is a diagnostics and configuration page. It provides a view of how the application is configured and how it is running locally. No sensitive values such as passwords, tokens, or API keys are shown.
+
+In **read-only mode** the page shows the current configuration. Click **Edit Settings** in the page header to enter edit mode and change feature visibility, logging settings, and display options.
+
+### Status bar
+
+A compact status bar at the top of the page shows the five most important runtime values at a glance: Environment, Package Mode, Database Mode, Compose Project, and Logging Level.
+
+### Copy Diagnostics Summary
+
+The **Copy Diagnostics** button in the page header copies a sanitized plain-text summary of the current configuration to the clipboard. This is useful for sharing diagnostic context in a bug report or support request. Secrets are never included.
 
 ### What values are shown
 
@@ -242,3 +252,93 @@ When the backend reports an error you can open the log files to see:
 ### Secrets are never shown
 
 Passwords, API keys, connection string passwords, and other secrets are never displayed on the System Settings page. If a value is derived from a connection string, only the non-sensitive parts (host, port, username, database name) are shown.
+
+
+## Admin — System Settings — Edit Mode
+
+The **Edit Settings** button in the System Settings page header enters edit mode. In edit mode you can change:
+
+- Which features are visible in the sidebar (feature visibility)
+- The logging minimum level
+- The Seq URL for log forwarding
+- Whether diagnostic information is shown
+
+When you are done, click **Save Settings** to apply changes. Click **Cancel** to discard and return to read-only mode.
+
+Changes are written to `appsettings.Local.json` in the backend application directory. This file is never committed to source control.
+
+### What cannot be changed from the UI
+
+The following settings are not editable from the UI:
+
+- Database credentials, connection strings, and secrets
+- Compose project name and expected volume names
+- Package mode and environment
+- Version, build number, and commit SHA
+
+These must be set in `appsettings.json` or via environment variables.
+
+## Admin — System Settings — Feature / Menu Visibility
+
+The **Feature / Menu Visibility** card in Admin → System Settings shows which menu items are currently enabled or disabled. Use **Edit Settings** to change visibility from the UI.
+
+### Feature tiers
+
+Features are grouped into three tiers:
+
+| Tier | Default | Can be changed |
+|---|---|---|
+| **Platform** | Always enabled | No — these are the recovery and navigation features |
+| **Core** | Enabled | Yes — toggle on or off |
+| **Advanced** | Disabled | Yes — enable when needed |
+
+**Platform features** (Dashboard, User Guide, Recommended Workflow, System Settings) are always enabled and cannot be disabled from the UI, configuration files, or environment variables. System Settings is the recovery page — disabling it would lock you out of the settings interface.
+
+**Core features** are standard QA workflows that most users need. They are enabled by default.
+
+**Advanced features** are hidden by default to reduce menu clutter for new users and tester packages. Enable them when the team is ready to use them.
+
+### How menu visibility works
+
+Each menu item in the left sidebar is controlled by a corresponding flag in the backend `FeatureVisibility` configuration section. Setting a flag to `false` hides the corresponding menu item from the sidebar. The underlying page and route still exist — only the menu link is hidden.
+
+Section headers (Getting Started, Review, Library, etc.) are automatically hidden when all items in that section are disabled.
+
+### Changing visibility from the UI
+
+1. Open **Admin → System Settings**
+2. Click **Edit Settings**
+3. Toggle the features you want to enable or disable in the **Core** and **Advanced** sections
+4. Click **Save Settings**
+5. Refresh the page — the sidebar updates after a full page refresh
+
+### Changing visibility from configuration
+
+Override flags in `appsettings.Local.json` (never edit `appsettings.json` directly):
+
+```json
+"FeatureVisibility": {
+  "SpecDrift": true,
+  "TaskDeltas": true
+}
+```
+
+Environment variables can also override flags:
+
+```
+FeatureVisibility__SpecDrift=true
+FeatureVisibility__TaskDeltas=true
+```
+
+### When to use this
+
+Feature visibility is useful for:
+
+- **Tester packages** — hide advanced features that are not relevant for the current testing context
+- **Demos** — show only the features relevant to the current demonstration
+- **Onboarding** — keep the sidebar minimal while the team learns core workflows
+- **Gradual rollout** — enable advanced features one at a time as the team is ready
+
+### After saving
+
+After saving feature visibility changes from the UI, the backend applies the new settings immediately. The sidebar in the frontend will not update until the page is refreshed. A full browser refresh (F5) is required to reload the Blazor application and pick up the updated feature flags.
