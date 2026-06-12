@@ -671,7 +671,7 @@ else
 
         @if (_activeViewMode == ExtractionViewMode.SpecExplorer)
         {
-            <SpecExplorerPanel Candidates="@PipelineResult.Candidates" InitialSpecMarkdown="@SpecMarkdown" />
+            <SpecExplorerPanel Candidates="@PipelineResult.Candidates" InitialSpecMarkdown="@SpecMarkdown" IsEmbeddedInReview="true" />
         }
 
         @if (!anyVisible && _activeViewMode != ExtractionViewMode.Traceability && _activeViewMode != ExtractionViewMode.SpecExplorer)

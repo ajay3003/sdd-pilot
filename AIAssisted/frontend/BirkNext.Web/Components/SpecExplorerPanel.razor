@@ -6,43 +6,55 @@
 
     @if (_tree is null)
     {
-        <!-- ── Empty / input state ──────────────────────────────────────── -->
-        <div class="se-empty-state">
-            <div class="se-empty-icon" aria-hidden="true">🌳</div>
-            <h3 class="se-empty-title">Spec Explorer</h3>
-            <p class="se-empty-desc">Transform a specification into a navigable hierarchy. Paste, import, or drag a spec.md file to build the explorer.</p>
-
-            <div class="se-input-area">
-                <div class="se-input-header">
-                    <span class="se-input-label">specification</span>
-                </div>
-                <SpecificationImport
-                    @ref="_importRef"
-                    InputId="se-file-input"
-                    OnFileImported="OnFileImported"
-                    OnFileRemoved="OnFileRemoved"
-                    IsDisabled="false" />
-                <textarea
-                    class="se-textarea"
-                    placeholder="Or paste spec.md content here..."
-                    rows="12"
-                    @bind="_specText"></textarea>
-                @if (!string.IsNullOrWhiteSpace(_specText))
-                {
-                    <div class="se-input-footer">
-                        <span class="se-input-stat">@CountLines(_specText) lines · @_specText.Length chars</span>
-                        <button class="se-clear-btn" @onclick="ClearInput">Clear</button>
-                    </div>
-                }
+        @if (IsEmbeddedInReview)
+        {
+            <!-- ── Embedded: no spec available yet ──────────────────────────── -->
+            <div class="se-no-spec-notice">
+                <div class="se-empty-icon" aria-hidden="true">🌳</div>
+                <h3 class="se-empty-title">Spec Explorer</h3>
+                <p class="se-empty-desc">No specification data available. Analyze a specification to populate the explorer.</p>
             </div>
+        }
+        else
+        {
+            <!-- ── Standalone: input state ──────────────────────────────────── -->
+            <div class="se-empty-state">
+                <div class="se-empty-icon" aria-hidden="true">🌳</div>
+                <h3 class="se-empty-title">Spec Explorer</h3>
+                <p class="se-empty-desc">Transform a specification into a navigable hierarchy. Paste, import, or drag a spec.md file to build the explorer.</p>
 
-            <button
-                class="se-build-btn"
-                disabled="@(!CanBuild)"
-                @onclick="BuildTree">
-                Build Spec Explorer
-            </button>
-        </div>
+                <div class="se-input-area">
+                    <div class="se-input-header">
+                        <span class="se-input-label">specification</span>
+                    </div>
+                    <SpecificationImport
+                        @ref="_importRef"
+                        InputId="se-file-input"
+                        OnFileImported="OnFileImported"
+                        OnFileRemoved="OnFileRemoved"
+                        IsDisabled="false" />
+                    <textarea
+                        class="se-textarea"
+                        placeholder="Or paste spec.md content here..."
+                        rows="12"
+                        @bind="_specText"></textarea>
+                    @if (!string.IsNullOrWhiteSpace(_specText))
+                    {
+                        <div class="se-input-footer">
+                            <span class="se-input-stat">@CountLines(_specText) lines · @_specText.Length chars</span>
+                            <button class="se-clear-btn" @onclick="ClearInput">Clear</button>
+                        </div>
+                    }
+                </div>
+
+                <button
+                    class="se-build-btn"
+                    disabled="@(!CanBuild)"
+                    @onclick="BuildTree">
+                    Build Spec Explorer
+                </button>
+            </div>
+        }
     }
     else
     {
@@ -63,7 +75,10 @@
                         Map View
                     </button>
                 </div>
-                <button class="se-reset-btn" @onclick="Reset">← New Spec</button>
+                @if (!IsEmbeddedInReview)
+                {
+                    <button class="se-reset-btn" @onclick="Reset">← New Spec</button>
+                }
             </div>
         </div>
 
@@ -449,9 +464,11 @@
 @code {
     [Parameter] public IReadOnlyList<ExtractionCandidate>? Candidates { get; set; }
     [Parameter] public string InitialSpecMarkdown { get; set; } = string.Empty;
+    [Parameter] public bool IsEmbeddedInReview { get; set; }
 
     private SpecificationImport? _importRef;
     private string _specText = string.Empty;
+    private string _lastBuiltMarkdown = string.Empty;
     private SpecTree? _tree;
     private HashSet<string> _expandedIds = [];
     private string? _selectedNodeId;
@@ -461,8 +478,9 @@
 
     protected override void OnParametersSet()
     {
-        if (!string.IsNullOrWhiteSpace(InitialSpecMarkdown) && _tree is null && string.IsNullOrEmpty(_specText))
+        if (!string.IsNullOrWhiteSpace(InitialSpecMarkdown) && InitialSpecMarkdown != _lastBuiltMarkdown)
         {
+            _lastBuiltMarkdown = InitialSpecMarkdown;
             _specText = InitialSpecMarkdown;
             BuildTree();
         }
@@ -508,6 +526,7 @@
     {
         _tree = null;
         _specText = string.Empty;
+        _lastBuiltMarkdown = string.Empty;
         _expandedIds = [];
         _selectedNodeId = null;
         _searchQuery = string.Empty;
