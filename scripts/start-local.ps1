@@ -715,79 +715,91 @@ function Start-DotNetProjectWindow {
         $escapedRoot = Escape-PowerShellSingleQuotedString -Value $Runnable.Path
 
         $runCommand = @"
-`$root = '$escapedRoot'
+`$wwwroot = '$escapedRoot'
 `$port = 5173
 `$prefix = "http://localhost:`$port/"
 
-function Get-MimeType([string]`$path) {
-    switch ([System.IO.Path]::GetExtension(`$path).ToLowerInvariant()) {
-        ".html" { "text/html"; break }
-        ".htm"  { "text/html"; break }
-        ".js"   { "application/javascript"; break }
-        ".mjs"  { "application/javascript"; break }
-        ".css"  { "text/css"; break }
-        ".json" { "application/json"; break }
-        ".wasm" { "application/wasm"; break }
-        ".dll"  { "application/octet-stream"; break }
-        ".dat"  { "application/octet-stream"; break }
-        ".pdb"  { "application/octet-stream"; break }
-        ".png"  { "image/png"; break }
-        ".jpg"  { "image/jpeg"; break }
-        ".jpeg" { "image/jpeg"; break }
-        ".gif"  { "image/gif"; break }
-        ".svg"  { "image/svg+xml"; break }
-        ".ico"  { "image/x-icon"; break }
-        ".woff" { "font/woff"; break }
-        ".woff2"{ "font/woff2"; break }
-        default { "application/octet-stream"; break }
-    }
+if (`$null -ne (Get-Command 'dotnet-serve' -ErrorAction SilentlyContinue)) {
+    Write-Host "Serving Blazor WebAssembly frontend with dotnet-serve..." -ForegroundColor Cyan
+    Write-Host "Frontend URL: `$prefix" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Keep this window open while testing." -ForegroundColor Yellow
+    dotnet-serve --directory "`$wwwroot" --port `$port
 }
+else {
+    Write-Host "NOTE: dotnet-serve not installed. Using built-in static file server." -ForegroundColor Yellow
+    Write-Host "To install dotnet-serve: dotnet tool install --global dotnet-serve" -ForegroundColor Yellow
+    Write-Host ""
 
-`$listener = [System.Net.HttpListener]::new()
-`$listener.Prefixes.Add(`$prefix)
-`$listener.Start()
-
-Write-Host "Serving Blazor WebAssembly frontend from: `$root" -ForegroundColor Cyan
-Write-Host "Frontend URL: `$prefix" -ForegroundColor Green
-Write-Host ""
-Write-Host "Keep this window open while testing." -ForegroundColor Yellow
-
-Start-Process `$prefix
-
-while (`$listener.IsListening) {
-    `$context = `$listener.GetContext()
-    `$requestPath = [System.Uri]::UnescapeDataString(`$context.Request.Url.AbsolutePath.TrimStart('/'))
-
-    if ([string]::IsNullOrWhiteSpace(`$requestPath)) {
-        `$requestPath = "index.html"
+    function Get-MimeType([string]`$path) {
+        switch ([System.IO.Path]::GetExtension(`$path).ToLowerInvariant()) {
+            ".html" { "text/html"; break }
+            ".htm"  { "text/html"; break }
+            ".js"   { "application/javascript"; break }
+            ".mjs"  { "application/javascript"; break }
+            ".css"  { "text/css"; break }
+            ".json" { "application/json"; break }
+            ".wasm" { "application/wasm"; break }
+            ".dll"  { "application/octet-stream"; break }
+            ".dat"  { "application/octet-stream"; break }
+            ".pdb"  { "application/octet-stream"; break }
+            ".png"  { "image/png"; break }
+            ".jpg"  { "image/jpeg"; break }
+            ".jpeg" { "image/jpeg"; break }
+            ".gif"  { "image/gif"; break }
+            ".svg"  { "image/svg+xml"; break }
+            ".ico"  { "image/x-icon"; break }
+            ".woff" { "font/woff"; break }
+            ".woff2"{ "font/woff2"; break }
+            default { "application/octet-stream"; break }
+        }
     }
 
-    `$candidate = Join-Path `$root `$requestPath
+    `$listener = [System.Net.HttpListener]::new()
+    `$listener.Prefixes.Add(`$prefix)
+    `$listener.Start()
 
-    if ((Test-Path `$candidate -PathType Container)) {
-        `$candidate = Join-Path `$candidate "index.html"
-    }
+    Write-Host "Serving Blazor WebAssembly frontend from: `$wwwroot" -ForegroundColor Cyan
+    Write-Host "Frontend URL: `$prefix" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Keep this window open while testing." -ForegroundColor Yellow
 
-    if (-not (Test-Path `$candidate -PathType Leaf)) {
-        # SPA fallback for Blazor routes like /extract or /scenarios.
-        `$candidate = Join-Path `$root "index.html"
-    }
+    Start-Process `$prefix
 
-    try {
-        `$bytes = [System.IO.File]::ReadAllBytes(`$candidate)
-        `$context.Response.StatusCode = 200
-        `$context.Response.ContentType = Get-MimeType `$candidate
-        `$context.Response.ContentLength64 = `$bytes.Length
-        `$context.Response.OutputStream.Write(`$bytes, 0, `$bytes.Length)
-    }
-    catch {
-        `$message = [System.Text.Encoding]::UTF8.GetBytes(`$_.Exception.Message)
-        `$context.Response.StatusCode = 500
-        `$context.Response.ContentType = "text/plain"
-        `$context.Response.OutputStream.Write(`$message, 0, `$message.Length)
-    }
-    finally {
-        `$context.Response.OutputStream.Close()
+    while (`$listener.IsListening) {
+        `$context = `$listener.GetContext()
+        `$requestPath = [System.Uri]::UnescapeDataString(`$context.Request.Url.AbsolutePath.TrimStart('/'))
+
+        if ([string]::IsNullOrWhiteSpace(`$requestPath)) {
+            `$requestPath = "index.html"
+        }
+
+        `$candidate = Join-Path `$wwwroot `$requestPath
+
+        if ((Test-Path `$candidate -PathType Container)) {
+            `$candidate = Join-Path `$candidate "index.html"
+        }
+
+        if (-not (Test-Path `$candidate -PathType Leaf)) {
+            `$candidate = Join-Path `$wwwroot "index.html"
+        }
+
+        try {
+            `$bytes = [System.IO.File]::ReadAllBytes(`$candidate)
+            `$context.Response.StatusCode = 200
+            `$context.Response.ContentType = Get-MimeType `$candidate
+            `$context.Response.ContentLength64 = `$bytes.Length
+            `$context.Response.OutputStream.Write(`$bytes, 0, `$bytes.Length)
+        }
+        catch {
+            `$message = [System.Text.Encoding]::UTF8.GetBytes(`$_.Exception.Message)
+            `$context.Response.StatusCode = 500
+            `$context.Response.ContentType = "text/plain"
+            `$context.Response.OutputStream.Write(`$message, 0, `$message.Length)
+        }
+        finally {
+            `$context.Response.OutputStream.Close()
+        }
     }
 }
 "@
@@ -868,20 +880,31 @@ if (-not (Test-Path $frontendPath)) {
 }
 
 $backendRunnable = Find-DotNetRunnable -BasePath $backendPath -PreferredName "BirkNext.Api"
-$frontendRunnable = Find-DotNetRunnable -BasePath $frontendPath -PreferredName "BirkNext.Web"
 
-# Blazor WebAssembly artifact mode:
-# Published BirkNext.Web contains static files and may also contain BirkNext.Web.dll.
-# That DLL is not a runnable server app, so prefer wwwroot/index.html when no source .csproj is present.
-if ($frontendRunnable.Kind -eq "Dll") {
-    $frontendIndex = Get-ChildItem -Path $frontendPath -Recurse -Filter "index.html" -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -match "\\wwwroot\\index\.html$" -or $_.DirectoryName -eq $frontendPath } |
-        Select-Object -First 1
+# Frontend: check for Blazor WASM artifact layout (wwwroot/index.html) before attempting dotnet runnable detection.
+# BirkNext.Web is Blazor WebAssembly — its published output is static files, not a runnable server DLL.
+$frontendWwwroot = Join-Path $frontendPath "wwwroot"
+$frontendIndexHtml = Join-Path $frontendWwwroot "index.html"
 
-    if ($frontendIndex) {
-        $frontendRunnable = [PSCustomObject]@{
-            Kind = "StaticWeb"
-            Path = $frontendIndex.Directory.FullName
+if (Test-Path $frontendIndexHtml) {
+    $frontendRunnable = [PSCustomObject]@{
+        Kind = "StaticWeb"
+        Path = $frontendWwwroot
+    }
+}
+else {
+    $frontendRunnable = Find-DotNetRunnable -BasePath $frontendPath -PreferredName "BirkNext.Web"
+
+    if ($frontendRunnable.Kind -eq "Dll") {
+        $frontendIndex = Get-ChildItem -Path $frontendPath -Recurse -Filter "index.html" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match "\\wwwroot\\index\.html$" -or $_.DirectoryName -eq $frontendPath } |
+            Select-Object -First 1
+
+        if ($frontendIndex) {
+            $frontendRunnable = [PSCustomObject]@{
+                Kind = "StaticWeb"
+                Path = $frontendIndex.Directory.FullName
+            }
         }
     }
 }
@@ -948,11 +971,16 @@ try {
     Write-Host ""
     Ok "Startup triggered."
     Write-Host ""
-    Write-Host "How to access the frontend:" -ForegroundColor Cyan
-    Write-Host "  Source mode:"
-    Write-Host "    Look in the 'BirkNext Frontend' window for the listening URL."
-    Write-Host "  Downloaded tester package mode:"
-    Write-Host "    Open http://localhost:5173/"
+
+    if (-not $FrontendOnly) {
+        $backendUrl = if ($env:ASPNETCORE_URLS) { ($env:ASPNETCORE_URLS -split ";")[0] } else { "http://localhost:5000" }
+        Write-Host "Backend:  $backendUrl" -ForegroundColor Green
+    }
+
+    if (-not $BackendOnly) {
+        Write-Host "Frontend: http://localhost:5173" -ForegroundColor Green
+    }
+
     Write-Host ""
     Write-Host "Useful paths:" -ForegroundColor Cyan
     Write-Host "  /extract"
