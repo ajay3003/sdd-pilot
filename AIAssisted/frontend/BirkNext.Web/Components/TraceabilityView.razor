@@ -1,0 +1,721 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@if (_model is null || _model.IsEmpty)
+{
+    <div class="tv-empty">
+        <p class="tv-empty-msg">No candidates available. Run spec extraction to build the traceability model.</p>
+    </div>
+}
+else
+{
+<div class="tv-root">
+
+    @* ── Metric chips ─────────────────────────────────────────────────── *@
+    <div class="tv-metrics" role="list" aria-label="Coverage metrics">
+        <span class="tv-metric-chip tv-chip-req" role="listitem">📋 @_model.Requirements.Count Requirements</span>
+        <span class="tv-metric-chip tv-chip-test" role="listitem">🧪 @_model.TotalTests Tests</span>
+        @if (_model.SuccessCriteria.Count > 0)
+        {
+            <span class="tv-metric-chip tv-chip-sc" role="listitem">✅ @_model.SuccessCriteria.Count SC</span>
+        }
+        <span class="tv-metric-chip tv-chip-cov @(_model.CoveragePercent >= 80 ? "tv-chip-cov-good" : _model.CoveragePercent >= 50 ? "tv-chip-cov-ok" : "tv-chip-cov-bad")" role="listitem">
+            @_model.CoveragePercent% Coverage
+        </span>
+        @if (_model.GapCount > 0)
+        {
+            <span class="tv-metric-chip tv-chip-gap" role="listitem">⚠️ @_model.GapCount Gaps</span>
+        }
+    </div>
+
+    @* ── Sub-view toggle ──────────────────────────────────────────────── *@
+    <div class="tv-toggle" role="tablist" aria-label="Traceability view mode">
+        <button type="button" role="tab" class="tv-toggle-btn @(_subView == TvSubView.Matrix ? "is-active" : "")"
+                aria-selected="@(_subView == TvSubView.Matrix)"
+                @onclick='() => _subView = TvSubView.Matrix'>📊 Matrix</button>
+        <button type="button" role="tab" class="tv-toggle-btn @(_subView == TvSubView.Requirements ? "is-active" : "")"
+                aria-selected="@(_subView == TvSubView.Requirements)"
+                @onclick='() => _subView = TvSubView.Requirements'>🔍 Requirements</button>
+        @if (_model.SuccessCriteria.Count > 0)
+        {
+            <button type="button" role="tab" class="tv-toggle-btn @(_subView == TvSubView.ScCoverage ? "is-active" : "")"
+                    aria-selected="@(_subView == TvSubView.ScCoverage)"
+                    @onclick='() => _subView = TvSubView.ScCoverage'>✅ Success Criteria</button>
+        }
+        <button type="button" role="tab" class="tv-toggle-btn @(_subView == TvSubView.Gaps ? "is-active" : "")"
+                aria-selected="@(_subView == TvSubView.Gaps)"
+                @onclick='() => _subView = TvSubView.Gaps'>⚠️ Gaps</button>
+        <button type="button" role="tab" class="tv-toggle-btn @(_subView == TvSubView.Graph ? "is-active" : "")"
+                aria-selected="@(_subView == TvSubView.Graph)"
+                @onclick='() => _subView = TvSubView.Graph'>🌿 Graph</button>
+    </div>
+
+    @* ════════════════════════════════════════════════════════════════════ *@
+    @* Sub-view 1: Coverage Matrix                                         *@
+    @* ════════════════════════════════════════════════════════════════════ *@
+
+    @if (_subView == TvSubView.Matrix)
+    {
+        <div class="tv-matrix-filter" role="group" aria-label="Matrix filter">
+            <button type="button" class="tv-filter-chip @(_matrixFilter == null ? "is-active" : "")"
+                    @onclick='() => _matrixFilter = null'>All <span class="tv-chip-count">@_model.Requirements.Count</span></button>
+            @{
+                var coveredN = _model.CoveredCount;
+                var missingN = _model.Requirements.Count(r => r.Status == TraceCoverageStatus.MissingTests);
+                var orphanN  = _model.OrphanedTests.Count;
+            }
+            @if (coveredN > 0)
+            {
+                <button type="button" class="tv-filter-chip tv-fc-covered @(_matrixFilter == TraceCoverageStatus.Covered ? "is-active" : "")"
+                        @onclick='() => _matrixFilter = TraceCoverageStatus.Covered'>✅ Covered <span class="tv-chip-count">@coveredN</span></button>
+            }
+            @if (missingN > 0)
+            {
+                <button type="button" class="tv-filter-chip tv-fc-missing @(_matrixFilter == TraceCoverageStatus.MissingTests ? "is-active" : "")"
+                        @onclick='() => _matrixFilter = TraceCoverageStatus.MissingTests'>⚠️ Missing Tests <span class="tv-chip-count">@missingN</span></button>
+            }
+            @if (orphanN > 0)
+            {
+                <button type="button" class="tv-filter-chip tv-fc-orphan @(_matrixFilter == TraceCoverageStatus.Orphaned ? "is-active" : "")"
+                        @onclick='() => SetOrphanedFilter()'>🔶 Orphaned Tests <span class="tv-chip-count">@orphanN</span></button>
+            }
+        </div>
+
+        @if (_showOrphanedInMatrix)
+        {
+            <div class="tv-matrix-orphans">
+                <div class="tv-section-label">Orphaned Tests (no linked requirement)</div>
+                @foreach (var t in _model.OrphanedTests)
+                {
+                    <div class="tv-orphan-row">
+                        <span class="tv-status-dot tv-dot-orphaned"></span>
+                        <span class="tv-orphan-title">@t.Title</span>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            var matrixRows = _matrixFilter.HasValue
+                ? _model.Requirements.Where(r => r.Status == _matrixFilter.Value).ToList()
+                : _model.Requirements;
+
+            <div class="tv-matrix-wrap" role="region" aria-label="Coverage matrix">
+                <table class="tv-matrix-table">
+                    <thead>
+                        <tr>
+                            <th class="tv-col-req">Requirement</th>
+                            <th class="tv-col-us">User Story</th>
+                            <th class="tv-col-tests">Tests</th>
+                            <th class="tv-col-sc">SC Links</th>
+                            <th class="tv-col-status">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var req in matrixRows)
+                        {
+                            var reqCap = req;
+                            <tr class="tv-matrix-row @(req.Status == TraceCoverageStatus.Covered ? "tv-row-covered" : "tv-row-missing")"
+                                @onclick="() => NavigateToRequirement(reqCap)"
+                                title="Click to view details"
+                                tabindex="0">
+                                <td class="tv-col-req">
+                                    @if (req.FrId is not null)
+                                    {
+                                        <span class="tv-fr-badge">@req.FrId</span>
+                                    }
+                                    <span class="tv-req-title" title="@req.Title">@TruncateTitle(req.Title, 80)</span>
+                                </td>
+                                <td class="tv-col-us">
+                                    @if (req.UserStoryId is not null)
+                                    {
+                                        <span class="tv-us-badge">@req.UserStoryId</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="tv-dim">—</span>
+                                    }
+                                </td>
+                                <td class="tv-col-tests">
+                                    <span class="tv-test-count @(req.LinkedTests.Count == 0 ? "tv-count-zero" : "tv-count-ok")">
+                                        @req.LinkedTests.Count
+                                    </span>
+                                </td>
+                                <td class="tv-col-sc">
+                                    @if (req.LinkedScIds.Count > 0)
+                                    {
+                                        @foreach (var scId in req.LinkedScIds)
+                                        {
+                                            var scCap = scId;
+                                            <button type="button" class="tv-sc-chip"
+                                                    @onclick:stopPropagation="true"
+                                                    @onclick="() => NavigateToSc(scCap)">@scId</button>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="tv-dim">—</span>
+                                    }
+                                </td>
+                                <td class="tv-col-status">
+                                    <span class="tv-status-badge tv-status-@req.Status.ToString().ToLowerInvariant()">
+                                        @StatusLabel(req.Status)
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+
+    @* ════════════════════════════════════════════════════════════════════ *@
+    @* Sub-view 2: Requirement Explorer                                    *@
+    @* ════════════════════════════════════════════════════════════════════ *@
+
+    @if (_subView == TvSubView.Requirements)
+    {
+        <div class="tv-req-layout">
+
+            @* Left: list ─────────────────────────────────────────────────── *@
+            <div class="tv-req-list">
+                <input type="search" class="tv-req-search" placeholder="Search requirements…"
+                       @bind="_reqSearch" @bind:event="oninput" />
+                <ul class="tv-req-items" role="listbox" aria-label="Requirements">
+                    @foreach (var req in FilteredRequirements)
+                    {
+                        var reqCap = req;
+                        <li role="option" aria-selected="@(_selectedReqId == req.CandidateId)">
+                            <button type="button"
+                                    class="tv-req-item-btn @(_selectedReqId == req.CandidateId ? "is-selected" : "")"
+                                    @onclick="() => _selectedReqId = reqCap.CandidateId">
+                                <span class="tv-status-dot tv-dot-@req.Status.ToString().ToLowerInvariant()"></span>
+                                @if (req.FrId is not null)
+                                {
+                                    <span class="tv-fr-badge tv-fr-sm">@req.FrId</span>
+                                }
+                                <span class="tv-req-item-title">@TruncateTitle(req.Title, 70)</span>
+                                @if (req.LinkedTests.Count > 0)
+                                {
+                                    <span class="tv-item-test-count">@req.LinkedTests.Count</span>
+                                }
+                            </button>
+                        </li>
+                    }
+                </ul>
+            </div>
+
+            @* Right: detail panel ────────────────────────────────────────── *@
+            <div class="tv-req-detail">
+                @if (SelectedRequirement is { } sel)
+                {
+                    <div class="tv-det-header">
+                        @if (sel.FrId is not null)
+                        {
+                            <span class="tv-fr-badge tv-fr-lg">@sel.FrId</span>
+                        }
+                        <span class="tv-status-badge tv-status-@sel.Status.ToString().ToLowerInvariant() tv-status-right">
+                            @StatusLabel(sel.Status)
+                        </span>
+                    </div>
+
+                    <div class="tv-det-title" title="@sel.Title">@sel.Title</div>
+
+                    @if (sel.UserStoryId is not null)
+                    {
+                        <div class="tv-det-section">
+                            <div class="tv-det-label">User Story</div>
+                            <span class="tv-us-badge">@sel.UserStoryId</span>
+                        </div>
+                    }
+
+                    @if (sel.LinkedTests.Count > 0)
+                    {
+                        <div class="tv-det-section">
+                            <div class="tv-det-label">Tests (@sel.LinkedTests.Count)</div>
+                            <ul class="tv-det-list">
+                                @foreach (var t in sel.LinkedTests)
+                                {
+                                    <li class="tv-test-item">
+                                        <span class="tv-test-dot"></span>@t.Title
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="tv-det-section">
+                            <div class="tv-det-label">Tests</div>
+                            <span class="tv-missing-badge">No tests linked</span>
+                        </div>
+                    }
+
+                    @if (sel.LinkedScIds.Count > 0)
+                    {
+                        <div class="tv-det-section">
+                            <div class="tv-det-label">Success Criteria</div>
+                            <div class="tv-sc-chips">
+                                @foreach (var scId in sel.LinkedScIds)
+                                {
+                                    var scCap = scId;
+                                    <button type="button" class="tv-sc-chip" @onclick="() => NavigateToSc(scCap)">@scId</button>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <div class="tv-det-section">
+                        <div class="tv-det-label">Task Links</div>
+                        <button type="button" class="tv-task-btn"
+                                @onclick='() => OnOpenInTaskExplorer.InvokeAsync(sel.FrId ?? sel.Title)'>
+                            Open in Task Explorer →
+                        </button>
+                    </div>
+
+                    <div class="tv-det-section tv-det-impact">
+                        <div class="tv-det-label">Impact</div>
+                        <span class="tv-impact-item">@sel.LinkedTests.Count tests</span>
+                        @if (sel.LinkedScIds.Count > 0)
+                        {
+                            <span class="tv-impact-sep">·</span>
+                            <span class="tv-impact-item">@sel.LinkedScIds.Count SC</span>
+                        }
+                        @if (sel.UserStoryId is not null)
+                        {
+                            <span class="tv-impact-sep">·</span>
+                            <span class="tv-impact-item">@sel.UserStoryId</span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="tv-det-placeholder">Select a requirement to see details.</div>
+                }
+            </div>
+        </div>
+    }
+
+    @* ════════════════════════════════════════════════════════════════════ *@
+    @* Sub-view 3: SC Coverage                                             *@
+    @* ════════════════════════════════════════════════════════════════════ *@
+
+    @if (_subView == TvSubView.ScCoverage)
+    {
+        @if (_model.SuccessCriteria.Count == 0)
+        {
+            <div class="tv-empty-inner">No Success Criteria found in specification.</div>
+        }
+        else
+        {
+            <div class="tv-sc-list">
+                @foreach (var sc in _model.SuccessCriteria)
+                {
+                    <div class="tv-sc-card tv-sc-@sc.Status.ToString().ToLowerInvariant()">
+                        <div class="tv-sc-card-header">
+                            <span class="tv-sc-id">@sc.SpecItemId</span>
+                            <span class="tv-status-badge tv-status-@sc.Status.ToString().ToLowerInvariant()">
+                                @StatusLabel(sc.Status)
+                            </span>
+                        </div>
+                        <div class="tv-sc-title">@sc.Title</div>
+                        @if (!string.IsNullOrWhiteSpace(sc.Excerpt) && sc.Excerpt != sc.Title)
+                        {
+                            <div class="tv-sc-excerpt">@TruncateTitle(sc.Excerpt, 160)</div>
+                        }
+                        <div class="tv-sc-meta">
+                            @if (sc.LinkedFrIds.Count > 0)
+                            {
+                                <span class="tv-sc-meta-label">Linked Requirements:</span>
+                                @foreach (var frId in sc.LinkedFrIds)
+                                {
+                                    var frCap = frId;
+                                    <button type="button" class="tv-fr-badge tv-fr-btn"
+                                            @onclick="() => NavigateToFr(frCap)">@frId</button>
+                                }
+                            }
+                            else
+                            {
+                                <span class="tv-dim">No linked requirements</span>
+                            }
+                        </div>
+                        @if (sc.LinkedTestCount > 0)
+                        {
+                            <div class="tv-sc-test-count">
+                                <span class="tv-count-ok">@sc.LinkedTestCount</span> test@(sc.LinkedTestCount != 1 ? "s" : "") covering this criterion
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    }
+
+    @* ════════════════════════════════════════════════════════════════════ *@
+    @* Sub-view 4: Gap Detection                                           *@
+    @* ════════════════════════════════════════════════════════════════════ *@
+
+    @if (_subView == TvSubView.Gaps)
+    {
+        var reqsNoTests   = _model.Requirements.Where(r => r.LinkedTests.Count == 0).ToList();
+        var scNoFr        = _model.SuccessCriteria.Where(s => s.LinkedFrIds.Count == 0).ToList();
+        var scNoTests     = _model.SuccessCriteria.Where(s => s.LinkedFrIds.Count > 0 && s.LinkedTestCount == 0).ToList();
+        var orphanTests   = _model.OrphanedTests;
+
+        @if (reqsNoTests.Count == 0 && orphanTests.Count == 0 && scNoFr.Count == 0 && scNoTests.Count == 0)
+        {
+            <div class="tv-gap-allgood">
+                <span class="tv-gap-allgood-icon">🎉</span>
+                <p>No coverage gaps detected.</p>
+            </div>
+        }
+        else
+        {
+            <div class="tv-gap-sections">
+
+                @* Requirements without tests *@
+                @if (reqsNoTests.Count > 0)
+                {
+                    <div class="tv-gap-section @(_gapExpanded["reqs-no-tests"] ? "is-open" : "")">
+                        <button type="button" class="tv-gap-header" @onclick='() => ToggleGap("reqs-no-tests")'>
+                            <span class="tv-gap-chevron">@(_gapExpanded["reqs-no-tests"] ? "▾" : "▸")</span>
+                            <span class="tv-gap-icon">⚠️</span>
+                            Requirements without Tests
+                            <span class="tv-gap-count">@reqsNoTests.Count</span>
+                        </button>
+                        @if (_gapExpanded["reqs-no-tests"])
+                        {
+                            <ul class="tv-gap-items">
+                                @foreach (var req in reqsNoTests)
+                                {
+                                    var reqCap = req;
+                                    <li><button type="button" class="tv-gap-item-btn" @onclick="() => NavigateToRequirement(reqCap)">
+                                        @if (req.FrId is not null) { <span class="tv-fr-badge tv-fr-sm">@req.FrId</span> }
+                                        @TruncateTitle(req.Title, 80)
+                                    </button></li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                }
+
+                @* Orphaned tests *@
+                @if (orphanTests.Count > 0)
+                {
+                    <div class="tv-gap-section @(_gapExpanded["orphan-tests"] ? "is-open" : "")">
+                        <button type="button" class="tv-gap-header" @onclick='() => ToggleGap("orphan-tests")'>
+                            <span class="tv-gap-chevron">@(_gapExpanded["orphan-tests"] ? "▾" : "▸")</span>
+                            <span class="tv-gap-icon">🔶</span>
+                            Orphaned Tests (no linked requirement)
+                            <span class="tv-gap-count">@orphanTests.Count</span>
+                        </button>
+                        @if (_gapExpanded["orphan-tests"])
+                        {
+                            <ul class="tv-gap-items">
+                                @foreach (var t in orphanTests)
+                                {
+                                    <li><span class="tv-gap-item-plain">@TruncateTitle(t.Title, 90)</span></li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                }
+
+                @* SC without FR links *@
+                @if (scNoFr.Count > 0)
+                {
+                    <div class="tv-gap-section @(_gapExpanded["sc-no-fr"] ? "is-open" : "")">
+                        <button type="button" class="tv-gap-header" @onclick='() => ToggleGap("sc-no-fr")'>
+                            <span class="tv-gap-chevron">@(_gapExpanded["sc-no-fr"] ? "▾" : "▸")</span>
+                            <span class="tv-gap-icon">🔗</span>
+                            Success Criteria without Requirement Links
+                            <span class="tv-gap-count">@scNoFr.Count</span>
+                        </button>
+                        @if (_gapExpanded["sc-no-fr"])
+                        {
+                            <ul class="tv-gap-items">
+                                @foreach (var sc in scNoFr)
+                                {
+                                    var scCap = sc.SpecItemId;
+                                    <li><button type="button" class="tv-gap-item-btn" @onclick="() => NavigateToSc(scCap)">
+                                        <span class="tv-sc-id-sm">@sc.SpecItemId</span> @TruncateTitle(sc.Title, 70)
+                                    </button></li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                }
+
+                @* SC without tests *@
+                @if (scNoTests.Count > 0)
+                {
+                    <div class="tv-gap-section @(_gapExpanded["sc-no-tests"] ? "is-open" : "")">
+                        <button type="button" class="tv-gap-header" @onclick='() => ToggleGap("sc-no-tests")'>
+                            <span class="tv-gap-chevron">@(_gapExpanded["sc-no-tests"] ? "▾" : "▸")</span>
+                            <span class="tv-gap-icon">🧪</span>
+                            Success Criteria without Tests
+                            <span class="tv-gap-count">@scNoTests.Count</span>
+                        </button>
+                        @if (_gapExpanded["sc-no-tests"])
+                        {
+                            <ul class="tv-gap-items">
+                                @foreach (var sc in scNoTests)
+                                {
+                                    var scCap = sc.SpecItemId;
+                                    <li><button type="button" class="tv-gap-item-btn" @onclick="() => NavigateToSc(scCap)">
+                                        <span class="tv-sc-id-sm">@sc.SpecItemId</span> @TruncateTitle(sc.Title, 70)
+                                    </button></li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                }
+
+            </div>
+        }
+    }
+
+    @* ════════════════════════════════════════════════════════════════════ *@
+    @* Sub-view 5: Graph View                                              *@
+    @* ════════════════════════════════════════════════════════════════════ *@
+
+    @if (_subView == TvSubView.Graph)
+    {
+        var usGroups = _model.Requirements
+            .GroupBy(r => r.UserStoryId ?? "__none__")
+            .OrderBy(g => g.Key == "__none__" ? "zzz" : g.Key)
+            .ToList();
+
+        <div class="tv-graph" role="tree">
+            @foreach (var group in usGroups)
+            {
+                var groupKey = group.Key;
+                var groupLabel = groupKey == "__none__" ? "No User Story assigned" : "👤 " + groupKey;
+                var isGroupOpen = !_graphExpanded.TryGetValue("us-" + groupKey, out var gv) || gv;
+
+                <div class="tv-graph-group" role="treeitem" aria-expanded="@isGroupOpen.ToString().ToLowerInvariant()">
+                    <button type="button" class="tv-graph-group-btn" @onclick='() => ToggleGraph("us-" + groupKey)'>
+                        <span class="tv-graph-chevron">@(isGroupOpen ? "▾" : "▸")</span>
+                        @groupLabel
+                        <span class="tv-graph-count">@group.Count() reqs</span>
+                    </button>
+
+                    @if (isGroupOpen)
+                    {
+                        <ul class="tv-graph-reqs" role="group">
+                            @foreach (var req in group)
+                            {
+                                var reqCap = req;
+                                var isReqOpen = !_graphExpanded.TryGetValue("req-" + req.CandidateId, out var rv) || rv;
+
+                                <li role="treeitem" aria-expanded="@isReqOpen.ToString().ToLowerInvariant()">
+                                    <div class="tv-graph-req-row">
+                                        @if (req.LinkedTests.Count > 0)
+                                        {
+                                            <button type="button" class="tv-graph-expand-btn"
+                                                    @onclick='() => ToggleGraph("req-" + reqCap.CandidateId)'>
+                                                @(isReqOpen ? "▾" : "▸")
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <span class="tv-graph-leaf-indent"></span>
+                                        }
+                                        <span class="tv-status-dot tv-dot-@req.Status.ToString().ToLowerInvariant()"></span>
+                                        @if (req.FrId is not null)
+                                        {
+                                            <span class="tv-fr-badge tv-fr-sm">@req.FrId</span>
+                                        }
+                                        <button type="button" class="tv-graph-req-btn"
+                                                @onclick="() => NavigateToRequirement(reqCap)">
+                                            @TruncateTitle(req.Title, 60)
+                                        </button>
+                                        <span class="tv-graph-test-pill @(req.LinkedTests.Count == 0 ? "tv-pill-zero" : "tv-pill-ok")">
+                                            @req.LinkedTests.Count tests
+                                        </span>
+                                    </div>
+
+                                    @if (isReqOpen && req.LinkedTests.Count > 0)
+                                    {
+                                        <ul class="tv-graph-tests" role="group">
+                                            @foreach (var t in req.LinkedTests)
+                                            {
+                                                <li class="tv-graph-test-row">
+                                                    <span class="tv-graph-test-indent">└</span>
+                                                    <span class="tv-test-dot"></span>
+                                                    @TruncateTitle(t.Title, 70)
+                                                </li>
+                                            }
+                                        </ul>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
+
+            @* SC section *@
+            @if (_model.SuccessCriteria.Count > 0)
+            {
+                var isScOpen = !_graphExpanded.TryGetValue("sc-group", out var scv) || scv;
+                <div class="tv-graph-group tv-graph-sc-group" role="treeitem" aria-expanded="@isScOpen.ToString().ToLowerInvariant()">
+                    <button type="button" class="tv-graph-group-btn" @onclick='() => ToggleGraph("sc-group")'>
+                        <span class="tv-graph-chevron">@(isScOpen ? "▾" : "▸")</span>
+                        ✅ Success Criteria
+                        <span class="tv-graph-count">@_model.SuccessCriteria.Count</span>
+                    </button>
+                    @if (isScOpen)
+                    {
+                        <ul class="tv-graph-reqs" role="group">
+                            @foreach (var sc in _model.SuccessCriteria)
+                            {
+                                <li class="tv-graph-sc-row">
+                                    <span class="tv-status-dot tv-dot-@sc.Status.ToString().ToLowerInvariant()"></span>
+                                    <span class="tv-sc-id-sm">@sc.SpecItemId</span>
+                                    <span class="tv-graph-sc-title">@TruncateTitle(sc.Title, 60)</span>
+                                    @if (sc.LinkedFrIds.Count > 0)
+                                    {
+                                        <span class="tv-dim">← </span>
+                                        @foreach (var frId in sc.LinkedFrIds)
+                                        {
+                                            <span class="tv-fr-badge tv-fr-sm">@frId</span>
+                                        }
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+</div>
+}
+
+@code {
+    [Parameter] public string? SpecMarkdown { get; set; }
+    [Parameter] public IReadOnlyList<ExtractionCandidate> Candidates { get; set; } = [];
+    [Parameter] public IReadOnlyList<CandidateLinkEntry> Links { get; set; } = [];
+    [Parameter] public EventCallback<string> OnOpenInTaskExplorer { get; set; }
+
+    private enum TvSubView { Matrix, Requirements, ScCoverage, Gaps, Graph }
+
+    private TvSubView _subView = TvSubView.Matrix;
+    private TraceabilityModel? _model;
+
+    // Change guards
+    private string? _lastSpec;
+    private IReadOnlyList<ExtractionCandidate>? _lastCandidates;
+    private IReadOnlyList<CandidateLinkEntry>? _lastLinks;
+
+    // Matrix state
+    private TraceCoverageStatus? _matrixFilter;
+    private bool _showOrphanedInMatrix;
+
+    // Requirements sub-view
+    private string _reqSearch = string.Empty;
+    private Guid? _selectedReqId;
+
+    // Gap section expand state
+    private readonly Dictionary<string, bool> _gapExpanded = new()
+    {
+        ["reqs-no-tests"] = true,
+        ["orphan-tests"]  = true,
+        ["sc-no-fr"]      = true,
+        ["sc-no-tests"]   = true,
+    };
+
+    // Graph expand state
+    private readonly Dictionary<string, bool> _graphExpanded = [];
+
+    protected override void OnParametersSet()
+    {
+        bool changed = !ReferenceEquals(SpecMarkdown, _lastSpec)
+            || !ReferenceEquals(Candidates, _lastCandidates)
+            || !ReferenceEquals(Links, _lastLinks);
+
+        if (!changed) return;
+
+        _lastSpec       = SpecMarkdown;
+        _lastCandidates = Candidates;
+        _lastLinks      = Links;
+        _selectedReqId  = null;
+        _matrixFilter   = null;
+        _showOrphanedInMatrix = false;
+
+        _model = TraceabilityModelBuilder.Build(SpecMarkdown, Candidates, Links);
+    }
+
+    // ── Computed properties ─────────────────────────────────────────────────
+
+    private IEnumerable<TracedRequirement> FilteredRequirements =>
+        _model is null
+            ? []
+            : string.IsNullOrWhiteSpace(_reqSearch)
+                ? _model.Requirements
+                : _model.Requirements.Where(r =>
+                    r.Title.Contains(_reqSearch, StringComparison.OrdinalIgnoreCase) ||
+                    (r.FrId?.Contains(_reqSearch, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    private TracedRequirement? SelectedRequirement =>
+        _selectedReqId.HasValue
+            ? _model?.Requirements.FirstOrDefault(r => r.CandidateId == _selectedReqId.Value)
+            : null;
+
+    // ── Navigation helpers ──────────────────────────────────────────────────
+
+    private void NavigateToRequirement(TracedRequirement req)
+    {
+        _subView       = TvSubView.Requirements;
+        _selectedReqId = req.CandidateId;
+    }
+
+    private void NavigateToSc(string scId)
+    {
+        _subView = TvSubView.ScCoverage;
+    }
+
+    private void NavigateToFr(string frId)
+    {
+        var req = _model?.Requirements.FirstOrDefault(r =>
+            string.Equals(r.FrId, frId, StringComparison.OrdinalIgnoreCase));
+        if (req is not null) NavigateToRequirement(req);
+    }
+
+    private void SetOrphanedFilter()
+    {
+        _matrixFilter         = null;
+        _showOrphanedInMatrix = true;
+    }
+
+    private void ToggleGap(string key)
+    {
+        _gapExpanded[key] = !(_gapExpanded.TryGetValue(key, out var v) && v);
+    }
+
+    private void ToggleGraph(string key)
+    {
+        var current = !_graphExpanded.TryGetValue(key, out var v) || v;
+        _graphExpanded[key] = !current;
+    }
+
+    // ── Formatting helpers ──────────────────────────────────────────────────
+
+    private static string StatusLabel(TraceCoverageStatus s) => s switch
+    {
+        TraceCoverageStatus.Covered      => "✅ Covered",
+        TraceCoverageStatus.MissingTests => "⚠️ Missing Tests",
+        TraceCoverageStatus.Orphaned     => "🔶 Orphaned",
+        _                                => s.ToString(),
+    };
+
+    private static string TruncateTitle(string s, int max)
+    {
+        if (s.Length <= max) return s;
+        var wb = s.LastIndexOf(' ', max - 2);
+        return (wb > max / 2 ? s[..wb] : s[..max]) + "…";
+    }
+}

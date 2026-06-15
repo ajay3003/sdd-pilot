@@ -31,13 +31,21 @@ public sealed class TaskNode
     public int HeadingLevel { get; init; }     // 1–6 for headings, 0 for tasks/rows
 
     // Task-specific fields
-    public string? TaskId { get; init; }       // e.g. "T001", "T042"
+    public string? TaskId { get; init; }        // e.g. "T001", "T042"
     public bool IsCompleted { get; init; }
     public bool IsParallel { get; init; }
-    public string? UserStoryTag { get; init; } // e.g. "US1", "US2"
+    public string? UserStoryTag { get; init; }  // e.g. "US1", "US2"
     public List<string> ReferencedFrIds { get; init; } = [];
     public List<string> ReferencedScIds { get; init; } = [];
     public string RawText { get; init; } = string.Empty;
+
+    // Derived display helpers
+    public string? ShortTitle { get; init; }        // brief readable title for tree (file path → class name + first clause)
+    public string? PhaseTitle { get; set; }          // H2 phase name, set after parse
+    public string? UserStoryTitle { get; set; }      // user story group name, set after parse
+    public List<string> RelatedFiles { get; init; } = [];   // file paths extracted from task body
+    public bool IsTestingTask { get; init; }         // keyword-detected testing task
+    public bool IsSecurityTask { get; init; }        // keyword-detected security task
 
     // Table-specific fields
     public List<string> TableHeaders { get; init; } = [];   // column names on TableSection
@@ -81,6 +89,14 @@ public sealed class TaskHealth
     public int PossibleDeviations { get; init; }
     public int HighRisk { get; init; }
     public int RegressionCandidates { get; init; }
+
+    // QA-oriented counts (always populated from task refs and keyword detection)
+    public int FrLinkedTasks { get; init; }    // tasks with ≥1 FR reference
+    public int ScLinkedTasks { get; init; }    // tasks with ≥1 SC reference
+    public int UnlinkedTasks { get; init; }    // tasks with no FR/SC refs or spec matches
+    public int TestingTasks { get; init; }
+    public int SecurityTasks { get; init; }
+    public int UserStoryCount { get; init; }
 }
 
 public sealed class TaskTree

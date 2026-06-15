@@ -1,0 +1,484 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@if (_model is null || _model.IsEmpty)
+{
+    <div class="av-empty">
+        <p class="av-empty-msg">No architecture elements extracted. Provide a specification to analyse.</p>
+    </div>
+}
+else
+{
+    <div class="av-root">
+
+        @* ── Metric chips ─────────────────────────────────────────────────── *@
+        <div class="av-metrics" role="list" aria-label="Architecture element counts">
+            @foreach (var (type, label, icon) in Categories)
+            {
+                var count = _model.ByType(type).Count();
+                if (count == 0) continue;
+                <span class="av-metric-chip av-chip-@type.ToString().ToLowerInvariant()" role="listitem">
+                    @icon @count @label
+                </span>
+            }
+        </div>
+
+        @* ── View-mode toggle ─────────────────────────────────────────────── *@
+        <div class="av-toggle" role="group" aria-label="View mode">
+            <button type="button"
+                    class="av-toggle-btn @(_viewMode == AvViewMode.Elements ? "is-active" : "")"
+                    @onclick='() => _viewMode = AvViewMode.Elements'>
+                🌳 Elements
+            </button>
+            <button type="button"
+                    class="av-toggle-btn @(_viewMode == AvViewMode.Diagram ? "is-active" : "")"
+                    @onclick='() => _viewMode = AvViewMode.Diagram'>
+                🗺 Diagram
+            </button>
+        </div>
+
+        @if (_viewMode == AvViewMode.Elements)
+        {
+            @* ── Elements view: category tree + detail panel ──────────────── *@
+            <div class="av-elements-layout">
+
+                @* ── Category tree ──────────────────────────────────────────── *@
+                <div class="av-tree" role="tree">
+                    @foreach (var (type, label, icon) in Categories)
+                    {
+                        var items = _model.ByType(type).ToList();
+                        if (items.Count == 0) continue;
+                        var isExpanded = _expanded.TryGetValue(type, out var ex) ? ex : true;
+                        <div class="av-category" role="treeitem" aria-expanded="@isExpanded.ToString().ToLowerInvariant()">
+                            <button type="button"
+                                    class="av-cat-header av-cat-@type.ToString().ToLowerInvariant()"
+                                    @onclick="() => ToggleCategory(type)">
+                                <span class="av-cat-chevron">@(isExpanded ? "▾" : "▸")</span>
+                                <span class="av-cat-icon">@icon</span>
+                                <span class="av-cat-label">@label</span>
+                                <span class="av-cat-count">@items.Count</span>
+                            </button>
+                            @if (isExpanded)
+                            {
+                                <ul class="av-item-list" role="group">
+                                    @foreach (var item in items)
+                                    {
+                                        var itemCap = item;
+                                        <li role="treeitem">
+                                            <button type="button"
+                                                    class="av-item-btn @(_selectedId == item.Id ? "is-selected" : "")"
+                                                    @onclick="() => SelectItem(itemCap)">
+                                                <span class="av-item-dot av-dot-@type.ToString().ToLowerInvariant()"></span>
+                                                <span class="av-item-name">@item.Name</span>
+                                                @if (item.RelatedFrIds.Count > 0)
+                                                {
+                                                    <span class="av-item-badge">FR:@item.RelatedFrIds.Count</span>
+                                                }
+                                            </button>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    }
+                </div>
+
+                @* ── Detail panel ────────────────────────────────────────────── *@
+                <div class="av-detail">
+                    @if (_selected is not null)
+                    {
+                        var typeMeta = Categories.FirstOrDefault(c => c.Type == _selected.ElementType);
+                        <div class="av-detail-header av-detail-header-@_selected.ElementType.ToString().ToLowerInvariant()">
+                            <span class="av-detail-icon">@typeMeta.Icon</span>
+                            <h3 class="av-detail-name">@_selected.Name</h3>
+                        </div>
+
+                        <div class="av-detail-type-badge av-chip-@_selected.ElementType.ToString().ToLowerInvariant()">
+                            @typeMeta.Label
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(_selected.Description))
+                        {
+                            <div class="av-detail-section">
+                                <div class="av-detail-label">Description</div>
+                                <div class="av-detail-desc">@_selected.Description</div>
+                            </div>
+                        }
+
+                        @if (_selected.SourceSections.Count > 0)
+                        {
+                            <div class="av-detail-section">
+                                <div class="av-detail-label">Source Sections</div>
+                                <ul class="av-detail-list">
+                                    @foreach (var s in _selected.SourceSections)
+                                    {
+                                        <li><span class="av-section-chip">@s</span></li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+
+                        @if (_selected.RelatedFrIds.Count > 0)
+                        {
+                            <div class="av-detail-section">
+                                <div class="av-detail-label">Related Requirements</div>
+                                <div class="av-ref-chips">
+                                    @foreach (var fr in _selected.RelatedFrIds)
+                                    {
+                                        <span class="av-ref-chip av-ref-fr">@fr</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (_selected.RelatedUsIds.Count > 0)
+                        {
+                            <div class="av-detail-section">
+                                <div class="av-detail-label">Related User Stories</div>
+                                <div class="av-ref-chips">
+                                    @foreach (var us in _selected.RelatedUsIds)
+                                    {
+                                        <span class="av-ref-chip av-ref-us">@us</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (_selected.DependsOn.Count > 0)
+                        {
+                            <div class="av-detail-section">
+                                <div class="av-detail-label">Dependencies</div>
+                                <ul class="av-detail-list">
+                                    @foreach (var d in _selected.DependsOn)
+                                    {
+                                        <li>@d</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+
+                        @if (_selected.UsedBy.Count > 0)
+                        {
+                            <div class="av-detail-section">
+                                <div class="av-detail-label">Used By</div>
+                                <ul class="av-detail-list">
+                                    @foreach (var u in _selected.UsedBy)
+                                    {
+                                        <li>@u</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="av-detail-placeholder">
+                            Select an element to see details.
+                        </div>
+                    }
+                </div>
+
+            </div>
+        }
+
+        @if (_viewMode == AvViewMode.Diagram)
+        {
+            @* ── Diagram view: layered flow ────────────────────────────────── *@
+            <div class="av-diagram">
+
+                @* External Systems row *@
+                @{
+                    var externalItems = _model.ByType(ArchElementType.ExternalSystem).ToList();
+                }
+                @if (externalItems.Count > 0)
+                {
+                    <div class="av-diagram-layer av-layer-external">
+                        <div class="av-layer-label">External Systems</div>
+                        <div class="av-layer-boxes">
+                            @foreach (var item in externalItems)
+                            {
+                                var itemCap = item;
+                                <button type="button"
+                                        class="av-diag-box av-diag-external @(_selectedId == item.Id ? "is-selected" : "")"
+                                        @onclick="() => SelectItem(itemCap)">
+                                    🔗 @item.Name
+                                </button>
+                            }
+                        </div>
+                    </div>
+                    <div class="av-layer-arrow">↓</div>
+                }
+
+                @* Services row *@
+                @{
+                    var serviceItems = _model.ByType(ArchElementType.Service).ToList();
+                }
+                @if (serviceItems.Count > 0)
+                {
+                    <div class="av-diagram-layer av-layer-services">
+                        <div class="av-layer-label">Services &amp; Modules</div>
+                        <div class="av-layer-boxes">
+                            @foreach (var item in serviceItems)
+                            {
+                                var itemCap = item;
+                                <button type="button"
+                                        class="av-diag-box av-diag-service @(_selectedId == item.Id ? "is-selected" : "")"
+                                        @onclick="() => SelectItem(itemCap)">
+                                    ⚙️ @item.Name
+                                </button>
+                            }
+                        </div>
+                    </div>
+                    <div class="av-layer-arrow">↓</div>
+                }
+
+                @* APIs + Persistence row (split) *@
+                @{
+                    var apiItems = _model.ByType(ArchElementType.Api).ToList();
+                    var persistItems = _model.ByType(ArchElementType.Persistence).ToList();
+                }
+                @if (apiItems.Count > 0 || persistItems.Count > 0)
+                {
+                    <div class="av-diagram-split-row">
+                        @if (apiItems.Count > 0)
+                        {
+                            <div class="av-diagram-layer av-layer-api">
+                                <div class="av-layer-label">APIs</div>
+                                <div class="av-layer-boxes">
+                                    @foreach (var item in apiItems)
+                                    {
+                                        var itemCap = item;
+                                        <button type="button"
+                                                class="av-diag-box av-diag-api @(_selectedId == item.Id ? "is-selected" : "")"
+                                                @onclick="() => SelectItem(itemCap)">
+                                            🌐 @item.Name
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        @if (persistItems.Count > 0)
+                        {
+                            <div class="av-diagram-layer av-layer-persistence">
+                                <div class="av-layer-label">Persistence</div>
+                                <div class="av-layer-boxes">
+                                    @foreach (var item in persistItems)
+                                    {
+                                        var itemCap = item;
+                                        <button type="button"
+                                                class="av-diag-box av-diag-persistence @(_selectedId == item.Id ? "is-selected" : "")"
+                                                @onclick="() => SelectItem(itemCap)">
+                                            🗃 @item.Name
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <div class="av-layer-arrow">↓</div>
+                }
+
+                @* Messaging + Domain Events row *@
+                @{
+                    var messagingItems = _model.ByType(ArchElementType.Messaging).ToList();
+                    var domainEventItems = _model.ByType(ArchElementType.DomainEvent).ToList();
+                }
+                @if (messagingItems.Count > 0 || domainEventItems.Count > 0)
+                {
+                    <div class="av-diagram-split-row">
+                        @if (messagingItems.Count > 0)
+                        {
+                            <div class="av-diagram-layer av-layer-messaging">
+                                <div class="av-layer-label">Messaging</div>
+                                <div class="av-layer-boxes">
+                                    @foreach (var item in messagingItems)
+                                    {
+                                        var itemCap = item;
+                                        <button type="button"
+                                                class="av-diag-box av-diag-messaging @(_selectedId == item.Id ? "is-selected" : "")"
+                                                @onclick="() => SelectItem(itemCap)">
+                                            📨 @item.Name
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        @if (domainEventItems.Count > 0)
+                        {
+                            <div class="av-diagram-layer av-layer-domainevent">
+                                <div class="av-layer-label">Domain Events</div>
+                                <div class="av-layer-boxes">
+                                    @foreach (var item in domainEventItems)
+                                    {
+                                        var itemCap = item;
+                                        <button type="button"
+                                                class="av-diag-box av-diag-domainevent @(_selectedId == item.Id ? "is-selected" : "")"
+                                                @onclick="() => SelectItem(itemCap)">
+                                            ⚡ @item.Name
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <div class="av-layer-arrow">↓</div>
+                }
+
+                @* Security row *@
+                @{
+                    var securityItems = _model.ByType(ArchElementType.Security).ToList();
+                }
+                @if (securityItems.Count > 0)
+                {
+                    <div class="av-diagram-layer av-layer-security">
+                        <div class="av-layer-label">Security</div>
+                        <div class="av-layer-boxes av-security-pills">
+                            @foreach (var item in securityItems)
+                            {
+                                var itemCap = item;
+                                <button type="button"
+                                        class="av-diag-pill av-diag-security @(_selectedId == item.Id ? "is-selected" : "")"
+                                        @onclick="() => SelectItem(itemCap)">
+                                    🔐 @item.Name
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @* Patterns + Risks row *@
+                @{
+                    var patternItems = _model.ByType(ArchElementType.Pattern).ToList();
+                    var riskItems = _model.ByType(ArchElementType.Risk).ToList();
+                }
+                @if (patternItems.Count > 0 || riskItems.Count > 0)
+                {
+                    <div class="av-diagram-split-row av-diagram-footer-row">
+                        @if (patternItems.Count > 0)
+                        {
+                            <div class="av-diagram-layer av-layer-pattern">
+                                <div class="av-layer-label">Patterns</div>
+                                <div class="av-layer-boxes">
+                                    @foreach (var item in patternItems)
+                                    {
+                                        var itemCap = item;
+                                        <button type="button"
+                                                class="av-diag-box av-diag-pattern @(_selectedId == item.Id ? "is-selected" : "")"
+                                                @onclick="() => SelectItem(itemCap)">
+                                            🔄 @item.Name
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        @if (riskItems.Count > 0)
+                        {
+                            <div class="av-diagram-layer av-layer-risk">
+                                <div class="av-layer-label">Architecture Risks</div>
+                                <div class="av-layer-boxes">
+                                    @foreach (var item in riskItems)
+                                    {
+                                        var itemCap = item;
+                                        <button type="button"
+                                                class="av-diag-box av-diag-risk @(_selectedId == item.Id ? "is-selected" : "")"
+                                                @onclick="() => SelectItem(itemCap)">
+                                            ⚠️ @item.Name
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @* Diagram detail panel *@
+                @if (_selected is not null)
+                {
+                    var typeMeta = Categories.FirstOrDefault(c => c.Type == _selected.ElementType);
+                    <div class="av-diag-detail av-detail-header-@_selected.ElementType.ToString().ToLowerInvariant()">
+                        <span class="av-detail-icon">@typeMeta.Icon</span>
+                        <strong>@_selected.Name</strong>
+                        <span class="av-detail-type-badge av-chip-@_selected.ElementType.ToString().ToLowerInvariant()">@typeMeta.Label</span>
+                        @if (!string.IsNullOrWhiteSpace(_selected.Description))
+                        {
+                            <span class="av-diag-desc">— @_selected.Description</span>
+                        }
+                        @if (_selected.SourceSections.Count > 0)
+                        {
+                            <span class="av-diag-sections">
+                                @foreach (var s in _selected.SourceSections)
+                                {
+                                    <span class="av-section-chip">@s</span>
+                                }
+                            </span>
+                        }
+                    </div>
+                }
+
+            </div>
+        }
+
+    </div>
+}
+
+@code {
+    [Parameter] public string? SpecMarkdown { get; set; }
+
+    private static readonly (ArchElementType Type, string Label, string Icon)[] Categories =
+    [
+        (ArchElementType.Api,            "APIs",               "🌐"),
+        (ArchElementType.Service,        "Services & Modules", "⚙️"),
+        (ArchElementType.Persistence,    "Persistence",        "🗃"),
+        (ArchElementType.Messaging,      "Messaging & Events", "📨"),
+        (ArchElementType.DomainEvent,    "Domain Events",      "⚡"),
+        (ArchElementType.Security,       "Security",           "🔐"),
+        (ArchElementType.ExternalSystem, "External Systems",   "🔗"),
+        (ArchElementType.Pattern,        "Patterns",           "🔄"),
+        (ArchElementType.Risk,           "Architecture Risks", "⚠️"),
+    ];
+
+    private enum AvViewMode { Elements, Diagram }
+
+    private AvViewMode _viewMode = AvViewMode.Elements;
+    private ArchitectureModel? _model;
+    private string? _lastMarkdown;
+    private ArchElement? _selected;
+    private string? _selectedId;
+    private readonly Dictionary<ArchElementType, bool> _expanded = [];
+
+    protected override void OnParametersSet()
+    {
+        if (string.Equals(SpecMarkdown, _lastMarkdown, StringComparison.Ordinal)) return;
+        _lastMarkdown = SpecMarkdown;
+        _selected = null;
+        _selectedId = null;
+
+        if (string.IsNullOrWhiteSpace(SpecMarkdown))
+        {
+            _model = null;
+            return;
+        }
+
+        var tree = SpecExplorerService.Parse(SpecMarkdown);
+        _model = ArchitectureExtractor.Extract(tree);
+    }
+
+    private void ToggleCategory(ArchElementType type)
+    {
+        _expanded[type] = !(_expanded.TryGetValue(type, out var v) ? v : true);
+    }
+
+    private void SelectItem(ArchElement item)
+    {
+        if (_selectedId == item.Id)
+        {
+            _selected = null;
+            _selectedId = null;
+        }
+        else
+        {
+            _selected = item;
+            _selectedId = item.Id;
+        }
+    }
+}

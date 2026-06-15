@@ -136,6 +136,27 @@
                         <div class="se-health-label">Success Criteria</div>
                     </div>
                 }
+                @if (_tree.Health.Entities > 0)
+                {
+                    <div class="se-health-card se-hcard-ent">
+                        <div class="se-health-value">@_tree.Health.Entities</div>
+                        <div class="se-health-label">Entities</div>
+                    </div>
+                }
+                @if (_tree.Health.Assumptions > 0)
+                {
+                    <div class="se-health-card se-hcard-assume">
+                        <div class="se-health-value">@_tree.Health.Assumptions</div>
+                        <div class="se-health-label">Assumptions</div>
+                    </div>
+                }
+                @if (_tree.Health.EdgeCases > 0)
+                {
+                    <div class="se-health-card se-hcard-edge">
+                        <div class="se-health-value">@_tree.Health.EdgeCases</div>
+                        <div class="se-health-label">Edge Cases</div>
+                    </div>
+                }
                 @if (_tree.Health.TablesDetected > 0)
                 {
                     <div class="se-health-card se-hcard-tbl">
@@ -763,21 +784,26 @@
 
     private static string GetIcon(SpecNodeType type, int level) => type switch
     {
-        SpecNodeType.Module       => "📦",
-        SpecNodeType.Section      => "📂",
-        SpecNodeType.SubSection   => "📁",
-        SpecNodeType.DeepSection  => "📄",
-        SpecNodeType.Requirement  => "📋",
-        SpecNodeType.UserStory    => "📖",
+        SpecNodeType.Module          => "📦",
+        SpecNodeType.Section         => "📂",
+        SpecNodeType.SubSection      => "📁",
+        SpecNodeType.DeepSection     => "📄",
+        SpecNodeType.Requirement     => "📋",
+        SpecNodeType.UserStory       => "📖",
         SpecNodeType.SuccessCriterion => "🎯",
-        SpecNodeType.AcceptanceTest   => "🧪",
-        SpecNodeType.BddScenario      => "🧪",
-        SpecNodeType.Clarification    => "💬",
-        SpecNodeType.QaPair           => "💬",
-        SpecNodeType.Entity           => "🔷",
-        SpecNodeType.DomainItem       => "🔗",
-        SpecNodeType.TableSection     => "📊",
-        SpecNodeType.TableRow         => "↔",
+        SpecNodeType.AcceptanceTest  => "🧪",
+        SpecNodeType.BddScenario     => "🧪",
+        SpecNodeType.Clarification   => "💬",
+        SpecNodeType.QaPair          => "💬",
+        SpecNodeType.Entity          => "🔷",
+        SpecNodeType.DomainItem      => "🔗",
+        SpecNodeType.TableSection    => "📊",
+        SpecNodeType.TableRow        => "↔",
+        SpecNodeType.Assumption      => "💡",
+        SpecNodeType.EdgeCase        => "⚠",
+        SpecNodeType.Metadata        => "ℹ",
+        SpecNodeType.ApiSurfaceItem  => "🔌",
+        SpecNodeType.StoryContext    => "📝",
         _ => level == 1 ? "📦" : level == 2 ? "📂" : "📄",
     };
 
@@ -789,6 +815,10 @@
         SpecNodeType.SuccessCriterion => "SC",
         SpecNodeType.UserStory        => "US",
         SpecNodeType.Entity           => "ENTITY",
+        SpecNodeType.Assumption       => "ASSUME",
+        SpecNodeType.EdgeCase         => "EDGE",
+        SpecNodeType.ApiSurfaceItem   => "API",
+        SpecNodeType.Metadata         => null,
         _ => null,
     };
 
@@ -804,26 +834,32 @@
         SpecNodeType.AcceptanceTest   => "Acceptance Test",
         SpecNodeType.BddScenario      => "Acceptance Scenario",
         SpecNodeType.Clarification    => "Clarification",
-        SpecNodeType.QaPair           => "Clarification",
+        SpecNodeType.QaPair           => "Q&A Clarification",
         SpecNodeType.Entity           => "Entity",
         SpecNodeType.DomainItem       => "Domain Item",
         SpecNodeType.TableSection     => "Table",
         SpecNodeType.TableRow         => "Table Row",
+        SpecNodeType.Assumption       => "Assumption",
+        SpecNodeType.EdgeCase         => "Edge Case",
+        SpecNodeType.Metadata         => "Metadata",
+        SpecNodeType.ApiSurfaceItem   => "API Surface",
+        SpecNodeType.StoryContext     => "Story Context",
         _ => type.ToString(),
     };
 
     private static string SemanticShortLabel(SectionSemantics sem) => sem switch
     {
-        SectionSemantics.Clarifications      => "Q/A",
-        SectionSemantics.EdgeCases           => "EDGE",
-        SectionSemantics.Assumptions         => "ASSUME",
-        SectionSemantics.ApiSurface          => "API",
-        SectionSemantics.Observability       => "OBS",
-        SectionSemantics.Security            => "SEC",
-        SectionSemantics.Performance         => "PERF",
-        SectionSemantics.AcceptanceScenarios => "BDD",
-        SectionSemantics.RequirementsSection => "REQS",
+        SectionSemantics.Clarifications         => "Q/A",
+        SectionSemantics.EdgeCases              => "EDGE",
+        SectionSemantics.Assumptions            => "ASSUME",
+        SectionSemantics.ApiSurface             => "API",
+        SectionSemantics.Observability          => "OBS",
+        SectionSemantics.Security               => "SEC",
+        SectionSemantics.Performance            => "PERF",
+        SectionSemantics.AcceptanceScenarios    => "BDD",
+        SectionSemantics.RequirementsSection    => "REQS",
         SectionSemantics.SuccessCriteriaSection => "SC",
+        SectionSemantics.KeyEntities            => "ENTITY",
         _ => "",
     };
 

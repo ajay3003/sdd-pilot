@@ -2,21 +2,26 @@ namespace BirkNext.Web.Models;
 
 public enum SpecNodeType
 {
-    Module,            // H1
-    Section,           // H2
-    SubSection,        // H3
-    DeepSection,       // H4+
-    Requirement,       // FR / NFR / REQ
-    UserStory,         // US / UC or "User Story N" heading
-    SuccessCriterion,  // SC
-    AcceptanceTest,    // AC / TS (inline pattern)
-    BddScenario,       // Scenario N + Given/When/Then block
-    Clarification,     // detected clarification (inline fallback)
-    QaPair,            // Q: ... A: ... paired clarification
-    Entity,            // CamelCase / domain term
-    DomainItem,        // Assumption / Dependency / Event / Operation / API
-    TableSection,      // markdown table block
-    TableRow,          // one data row of a table
+    Module,             // H1
+    Section,            // H2
+    SubSection,         // H3
+    DeepSection,        // H4+
+    Requirement,        // FR / NFR / REQ
+    UserStory,          // US / UC or "User Story N" heading
+    SuccessCriterion,   // SC
+    AcceptanceTest,     // AC / TS (inline pattern)
+    BddScenario,        // Scenario N + Given/When/Then block; also numbered inline BDD
+    Clarification,      // inline clarification fallback
+    QaPair,             // Q: ... A: ... paired clarification
+    Entity,             // Key Entity definition
+    DomainItem,         // legacy domain item
+    TableSection,       // markdown table block
+    TableRow,           // one data row of a table
+    Assumption,         // item in Assumptions section
+    EdgeCase,           // item in Edge Cases section
+    Metadata,           // frontmatter metadata line (Source:, Status:, etc.)
+    ApiSurfaceItem,     // bullet item in API Surface section
+    StoryContext,       // user story narrative (not requirement/test)
 }
 
 public enum TableType
@@ -45,6 +50,7 @@ public enum SectionSemantics
     AcceptanceScenarios,
     RequirementsSection,
     SuccessCriteriaSection,
+    KeyEntities,         // Key Entities / domain model section
 }
 
 public enum CoverageState { Unknown, Covered, Partial, Missing }
@@ -71,7 +77,7 @@ public sealed class SpecNode
     public string? BddWhen { get; init; }
     public string? BddThen { get; init; }
 
-    // Table-specific fields (populated on TableSection / TableRow nodes)
+    // Table-specific fields (TableSection / TableRow nodes)
     public TableType TableKind { get; init; } = TableType.Generic;
     public List<string> ColumnHeaders { get; init; } = [];
     public List<string> CellValues { get; init; } = [];
@@ -98,7 +104,10 @@ public sealed class SpecHealth
     public int Entities { get; init; }
     public int DomainItems { get; init; }
     public int TablesDetected { get; init; }
-    public int TotalItems => Requirements + UserStories + Tests + BddScenarios + Clarifications + SuccessCriteria + Entities + DomainItems;
+    public int Assumptions { get; init; }
+    public int EdgeCases { get; init; }
+    public int TotalItems => Requirements + UserStories + Tests + BddScenarios + Clarifications
+                           + SuccessCriteria + Entities + DomainItems + Assumptions + EdgeCases;
 }
 
 public sealed class SpecTree

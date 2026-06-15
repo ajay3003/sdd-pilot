@@ -34,6 +34,19 @@ public static class TaskExplorerService
     private static readonly Regex ScRefRe = new(
         @"\b(SC)-?(\d{1,4})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // File path pattern for extracting class names and related files
+    private static readonly Regex FilePathRe = new(
+        @"(?:src|test[s]?)/[\w/.-]+\.(?:cs|json|md|yaml|yml|csproj|sln)\b",
+        RegexOptions.Compiled);
+
+    private static readonly Regex TestKeywordRe = new(
+        @"\b(?:test|spec|assert|xunit|nunit|mstest|shouldly|testcontainer|integration[\s-]?test|unit[\s-]?test)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex SecurityKeywordRe = new(
+        @"\b(?:security|authoris|kode[\s-]?[67]|permission|access[\s-]?control|gradert|sikkerhet|auth(?:orization|entication)?)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static readonly Regex TableRowRe = new(
         @"^\|(.+)\|$", RegexOptions.Compiled);
 
@@ -58,7 +71,7 @@ public static class TaskExplorerService
         var roots = new List<TaskNode>();
         var headingStack = new List<(int Level, TaskNode Node)>();
 
-        var hTasks = 0; var hCompleted = 0; var hPhases = 0;
+        var hTasks = 0; var hCompleted = 0; var hPhases = 0; var hUserStories = 0;
         var hTables = 0; var hRows = 0;
 
         var tableBuffer = new List<string>();
@@ -98,6 +111,7 @@ public static class TaskExplorerService
                 var nodeType = ClassifyHeading(level, rawTitle);
 
                 if (nodeType == TaskNodeType.Phase) hPhases++;
+                if (nodeType == TaskNodeType.UserStoryGroup) hUserStories++;
 
                 var node = new TaskNode { Title = title, NodeType = nodeType, HeadingLevel = level };
 
@@ -123,6 +137,7 @@ public static class TaskExplorerService
                 {
                     hTasks++;
                     if (completed) hCompleted++;
+                    InjectContext(task, headingStack);
                     AddToParent(roots, headingStack, task);
                 }
                 i++;
@@ -138,6 +153,7 @@ public static class TaskExplorerService
                 if (task is not null)
                 {
                     hTasks++;
+                    InjectContext(task, headingStack);
                     AddToParent(roots, headingStack, task);
                 }
                 i++;
@@ -174,6 +190,7 @@ public static class TaskExplorerService
             TotalTasks = hTasks,
             CompletedTasks = hCompleted,
             TotalPhases = hPhases,
+            UserStoryCount = hUserStories,
             TablesDetected = hTables,
             TraceabilityRows = hRows,
             TasksLinkedFromTables = linkedTaskIds.Count,
@@ -266,6 +283,7 @@ public static class TaskExplorerService
             TotalTasks = tree.Health.TotalTasks,
             CompletedTasks = tree.Health.CompletedTasks,
             TotalPhases = tree.Health.TotalPhases,
+            UserStoryCount = tree.Health.UserStoryCount,
             TablesDetected = tables > 0 ? tables : tree.Health.TablesDetected,
             TraceabilityRows = rows > 0 ? rows : tree.Health.TraceabilityRows,
             TasksLinkedFromTables = linkedIds.Count > 0 ? linkedIds.Count : tree.Health.TasksLinkedFromTables,
@@ -276,6 +294,13 @@ public static class TaskExplorerService
             PossibleDeviations = tasks.Count(t => t.Status == AlignmentStatus.PossibleDeviation),
             HighRisk = tasks.Count(t => t.Risk == AlignmentRisk.High),
             RegressionCandidates = tasks.Count(t => t.IsRegressionCandidate),
+            FrLinkedTasks  = tasks.Count(t => t.ReferencedFrIds.Count > 0),
+            ScLinkedTasks  = tasks.Count(t => t.ReferencedScIds.Count > 0),
+            UnlinkedTasks  = tasks.Count(t => t.ReferencedFrIds.Count == 0
+                                               && t.ReferencedScIds.Count == 0
+                                               && t.SpecMatches.Count == 0),
+            TestingTasks   = tasks.Count(t => t.IsTestingTask),
+            SecurityTasks  = tasks.Count(t => t.IsSecurityTask),
         };
     }
 
@@ -331,17 +356,23 @@ public static class TaskExplorerService
         if (taskMatch.Success)
             taskId = $"T{taskMatch.Groups[1].Value.PadLeft(3, '0')}";
 
-        // Clean title: strip [P], [USN], remove redundant task ID prefix from display text
+        // Clean title: strip [P], [USN], FR/SC refs, then strip redundant leading task ID
         var title = ParallelRe.Replace(body, "").Trim();
         title = UserStoryTagRe.Replace(title, "").Trim();
         title = FrRefRe.Replace(title, "").Trim();
         title = ScRefRe.Replace(title, "").Trim();
         title = StripMarkdown(title);
+        if (taskId != null)
+            title = Regex.Replace(title, @"^T\d{2,4}\s*[-–.]?\s*", "").Trim();
         if (title.Length > 200) title = title[..200];
+
+        var shortTitle = DeriveShortTitle(title);
+        var relatedFiles = FilePathRe.Matches(rawLine).Select(m => m.Value).Distinct().ToList();
 
         return new TaskNode
         {
             Title = title,
+            ShortTitle = shortTitle != title ? shortTitle : null,
             NodeType = TaskNodeType.Task,
             HeadingLevel = 0,
             TaskId = taskId,
@@ -351,6 +382,9 @@ public static class TaskExplorerService
             ReferencedFrIds = frIds,
             ReferencedScIds = scIds,
             RawText = rawLine.Trim(),
+            RelatedFiles = relatedFiles,
+            IsTestingTask = TestKeywordRe.IsMatch(rawLine),
+            IsSecurityTask = SecurityKeywordRe.IsMatch(rawLine),
         };
     }
 
@@ -451,6 +485,13 @@ public static class TaskExplorerService
         if (inner.StartsWith('|')) inner = inner[1..];
         if (inner.EndsWith('|')) inner = inner[..^1];
         return inner.Split('|').Select(c => c.Trim()).Where(c => c.Length > 0).ToList();
+    }
+
+    private static void InjectContext(TaskNode task, List<(int Level, TaskNode Node)> stack)
+    {
+        task.PhaseTitle = stack.LastOrDefault(h => h.Level == 2).Node?.Title;
+        task.UserStoryTitle = stack
+            .LastOrDefault(h => h.Node.NodeType == TaskNodeType.UserStoryGroup).Node?.Title;
     }
 
     private static void AddToParent(List<TaskNode> roots, List<(int Level, TaskNode Node)> stack, TaskNode child)
@@ -586,6 +627,9 @@ public static class TaskExplorerService
         if (node.LinkedTaskIds.Any(t => t.Contains(q, ci))) return true;
         if (node.NodeType == TaskNodeType.TableSection && node.TableKind != TaskTableType.Generic &&
             node.TableKind.ToString().Contains(q, ci)) return true;
+        // Search raw text (file paths, technical terms) and phase context
+        if (!string.IsNullOrEmpty(node.RawText) && node.RawText.Contains(q, ci)) return true;
+        if (node.PhaseTitle?.Contains(q, ci) ?? false) return true;
         return false;
     }
 
@@ -610,6 +654,11 @@ public static class TaskExplorerService
                                    (node.NodeType == TaskNodeType.Task && node.SpecMatches
                                        .Any(m => m.MatchType == SpecMatchType.Requirement)),
             "Unresolved"        => node.NodeType == TaskNodeType.TableTaskRef && node.IsUnresolved,
+            "TestingTasks"      => node.NodeType == TaskNodeType.Task && node.IsTestingTask,
+            "SecurityTasks"     => node.NodeType == TaskNodeType.Task && node.IsSecurityTask,
+            "NoLinks"           => node.NodeType == TaskNodeType.Task
+                                   && node.ReferencedFrIds.Count == 0
+                                   && node.ReferencedScIds.Count == 0,
             _ => true,
         };
     }
@@ -651,6 +700,40 @@ public static class TaskExplorerService
             }
             MarkUnresolvedTableRefs(node.Children, taskIds, ref unresolvedCount);
         }
+    }
+
+    // Derives a short, readable display title from the cleaned task body.
+    // If the body contains a file path, extracts the class/filename and first clause.
+    // Falls back to word-boundary truncation at ~80 chars.
+    private static string DeriveShortTitle(string body)
+    {
+        if (body.Length <= 80) return body;
+
+        var pathMatch = FilePathRe.Match(body);
+        if (pathMatch.Success)
+        {
+            var pathVal = pathMatch.Value;
+            var slash = pathVal.LastIndexOf('/');
+            var fileName = slash >= 0 ? pathVal[(slash + 1)..] : pathVal;
+            var nameNoExt = fileName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+                ? fileName[..^3] : fileName;
+
+            var afterPath = body[(pathMatch.Index + pathMatch.Length)..].Trim();
+            afterPath = Regex.Replace(afterPath,
+                @"^[-–—]\s*|^implementing\s+\w+(?:\s*,\s*\w+)*\s*;?\s*",
+                "", RegexOptions.IgnoreCase).Trim();
+            var clauseEnd = afterPath.IndexOfAny(new[] { ';', '\n' });
+            var clause = (clauseEnd > 0 ? afterPath[..clauseEnd] : afterPath).Trim();
+            if (clause.Length > 55)
+            {
+                var wb = clause.LastIndexOf(' ', 52);
+                clause = wb > 10 ? clause[..wb] + "…" : clause[..52] + "…";
+            }
+            return string.IsNullOrWhiteSpace(clause) ? nameNoExt : $"{nameNoExt}: {clause}";
+        }
+
+        var boundary = body.LastIndexOf(' ', 77);
+        return boundary > 20 ? body[..boundary] + "…" : body[..77] + "…";
     }
 
     private static string StripMarkdown(string s) =>

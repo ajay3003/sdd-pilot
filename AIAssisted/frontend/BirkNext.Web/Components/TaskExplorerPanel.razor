@@ -163,6 +163,48 @@
                         <div class="te-health-label">Unresolved</div>
                     </div>
                 }
+                @if (_health.UserStoryCount > 0)
+                {
+                    <div class="te-health-card te-hcard-us">
+                        <div class="te-health-value">@_health.UserStoryCount</div>
+                        <div class="te-health-label">User Stories</div>
+                    </div>
+                }
+                @if (_health.FrLinkedTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-fr">
+                        <div class="te-health-value">@_health.FrLinkedTasks</div>
+                        <div class="te-health-label">FR Linked</div>
+                    </div>
+                }
+                @if (_health.ScLinkedTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-sc">
+                        <div class="te-health-value">@_health.ScLinkedTasks</div>
+                        <div class="te-health-label">SC Linked</div>
+                    </div>
+                }
+                @if (_health.UnlinkedTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-unlinked">
+                        <div class="te-health-value">@_health.UnlinkedTasks</div>
+                        <div class="te-health-label">Unlinked</div>
+                    </div>
+                }
+                @if (_health.TestingTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-testing">
+                        <div class="te-health-value">@_health.TestingTasks</div>
+                        <div class="te-health-label">Testing</div>
+                    </div>
+                }
+                @if (_health.SecurityTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-security">
+                        <div class="te-health-value">@_health.SecurityTasks</div>
+                        <div class="te-health-label">Security</div>
+                    </div>
+                }
             </div>
         }
 
@@ -202,6 +244,18 @@
             <button class='te-filter-chip @(_activeFilter == "HasTableLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasTableLinks")'>Has Table Links</button>
             <button class='te-filter-chip @(_activeFilter == "HasScLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasScLinks")'>Has SC Links</button>
             <button class='te-filter-chip @(_activeFilter == "HasFrLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasFrLinks")'>Has FR Links</button>
+            @if (_health.TestingTasks > 0)
+            {
+                <button class='te-filter-chip te-fc-testing @(_activeFilter == "TestingTasks" ? "is-active" : "")' @onclick='() => SetFilter("TestingTasks")'>🧪 Testing</button>
+            }
+            @if (_health.SecurityTasks > 0)
+            {
+                <button class='te-filter-chip te-fc-security @(_activeFilter == "SecurityTasks" ? "is-active" : "")' @onclick='() => SetFilter("SecurityTasks")'>🔒 Security</button>
+            }
+            @if (_health.UnlinkedTasks > 0)
+            {
+                <button class='te-filter-chip @(_activeFilter == "NoLinks" ? "is-active" : "")' @onclick='() => SetFilter("NoLinks")'>No Links</button>
+            }
             @if (_health.UnresolvedTableRefs > 0)
             {
                 <button class='te-filter-chip te-fc-unresolved @(_activeFilter == "Unresolved" ? "is-active" : "")' @onclick='() => SetFilter("Unresolved")'>⚠ Unresolved Refs <span class="te-unresolved-count">@_health.UnresolvedTableRefs</span></button>
@@ -268,7 +322,7 @@
                             }
 
                             <span class="te-node-title @(node.NodeType == TaskNodeType.Task && node.IsCompleted ? "is-done" : "")">
-                                @node.Title
+                                @(node.ShortTitle ?? node.Title)
                                 @if (node.TaskId is not null && node.NodeType == TaskNodeType.Task)
                                 {
                                     <span class="te-task-id">@node.TaskId</span>
@@ -307,29 +361,36 @@
                                 </span>
                             }
 
-                            <!-- Heading task counts -->
+                            <!-- Heading task counts + progress bar -->
                             @if (isHeading && node.TaskCount > 0)
                             {
+                                var phasePct = (int)Math.Round((double)node.CompletedCount / node.TaskCount * 100);
                                 <span class="te-meta-chips">
-                                    <span class="te-meta-chip">@node.TaskCount tasks</span>
-                                    @if (node.CompletedCount > 0)
-                                    {
-                                        <span class="te-meta-chip te-mc-done">@node.CompletedCount done</span>
-                                    }
+                                    <span class="te-meta-chip">@node.TaskCount tasks · @node.CompletedCount done</span>
+                                    <span class="te-phase-progress" title="@(phasePct)% complete">
+                                        <span class="te-phase-bar" style="width:@(phasePct)%"></span>
+                                    </span>
                                 </span>
                             }
 
-                            <!-- FR/SC ref chips on task rows -->
+                            <!-- FR/SC ref chips on task rows — clickable to search -->
                             @if (node.NodeType == TaskNodeType.Task && (node.ReferencedFrIds.Count > 0 || node.ReferencedScIds.Count > 0))
                             {
                                 <span class="te-ref-chips">
                                     @foreach (var fr in node.ReferencedFrIds.Take(2))
                                     {
-                                        <span class="te-ref-chip te-ref-fr">@fr</span>
+                                        var frCapture = fr;
+                                        <button class="te-ref-chip te-ref-fr" @onclick:stopPropagation="true" @onclick='() => SetSearch(frCapture)' title="Search @frCapture">@frCapture</button>
                                     }
                                     @foreach (var sc in node.ReferencedScIds.Take(2))
                                     {
-                                        <span class="te-ref-chip te-ref-sc">@sc</span>
+                                        var scCapture = sc;
+                                        <button class="te-ref-chip te-ref-sc" @onclick:stopPropagation="true" @onclick='() => SetSearch(scCapture)' title="Search @scCapture">@scCapture</button>
+                                    }
+                                    @{ var refOverflow = node.ReferencedFrIds.Count + node.ReferencedScIds.Count - 4; }
+                                    @if (refOverflow > 0)
+                                    {
+                                        <span class="te-ref-chip te-ref-more">+@refOverflow</span>
                                     }
                                 </span>
                             }
@@ -371,10 +432,33 @@
                             <div class="te-details-task-id">@selected.TaskId</div>
                         }
 
-                        <h3 class="te-details-title">@selected.Title</h3>
+                        <h3 class="te-details-title">@(selected.ShortTitle ?? selected.Title)</h3>
+
+                        @if (selected.NodeType == TaskNodeType.Task && selected.ShortTitle is not null)
+                        {
+                            <div class="te-details-section">
+                                <div class="te-details-label">Full Description</div>
+                                <div class="te-details-desc">@selected.Title</div>
+                            </div>
+                        }
 
                         @if (selected.NodeType == TaskNodeType.Task)
                         {
+                            @if (!string.IsNullOrEmpty(selected.PhaseTitle) || !string.IsNullOrEmpty(selected.UserStoryTitle))
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Context</div>
+                                    @if (!string.IsNullOrEmpty(selected.PhaseTitle))
+                                    {
+                                        <div><span class="te-det-chip">🗂 @selected.PhaseTitle</span></div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(selected.UserStoryTitle))
+                                    {
+                                        <div><span class="te-det-chip te-chip-us">👤 @selected.UserStoryTitle</span></div>
+                                    }
+                                </div>
+                            }
+
                             <div class="te-details-section">
                                 <div class="te-details-label">Status</div>
                                 <div class="te-details-status-row">
@@ -388,6 +472,14 @@
                                     @if (selected.UserStoryTag is not null)
                                     {
                                         <span class="te-chip te-chip-us">@selected.UserStoryTag</span>
+                                    }
+                                    @if (selected.IsTestingTask)
+                                    {
+                                        <span class="te-chip te-chip-testing">🧪 Testing</span>
+                                    }
+                                    @if (selected.IsSecurityTask)
+                                    {
+                                        <span class="te-chip te-chip-security">🔒 Security</span>
                                     }
                                 </div>
                             </div>
@@ -460,13 +552,28 @@
                                     <div class="te-ref-chips">
                                         @foreach (var fr in selected.ReferencedFrIds)
                                         {
-                                            <span class="te-ref-chip te-ref-fr">@fr</span>
+                                            var frCap = fr;
+                                            <button class="te-ref-chip te-ref-fr" @onclick='() => SetSearch(frCap)' title="Filter by @frCap">@frCap</button>
                                         }
                                         @foreach (var sc in selected.ReferencedScIds)
                                         {
-                                            <span class="te-ref-chip te-ref-sc">@sc</span>
+                                            var scCap = sc;
+                                            <button class="te-ref-chip te-ref-sc" @onclick='() => SetSearch(scCap)' title="Filter by @scCap">@scCap</button>
                                         }
                                     </div>
+                                </div>
+                            }
+
+                            @if (selected.RelatedFiles.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Related Files</div>
+                                    <ul class="te-details-list te-file-list">
+                                        @foreach (var f in selected.RelatedFiles)
+                                        {
+                                            <li class="te-file-path"><code>@f</code></li>
+                                        }
+                                    </ul>
                                 </div>
                             }
 
@@ -533,7 +640,8 @@
                                     <div class="te-ref-chips">
                                         @foreach (var tid in tsLinkedIds.Take(10))
                                         {
-                                            <span class="te-ref-chip te-ref-task">@tid</span>
+                                            var tidCap = tid;
+                                            <button class="te-ref-chip te-ref-task" @onclick='() => NavigateToTask(tidCap)' title="Go to @tid">@tid</button>
                                         }
                                         @if (tsLinkedIds.Count > 10)
                                         {
@@ -578,7 +686,8 @@
                                         @foreach (var tid in selected.LinkedTaskIds)
                                         {
                                             var isUnres = IsTaskRefUnresolved(selected, tid);
-                                            <span class="te-ref-chip @(isUnres ? "te-ref-unresolved" : "te-ref-task")">@tid@(isUnres ? " ?" : "")</span>
+                                            var tidCap = tid;
+                                            <button class="te-ref-chip @(isUnres ? "te-ref-unresolved" : "te-ref-task")" @onclick='() => NavigateToTask(tidCap)' title="Go to @tid">@tid@(isUnres ? " ?" : "")</button>
                                         }
                                     </div>
                                 </div>
@@ -914,4 +1023,37 @@
         AlignmentStatus.PossibleDeviation => "Possible Deviation",
         _ => s.ToString(),
     };
+
+    private void SetSearch(string query)
+    {
+        _searchQuery = query;
+        _activeFilter = null;
+        RefreshFlatCache();
+    }
+
+    private void NavigateToTask(string taskId)
+    {
+        if (_tree is null) return;
+        var ancestors = new List<string>();
+        var found = FindTaskInTree(_tree.Roots, taskId, ancestors);
+        if (found is null) return;
+        foreach (var id in ancestors) _expandedIds.Add(id);
+        _selectedNodeId = found.Id;
+        RefreshFlatCache();
+    }
+
+    private static TaskNode? FindTaskInTree(IEnumerable<TaskNode> nodes, string taskId, List<string> ancestors)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.NodeType == TaskNodeType.Task &&
+                string.Equals(node.TaskId, taskId, StringComparison.OrdinalIgnoreCase))
+                return node;
+            ancestors.Add(node.Id);
+            var found = FindTaskInTree(node.Children, taskId, ancestors);
+            if (found is not null) return found;
+            ancestors.RemoveAt(ancestors.Count - 1);
+        }
+        return null;
+    }
 }

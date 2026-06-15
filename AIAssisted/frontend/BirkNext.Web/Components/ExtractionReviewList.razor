@@ -32,6 +32,10 @@
 else
 {
     <div class="extraction-review-list">
+        @if (_activeViewMode != ExtractionViewMode.Architecture
+             && _activeViewMode != ExtractionViewMode.Traceability
+             && _activeViewMode != ExtractionViewMode.Capability)
+        {
         <p class="candidate-summary" data-testid="candidate-summary">
             @PipelineResult.Candidates.Count review candidates found -
             @PipelineResult.RequirementCount REQUIREMENT,
@@ -42,6 +46,7 @@ else
                 <span class="profile-badge" data-testid="profile-badge">@PipelineResult.Profile</span>
             }
         </p>
+        }
 
         @{
             var rNewCount       = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.New);
@@ -119,7 +124,10 @@ else
             </button>
         </div>
 
-        @if (_activeViewMode != ExtractionViewMode.SpecExplorer)
+        @if (_activeViewMode != ExtractionViewMode.SpecExplorer
+             && _activeViewMode != ExtractionViewMode.Architecture
+             && _activeViewMode != ExtractionViewMode.Traceability
+             && _activeViewMode != ExtractionViewMode.Capability)
         {
         <div class="filter-toolbar">
             <div class="filter-chips" role="group" aria-label="Filter by type" hidden="@(_activeViewMode == ExtractionViewMode.Traceability ? "hidden" : null)">
@@ -305,7 +313,7 @@ else
             <p class="notification notification-error" data-testid="save-failed" role="alert">Save failed. Please try again.</p>
         }
 
-        @if (anyVisible)
+        @if (anyVisible && _activeViewMode != ExtractionViewMode.Capability)
         {
             <div class="section-summary-bar" role="toolbar" aria-label="Section controls">
                 <div class="section-summary-pills">
@@ -452,236 +460,40 @@ else
 
         @if (_activeViewMode == ExtractionViewMode.Capability)
         {
-            var capViewGroups = GetCapabilityViewGroups(visibleRequirements, visibleTests, visibleNeeds);
-
-            @foreach (var capGroup in capViewGroups)
-            {
-                <CapabilityGroupSection
-                    Label="@capGroup.Label"
-                    Subtitle="@capGroup.Subtitle"
-                    TotalCount="@capGroup.TotalCount"
-                    VisibleCount="@capGroup.VisibleCount"
-                    ReqCount="@capGroup.VisibleRequirements.Count"
-                    TestCount="@capGroup.VisibleTests.Count"
-                    ClarificationCount="@capGroup.VisibleClarifications.Count"
-                    IsUnmapped="@(capGroup.Key == "unmapped")"
-                    StatusCounts="@capGroup.StatusCounts"
-                    IsExpanded="@GetCapabilityGroupExpanded(capGroup.Key)"
-                    IsExpandedChanged="@(v => SetCapabilityGroupExpanded(capGroup.Key, v))">
-                    @if (capGroup.VisibleRequirements.Count > 0)
-                    {
-                        <div class="cap-type-subgroup">
-                            <div class="cap-type-label">Requirements</div>
-                            @foreach (var candidate in capGroup.VisibleRequirements)
-                            {
-                                <ExtractionCandidateRow Candidate="candidate"
-                                                        OnSelectionToggled="HandleSelectionToggled"
-                                                        OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                        Links="GetLinksForCandidate(candidate.CandidateId)"
-                                                        OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                        IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == candidate.CandidateId)" />
-                            }
-                        </div>
-                    }
-                    @if (capGroup.VisibleTests.Count > 0)
-                    {
-                        <div class="cap-type-subgroup">
-                            <div class="cap-type-label">Tests</div>
-                            @foreach (var candidate in capGroup.VisibleTests)
-                            {
-                                <ExtractionCandidateRow Candidate="candidate"
-                                                        OnSelectionToggled="HandleSelectionToggled"
-                                                        OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                        Links="GetLinksForCandidate(candidate.CandidateId)"
-                                                        OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                        IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == candidate.CandidateId)" />
-                            }
-                        </div>
-                    }
-                    @if (capGroup.VisibleClarifications.Count > 0)
-                    {
-                        <div class="cap-type-subgroup">
-                            <div class="cap-type-label">Needs Clarification</div>
-                            @foreach (var candidate in capGroup.VisibleClarifications)
-                            {
-                                <ExtractionCandidateRow Candidate="candidate"
-                                                        OnSelectionToggled="HandleSelectionToggled"
-                                                        OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                        Links="GetLinksForCandidate(candidate.CandidateId)"
-                                                        OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                        IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == candidate.CandidateId)" />
-                            }
-                        </div>
-                    }
-                </CapabilityGroupSection>
-            }
+            <FlowView SpecMarkdown="@SpecMarkdown"
+                      Candidates="@(PipelineResult?.Candidates ?? [])"
+                      Links="@_links" />
         }
 
         @if (_activeViewMode == ExtractionViewMode.Traceability)
         {
-            var tracData = GetTraceabilityData(visibleRequirements, visibleTests, visibleNeeds);
-
-            @foreach (var thread in tracData.Threads)
-            {
-                <div class="trac-thread @(thread.HasChildren ? "trac-thread-linked" : "trac-thread-standalone")">
-                    <div class="trac-root">
-                        <ExtractionCandidateRow Candidate="thread.Requirement"
-                                                OnSelectionToggled="HandleSelectionToggled"
-                                                OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                Links="GetLinksForCandidate(thread.Requirement.CandidateId)"
-                                                OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == thread.Requirement.CandidateId)" />
-                    </div>
-                    @if (thread.HasChildren)
-                    {
-                        <div class="trac-children">
-                            @foreach (var test in thread.LinkedTests)
-                            {
-                                <div class="trac-child trac-child-test">
-                                    <ExtractionCandidateRow Candidate="test"
-                                                            OnSelectionToggled="HandleSelectionToggled"
-                                                            OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                            Links="GetLinksForCandidate(test.CandidateId)"
-                                                            OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                            IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == test.CandidateId)" />
-                                </div>
-                            }
-                            @foreach (var clr in thread.LinkedClarifications)
-                            {
-                                <div class="trac-child trac-child-clr">
-                                    <ExtractionCandidateRow Candidate="clr"
-                                                            OnSelectionToggled="HandleSelectionToggled"
-                                                            OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                            Links="GetLinksForCandidate(clr.CandidateId)"
-                                                            OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                            IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == clr.CandidateId)" />
-                                </div>
-                            }
-                        </div>
-                    }
-                </div>
-            }
-
-            @if (tracData.OrphanedTests.Count > 0)
-            {
-                <div class="trac-orphan-section" data-testid="trac-orphaned-tests">
-                    <div class="trac-orphan-label">Tests without requirements</div>
-                    @foreach (var test in tracData.OrphanedTests)
-                    {
-                        <ExtractionCandidateRow Candidate="test"
-                                                OnSelectionToggled="HandleSelectionToggled"
-                                                OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                Links="GetLinksForCandidate(test.CandidateId)"
-                                                OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == test.CandidateId)" />
-                    }
-                </div>
-            }
-
-            @if (tracData.OrphanedClarifications.Count > 0)
-            {
-                <div class="trac-orphan-section" data-testid="trac-orphaned-clarifications">
-                    <div class="trac-orphan-label">Clarifications without requirements</div>
-                    @foreach (var clr in tracData.OrphanedClarifications)
-                    {
-                        <ExtractionCandidateRow Candidate="clr"
-                                                OnSelectionToggled="HandleSelectionToggled"
-                                                OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                Links="GetLinksForCandidate(clr.CandidateId)"
-                                                OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == clr.CandidateId)" />
-                    }
-                </div>
-            }
-
-            @if (!anyVisible)
-            {
-                <div class="filter-empty-state" data-testid="trac-empty-state">
-                    <p>No candidates match@(_searchTerm.Length > 0 ? " your search" : " the selected filter").</p>
-                </div>
-            }
+            <TraceabilityView SpecMarkdown="@SpecMarkdown"
+                              Candidates="@(PipelineResult?.Candidates ?? [])"
+                              Links="@_links"
+                              OnOpenInTaskExplorer="@HandleOpenInTaskExplorer" />
         }
 
         @if (_activeViewMode == ExtractionViewMode.Architecture)
         {
-            var archViewGroups = GetArchitectureViewGroups(visibleRequirements, visibleTests, visibleNeeds);
-
-            @foreach (var archGroup in archViewGroups)
-            {
-                <CapabilityGroupSection
-                    Label="@archGroup.Label"
-                    Subtitle="@archGroup.Subtitle"
-                    TotalCount="@archGroup.TotalCount"
-                    VisibleCount="@archGroup.VisibleCount"
-                    ReqCount="@archGroup.VisibleRequirements.Count"
-                    TestCount="@archGroup.VisibleTests.Count"
-                    ClarificationCount="@archGroup.VisibleClarifications.Count"
-                    IsUnmapped="@(archGroup.Key == "unmapped")"
-                    StatusCounts="@archGroup.StatusCounts"
-                    IsExpanded="@GetArchitectureGroupExpanded(archGroup.Key)"
-                    IsExpandedChanged="@(v => SetArchitectureGroupExpanded(archGroup.Key, v))">
-                    @if (archGroup.VisibleRequirements.Count > 0)
-                    {
-                        <div class="cap-type-subgroup">
-                            <div class="cap-type-label">Requirements</div>
-                            @foreach (var candidate in archGroup.VisibleRequirements)
-                            {
-                                <ExtractionCandidateRow Candidate="candidate"
-                                                        OnSelectionToggled="HandleSelectionToggled"
-                                                        OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                        Links="GetLinksForCandidate(candidate.CandidateId)"
-                                                        OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                        IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == candidate.CandidateId)" />
-                            }
-                        </div>
-                    }
-                    @if (archGroup.VisibleTests.Count > 0)
-                    {
-                        <div class="cap-type-subgroup">
-                            <div class="cap-type-label">Tests</div>
-                            @foreach (var candidate in archGroup.VisibleTests)
-                            {
-                                <ExtractionCandidateRow Candidate="candidate"
-                                                        OnSelectionToggled="HandleSelectionToggled"
-                                                        OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                        Links="GetLinksForCandidate(candidate.CandidateId)"
-                                                        OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                        IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == candidate.CandidateId)" />
-                            }
-                        </div>
-                    }
-                    @if (archGroup.VisibleClarifications.Count > 0)
-                    {
-                        <div class="cap-type-subgroup">
-                            <div class="cap-type-label">Needs Clarification</div>
-                            @foreach (var candidate in archGroup.VisibleClarifications)
-                            {
-                                <ExtractionCandidateRow Candidate="candidate"
-                                                        OnSelectionToggled="HandleSelectionToggled"
-                                                        OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                        Links="GetLinksForCandidate(candidate.CandidateId)"
-                                                        OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                        IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == candidate.CandidateId)" />
-                            }
-                        </div>
-                    }
-                </CapabilityGroupSection>
-            }
+            <ArchitectureView SpecMarkdown="@SpecMarkdown" />
         }
 
         @if (_activeViewMode == ExtractionViewMode.SpecExplorer)
         {
-            <SpecExplorerPanel Candidates="@PipelineResult.Candidates" InitialSpecMarkdown="@SpecMarkdown" IsEmbeddedInReview="true" />
+            <SpecExplorerPanel Candidates="@(PipelineResult?.Candidates ?? [])" InitialSpecMarkdown="@SpecMarkdown" IsEmbeddedInReview="true" />
         }
 
-        @if (!anyVisible && _activeViewMode != ExtractionViewMode.Traceability && _activeViewMode != ExtractionViewMode.SpecExplorer)
+        @if (!anyVisible && _activeViewMode != ExtractionViewMode.Traceability && _activeViewMode != ExtractionViewMode.SpecExplorer && _activeViewMode != ExtractionViewMode.Capability)
         {
             <div class="filter-empty-state" data-testid="filter-empty-state">
                 <p>No candidates match@(_searchTerm.Length > 0 ? " your search" : " the selected filter").</p>
             </div>
         }
 
-        @if (_activeViewMode != ExtractionViewMode.SpecExplorer)
+        @if (_activeViewMode != ExtractionViewMode.SpecExplorer
+             && _activeViewMode != ExtractionViewMode.Architecture
+             && _activeViewMode != ExtractionViewMode.Traceability
+             && _activeViewMode != ExtractionViewMode.Capability)
         {
         <div class="review-action-bar">
             <button type="button"
@@ -1242,6 +1054,7 @@ else
     }
 
     private void HandleOpenLinkDrawer(ExtractionCandidate candidate) => _linkModalCandidate = candidate;
+    private void HandleOpenInTaskExplorer(string frId) { /* Future: switch to task explorer tab and search for frId */ }
     private void CloseDrawer() => _linkModalCandidate = null;
     private void HandleDrawerKeyDown(KeyboardEventArgs e) { if (e.Key == "Escape") CloseDrawer(); }
 

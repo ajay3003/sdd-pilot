@@ -1,0 +1,355 @@
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@if (_model is null)
+{
+    return;
+}
+
+<div class="flow-view">
+
+    @* ── Top metrics ─────────────────────────────────────────────────── *@
+    <div class="fv-metrics" role="region" aria-label="Flow summary">
+        <span class="fv-metric-chip fv-chip-story">
+            <span aria-hidden="true">👤</span>
+            @_model.Stories.Count(s => !s.IsUnmapped) User @(_model.Stories.Count(s => !s.IsUnmapped) == 1 ? "Story" : "Stories")
+        </span>
+        <span class="fv-metric-chip fv-chip-req">
+            <span aria-hidden="true">📋</span>
+            @_model.TotalRequirements @(_model.TotalRequirements == 1 ? "Requirement" : "Requirements")
+        </span>
+        <span class="fv-metric-chip fv-chip-test">
+            <span aria-hidden="true">🧪</span>
+            @_model.TotalTests @(_model.TotalTests == 1 ? "Test" : "Tests")
+        </span>
+        @if (_model.TotalSc > 0)
+        {
+            <span class="fv-metric-chip fv-chip-sc">
+                <span aria-hidden="true">✅</span>
+                @_model.TotalSc SC
+            </span>
+        }
+        @{
+            var covPct = _model.CoveragePercent;
+            var covClass = covPct >= 80 ? "fv-chip-cov-good" : covPct >= 50 ? "fv-chip-cov-ok" : "fv-chip-cov-bad";
+        }
+        <span class="fv-metric-chip @covClass">
+            <span aria-hidden="true">📊</span>
+            @covPct% Coverage
+        </span>
+        @if (_model.GapCount > 0)
+        {
+            <span class="fv-metric-chip fv-chip-gap">
+                <span aria-hidden="true">⚠️</span>
+                @_model.GapCount @(_model.GapCount == 1 ? "Gap" : "Gaps")
+            </span>
+        }
+    </div>
+
+    @* ── Story lanes ──────────────────────────────────────────────────── *@
+    @if (_model.IsEmpty)
+    {
+        <div class="fv-empty-state">
+            <p>No flow data available. Run analysis to extract requirements and tests.</p>
+        </div>
+    }
+    else
+    {
+        @foreach (var story in _model.Stories)
+        {
+            var isExpanded = _expanded.GetValueOrDefault(story.Key);
+            var covCss = story.CoverageStatus.ToString().ToLowerInvariant();
+
+            <div class="fv-lane @(story.IsUnmapped ? "fv-lane-unmapped" : "")">
+
+                <button type="button"
+                        class="fv-lane-header @(isExpanded ? "is-expanded" : "")"
+                        @onclick="() => ToggleLane(story.Key)"
+                        aria-expanded="@isExpanded">
+                    <span class="fv-lane-chevron" aria-hidden="true">@(isExpanded ? "▼" : "▶")</span>
+                    @if (story.StoryId is not null)
+                    {
+                        <span class="fv-story-badge">@story.StoryId</span>
+                    }
+                    <span class="fv-lane-title">@story.Title</span>
+                    <span class="fv-lane-summary" aria-hidden="true">
+                        @story.Requirements.Count FR · @story.AllTests.Count tests
+                        @if (story.SuccessCriteria.Count > 0)
+                        {
+                            <text> · @story.SuccessCriteria.Count SC</text>
+                        }
+                    </span>
+                    <span class="fv-cov-pill fv-cov-@covCss">@CovLabel(story.CoverageStatus)</span>
+                </button>
+
+                @if (isExpanded)
+                {
+                    <div class="fv-lane-body">
+
+                        @* Context step *@
+                        @if (story.ContextDescription is not null)
+                        {
+                            <div class="fv-step fv-step-context">
+                                <div class="fv-step-header">
+                                    <span class="fv-step-icon" aria-hidden="true">📝</span>
+                                    <span class="fv-step-label">Context</span>
+                                </div>
+                                <div class="fv-step-body">
+                                    <p class="fv-context-text">@story.ContextDescription</p>
+                                </div>
+                            </div>
+                            <div class="fv-connector" aria-hidden="true"></div>
+                        }
+
+                        @* Requirements step *@
+                        @if (story.Requirements.Count > 0)
+                        {
+                            <div class="fv-step fv-step-requirements">
+                                <div class="fv-step-header">
+                                    <span class="fv-step-icon" aria-hidden="true">📋</span>
+                                    <span class="fv-step-label">Requirements</span>
+                                    <span class="fv-step-count">@story.Requirements.Count</span>
+                                </div>
+                                <div class="fv-step-body">
+                                    @foreach (var req in story.Requirements)
+                                    {
+                                        var itemKey = req.CandidateId?.ToString() ?? (req.FrId ?? req.Title);
+                                        var isItemExpanded = _expandedItems.GetValueOrDefault(itemKey);
+
+                                        <div class="fv-req-item @(req.HasTests ? "has-tests" : "no-tests") @(isItemExpanded ? "is-expanded" : "")"
+                                             role="button"
+                                             tabindex="0"
+                                             aria-expanded="@isItemExpanded"
+                                             @onclick="() => ToggleItem(itemKey)"
+                                             @onkeydown="@(e => { if (e.Key == "Enter" || e.Key == " ") ToggleItem(itemKey); })">
+                                            <div class="fv-req-item-header">
+                                                @if (req.FrId is not null)
+                                                {
+                                                    <span class="fv-fr-badge">@req.FrId</span>
+                                                }
+                                                <span class="fv-req-title">@req.Title</span>
+                                                @if (req.HasTests)
+                                                {
+                                                    <span class="fv-item-status fv-status-covered" title="@req.LinkedTests.Count test(s) linked">
+                                                        ✓ @req.LinkedTests.Count
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="fv-item-status fv-status-missing" title="No linked tests">!</span>
+                                                }
+                                            </div>
+
+                                            @if (isItemExpanded)
+                                            {
+                                                @if (req.LinkedTests.Count > 0)
+                                                {
+                                                    <div class="fv-req-detail">
+                                                        <div class="fv-detail-section-label">Tests (@req.LinkedTests.Count)</div>
+                                                        @foreach (var t in req.LinkedTests)
+                                                        {
+                                                            <div class="fv-detail-test-item">
+                                                                <span class="fv-test-dot" aria-hidden="true"></span>
+                                                                @if (t.HasBdd)
+                                                                {
+                                                                    <div class="fv-bdd-block">
+                                                                        @if (t.BddGiven is not null)
+                                                                        {
+                                                                            <div><span class="fv-bdd-kw fv-bdd-given">Given</span> @t.BddGiven</div>
+                                                                        }
+                                                                        @if (t.BddWhen is not null)
+                                                                        {
+                                                                            <div><span class="fv-bdd-kw fv-bdd-when">When</span> @t.BddWhen</div>
+                                                                        }
+                                                                        @if (t.BddThen is not null)
+                                                                        {
+                                                                            <div><span class="fv-bdd-kw fv-bdd-then">Then</span> @t.BddThen</div>
+                                                                        }
+                                                                    </div>
+                                                                }
+                                                                else
+                                                                {
+                                                                    <span>@t.Title</span>
+                                                                }
+                                                            </div>
+                                                        }
+                                                        @if (req.LinkedScIds.Count > 0)
+                                                        {
+                                                            <div class="fv-detail-section-label">Success Criteria</div>
+                                                            <div class="fv-sc-chips">
+                                                                @foreach (var scId in req.LinkedScIds)
+                                                                {
+                                                                    <span class="fv-sc-badge">@scId</span>
+                                                                }
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="fv-req-detail fv-req-detail-empty">
+                                                        <span class="fv-empty-hint">No linked tests found for this requirement</span>
+                                                    </div>
+                                                }
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                            <div class="fv-connector" aria-hidden="true"></div>
+                        }
+
+                        @* Tests step *@
+                        @if (story.AllTests.Count > 0)
+                        {
+                            <div class="fv-step fv-step-tests">
+                                <div class="fv-step-header">
+                                    <span class="fv-step-icon" aria-hidden="true">🧪</span>
+                                    <span class="fv-step-label">Acceptance Tests</span>
+                                    <span class="fv-step-count">@story.AllTests.Count</span>
+                                </div>
+                                <div class="fv-step-body">
+                                    @foreach (var test in story.AllTests)
+                                    {
+                                        var testKey     = test.CandidateId?.ToString() ?? test.Title;
+                                        var testItemKey = "test-" + testKey;
+                                        var isTestExpanded = _expandedItems.GetValueOrDefault(testItemKey);
+
+                                        <div class="fv-test-item @(isTestExpanded && test.HasBdd ? "is-expanded" : "") @(test.HasBdd ? "fv-test-expandable" : "")"
+                                             role="@(test.HasBdd ? "button" : "listitem")"
+                                             tabindex="@(test.HasBdd ? "0" : "-1")"
+                                             @onclick="() => ToggleItem(testItemKey)"
+                                             @onkeydown="@(e => { if (e.Key == "Enter" || e.Key == " ") ToggleItem(testItemKey); })">
+                                            <div class="fv-test-item-header">
+                                                <span class="fv-test-dot" aria-hidden="true"></span>
+                                                <span class="fv-test-title">@test.Title</span>
+                                                @if (test.LinkedFrId is not null)
+                                                {
+                                                    <span class="fv-fr-link-badge">@test.LinkedFrId</span>
+                                                }
+                                                @if (test.HasBdd)
+                                                {
+                                                    <span class="fv-bdd-indicator" title="Has Given/When/Then">GWT</span>
+                                                }
+                                            </div>
+                                            @if (isTestExpanded && test.HasBdd)
+                                            {
+                                                <div class="fv-bdd-detail">
+                                                    @if (test.BddGiven is not null)
+                                                    {
+                                                        <div><span class="fv-bdd-kw fv-bdd-given">Given</span> @test.BddGiven</div>
+                                                    }
+                                                    @if (test.BddWhen is not null)
+                                                    {
+                                                        <div><span class="fv-bdd-kw fv-bdd-when">When</span> @test.BddWhen</div>
+                                                    }
+                                                    @if (test.BddThen is not null)
+                                                    {
+                                                        <div><span class="fv-bdd-kw fv-bdd-then">Then</span> @test.BddThen</div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                            @if (story.SuccessCriteria.Count > 0)
+                            {
+                                <div class="fv-connector" aria-hidden="true"></div>
+                            }
+                        }
+
+                        @* Success Criteria step *@
+                        @if (story.SuccessCriteria.Count > 0)
+                        {
+                            <div class="fv-step fv-step-sc">
+                                <div class="fv-step-header">
+                                    <span class="fv-step-icon" aria-hidden="true">✅</span>
+                                    <span class="fv-step-label">Success Criteria</span>
+                                    <span class="fv-step-count">@story.SuccessCriteria.Count</span>
+                                </div>
+                                <div class="fv-step-body">
+                                    @foreach (var sc in story.SuccessCriteria)
+                                    {
+                                        <div class="fv-sc-item">
+                                            <span class="fv-sc-badge-sm">@sc.SpecItemId</span>
+                                            <span class="fv-sc-title" title="@sc.Excerpt">@sc.Title</span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @* Tasks placeholder (not available in this context) *@
+                        @if (story.Requirements.Count > 0 || story.AllTests.Count > 0)
+                        {
+                            <div class="fv-connector fv-connector-dashed" aria-hidden="true"></div>
+                            <div class="fv-step fv-step-tasks">
+                                <div class="fv-step-header">
+                                    <span class="fv-step-icon" aria-hidden="true">📌</span>
+                                    <span class="fv-step-label">Implementation Tasks</span>
+                                    <span class="fv-step-count fv-count-na">—</span>
+                                </div>
+                                <div class="fv-step-body fv-step-body-placeholder">
+                                    <span class="fv-placeholder-hint">Task data available in Task Explorer</span>
+                                </div>
+                            </div>
+                        }
+
+                    </div>
+                }
+            </div>
+        }
+    }
+
+</div>
+
+@code {
+    [Parameter] public string? SpecMarkdown { get; set; }
+    [Parameter] public IReadOnlyList<ExtractionCandidate> Candidates { get; set; } = [];
+    [Parameter] public IReadOnlyList<CandidateLinkEntry> Links { get; set; } = [];
+
+    private FlowModel? _model;
+    private string? _lastSpec;
+    private IReadOnlyList<ExtractionCandidate>? _lastCandidates;
+    private IReadOnlyList<CandidateLinkEntry>? _lastLinks;
+
+    private readonly Dictionary<string, bool> _expanded      = [];
+    private readonly Dictionary<string, bool> _expandedItems = [];
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_lastSpec, SpecMarkdown) &&
+            ReferenceEquals(_lastCandidates, Candidates) &&
+            ReferenceEquals(_lastLinks, Links))
+            return;
+
+        _lastSpec       = SpecMarkdown;
+        _lastCandidates = Candidates;
+        _lastLinks      = Links;
+
+        _model = FlowModelBuilder.Build(SpecMarkdown, Candidates, Links);
+        _expanded.Clear();
+        _expandedItems.Clear();
+
+        // Expand the first mapped story by default
+        var first = _model.Stories.FirstOrDefault(s => !s.IsUnmapped) ?? _model.Stories.FirstOrDefault();
+        if (first is not null) _expanded[first.Key] = true;
+    }
+
+    private void ToggleLane(string key) =>
+        _expanded[key] = !_expanded.GetValueOrDefault(key);
+
+    private void ToggleItem(string key) =>
+        _expandedItems[key] = !_expandedItems.GetValueOrDefault(key);
+
+    private static string CovLabel(FlowCoverageStatus s) => s switch
+    {
+        FlowCoverageStatus.Covered        => "Covered",
+        FlowCoverageStatus.Partial        => "Partial",
+        FlowCoverageStatus.MissingTests   => "Missing Tests",
+        FlowCoverageStatus.NoRequirements => "No Requirements",
+        _ => s.ToString(),
+    };
+}
