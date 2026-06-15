@@ -571,4 +571,73 @@ public class ViewBehaviorTests : BunitContext
         cut.Markup.Should().Contain("Barn",
             "All Key Entities must be extracted — none should be silently dropped by ClassifyEntityNode");
     }
+
+    // =========================================================================
+    // T18 — SpecExplorer: candidate count strip shows extraction-derived counts
+    // =========================================================================
+
+    [Fact]
+    public void SpecExplorer_CandidateCountStripShowsExtractionCounts()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search",     ScenarioKind.Requirement,          "US1: Search"),
+            MakeCandidate("FR-002: The system MUST display results",  ScenarioKind.Requirement,          "US1: Search"),
+            MakeCandidate("Test: search returns results",             ScenarioKind.Test,                  "US1: Search"),
+            MakeCandidate("How should timeout work?",                 ScenarioKind.NeedsClarification,    "US1: Search"),
+        ];
+
+        const string specMd = """
+            # Spec
+
+            ## US1: Search
+
+            **FR-001**: The system MUST allow search.
+            **FR-002**: The system MUST display results.
+            """;
+
+        var cut = Render<SpecExplorerPanel>(p =>
+        {
+            p.Add(c => c.InitialSpecMarkdown, specMd);
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.IsEmbeddedInReview, true);
+        });
+
+        var strip = cut.Find("[data-testid='se-candidate-strip']");
+        strip.TextContent.Should().Contain("Requirements (2)", "strip must show candidate-derived requirement count");
+        strip.TextContent.Should().Contain("Tests (1)",        "strip must show candidate-derived test count");
+        strip.TextContent.Should().Contain("Clarifications (1)", "strip must show candidate-derived clarification count");
+    }
+
+    // =========================================================================
+    // T19 — SpecExplorer: badge labels use full names not cryptic abbreviations
+    // =========================================================================
+
+    [Fact]
+    public void SpecExplorer_BadgeLabelsAreFullNamesNotAbbreviations()
+    {
+        const string specMd = """
+            # Module
+
+            ## US1: Search
+
+            **FR-001**: The system MUST allow search.
+            **FR-002**: The system MUST display results.
+            """;
+
+        var cut = Render<SpecExplorerPanel>(p =>
+        {
+            p.Add(c => c.InitialSpecMarkdown, specMd);
+            p.Add(c => c.IsEmbeddedInReview, true);
+        });
+
+        var metaChips = cut.FindAll(".se-meta-chip");
+        metaChips.Should().NotBeEmpty("there should be badge chips on the heading that contains requirements");
+
+        var chipTexts = metaChips.Select(c => c.TextContent).ToList();
+        chipTexts.Should().NotContain(t => t.Trim() == "2 req",
+            "abbreviation 'req' must be replaced with 'Requirements (N)'");
+        chipTexts.Should().Contain(t => t.Contains("Requirements"),
+            "full label 'Requirements' must appear in badge chips");
+    }
 }

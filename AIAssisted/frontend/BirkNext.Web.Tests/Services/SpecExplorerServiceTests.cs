@@ -373,6 +373,165 @@ public sealed class SpecExplorerServiceTests
     }
 
     // =========================================================================
+    // T11 — Root level contains only heading nodes, never artifact nodes
+    // =========================================================================
+
+    [Fact]
+    public void Parse_never_places_artifact_nodes_at_document_root()
+    {
+        const string md = """
+            # Module
+
+            ## Requirements
+
+            **FR-001**: The system MUST allow search.
+            **FR-002**: The system MUST display results.
+
+            ## Clarifications
+
+            ### Session 2026-03-06
+            - Q: How should timeout work? → A: 30 seconds.
+            """;
+
+        var tree = SpecExplorerService.Parse(md);
+
+        tree.Roots.Should().AllSatisfy(root =>
+            root.HeadingLevel.Should().BeGreaterThan(0,
+                "all root nodes must be heading nodes — requirements, tests, and clarifications must be nested under headings"));
+    }
+
+    // =========================================================================
+    // T12 — Clarifications in separate sections stay under their own headings
+    // =========================================================================
+
+    [Fact]
+    public void Clarifications_in_separate_sections_stay_under_their_respective_headings()
+    {
+        const string md = """
+            # Spec
+
+            ## User Story 1
+
+            ### Clarifications
+            - Q: What format for US1? → A: JSON.
+
+            ## User Story 2
+
+            ### Clarifications
+            - Q: What timeout for US2? → A: 30 seconds.
+            """;
+
+        var tree = SpecExplorerService.Parse(md);
+
+        var us1 = AllDescendants(tree).First(n => n.Title == "User Story 1");
+        var us2 = AllDescendants(tree).First(n => n.Title == "User Story 2");
+
+        var us1Clrs = DescendantsOf(us1).Where(n => n.NodeType == SpecNodeType.QaPair).ToList();
+        var us2Clrs = DescendantsOf(us2).Where(n => n.NodeType == SpecNodeType.QaPair).ToList();
+
+        us1Clrs.Should().HaveCount(1, "US1's clarification must stay under US1, not bleed into US2");
+        us2Clrs.Should().HaveCount(1, "US2's clarification must stay under US2, not bleed into US1");
+        us1Clrs[0].QuestionText.Should().Contain("US1");
+        us2Clrs[0].QuestionText.Should().Contain("US2");
+    }
+
+    // =========================================================================
+    // T13 — Requirements nest under their section heading, not at document root
+    // =========================================================================
+
+    [Fact]
+    public void Requirements_nest_under_their_section_heading_not_at_root()
+    {
+        const string md = """
+            # Feature
+
+            ## Functional Requirements
+
+            **FR-001**: The system MUST allow search.
+            **FR-002**: The system MUST display results.
+            """;
+
+        var tree = SpecExplorerService.Parse(md);
+
+        tree.Roots.Should().AllSatisfy(root =>
+            root.Children.Should().NotContain(c => c.NodeType == SpecNodeType.Requirement,
+                "requirements must be under their section heading, never a direct child of the root Module"));
+
+        var funcReqs = AllDescendants(tree).First(n => n.Title == "Functional Requirements");
+        DescendantsOf(funcReqs)
+            .Where(n => n.NodeType == SpecNodeType.Requirement)
+            .Should().HaveCount(2, "both FR-001 and FR-002 must be descendants of Functional Requirements");
+    }
+
+    // =========================================================================
+    // T14 — Heading badge counts accurately reflect descendant artifact counts
+    // =========================================================================
+
+    [Fact]
+    public void Heading_badge_counts_accurately_reflect_descendant_artifact_counts()
+    {
+        const string md = """
+            # Module
+
+            ## Section A
+
+            **FR-001**: Requirement one.
+            **FR-002**: Requirement two.
+
+            ## Section B
+
+            **FR-003**: Requirement three.
+            """;
+
+        var tree = SpecExplorerService.Parse(md);
+
+        var sectionA = AllDescendants(tree).First(n => n.Title == "Section A");
+        var sectionB = AllDescendants(tree).First(n => n.Title == "Section B");
+
+        sectionA.ReqCount.Should().Be(2, "Section A has FR-001 and FR-002");
+        sectionB.ReqCount.Should().Be(1, "Section B has only FR-003");
+        tree.Roots[0].ReqCount.Should().Be(3, "the root Module has all 3 requirements across both sections");
+    }
+
+    // =========================================================================
+    // T15 — Parse tree depth mirrors markdown heading levels
+    // =========================================================================
+
+    [Fact]
+    public void Parse_tree_depth_mirrors_markdown_heading_levels()
+    {
+        const string md = """
+            # Module
+
+            ## Section A
+
+            ### Subsection A1
+
+            **FR-001**: The system MUST do something.
+
+            ## Section B
+            """;
+
+        var tree = SpecExplorerService.Parse(md);
+
+        tree.Roots.Should().HaveCount(1, "the single H1 heading is the only root");
+        var module = tree.Roots[0];
+        module.HeadingLevel.Should().Be(1);
+        module.Title.Should().Be("Module");
+
+        var h2Nodes = module.Children.Where(c => c.HeadingLevel == 2).ToList();
+        h2Nodes.Should().HaveCount(2, "two H2 sections directly under Module");
+        h2Nodes[0].Title.Should().Be("Section A");
+        h2Nodes[1].Title.Should().Be("Section B");
+
+        var h3 = h2Nodes[0].Children.First(c => c.HeadingLevel == 3);
+        h3.Title.Should().Be("Subsection A1");
+
+        var req = DescendantsOf(h3).First(n => n.NodeType == SpecNodeType.Requirement);
+        req.SpecItemId.Should().Be("FR-001");
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
 

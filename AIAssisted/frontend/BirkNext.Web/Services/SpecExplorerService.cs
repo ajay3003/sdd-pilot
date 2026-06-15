@@ -1176,7 +1176,8 @@ public static class SpecExplorerService
         }
         else
         {
-            // No context headings — normalize requirements globally by FR-ID
+            // No context headings — normalize requirements globally by FR-ID and wrap under a
+            // synthetic root heading so no artifact node appears at document root level.
             var seenFrIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var normalized = candidates
                 .Where(c =>
@@ -1186,7 +1187,9 @@ public static class SpecExplorerService
                     return !m.Success || seenFrIds.Add(m.Value);
                 })
                 .ToList();
-            AddKindSubGroups(roots, normalized, headingLevel: 2, ref reqCount, ref testCount, ref clrCount);
+            var wrapper = new SpecNode { Title = "Extracted Artifacts", NodeType = SpecNodeType.Section, HeadingLevel = 2 };
+            AddKindSubGroups(wrapper.Children, normalized, headingLevel: 3, ref reqCount, ref testCount, ref clrCount);
+            if (wrapper.Children.Count > 0) roots.Add(wrapper);
         }
 
         foreach (var root in roots) PropagateStats(root);

@@ -174,6 +174,19 @@
             </div>
         }
 
+        @if (Candidates is { Count: > 0 })
+        {
+            var cReqs = Candidates.Count(c => c.Classification == ScenarioKind.Requirement);
+            var cTests = Candidates.Count(c => c.Classification == ScenarioKind.Test);
+            var cClrs = Candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification);
+            <div class="se-candidate-strip" data-testid="se-candidate-strip">
+                <span class="se-candidate-label">Extracted:</span>
+                <span class="se-cand-chip se-cand-req">Requirements (@cReqs)</span>
+                <span class="se-cand-chip se-cand-test">Tests (@cTests)</span>
+                @if (cClrs > 0) { <span class="se-cand-chip se-cand-clr">Clarifications (@cClrs)</span> }
+            </div>
+        }
+
         <!-- Controls bar -->
         <div class="se-controls">
             <div class="se-search-wrap">
@@ -191,6 +204,12 @@
             </div>
             <button class="se-ctrl-btn" @onclick="ExpandAll">Expand All</button>
             <button class="se-ctrl-btn" @onclick="CollapseAll">Collapse All</button>
+            @if (_hiddenCount > 0)
+            {
+                <button class="se-ctrl-btn se-ctrl-show-hidden" @onclick="ShowAllHidden" title="Restore all hidden nodes">
+                    Show Hidden (@_hiddenCount)
+                </button>
+            }
         </div>
 
         <!-- Main layout: tree/map + details panel -->
@@ -298,12 +317,12 @@
                             @if (isHeading && (node.ReqCount > 0 || node.UserStoryCount > 0 || node.TestCount > 0 || node.ClarCount > 0 || node.ScCount > 0 || node.DecisionCount > 0))
                             {
                                 <span class="se-meta-chips">
-                                    @if (node.UserStoryCount > 0) { <span class="se-meta-chip se-mc-us">@node.UserStoryCount us</span> }
-                                    @if (node.ReqCount > 0) { <span class="se-meta-chip se-mc-req">@node.ReqCount req</span> }
-                                    @if (node.TestCount > 0) { <span class="se-meta-chip se-mc-test">@node.TestCount tests</span> }
-                                    @if (node.ScCount > 0) { <span class="se-meta-chip se-mc-sc">@node.ScCount sc</span> }
-                                    @if (node.ClarCount > 0) { <span class="se-meta-chip se-mc-clr">@node.ClarCount clr</span> }
-                                    @if (node.DecisionCount > 0) { <span class="se-meta-chip se-mc-decision">@node.DecisionCount dec</span> }
+                                    @if (node.UserStoryCount > 0) { <span class="se-meta-chip se-mc-us">User Stories (@node.UserStoryCount)</span> }
+                                    @if (node.ReqCount > 0) { <span class="se-meta-chip se-mc-req">Requirements (@node.ReqCount)</span> }
+                                    @if (node.TestCount > 0) { <span class="se-meta-chip se-mc-test">Tests (@node.TestCount)</span> }
+                                    @if (node.ScCount > 0) { <span class="se-meta-chip se-mc-sc">Success Criteria (@node.ScCount)</span> }
+                                    @if (node.ClarCount > 0) { <span class="se-meta-chip se-mc-clr">Clarifications (@node.ClarCount)</span> }
+                                    @if (node.DecisionCount > 0) { <span class="se-meta-chip se-mc-decision">Decisions (@node.DecisionCount)</span> }
                                 </span>
                             }
 
@@ -313,6 +332,13 @@
                                     @CoverageIcon(node.Coverage)
                                 </span>
                             }
+
+                            <button class="se-hide-btn"
+                                    title="Hide this node from view"
+                                    @onclick:stopPropagation="true"
+                                    @onclick="() => HideNode(node)">
+                                Hide
+                            </button>
                         </div>
                     }
                 }
@@ -327,7 +353,7 @@
                     <div class="se-details">
                         <div class="se-details-header">
                             <span class="se-details-type">@NodeTypeLabel(selected.NodeType)</span>
-                            <button class="se-details-close" @onclick='() => _selectedNodeId = null' aria-label="Close details">×</button>
+                            <button class="se-details-close" @onclick='() => _selectedNodeId = null' aria-label="Close details panel">Close</button>
                         </div>
 
                         <h3 class="se-details-title">@selected.Title</h3>
@@ -398,17 +424,23 @@
                         }
 
                         @* ── Section contents summary ──────────────────────────── *@
+                        @if (selected.HeadingLevel > 0 && selected.TotalDescendants == 0)
+                        {
+                            <div class="se-details-section">
+                                <span class="se-no-artifacts">No extracted artifacts in this section.</span>
+                            </div>
+                        }
                         @if (selected.HeadingLevel > 0 && selected.TotalDescendants > 0)
                         {
                             <div class="se-details-section">
                                 <div class="se-details-label">Contents</div>
                                 <div class="se-details-counts">
-                                    @if (selected.UserStoryCount > 0) { <span class="se-det-chip se-mc-us">@selected.UserStoryCount user stories</span> }
-                                    @if (selected.ReqCount > 0) { <span class="se-det-chip se-mc-req">@selected.ReqCount req</span> }
-                                    @if (selected.TestCount > 0) { <span class="se-det-chip se-mc-test">@selected.TestCount tests</span> }
-                                    @if (selected.ClarCount > 0) { <span class="se-det-chip se-mc-clr">@selected.ClarCount clarifications</span> }
-                                    @if (selected.ScCount > 0) { <span class="se-det-chip se-mc-sc">@selected.ScCount success criteria</span> }
-                                    @if (selected.DecisionCount > 0) { <span class="se-det-chip se-mc-decision">@selected.DecisionCount decisions</span> }
+                                    @if (selected.UserStoryCount > 0) { <span class="se-det-chip se-mc-us">@selected.UserStoryCount User @(selected.UserStoryCount == 1 ? "Story" : "Stories")</span> }
+                                    @if (selected.ReqCount > 0) { <span class="se-det-chip se-mc-req">@selected.ReqCount @(selected.ReqCount == 1 ? "Requirement" : "Requirements")</span> }
+                                    @if (selected.TestCount > 0) { <span class="se-det-chip se-mc-test">@selected.TestCount @(selected.TestCount == 1 ? "Test" : "Tests")</span> }
+                                    @if (selected.ClarCount > 0) { <span class="se-det-chip se-mc-clr">@selected.ClarCount @(selected.ClarCount == 1 ? "Clarification" : "Clarifications")</span> }
+                                    @if (selected.ScCount > 0) { <span class="se-det-chip se-mc-sc">@selected.ScCount @(selected.ScCount == 1 ? "Success Criterion" : "Success Criteria")</span> }
+                                    @if (selected.DecisionCount > 0) { <span class="se-det-chip se-mc-decision">@selected.DecisionCount @(selected.DecisionCount == 1 ? "Decision" : "Decisions")</span> }
                                 </div>
                             </div>
                         }
@@ -610,6 +642,8 @@
     private string _searchQuery = string.Empty;
     private bool _isMapView;
     private List<(SpecNode Node, int Depth, bool IsMatch)> _flatCache = [];
+    private HashSet<string> _hiddenIds = [];
+    private int _hiddenCount;
 
     protected override void OnParametersSet()
     {
@@ -678,13 +712,35 @@
         _searchQuery = string.Empty;
         _isMapView = false;
         _flatCache = [];
+        _hiddenIds = [];
+        _hiddenCount = 0;
         _importRef?.Reset();
     }
 
     private void RefreshFlatCache()
     {
         if (_tree is null) { _flatCache = []; return; }
-        _flatCache = SpecExplorerService.GetFlatVisible(_tree.Roots, _expandedIds, _searchQuery);
+        var all = SpecExplorerService.GetFlatVisible(_tree.Roots, _expandedIds, _searchQuery);
+        _flatCache = _hiddenIds.Count == 0
+            ? all
+            : all.Where(r => !_hiddenIds.Contains(r.Node.Id)).ToList();
+    }
+
+    private void HideNode(SpecNode node)
+    {
+        if (_hiddenIds.Add(node.Id)) _hiddenCount++;
+        foreach (var descendant in GetAllNodes(node.Children))
+            _hiddenIds.Add(descendant.Id);
+        _expandedIds.Remove(node.Id);
+        if (_selectedNodeId == node.Id) _selectedNodeId = null;
+        RefreshFlatCache();
+    }
+
+    private void ShowAllHidden()
+    {
+        _hiddenIds.Clear();
+        _hiddenCount = 0;
+        RefreshFlatCache();
     }
 
     private void ApplyCoverageOverlay()

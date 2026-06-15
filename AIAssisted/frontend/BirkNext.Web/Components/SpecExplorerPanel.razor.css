@@ -422,6 +422,73 @@
 .se-mc-test { background: rgba(52, 211, 153, 0.12); color: #6ee7b7; }
 .se-mc-clr { background: rgba(251, 191, 36, 0.12); color: #fcd34d; }
 .se-mc-sc { background: rgba(244, 114, 182, 0.12); color: #f9a8d4; }
+.se-mc-decision { background: rgba(148, 163, 184, 0.12); color: #94a3b8; }
+
+/* ── Candidate extraction count strip ───────────────────────────────────── */
+
+.se-candidate-strip {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    padding: 0.35rem 0.6rem;
+    margin-bottom: 0.6rem;
+    background: rgba(99, 102, 241, 0.06);
+    border: 1px solid rgba(99, 102, 241, 0.18);
+    border-radius: 0.375rem;
+    font-size: 0.72rem;
+}
+
+.se-candidate-label {
+    color: var(--clr-text-subtle);
+    font-weight: 500;
+    margin-right: 0.2rem;
+}
+
+.se-cand-chip {
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 0.12rem 0.45rem;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.se-cand-req  { background: rgba(96, 165, 250, 0.15); color: #93c5fd; }
+.se-cand-test { background: rgba(52, 211, 153, 0.15); color: #6ee7b7; }
+.se-cand-clr  { background: rgba(251, 191, 36, 0.15); color: #fcd34d; }
+
+/* ── Empty section notice (details panel) ───────────────────────────────── */
+
+.se-no-artifacts {
+    font-size: 0.78rem;
+    color: var(--clr-text-subtle);
+    font-style: italic;
+}
+
+/* ── Hide node button ────────────────────────────────────────────────────── */
+
+.se-hide-btn {
+    display: none;
+    background: transparent;
+    border: 1px solid var(--clr-border);
+    border-radius: 0.25rem;
+    color: var(--clr-text-subtle);
+    font-size: 0.62rem;
+    padding: 0.1rem 0.4rem;
+    cursor: pointer;
+    margin-left: auto;
+    flex-shrink: 0;
+    transition: color 0.12s, border-color 0.12s;
+}
+
+.se-row:hover .se-hide-btn { display: inline-block; }
+.se-hide-btn:hover { color: var(--clr-text-primary); border-color: var(--clr-text-subtle); }
+
+.se-ctrl-show-hidden {
+    color: #fcd34d;
+    border-color: rgba(251, 191, 36, 0.3);
+}
+.se-ctrl-show-hidden:hover { color: #f59e0b; background: rgba(251, 191, 36, 0.06); }
 
 .se-coverage {
     font-size: 0.85rem;
@@ -517,11 +584,11 @@
 
 .se-details-close {
     background: transparent;
-    border: none;
+    border: 1px solid var(--clr-border);
     color: var(--clr-text-subtle);
-    font-size: 1rem;
+    font-size: 0.72rem;
     cursor: pointer;
-    padding: 0.1rem 0.3rem;
+    padding: 0.15rem 0.55rem;
     border-radius: 0.25rem;
     line-height: 1;
 }
