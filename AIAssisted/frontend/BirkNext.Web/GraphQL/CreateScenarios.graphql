@@ -18,5 +18,12 @@ mutation CreateScenarios($input: CreateScenariosInput!) {
     successCount
     failureCount
     correlationId
+    suggestionResult {
+      totalGenerated
+      highConfidenceCount
+      needsReviewCount
+      suggestionsAvailable
+      message
+    }
   }
 }

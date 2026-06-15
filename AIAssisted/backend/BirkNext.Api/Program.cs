@@ -62,6 +62,7 @@ builder.Services.AddScoped<ReviewedCandidateService>();
 builder.Services.AddScoped<CandidateLinkService>();
 builder.Services.AddScoped<QaDeltaReviewService>();
 builder.Services.AddScoped<TraceLinkService>();
+builder.Services.AddScoped<TraceabilitySuggestionService>();
 builder.Services.AddScoped<ImpactAnalysisService>();
 builder.Services.AddScoped<AIChangeAuditService>();
 builder.Services.AddScoped<SpecDriftDetectionService>();
@@ -107,6 +108,9 @@ builder.Services
     .AddType<CodeSummaryObjectType>()
     .AddType<QaScoreDeductionObjectType>()
     .AddType<QaAuditReportObjectType>()
+    .AddType<TraceabilitySuggestionObjectType>()
+    .AddType<TraceabilitySuggestionItemObjectType>()
+    .AddType<SuggestionGenerationResultObjectType>()
     .AddDiagnosticEventListener<OperationDiagnosticEventListener>()
     .ConfigureSchema(b => b.ModifyOptions(o => o.UseXmlDocumentation = true));
 

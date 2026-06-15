@@ -5,5 +5,8 @@ query GetCoverageSummary($projectId: String!) {
         notCoveredRequirements
         coveragePercent
         orphanTests
+        suggestedCoverageRequirements
+        pendingSuggestionCount
+        highConfidenceSuggestionCount
     }
 }

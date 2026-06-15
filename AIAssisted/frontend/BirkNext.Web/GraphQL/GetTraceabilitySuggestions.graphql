@@ -1,0 +1,19 @@
+query GetTraceabilitySuggestions($projectId: String!) {
+    traceabilitySuggestions(projectId: $projectId) {
+        suggestion {
+            id
+            sourceId
+            targetId
+            linkType
+            status
+            confidence
+            reason
+            signalsJson
+            createdAt
+            confirmedAt
+            rejectedAt
+        }
+        sourceTitle
+        targetTitle
+    }
+}

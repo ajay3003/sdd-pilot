@@ -12,6 +12,7 @@ public class AppDbContext : DbContext
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
     public DbSet<QaDeltaReview> QaDeltaReviews => Set<QaDeltaReview>();
     public DbSet<TraceLink> TraceLinks => Set<TraceLink>();
+    public DbSet<TraceabilitySuggestion> TraceabilitySuggestions => Set<TraceabilitySuggestion>();
     public DbSet<CodeFile> CodeFiles => Set<CodeFile>();
     public DbSet<CodeLink> CodeLinks => Set<CodeLink>();
 
@@ -259,6 +260,49 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(t => new { t.ProjectId, t.SourceKind, t.SourceId })
                 .HasDatabaseName("ix_trace_links_project_source");
+        });
+
+        modelBuilder.Entity<TraceabilitySuggestion>(entity =>
+        {
+            entity.ToTable("traceability_suggestions");
+
+            entity.Property(s => s.Id).HasColumnName("id");
+
+            entity.Property(s => s.ProjectId)
+                .HasColumnName("project_id")
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(s => s.SourceId).HasColumnName("source_id").IsRequired();
+            entity.Property(s => s.SourceKind).HasColumnName("source_kind").HasMaxLength(50).IsRequired();
+            entity.Property(s => s.TargetId).HasColumnName("target_id").IsRequired();
+            entity.Property(s => s.TargetKind).HasColumnName("target_kind").HasMaxLength(50).IsRequired();
+
+            entity.Property(s => s.LinkType)
+                .HasColumnName("link_type")
+                .HasMaxLength(50)
+                .IsRequired()
+                .HasConversion<string>();
+
+            entity.Property(s => s.Status)
+                .HasColumnName("status")
+                .HasMaxLength(30)
+                .IsRequired()
+                .HasConversion<string>();
+
+            entity.Property(s => s.Confidence).HasColumnName("confidence").IsRequired();
+            entity.Property(s => s.Reason).HasColumnName("reason").HasColumnType("text").IsRequired();
+            entity.Property(s => s.SignalsJson).HasColumnName("signals_json").HasColumnType("text").IsRequired();
+            entity.Property(s => s.CreatedAt).HasColumnName("created_at");
+            entity.Property(s => s.ConfirmedAt).HasColumnName("confirmed_at");
+            entity.Property(s => s.RejectedAt).HasColumnName("rejected_at");
+
+            entity.HasIndex(s => new { s.ProjectId, s.Status })
+                .HasDatabaseName("ix_traceability_suggestions_project_status");
+
+            entity.HasIndex(s => new { s.ProjectId, s.SourceId, s.TargetId, s.LinkType })
+                .HasDatabaseName("ix_traceability_suggestions_pair")
+                .IsUnique();
         });
 
         modelBuilder.Entity<CodeFile>(entity =>

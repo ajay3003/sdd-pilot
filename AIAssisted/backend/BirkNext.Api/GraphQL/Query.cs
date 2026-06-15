@@ -68,13 +68,37 @@ public class Query
         return await traceLinkService.GetTraceabilityMatrixAsync(projectId, cancellationToken);
     }
 
-    /// <summary>Returns aggregate coverage statistics for the given project.</summary>
+    /// <summary>Returns aggregate coverage statistics for the given project, including suggestion counts.</summary>
     public async Task<CoverageSummary> CoverageSummaryAsync(
         string projectId,
         [Service] TraceLinkService traceLinkService,
+        [Service] TraceabilitySuggestionService suggestionService,
         CancellationToken cancellationToken)
     {
-        return await traceLinkService.GetCoverageSummaryAsync(projectId, cancellationToken);
+        var summary = await traceLinkService.GetCoverageSummaryAsync(projectId, cancellationToken);
+        var (total, high) = await suggestionService.GetPendingCountsAsync(projectId, cancellationToken);
+        var suggested = await suggestionService.GetSuggestedCoverageCountAsync(projectId, cancellationToken);
+
+        return new CoverageSummary
+        {
+            TotalRequirements = summary.TotalRequirements,
+            CoveredRequirements = summary.CoveredRequirements,
+            NotCoveredRequirements = summary.NotCoveredRequirements,
+            CoveragePercent = summary.CoveragePercent,
+            OrphanTests = summary.OrphanTests,
+            SuggestedCoverageRequirements = suggested,
+            PendingSuggestionCount = total,
+            HighConfidenceSuggestionCount = high,
+        };
+    }
+
+    /// <summary>Returns all pending traceability suggestions for the given project.</summary>
+    public async Task<IReadOnlyList<SuggestionItem>> TraceabilitySuggestionsAsync(
+        string projectId,
+        [Service] TraceabilitySuggestionService suggestionService,
+        CancellationToken cancellationToken)
+    {
+        return await suggestionService.GetSuggestionsAsync(projectId, cancellationToken);
     }
 
     /// <summary>

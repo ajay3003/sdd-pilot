@@ -337,6 +337,42 @@ public sealed class SpecExplorerServiceTests
     }
 
     // =========================================================================
+    // T10 — Metadata lines inside H1 do not inflate requirement or clarification counts
+    // =========================================================================
+
+    [Fact]
+    public void Metadata_lines_inside_h1_do_not_inflate_requirement_or_clarification_counts()
+    {
+        const string md = """
+            # Feature Specification: Person Module Core
+
+            **Feature Branch**: `001-person-module`
+            **Created**: 2026-03-06
+            **Status**: Draft
+            **Source**: `docs/person-func-requirements-no.md`
+
+            ## Requirements
+
+            ### Functional Requirements
+
+            **FR-001**: The system MUST allow caseworkers to search for children by first name, last name, and date of birth.
+
+            **FR-002**: The system MUST display the search result as a list of matching persons.
+
+            """;
+
+        var tree = SpecExplorerService.Parse(md);
+
+        tree.Health.Requirements.Should().Be(2, "only the two explicit FR blocks are requirements");
+        tree.Health.Clarifications.Should().Be(0, "metadata lines must not become clarifications");
+
+        var metaNodes = AllDescendants(tree)
+            .Where(n => n.NodeType == SpecNodeType.Metadata)
+            .ToList();
+        metaNodes.Should().HaveCount(4, "four frontmatter-style lines: Feature Branch, Created, Status, Source");
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
 

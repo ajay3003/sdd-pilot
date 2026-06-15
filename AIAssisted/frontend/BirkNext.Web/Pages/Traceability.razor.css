@@ -276,3 +276,38 @@
     color: var(--clr-text-subtle, #94a3b8);
     margin-right: 0.1rem;
 }
+
+/* ─── Coverage compare row (confirmed vs suggested) ────────────────────── */
+
+.coverage-compare-row {
+    display: flex;
+    align-items: stretch;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.coverage-compare-card {
+    flex: 1;
+    min-width: 180px;
+    cursor: default;
+    pointer-events: none;
+}
+
+.coverage-compare-cta {
+    flex: 1;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid #bfdbfe;
+    border-radius: var(--radius-lg, 8px);
+    background: #eff6ff;
+    font-size: 0.84rem;
+    color: var(--clr-text-body, #1e293b);
+}
+
+.coverage-compare-cta p {
+    margin: 0;
+}

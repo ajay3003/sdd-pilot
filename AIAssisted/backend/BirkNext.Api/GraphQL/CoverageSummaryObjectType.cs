@@ -15,5 +15,8 @@ public sealed class CoverageSummaryObjectType : ObjectType<CoverageSummary>
         descriptor.Field(s => s.NotCoveredRequirements).Type<NonNullType<IntType>>();
         descriptor.Field(s => s.CoveragePercent).Type<NonNullType<FloatType>>();
         descriptor.Field(s => s.OrphanTests).Type<NonNullType<IntType>>();
+        descriptor.Field(s => s.SuggestedCoverageRequirements).Type<NonNullType<IntType>>();
+        descriptor.Field(s => s.PendingSuggestionCount).Type<NonNullType<IntType>>();
+        descriptor.Field(s => s.HighConfidenceSuggestionCount).Type<NonNullType<IntType>>();
     }
 }

@@ -1,11 +1,18 @@
 using BirkNext.Web.Layout;
+using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BirkNext.Web.Tests.Layout;
 
 public class NavMenuTests : BunitContext
 {
+    public NavMenuTests()
+    {
+        Services.AddSingleton<FeatureVisibilityService>();
+    }
+
     [Fact]
     public void NavMenu_RendersMvpNavigation()
     {
@@ -20,14 +27,14 @@ public class NavMenuTests : BunitContext
         navText.Should().Contain("Specification Review");
         navText.Should().Contain("QA Artifact Library");
         navText.Should().Contain("Create Test Scenario");
-        navText.Should().Contain("Compare Specs");
+        navText.Should().Contain("Spec Comparison");
+        navText.Should().Contain("Specification Deltas");
 
         navText.IndexOf("Dashboard", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Review", StringComparison.Ordinal));
         navText.IndexOf("Specification Review", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("QA Artifact Library", StringComparison.Ordinal));
         navText.IndexOf("QA Artifact Library", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Create Test Scenario", StringComparison.Ordinal));
-        navText.IndexOf("Create Test Scenario", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Compare Specs", StringComparison.Ordinal));
-        navText.IndexOf("Compare Specs", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Delta Reviews", StringComparison.Ordinal));
-        navText.Should().Contain("Delta Reviews");
+        navText.IndexOf("Create Test Scenario", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Spec Comparison", StringComparison.Ordinal));
+        navText.IndexOf("Spec Comparison", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Deltas", StringComparison.Ordinal));
 
         cut.Find("a[href='dashboard']").Should().NotBeNull();
         cut.Find("a[href='extract']").Should().NotBeNull();

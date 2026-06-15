@@ -7,6 +7,7 @@ type Query {
   qaDeltaReview(id: ID!): QaDeltaReview
   traceabilityMatrix(projectId: String!): [TraceabilityMatrixRow!]!
   coverageSummary(projectId: String!): CoverageSummary!
+  traceabilitySuggestions(projectId: String!): [TraceabilitySuggestionItem!]!
   requirementImpact(projectId: String!, requirementId: ID!): RequirementImpact
   impactSummary(projectId: String!): ImpactSummary!
   specDriftReport(projectId: String!): SpecDriftReport!
@@ -32,6 +33,10 @@ type Mutation {
   deleteCodeFile(input: DeleteCodeFileInput!): DeleteCodeFilePayload!
   createCodeLink(input: CreateCodeLinkInput!): CreateCodeLinkPayload!
   deleteCodeLink(input: DeleteCodeLinkInput!): DeleteCodeLinkPayload!
+  generateTraceabilitySuggestions(input: GenerateTraceabilitySuggestionsInput!): GenerateTraceabilitySuggestionsPayload!
+  confirmSuggestion(input: ConfirmSuggestionInput!): ConfirmSuggestionPayload!
+  rejectSuggestion(input: RejectSuggestionInput!): RejectSuggestionPayload!
+  confirmHighConfidenceSuggestions(input: ConfirmHighConfidenceSuggestionsInput!): ConfirmHighConfidenceSuggestionsPayload!
 }
 
 type Scenario {
@@ -86,6 +91,7 @@ type CreateScenariosPayload {
   successCount: Int!
   failureCount: Int!
   correlationId: String!
+  suggestionResult: SuggestionGenerationResult
 }
 
 union CreateScenarioResult = CreateScenarioSuccess | CreateScenarioError
@@ -276,6 +282,9 @@ type CoverageSummary {
   notCoveredRequirements: Int!
   coveragePercent: Float!
   orphanTests: Int!
+  suggestedCoverageRequirements: Int!
+  pendingSuggestionCount: Int!
+  highConfidenceSuggestionCount: Int!
 }
 
 input CreateTraceLinkInput {
@@ -524,4 +533,76 @@ type QaAuditReport {
   topRisks: [DriftRequirement!]!
   recommendedActions: [String!]!
   scoreDeductions: [QaScoreDeduction!]!
+}
+
+type TraceabilitySuggestion {
+  id: ID!
+  projectId: String!
+  sourceId: ID!
+  sourceKind: String!
+  targetId: ID!
+  targetKind: String!
+  linkType: String!
+  status: String!
+  confidence: Float!
+  reason: String!
+  signalsJson: String!
+  createdAt: DateTime!
+  confirmedAt: DateTime
+  rejectedAt: DateTime
+}
+
+type TraceabilitySuggestionItem {
+  suggestion: TraceabilitySuggestion!
+  sourceTitle: String!
+  targetTitle: String!
+}
+
+type SuggestionGenerationResult {
+  totalGenerated: Int!
+  highConfidenceCount: Int!
+  needsReviewCount: Int!
+  suggestionsAvailable: Boolean!
+  message: String
+}
+
+type GenerateTraceabilitySuggestionsPayload {
+  result: SuggestionGenerationResult
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type ConfirmSuggestionPayload {
+  traceLink: TraceLink
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type RejectSuggestionPayload {
+  success: Boolean!
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type ConfirmHighConfidenceSuggestionsPayload {
+  confirmedCount: Int!
+  correlationId: String!
+}
+
+input GenerateTraceabilitySuggestionsInput {
+  projectId: String!
+}
+
+input ConfirmSuggestionInput {
+  id: ID!
+  projectId: String!
+}
+
+input RejectSuggestionInput {
+  id: ID!
+  projectId: String!
+}
+
+input ConfirmHighConfidenceSuggestionsInput {
+  projectId: String!
 }

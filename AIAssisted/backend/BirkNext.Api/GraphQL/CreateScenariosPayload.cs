@@ -39,4 +39,7 @@ public sealed class CreateScenariosPayload
     public int SuccessCount { get; init; }
     public int FailureCount { get; init; }
     public string CorrelationId { get; init; } = string.Empty;
+
+    /// <summary>Traceability suggestions generated automatically after save. Null when no suggestions were attempted.</summary>
+    public SuggestionGenerationResult? SuggestionResult { get; init; }
 }

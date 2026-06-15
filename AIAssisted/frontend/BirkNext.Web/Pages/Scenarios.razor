@@ -177,6 +177,20 @@
         </div>
     </section>
 
+    @if (_pendingSuggestionCount > 0)
+    {
+        <div class="pending-suggestions-banner" role="status">
+            <div class="pending-suggestions-info">
+                <strong>@_pendingSuggestionCount traceability suggestion@(_pendingSuggestionCount == 1 ? "" : "s") ready for review</strong>
+                @if (_highConfidenceSuggestionCount > 0)
+                {
+                    <span class="pending-suggestions-tag">@_highConfidenceSuggestionCount high confidence</span>
+                }
+            </div>
+            <a href="traceability/suggestions" class="btn-primary btn-sm">Review Suggestions</a>
+        </div>
+    }
+
     <section class="requirement-map-panel" aria-label="Requirement to test mapping">
         <div class="requirement-map-header">
             <div>
@@ -406,6 +420,8 @@
     private string? _deletingId;
     private Dictionary<string, string> _deleteErrors = [];
     private string? _reorderError;
+    private int _pendingSuggestionCount;
+    private int _highConfidenceSuggestionCount;
 
     private IReadOnlyList<ScenarioListItem> FilteredScenarios =>
         _scenarios
@@ -525,7 +541,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadScenariosAsync();
+        await Task.WhenAll(LoadScenariosAsync(), LoadSuggestionCountAsync());
     }
 
     private async Task LoadScenariosAsync()
@@ -567,6 +583,20 @@
 
             _isLoading = false;
         }
+    }
+
+    private async Task LoadSuggestionCountAsync()
+    {
+        try
+        {
+            var result = await Client.GetCoverageSummary.ExecuteAsync(ProjectId);
+            if (result.Data is { } data)
+            {
+                _pendingSuggestionCount = data.CoverageSummary.PendingSuggestionCount;
+                _highConfidenceSuggestionCount = data.CoverageSummary.HighConfidenceSuggestionCount;
+            }
+        }
+        catch { }
     }
 
     private async Task LoadLinksAsync()

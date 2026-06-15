@@ -42,6 +42,7 @@ public class Mutation
     public async Task<CreateScenariosPayload> CreateScenariosAsync(
         CreateScenariosInput input,
         [Service] ScenarioService scenarioService,
+        [Service] TraceabilitySuggestionService suggestionService,
         [Service] IHttpContextAccessor httpContextAccessor,
         [Service] ILogger<Mutation> logger,
         CancellationToken cancellationToken)
@@ -100,12 +101,39 @@ public class Mutation
             failureCount,
             sw.ElapsedMilliseconds);
 
+        SuggestionGenerationResult? suggestionResult = null;
+        if (successCount > 0)
+        {
+            try
+            {
+                var projectId = input.Items[0].ProjectId;
+                var summary = await suggestionService.GenerateSuggestionsAsync(projectId, cancellationToken);
+
+                suggestionResult = new SuggestionGenerationResult
+                {
+                    TotalGenerated = summary.TotalGenerated,
+                    HighConfidenceCount = summary.HighConfidenceCount,
+                    NeedsReviewCount = summary.NeedsReviewCount,
+                    SuggestionsAvailable = summary.TotalGenerated > 0,
+                    Message = summary.TotalGenerated == 0
+                        ? null
+                        : $"{summary.TotalGenerated} traceability suggestion{(summary.TotalGenerated == 1 ? "" : "s")} generated.",
+                };
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex,
+                    "SuggestionGenerationFailed correlationId={CorrelationId}", correlationId);
+            }
+        }
+
         return new CreateScenariosPayload
         {
             Results = results,
             SuccessCount = successCount,
             FailureCount = failureCount,
             CorrelationId = correlationId,
+            SuggestionResult = suggestionResult,
         };
     }
 
@@ -463,6 +491,114 @@ public class Mutation
             input.ProjectId, fileGuid, scenarioGuid, cancellationToken);
 
         return new CreateCodeLinkPayload { Link = result.Link, Errors = result.Errors };
+    }
+
+    /// <summary>Generates traceability suggestions for all requirement–test pairs in the project.</summary>
+    public async Task<GenerateTraceabilitySuggestionsPayload> GenerateTraceabilitySuggestionsAsync(
+        GenerateTraceabilitySuggestionsInput input,
+        [Service] TraceabilitySuggestionService suggestionService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"].FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var summary = await suggestionService.GenerateSuggestionsAsync(input.ProjectId, cancellationToken);
+
+        var result = new SuggestionGenerationResult
+        {
+            TotalGenerated = summary.TotalGenerated,
+            HighConfidenceCount = summary.HighConfidenceCount,
+            NeedsReviewCount = summary.NeedsReviewCount,
+            SuggestionsAvailable = summary.TotalGenerated > 0,
+            Message = summary.TotalGenerated == 0
+                ? "No new suggestions — either no requirements/tests exist or all pairs already have suggestions."
+                : $"{summary.TotalGenerated} suggestion{(summary.TotalGenerated == 1 ? "" : "s")} generated.",
+        };
+
+        return new GenerateTraceabilitySuggestionsPayload
+        {
+            Result = result,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Confirms a traceability suggestion, creating a permanent trace link.</summary>
+    public async Task<ConfirmSuggestionPayload> ConfirmSuggestionAsync(
+        ConfirmSuggestionInput input,
+        [Service] TraceabilitySuggestionService suggestionService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"].FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        if (!Guid.TryParse(input.Id, out var guid))
+            return new ConfirmSuggestionPayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Suggestion ID is not valid.")],
+                CorrelationId = correlationId,
+            };
+
+        var result = await suggestionService.ConfirmAsync(guid, input.ProjectId, correlationId, cancellationToken);
+
+        return new ConfirmSuggestionPayload
+        {
+            TraceLink = result.TraceLink,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Rejects a traceability suggestion. Rejected suggestions are not regenerated.</summary>
+    public async Task<RejectSuggestionPayload> RejectSuggestionAsync(
+        RejectSuggestionInput input,
+        [Service] TraceabilitySuggestionService suggestionService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"].FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        if (!Guid.TryParse(input.Id, out var guid))
+            return new RejectSuggestionPayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Suggestion ID is not valid.")],
+                CorrelationId = correlationId,
+            };
+
+        var result = await suggestionService.RejectAsync(guid, input.ProjectId, correlationId, cancellationToken);
+
+        return new RejectSuggestionPayload
+        {
+            Success = result.IsSuccess,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Bulk-confirms all high-confidence pending suggestions for the project.</summary>
+    public async Task<ConfirmHighConfidenceSuggestionsPayload> ConfirmHighConfidenceSuggestionsAsync(
+        ConfirmHighConfidenceSuggestionsInput input,
+        [Service] TraceabilitySuggestionService suggestionService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"].FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var confirmed = await suggestionService.ConfirmHighConfidenceAsync(
+            input.ProjectId, correlationId, cancellationToken);
+
+        return new ConfirmHighConfidenceSuggestionsPayload
+        {
+            ConfirmedCount = confirmed,
+            CorrelationId = correlationId,
+        };
     }
 
     /// <summary>Removes a code link by ID.</summary>

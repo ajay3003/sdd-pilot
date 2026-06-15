@@ -1,0 +1,6 @@
+mutation ConfirmHighConfidenceSuggestions($input: ConfirmHighConfidenceSuggestionsInput!) {
+    confirmHighConfidenceSuggestions(input: $input) {
+        confirmedCount
+        correlationId
+    }
+}

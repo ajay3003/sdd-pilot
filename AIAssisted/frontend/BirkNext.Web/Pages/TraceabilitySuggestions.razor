@@ -1,0 +1,475 @@
+@page "/traceability/suggestions"
+@using BirkNext.Web.GraphQL
+@inject IBirkNextClient Client
+
+<PageTitle>Traceability Suggestions</PageTitle>
+
+<div class="traceability-page">
+    <section class="traceability-hero">
+        <div class="workflow-step-badge"><a href="traceability" class="workflow-step-link">Traceability</a> &middot; Suggestions</div>
+        <p class="section-kicker">AI-Assisted Traceability</p>
+        <h1>Traceability Suggestions</h1>
+        <p class="page-lead">Review suggested links between tests and requirements. Accept what's correct, reject what isn't — only confirmed links count toward coverage.</p>
+    </section>
+
+    @if (_isLoading)
+    {
+        <p class="loading-state">Loading suggestions...</p>
+    }
+    else if (_loadError is not null)
+    {
+        <div class="notification notification-error" role="alert">@_loadError</div>
+    }
+    else
+    {
+        @if (_generateResult is not null)
+        {
+            <div class="notification notification-success" role="status">
+                @_generateResult
+                <button class="notification-dismiss" @onclick="() => _generateResult = null" aria-label="Dismiss">×</button>
+            </div>
+        }
+
+        @if (_bulkResult is not null)
+        {
+            <div class="notification notification-success" role="status">
+                @_bulkResult
+                <button class="notification-dismiss" @onclick="() => _bulkResult = null" aria-label="Dismiss">×</button>
+            </div>
+        }
+
+        @if (_actionError is not null)
+        {
+            <div class="notification notification-error" role="alert">@_actionError</div>
+        }
+
+        <div class="suggestions-action-bar">
+            <span class="suggestions-count">
+                @PendingCount pending suggestion@(PendingCount == 1 ? "" : "s")
+                @if (HighConfidenceCount > 0)
+                {
+                    <span class="suggestions-count-detail">(@HighConfidenceCount high confidence)</span>
+                }
+            </span>
+            <div class="suggestions-actions">
+                <button class="btn-secondary btn-sm"
+                        disabled="@_isRegenerating"
+                        @onclick="HandleRegenerateAsync">
+                    @if (_isRegenerating) { <span>Regenerating…</span> } else { <span>Regenerate Suggestions</span> }
+                </button>
+                @if (HighConfidenceCount > 0)
+                {
+                    <button class="btn-primary btn-sm"
+                            disabled="@_isBulkConfirming"
+                            @onclick="HandleBulkConfirmAsync">
+                        @if (_isBulkConfirming)
+                        {
+                            <span>Confirming…</span>
+                        }
+                        else
+                        {
+                            <span>Accept All High Confidence (@HighConfidenceCount)</span>
+                        }
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="filter-chip-grid" aria-label="Suggestion filters">
+            <button type="button" class="library-filter-chip @(_filter == "Pending" ? "is-active" : "")" @onclick='() => _filter = "Pending"'>
+                Pending <span>@PendingCount</span>
+            </button>
+            <button type="button" class="library-filter-chip @(_filter == "HighConfidence" ? "is-active" : "")" @onclick='() => _filter = "HighConfidence"'>
+                High Confidence <span>@HighConfidenceCount</span>
+            </button>
+            <button type="button" class="library-filter-chip @(_filter == "Medium" ? "is-active" : "")" @onclick='() => _filter = "Medium"'>
+                Medium <span>@MediumCount</span>
+            </button>
+            <button type="button" class="library-filter-chip @(_filter == "NeedsReview" ? "is-active" : "")" @onclick='() => _filter = "NeedsReview"'>
+                Needs Review <span>@NeedsReviewCount</span>
+            </button>
+            <button type="button" class="library-filter-chip @(_filter == "Confirmed" ? "is-active" : "")" @onclick='() => _filter = "Confirmed"'>
+                Confirmed <span>@ConfirmedCount</span>
+            </button>
+        </div>
+
+        @if (_items.Count == 0)
+        {
+            <div class="empty-state empty-state-dashed">
+                <h3>No suggestions yet</h3>
+                <p>Traceability suggestions are generated automatically when you save requirements and tests to the QA Artifact Library.</p>
+                <p>Once you have both requirements and tests saved, click <strong>Regenerate Suggestions</strong> to generate links.</p>
+                <div class="empty-state-actions">
+                    <a href="/scenarios">Go to QA Artifact Library</a>
+                </div>
+            </div>
+        }
+        else if (FilteredItems.Count == 0)
+        {
+            <div class="mapping-empty">No suggestions match this filter.</div>
+        }
+        else
+        {
+            <section class="requirement-map-panel" aria-label="Traceability suggestions table">
+                <div class="requirement-map-header">
+                    <div>
+                        <p class="section-kicker">Test → Requirement Links</p>
+                        <h2>@FilterLabel</h2>
+                    </div>
+                    <span>@FilteredItems.Count suggestion@(FilteredItems.Count == 1 ? "" : "s")</span>
+                </div>
+                <div class="trace-table-wrapper">
+                    <table class="trace-table" aria-label="Traceability suggestion rows">
+                        <thead>
+                            <tr>
+                                <th class="suggestions-col-source">Test (Source)</th>
+                                <th class="suggestions-col-target">Requirement (Target)</th>
+                                <th class="suggestions-col-confidence">Confidence</th>
+                                <th class="suggestions-col-reason">Reason</th>
+                                <th class="suggestions-col-status">Status</th>
+                                <th class="suggestions-col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in FilteredItems)
+                            {
+                                var isConfirming = _confirmingId == item.Id;
+                                var isRejecting = _rejectingId == item.Id;
+                                var busy = isConfirming || isRejecting;
+                                <tr class="trace-row suggestions-row--@StatusClass(item.Status)">
+                                    <td class="suggestions-col-source">
+                                        <span class="badge badge-test">Test</span>
+                                        <span class="suggestions-title">@item.SourceTitle</span>
+                                    </td>
+                                    <td class="suggestions-col-target">
+                                        <span class="badge badge-requirement">Req</span>
+                                        <span class="suggestions-title">@item.TargetTitle</span>
+                                    </td>
+                                    <td class="suggestions-col-confidence">
+                                        <span class="confidence-pill confidence-pill--@ConfidenceClass(item.Confidence)">
+                                            @ConfidenceLabel(item.Confidence) @ConfidencePct(item.Confidence)%
+                                        </span>
+                                    </td>
+                                    <td class="suggestions-col-reason">
+                                        <span class="suggestions-reason">@item.Reason</span>
+                                    </td>
+                                    <td class="suggestions-col-status">
+                                        <span class="trace-badge trace-badge--@StatusClass(item.Status)">@StatusDisplayName(item.Status)</span>
+                                    </td>
+                                    <td class="suggestions-col-actions">
+                                        @if (item.Status == "Confirmed")
+                                        {
+                                            <span class="suggestions-confirmed-label">Confirmed</span>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn-primary btn-sm"
+                                                    disabled="@busy"
+                                                    @onclick="() => HandleConfirmAsync(item.Id)">
+                                                @if (isConfirming) { <span>Accepting…</span> } else { <span>Accept</span> }
+                                            </button>
+                                            <button class="btn-secondary btn-sm suggestions-reject-btn"
+                                                    disabled="@busy"
+                                                    @onclick="() => HandleRejectAsync(item.Id)">
+                                                @if (isRejecting) { <span>Rejecting…</span> } else { <span>Reject</span> }
+                                            </button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+
+    private bool _isLoading = true;
+    private string? _loadError;
+    private string? _actionError;
+    private string? _generateResult;
+    private string? _bulkResult;
+    private string _filter = "Pending";
+
+    private List<SuggestionRow> _items = [];
+
+    private string? _confirmingId;
+    private string? _rejectingId;
+    private bool _isBulkConfirming;
+    private bool _isRegenerating;
+
+    private int PendingCount => _items.Count(i => i.Status is "Suggested" or "NeedsReview");
+    private int HighConfidenceCount => _items.Count(i => i.Status == "Suggested" && i.Confidence >= 0.75);
+    private int MediumCount => _items.Count(i => i.Status == "Suggested" && i.Confidence >= 0.50 && i.Confidence < 0.75);
+    private int NeedsReviewCount => _items.Count(i => i.Status == "NeedsReview");
+    private int ConfirmedCount => _items.Count(i => i.Status == "Confirmed");
+
+    private IReadOnlyList<SuggestionRow> FilteredItems => _filter switch
+    {
+        "HighConfidence" => _items.Where(i => i.Status == "Suggested" && i.Confidence >= 0.75).ToList(),
+        "Medium"         => _items.Where(i => i.Status == "Suggested" && i.Confidence >= 0.50 && i.Confidence < 0.75).ToList(),
+        "NeedsReview"    => _items.Where(i => i.Status == "NeedsReview").ToList(),
+        "Confirmed"      => _items.Where(i => i.Status == "Confirmed").ToList(),
+        _                => _items.Where(i => i.Status is "Suggested" or "NeedsReview").ToList(), // Pending
+    };
+
+    private string FilterLabel => _filter switch
+    {
+        "HighConfidence" => "High Confidence Suggestions",
+        "Medium"         => "Medium Confidence Suggestions",
+        "NeedsReview"    => "Needs Review",
+        "Confirmed"      => "Confirmed Links",
+        _                => "Pending Suggestions",
+    };
+
+    protected override async Task OnInitializedAsync() => await LoadDataAsync();
+
+    private async Task LoadDataAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.GetTraceabilitySuggestions.ExecuteAsync(ProjectId);
+
+            if (result.Errors is { Count: > 0 })
+            {
+                _loadError = "We couldn't load traceability suggestions right now. Please try again.";
+                return;
+            }
+
+            _items = result.Data?.TraceabilitySuggestions
+                .Select(i => new SuggestionRow
+                {
+                    Id         = i.Suggestion.Id,
+                    SourceTitle = i.SourceTitle,
+                    TargetTitle = i.TargetTitle,
+                    Status      = i.Suggestion.Status,
+                    Confidence  = i.Suggestion.Confidence,
+                    Reason      = i.Suggestion.Reason,
+                    SourceId    = i.Suggestion.SourceId,
+                    TargetId    = i.Suggestion.TargetId,
+                })
+                .OrderByDescending(i => i.Confidence)
+                .ToList() ?? [];
+        }
+        catch (Exception)
+        {
+            _loadError = "We couldn't load traceability suggestions right now. Please try again.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task HandleConfirmAsync(string suggestionId)
+    {
+        _confirmingId = suggestionId;
+        _actionError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.ConfirmSuggestion.ExecuteAsync(new ConfirmSuggestionInput
+            {
+                Id = suggestionId,
+                ProjectId = ProjectId,
+            });
+
+            if (result.Errors is { Count: > 0 })
+            {
+                _actionError = "Something went wrong confirming the suggestion. Please try again.";
+                return;
+            }
+
+            var payload = result.Data?.ConfirmSuggestion;
+            if (payload?.Errors is { Count: > 0 })
+            {
+                _actionError = payload.Errors[0].Message;
+                return;
+            }
+
+            var item = _items.FirstOrDefault(i => i.Id == suggestionId);
+            if (item is not null)
+                item.Status = "Confirmed";
+        }
+        catch (Exception)
+        {
+            _actionError = "Something went wrong confirming the suggestion. Please try again.";
+        }
+        finally
+        {
+            _confirmingId = null;
+        }
+    }
+
+    private async Task HandleRejectAsync(string suggestionId)
+    {
+        _rejectingId = suggestionId;
+        _actionError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.RejectSuggestion.ExecuteAsync(new RejectSuggestionInput
+            {
+                Id = suggestionId,
+                ProjectId = ProjectId,
+            });
+
+            if (result.Errors is { Count: > 0 })
+            {
+                _actionError = "Something went wrong rejecting the suggestion. Please try again.";
+                return;
+            }
+
+            var payload = result.Data?.RejectSuggestion;
+            if (payload?.Errors is { Count: > 0 })
+            {
+                _actionError = payload.Errors[0].Message;
+                return;
+            }
+
+            _items.RemoveAll(i => i.Id == suggestionId);
+        }
+        catch (Exception)
+        {
+            _actionError = "Something went wrong rejecting the suggestion. Please try again.";
+        }
+        finally
+        {
+            _rejectingId = null;
+        }
+    }
+
+    private async Task HandleBulkConfirmAsync()
+    {
+        _isBulkConfirming = true;
+        _actionError = null;
+        _bulkResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.ConfirmHighConfidenceSuggestions.ExecuteAsync(
+                new ConfirmHighConfidenceSuggestionsInput { ProjectId = ProjectId });
+
+            if (result.Errors is { Count: > 0 })
+            {
+                _actionError = "Something went wrong during bulk confirmation. Please try again.";
+                return;
+            }
+
+            var count = result.Data?.ConfirmHighConfidenceSuggestions.ConfirmedCount ?? 0;
+            if (count > 0)
+            {
+                _bulkResult = $"{count} high-confidence suggestion{(count == 1 ? "" : "s")} confirmed and added to coverage.";
+                await LoadDataAsync();
+            }
+        }
+        catch (Exception)
+        {
+            _actionError = "Something went wrong during bulk confirmation. Please try again.";
+        }
+        finally
+        {
+            _isBulkConfirming = false;
+        }
+    }
+
+    private async Task HandleRegenerateAsync()
+    {
+        _isRegenerating = true;
+        _actionError = null;
+        _generateResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.GenerateTraceabilitySuggestions.ExecuteAsync(
+                new GenerateTraceabilitySuggestionsInput { ProjectId = ProjectId });
+
+            if (result.Errors is { Count: > 0 })
+            {
+                _actionError = "Something went wrong generating suggestions. Please try again.";
+                return;
+            }
+
+            var payload = result.Data?.GenerateTraceabilitySuggestions;
+            if (payload?.Errors is { Count: > 0 })
+            {
+                _actionError = payload.Errors[0].Message;
+                return;
+            }
+
+            var genResult = payload?.Result;
+            if (genResult is not null)
+            {
+                _generateResult = genResult.TotalGenerated > 0
+                    ? $"Generated {genResult.TotalGenerated} new suggestion{(genResult.TotalGenerated == 1 ? "" : "s")} — {genResult.HighConfidenceCount} high confidence, {genResult.NeedsReviewCount} need review."
+                    : "No new suggestions found. All eligible pairs have already been evaluated.";
+            }
+
+            await LoadDataAsync();
+        }
+        catch (Exception)
+        {
+            _actionError = "Something went wrong generating suggestions. Please try again.";
+        }
+        finally
+        {
+            _isRegenerating = false;
+        }
+    }
+
+    private static string ConfidencePct(double confidence) => ((int)Math.Round(confidence * 100)).ToString();
+
+    private static string ConfidenceLabel(double confidence) => confidence switch
+    {
+        >= 0.75 => "High",
+        >= 0.50 => "Medium",
+        _       => "Low",
+    };
+
+    private static string ConfidenceClass(double confidence) => confidence switch
+    {
+        >= 0.75 => "high",
+        >= 0.50 => "medium",
+        _       => "low",
+    };
+
+    private static string StatusDisplayName(string status) => status switch
+    {
+        "Suggested"   => "Suggested",
+        "NeedsReview" => "Needs Review",
+        "Confirmed"   => "Confirmed",
+        _             => status,
+    };
+
+    private static string StatusClass(string status) => status switch
+    {
+        "Suggested"   => "suggested",
+        "NeedsReview" => "review",
+        "Confirmed"   => "covered",
+        _             => "suggested",
+    };
+
+    private sealed class SuggestionRow
+    {
+        public required string Id { get; init; }
+        public required string SourceTitle { get; init; }
+        public required string TargetTitle { get; init; }
+        public string Status { get; set; } = "";
+        public required double Confidence { get; init; }
+        public required string Reason { get; init; }
+        public required string SourceId { get; init; }
+        public required string TargetId { get; init; }
+    }
+}

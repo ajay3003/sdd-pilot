@@ -58,6 +58,28 @@
             </button>
         </div>
 
+        @if (_summary.SuggestedCoverageRequirements > 0)
+        {
+            <div class="coverage-compare-row" aria-label="Confirmed vs suggested coverage">
+                <div class="kpi-card kpi-card-coverage coverage-compare-card">
+                    <span class="kpi-marker" aria-hidden="true"></span>
+                    <span class="kpi-value">@_summary.CoveragePercent%</span>
+                    <span class="kpi-label">Confirmed Coverage</span>
+                    <span class="kpi-hint">@_summary.CoveredRequirements of @_summary.TotalRequirements requirements with confirmed test links</span>
+                </div>
+                <div class="kpi-card kpi-card-progress coverage-compare-card">
+                    <span class="kpi-marker" aria-hidden="true"></span>
+                    <span class="kpi-value">@SuggestedCoveragePercent%</span>
+                    <span class="kpi-label">Suggested Coverage</span>
+                    <span class="kpi-hint">@_summary.SuggestedCoverageRequirements additional requirement@(_summary.SuggestedCoverageRequirements == 1 ? "" : "s") have pending AI-suggested links</span>
+                </div>
+                <div class="coverage-compare-cta">
+                    <p>Confirming pending suggestions could bring coverage to <strong>@SuggestedCoveragePercent%</strong>.</p>
+                    <a href="traceability/suggestions" class="btn-primary btn-sm">Review @_summary.PendingSuggestionCount Suggestion@(_summary.PendingSuggestionCount == 1 ? "" : "s") →</a>
+                </div>
+            </div>
+        }
+
         <div class="filter-chip-grid" aria-label="Coverage filters">
             <button type="button" class="library-filter-chip @(_filter == "" ? "is-active" : "")" @onclick='() => _filter = ""'>
                 All <span>@_matrix.Count</span>
@@ -329,6 +351,8 @@
 
     private int CoveredCount => _matrix.Count(r => r.CoverageStatus == "Covered");
     private int NotCoveredCount => _matrix.Count(r => r.CoverageStatus == "NotCovered");
+    private int SuggestedCoveragePercent => _summary.TotalRequirements == 0 ? 0
+        : (int)Math.Round((_summary.CoveredRequirements + _summary.SuggestedCoverageRequirements) * 100.0 / _summary.TotalRequirements);
 
     private IReadOnlyList<RequirementRow> FilteredMatrix => _filter switch
     {
@@ -406,6 +430,8 @@
                     NotCoveredRequirements = sd.CoverageSummary.NotCoveredRequirements,
                     CoveragePercent = Math.Round(sd.CoverageSummary.CoveragePercent, 1),
                     OrphanTests = sd.CoverageSummary.OrphanTests,
+                    SuggestedCoverageRequirements = sd.CoverageSummary.SuggestedCoverageRequirements,
+                    PendingSuggestionCount = sd.CoverageSummary.PendingSuggestionCount,
                 };
             }
 
@@ -640,6 +666,8 @@
                     NotCoveredRequirements = sd.CoverageSummary.NotCoveredRequirements,
                     CoveragePercent = Math.Round(sd.CoverageSummary.CoveragePercent, 1),
                     OrphanTests = sd.CoverageSummary.OrphanTests,
+                    SuggestedCoverageRequirements = sd.CoverageSummary.SuggestedCoverageRequirements,
+                    PendingSuggestionCount = sd.CoverageSummary.PendingSuggestionCount,
                 };
             }
         }
@@ -685,5 +713,7 @@
         public int NotCoveredRequirements { get; init; }
         public double CoveragePercent { get; init; }
         public int OrphanTests { get; init; }
+        public int SuggestedCoverageRequirements { get; init; }
+        public int PendingSuggestionCount { get; init; }
     }
 }

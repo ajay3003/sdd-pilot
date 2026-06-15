@@ -327,3 +327,44 @@ input[type="checkbox"]:focus-visible {
         gap: 0.25rem;
     }
 }
+
+/* ─── Context-aware card action button variants ─────────────────────────── */
+
+.review-action-undo {
+    background: var(--clr-surface, #f8fafc);
+    color: var(--clr-text-muted, #475569);
+    border-color: var(--clr-border-input, #d1d5db);
+}
+
+.review-action-undo:hover {
+    background: #f1f5f9;
+    color: var(--clr-text-body, #1e293b);
+}
+
+.review-action-reopen {
+    background: var(--clr-surface, #f8fafc);
+    color: var(--clr-text-muted, #475569);
+    border-color: var(--clr-border-input, #d1d5db);
+}
+
+.review-action-reopen:hover {
+    background: #f1f5f9;
+    color: var(--clr-text-body, #1e293b);
+}
+
+.review-action-clear {
+    background: #fef9c3;
+    color: #a16207;
+    border-color: #fde68a;
+}
+
+.review-action-clear:hover {
+    background: #fef08a;
+    color: #92400e;
+}
+
+/* Checkbox disabled styling for saved items */
+.candidate-select-cell input[type="checkbox"]:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}

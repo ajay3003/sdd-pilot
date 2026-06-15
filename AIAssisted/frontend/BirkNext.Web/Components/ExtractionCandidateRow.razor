@@ -8,6 +8,7 @@
             type="checkbox"
             checked="@Candidate.IsSelected"
             @onchange="HandleCheckboxChange"
+            disabled="@(Candidate.SaveState == CandidateSaveState.Saved)"
             data-testid="candidate-checkbox"
             aria-label="Select candidate: @Candidate.Title" />
     </div>
@@ -64,24 +65,79 @@
         }
 
         <div class="review-actions" role="group" aria-label="Review this candidate">
-            <button type="button"
-                    class="review-action-btn review-action-accept @(Candidate.ReviewStatus == CandidateReviewStatus.Accepted ? "is-active" : "")"
-                    @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Accepted))"
-                    aria-pressed="@(Candidate.ReviewStatus == CandidateReviewStatus.Accepted)">
-                Accept
-            </button>
-            <button type="button"
-                    class="review-action-btn review-action-reject @(Candidate.ReviewStatus == CandidateReviewStatus.Rejected ? "is-active" : "")"
-                    @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Rejected))"
-                    aria-pressed="@(Candidate.ReviewStatus == CandidateReviewStatus.Rejected)">
-                Reject
-            </button>
-            <button type="button"
-                    class="review-action-btn review-action-needsreview @(Candidate.ReviewStatus == CandidateReviewStatus.NeedsReview ? "is-active" : "")"
-                    @onclick="@(() => SetReviewStatus(CandidateReviewStatus.NeedsReview))"
-                    aria-pressed="@(Candidate.ReviewStatus == CandidateReviewStatus.NeedsReview)">
-                Needs Review
-            </button>
+            @if (Candidate.ReviewStatus == CandidateReviewStatus.New)
+            {
+                <button type="button"
+                        class="review-action-btn review-action-accept"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Accepted))"
+                        aria-pressed="false">
+                    Accept
+                </button>
+                <button type="button"
+                        class="review-action-btn review-action-reject"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Rejected))"
+                        aria-pressed="false">
+                    Reject
+                </button>
+                <button type="button"
+                        class="review-action-btn review-action-needsreview"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.NeedsReview))"
+                        aria-pressed="false">
+                    Needs Review
+                </button>
+            }
+            else if (Candidate.ReviewStatus == CandidateReviewStatus.Accepted
+                     && Candidate.SaveState != CandidateSaveState.Saved)
+            {
+                <button type="button"
+                        class="review-action-btn review-action-undo"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Accepted))">
+                    Undo Accept
+                </button>
+            }
+            else if (Candidate.ReviewStatus == CandidateReviewStatus.Accepted
+                     && Candidate.SaveState == CandidateSaveState.Saved)
+            {
+                <button type="button"
+                        class="review-action-btn review-action-reopen"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Accepted))">
+                    Reopen
+                </button>
+            }
+            else if (Candidate.ReviewStatus == CandidateReviewStatus.Rejected)
+            {
+                <button type="button"
+                        class="review-action-btn review-action-accept"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Accepted))"
+                        aria-pressed="false">
+                    Accept
+                </button>
+                <button type="button"
+                        class="review-action-btn review-action-reopen"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Rejected))">
+                    Reopen
+                </button>
+            }
+            else if (Candidate.ReviewStatus == CandidateReviewStatus.NeedsReview)
+            {
+                <button type="button"
+                        class="review-action-btn review-action-accept"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Accepted))"
+                        aria-pressed="false">
+                    Accept
+                </button>
+                <button type="button"
+                        class="review-action-btn review-action-reject"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Rejected))"
+                        aria-pressed="false">
+                    Reject
+                </button>
+                <button type="button"
+                        class="review-action-btn review-action-clear"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.NeedsReview))">
+                    Clear Review
+                </button>
+            }
         </div>
     </div>
 </div>

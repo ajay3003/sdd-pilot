@@ -306,7 +306,35 @@ else
         }
         else if (_savePhase == ReviewSavePhase.Complete)
         {
-            <p class="notification notification-success" data-testid="save-complete" role="status">All selected candidates saved successfully.</p>
+            @if (_suggestionResult is { SuggestionsAvailable: true })
+            {
+                <div class="save-complete-panel" data-testid="save-complete" role="status">
+                    <p class="notification notification-success">@SaveCompleteMessage</p>
+                    <div class="suggestion-next-step">
+                        <span class="suggestion-next-label">@_suggestionResult.TotalGenerated traceability suggestion@(_suggestionResult.TotalGenerated == 1 ? "" : "s") generated</span>
+                        @if (_suggestionResult.HighConfidenceCount > 0)
+                        {
+                            <span class="suggestion-confidence-tag">@_suggestionResult.HighConfidenceCount high confidence</span>
+                        }
+                        @if (_suggestionResult.NeedsReviewCount > 0)
+                        {
+                            <span class="suggestion-review-tag">@_suggestionResult.NeedsReviewCount need review</span>
+                        }
+                        <a href="traceability/suggestions" class="suggestion-cta-link">Review Suggestions →</a>
+                    </div>
+                </div>
+            }
+            else if (_savedSummary is { TestCount: > 0, RequirementCount: 0, ClarificationCount: 0 })
+            {
+                <div class="save-complete-panel" data-testid="save-complete" role="status">
+                    <p class="notification notification-success">@SaveCompleteMessage</p>
+                    <p class="suggestion-info-note">To generate traceability suggestions, also save requirements. Suggestions link each test to the requirement it validates.</p>
+                </div>
+            }
+            else
+            {
+                <p class="notification notification-success" data-testid="save-complete" role="status">@SaveCompleteMessage</p>
+            }
         }
         else if (_savePhase == ReviewSavePhase.Failed)
         {
@@ -501,48 +529,70 @@ else
                     @onclick="HandleSaveReviewAsync"
                     disabled="@(_reviewPersistState == ReviewPersistState.Saving)"
                     data-testid="save-review-button">
-                @(_reviewPersistState == ReviewPersistState.Saving ? "Saving review…" : "Save Review")
+                @(_reviewPersistState == ReviewPersistState.Saving ? "Saving…" : "Save Review Progress")
             </button>
+
             @if (_selectedIds.Count > 0 && _savePhase != ReviewSavePhase.Saving)
             {
                 <span class="action-bar-selection-count">@_selectedIds.Count selected</span>
-                <div class="bulk-review-actions">
-                    <button type="button" class="bulk-review-btn bulk-review-accept"
-                            @onclick="@(() => BulkSetStatus(CandidateReviewStatus.Accepted))">
-                        Accept Selected
-                    </button>
-                    <button type="button" class="bulk-review-btn bulk-review-reject"
-                            @onclick="@(() => BulkSetStatus(CandidateReviewStatus.Rejected))">
-                        Reject Selected
-                    </button>
-                    <button type="button" class="bulk-review-btn bulk-review-needsreview"
-                            @onclick="@(() => BulkSetStatus(CandidateReviewStatus.NeedsReview))">
-                        Needs Review
-                    </button>
-                </div>
+
+                @if (HasPendingSelected)
+                {
+                    <div class="bulk-review-actions">
+                        <button type="button" class="bulk-review-btn bulk-review-accept"
+                                @onclick="@(() => BulkSetStatus(CandidateReviewStatus.Accepted))">
+                            Accept Selected
+                        </button>
+                        <button type="button" class="bulk-review-btn bulk-review-reject"
+                                @onclick="@(() => BulkSetStatus(CandidateReviewStatus.Rejected))">
+                            Reject Selected
+                        </button>
+                        <button type="button" class="bulk-review-btn bulk-review-needsreview"
+                                @onclick="@(() => BulkSetStatus(CandidateReviewStatus.NeedsReview))">
+                            Mark Needs Review
+                        </button>
+                    </div>
+                }
             }
+
             <div class="action-bar-right">
                 @if (_selectedIds.Count > 0 && _savePhase != ReviewSavePhase.Saving)
                 {
                     <button type="button" class="btn-secondary" @onclick="ClearSelection">
-                        Clear selection
+                        Clear Selection
+                    </button>
+
+                    @if (HasOnlyAlreadySavedSelected)
+                    {
+                        <button type="button" class="btn-primary" disabled
+                                title="All selected items are already saved to the QA Artifact Library."
+                                data-testid="confirm-save-button">
+                            Save Selected Artifacts
+                        </button>
+                    }
+                    else if (HasAcceptedUnsavedSelected)
+                    {
+                        <button type="button" class="btn-primary"
+                                @onclick="HandleSaveConfirm"
+                                data-testid="confirm-save-button">
+                            @if (_savePhase == ReviewSavePhase.Saving)
+                            {
+                                <span>Saving…</span>
+                            }
+                            else
+                            {
+                                <span>Save @SaveableSelectedCount Accepted Artifact@(SaveableSelectedCount == 1 ? "" : "s")</span>
+                            }
+                        </button>
+                    }
+                }
+                else if (_selectedIds.Count == 0)
+                {
+                    <button type="button" class="btn-primary" disabled
+                            data-testid="confirm-save-button">
+                        Save Accepted Artifacts
                     </button>
                 }
-                <button
-                    type="button"
-                    disabled="@(_selectedIds.Count == 0 || _savePhase == ReviewSavePhase.Saving)"
-                    @onclick="HandleSaveConfirm"
-                    data-testid="confirm-save-button"
-                    class="btn-primary">
-                    @if (_savePhase == ReviewSavePhase.Saving)
-                    {
-                        <span>Saving…</span>
-                    }
-                    else
-                    {
-                        <span>Save @_selectedIds.Count selected</span>
-                    }
-                </button>
             </div>
         </div>
 
@@ -582,6 +632,29 @@ else
     private readonly HashSet<Guid> _selectedIds = new();
     private ReviewSavePhase _savePhase = ReviewSavePhase.Idle;
     private ReviewPersistState _reviewPersistState = ReviewPersistState.Idle;
+    private SuggestionResultData? _suggestionResult;
+    private SavedTypeSummary? _savedSummary;
+    private int _alreadySavedCount;
+
+    // ── Selection context helpers ─────────────────────────────────────────────
+    private IReadOnlyList<ExtractionCandidate> SelectedCandidates =>
+        PipelineResult?.Candidates.Where(c => _selectedIds.Contains(c.CandidateId)).ToList()
+        ?? (IReadOnlyList<ExtractionCandidate>)Array.Empty<ExtractionCandidate>();
+
+    private bool HasPendingSelected =>
+        SelectedCandidates.Any(c => c.ReviewStatus is CandidateReviewStatus.New or CandidateReviewStatus.NeedsReview);
+
+    private bool HasAcceptedUnsavedSelected =>
+        SelectedCandidates.Any(c => c.ReviewStatus == CandidateReviewStatus.Accepted
+                                 && c.SaveState != CandidateSaveState.Saved);
+
+    private bool HasOnlyAlreadySavedSelected =>
+        _selectedIds.Count > 0
+        && SelectedCandidates.All(c => c.SaveState == CandidateSaveState.Saved);
+
+    private int SaveableSelectedCount =>
+        SelectedCandidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted
+                                   && c.SaveState != CandidateSaveState.Saved);
     private string _sessionId = Guid.NewGuid().ToString();
     private ExtractionPipelineResult? _previousPipelineResult;
     private ScenarioKind? _activeFilter = null;
@@ -594,7 +667,7 @@ else
     private readonly Dictionary<string, bool> _clrSubsectionExpanded = new();
     private readonly Dictionary<string, bool> _capabilityGroupExpanded = new();
     private readonly Dictionary<string, bool> _architectureGroupExpanded = new();
-    private ExtractionViewMode _activeViewMode = ExtractionViewMode.Traceability;
+    private ExtractionViewMode _activeViewMode = ExtractionViewMode.Extraction;
     private readonly List<CandidateLinkEntry> _links = new();
     private ExtractionCandidate? _linkModalCandidate;
     private ExtractionCandidate? _prevLinkModalCandidate;
@@ -609,6 +682,9 @@ else
             _previousPipelineResult = PipelineResult;
             _savePhase = ReviewSavePhase.Idle;
             _reviewPersistState = ReviewPersistState.Idle;
+            _suggestionResult = null;
+            _savedSummary = null;
+            _alreadySavedCount = 0;
 
             if (InitialSession is not null && !_initialSessionConsumed)
             {
@@ -625,7 +701,7 @@ else
                 _activeReviewFilter = null;
                 _activeLinkFilter = null;
                 _searchTerm = string.Empty;
-                _activeViewMode = ExtractionViewMode.Traceability;
+                _activeViewMode = ExtractionViewMode.Extraction;
                 _sectionExpanded.Clear();
                 _reqSubsectionExpanded.Clear();
                 _testSubsectionExpanded.Clear();
@@ -1355,83 +1431,112 @@ else
             return;
 
         _savePhase = ReviewSavePhase.Saving;
+        _alreadySavedCount = 0;
 
         var selectedCandidates = PipelineResult.Candidates
             .Where(c => _selectedIds.Contains(c.CandidateId))
             .ToList();
 
-        foreach (var c in selectedCandidates)
+        // Split: skip items already saved (client-side duplicate protection)
+        var alreadySaved = selectedCandidates.Where(c => c.SaveState == CandidateSaveState.Saved).ToList();
+        var toSave = selectedCandidates.Where(c => c.SaveState != CandidateSaveState.Saved).ToList();
+        _alreadySavedCount = alreadySaved.Count;
+
+        foreach (var c in toSave)
             c.SaveState = CandidateSaveState.Saving;
 
         StateHasChanged();
 
         try
         {
-            var items = selectedCandidates
-                .Select(c => new CreateScenarioInput
-                {
-                    Title = c.Title,
-                    Description = null,
-                    Kind = c.Classification,
-                    ProjectId = ProjectId,
-                })
-                .ToList();
-
-            var metadata = new ExtractionMetadataInput
+            if (toSave.Count == 0)
             {
-                TotalExtracted = PipelineResult.Candidates.Count,
-                SelectedCount = selectedCandidates.Count,
-                ExtractionDurationMs = (int)PipelineResult.DurationMs,
-                SessionId = _sessionId,
-            };
-
-            var input = new CreateScenariosInput
-            {
-                Items = items,
-                ExtractionMetadata = metadata,
-            };
-
-            var result = await CreateScenariosMutation.ExecuteAsync(input);
-
-            if (result.Data?.CreateScenarios is { } payload)
-            {
-                var results = payload.Results;
-                for (var i = 0; i < selectedCandidates.Count && i < results.Count; i++)
-                {
-                    var candidate = selectedCandidates[i];
-                    var itemResult = results[i];
-
-                    if (itemResult is ICreateScenarios_CreateScenarios_Results_CreateScenarioSuccess success)
-                    {
-                        candidate.SaveState = CandidateSaveState.Saved;
-                        candidate.SavedScenarioId = success.Scenario.Id;
-                    }
-                    else if (itemResult is ICreateScenarios_CreateScenarios_Results_CreateScenarioError error)
-                    {
-                        candidate.SaveState = CandidateSaveState.Failed;
-                        candidate.SaveError = error.Message;
-                    }
-                }
-
-                _savePhase = payload.FailureCount == 0
-                    ? ReviewSavePhase.Complete
-                    : payload.SuccessCount == 0
-                        ? ReviewSavePhase.Failed
-                        : ReviewSavePhase.PartialSuccess;
+                // Everything was already saved — no API call needed
+                _savedSummary = new SavedTypeSummary(0, 0, 0);
+                _savePhase = ReviewSavePhase.Complete;
             }
             else
             {
-                foreach (var c in selectedCandidates)
+                var items = toSave
+                    .Select(c => new CreateScenarioInput
+                    {
+                        Title = c.Title,
+                        Description = null,
+                        Kind = c.Classification,
+                        ProjectId = ProjectId,
+                    })
+                    .ToList();
+
+                var metadata = new ExtractionMetadataInput
                 {
-                    c.SaveState = CandidateSaveState.Failed;
-                    c.SaveError = "No response data received.";
+                    TotalExtracted = PipelineResult.Candidates.Count,
+                    SelectedCount = selectedCandidates.Count,
+                    ExtractionDurationMs = (int)PipelineResult.DurationMs,
+                    SessionId = _sessionId,
+                };
+
+                var input = new CreateScenariosInput
+                {
+                    Items = items,
+                    ExtractionMetadata = metadata,
+                };
+
+                var result = await CreateScenariosMutation.ExecuteAsync(input);
+
+                if (result.Data?.CreateScenarios is { } payload)
+                {
+                    var results = payload.Results;
+                    for (var i = 0; i < toSave.Count && i < results.Count; i++)
+                    {
+                        var candidate = toSave[i];
+                        var itemResult = results[i];
+
+                        if (itemResult is ICreateScenarios_CreateScenarios_Results_CreateScenarioSuccess success)
+                        {
+                            candidate.SaveState = CandidateSaveState.Saved;
+                            candidate.SavedScenarioId = success.Scenario.Id;
+                        }
+                        else if (itemResult is ICreateScenarios_CreateScenarios_Results_CreateScenarioError error)
+                        {
+                            candidate.SaveState = CandidateSaveState.Failed;
+                            candidate.SaveError = error.Message;
+                        }
+                    }
+
+                    _savedSummary = new SavedTypeSummary(
+                        toSave.Count(c => c.Classification == ScenarioKind.Requirement && c.SaveState == CandidateSaveState.Saved),
+                        toSave.Count(c => c.Classification == ScenarioKind.Test && c.SaveState == CandidateSaveState.Saved),
+                        toSave.Count(c => c.Classification == ScenarioKind.NeedsClarification && c.SaveState == CandidateSaveState.Saved));
+
+                    if (payload.SuggestionResult is { } sr)
+                        _suggestionResult = new SuggestionResultData(sr.TotalGenerated, sr.HighConfidenceCount, sr.NeedsReviewCount, sr.SuggestionsAvailable);
+
+                    _savePhase = payload.FailureCount == 0
+                        ? ReviewSavePhase.Complete
+                        : payload.SuccessCount == 0
+                            ? ReviewSavePhase.Failed
+                            : ReviewSavePhase.PartialSuccess;
                 }
-                _savePhase = ReviewSavePhase.Failed;
+                else
+                {
+                    foreach (var c in toSave)
+                    {
+                        c.SaveState = CandidateSaveState.Failed;
+                        c.SaveError = "No response data received.";
+                    }
+                    _savePhase = ReviewSavePhase.Failed;
+                }
+            }
+
+            if (_savePhase is ReviewSavePhase.Complete or ReviewSavePhase.PartialSuccess)
+            {
+                ClearSelection();
+                await SaveSessionAsync();
             }
         }
         catch (Exception)
         {
-            foreach (var c in selectedCandidates)
+            foreach (var c in toSave)
             {
                 if (c.SaveState == CandidateSaveState.Saving)
                 {
@@ -1445,9 +1550,22 @@ else
 
     private void RestoreFromSession(ExtractionSessionSnapshot snapshot)
     {
+        // Restore selection only for non-accepted, non-saved items (selection is temporary UI state)
         _selectedIds.Clear();
         foreach (var id in snapshot.SelectedIds)
+        {
+            var candidate = PipelineResult?.Candidates.FirstOrDefault(c => c.CandidateId == id);
+            if (candidate is null) continue;
+            if (candidate.ReviewStatus == CandidateReviewStatus.Accepted) continue;
+            if (candidate.SaveState == CandidateSaveState.Saved) continue;
             _selectedIds.Add(id);
+        }
+        // Sync IsSelected on all candidates to match the filtered set
+        if (PipelineResult is not null)
+        {
+            foreach (var c in PipelineResult.Candidates)
+                c.IsSelected = _selectedIds.Contains(c.CandidateId);
+        }
 
         _activeFilter = snapshot.ActiveFilter;
         _activeReviewFilter = snapshot.ActiveReviewFilter;
@@ -1563,6 +1681,35 @@ else
         }
         var hours = (int)age.TotalHours;
         return $"{hours} hour{(hours == 1 ? "" : "s")} ago";
+    }
+
+    private sealed record SuggestionResultData(int TotalGenerated, int HighConfidenceCount, int NeedsReviewCount, bool SuggestionsAvailable);
+    private sealed record SavedTypeSummary(int RequirementCount, int TestCount, int ClarificationCount);
+
+    private string SaveCompleteMessage
+    {
+        get
+        {
+            var newCount = _savedSummary is not null
+                ? _savedSummary.RequirementCount + _savedSummary.TestCount + _savedSummary.ClarificationCount
+                : 0;
+            if (_alreadySavedCount > 0 && newCount == 0)
+                return $"{_alreadySavedCount} artifact{(_alreadySavedCount == 1 ? "" : "s")} already saved — no duplicates created. Selection cleared.";
+            if (_alreadySavedCount > 0)
+                return $"{newCount} new artifact{(newCount == 1 ? "" : "s")} saved ({BuildSavedSummaryText(_savedSummary!)}). {_alreadySavedCount} already saved. Selection cleared.";
+            if (newCount > 0)
+                return $"{newCount} artifact{(newCount == 1 ? "" : "s")} saved ({BuildSavedSummaryText(_savedSummary!)}). Selection cleared.";
+            return "Saved successfully. Selection cleared.";
+        }
+    }
+
+    private static string BuildSavedSummaryText(SavedTypeSummary s)
+    {
+        var parts = new List<string>(3);
+        if (s.RequirementCount > 0) parts.Add($"{s.RequirementCount} requirement{(s.RequirementCount == 1 ? "" : "s")}");
+        if (s.TestCount > 0) parts.Add($"{s.TestCount} test{(s.TestCount == 1 ? "" : "s")}");
+        if (s.ClarificationCount > 0) parts.Add($"{s.ClarificationCount} clarification{(s.ClarificationCount == 1 ? "" : "s")}");
+        return string.Join(", ", parts);
     }
 
     public void Dispose()

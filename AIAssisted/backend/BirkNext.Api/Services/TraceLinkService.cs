@@ -33,6 +33,15 @@ public class CoverageSummary
     public int NotCoveredRequirements { get; init; }
     public double CoveragePercent { get; init; }
     public int OrphanTests { get; init; }
+
+    /// <summary>Requirements with pending suggestions but no confirmed coverage.</summary>
+    public int SuggestedCoverageRequirements { get; init; }
+
+    /// <summary>Total pending (non-rejected) suggestions for this project.</summary>
+    public int PendingSuggestionCount { get; init; }
+
+    /// <summary>High-confidence pending suggestions.</summary>
+    public int HighConfidenceSuggestionCount { get; init; }
 }
 
 public enum CoverageStatus { Covered, NotCovered }
