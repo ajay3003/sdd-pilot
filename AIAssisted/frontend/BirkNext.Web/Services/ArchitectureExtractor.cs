@@ -70,12 +70,33 @@ public static class ArchitectureExtractor
         ("Folkeregisteret",
          ["folkeregisteret"],
          "Civil registration authority"),
+        ("Microsoft Graph",
+         ["microsoft graph", "ms graph"],
+         "Microsoft Graph API for Azure AD / Entra ID identity and group membership data"),
         ("Authorisation Module",
          ["authorisation module", "authorization module", "auth module"],
          "Central authorisation service; fail-closed — denies all access when unavailable"),
         ("Audit Service",
          ["audit service", "audit log service", "auditservice"],
          "Records all data access operations for compliance and audit trail"),
+    ];
+
+    // ── Infrastructure components ─────────────────────────────────────────────
+
+    private static readonly (string Name, string[] SearchTerms, string Description)[] InfrastructureItems =
+    [
+        ("EF Core",
+         ["ef core", "entity framework core", "entityframeworkcore"],
+         "ORM for database access and schema migrations"),
+        ("Outbox Worker",
+         ["outbox worker", "outbox hosted", "outboxworker"],
+         "Hosted background service that publishes domain events from the transactional outbox"),
+        ("Hosted Services",
+         ["ihostedservice", "backgroundservice", "hosted service worker"],
+         "ASP.NET Core background services for long-running and scheduled operations"),
+        ("Azure Container Apps",
+         ["container apps", "azure container app"],
+         "Managed container hosting platform for the application"),
     ];
 
     // ── Architecture patterns ────────────────────────────────────────────────
@@ -153,19 +174,15 @@ public static class ArchitectureExtractor
 
             if (node.NodeType == SpecNodeType.Entity)
             {
-                var type = ClassifyEntityNode(node.Title, text);
-                if (type.HasValue)
+                AddOrMerge(elements, new ArchElement
                 {
-                    AddOrMerge(elements, new ArchElement
-                    {
-                        Name = node.SpecItemId ?? node.Title,
-                        ElementType = type.Value,
-                        Description = TrimDescription(node.FullContent ?? node.Excerpt),
-                        SourceSections = [section],
-                        RelatedFrIds = ExtractFrIds(text),
-                        RelatedUsIds = ExtractUsIds(text),
-                    });
-                }
+                    Name = node.SpecItemId ?? node.Title,
+                    ElementType = ClassifyEntityNode(node.Title, text),
+                    Description = TrimDescription(node.FullContent ?? node.Excerpt),
+                    SourceSections = [section],
+                    RelatedFrIds = ExtractFrIds(text),
+                    RelatedUsIds = ExtractUsIds(text),
+                });
                 continue;
             }
 
@@ -383,6 +400,27 @@ public static class ArchitectureExtractor
             });
         }
 
+        // Infrastructure components (EF Core, hosted services, etc.)
+        foreach (var (name, searchTerms, desc) in InfrastructureItems)
+        {
+            if (!searchTerms.Any(t => fullText.Contains(t, StringComparison.OrdinalIgnoreCase))) continue;
+            var matchingNodes = nodesWithSection
+                .Where(x => searchTerms.Any(t => GetNodeText(x.Node).Contains(t, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+            var sections = matchingNodes.Select(x => x.Section).Distinct().ToList();
+            if (sections.Count == 0) sections = ["Infrastructure"];
+            var combinedText = string.Join(" ", matchingNodes.Select(x => GetNodeText(x.Node)));
+            AddOrMerge(elements, new ArchElement
+            {
+                Name = name,
+                ElementType = ArchElementType.InfrastructureComponent,
+                Description = desc,
+                SourceSections = sections,
+                RelatedFrIds = ExtractFrIds(combinedText),
+                RelatedUsIds = ExtractUsIds(combinedText),
+            });
+        }
+
         // Azure deployment region
         if (fullText.Contains("norway east", StringComparison.OrdinalIgnoreCase) ||
             fullText.Contains("norwayeast", StringComparison.OrdinalIgnoreCase))
@@ -390,7 +428,7 @@ public static class ArchitectureExtractor
             AddOrMerge(elements, new ArchElement
             {
                 Name = "Azure Norway East",
-                ElementType = ArchElementType.Service,
+                ElementType = ArchElementType.InfrastructureComponent,
                 Description = "Primary Azure deployment region; data sovereignty for Norwegian citizen data",
                 SourceSections = ["Infrastructure"],
             });
@@ -492,7 +530,7 @@ public static class ArchitectureExtractor
         return words.Length > 0 ? words[0] : cleaned;
     }
 
-    private static ArchElementType? ClassifyEntityNode(string name, string text)
+    private static ArchElementType ClassifyEntityNode(string name, string text)
     {
         var combined = (name + " " + text).ToLowerInvariant();
         if (combined.Contains("historikk") || combined.Contains("history") ||
@@ -507,7 +545,7 @@ public static class ArchitectureExtractor
             combined.EndsWith("endret") || combined.EndsWith("registrert") ||
             combined.EndsWith("slettet"))
             return ArchElementType.DomainEvent;
-        return null; // domain model entities — not architecture elements
+        return ArchElementType.DomainEntity; // plain domain model entity (Person, Barn, etc.)
     }
 
     private static List<string> ExtractFrIds(string text) =>

@@ -432,15 +432,20 @@ else
 
     private static readonly (ArchElementType Type, string Label, string Icon)[] Categories =
     [
-        (ArchElementType.Api,            "APIs",               "🌐"),
-        (ArchElementType.Service,        "Services & Modules", "⚙️"),
-        (ArchElementType.Persistence,    "Persistence",        "🗃"),
-        (ArchElementType.Messaging,      "Messaging & Events", "📨"),
-        (ArchElementType.DomainEvent,    "Domain Events",      "⚡"),
-        (ArchElementType.Security,       "Security",           "🔐"),
-        (ArchElementType.ExternalSystem, "External Systems",   "🔗"),
-        (ArchElementType.Pattern,        "Patterns",           "🔄"),
-        (ArchElementType.Risk,           "Architecture Risks", "⚠️"),
+        (ArchElementType.Api,                    "APIs",                    "🌐"),
+        (ArchElementType.DomainEntity,           "Domain Entities",         "👤"),
+        (ArchElementType.DomainEvent,            "Domain Events",           "⚡"),
+        (ArchElementType.Service,                "Services & Modules",      "⚙️"),
+        (ArchElementType.InfrastructureComponent,"Infrastructure",          "🏗"),
+        (ArchElementType.DataStore,              "Data Stores",             "🗄"),
+        (ArchElementType.Persistence,            "Persistence",             "🗃"),
+        (ArchElementType.Messaging,              "Messaging",               "📨"),
+        (ArchElementType.Security,               "Security",                "🔐"),
+        (ArchElementType.SecurityBoundary,       "Security Boundaries",     "🛡"),
+        (ArchElementType.ExternalSystem,         "External Systems",        "🔗"),
+        (ArchElementType.IntegrationPoint,       "Integration Points",      "🔌"),
+        (ArchElementType.Pattern,                "Patterns",                "🔄"),
+        (ArchElementType.Risk,                   "Architecture Risks",      "⚠️"),
     ];
 
     private enum AvViewMode { Elements, Diagram }

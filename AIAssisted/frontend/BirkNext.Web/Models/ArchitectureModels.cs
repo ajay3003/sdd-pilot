@@ -3,12 +3,17 @@ namespace BirkNext.Web.Models;
 public enum ArchElementType
 {
     Api,
+    DomainEntity,            // plain domain model entity (Person, Barn, etc.)
+    DomainEvent,
     Service,
+    InfrastructureComponent, // EF Core, Outbox worker, Hosted Services, Azure deployment
+    DataStore,               // database / data-store specific
     Persistence,
     Messaging,
-    DomainEvent,
     Security,
+    SecurityBoundary,        // security boundary (e.g. Kode 6/7 protected data zone)
     ExternalSystem,
+    IntegrationPoint,        // integration point with external systems
     Pattern,
     Risk,
 }

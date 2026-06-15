@@ -445,3 +445,38 @@
 .av-cat-risk { border-left: 3px solid #ef4444 !important; }
 .av-diag-risk { background: rgba(239, 68, 68, 0.18); border-color: #ef4444; }
 .av-detail-header-risk { border-bottom-color: #ef4444; }
+
+/* DomainEntity — emerald green */
+.av-chip-domainentity { background: #10b981; }
+.av-dot-domainentity { background: #10b981; }
+.av-cat-domainentity { border-left: 3px solid #10b981 !important; }
+.av-diag-domainentity { background: rgba(16, 185, 129, 0.18); border-color: #10b981; }
+.av-detail-header-domainentity { border-bottom-color: #10b981; }
+
+/* InfrastructureComponent — slate blue-gray */
+.av-chip-infrastructurecomponent { background: #475569; }
+.av-dot-infrastructurecomponent { background: #475569; }
+.av-cat-infrastructurecomponent { border-left: 3px solid #475569 !important; }
+.av-diag-infrastructurecomponent { background: rgba(71, 85, 105, 0.18); border-color: #475569; }
+.av-detail-header-infrastructurecomponent { border-bottom-color: #475569; }
+
+/* DataStore — deep violet */
+.av-chip-datastore { background: #7c3aed; }
+.av-dot-datastore { background: #7c3aed; }
+.av-cat-datastore { border-left: 3px solid #7c3aed !important; }
+.av-diag-datastore { background: rgba(124, 58, 237, 0.18); border-color: #7c3aed; }
+.av-detail-header-datastore { border-bottom-color: #7c3aed; }
+
+/* SecurityBoundary — rose */
+.av-chip-securityboundary { background: #f43f5e; }
+.av-dot-securityboundary { background: #f43f5e; }
+.av-cat-securityboundary { border-left: 3px solid #f43f5e !important; }
+.av-diag-securityboundary { background: rgba(244, 63, 94, 0.18); border-color: #f43f5e; }
+.av-detail-header-securityboundary { border-bottom-color: #f43f5e; }
+
+/* IntegrationPoint — cyan */
+.av-chip-integrationpoint { background: #06b6d4; }
+.av-dot-integrationpoint { background: #06b6d4; }
+.av-cat-integrationpoint { border-left: 3px solid #06b6d4 !important; }
+.av-diag-integrationpoint { background: rgba(6, 182, 212, 0.18); border-color: #06b6d4; }
+.av-detail-header-integrationpoint { border-bottom-color: #06b6d4; }

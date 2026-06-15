@@ -833,6 +833,14 @@ public static class SpecExplorerService
             return SectionSemantics.SuccessCriteriaSection;
         if (Regex.IsMatch(t, @"\bkey\s+entit|\bentities\b"))
             return SectionSemantics.KeyEntities;
+        if (Regex.IsMatch(t, @"\bdomain\s+event"))
+            return SectionSemantics.DomainEvents;
+        if (Regex.IsMatch(t, @"\binfrastructure"))
+            return SectionSemantics.Infrastructure;
+        if (Regex.IsMatch(t, @"\bexternal\s+system"))
+            return SectionSemantics.ExternalSystems;
+        if (Regex.IsMatch(t, @"\bintegration\s+point"))
+            return SectionSemantics.IntegrationPoints;
 
         return SectionSemantics.Generic;
     }

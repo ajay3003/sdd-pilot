@@ -52,6 +52,10 @@ public enum SectionSemantics
     RequirementsSection,
     SuccessCriteriaSection,
     KeyEntities,         // Key Entities / domain model section
+    DomainEvents,        // Domain Events section
+    Infrastructure,      // Infrastructure Components section
+    ExternalSystems,     // External Systems section
+    IntegrationPoints,   // Integration Points section
 }
 
 public enum CoverageState { Unknown, Covered, Partial, Missing }

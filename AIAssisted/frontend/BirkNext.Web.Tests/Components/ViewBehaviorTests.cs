@@ -426,4 +426,149 @@ public class ViewBehaviorTests : BunitContext
         coveredBadge.TextContent.Should().Contain("1",
             "Covered requirement must display the linked test count in its row header");
     }
+
+    // =========================================================================
+    // ArchitectureView — extraction correctness and empty-state prevention
+    // =========================================================================
+
+    [Fact]
+    public void ArchitectureView_ExtractsApiSurface()
+    {
+        const string md = """
+            # Spec
+
+            ## API Surface
+            - **GraphQL** — read operations for the presentation layer
+            - **REST** — ingestion endpoint for the BiRK adapter
+            """;
+
+        var cut = Render<ArchitectureView>(p => p.Add(c => c.SpecMarkdown, md));
+
+        cut.FindAll(".av-empty").Should().BeEmpty("API Surface items must produce architecture elements");
+        cut.FindAll(".av-chip-api").Should().NotBeEmpty("API elements must appear as metric chips");
+    }
+
+    [Fact]
+    public void ArchitectureView_ExtractsDomainEntities()
+    {
+        const string md = """
+            # Spec
+
+            ## Key Entities
+            - **Person**: A person registered in the system
+            - **Barn**: A child linked to one or more caregivers
+            """;
+
+        var cut = Render<ArchitectureView>(p => p.Add(c => c.SpecMarkdown, md));
+
+        cut.FindAll(".av-empty").Should().BeEmpty("Key Entities must produce domain entity elements");
+        cut.FindAll(".av-chip-domainentity").Should().NotBeEmpty(
+            "Domain entity chip must appear — ClassifyEntityNode must not return null for plain entities");
+        cut.Markup.Should().Contain("Person", "Extracted entity names must be visible in the element tree");
+    }
+
+    [Fact]
+    public void ArchitectureView_ExtractsDomainEvents()
+    {
+        const string md = """
+            # Spec
+
+            ## Domain Events
+            PersonOpprettet — published when a new Person is created.
+            PersonOppdatert — published when Person data changes.
+            """;
+
+        var cut = Render<ArchitectureView>(p => p.Add(c => c.SpecMarkdown, md));
+
+        cut.FindAll(".av-empty").Should().BeEmpty("Domain Events section must produce architecture elements");
+        cut.FindAll(".av-chip-domainevent").Should().NotBeEmpty("Domain event chip must appear");
+    }
+
+    [Fact]
+    public void ArchitectureView_ExtractsInfrastructureComponents()
+    {
+        const string md = """
+            # Spec
+
+            ## Infrastructure
+            EF Core is used for database access and schema migrations.
+            """;
+
+        var cut = Render<ArchitectureView>(p => p.Add(c => c.SpecMarkdown, md));
+
+        cut.FindAll(".av-empty").Should().BeEmpty("Infrastructure section must produce architecture elements");
+        cut.FindAll(".av-chip-infrastructurecomponent").Should().NotBeEmpty(
+            "Infrastructure component chip must appear for EF Core");
+    }
+
+    [Fact]
+    public void ArchitectureView_ExtractsExternalSystems()
+    {
+        const string md = """
+            # Spec
+
+            ## External Systems
+            BiRK provides national child welfare data via the CDC pipeline.
+            Microsoft Graph is used for Azure AD group membership lookups.
+            """;
+
+        var cut = Render<ArchitectureView>(p => p.Add(c => c.SpecMarkdown, md));
+
+        cut.FindAll(".av-empty").Should().BeEmpty("External Systems section must produce architecture elements");
+        cut.FindAll(".av-chip-externalsystem").Should().NotBeEmpty("External system chip must appear");
+        cut.Markup.Should().Contain("Microsoft Graph",
+            "Microsoft Graph must be extracted as an external system from its named lookup");
+    }
+
+    [Fact]
+    public void ArchitectureView_DoesNotShowFalseEmptyState()
+    {
+        const string md = """
+            # Person Module Spec
+
+            ## API Surface
+            - **GraphQL** — queries and mutations for the presentation layer
+
+            ## Key Entities
+            - **Person**: Core domain entity with name and contact data
+            - **Barn**: Child entity linked to caregivers
+
+            ## Domain Events
+            PersonOpprettet — published when a new Person is created.
+
+            ## Infrastructure
+            EF Core handles database access. Norway East deployment region.
+
+            ## External Systems
+            BiRK is the primary data source.
+            """;
+
+        var cut = Render<ArchitectureView>(p => p.Add(c => c.SpecMarkdown, md));
+
+        cut.FindAll(".av-empty").Should().BeEmpty(
+            "A spec with API Surface, Key Entities, Domain Events, Infrastructure, and External Systems must not show an empty state");
+        cut.Markup.Should().Contain("av-root");
+    }
+
+    [Fact]
+    public void ArchitectureView_UsesSharedExtractionModel()
+    {
+        // Verify that the Architecture View faithfully extracts what SpecExplorerService parses:
+        // entity names from the Key Entities section must appear verbatim in the element tree.
+        const string md = """
+            # Spec
+
+            ## Key Entities
+            - **Person**: Core domain entity representing a registered individual
+            - **Barn**: Child entity in the child welfare domain
+            """;
+
+        var cut = Render<ArchitectureView>(p => p.Add(c => c.SpecMarkdown, md));
+
+        cut.FindAll(".av-empty").Should().BeEmpty();
+        cut.Markup.Should().Contain("Person",
+            "Entity names parsed by SpecExplorerService must be surfaced in the Architecture View element tree");
+        cut.Markup.Should().Contain("Barn",
+            "All Key Entities must be extracted — none should be silently dropped by ClassifyEntityNode");
+    }
 }
