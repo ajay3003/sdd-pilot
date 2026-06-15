@@ -72,6 +72,119 @@ public class ViewBehaviorTests : BunitContext
     }
 
     // =========================================================================
+    // Traceability — artifact classification and coverage eligibility
+    // =========================================================================
+
+    [Fact]
+    public void Traceability_DoesNotTreatClarificationsAsRequirements()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement,       "US1: Search"),
+            MakeCandidate("How should we handle session timeout?", ScenarioKind.NeedsClarification, "US1: Search"),
+            MakeCandidate("Q/A session item about retries",        ScenarioKind.Requirement,       "Session 2026-03-06"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.Find(".tv-chip-req").TextContent.Should().Contain("1 Requirement",
+            "Clarifications and Q/A session items must not count as coverage-eligible requirements");
+    }
+
+    [Fact]
+    public void Traceability_DoesNotRequireTestsForDecisions()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("Use REST for the public API",           ScenarioKind.Requirement,       "Architecture Decisions"),
+            MakeCandidate("How should we handle retries?",         ScenarioKind.NeedsClarification, "US1: Search"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.FindAll(".tv-status-missingtests").Should().BeEmpty(
+            "Non-eligible artifacts must not carry a Missing Tests warning");
+        cut.FindAll(".tv-chip-gap").Should().BeEmpty(
+            "No coverage gaps should be reported when there are no eligible requirements without tests");
+    }
+
+    [Fact]
+    public void Traceability_CoverageUsesEligibleArtifactsOnly()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search",  ScenarioKind.Requirement, "US1: Search"),
+            MakeCandidate("Test: search returns results",          ScenarioKind.Test,        "US1: Search"),
+            MakeCandidate("Q/A session item",                      ScenarioKind.Requirement, "Session 2026-03-06"),
+            MakeCandidate("Architecture: use Elasticsearch",       ScenarioKind.Requirement, "Architecture Decisions"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        // 1 eligible requirement, 1 test → 100% coverage; not 33% from 3 total items
+        cut.Find(".tv-chip-cov").TextContent.Should().Contain("100%",
+            "Coverage must be calculated only from coverage-eligible artifacts");
+    }
+
+    [Fact]
+    public void Traceability_ArtifactCountsMatchAcrossViews()
+    {
+        // Two requirements in the same heading share 1 test via proximity linking.
+        // TotalTests must be 1 (distinct), not 2 (double-counted via proximity).
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+            MakeCandidate("FR-002: The system MUST filter results", ScenarioKind.Requirement, "US1: Search"),
+            MakeCandidate("Test: search and filter works",         ScenarioKind.Test,        "US1: Search"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.Find(".tv-chip-test").TextContent.Should().Contain("1 Test",
+            "Test count must use distinct IDs — a single test linked to 2 requirements counts once");
+    }
+
+    [Fact]
+    public void Traceability_ShowsArtifactTypeBadges()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement,       "US1: Search"),
+            MakeCandidate("How should we handle timeouts?",       ScenarioKind.NeedsClarification, "US1: Search"),
+            MakeCandidate("Use GraphQL for the BFF layer",        ScenarioKind.Requirement,       "Architecture Decisions"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.FindAll(".tv-type-badge").Should().NotBeEmpty(
+            "Non-eligible artifacts must display an artifact type badge instead of a Missing Tests warning");
+        cut.Markup.Should().Contain("Clarification",
+            "NeedsClarification items must be labelled as Clarification");
+        cut.Markup.Should().Contain("Architecture Note",
+            "Items from architecture headings must be labelled as Architecture Note");
+    }
+
+    // =========================================================================
     // T13 — FlowView groups by user story heading, not by candidate classification
     // =========================================================================
 

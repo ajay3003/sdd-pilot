@@ -735,3 +735,92 @@
     margin-bottom: 0.3rem;
     border-bottom: 1px solid var(--clr-border, #334155);
 }
+
+/* ── Artifact type badges ─────────────────────────────────────────────────── */
+
+.tv-type-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.18rem 0.48rem;
+    border-radius: 4px;
+    border: 1px solid;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.tv-type-clarification  { background: #f0f9ff; color: #0369a1; border-color: #bae6fd; }
+.tv-type-decision       { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+.tv-type-arch-note      { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+.tv-type-metadata       { background: #f9fafb; color: #374151; border-color: #d1d5db; }
+.tv-type-requirement    { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+
+/* ── NotEligible status ───────────────────────────────────────────────────── */
+
+.tv-status-noteligible  { background: transparent; color: #9ca3af; border-color: #e5e7eb; }
+.tv-dot-noteligible     { background: #9ca3af; }
+.tv-row-noteligible     { border-left: 3px solid #9ca3af; opacity: 0.8; }
+
+/* ── Non-testable matrix filter chip ─────────────────────────────────────── */
+
+.tv-fc-noneligible { color: #6b7280; }
+.tv-fc-noneligible.is-active { background: #6b7280; color: #fff; border-color: #6b7280; }
+
+/* ── Coverage eligibility indicator ──────────────────────────────────────── */
+
+.tv-det-eligibility { padding: 0.3rem 0; }
+
+.tv-eligible-yes {
+    font-size: 0.72rem;
+    color: #16a34a;
+    font-weight: 600;
+}
+
+.tv-eligible-no {
+    font-size: 0.72rem;
+    color: #9ca3af;
+    font-style: italic;
+}
+
+/* ── Artifact breakdown bar ───────────────────────────────────────────────── */
+
+.tv-artifact-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--clr-surface-alt, #1e293b);
+    border: 1px solid var(--clr-border, #334155);
+    border-radius: 8px;
+    font-size: 0.72rem;
+}
+
+.tv-breakdown-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--clr-text-subtle, #64748b);
+    margin-right: 0.2rem;
+}
+
+.tv-breakdown-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.16rem 0.48rem;
+    border-radius: 4px;
+    border: 1px solid;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.tv-breakdown-req          { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.tv-breakdown-sc           { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+.tv-breakdown-test         { background: #f0fdfa; color: #0f766e; border-color: #99f6e4; }
+.tv-breakdown-clarification { background: #f0f9ff; color: #0369a1; border-color: #bae6fd; }
+.tv-breakdown-decision     { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+.tv-breakdown-arch         { background: #faf5ff; color: #7c3aed; border-color: #e9d5ff; }
+.tv-breakdown-meta         { background: #f9fafb; color: #374151; border-color: #d1d5db; }
