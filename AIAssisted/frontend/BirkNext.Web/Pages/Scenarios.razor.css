@@ -914,6 +914,105 @@
     }
 }
 
+/* ─── Workflow banner ───────────────────────────────────────────────────── */
+
+.workflow-banner {
+    padding: 1rem 1.2rem;
+    border: 1px solid #bfdbfe;
+    border-radius: var(--radius-lg, 8px);
+    background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.workflow-banner-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.72rem;
+    gap: 1rem;
+}
+
+.workflow-banner-header span {
+    color: var(--clr-text-muted, #475569);
+    font-size: 0.78rem;
+    font-weight: 850;
+}
+
+.workflow-steps {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0;
+    list-style: none;
+    margin: 0 0 0.72rem;
+    padding: 0;
+    overflow-x: auto;
+}
+
+.workflow-step {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.76rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.workflow-step:not(:last-child)::after {
+    content: "›";
+    margin-left: 0.4rem;
+    color: #94a3b8;
+    font-size: 1rem;
+    font-weight: 400;
+}
+
+.step-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.45rem;
+    height: 1.45rem;
+    border-radius: 50%;
+    font-size: 0.68rem;
+    font-weight: 950;
+    flex-shrink: 0;
+}
+
+.step-done .step-indicator { background: #dcfce7; color: #15803d; }
+.step-active .step-indicator { background: var(--clr-primary, #2563eb); color: #ffffff; }
+.step-pending .step-indicator { background: #f1f5f9; color: #94a3b8; }
+
+.step-done .step-label { color: #15803d; }
+.step-active .step-label { color: var(--clr-primary, #2563eb); font-weight: 900; }
+.step-pending .step-label { color: #94a3b8; }
+
+.workflow-hint {
+    margin: 0;
+    padding-top: 0.68rem;
+    border-top: 1px solid #bfdbfe;
+    color: var(--clr-text-body, #1e293b);
+    font-size: 0.84rem;
+}
+
+/* ─── Disabled recommended action ──────────────────────────────────────── */
+
+.recommended-action-list li.action-disabled {
+    opacity: 0.55;
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    border-left-color: #cbd5e1;
+}
+
+/* ─── Coverage gap setup CTA ────────────────────────────────────────────── */
+
+.coverage-gap-setup-hint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
 /* ─── Pending suggestions banner ───────────────────────────────────────── */
 
 .pending-suggestions-banner {

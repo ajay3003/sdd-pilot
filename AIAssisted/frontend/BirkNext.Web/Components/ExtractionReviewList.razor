@@ -34,7 +34,8 @@ else
     <div class="extraction-review-list">
         @if (_activeViewMode != ExtractionViewMode.Architecture
              && _activeViewMode != ExtractionViewMode.Traceability
-             && _activeViewMode != ExtractionViewMode.Capability)
+             && _activeViewMode != ExtractionViewMode.Capability
+             && _activeViewMode != ExtractionViewMode.Extraction)
         {
         <p class="candidate-summary" data-testid="candidate-summary">
             @PipelineResult.Candidates.Count review candidates found -
@@ -127,7 +128,8 @@ else
         @if (_activeViewMode != ExtractionViewMode.SpecExplorer
              && _activeViewMode != ExtractionViewMode.Architecture
              && _activeViewMode != ExtractionViewMode.Traceability
-             && _activeViewMode != ExtractionViewMode.Capability)
+             && _activeViewMode != ExtractionViewMode.Capability
+             && _activeViewMode != ExtractionViewMode.Extraction)
         {
         <div class="filter-toolbar">
             <div class="filter-chips" role="group" aria-label="Filter by type" hidden="@(_activeViewMode == ExtractionViewMode.Traceability ? "hidden" : null)">
@@ -341,7 +343,7 @@ else
             <p class="notification notification-error" data-testid="save-failed" role="alert">Save failed. Please try again.</p>
         }
 
-        @if (anyVisible && _activeViewMode != ExtractionViewMode.Capability)
+        @if (anyVisible && _activeViewMode != ExtractionViewMode.Capability && _activeViewMode != ExtractionViewMode.Extraction)
         {
             <div class="section-summary-bar" role="toolbar" aria-label="Section controls">
                 <div class="section-summary-pills">
@@ -389,101 +391,13 @@ else
 
         @if (_activeViewMode == ExtractionViewMode.Extraction)
         {
-            @if (visibleRequirements.Count > 0)
-            {
-                <ExtractionSectionGroup Title="Requirements"
-                                        Accent="requirement"
-                                        DataTestId="group-requirement"
-                                        TotalCount="@PipelineResult.RequirementCount"
-                                        VisibleCount="@visibleRequirements.Count"
-                                        StatusCounts="@ComputeStatusCounts(ScenarioKind.Requirement)"
-                                        @bind-IsExpanded="_sectionExpanded[ScenarioKind.Requirement]">
-                    @foreach (var group in reqGroups)
-                    {
-                        <TestSubsectionGroup Title="@group.Label"
-                                             Accent="requirement"
-                                             TotalCount="@group.TotalCount"
-                                             VisibleCount="@group.VisibleItems.Count"
-                                             StatusCounts="@ComputeStatusCountsFor(group.VisibleItems)"
-                                             IsExpanded="@GetReqSubsectionExpanded(group.Key)"
-                                             IsExpandedChanged="@(v => SetReqSubsectionExpanded(group.Key, v))">
-                            @foreach (var candidate in group.VisibleItems)
-                            {
-                                <ExtractionCandidateRow Candidate="candidate"
-                                                        OnSelectionToggled="HandleSelectionToggled"
-                                                        OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                        Links="GetLinksForCandidate(candidate.CandidateId)"
-                                                        OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                        IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == candidate.CandidateId)" />
-                            }
-                        </TestSubsectionGroup>
-                    }
-                </ExtractionSectionGroup>
-            }
-
-            @if (visibleTests.Count > 0)
-            {
-                <ExtractionSectionGroup Title="Tests"
-                                        Accent="test"
-                                        DataTestId="group-test"
-                                        TotalCount="@PipelineResult.TestCount"
-                                        VisibleCount="@visibleTests.Count"
-                                        StatusCounts="@ComputeStatusCounts(ScenarioKind.Test)"
-                                        @bind-IsExpanded="_sectionExpanded[ScenarioKind.Test]">
-                    @foreach (var group in testGroups)
-                    {
-                        <TestSubsectionGroup Title="@group.Label"
-                                             Accent="test"
-                                             TotalCount="@group.TotalCount"
-                                             VisibleCount="@group.VisibleItems.Count"
-                                             StatusCounts="@ComputeStatusCountsFor(group.VisibleItems)"
-                                             IsExpanded="@GetSubsectionExpanded(group.Key)"
-                                             IsExpandedChanged="@(v => SetSubsectionExpanded(group.Key, v))">
-                            @foreach (var candidate in group.VisibleItems)
-                            {
-                                <ExtractionCandidateRow Candidate="candidate"
-                                                        OnSelectionToggled="HandleSelectionToggled"
-                                                        OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                        Links="GetLinksForCandidate(candidate.CandidateId)"
-                                                        OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                        IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == candidate.CandidateId)" />
-                            }
-                        </TestSubsectionGroup>
-                    }
-                </ExtractionSectionGroup>
-            }
-
-            @if (visibleNeeds.Count > 0)
-            {
-                <ExtractionSectionGroup Title="Needs Clarification"
-                                        Accent="needsclarification"
-                                        DataTestId="group-needs-clarification"
-                                        TotalCount="@PipelineResult.NeedsClarificationCount"
-                                        VisibleCount="@visibleNeeds.Count"
-                                        StatusCounts="@ComputeStatusCounts(ScenarioKind.NeedsClarification)"
-                                        @bind-IsExpanded="_sectionExpanded[ScenarioKind.NeedsClarification]">
-                    @foreach (var group in clrGroups)
-                    {
-                        <TestSubsectionGroup Title="@group.Label"
-                                             Accent="needsclarification"
-                                             TotalCount="@group.TotalCount"
-                                             VisibleCount="@group.VisibleItems.Count"
-                                             StatusCounts="@ComputeStatusCountsFor(group.VisibleItems)"
-                                             IsExpanded="@GetClrSubsectionExpanded(group.Key)"
-                                             IsExpandedChanged="@(v => SetClrSubsectionExpanded(group.Key, v))">
-                            @foreach (var candidate in group.VisibleItems)
-                            {
-                                <ExtractionCandidateRow Candidate="candidate"
-                                                        OnSelectionToggled="HandleSelectionToggled"
-                                                        OnReviewStatusChanged="HandleReviewStatusChanged"
-                                                        Links="GetLinksForCandidate(candidate.CandidateId)"
-                                                        OnOpenLinkPanel="HandleOpenLinkDrawer"
-                                                        IsLinkPanelOpen="(_linkModalCandidate?.CandidateId == candidate.CandidateId)" />
-                            }
-                        </TestSubsectionGroup>
-                    }
-                </ExtractionSectionGroup>
-            }
+            <DocumentView SpecMarkdown="@SpecMarkdown"
+                          Candidates="@(PipelineResult?.Candidates ?? [])"
+                          Links="@_links"
+                          OnSelectionToggled="HandleSelectionToggled"
+                          OnReviewStatusChanged="HandleReviewStatusChanged"
+                          OnOpenLinkPanel="HandleOpenLinkDrawer"
+                          LinkModalCandidateId="@_linkModalCandidate?.CandidateId" />
         }
 
         @if (_activeViewMode == ExtractionViewMode.Capability)
@@ -511,7 +425,7 @@ else
             <SpecExplorerPanel Candidates="@(PipelineResult?.Candidates ?? [])" InitialSpecMarkdown="@SpecMarkdown" IsEmbeddedInReview="true" />
         }
 
-        @if (!anyVisible && _activeViewMode != ExtractionViewMode.Traceability && _activeViewMode != ExtractionViewMode.SpecExplorer && _activeViewMode != ExtractionViewMode.Capability)
+        @if (!anyVisible && _activeViewMode != ExtractionViewMode.Traceability && _activeViewMode != ExtractionViewMode.SpecExplorer && _activeViewMode != ExtractionViewMode.Capability && _activeViewMode != ExtractionViewMode.Extraction)
         {
             <div class="filter-empty-state" data-testid="filter-empty-state">
                 <p>No candidates match@(_searchTerm.Length > 0 ? " your search" : " the selected filter").</p>
