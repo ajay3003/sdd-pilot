@@ -76,6 +76,12 @@ public static class SpecExplorerService
         @"^\*{1,2}(Feature Branch|Feature|Created|Status|Source|Input|Document|Imported from|Branch)\*{1,2}\s*:\s*(.*)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // FR identifier — used to deduplicate sub-bullet fragments in BuildFromCandidates
+    private static readonly Regex FrIdRe = new(@"\bFR-\d{3,4}\b", RegexOptions.Compiled);
+
+    // ISO-date heading: "2026-03-06" — marks a Q/A decision session, not a user-story lane
+    private static readonly Regex DateHeadingRe = new(@"^\d{4}-\d{2}-\d{2}\b", RegexOptions.Compiled);
+
     // Bullet item start
     private static readonly Regex BulletStartRe = new(
         @"^[-*]\s+(.+)$", RegexOptions.Compiled);
@@ -101,7 +107,7 @@ public static class SpecExplorerService
         // Health counters
         int hHeadings = 0, hReq = 0, hUs = 0, hTest = 0, hBdd = 0,
             hClr = 0, hSc = 0, hEnt = 0, hDomain = 0, hTables = 0,
-            hAssumptions = 0, hEdgeCases = 0;
+            hAssumptions = 0, hEdgeCases = 0, hDecision = 0;
 
         // Table buffer
         var tableBuffer = new List<string>();
@@ -145,6 +151,7 @@ public static class SpecExplorerService
             headingStack.Count > 0 ? headingStack[^1].Node : null;
 
         bool InClarificationsContext() => InAnyContext(SectionSemantics.Clarifications);
+        bool IsInDecisionSession() => headingStack.Any(h => DateHeadingRe.IsMatch(h.Node.Title));
         bool InBddContext() => InAnyContext(SectionSemantics.UserStory) || InAnyContext(SectionSemantics.AcceptanceScenarios);
         bool InKeyEntitiesContext() => InAnyContext(SectionSemantics.KeyEntities);
         bool InAssumptionsContext() => ActiveSemantics() == SectionSemantics.Assumptions;
@@ -227,16 +234,17 @@ public static class SpecExplorerService
                 var content = string.IsNullOrEmpty(answer)
                     ? $"Q: {qaQuestion}"
                     : $"Q: {qaQuestion}\nA: {answer}";
+                var isDecision = IsInDecisionSession();
                 par.Children.Add(new SpecNode
                 {
                     Title = titleText,
-                    NodeType = SpecNodeType.QaPair,
+                    NodeType = isDecision ? SpecNodeType.DecisionNode : SpecNodeType.QaPair,
                     HeadingLevel = 0,
                     QuestionText = qaQuestion,
                     AnswerText = answer.Length > 0 ? answer : null,
                     FullContent = content,
                 });
-                hClr++;
+                if (isDecision) hDecision++; else hClr++;
             }
             qaQuestion = null;
             qaAnswerLines.Clear();
@@ -416,16 +424,17 @@ public static class SpecExplorerService
                     var a = iqm.Groups[2].Value.Trim();
                     var titleText = StripMarkdown(q);
                     if (titleText.Length > 160) titleText = titleText[..160];
+                    var isDecision = IsInDecisionSession();
                     parent.Children.Add(new SpecNode
                     {
                         Title = titleText,
-                        NodeType = SpecNodeType.QaPair,
+                        NodeType = isDecision ? SpecNodeType.DecisionNode : SpecNodeType.QaPair,
                         HeadingLevel = 0,
                         QuestionText = q,
                         AnswerText = a,
                         FullContent = $"Q: {q}\nA: {a}",
                     });
-                    hClr++;
+                    if (isDecision) hDecision++; else hClr++;
                     continue;
                 }
 
@@ -767,6 +776,7 @@ public static class SpecExplorerService
                 Tests          = hTest,
                 BddScenarios   = hBdd,
                 Clarifications = hClr,
+                Decisions      = hDecision,
                 SuccessCriteria = hSc,
                 Entities       = hEnt,
                 DomainItems    = hDomain,
@@ -804,6 +814,8 @@ public static class SpecExplorerService
     {
         var t = title.ToLowerInvariant().Trim();
 
+        // ISO-date headings (e.g. "2026-03-06 Q/A Session") are decision sessions
+        if (DateHeadingRe.IsMatch(title)) return SectionSemantics.Clarifications;
         if (UserStoryHeadingRe.IsMatch(title)) return SectionSemantics.UserStory;
         if (Regex.IsMatch(t, @"\bclarification"))  return SectionSemantics.Clarifications;
         if (Regex.IsMatch(t, @"\bedge\s+case"))    return SectionSemantics.EdgeCases;
@@ -936,6 +948,7 @@ public static class SpecExplorerService
         node.TestCount = 0;
         node.ClarCount = 0;
         node.ScCount = 0;
+        node.DecisionCount = 0;
         node.TotalDescendants = 0;
 
         foreach (var child in node.Children)
@@ -951,6 +964,7 @@ public static class SpecExplorerService
                     case SpecNodeType.Clarification:
                     case SpecNodeType.QaPair:       node.ClarCount++; break;
                     case SpecNodeType.SuccessCriterion: node.ScCount++; break;
+                    case SpecNodeType.DecisionNode: node.DecisionCount++; break;
                     // Assumption, EdgeCase, Entity, Metadata, ApiSurfaceItem:
                     // counted in TotalDescendants but intentionally excluded from
                     // req/test/clr semantic counts so they don't inflate those metrics.
@@ -960,14 +974,25 @@ public static class SpecExplorerService
             else
             {
                 PropagateStats(child);
-                node.ReqCount      += child.ReqCount;
+                node.ReqCount       += child.ReqCount;
                 node.UserStoryCount += child.UserStoryCount;
-                node.TestCount     += child.TestCount;
-                node.ClarCount     += child.ClarCount;
-                node.ScCount       += child.ScCount;
+                node.TestCount      += child.TestCount;
+                node.ClarCount      += child.ClarCount;
+                node.ScCount        += child.ScCount;
+                node.DecisionCount  += child.DecisionCount;
                 node.TotalDescendants += child.TotalDescendants + 1;
             }
         }
+    }
+
+    private static bool IsDecisionHeadingTitle(string heading)
+    {
+        if (DateHeadingRe.IsMatch(heading)) return true;
+        var lower = heading.ToLowerInvariant();
+        return lower.StartsWith("q/a", StringComparison.Ordinal)
+            || lower.StartsWith("q&a", StringComparison.Ordinal)
+            || lower.StartsWith("decisions", StringComparison.Ordinal)
+            || (lower.Contains("clarification") && lower.Contains("session"));
     }
 
     private static string StripMarkdown(string s) =>
@@ -1095,7 +1120,7 @@ public static class SpecExplorerService
         if (candidates.Count == 0) return new SpecTree();
 
         var roots = new List<SpecNode>();
-        int reqCount = 0, testCount = 0, clrCount = 0;
+        int reqCount = 0, testCount = 0, clrCount = 0, decisionCount = 0;
 
         var hasContext = candidates.Any(c => !string.IsNullOrWhiteSpace(c.ContextHeading));
 
@@ -1108,13 +1133,52 @@ public static class SpecExplorerService
             foreach (var g in groups)
             {
                 var section = new SpecNode { Title = g.Key, NodeType = SpecNodeType.Section, HeadingLevel = 2 };
-                AddKindSubGroups(section.Children, g.ToList(), headingLevel: 3, ref reqCount, ref testCount, ref clrCount);
-                roots.Add(section);
+
+                if (g.Key != "(Uncategorized)" && IsDecisionHeadingTitle(g.Key))
+                {
+                    // All candidates under decision headings (ISO-date Q/A sessions) become DecisionNode
+                    foreach (var c in g)
+                    {
+                        section.Children.Add(new SpecNode
+                        {
+                            Title = c.Title.Length > 200 ? c.Title[..200] : c.Title,
+                            NodeType = SpecNodeType.DecisionNode,
+                            HeadingLevel = 0,
+                        });
+                        decisionCount++;
+                    }
+                }
+                else
+                {
+                    // Non-decision heading: deduplicate requirements by FR-ID to eliminate sub-bullet fragments
+                    var seenFrIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    var normalized = g
+                        .Where(c =>
+                        {
+                            if (c.Classification != ScenarioKind.Requirement) return true;
+                            var m = FrIdRe.Match(c.Title);
+                            return !m.Success || seenFrIds.Add(m.Value);
+                        })
+                        .ToList();
+                    AddKindSubGroups(section.Children, normalized, headingLevel: 3, ref reqCount, ref testCount, ref clrCount);
+                }
+
+                if (section.Children.Count > 0) roots.Add(section);
             }
         }
         else
         {
-            AddKindSubGroups(roots, candidates.ToList(), headingLevel: 2, ref reqCount, ref testCount, ref clrCount);
+            // No context headings — normalize requirements globally by FR-ID
+            var seenFrIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var normalized = candidates
+                .Where(c =>
+                {
+                    if (c.Classification != ScenarioKind.Requirement) return true;
+                    var m = FrIdRe.Match(c.Title);
+                    return !m.Success || seenFrIds.Add(m.Value);
+                })
+                .ToList();
+            AddKindSubGroups(roots, normalized, headingLevel: 2, ref reqCount, ref testCount, ref clrCount);
         }
 
         foreach (var root in roots) PropagateStats(root);
@@ -1128,6 +1192,7 @@ public static class SpecExplorerService
                 Requirements   = reqCount,
                 Tests          = testCount,
                 Clarifications = clrCount,
+                Decisions      = decisionCount,
             },
         };
     }

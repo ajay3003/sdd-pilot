@@ -1,10 +1,16 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 
-@if (_model is null || _model.IsEmpty)
+@if (_model is null)
 {
     <div class="tv-empty">
-        <p class="tv-empty-msg">No candidates available. Run spec extraction to build the traceability model.</p>
+        <p class="tv-empty-msg">Run spec extraction to build the traceability model.</p>
+    </div>
+}
+else if (_model.IsEmpty)
+{
+    <div class="tv-empty">
+        <p class="tv-empty-msg">No traceable requirements found. Ensure the specification contains FR-xxx requirements outside of Q/A session headings.</p>
     </div>
 }
 else

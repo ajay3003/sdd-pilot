@@ -515,13 +515,20 @@
 .fv-step-body-placeholder {
     background: #fffbeb;
     border-top: none;
+    gap: 4px;
 }
 
 .fv-placeholder-hint {
     font-size: 0.79rem;
     color: #92400e;
     font-style: italic;
-    padding: 4px 2px;
+    padding: 4px 2px 0;
+}
+
+.fv-placeholder-sub {
+    font-size: 0.74rem;
+    color: #b45309;
+    padding: 0 2px 4px;
 }
 
 /* ── Empty state ────────────────────────────────────────────────────── */
@@ -534,4 +541,111 @@
     border: 1px dashed #e2e8f0;
     border-radius: 10px;
     background: #f8fafc;
+}
+
+/* ── Decision lane ──────────────────────────────────────────────────── */
+
+.fv-lane-decision {
+    border-color: #bae6fd;
+    background: #f0f9ff;
+}
+
+.fv-lane-decision .fv-lane-header {
+    background: #f0f9ff;
+}
+
+.fv-lane-decision .fv-lane-header:hover,
+.fv-lane-decision .fv-lane-header.is-expanded {
+    background: #e0f2fe;
+}
+
+.fv-type-pill-decisions {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 100px;
+    background: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.fv-step-decisions .fv-step-header {
+    background: #f0f9ff;
+    border-left: 3px solid #38bdf8;
+}
+
+.fv-decision-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 5px 6px;
+    border-radius: 4px;
+    font-size: 0.84rem;
+    color: #334155;
+    line-height: 1.45;
+}
+
+.fv-decision-item:hover {
+    background: #f0f9ff;
+}
+
+.fv-decision-badge {
+    font-size: 0.66rem;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 100px;
+    background: #e0f2fe;
+    color: #0369a1;
+    flex-shrink: 0;
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.02em;
+    margin-top: 2px;
+}
+
+.fv-decision-title {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+/* ── Global Success Criteria section ────────────────────────────────── */
+
+.fv-sc-global {
+    border: 1px solid #e9d5ff;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.fv-sc-global-header {
+    all: unset;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 11px 18px;
+    background: #faf5ff;
+    border-bottom: 1px solid transparent;
+    border-left: 3px solid #8b5cf6;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #6b21a8;
+    box-sizing: border-box;
+    user-select: none;
+    transition: background 0.12s;
+}
+
+.fv-sc-global-header:hover {
+    background: #f3e8ff;
+}
+
+.fv-sc-global-body {
+    padding: 10px 14px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }

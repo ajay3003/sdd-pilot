@@ -13,6 +13,7 @@ public enum SpecNodeType
     BddScenario,        // Scenario N + Given/When/Then block; also numbered inline BDD
     Clarification,      // inline clarification fallback
     QaPair,             // Q: ... A: ... paired clarification
+    DecisionNode,       // Q/A item under a decision session (ISO-date-headed) heading
     Entity,             // Key Entity definition
     DomainItem,         // legacy domain item
     TableSection,       // markdown table block
@@ -89,6 +90,7 @@ public sealed class SpecNode
     public int TestCount { get; set; }
     public int ClarCount { get; set; }
     public int ScCount { get; set; }
+    public int DecisionCount { get; set; }
     public int TotalDescendants { get; set; }
 }
 
@@ -100,6 +102,7 @@ public sealed class SpecHealth
     public int Tests { get; init; }
     public int BddScenarios { get; init; }
     public int Clarifications { get; init; }
+    public int Decisions { get; init; }
     public int SuccessCriteria { get; init; }
     public int Entities { get; init; }
     public int DomainItems { get; init; }
@@ -107,7 +110,7 @@ public sealed class SpecHealth
     public int Assumptions { get; init; }
     public int EdgeCases { get; init; }
     public int TotalItems => Requirements + UserStories + Tests + BddScenarios + Clarifications
-                           + SuccessCriteria + Entities + DomainItems + Assumptions + EdgeCases;
+                           + SuccessCriteria + Entities + DomainItems + Assumptions + EdgeCases + Decisions;
 }
 
 public sealed class SpecTree

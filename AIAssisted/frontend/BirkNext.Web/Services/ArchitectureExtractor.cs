@@ -49,17 +49,33 @@ public static class ArchitectureExtractor
 
     private static readonly HashSet<string> FalseServices = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Service Bus", "Azure Service Bus", // handled as messaging
+        "Service Bus", "Azure Service Bus",              // handled as messaging
+        "Authorisation Module", "Authorization Module",  // handled as external system
+        "Audit Service", "Audit Log Service",            // handled as external system
     };
 
     // ── External systems ─────────────────────────────────────────────────────
 
-    private static readonly (string Name, string Description)[] ExternalSystems =
+    private static readonly (string Name, string[] SearchTerms, string Description)[] ExternalSystems =
     [
-        ("BiRK", "National child welfare data source; drives the ingestion pipeline via CDC"),
-        ("FREG", "National population registry"),
-        ("DSAM", "Child welfare case management system"),
-        ("Folkeregisteret", "Civil registration authority"),
+        ("BiRK",
+         ["birk"],
+         "National child welfare data source; drives the ingestion pipeline via CDC"),
+        ("FREG",
+         ["freg"],
+         "National population registry"),
+        ("DSAM",
+         ["dsam"],
+         "Child welfare case management system"),
+        ("Folkeregisteret",
+         ["folkeregisteret"],
+         "Civil registration authority"),
+        ("Authorisation Module",
+         ["authorisation module", "authorization module", "auth module"],
+         "Central authorisation service; fail-closed — denies all access when unavailable"),
+        ("Audit Service",
+         ["audit service", "audit log service", "auditservice"],
+         "Records all data access operations for compliance and audit trail"),
     ];
 
     // ── Architecture patterns ────────────────────────────────────────────────
@@ -293,14 +309,15 @@ public static class ArchitectureExtractor
         List<(SpecNode Node, string Section)> nodesWithSection,
         List<ArchElement> elements)
     {
-        // External systems
-        foreach (var (name, desc) in ExternalSystems)
+        // External systems (multi-term search: name OR any alias must appear in fullText)
+        foreach (var (name, searchTerms, desc) in ExternalSystems)
         {
-            if (!fullText.Contains(name, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!searchTerms.Any(t => fullText.Contains(t, StringComparison.OrdinalIgnoreCase))) continue;
             var matchingNodes = nodesWithSection
-                .Where(x => GetNodeText(x.Node).Contains(name, StringComparison.OrdinalIgnoreCase))
+                .Where(x => searchTerms.Any(t => GetNodeText(x.Node).Contains(t, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
             var sections = matchingNodes.Select(x => x.Section).Distinct().ToList();
+            if (sections.Count == 0) sections = ["External Systems"];
             var combinedText = string.Join(" ", matchingNodes.Select(x => GetNodeText(x.Node)));
             AddOrMerge(elements, new ArchElement
             {
@@ -327,6 +344,55 @@ public static class ArchitectureExtractor
                 ElementType = ArchElementType.Pattern,
                 Description = desc,
                 SourceSections = sections,
+            });
+        }
+
+        // Named API lookups — supplement Pass 1 for specs where section headings don't trigger
+        // SectionSemantics.ApiSurface, so no ApiSurfaceItem nodes were created by the parser.
+        (string Name, string[] Terms, string Desc)[] apiLookups =
+        [
+            ("GraphQL", ["graphql"], "GraphQL query/mutation API"),
+            ("REST API", ["rest api", "restful api", "rest endpoint"], "RESTful HTTP API"),
+        ];
+        foreach (var (aName, terms, aDesc) in apiLookups)
+        {
+            if (!terms.Any(t => fullText.Contains(t, StringComparison.OrdinalIgnoreCase))) continue;
+            if (elements.Any(e => e.ElementType == ArchElementType.Api &&
+                    string.Equals(e.Name, aName, StringComparison.OrdinalIgnoreCase)))
+                continue; // already captured by Pass 1 structured ApiSurfaceItem extraction
+            AddOrMerge(elements, new ArchElement
+            {
+                Name = aName,
+                ElementType = ArchElementType.Api,
+                Description = aDesc,
+                SourceSections = ["API Surface"],
+            });
+        }
+
+        // Known Service Bus topic names using bare dotted notation in the spec ("person.person")
+        // without the literal "topic" keyword that TopicRe requires.
+        foreach (var knownTopic in new[] { "person.person", "person.barn" })
+        {
+            if (!fullText.Contains(knownTopic, StringComparison.OrdinalIgnoreCase)) continue;
+            AddOrMerge(elements, new ArchElement
+            {
+                Name = knownTopic + " topic",
+                ElementType = ArchElementType.Messaging,
+                Description = "Azure Service Bus topic",
+                SourceSections = ["Messaging"],
+            });
+        }
+
+        // Azure deployment region
+        if (fullText.Contains("norway east", StringComparison.OrdinalIgnoreCase) ||
+            fullText.Contains("norwayeast", StringComparison.OrdinalIgnoreCase))
+        {
+            AddOrMerge(elements, new ArchElement
+            {
+                Name = "Azure Norway East",
+                ElementType = ArchElementType.Service,
+                Description = "Primary Azure deployment region; data sovereignty for Norwegian citizen data",
+                SourceSections = ["Infrastructure"],
             });
         }
 
@@ -394,8 +460,13 @@ public static class ArchitectureExtractor
     private static IEnumerable<(string Section, string Text, List<string> FrIds, List<string> UsIds)>
         BuildSectionBlocks(List<(SpecNode Node, string Section)> nodesWithSection)
     {
+        // Include ALL nodes: leaf spec items (HeadingLevel==0) AND heading nodes whose FullContent
+        // carries prose that regex passes need to scan. Architecture terms listed as bullet-prose
+        // under a heading (domain events, topic names, entity names) are stored in the heading
+        // node's FullContent, NOT in leaf child nodes, so filtering to HeadingLevel==0 misses them.
         var groups = nodesWithSection
-            .Where(x => x.Node.HeadingLevel == 0)
+            .Where(x => x.Node.HeadingLevel == 0 ||
+                        (x.Node.HeadingLevel > 0 && !string.IsNullOrWhiteSpace(x.Node.FullContent)))
             .GroupBy(x => x.Section);
 
         foreach (var g in groups)

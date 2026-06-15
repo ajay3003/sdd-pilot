@@ -1,10 +1,16 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 
-@if (_model is null || _model.IsEmpty)
+@if (_model is null)
 {
     <div class="av-empty">
-        <p class="av-empty-msg">No architecture elements extracted. Provide a specification to analyse.</p>
+        <p class="av-empty-msg">Architecture analysis has not been generated. Load a specification to analyse its architecture.</p>
+    </div>
+}
+else if (_model.IsEmpty)
+{
+    <div class="av-empty">
+        <p class="av-empty-msg">No architecture elements could be extracted from this specification.</p>
     </div>
 }
 else

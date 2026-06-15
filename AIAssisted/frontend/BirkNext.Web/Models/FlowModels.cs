@@ -41,9 +41,12 @@ public sealed class FlowStory
     public List<FlowTest> AllTests { get; init; } = [];
     public List<FlowSc> SuccessCriteria { get; init; } = [];
     public bool IsUnmapped { get; init; }
+    public bool IsDecisionLane { get; init; }
 
     public int CoveredReqCount => Requirements.Count(r => r.HasTests);
+
     public FlowCoverageStatus CoverageStatus =>
+        IsDecisionLane             ? FlowCoverageStatus.NoRequirements :
         Requirements.Count == 0    ? FlowCoverageStatus.NoRequirements :
         CoveredReqCount == Requirements.Count ? FlowCoverageStatus.Covered :
         CoveredReqCount == 0       ? FlowCoverageStatus.MissingTests :
@@ -53,19 +56,30 @@ public sealed class FlowStory
 public sealed class FlowModel
 {
     public List<FlowStory> Stories { get; init; } = [];
+
+    /// <summary>SC items from the spec that are not linked to any story's FRs.</summary>
+    public List<FlowSc> UnlinkedSuccessCriteria { get; init; } = [];
+
     public bool IsEmpty => Stories.Count == 0;
-    public int TotalRequirements => Stories.Sum(s => s.Requirements.Count);
-    public int TotalTests        => Stories.Sum(s => s.AllTests.Count);
-    public int TotalSc           => Stories.Sum(s => s.SuccessCriteria.Count);
-    public int GapCount          => Stories.Sum(s => s.Requirements.Count(r => !r.HasTests));
+
+    /// <summary>Total requirements, excluding decision lanes.</summary>
+    public int TotalRequirements => Stories.Where(s => !s.IsDecisionLane).Sum(s => s.Requirements.Count);
+
+    public int TotalTests => Stories.Sum(s => s.AllTests.Count);
+
+    /// <summary>Total SC count across stories and unlinked.</summary>
+    public int TotalSc => Stories.Sum(s => s.SuccessCriteria.Count) + UnlinkedSuccessCriteria.Count;
+
+    /// <summary>Requirements without test coverage, excluding decision lanes.</summary>
+    public int GapCount => Stories.Where(s => !s.IsDecisionLane).Sum(s => s.Requirements.Count(r => !r.HasTests));
 
     public int CoveragePercent
     {
         get
         {
-            var totalReqs   = Stories.Where(s => !s.IsUnmapped).Sum(s => s.Requirements.Count);
+            var totalReqs   = Stories.Where(s => !s.IsUnmapped && !s.IsDecisionLane).Sum(s => s.Requirements.Count);
             if (totalReqs == 0) return 0;
-            var coveredReqs = Stories.Where(s => !s.IsUnmapped).Sum(s => s.CoveredReqCount);
+            var coveredReqs = Stories.Where(s => !s.IsUnmapped && !s.IsDecisionLane).Sum(s => s.CoveredReqCount);
             return coveredReqs * 100 / totalReqs;
         }
     }

@@ -12,6 +12,9 @@ public static class FlowModelBuilder
         @"^(FR|SC|US|AC|TS|NFR|REQ)-?\s*\d+[\s.:–\-]+\s*",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // A heading is a decision lane if it starts with an ISO date or is a Q/A clarification session.
+    private static readonly Regex DateHeadingRe = new(@"^\d{4}-\d{2}-\d{2}\b", RegexOptions.Compiled);
+
     public static FlowModel Build(
         string? specMarkdown,
         IReadOnlyList<ExtractionCandidate> candidates,
@@ -29,15 +32,21 @@ public static class FlowModelBuilder
             AddToMap(reqToTestIds, link.TargetId, link.SourceId);
         }
 
-        // Parse spec: collect SC→FR reverse map and BDD node data
-        var scByFrId    = new Dictionary<string, List<FlowSc>>(StringComparer.OrdinalIgnoreCase);
-        var bddByTitle  = new Dictionary<string, (string? Given, string? When, string? Then)>(StringComparer.OrdinalIgnoreCase);
+        // Parse spec: collect SC→FR reverse map, BDD node data, heading semantics
+        var scByFrId         = new Dictionary<string, List<FlowSc>>(StringComparer.OrdinalIgnoreCase);
+        var bddByTitle       = new Dictionary<string, (string? Given, string? When, string? Then)>(StringComparer.OrdinalIgnoreCase);
+        var headingSemantics = new Dictionary<string, SectionSemantics>(StringComparer.OrdinalIgnoreCase);
+        var allSpecScs       = new List<FlowSc>(); // every SC from the spec, regardless of FR links
 
         if (!string.IsNullOrWhiteSpace(specMarkdown))
         {
             var specTree = SpecExplorerService.Parse(specMarkdown);
             foreach (var node in FlattenNodes(specTree.Roots))
             {
+                // Build heading-title → semantics map for decision-lane detection
+                if (node.HeadingLevel > 0)
+                    headingSemantics[node.Title] = node.Semantics;
+
                 if (node.NodeType == SpecNodeType.SuccessCriterion && node.SpecItemId is not null)
                 {
                     var content    = node.Title + " " + node.Excerpt;
@@ -52,6 +61,7 @@ public static class FlowModelBuilder
                         Excerpt     = node.Excerpt,
                         LinkedFrIds = linkedFrIds,
                     };
+                    allSpecScs.Add(sc);
                     foreach (var frId in linkedFrIds)
                     {
                         if (!scByFrId.TryGetValue(frId, out var list)) scByFrId[frId] = list = [];
@@ -61,7 +71,13 @@ public static class FlowModelBuilder
                 else if (node.NodeType is SpecNodeType.BddScenario or SpecNodeType.AcceptanceTest
                          && (node.BddGiven is not null || node.BddWhen is not null || node.BddThen is not null))
                 {
-                    bddByTitle[node.Title] = (node.BddGiven, node.BddWhen, node.BddThen);
+                    var bddTuple = (node.BddGiven, node.BddWhen, node.BddThen);
+                    // Index by raw title, stripped title, and first-160-chars for robust lookup
+                    bddByTitle[node.Title] = bddTuple;
+                    var stripped = StripIdPrefix(node.Title);
+                    bddByTitle[stripped] = bddTuple;
+                    if (node.Title.Length > 160)
+                        bddByTitle[node.Title[..160]] = bddTuple;
                 }
             }
         }
@@ -88,19 +104,32 @@ public static class FlowModelBuilder
             headingTests[key].Add(c);
         }
 
-        var stories = new List<FlowStory>(headingOrder.Count);
+        var stories      = new List<FlowStory>(headingOrder.Count);
+        var linkedScIds  = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var heading in headingOrder)
         {
             var reqs  = headingReqs.TryGetValue(heading, out var r)  ? r : [];
             var tests = headingTests.TryGetValue(heading, out var t) ? t : [];
 
+            var isDecisionLane = !string.IsNullOrWhiteSpace(heading)
+                                 && IsDecisionHeading(heading, headingSemantics);
+
             var usedTestIds = new HashSet<Guid>();
             var flowReqs    = new List<FlowRequirement>(reqs.Count);
+
+            // Deduplicate by FR-ID: when multiple candidate fragments reference the same FR-001,
+            // keep only the first (the canonical declaration). This prevents 187-req inflation
+            // when each sub-bullet of an FR becomes its own candidate.
+            var seenFrIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var req in reqs)
             {
                 var frId = FirstMatch(FrIdRe, req.Title);
+
+                // Skip duplicate: a second candidate with the same FR-ID is a sub-bullet fragment
+                if (frId is not null && !seenFrIds.Add(frId))
+                    continue;
 
                 // Prefer explicit links; fall back to same-ContextHeading proximity
                 List<FlowTest> linkedTests;
@@ -122,9 +151,12 @@ public static class FlowModelBuilder
                 foreach (var ft in linkedTests)
                     if (ft.CandidateId.HasValue) usedTestIds.Add(ft.CandidateId.Value);
 
-                var linkedScIds = frId is not null && scByFrId.TryGetValue(frId, out var scList)
+                var reqLinkedScIds = frId is not null && scByFrId.TryGetValue(frId, out var scList)
                     ? scList.Select(s => s.SpecItemId).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
                     : (List<string>)[];
+
+                foreach (var scId in reqLinkedScIds)
+                    linkedScIds.Add(scId);
 
                 flowReqs.Add(new FlowRequirement
                 {
@@ -132,7 +164,7 @@ public static class FlowModelBuilder
                     FrId        = frId,
                     CandidateId = req.CandidateId,
                     LinkedTests = linkedTests,
-                    LinkedScIds = linkedScIds,
+                    LinkedScIds = reqLinkedScIds,
                 });
             }
 
@@ -157,6 +189,9 @@ public static class FlowModelBuilder
                 .DistinctBy(s => s.SpecItemId, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
+            foreach (var sc in flowScs)
+                linkedScIds.Add(sc.SpecItemId);
+
             var isUnmapped = string.IsNullOrWhiteSpace(heading);
 
             stories.Add(new FlowStory
@@ -168,10 +203,45 @@ public static class FlowModelBuilder
                 AllTests        = allTests,
                 SuccessCriteria = flowScs,
                 IsUnmapped      = isUnmapped,
+                IsDecisionLane  = isDecisionLane,
             });
         }
 
-        return new FlowModel { Stories = stories };
+        // SCs from the spec that were not shown in any story's SC step
+        var unlinkedScs = allSpecScs
+            .Where(sc => !linkedScIds.Contains(sc.SpecItemId))
+            .DistinctBy(s => s.SpecItemId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new FlowModel
+        {
+            Stories                  = stories,
+            UnlinkedSuccessCriteria  = unlinkedScs,
+        };
+    }
+
+    /// <summary>
+    /// Returns true when a heading represents a Q/A or decision session rather than a user story.
+    /// Detected via spec semantics (Clarifications) or heading text patterns.
+    /// </summary>
+    private static bool IsDecisionHeading(
+        string heading,
+        Dictionary<string, SectionSemantics> headingSemantics)
+    {
+        if (headingSemantics.TryGetValue(heading, out var sem) &&
+            sem == SectionSemantics.Clarifications)
+            return true;
+
+        // ISO-date headings like "2026-03-06" or "Session 2026-03-06"
+        if (DateHeadingRe.IsMatch(heading)) return true;
+
+        var lower = heading.ToLowerInvariant();
+
+        // Q/A session or clarification session patterns
+        return (lower.Contains("clarification") && lower.Contains("session"))
+            || lower.StartsWith("q/a", StringComparison.Ordinal)
+            || lower.StartsWith("q&a", StringComparison.Ordinal)
+            || lower.StartsWith("decisions", StringComparison.Ordinal);
     }
 
     private static FlowTest MakeFlowTest(
@@ -179,15 +249,24 @@ public static class FlowModelBuilder
         string? linkedFrId,
         Dictionary<string, (string? Given, string? When, string? Then)> bddByTitle)
     {
-        bddByTitle.TryGetValue(c.Title, out var bdd);
+        // Try multiple lookup keys to handle title mismatches between the spec parser and
+        // the extraction pipeline (e.g., "Scenario 1: Given..." vs "Given...").
+        (string? Given, string? When, string? Then) bdd = default;
+        if (!bddByTitle.TryGetValue(c.Title, out bdd))
+        {
+            var stripped = StripIdPrefix(c.Title);
+            if (!bddByTitle.TryGetValue(stripped, out bdd) && stripped.Length > 160)
+                bddByTitle.TryGetValue(stripped[..160], out bdd);
+        }
+
         return new FlowTest
         {
-            Title      = StripIdPrefix(c.Title),
+            Title       = StripIdPrefix(c.Title),
             CandidateId = c.CandidateId,
-            BddGiven   = bdd.Given,
-            BddWhen    = bdd.When,
-            BddThen    = bdd.Then,
-            LinkedFrId = linkedFrId,
+            BddGiven    = bdd.Given,
+            BddWhen     = bdd.When,
+            BddThen     = bdd.Then,
+            LinkedFrId  = linkedFrId,
         };
     }
 

@@ -129,6 +129,13 @@
                         <div class="se-health-label">Clarifications</div>
                     </div>
                 }
+                @if (_tree.Health.Decisions > 0)
+                {
+                    <div class="se-health-card se-hcard-decision">
+                        <div class="se-health-value">@_tree.Health.Decisions</div>
+                        <div class="se-health-label">Decisions</div>
+                    </div>
+                }
                 @if (_tree.Health.SuccessCriteria > 0)
                 {
                     <div class="se-health-card se-hcard-sc">
@@ -288,7 +295,7 @@
                                 <span class="se-child-count">(@node.TotalDescendants)</span>
                             }
 
-                            @if (isHeading && (node.ReqCount > 0 || node.UserStoryCount > 0 || node.TestCount > 0 || node.ClarCount > 0 || node.ScCount > 0))
+                            @if (isHeading && (node.ReqCount > 0 || node.UserStoryCount > 0 || node.TestCount > 0 || node.ClarCount > 0 || node.ScCount > 0 || node.DecisionCount > 0))
                             {
                                 <span class="se-meta-chips">
                                     @if (node.UserStoryCount > 0) { <span class="se-meta-chip se-mc-us">@node.UserStoryCount us</span> }
@@ -296,6 +303,7 @@
                                     @if (node.TestCount > 0) { <span class="se-meta-chip se-mc-test">@node.TestCount tests</span> }
                                     @if (node.ScCount > 0) { <span class="se-meta-chip se-mc-sc">@node.ScCount sc</span> }
                                     @if (node.ClarCount > 0) { <span class="se-meta-chip se-mc-clr">@node.ClarCount clr</span> }
+                                    @if (node.DecisionCount > 0) { <span class="se-meta-chip se-mc-decision">@node.DecisionCount dec</span> }
                                 </span>
                             }
 
@@ -329,8 +337,8 @@
                             <div class="se-details-id">@selected.SpecItemId</div>
                         }
 
-                        @* ── Q/A Clarification ─────────────────────────────────── *@
-                        @if (selected.NodeType == SpecNodeType.QaPair)
+                        @* ── Q/A Clarification / Decision ─────────────────────── *@
+                        @if (selected.NodeType == SpecNodeType.QaPair || selected.NodeType == SpecNodeType.DecisionNode)
                         {
                             @if (!string.IsNullOrEmpty(selected.QuestionText))
                             {
@@ -400,6 +408,7 @@
                                     @if (selected.TestCount > 0) { <span class="se-det-chip se-mc-test">@selected.TestCount tests</span> }
                                     @if (selected.ClarCount > 0) { <span class="se-det-chip se-mc-clr">@selected.ClarCount clarifications</span> }
                                     @if (selected.ScCount > 0) { <span class="se-det-chip se-mc-sc">@selected.ScCount success criteria</span> }
+                                    @if (selected.DecisionCount > 0) { <span class="se-det-chip se-mc-decision">@selected.DecisionCount decisions</span> }
                                 </div>
                             </div>
                         }
@@ -686,7 +695,11 @@
         {
             if (node.HeadingLevel > 0)
             {
-                var linked = GetLinkedCandidates(node);
+                // Only apply coverage to headings that contain requirements
+                if (node.ReqCount == 0) { node.Coverage = CoverageState.Unknown; continue; }
+                var linked = GetLinkedCandidates(node)
+                    .Where(c => c.Classification == ScenarioKind.Requirement)
+                    .ToList();
                 if (linked.Count == 0) { node.Coverage = CoverageState.Unknown; continue; }
                 var accepted = linked.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted);
                 node.Coverage = accepted == linked.Count ? CoverageState.Covered
@@ -795,6 +808,7 @@
         SpecNodeType.BddScenario     => "🧪",
         SpecNodeType.Clarification   => "💬",
         SpecNodeType.QaPair          => "💬",
+        SpecNodeType.DecisionNode    => "🗣",
         SpecNodeType.Entity          => "🔷",
         SpecNodeType.DomainItem      => "🔗",
         SpecNodeType.TableSection    => "📊",
@@ -812,6 +826,7 @@
         SpecNodeType.BddScenario      => "TEST",
         SpecNodeType.QaPair           => "Q/A",
         SpecNodeType.Clarification    => "CLR",
+        SpecNodeType.DecisionNode     => "DECISION",
         SpecNodeType.SuccessCriterion => "SC",
         SpecNodeType.UserStory        => "US",
         SpecNodeType.Entity           => "ENTITY",
@@ -835,6 +850,7 @@
         SpecNodeType.BddScenario      => "Acceptance Scenario",
         SpecNodeType.Clarification    => "Clarification",
         SpecNodeType.QaPair           => "Q&A Clarification",
+        SpecNodeType.DecisionNode     => "Decision",
         SpecNodeType.Entity           => "Entity",
         SpecNodeType.DomainItem       => "Domain Item",
         SpecNodeType.TableSection     => "Table",
