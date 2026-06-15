@@ -291,11 +291,11 @@
 .fv-item-status {
     font-size: 0.68rem;
     font-weight: 700;
-    min-width: 22px;
-    padding: 1px 6px;
+    padding: 1px 7px;
     border-radius: 100px;
     text-align: center;
     flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .fv-status-covered { background: #dcfce7; color: #15803d; }
@@ -522,13 +522,41 @@
     font-size: 0.79rem;
     color: #92400e;
     font-style: italic;
-    padding: 4px 2px 0;
+    padding: 4px 2px 2px;
 }
 
-.fv-placeholder-sub {
+/* ── Task CTA buttons ───────────────────────────────────────────────── */
+
+.fv-task-cta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 2px 2px 6px;
+}
+
+.fv-task-cta-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border: 1px solid #d97706;
+    border-radius: 6px;
+    background: #fffbeb;
+    color: #92400e;
     font-size: 0.74rem;
-    color: #b45309;
-    padding: 0 2px 4px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.fv-task-cta-btn:hover:not(:disabled) {
+    background: #fef3c7;
+    border-color: #b45309;
+}
+
+.fv-task-cta-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 /* ── Empty state ────────────────────────────────────────────────────── */
@@ -648,4 +676,121 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+}
+
+/* ── SC placeholder (no linked SCs) ────────────────────────────────── */
+
+.fv-sc-placeholder {
+    flex-direction: column;
+    gap: 4px;
+}
+
+.fv-sc-global-note {
+    font-size: 0.76rem;
+    color: #7e22ce;
+}
+
+/* ── Metrics scope note ─────────────────────────────────────────────── */
+
+.fv-metrics-note {
+    margin: -12px 0 16px;
+    font-size: 0.74rem;
+    color: #94a3b8;
+}
+
+/* ── Gap explanation panel ──────────────────────────────────────────── */
+
+.fv-gap-panel {
+    margin-bottom: 16px;
+    border: 1px solid #fed7aa;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.fv-gap-header {
+    all: unset;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 11px 18px;
+    background: #fff7ed;
+    border-left: 3px solid #f59e0b;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #92400e;
+    box-sizing: border-box;
+    user-select: none;
+    transition: background 0.12s;
+}
+
+.fv-gap-header:hover {
+    background: #fef3c7;
+}
+
+.fv-gap-question {
+    flex: 1;
+}
+
+.fv-gap-summary-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 9px;
+    border-radius: 100px;
+    background: #fed7aa;
+    color: #9a3412;
+}
+
+.fv-gap-body {
+    padding: 12px 18px;
+    background: #fff;
+}
+
+.fv-gap-intro {
+    margin: 0 0 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #475569;
+}
+
+.fv-gap-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.fv-gap-list li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.8rem;
+}
+
+.fv-gap-source {
+    min-width: 180px;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.fv-gap-count {
+    color: #64748b;
+}
+
+.fv-gap-count-bad {
+    color: #b91c1c;
+    font-weight: 600;
+}
+
+.fv-gap-exempt .fv-gap-source {
+    color: #64748b;
+    font-weight: 400;
+}
+
+.fv-gap-note {
+    color: #94a3b8;
+    font-style: italic;
 }

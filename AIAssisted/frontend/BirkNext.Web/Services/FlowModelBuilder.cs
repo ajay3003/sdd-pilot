@@ -13,7 +13,8 @@ public static class FlowModelBuilder
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // A heading is a decision lane if it starts with an ISO date or is a Q/A clarification session.
-    private static readonly Regex DateHeadingRe = new(@"^\d{4}-\d{2}-\d{2}\b", RegexOptions.Compiled);
+    // Matches ISO date anywhere in heading so "Session 2026-03-06" is caught as a decision lane.
+    private static readonly Regex DateHeadingRe = new(@"\b\d{4}-\d{2}-\d{2}\b", RegexOptions.Compiled);
 
     public static FlowModel Build(
         string? specMarkdown,

@@ -83,4 +83,20 @@ public sealed class FlowModel
             return coveredReqs * 100 / totalReqs;
         }
     }
+
+    /// <summary>Functional requirements (FR-###) without test coverage.</summary>
+    public int GapFunctionalRequirements =>
+        Stories.Where(s => !s.IsDecisionLane)
+               .SelectMany(s => s.Requirements)
+               .Count(r => !r.HasTests && (r.FrId?.StartsWith("FR-", StringComparison.OrdinalIgnoreCase) ?? false));
+
+    /// <summary>User story items (US-###) without test coverage.</summary>
+    public int GapUserStories =>
+        Stories.Where(s => !s.IsDecisionLane)
+               .SelectMany(s => s.Requirements)
+               .Count(r => !r.HasTests && (r.FrId?.StartsWith("US-", StringComparison.OrdinalIgnoreCase) ?? false));
+
+    /// <summary>Total items in decision / clarification lanes (not counted toward gaps).</summary>
+    public int DecisionItemCount =>
+        Stories.Where(s => s.IsDecisionLane).Sum(s => s.Requirements.Count);
 }

@@ -47,6 +47,70 @@
         }
     </div>
 
+    @* ── Metrics scope note ───────────────────────────────────────────── *@
+    @if (_model.Stories.Count > 0)
+    {
+        <p class="fv-metrics-note">Metrics are specification-wide. Per-section coverage is shown on each lane.</p>
+    }
+
+    @* ── Gap explanation panel ────────────────────────────────────────── *@
+    @if (_model.GapCount > 0)
+    {
+        <div class="fv-gap-panel" role="region" aria-label="Coverage gap explanation" data-testid="gap-explanation-panel">
+            <button type="button" class="fv-gap-header" @onclick="ToggleGapPanel" aria-expanded="@_gapPanelExpanded">
+                <span class="fv-lane-chevron" aria-hidden="true">@(_gapPanelExpanded ? "▼" : "▶")</span>
+                <span class="fv-gap-question">Why is coverage low?</span>
+                <span class="fv-gap-summary-badge">@_model.GapCount @(_model.GapCount == 1 ? "gap" : "gaps")</span>
+            </button>
+            @if (_gapPanelExpanded)
+            {
+                <div class="fv-gap-body">
+                    <p class="fv-gap-intro">Coverage gaps by source:</p>
+                    <ul class="fv-gap-list">
+                        @if (_model.GapFunctionalRequirements > 0)
+                        {
+                            <li>
+                                <span class="fv-gap-source">Functional Requirements</span>
+                                <span class="fv-gap-count fv-gap-count-bad">@_model.GapFunctionalRequirements without linked tests</span>
+                            </li>
+                        }
+                        @if (_model.GapUserStories > 0)
+                        {
+                            <li>
+                                <span class="fv-gap-source">User Stories</span>
+                                <span class="fv-gap-count fv-gap-count-bad">@_model.GapUserStories without linked tests</span>
+                            </li>
+                        }
+                        @{
+                            var otherGaps = _model.GapCount - _model.GapFunctionalRequirements - _model.GapUserStories;
+                        }
+                        @if (otherGaps > 0)
+                        {
+                            <li>
+                                <span class="fv-gap-source">Other Requirements</span>
+                                <span class="fv-gap-count fv-gap-count-bad">@otherGaps without linked tests</span>
+                            </li>
+                        }
+                        @if (_model.TotalSc > 0)
+                        {
+                            <li>
+                                <span class="fv-gap-source">Success Criteria</span>
+                                <span class="fv-gap-count">@_model.TotalSc defined — SC coverage tracked separately</span>
+                            </li>
+                        }
+                        @if (_model.DecisionItemCount > 0)
+                        {
+                            <li class="fv-gap-exempt">
+                                <span class="fv-gap-source">Decisions &amp; Clarifications</span>
+                                <span class="fv-gap-note">@_model.DecisionItemCount @(_model.DecisionItemCount == 1 ? "item" : "items") — not counted as coverage gaps</span>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+        </div>
+    }
+
     @* ── Global Success Criteria section (unlinked SCs) ──────────────── *@
     @if (_model.UnlinkedSuccessCriteria.Count > 0)
     {
@@ -213,7 +277,7 @@
                                                     }
                                                     else
                                                     {
-                                                        <span class="fv-item-status fv-status-missing" title="No linked tests">!</span>
+                                                        <span class="fv-item-status fv-status-missing" title="No linked tests — this requirement creates a coverage gap">Missing Tests</span>
                                                     }
                                                 </div>
 
@@ -356,14 +420,17 @@
                             }
                             else if (story.Requirements.Count > 0)
                             {
-                                @* Show placeholder so users know to link SCs *@
                                 <div class="fv-step fv-step-sc">
                                     <div class="fv-step-header">
                                         <span class="fv-step-icon" aria-hidden="true">✅</span>
                                         <span class="fv-step-label">Success Criteria</span>
                                     </div>
-                                    <div class="fv-step-body">
-                                        <span class="fv-empty-hint">No linked SC yet</span>
+                                    <div class="fv-step-body fv-sc-placeholder">
+                                        <span class="fv-empty-hint">No Success Criteria linked to this item yet.</span>
+                                        @if (_model.TotalSc > 0)
+                                        {
+                                            <span class="fv-sc-global-note">@_model.TotalSc Success @(_model.TotalSc == 1 ? "Criterion" : "Criteria") exist in this specification.</span>
+                                        }
                                     </div>
                                 </div>
                                 <div class="fv-connector fv-connector-dashed" aria-hidden="true"></div>
@@ -380,7 +447,11 @@
                                     </div>
                                     <div class="fv-step-body fv-step-body-placeholder">
                                         <span class="fv-placeholder-hint">No task links found yet.</span>
-                                        <span class="fv-placeholder-sub">Import tasks.md or run task alignment to see linked tasks here.</span>
+                                        <div class="fv-task-cta-row">
+                                            <a href="/task-explorer" class="fv-task-cta-btn">Open Task Explorer</a>
+                                            <button type="button" class="fv-task-cta-btn" disabled title="Upload a tasks.md file to import task links">Import tasks.md</button>
+                                            <button type="button" class="fv-task-cta-btn" disabled title="Run task alignment to automatically link tasks to requirements">Run Task Alignment</button>
+                                        </div>
                                     </div>
                                 </div>
                             }
@@ -407,6 +478,7 @@
     private readonly Dictionary<string, bool> _expanded      = [];
     private readonly Dictionary<string, bool> _expandedItems = [];
     private bool _scSectionExpanded = true;
+    private bool _gapPanelExpanded;
 
     protected override void OnParametersSet()
     {
@@ -437,6 +509,9 @@
 
     private void ToggleScSection() =>
         _scSectionExpanded = !_scSectionExpanded;
+
+    private void ToggleGapPanel() =>
+        _gapPanelExpanded = !_gapPanelExpanded;
 
     private static string CovLabel(FlowCoverageStatus s) => s switch
     {
