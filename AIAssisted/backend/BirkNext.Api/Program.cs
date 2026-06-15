@@ -130,6 +130,8 @@ catch (PostgresException ex) when (ex.SqlState == "28P01")
         ex);
 }
 
+app.UseStaticFiles();
+
 app.UseCors("Frontend");
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.MapControllers();
@@ -139,6 +141,8 @@ app.MapGraphQL()
    {
        Tool = { Enable = app.Environment.IsDevelopment() }
    });
+
+app.MapFallbackToFile("index.html");
 
 app.Run();
 

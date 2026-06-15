@@ -45,4 +45,40 @@ public class NavMenuTests : BunitContext
         cut.Find("a[href='dashboard'] .nav-icon-dashboard").Should().NotBeNull();
         cut.Find("a[href='compare'] .nav-icon-compare").Should().NotBeNull();
     }
+
+    [Fact]
+    public void TraceabilitySidebar_DoesNotOverlapLabels()
+    {
+        var cut = Render<NavMenu>();
+
+        var navText = cut.Find("nav").TextContent;
+        navText.Should().Contain("Traceability & Coverage");
+        navText.Should().Contain("Traceability Suggestions");
+        navText.Should().Contain("Code Traceability");
+
+        // All three links must render as distinct anchor elements
+        cut.Find("a[href='traceability']").Should().NotBeNull();
+        cut.Find("a[href='traceability/suggestions']").Should().NotBeNull();
+        cut.Find("a[href='code-traceability']").Should().NotBeNull();
+
+        // The link must not carry an inline height that clips multi-line text
+        var traceLink = cut.Find("a[href='traceability']");
+        (traceLink.GetAttribute("style") ?? string.Empty).Should().NotContain("height:");
+    }
+
+    [Fact]
+    public void TraceabilityNavigation_RendersCorrectHierarchy()
+    {
+        var cut = Render<NavMenu>();
+
+        var navText = cut.Find("nav").TextContent;
+
+        // "Traceability & Coverage" must precede "Traceability Suggestions"
+        navText.IndexOf("Traceability & Coverage", StringComparison.Ordinal)
+            .Should().BeLessThan(navText.IndexOf("Traceability Suggestions", StringComparison.Ordinal));
+
+        // "Traceability Suggestions" must precede "Code Traceability"
+        navText.IndexOf("Traceability Suggestions", StringComparison.Ordinal)
+            .Should().BeLessThan(navText.IndexOf("Code Traceability", StringComparison.Ordinal));
+    }
 }

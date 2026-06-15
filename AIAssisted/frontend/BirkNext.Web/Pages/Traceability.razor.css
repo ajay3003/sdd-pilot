@@ -311,3 +311,52 @@
 .coverage-compare-cta p {
     margin: 0;
 }
+
+/* ─── Filter chips ──────────────────────────────────────────────────────── */
+
+.filter-chip-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.library-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.38rem;
+    min-height: 2rem;
+    padding: 0.34rem 0.68rem;
+    border: 1px solid var(--clr-border-input, #d1d5db);
+    border-radius: var(--radius-md, 6px);
+    background: #ffffff;
+    color: var(--clr-text-muted, #475569);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.library-filter-chip:hover {
+    border-color: var(--clr-primary, #2563eb);
+    background: #eff6ff;
+}
+
+.library-filter-chip span {
+    min-width: 1.2rem;
+    padding: 0.06rem 0.32rem;
+    border-radius: var(--radius-pill, 10px);
+    background: var(--clr-surface, #f8fafc);
+    text-align: center;
+}
+
+.library-filter-chip.is-active {
+    border-color: var(--clr-primary, #2563eb);
+    background: var(--clr-primary, #2563eb);
+    color: #ffffff;
+}
+
+.library-filter-chip.is-active span {
+    background: rgba(255, 255, 255, 0.2);
+}
