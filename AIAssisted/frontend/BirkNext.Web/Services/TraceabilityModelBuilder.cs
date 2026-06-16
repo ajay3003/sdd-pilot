@@ -46,6 +46,7 @@ public static class TraceabilityModelBuilder
         // ── Step 3: parse spec for SC nodes and heading semantics ─────────────
         var frToScIds        = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         var tracedScs        = new List<TracedSc>();
+        var explicitFrNodes  = new List<SpecNode>();
         var headingSemantics = new Dictionary<string, SectionSemantics>(StringComparer.OrdinalIgnoreCase);
 
         if (!string.IsNullOrWhiteSpace(specMarkdown))
@@ -56,6 +57,12 @@ public static class TraceabilityModelBuilder
                 if (node.HeadingLevel > 0)
                     headingSemantics[node.Title] = node.Semantics;
             }
+
+            explicitFrNodes = FlattenSpecNodes(specTree.Roots)
+                .Where(n => n.NodeType == SpecNodeType.Requirement
+                    && n.SpecItemId is not null
+                    && n.SpecItemId.StartsWith("FR-", StringComparison.OrdinalIgnoreCase))
+                .ToList();
 
             var scNodes = FlattenSpecNodes(specTree.Roots)
                 .Where(n => n.NodeType == SpecNodeType.SuccessCriterion && n.SpecItemId is not null)
@@ -90,8 +97,15 @@ public static class TraceabilityModelBuilder
         // Previously, decision headings were skipped entirely; now we include them but mark
         // them as non-eligible so they get artifact type badges rather than "Missing Tests".
         // Within each heading, deduplicate by FR-ID (sub-bullet fragments of one requirement).
+        var explicitFrCandidates = BuildExplicitFrCandidates(explicitFrNodes, reqLike);
+        var normalizationSource = explicitFrCandidates.Count > 0
+            ? explicitFrCandidates
+                .Concat(reqLike.Where(c => DeriveArtifactType(c, headingSemantics) != TraceArtifactType.Requirement))
+                .ToList()
+            : reqLike;
+
         var normalizedCandidates = new List<ExtractionCandidate>();
-        foreach (var group in reqLike.GroupBy(r => r.ContextHeading ?? string.Empty))
+        foreach (var group in normalizationSource.GroupBy(r => r.ContextHeading ?? string.Empty))
         {
             var seenFrIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var c in group)
@@ -221,12 +235,17 @@ public static class TraceabilityModelBuilder
         if (candidate.Classification == ScenarioKind.NeedsClarification)
             return TraceArtifactType.Clarification;
 
+        if (IsQaPair(candidate.Title))
+            return TraceArtifactType.Decision;
+
         // ScenarioKind.Requirement — infer from context heading
         var heading = candidate.ContextHeading ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(heading))
         {
             if (IsDecisionHeading(heading, headingSemantics))
                 return TraceArtifactType.Decision;
+            if (IsAssumptionHeading(heading))
+                return TraceArtifactType.Assumption;
             if (IsArchitectureHeading(heading))
                 return TraceArtifactType.ArchitectureNote;
             if (IsMetadataHeading(heading))
@@ -234,6 +253,56 @@ public static class TraceabilityModelBuilder
         }
 
         return TraceArtifactType.Requirement;
+    }
+
+    private static bool IsQaPair(string title)
+    {
+        var trimmed = title.TrimStart();
+        return trimmed.StartsWith("Q:", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("Q.", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("Question:", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains(" A:", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains(" Answer:", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<ExtractionCandidate> BuildExplicitFrCandidates(
+        IReadOnlyList<SpecNode> explicitFrNodes,
+        IReadOnlyList<ExtractionCandidate> candidates)
+    {
+        if (explicitFrNodes.Count == 0) return [];
+
+        var byFrId = candidates
+            .Where(c => c.Classification == ScenarioKind.Requirement)
+            .Select(c => (Candidate: c, FrId: FirstMatch(FrIdRe, c.Title)))
+            .Where(x => x.FrId is not null)
+            .GroupBy(x => x.FrId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Candidate, StringComparer.OrdinalIgnoreCase);
+
+        var result = new List<ExtractionCandidate>(explicitFrNodes.Count);
+        foreach (var node in explicitFrNodes)
+        {
+            var frId = node.SpecItemId!;
+            byFrId.TryGetValue(frId, out var matchingCandidate);
+            var title = node.FullContent ?? node.Title;
+
+            result.Add(new ExtractionCandidate
+            {
+                CandidateId = matchingCandidate?.CandidateId ?? Guid.NewGuid(),
+                Title = title,
+                Classification = ScenarioKind.Requirement,
+                ClassificationSignal = ClassificationSignal.FrPrefix,
+                ContextHeading = "Functional Requirements",
+                SourceBlockType = BlockType.ParagraphLine,
+                IsSelected = matchingCandidate?.IsSelected ?? false,
+                ReviewStatus = matchingCandidate?.ReviewStatus ?? CandidateReviewStatus.New,
+                SaveState = matchingCandidate?.SaveState ?? CandidateSaveState.Pending,
+                SaveError = matchingCandidate?.SaveError,
+                SavedScenarioId = matchingCandidate?.SavedScenarioId,
+                Confidence = matchingCandidate?.Confidence,
+            });
+        }
+
+        return result;
     }
 
     private static bool IsDecisionHeading(
@@ -250,6 +319,15 @@ public static class TraceabilityModelBuilder
             || lower.StartsWith("decisions", StringComparison.Ordinal);
     }
 
+    private static bool IsAssumptionHeading(string heading)
+    {
+        var lower = heading.ToLowerInvariant();
+        return lower.StartsWith("assumption", StringComparison.Ordinal)
+            || lower.StartsWith("assumptions", StringComparison.Ordinal)
+            || lower.Contains("out of scope")
+            || lower.Contains("scope constraint");
+    }
+
     private static bool IsArchitectureHeading(string heading)
     {
         var lower = heading.ToLowerInvariant();
@@ -258,6 +336,9 @@ public static class TraceabilityModelBuilder
             || lower.Contains("api design")
             || lower.Contains("system design")
             || lower.Contains("system components")
+            || lower.Contains("key entities")
+            || lower.Contains("entities")
+            || lower.Contains("domain model")
             || lower.Contains("data model")
             || lower.Contains("technical design");
     }

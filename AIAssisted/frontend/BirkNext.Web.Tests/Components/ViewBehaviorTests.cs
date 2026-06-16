@@ -176,12 +176,70 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
+        cut.FindAll(".tv-matrix-row").Should().ContainSingle(
+            "the primary matrix must render only coverage-eligible requirements");
+
+        cut.FindAll("button").First(b => b.TextContent.Contains("Artifacts")).Click();
+
+        cut.Find("[data-testid='noneligible-artifacts-panel']").Should().NotBeNull();
         cut.FindAll(".tv-type-badge").Should().NotBeEmpty(
-            "Non-eligible artifacts must display an artifact type badge instead of a Missing Tests warning");
+            "Non-eligible artifacts must display artifact type badges in the artifacts panel");
         cut.Markup.Should().Contain("Clarification",
             "NeedsClarification items must be labelled as Clarification");
         cut.Markup.Should().Contain("Architecture Note",
             "Items from architecture headings must be labelled as Architecture Note");
+    }
+
+    [Fact]
+    public void Traceability_MatrixExcludesNonEligibleArtifacts()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+            MakeCandidate("How should we handle timeouts?", ScenarioKind.NeedsClarification, "Clarifications"),
+            MakeCandidate("Infrastructure sizing MUST validate the SLA.", ScenarioKind.Requirement, "Assumptions"),
+            MakeCandidate("GraphQL MUST be used for presentation reads.", ScenarioKind.Requirement, "Decisions"),
+            MakeCandidate("Person entity MUST carry BirkId.", ScenarioKind.Requirement, "Key Entities"),
+            MakeCandidate("Status: Draft", ScenarioKind.Requirement, "Metadata"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        var matrixText = cut.Find(".tv-matrix-table").TextContent;
+        matrixText.Should().Contain("allow search");
+        matrixText.Should().NotContain("timeouts");
+        matrixText.Should().NotContain("SLA");
+        matrixText.Should().NotContain("presentation reads");
+        matrixText.Should().NotContain("BirkId");
+        matrixText.Should().NotContain("Draft");
+        cut.Find(".tv-chip-req").TextContent.Should().Contain("1 Requirement");
+        cut.Find(".tv-chip-gap").TextContent.Should().Contain("1 Gap");
+    }
+
+    [Fact]
+    public void DocumentView_RendersFrBlockAsSingleCard()
+    {
+        var specMarkdown = File.ReadAllText(FindPersonSpecPath());
+
+        var cut = Render<DocumentView>(p => p.Add(c => c.SpecMarkdown, specMarkdown));
+
+        var requirementRows = cut.FindAll(".doc-artifact-requirement");
+        requirementRows.Should().HaveCount(33);
+
+        var fr001Rows = requirementRows
+            .Where(r => r.TextContent.Contains("FR-001"))
+            .ToList();
+        fr001Rows.Should().ContainSingle();
+
+        var fr001Text = fr001Rows.Single().TextContent;
+        fr001Text.Should().Contain("child search");
+        fr001Text.Should().Contain("national ID");
+        fr001Text.Should().Contain("DUF number");
+        fr001Text.Should().Contain("BirkID");
     }
 
     // =========================================================================
@@ -639,5 +697,19 @@ public class ViewBehaviorTests : BunitContext
             "abbreviation 'req' must be replaced with 'Requirements (N)'");
         chipTexts.Should().Contain(t => t.Contains("Requirements"),
             "full label 'Requirements' must appear in badge chips");
+    }
+
+    private static string FindPersonSpecPath()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var path = Path.Combine(directory.FullName, "examples", "personSpec.md");
+            if (File.Exists(path))
+                return path;
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException("Could not locate examples/personSpec.md from test output directory.");
     }
 }

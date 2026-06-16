@@ -44,6 +44,13 @@
             <div class="doc-artifact-excerpt">@Artifact.Excerpt</div>
         }
 
+        @if (!string.IsNullOrWhiteSpace(Artifact.FullContent)
+            && Artifact.FullContent != Artifact.Title
+            && Artifact.FullContent != Artifact.Excerpt)
+        {
+            <div class="doc-artifact-full-content" data-testid="doc-artifact-full-content">@Artifact.FullContent</div>
+        }
+
         @if (Artifact.QuestionText is not null)
         {
             <div class="doc-artifact-qa">

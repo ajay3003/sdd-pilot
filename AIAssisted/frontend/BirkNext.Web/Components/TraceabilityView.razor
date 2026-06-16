@@ -53,6 +53,10 @@ else
             {
                 <span class="tv-breakdown-chip tv-breakdown-decision">@_model.DecisionCount @(_model.DecisionCount == 1 ? "Decision" : "Decisions")</span>
             }
+            @if (_model.AssumptionCount > 0)
+            {
+                <span class="tv-breakdown-chip tv-breakdown-assumption">@_model.AssumptionCount @(_model.AssumptionCount == 1 ? "Assumption" : "Assumptions")</span>
+            }
             @if (_model.ArchitectureNoteCount > 0)
             {
                 <span class="tv-breakdown-chip tv-breakdown-arch">@_model.ArchitectureNoteCount Architecture @(_model.ArchitectureNoteCount == 1 ? "Note" : "Notes")</span>
@@ -72,6 +76,12 @@ else
         <button type="button" role="tab" class="tv-toggle-btn @(_subView == TvSubView.Requirements ? "is-active" : "")"
                 aria-selected="@(_subView == TvSubView.Requirements)"
                 @onclick='() => _subView = TvSubView.Requirements'>🔍 Requirements</button>
+        @if (_model.HasNonEligibleArtifacts)
+        {
+            <button type="button" role="tab" class="tv-toggle-btn @(_subView == TvSubView.Artifacts ? "is-active" : "")"
+                    aria-selected="@(_subView == TvSubView.Artifacts)"
+                    @onclick='() => _subView = TvSubView.Artifacts'>🏷 Artifacts</button>
+        }
         @if (_model.SuccessCriteria.Count > 0)
         {
             <button type="button" role="tab" class="tv-toggle-btn @(_subView == TvSubView.ScCoverage ? "is-active" : "")"
@@ -93,13 +103,12 @@ else
     @if (_subView == TvSubView.Matrix)
     {
         <div class="tv-matrix-filter" role="group" aria-label="Matrix filter">
-            <button type="button" class="tv-filter-chip @(_matrixFilter == null && !_showOrphanedInMatrix && !_showNonEligibleInMatrix ? "is-active" : "")"
-                    @onclick='() => SetFilter(null)'>All <span class="tv-chip-count">@_model.Requirements.Count</span></button>
+            <button type="button" class="tv-filter-chip @(_matrixFilter == null && !_showOrphanedInMatrix ? "is-active" : "")"
+                    @onclick='() => SetFilter(null)'>All <span class="tv-chip-count">@_model.EligibleCount</span></button>
             @{
                 var coveredN  = _model.CoveredCount;
                 var missingN  = _model.Requirements.Count(r => r.IsEligible && r.Status == TraceCoverageStatus.MissingTests);
                 var orphanN   = _model.OrphanedTests.Count;
-                var nonEligN  = _model.Requirements.Count(r => !r.IsEligible);
             }
             @if (coveredN > 0)
             {
@@ -110,11 +119,6 @@ else
             {
                 <button type="button" class="tv-filter-chip tv-fc-missing @(_matrixFilter == TraceCoverageStatus.MissingTests ? "is-active" : "")"
                         @onclick='() => SetFilter(TraceCoverageStatus.MissingTests)'>⚠️ Missing Tests <span class="tv-chip-count">@missingN</span></button>
-            }
-            @if (nonEligN > 0)
-            {
-                <button type="button" class="tv-filter-chip tv-fc-noneligible @(_showNonEligibleInMatrix ? "is-active" : "")"
-                        @onclick='() => SetNonEligibleFilter()'>🏷 Non-testable <span class="tv-chip-count">@nonEligN</span></button>
             }
             @if (orphanN > 0)
             {
@@ -138,33 +142,29 @@ else
         }
         else
         {
-            var matrixRows = _showNonEligibleInMatrix
-                ? _model.Requirements.Where(r => !r.IsEligible).ToList()
-                : _matrixFilter switch
+            var matrixRows = _matrixFilter switch
                 {
                     TraceCoverageStatus.Covered      => _model.Requirements.Where(r => r.IsEligible && r.Status == TraceCoverageStatus.Covered).ToList(),
                     TraceCoverageStatus.MissingTests => _model.Requirements.Where(r => r.IsEligible && r.Status == TraceCoverageStatus.MissingTests).ToList(),
-                    _ => (IReadOnlyList<TracedRequirement>)_model.Requirements,
+                    _ => _model.Requirements.Where(r => r.IsEligible).ToList(),
                 };
 
             <div class="tv-matrix-wrap" role="region" aria-label="Coverage matrix">
                 <table class="tv-matrix-table">
                     <thead>
                         <tr>
-                            <th class="tv-col-req">Requirement / Artifact</th>
+                            <th class="tv-col-req">Requirement</th>
                             <th class="tv-col-us">User Story</th>
                             <th class="tv-col-tests">Tests</th>
-                            <th class="tv-col-sc">SC Links</th>
-                            <th class="tv-col-status">Status</th>
+                            <th class="tv-col-sc">Success Criteria</th>
+                            <th class="tv-col-status">Coverage Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach (var req in matrixRows)
                         {
                             var reqCap = req;
-                            var rowClass = req.IsEligible
-                                ? (req.Status == TraceCoverageStatus.Covered ? "tv-row-covered" : "tv-row-missing")
-                                : "tv-row-noteligible";
+                            var rowClass = req.Status == TraceCoverageStatus.Covered ? "tv-row-covered" : "tv-row-missing";
                             <tr class="tv-matrix-row @rowClass"
                                 @onclick="() => NavigateToRequirement(reqCap)"
                                 title="Click to view details"
@@ -187,16 +187,9 @@ else
                                     }
                                 </td>
                                 <td class="tv-col-tests">
-                                    @if (req.IsEligible)
-                                    {
-                                        <span class="tv-test-count @(req.LinkedTests.Count == 0 ? "tv-count-zero" : "tv-count-ok")">
-                                            @req.LinkedTests.Count
-                                        </span>
-                                    }
-                                    else
-                                    {
-                                        <span class="tv-dim">—</span>
-                                    }
+                                    <span class="tv-test-count @(req.LinkedTests.Count == 0 ? "tv-count-zero" : "tv-count-ok")">
+                                        @req.LinkedTests.Count
+                                    </span>
                                 </td>
                                 <td class="tv-col-sc">
                                     @if (req.LinkedScIds.Count > 0)
@@ -215,18 +208,9 @@ else
                                     }
                                 </td>
                                 <td class="tv-col-status">
-                                    @if (req.IsEligible)
-                                    {
-                                        <span class="tv-status-badge tv-status-@req.Status.ToString().ToLowerInvariant()">
-                                            @StatusLabel(req.Status)
-                                        </span>
-                                    }
-                                    else
-                                    {
-                                        <span class="tv-type-badge tv-type-@ArtifactTypeClass(req.ArtifactType)">
-                                            @ArtifactTypeLabel(req.ArtifactType)
-                                        </span>
-                                    }
+                                    <span class="tv-status-badge tv-status-@req.Status.ToString().ToLowerInvariant()">
+                                        @StatusLabel(req.Status)
+                                    </span>
                                 </td>
                             </tr>
                         }
@@ -234,6 +218,39 @@ else
                 </table>
             </div>
         }
+    }
+
+    @if (_subView == TvSubView.Artifacts && _model.HasNonEligibleArtifacts)
+    {
+        var artifactGroups = _model.Requirements
+            .Where(r => !r.IsEligible)
+            .GroupBy(r => r.ArtifactType)
+            .OrderBy(g => ArtifactTypeLabel(g.Key))
+            .ToList();
+
+        <div class="tv-artifacts-panel" data-testid="noneligible-artifacts-panel">
+            @foreach (var group in artifactGroups)
+            {
+                <section class="tv-artifact-section">
+                    <div class="tv-section-label">@ArtifactTypeLabel(group.Key)</div>
+                    <div class="tv-artifact-list">
+                        @foreach (var artifact in group)
+                        {
+                            <button type="button" class="tv-artifact-row" @onclick="() => NavigateToRequirement(artifact)">
+                                <span class="tv-type-badge tv-type-@ArtifactTypeClass(artifact.ArtifactType)">
+                                    @ArtifactTypeLabel(artifact.ArtifactType)
+                                </span>
+                                <span class="tv-artifact-title">@TruncateTitle(artifact.Title, 100)</span>
+                                @if (artifact.UserStoryId is not null)
+                                {
+                                    <span class="tv-us-badge">@artifact.UserStoryId</span>
+                                }
+                            </button>
+                        }
+                    </div>
+                </section>
+            }
+        </div>
     }
 
     @* ════════════════════════════════════════════════════════════════════ *@
@@ -705,7 +722,7 @@ else
     [Parameter] public IReadOnlyList<CandidateLinkEntry> Links { get; set; } = [];
     [Parameter] public EventCallback<string> OnOpenInTaskExplorer { get; set; }
 
-    private enum TvSubView { Matrix, Requirements, ScCoverage, Gaps, Graph }
+    private enum TvSubView { Matrix, Requirements, Artifacts, ScCoverage, Gaps, Graph }
 
     private TvSubView _subView = TvSubView.Matrix;
     private TraceabilityModel? _model;
@@ -718,7 +735,6 @@ else
     // Matrix state
     private TraceCoverageStatus? _matrixFilter;
     private bool _showOrphanedInMatrix;
-    private bool _showNonEligibleInMatrix;
 
     // Requirements sub-view
     private string _reqSearch = string.Empty;
@@ -749,8 +765,7 @@ else
         _lastLinks      = Links;
         _selectedReqId  = null;
         _matrixFilter   = null;
-        _showOrphanedInMatrix    = false;
-        _showNonEligibleInMatrix = false;
+        _showOrphanedInMatrix = false;
 
         _model = TraceabilityModelBuilder.Build(SpecMarkdown, Candidates, Links);
     }
@@ -761,10 +776,11 @@ else
         _model is null
             ? []
             : string.IsNullOrWhiteSpace(_reqSearch)
-                ? _model.Requirements
+                ? _model.Requirements.Where(r => r.IsEligible)
                 : _model.Requirements.Where(r =>
-                    r.Title.Contains(_reqSearch, StringComparison.OrdinalIgnoreCase) ||
-                    (r.FrId?.Contains(_reqSearch, StringComparison.OrdinalIgnoreCase) ?? false));
+                    r.IsEligible &&
+                    (r.Title.Contains(_reqSearch, StringComparison.OrdinalIgnoreCase) ||
+                     (r.FrId?.Contains(_reqSearch, StringComparison.OrdinalIgnoreCase) ?? false)));
 
     private TracedRequirement? SelectedRequirement =>
         _selectedReqId.HasValue
@@ -795,21 +811,12 @@ else
     {
         _matrixFilter            = status;
         _showOrphanedInMatrix    = false;
-        _showNonEligibleInMatrix = false;
     }
 
     private void SetOrphanedFilter()
     {
         _matrixFilter            = null;
         _showOrphanedInMatrix    = true;
-        _showNonEligibleInMatrix = false;
-    }
-
-    private void SetNonEligibleFilter()
-    {
-        _matrixFilter            = null;
-        _showOrphanedInMatrix    = false;
-        _showNonEligibleInMatrix = true;
     }
 
     private void ToggleGap(string key)
@@ -838,6 +845,7 @@ else
     {
         TraceArtifactType.Clarification   => "Clarification",
         TraceArtifactType.Decision        => "Decision",
+        TraceArtifactType.Assumption      => "Assumption",
         TraceArtifactType.ArchitectureNote => "Architecture Note",
         TraceArtifactType.Metadata        => "Metadata",
         _                                 => "Requirement",
@@ -847,6 +855,7 @@ else
     {
         TraceArtifactType.Clarification   => "clarification",
         TraceArtifactType.Decision        => "decision",
+        TraceArtifactType.Assumption      => "assumption",
         TraceArtifactType.ArchitectureNote => "arch-note",
         TraceArtifactType.Metadata        => "metadata",
         _                                 => "requirement",

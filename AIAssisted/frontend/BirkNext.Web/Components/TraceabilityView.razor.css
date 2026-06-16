@@ -822,5 +822,48 @@
 .tv-breakdown-test         { background: #f0fdfa; color: #0f766e; border-color: #99f6e4; }
 .tv-breakdown-clarification { background: #f0f9ff; color: #0369a1; border-color: #bae6fd; }
 .tv-breakdown-decision     { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+.tv-breakdown-assumption   { background: #f7fee7; color: #3f6212; border-color: #d9f99d; }
 .tv-breakdown-arch         { background: #faf5ff; color: #7c3aed; border-color: #e9d5ff; }
 .tv-breakdown-meta         { background: #f9fafb; color: #374151; border-color: #d1d5db; }
+
+.tv-artifacts-panel {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.tv-artifact-section {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 0.75rem;
+}
+
+.tv-artifact-list {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.tv-artifact-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #f9fafb;
+    padding: 0.625rem 0.75rem;
+    text-align: left;
+}
+
+.tv-artifact-row:hover {
+    background: #f3f4f6;
+}
+
+.tv-artifact-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

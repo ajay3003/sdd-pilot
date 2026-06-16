@@ -1,6 +1,7 @@
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
 using FluentAssertions;
+using System.Text.RegularExpressions;
 
 namespace BirkNext.Web.Tests.Services;
 
@@ -11,6 +12,101 @@ namespace BirkNext.Web.Tests.Services;
 /// </summary>
 public sealed class SpecExplorerServiceTests
 {
+    [Fact]
+    public void FunctionalRequirements_ExtractsExactly33ExplicitFrs()
+    {
+        var tree = SpecExplorerService.Parse(ReadPersonSpec());
+
+        var explicitFrs = ExplicitFrRequirements(tree);
+
+        explicitFrs.Should().HaveCount(33);
+        explicitFrs.Select(n => n.SpecItemId).Should().BeEquivalentTo(ExpectedPersonSpecFrIds());
+    }
+
+    [Fact]
+    public void Fr001_IsSingleRequirementWithAllSearchFields()
+    {
+        var fr001 = ExplicitFrRequirements(SpecExplorerService.Parse(ReadPersonSpec()))
+            .Single(n => n.SpecItemId == "FR-001");
+
+        fr001.FullContent.Should().Contain("name");
+        fr001.FullContent.Should().Contain("national ID");
+        fr001.FullContent.Should().Contain("DUF number");
+        fr001.FullContent.Should().Contain("BirkID");
+    }
+
+    [Fact]
+    public void Fr002_IsSingleRequirementWithSecurityBullets()
+    {
+        var fr002 = ExplicitFrRequirements(SpecExplorerService.Parse(ReadPersonSpec()))
+            .Single(n => n.SpecItemId == "FR-002");
+
+        fr002.FullContent.Should().Contain("authorisation control");
+        fr002.FullContent.Should().Contain("Levels 0 and 1");
+        fr002.FullContent.Should().Contain("Kode 6 / Kode 7");
+    }
+
+    [Fact]
+    public void Fr025_IsSingleRequirementWithServiceBusTopicsAndEvents()
+    {
+        var fr025 = ExplicitFrRequirements(SpecExplorerService.Parse(ReadPersonSpec()))
+            .Single(n => n.SpecItemId == "FR-025");
+
+        fr025.FullContent.Should().Contain("person.person");
+        fr025.FullContent.Should().Contain("person.barn");
+        fr025.FullContent.Should().Contain("PersonOpprettet");
+        fr025.FullContent.Should().Contain("BarnRegistrert");
+        fr025.FullContent.Should().Contain("Sikkerhetsniv");
+    }
+
+    [Fact]
+    public void Fr029_IsSingleRequirementWithSevenOperations()
+    {
+        var fr029 = ExplicitFrRequirements(SpecExplorerService.Parse(ReadPersonSpec()))
+            .Single(n => n.SpecItemId == "FR-029");
+
+        var operationCount = Regex.Matches(fr029.FullContent ?? string.Empty, @"-\s+`Person:")
+            .Count;
+        operationCount.Should().Be(7);
+        fr029.FullContent.Should().Contain("using `IHostedService`");
+        fr029.FullContent.Should().Contain("Person:SeRevisjonslogg");
+    }
+
+    [Fact]
+    public void Fr031_IsSingleRequirementWithFailClosedText()
+    {
+        var fr031 = ExplicitFrRequirements(SpecExplorerService.Parse(ReadPersonSpec()))
+            .Single(n => n.SpecItemId == "FR-031");
+
+        fr031.FullContent.Should().Contain("HTTP 503");
+        fr031.FullContent.Should().Contain("No access decision MUST be assumed");
+        fr031.FullContent.Should().Contain("service MUST remain operational");
+    }
+
+    [Fact]
+    public void FrReferencesInQa_DoNotCreateExtraRequirements()
+    {
+        var tree = SpecExplorerService.Parse(ReadPersonSpec());
+
+        ExplicitFrRequirements(tree).Should().HaveCount(33);
+        DescendantsOf(AllDescendants(tree).First(n => n.Title == "Clarifications"))
+            .Where(n => n.NodeType == SpecNodeType.Requirement)
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public void WrappedContinuationLines_DoNotCreateRequirements()
+    {
+        var explicitFrs = ExplicitFrRequirements(SpecExplorerService.Parse(ReadPersonSpec()));
+        var titles = explicitFrs.Select(n => n.Title.TrimStart()).ToList();
+
+        titles.Should().NotContain(t => t.StartsWith("national ID", StringComparison.OrdinalIgnoreCase));
+        titles.Should().NotContain(t => t.StartsWith("returning to the user", StringComparison.OrdinalIgnoreCase));
+        titles.Should().NotContain(t => t.StartsWith("include an address-protection flag", StringComparison.OrdinalIgnoreCase));
+        titles.Should().NotContain(t => t.StartsWith("records processed per period", StringComparison.OrdinalIgnoreCase));
+        titles.Should().NotContain(t => t.StartsWith("using IHostedService", StringComparison.OrdinalIgnoreCase));
+    }
+
     // =========================================================================
     // T1 — FR block: multi-line requirement with bullet sub-items
     // =========================================================================
@@ -537,6 +633,37 @@ public sealed class SpecExplorerServiceTests
 
     private static IEnumerable<SpecNode> AllDescendants(SpecTree tree) =>
         tree.Roots.SelectMany(r => DescendantsOf(r));
+
+    private static List<SpecNode> ExplicitFrRequirements(SpecTree tree) =>
+        AllDescendants(tree)
+            .Where(n => n.NodeType == SpecNodeType.Requirement
+                && n.SpecItemId is not null
+                && n.SpecItemId.StartsWith("FR-", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    private static string ReadPersonSpec() => File.ReadAllText(FindPersonSpecPath());
+
+    private static string FindPersonSpecPath()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var path = Path.Combine(directory.FullName, "examples", "personSpec.md");
+            if (File.Exists(path))
+                return path;
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException("Could not locate examples/personSpec.md from test output directory.");
+    }
+
+    private static string[] ExpectedPersonSpecFrIds() =>
+    [
+        "FR-001", "FR-002", "FR-003", "FR-004", "FR-005", "FR-006", "FR-007", "FR-008", "FR-009",
+        "FR-010", "FR-011", "FR-012", "FR-013", "FR-014", "FR-015", "FR-016", "FR-017", "FR-018",
+        "FR-019", "FR-020", "FR-021", "FR-022", "FR-023", "FR-024", "FR-025", "FR-026", "FR-027",
+        "FR-028", "FR-029", "FR-030", "FR-031", "FR-032", "FR-033",
+    ];
 
     private static IEnumerable<SpecNode> DescendantsOf(SpecNode node)
     {
