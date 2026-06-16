@@ -3,6 +3,25 @@
   mutation: Mutation
 }
 
+type AnalyzeChangePayload {
+  report: ChangeAuditReport
+  errors: [UserError!]!
+}
+
+"A requirement identified as potentially affected by the described change, enriched with formal impact data."
+type AuditAffectedRequirement {
+  requirement: Scenario!
+  riskLevel: RiskLevel!
+  linkedTestCount: Int!
+  aiRelevanceReason: String!
+}
+
+"A test scenario identified as potentially affected by the described change."
+type AuditAffectedTest {
+  test: Scenario!
+  aiRelevanceReason: String!
+}
+
 type CandidateLink {
   id: ID!
   projectId: String!
@@ -13,6 +32,74 @@ type CandidateLink {
   createdAt: DateTime!
 }
 
+"AI-generated change audit report combining Claude's semantic analysis with formal impact data."
+type ChangeAuditReport {
+  changeDescription: String!
+  overallRiskLevel: RiskLevel!
+  aiReasoning: String!
+  regressionScope: String!
+  affectedRequirements: [AuditAffectedRequirement!]!
+  affectedTests: [AuditAffectedTest!]!
+  coverageGaps: [String!]!
+  recommendedRegressionTests: [RegressionItem!]!
+}
+
+"A source-code file registered in the code traceability system."
+type CodeFile {
+  id: ID!
+  projectId: String!
+  "Relative or absolute path, e.g. \"backend\/Services\/ScenarioService.cs\"."
+  filePath: String!
+  "Filename segment derived from FilePath on write, e.g. \"ScenarioService.cs\"."
+  fileName: String!
+  description: String
+  createdAt: DateTime!
+}
+
+"Full code impact for a file: all linked requirements and tests."
+type CodeImpact {
+  file: CodeFile!
+  linkedRequirements: [CodeLinkWithScenario!]!
+  linkedTests: [CodeLinkWithScenario!]!
+}
+
+"A link between a code file and a QA scenario (requirement or test)."
+type CodeLink {
+  id: ID!
+  projectId: String!
+  codeFileId: ID!
+  scenarioId: ID!
+  "Denormalised from Scenario.Kind for query efficiency."
+  scenarioKind: String!
+  createdAt: DateTime!
+}
+
+"A code link paired with its resolved scenario."
+type CodeLinkWithScenario {
+  link: CodeLink!
+  scenario: Scenario!
+}
+
+"Project-wide code traceability summary."
+type CodeSummary {
+  totalFiles: Int!
+  linkedRequirements: Int!
+  linkedTests: Int!
+  "Files with no code links at all."
+  unlinkedFiles: Int!
+}
+
+type ConfirmHighConfidenceSuggestionsPayload {
+  confirmedCount: Int!
+  correlationId: String!
+}
+
+type ConfirmSuggestionPayload {
+  traceLink: TraceLink
+  errors: [UserError!]!
+  correlationId: String!
+}
+
 "Aggregate coverage statistics for a project."
 type CoverageSummary {
   totalRequirements: Int!
@@ -20,6 +107,17 @@ type CoverageSummary {
   notCoveredRequirements: Int!
   coveragePercent: Float!
   orphanTests: Int!
+  "Requirements with pending suggestions but no confirmed coverage."
+  suggestedCoverageRequirements: Int!
+  "Total pending (non-rejected) suggestions for this project."
+  pendingSuggestionCount: Int!
+  "High-confidence pending suggestions."
+  highConfidenceSuggestionCount: Int!
+}
+
+type CreateCodeLinkPayload {
+  link: CodeLink
+  errors: [UserError!]!
 }
 
 "Indicates that creation of a single batch item failed."
@@ -50,6 +148,8 @@ type CreateScenariosPayload {
   successCount: Int!
   failureCount: Int!
   correlationId: String!
+  "Traceability suggestions generated automatically after save. Null when no suggestions were attempted."
+  suggestionResult: SuggestionGenerationResult
 }
 
 "Payload returned by the createTraceLink mutation."
@@ -60,6 +160,18 @@ type CreateTraceLinkPayload {
   errors: [UserError!]!
   "Correlation ID for tracing this request in logs."
   correlationId: String!
+}
+
+type DeleteCodeFilePayload {
+  deletedId: String
+  success: Boolean!
+  errors: [UserError!]!
+}
+
+type DeleteCodeLinkPayload {
+  deletedId: String
+  success: Boolean!
+  errors: [UserError!]!
 }
 
 type DeleteQaDeltaReviewPayload {
@@ -93,6 +205,48 @@ type DeleteTraceLinkPayload {
   correlationId: String!
 }
 
+"A single drift finding produced by a deterministic drift rule."
+type DriftFinding {
+  """
+  Rule category: CoverageGap | PartialCoverage | OrphanTest | LowCoverage.
+  String (not enum) for extensibility — new rules can be added without a schema change.
+  """
+  category: String!
+  description: String!
+  "Reuses RiskLevel for consistent severity vocabulary across the feature set."
+  severity: RiskLevel!
+}
+
+"A requirement showing signs of spec drift — uncovered or partially covered."
+type DriftRequirement {
+  requirement: Scenario!
+  "Reuses the same thresholds as ImpactAnalysisService (0=High, 1=Medium, 2+=Low)."
+  driftRisk: RiskLevel!
+  linkedTestCount: Int!
+  driftReason: String!
+}
+
+type GenerateTraceabilitySuggestionsPayload {
+  result: SuggestionGenerationResult
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+"Project-wide impact summary: all requirements ranked by risk."
+type ImpactSummary {
+  totalRequirements: Int!
+  highRiskCount: Int!
+  mediumRiskCount: Int!
+  lowRiskCount: Int!
+  requirements: [RequirementRiskItem!]!
+}
+
+"A test scenario linked to a requirement via a Covers trace link."
+type ImpactedTest {
+  test: Scenario!
+  link: TraceLink!
+}
+
 "Root mutation type."
 type Mutation {
   "Creates a new scenario in the given project."
@@ -113,8 +267,64 @@ type Mutation {
   deleteQaDeltaReview(id: ID!): DeleteQaDeltaReviewPayload! @cost(weight: "10")
   "Creates a trace link between two artifacts in the given project."
   createTraceLink(input: CreateTraceLinkInput!): CreateTraceLinkPayload! @cost(weight: "10")
+  """
+  Runs the AI Change Auditor: identifies affected requirements and tests,
+  computes formal risk levels via ImpactAnalysisService, and returns a
+  human-readable audit report. Requires ANTHROPIC_API_KEY to be configured.
+  """
+  analyzeChange(input: AnalyzeChangeInput!): AnalyzeChangePayload! @cost(weight: "10")
   "Deletes a trace link by ID. ProjectId is required for safety scoping."
   deleteTraceLink(input: DeleteTraceLinkInput!): DeleteTraceLinkPayload! @cost(weight: "10")
+  "Registers a new code file in the project's code traceability registry."
+  registerCodeFile(input: RegisterCodeFileInput!): RegisterCodeFilePayload! @cost(weight: "10")
+  "Removes a code file and all its code links from the registry."
+  deleteCodeFile(input: DeleteCodeFileInput!): DeleteCodeFilePayload! @cost(weight: "10")
+  "Creates a link between a code file and a requirement or test."
+  createCodeLink(input: CreateCodeLinkInput!): CreateCodeLinkPayload! @cost(weight: "10")
+  "Generates traceability suggestions for all requirement–test pairs in the project."
+  generateTraceabilitySuggestions(input: GenerateTraceabilitySuggestionsInput!): GenerateTraceabilitySuggestionsPayload! @cost(weight: "10")
+  "Confirms a traceability suggestion, creating a permanent trace link."
+  confirmSuggestion(input: ConfirmSuggestionInput!): ConfirmSuggestionPayload! @cost(weight: "10")
+  "Rejects a traceability suggestion. Rejected suggestions are not regenerated."
+  rejectSuggestion(input: RejectSuggestionInput!): RejectSuggestionPayload! @cost(weight: "10")
+  "Bulk-confirms all high-confidence pending suggestions for the project."
+  confirmHighConfidenceSuggestions(input: ConfirmHighConfidenceSuggestionsInput!): ConfirmHighConfidenceSuggestionsPayload! @cost(weight: "10")
+  "Removes a code link by ID."
+  deleteCodeLink(input: DeleteCodeLinkInput!): DeleteCodeLinkPayload! @cost(weight: "10")
+}
+
+"""
+Full AI QA audit report for a project. Computed on demand — not persisted.
+            
+Deterministic quality score (0–100) aggregated from:
+  - Coverage: TraceLinkService / SpecDriftDetectionService
+  - Spec Drift: SpecDriftDetectionService (which reuses ImpactAnalysisService)
+  - Code Traceability: CodeTraceabilityService
+            
+Optional AI layer (requires Anthropic:ApiKey in config):
+  - Executive summary, QA concerns, recommended actions generated by Claude.
+  - Only requested when includeAiSummary=true — graceful null fallback otherwise.
+"""
+type QaAuditReport {
+  qualityScore: Int!
+  readinessStatus: QaReadinessStatus!
+  aiExecutiveSummary: String
+  aiConcerns: [String!]!
+  aiRecommendedActions: [String!]!
+  coveragePercent: Float!
+  totalRequirements: Int!
+  requirementsAtRisk: Int!
+  "Requirements with 0 linked tests (High Risk)."
+  highRiskRequirements: Int!
+  driftFindingsCount: Int!
+  highRiskDriftFindings: Int!
+  orphanTestCount: Int!
+  totalCodeFiles: Int!
+  unlinkedCodeFiles: Int!
+  driftFindings: [DriftFinding!]!
+  topRisks: [DriftRequirement!]!
+  recommendedActions: [String!]!
+  scoreDeductions: [QaScoreDeduction!]!
 }
 
 "Represents a saved QA delta review from a specification comparison."
@@ -134,6 +344,13 @@ type QaDeltaReview {
   deltaItemsJson: String!
 }
 
+"A single deduction from the deterministic quality score."
+type QaScoreDeduction {
+  category: String!
+  reason: String!
+  points: Int!
+}
+
 "Root query type."
 type Query {
   "Health-check; returns \"pong\"."
@@ -150,14 +367,87 @@ type Query {
   qaDeltaReview(id: ID!): QaDeltaReview @cost(weight: "10")
   "Returns the traceability matrix for the given project. Only Requirement and Test scenarios are included."
   traceabilityMatrix(projectId: String!): [TraceabilityMatrixRow!]! @cost(weight: "10")
-  "Returns aggregate coverage statistics for the given project."
+  "Returns aggregate coverage statistics for the given project, including suggestion counts."
   coverageSummary(projectId: String!): CoverageSummary! @cost(weight: "10")
+  "Returns all pending traceability suggestions for the given project."
+  traceabilitySuggestions(projectId: String!): [TraceabilitySuggestionItem!]! @cost(weight: "10")
+  """
+  Returns the full impact analysis for a single requirement, or null when not found.
+  Includes linked tests, risk level, and regression recommendation.
+  """
+  requirementImpact(projectId: String! requirementId: ID!): RequirementImpact @cost(weight: "10")
+  "Returns the project-wide impact summary with all requirements ranked by risk level."
+  impactSummary(projectId: String!): ImpactSummary! @cost(weight: "10")
+  "Returns all registered code files for the given project."
+  codeFiles(projectId: String!): [CodeFile!]! @cost(weight: "10")
+  "Returns project-wide code traceability summary counts."
+  codeSummary(projectId: String!): CodeSummary! @cost(weight: "10")
+  """
+  Returns the full code impact for a single file: all linked requirements and tests.
+  Returns null if the file is not found.
+  """
+  codeImpact(projectId: String! codeFileId: ID!): CodeImpact @cost(weight: "10")
+  """
+  Returns a deterministic spec drift report: coverage gaps, orphan tests,
+  at-risk requirements, and recommended actions. Reuses ImpactAnalysisService
+  for risk levels; adds orphan test detection.
+  """
+  specDriftReport(projectId: String!): SpecDriftReport! @cost(weight: "10")
+  """
+  Returns the AI QA Auditor report: deterministic quality score (0–100),
+  readiness status, aggregated metrics from all quality signals, and an
+  optional AI-generated executive summary (requires includeAiSummary=true
+  and a configured Anthropic API key).
+  """
+  qaAuditReport(projectId: String! includeAiSummary: Boolean!): QaAuditReport! @cost(weight: "10")
+}
+
+type RegisterCodeFilePayload {
+  file: CodeFile
+  errors: [UserError!]!
+}
+
+"A test recommended for regression, with the reason it is included."
+type RegressionItem {
+  test: Scenario!
+  reason: String!
+}
+
+type RejectSuggestionPayload {
+  success: Boolean!
+  errors: [UserError!]!
+  correlationId: String!
 }
 
 type ReorderTestScenariosPayload {
   success: Boolean!
   errors: [UserError!]!
   correlationId: String!
+}
+
+"Full impact analysis for a single requirement."
+type RequirementImpact {
+  requirement: Scenario!
+  linkedTests: [ImpactedTest!]!
+  regressionRecommendation: [RegressionItem!]!
+  summary: RequirementImpactSummary!
+}
+
+"Aggregate impact metrics for a single requirement."
+type RequirementImpactSummary {
+  totalLinkedTests: Int!
+  "In v1, all linked tests are accepted (Scenario has no rejection status)."
+  acceptedTests: Int!
+  "1 when no tests are linked, 0 otherwise."
+  missingCoverage: Int!
+  riskLevel: RiskLevel!
+}
+
+"A requirement with its computed risk level."
+type RequirementRiskItem {
+  requirement: Scenario!
+  riskLevel: RiskLevel!
+  linkedTestCount: Int!
 }
 
 "A candidate extracted from a document with its QA review decision."
@@ -173,6 +463,7 @@ type ReviewedCandidate {
   reviewedBy: String!
   createdAt: DateTime!
   reviewedAt: DateTime
+  candidateId: UUID
 }
 
 type SaveCandidateLinksPayload {
@@ -200,6 +491,32 @@ type Scenario {
   projectId: String!
   createdAt: DateTime!
   displayOrder: Int!
+}
+
+"Deterministic spec drift report. Computed on demand from live traceability data."
+type SpecDriftReport {
+  overallDriftRisk: RiskLevel!
+  totalRequirements: Int!
+  requirementsAtRisk: Int!
+  "Requirements with 0 linked tests (High Risk)."
+  coverageGaps: Int!
+  "Tests not linked to any requirement."
+  orphanTestCount: Int!
+  "Percentage of requirements with at least one linked test."
+  coveragePercent: Float!
+  requirementsAtRiskList: [DriftRequirement!]!
+  orphanTests: [Scenario!]!
+  findings: [DriftFinding!]!
+  recommendedActions: [String!]!
+}
+
+"Summary of traceability suggestions generated after saving artifacts."
+type SuggestionGenerationResult {
+  totalGenerated: Int!
+  highConfidenceCount: Int!
+  needsReviewCount: Int!
+  suggestionsAvailable: Boolean!
+  message: String
 }
 
 "A directional link between two artifacts in BirkNext."
@@ -233,6 +550,37 @@ type TraceabilityMatrixRow {
   coverageStatus: CoverageStatus!
 }
 
+"A pending traceability link suggestion generated by signal matching."
+type TraceabilitySuggestion {
+  id: ID!
+  projectId: String!
+  "Test scenario Id (the artifact that covers)."
+  sourceId: ID!
+  sourceKind: String!
+  "Requirement scenario Id (the artifact being covered)."
+  targetId: ID!
+  targetKind: String!
+  linkType: String!
+  status: String!
+  "Confidence score 0.0–1.0."
+  confidence: Float!
+  reason: String!
+  "JSON array of matching signal descriptions."
+  signalsJson: String!
+  createdAt: DateTime!
+  confirmedAt: DateTime
+  rejectedAt: DateTime
+}
+
+"A pending AI-suggested traceability link with source\/target titles."
+type TraceabilitySuggestionItem {
+  suggestion: TraceabilitySuggestion!
+  "Title of the source (test) scenario."
+  sourceTitle: String!
+  "Title of the target (requirement) scenario."
+  targetTitle: String!
+}
+
 type UserError {
   code: String!
   message: String!
@@ -241,6 +589,26 @@ type UserError {
 
 "A discriminated result for a single item in a batch scenario creation."
 union CreateScenarioResult = CreateScenarioSuccess | CreateScenarioError
+
+input AnalyzeChangeInput {
+  projectId: String!
+  changeDescription: String!
+}
+
+input ConfirmHighConfidenceSuggestionsInput {
+  projectId: String!
+}
+
+input ConfirmSuggestionInput {
+  id: ID!
+  projectId: String!
+}
+
+input CreateCodeLinkInput {
+  projectId: String!
+  codeFileId: String!
+  scenarioId: String!
+}
 
 "Input for the createScenario mutation."
 input CreateScenarioInput {
@@ -271,6 +639,16 @@ input CreateTraceLinkInput {
   notes: String
 }
 
+input DeleteCodeFileInput {
+  id: String!
+  projectId: String!
+}
+
+input DeleteCodeLinkInput {
+  id: String!
+  projectId: String!
+}
+
 "Input for the deleteTraceLink mutation."
 input DeleteTraceLinkInput {
   id: String!
@@ -288,6 +666,21 @@ input ExtractionMetadataInput {
   selectedCount: Int!
   extractionDurationMs: Int!
   sessionId: String!
+}
+
+input GenerateTraceabilitySuggestionsInput {
+  projectId: String!
+}
+
+input RegisterCodeFileInput {
+  projectId: String!
+  filePath: String!
+  description: String
+}
+
+input RejectSuggestionInput {
+  id: ID!
+  projectId: String!
 }
 
 input ReorderTestScenariosInput {
@@ -330,6 +723,7 @@ input SaveReviewedCandidateItemInput {
   projectId: String!
   reviewedBy: String
   reviewedAt: DateTime
+  candidateId: UUID
 }
 
 input SaveReviewedCandidatesInput {
@@ -345,6 +739,7 @@ enum CandidateLinkType {
 
 enum CandidateReviewStatus {
   NEW
+  AUTO_ACCEPTED
   ACCEPTED
   REJECTED
   NEEDS_REVIEW
@@ -353,6 +748,20 @@ enum CandidateReviewStatus {
 enum CoverageStatus {
   COVERED
   NOT_COVERED
+}
+
+enum QaReadinessStatus {
+  READY
+  REVIEW_NEEDED
+  HIGH_RISK
+  "No requirements exist — score is meaningless and should not be displayed."
+  INSUFFICIENT_DATA
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
 }
 
 enum ScenarioKind {
@@ -374,3 +783,5 @@ directive @specifiedBy("The specifiedBy URL points to a human-readable specifica
 
 "The `DateTime` scalar represents an ISO-8601 compliant date time type."
 scalar DateTime @specifiedBy(url: "https:\/\/www.graphql-scalars.com\/date-time")
+
+scalar UUID @specifiedBy(url: "https:\/\/tools.ietf.org\/html\/rfc4122")

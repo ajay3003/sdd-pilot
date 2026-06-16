@@ -155,9 +155,9 @@ public class ExtractionSessionServiceTests : BunitContext
     }
 
     [Fact]
-    public void IsExpired_WhenSnapshotIsOlderThanTwoHours_ReturnsTrue()
+    public void IsExpired_WhenSnapshotIsOlderThanSevenDays_ReturnsTrue()
     {
-        var snapshot = MakeSnapshot(DateTimeOffset.UtcNow.AddHours(-2).AddMinutes(-1));
+        var snapshot = MakeSnapshot(DateTimeOffset.UtcNow.AddDays(-7).AddMinutes(-1));
 
         CreateService().IsExpired(snapshot).Should().BeTrue();
     }
@@ -167,6 +167,6 @@ public class ExtractionSessionServiceTests : BunitContext
     {
         var snapshot = MakeSnapshot(DateTimeOffset.UtcNow.AddHours(-2).AddSeconds(1));
 
-        CreateService().IsExpired(snapshot).Should().BeFalse("expiry is strictly after 2 hours");
+        CreateService().IsExpired(snapshot).Should().BeFalse("2 hours is well within the 7-day expiry window");
     }
 }
