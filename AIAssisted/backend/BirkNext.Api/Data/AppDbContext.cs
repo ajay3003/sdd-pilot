@@ -63,6 +63,9 @@ public class AppDbContext : DbContext
             entity.Property(c => c.Id)
                 .HasColumnName("id");
 
+            entity.Property(c => c.CandidateId)
+                .HasColumnName("candidate_id");
+
             entity.Property(c => c.Title)
                 .HasColumnName("title")
                 .HasMaxLength(500)

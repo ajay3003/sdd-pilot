@@ -45,6 +45,12 @@ public class ScenarioExtractionSessionTests : BunitContext
         _mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
         Services.AddSingleton(_mockSession.Object);
 
+        var mockGetReviewed = new Mock<IGetReviewedCandidatesQuery>();
+        mockGetReviewed
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
+        Services.AddSingleton(mockGetReviewed.Object);
+
         Services.AddLogging();
         JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
     }

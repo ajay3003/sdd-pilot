@@ -3,6 +3,7 @@ namespace BirkNext.Api.Models;
 public class ReviewedCandidate
 {
     public Guid Id { get; init; } = Guid.NewGuid();
+    public Guid? CandidateId { get; set; }
     public string Title { get; set; } = string.Empty;
     public ScenarioKind Classification { get; set; }
     public CandidateReviewStatus ReviewStatus { get; set; }

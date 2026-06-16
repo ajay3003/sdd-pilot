@@ -16,7 +16,7 @@ public interface IExtractionSessionService
 public sealed class ExtractionSessionService : IExtractionSessionService
 {
     private const string StorageKey = "birknext:extraction:session";
-    private static readonly TimeSpan SessionExpiry = TimeSpan.FromHours(2);
+    private static readonly TimeSpan SessionExpiry = TimeSpan.FromDays(7);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

@@ -242,4 +242,61 @@ public sealed class TraceabilityModelBuilderTests
         "FR-019", "FR-020", "FR-021", "FR-022", "FR-023", "FR-024", "FR-025", "FR-026", "FR-027",
         "FR-028", "FR-029", "FR-030", "FR-031", "FR-032", "FR-033",
     ];
+
+    // =========================================================================
+    // T016 — Rejected artifacts are excluded from Traceability calculations
+    // =========================================================================
+
+    [Fact]
+    public void RejectedArtifacts_AreExcludedFromTraceability()
+    {
+        var accepted = Candidate("FR-001: The system MUST allow login");
+        var rejected = Candidate("FR-002: The system MUST validate email");
+        rejected.ReviewStatus = CandidateReviewStatus.Rejected;
+        var test = Candidate("Verify login succeeds", ScenarioKind.Test);
+
+        var model = TraceabilityModelBuilder.Build(null, [accepted, rejected, test], []);
+
+        model.Requirements.Should().NotContain(r => r.CandidateId == rejected.CandidateId,
+            "Rejected candidates must not appear in Traceability requirements");
+        model.Requirements.Should().ContainSingle(r => r.CandidateId == accepted.CandidateId,
+            "Non-rejected requirements must still appear");
+        model.TotalCandidates.Should().Be(2,
+            "TotalCandidates count must reflect only non-rejected candidates");
+    }
+
+    // =========================================================================
+    // T017 — NeedsReview artifacts are flagged with NeedsReviewWarning
+    // =========================================================================
+
+    [Fact]
+    public void NeedsReviewArtifacts_AreFlaggedOrHandledConsistently()
+    {
+        var needsReview = Candidate("FR-003: The system MUST cache results");
+        needsReview.ReviewStatus = CandidateReviewStatus.NeedsReview;
+
+        var model = TraceabilityModelBuilder.Build(null, [needsReview], []);
+
+        var traced = model.Requirements.Single(r => r.CandidateId == needsReview.CandidateId);
+        traced.NeedsReviewWarning.Should().BeTrue(
+            "NeedsReview candidates must have NeedsReviewWarning=true in the Traceability model");
+    }
+
+    // =========================================================================
+    // T018 — Traceability works with all AutoAccepted candidates (no manual review)
+    // =========================================================================
+
+    [Fact]
+    public void Traceability_WorksWithAutoAcceptedCandidates()
+    {
+        var req = Candidate("FR-001: The system MUST process orders");
+        var test = Candidate("Verify order processing", ScenarioKind.Test);
+        // Both default to AutoAccepted (new default)
+
+        var model = TraceabilityModelBuilder.Build(null, [req, test], []);
+
+        model.Requirements.Should().ContainSingle(r => r.CandidateId == req.CandidateId,
+            "AutoAccepted requirements must appear in Traceability");
+        model.EligibleCount.Should().Be(1);
+    }
 }

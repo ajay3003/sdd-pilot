@@ -21,14 +21,19 @@ public static class TraceabilityModelBuilder
         IReadOnlyList<ExtractionCandidate> candidates,
         IReadOnlyList<CandidateLinkEntry> links)
     {
+        // Exclude rejected artifacts — they must not contribute to Traceability or coverage.
+        var activeCandidates = candidates
+            .Where(c => c.ReviewStatus != CandidateReviewStatus.Rejected)
+            .ToList();
+
         // ── Step 1: partition candidates ─────────────────────────────────────
         // Include NeedsClarification alongside Requirement so they appear in the matrix
         // with the correct artifact type badge rather than being silently dropped.
-        var reqLike = candidates
+        var reqLike = activeCandidates
             .Where(c => c.Classification == ScenarioKind.Requirement
                      || c.Classification == ScenarioKind.NeedsClarification)
             .ToList();
-        var tests = candidates
+        var tests = activeCandidates
             .Where(c => c.Classification == ScenarioKind.Test)
             .ToList();
 
@@ -199,6 +204,7 @@ public static class TraceabilityModelBuilder
                     : $"{artifactType} artifacts are not part of coverage calculations.",
                 ArtifactType = artifactType,
                 Status      = status,
+                NeedsReviewWarning = candidate.ReviewStatus == CandidateReviewStatus.NeedsReview,
             });
         }
 
@@ -249,9 +255,9 @@ public static class TraceabilityModelBuilder
             SuccessCriteria = finalScs,
             OrphanedTests   = orphanedTests,
             TotalTests      = totalTests,
-            TotalCandidates = candidates.Count,
-            RequirementCandidateCount = candidates.Count(c => c.Classification == ScenarioKind.Requirement),
-            DerivedRequirementCount = Math.Max(0, candidates.Count(c => c.Classification == ScenarioKind.Requirement) - tracedReqs.Count(r => r.IsEligible)),
+            TotalCandidates = activeCandidates.Count,
+            RequirementCandidateCount = activeCandidates.Count(c => c.Classification == ScenarioKind.Requirement),
+            DerivedRequirementCount = Math.Max(0, activeCandidates.Count(c => c.Classification == ScenarioKind.Requirement) - tracedReqs.Count(r => r.IsEligible)),
         };
     }
 

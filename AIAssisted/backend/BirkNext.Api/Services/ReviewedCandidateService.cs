@@ -31,6 +31,7 @@ public sealed class ReviewedCandidateService
 
         var entities = items.Select(item => new ReviewedCandidate
         {
+            CandidateId   = item.CandidateId,
             Title        = item.Title,
             Classification = item.Classification,
             ReviewStatus  = item.ReviewStatus,
@@ -71,4 +72,5 @@ public record ReviewedCandidateItem(
     string? SourceDocument,
     string? SourceSection,
     string? ReviewedBy,
-    DateTimeOffset? ReviewedAt);
+    DateTimeOffset? ReviewedAt,
+    Guid? CandidateId = null);

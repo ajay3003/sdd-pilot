@@ -241,6 +241,10 @@ namespace BirkNext.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<Guid?>("CandidateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("candidate_id");
+
                     b.Property<string>("Classification")
                         .IsRequired()
                         .HasMaxLength(30)

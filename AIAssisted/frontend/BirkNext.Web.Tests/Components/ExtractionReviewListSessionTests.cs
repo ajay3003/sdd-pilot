@@ -38,6 +38,12 @@ public class ExtractionReviewListSessionTests : BunitContext
             .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
         Services.AddSingleton(mockSaveLinks.Object);
 
+        var mockGetReviewed = new Mock<IGetReviewedCandidatesQuery>();
+        mockGetReviewed
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
+        Services.AddSingleton(mockGetReviewed.Object);
+
         Services.AddLogging();
     }
 
@@ -328,5 +334,68 @@ public class ExtractionReviewListSessionTests : BunitContext
 
         _mockSession.Verify(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>()), Times.AtLeastOnce,
             "SaveAsync must be called when a candidate review status changes");
+    }
+
+    // =========================================================================
+    // T011 — Re-analysis applies saved review statuses from server when
+    //         localStorage is missing (simulated via no InitialSession + mock query)
+    // =========================================================================
+
+    [Fact]
+    public async Task ReopenSession_RestoresTraceability_WhenLocalStorageIsEmpty()
+    {
+        // Arrange: a prior Rejected candidate that the server knows about
+        var candidateId = Guid.NewGuid();
+
+        var mockGetReviewed = new Mock<IGetReviewedCandidatesQuery>();
+        var mockCandidateResult = new Mock<IGetReviewedCandidates_ReviewedCandidates>();
+        mockCandidateResult.Setup(c => c.CandidateId).Returns(candidateId.ToString());
+        mockCandidateResult.Setup(c => c.ReviewStatus).Returns(CandidateReviewStatus.Rejected);
+
+        var mockData = new Mock<IGetReviewedCandidatesResult>();
+        mockData.Setup(d => d.ReviewedCandidates)
+            .Returns(new List<IGetReviewedCandidates_ReviewedCandidates> { mockCandidateResult.Object });
+
+        var mockResult = new Mock<IOperationResult<IGetReviewedCandidatesResult>>();
+        mockResult.Setup(r => r.Data).Returns(mockData.Object);
+
+        mockGetReviewed
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockResult.Object);
+
+        // Override the default mock with one that returns prior Rejected record
+        Services.AddSingleton(mockGetReviewed.Object);
+
+        // Fresh extraction result (no InitialSession = localStorage was missing)
+        var freshCandidate = new ExtractionCandidate
+        {
+            Title = "FR-001: The system MUST allow login",
+            Classification = ScenarioKind.Requirement,
+            ClassificationSignal = ClassificationSignal.Rfc2119Uppercase,
+            SourceBlockType = BlockType.UnorderedListItem,
+        };
+        // Manually set CandidateId to match the server record
+        var idField = typeof(ExtractionCandidate).GetProperty("CandidateId")!;
+
+        var result = ExtractionPipelineResult.Success(
+            candidates: [freshCandidate],
+            inputLengthChars: 100,
+            inputLineCount: 5,
+            durationMs: 10,
+            requirementCount: 1,
+            testCount: 0,
+            needsClarificationCount: 0);
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, result));
+        // InitialSession = null — simulates localStorage miss
+
+        await Task.Delay(100); // allow async restore to complete
+
+        // The server-restore should have queried for prior records
+        mockGetReviewed.Verify(
+            q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce,
+            "Server must be queried for prior review statuses when no InitialSession is present");
     }
 }

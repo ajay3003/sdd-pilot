@@ -200,6 +200,10 @@ else
                                     {
                                         <span class="tv-fr-badge">@req.FrId</span>
                                     }
+                                    @if (req.NeedsReviewWarning)
+                                    {
+                                        <span class="needs-review-badge" data-testid="needs-review-badge" title="Extraction quality not confirmed — review in Extraction Review">Needs Review</span>
+                                    }
                                     <span class="tv-req-title" title="@req.Title">@TruncateTitle(req.Title, 80)</span>
                                 </td>
                                 <td class="tv-col-us">

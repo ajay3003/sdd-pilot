@@ -108,6 +108,7 @@ type CreateScenarioError {
 
 enum CandidateReviewStatus {
   NEW
+  AUTO_ACCEPTED
   ACCEPTED
   REJECTED
   NEEDS_REVIEW
@@ -115,6 +116,7 @@ enum CandidateReviewStatus {
 
 type ReviewedCandidate {
   id: ID!
+  candidateId: ID
   title: String!
   classification: ScenarioKind!
   reviewStatus: CandidateReviewStatus!
@@ -128,6 +130,7 @@ type ReviewedCandidate {
 }
 
 input SaveReviewedCandidateItemInput {
+  candidateId: ID
   title: String!
   classification: ScenarioKind!
   reviewStatus: CandidateReviewStatus!

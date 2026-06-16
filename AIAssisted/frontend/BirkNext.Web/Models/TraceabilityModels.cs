@@ -33,6 +33,7 @@ public sealed class TracedRequirement
     public string? CoverageReason { get; init; }
     public TraceCoverageStatus Status { get; init; }
     public TraceArtifactType ArtifactType { get; init; } = TraceArtifactType.Requirement;
+    public bool NeedsReviewWarning { get; init; }
 
     public bool IsEligible => ArtifactType == TraceArtifactType.Requirement;
 }

@@ -82,13 +82,24 @@ public class ExtractionSessionServiceTests : BunitContext
     [Fact]
     public async Task LoadAsync_WhenSnapshotIsExpired_ReturnsNull()
     {
-        var expiredSnapshot = MakeSnapshot(DateTimeOffset.UtcNow.AddHours(-3));
+        var expiredSnapshot = MakeSnapshot(DateTimeOffset.UtcNow.AddDays(-8));
         var json = JsonSerializer.Serialize(expiredSnapshot, JsonOptions);
         JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult(json);
 
         var result = await CreateService().LoadAsync();
 
-        result.Should().BeNull("snapshot older than 2 hours must be treated as expired");
+        result.Should().BeNull("snapshot older than 7 days must be treated as expired");
+    }
+
+    [Fact]
+    public void SessionArtifacts_SurviveRefresh()
+    {
+        // A 5-day-old snapshot must NOT be expired (session should survive browser restart / refresh)
+        var recentSnapshot = MakeSnapshot(DateTimeOffset.UtcNow.AddDays(-5));
+        var service = CreateService();
+
+        service.IsExpired(recentSnapshot).Should().BeFalse(
+            "session artifacts must survive at least 7 days to cover browser restart scenarios");
     }
 
     [Fact]

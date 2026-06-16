@@ -10,7 +10,8 @@ public record SaveReviewedCandidateItemInput(
     string? SourceSection,
     string ProjectId,
     string? ReviewedBy,
-    DateTimeOffset? ReviewedAt);
+    DateTimeOffset? ReviewedAt,
+    Guid? CandidateId = null);
 
 public record SaveReviewedCandidatesInput(
     IReadOnlyList<SaveReviewedCandidateItemInput> Items,

@@ -14,16 +14,16 @@ namespace BirkNext.Web.Tests.Components;
 public class ExtractionReviewListTests : BunitContext
 {
     private readonly Mock<ICreateScenariosMutation> _mockMutation = new();
+    private readonly Mock<ISaveReviewedCandidatesMutation> _mockSaveReview = new();
 
     public ExtractionReviewListTests()
     {
         Services.AddSingleton(_mockMutation.Object);
 
-        var mockSaveReview = new Mock<ISaveReviewedCandidatesMutation>();
-        mockSaveReview
+        _mockSaveReview
             .Setup(m => m.ExecuteAsync(It.IsAny<SaveReviewedCandidatesInput>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<ISaveReviewedCandidatesResult>>());
-        Services.AddSingleton(mockSaveReview.Object);
+        Services.AddSingleton(_mockSaveReview.Object);
 
         var mockSaveLinks = new Mock<ISaveCandidateLinksMutation>();
         mockSaveLinks
@@ -37,6 +37,12 @@ public class ExtractionReviewListTests : BunitContext
         mockSession.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
         mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
         Services.AddSingleton(mockSession.Object);
+
+        var mockGetReviewed = new Mock<IGetReviewedCandidatesQuery>();
+        mockGetReviewed
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
+        Services.AddSingleton(mockGetReviewed.Object);
 
         Services.AddLogging();
     }
@@ -557,6 +563,121 @@ public class ExtractionReviewListTests : BunitContext
             .Should().Contain("FR-007: The system MUST restrict access");
     }
 
+    // =========================================================================
+    // T008 — Auto-persist calls mutation when PipelineResult first arrives
+    // =========================================================================
+
+    [Fact]
+    public async Task AnalyzeSpec_AutoPersistsNormalizedArtifacts()
+    {
+        var candidate = MakeCandidate();
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([candidate])));
+
+        await Task.Delay(50); // allow fire-and-forget to complete
+
+        _mockSaveReview.Verify(
+            m => m.ExecuteAsync(
+                It.Is<SaveReviewedCandidatesInput>(i =>
+                    i.Items.Count == 1 &&
+                    i.Items[0].ReviewStatus == CandidateReviewStatus.AutoAccepted),
+                It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce,
+            "auto-persist must call SaveReviewedCandidates with AutoAccepted status on first PipelineResult");
+    }
+
+    // =========================================================================
+    // T009 — Auto-persist preserves existing manual review statuses
+    // =========================================================================
+
+    [Fact]
+    public async Task AutoPersist_DoesNotDuplicateExistingArtifacts()
+    {
+        var candidateWithKnownId = new ExtractionCandidate
+        {
+            Title = "The system shall validate input",
+            Classification = ScenarioKind.Requirement,
+            ClassificationSignal = ClassificationSignal.Rfc2119Uppercase,
+            SourceBlockType = BlockType.UnorderedListItem,
+            ReviewStatus = CandidateReviewStatus.Rejected,
+        };
+
+        var snapshot = new ExtractionSessionSnapshot
+        {
+            SessionId = "prior-session-id",
+            Timestamp = DateTimeOffset.UtcNow,
+            Profile = ExtractionProfile.Default,
+            PipelineStatus = PipelineStatus.Success,
+            Candidates = [new CandidateSnapshot(
+                CandidateId: candidateWithKnownId.CandidateId,
+                Title: candidateWithKnownId.Title,
+                Classification: ScenarioKind.Requirement,
+                ClassificationSignal: ClassificationSignal.Rfc2119Uppercase,
+                ContextHeading: null,
+                SourceBlockType: BlockType.UnorderedListItem,
+                Confidence: null,
+                IsSelected: false,
+                ReviewStatus: CandidateReviewStatus.Rejected,
+                SaveState: CandidateSaveState.Saved,
+                SaveError: null,
+                SavedScenarioId: null)],
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+        {
+            p.Add(c => c.PipelineResult, MakeResult([candidateWithKnownId]));
+            p.Add(c => c.InitialSession, snapshot);
+        });
+
+        await Task.Delay(50);
+
+        _mockSaveReview.Verify(
+            m => m.ExecuteAsync(
+                It.Is<SaveReviewedCandidatesInput>(i =>
+                    i.Items.Any(item => item.ReviewStatus == CandidateReviewStatus.Rejected)),
+                It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce,
+            "auto-persist must preserve Rejected status for candidates from restored session");
+    }
+
+    // =========================================================================
+    // T015 — Traceability works without any save action
+    // =========================================================================
+
+    [Fact]
+    public void SaveAcceptedArtifacts_NotRequiredForTraceability()
+    {
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult()));
+
+        var activeTab = cut.FindAll(".view-mode-tab").Single(t => t.ClassList.Contains("is-active"));
+        activeTab.TextContent.Should().Contain("Traceability & Coverage");
+        cut.Markup.Should().Contain("tv-root", "TraceabilityView must render without any Accept/Save action");
+    }
+
+    // =========================================================================
+    // T019 — Existing Accepted candidates still appear in Traceability
+    // =========================================================================
+
+    [Fact]
+    public void ExistingAcceptedArtifacts_StillWorkAfterMigration()
+    {
+        var legacyAccepted = new ExtractionCandidate
+        {
+            Title = "FR-001: The system MUST allow login",
+            Classification = ScenarioKind.Requirement,
+            ClassificationSignal = ClassificationSignal.Rfc2119Uppercase,
+            SourceBlockType = BlockType.UnorderedListItem,
+            ReviewStatus = CandidateReviewStatus.Accepted,
+        };
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([legacyAccepted])));
+
+        cut.Markup.Should().Contain("tv-root",
+            "legacy Accepted candidates must still appear in Traceability after migration");
+    }
 }
 
 // ── T086 ─────────────────────────────────────────────────────────────────────
@@ -607,6 +728,12 @@ public class ExtractionReviewListObservabilityTests : BunitContext
         mockSession.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
         mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
         Services.AddSingleton(mockSession.Object);
+
+        var mockGetReviewed = new Mock<IGetReviewedCandidatesQuery>();
+        mockGetReviewed
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
+        Services.AddSingleton(mockGetReviewed.Object);
     }
 
     private static ExtractionCandidate MakeCandidate(string title = "sentinel-candidate-title") => new()
@@ -761,6 +888,12 @@ public class TestSubsectionGroupingTests : BunitContext
         mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
         Services.AddSingleton(mockSession.Object);
 
+        var mockGetReviewed = new Mock<IGetReviewedCandidatesQuery>();
+        mockGetReviewed
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
+        Services.AddSingleton(mockGetReviewed.Object);
+
         Services.AddLogging();
     }
 
@@ -781,6 +914,9 @@ public class TestSubsectionGroupingTests : BunitContext
         return ExtractionPipelineResult.Success(candidates, 100, 5, 10, req, test, nc);
     }
 
+    private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut) =>
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+
     [Fact]
     public void SameContextHeading_RenderedInSameSubsection()
     {
@@ -793,6 +929,7 @@ public class TestSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         var subsections = cut.FindAll("[data-testid='test-subsection-group']");
         subsections.Should().HaveCount(2, "two unique headings → two subsection groups");
@@ -815,6 +952,7 @@ public class TestSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         var subsections = cut.FindAll("[data-testid='test-subsection-group']");
         subsections.Should().HaveCount(1);
@@ -847,6 +985,7 @@ public class TestSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='group-requirement']").Should().NotBeNull();
         cut.FindAll("[data-testid='test-subsection-group']").Should().HaveCount(2,
@@ -865,6 +1004,7 @@ public class TestSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find(".search-input").Input("admin");
 
@@ -883,6 +1023,7 @@ public class TestSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='candidate-checkbox']").Change(true);
 
@@ -900,6 +1041,7 @@ public class TestSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find(".search-input").Input("admin");
 
@@ -942,6 +1084,12 @@ public class ClarificationSubsectionGroupingTests : BunitContext
         mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
         Services.AddSingleton(mockSession.Object);
 
+        var mockGetReviewed = new Mock<IGetReviewedCandidatesQuery>();
+        mockGetReviewed
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
+        Services.AddSingleton(mockGetReviewed.Object);
+
         Services.AddLogging();
     }
 
@@ -962,6 +1110,9 @@ public class ClarificationSubsectionGroupingTests : BunitContext
         return ExtractionPipelineResult.Success(candidates, 100, 5, 10, req, test, nc);
     }
 
+    private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut) =>
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+
     [Fact]
     public void SameContextHeading_RenderedInSameSubsection()
     {
@@ -974,6 +1125,7 @@ public class ClarificationSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         var subsections = cut.FindAll("[data-testid='test-subsection-group']");
         subsections.Should().HaveCount(2, "two unique headings → two subsection groups");
@@ -996,6 +1148,7 @@ public class ClarificationSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         var subsections = cut.FindAll("[data-testid='test-subsection-group']");
         subsections.Should().HaveCount(1);
@@ -1021,6 +1174,7 @@ public class ClarificationSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         // Both TEST and NEEDS_CLARIFICATION have one subsection each
         var subsections = cut.FindAll("[data-testid='test-subsection-group']");
@@ -1046,6 +1200,7 @@ public class ClarificationSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='group-requirement']").Should().NotBeNull();
         cut.FindAll("[data-testid='test-subsection-group']").Should().HaveCount(1,
@@ -1063,6 +1218,7 @@ public class ClarificationSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find(".search-input").Input("retry");
 
@@ -1079,6 +1235,7 @@ public class ClarificationSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='candidate-checkbox']").Change(true);
 
@@ -1096,6 +1253,7 @@ public class ClarificationSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find(".search-input").Input("timeout");
 
@@ -1138,6 +1296,12 @@ public class RequirementSubsectionGroupingTests : BunitContext
         mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
         Services.AddSingleton(mockSession.Object);
 
+        var mockGetReviewed = new Mock<IGetReviewedCandidatesQuery>();
+        mockGetReviewed
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
+        Services.AddSingleton(mockGetReviewed.Object);
+
         Services.AddLogging();
     }
 
@@ -1158,6 +1322,9 @@ public class RequirementSubsectionGroupingTests : BunitContext
         return ExtractionPipelineResult.Success(candidates, 100, 5, 10, req, test, nc);
     }
 
+    private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut) =>
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+
     [Fact]
     public void SameContextHeading_RenderedInSameSubsection()
     {
@@ -1170,6 +1337,7 @@ public class RequirementSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         var subsections = cut.FindAll("[data-testid='test-subsection-group']");
         subsections.Should().HaveCount(2, "two unique headings → two subsection groups");
@@ -1192,6 +1360,7 @@ public class RequirementSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         var subsections = cut.FindAll("[data-testid='test-subsection-group']");
         subsections.Should().HaveCount(1);
@@ -1217,6 +1386,7 @@ public class RequirementSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         // Both REQUIREMENT and TEST have one subsection each — grouping is independent
         var subsections = cut.FindAll("[data-testid='test-subsection-group']");
@@ -1243,6 +1413,7 @@ public class RequirementSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         var subsections = cut.FindAll("[data-testid='test-subsection-group']");
         subsections.Should().HaveCount(2);
@@ -1262,6 +1433,7 @@ public class RequirementSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find(".search-input").Input("rate");
 
@@ -1280,6 +1452,7 @@ public class RequirementSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='candidate-checkbox']").Change(true);
 
@@ -1297,6 +1470,7 @@ public class RequirementSubsectionGroupingTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find(".search-input").Input("200ms");
 
@@ -1337,6 +1511,12 @@ public class ExtractionReviewListDefaultExpansionTests : BunitContext
         mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
         Services.AddSingleton(mockSession.Object);
 
+        var mockGetReviewed = new Mock<IGetReviewedCandidatesQuery>();
+        mockGetReviewed
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
+        Services.AddSingleton(mockGetReviewed.Object);
+
         Services.AddLogging();
     }
 
@@ -1357,6 +1537,9 @@ public class ExtractionReviewListDefaultExpansionTests : BunitContext
         return ExtractionPipelineResult.Success(candidates, 100, 5, 10, req, test, nc);
     }
 
+    private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut) =>
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+
     [Fact]
     public void AfterExtraction_TopLevelSections_AreExpandedByDefault()
     {
@@ -1368,6 +1551,7 @@ public class ExtractionReviewListDefaultExpansionTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         var sectionBodies = cut.FindAll(".section-body");
         sectionBodies.Should().NotBeEmpty();
@@ -1387,6 +1571,7 @@ public class ExtractionReviewListDefaultExpansionTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         var subgroupBodies = cut.FindAll(".subsection-body");
         subgroupBodies.Should().NotBeEmpty();
@@ -1405,6 +1590,7 @@ public class ExtractionReviewListDefaultExpansionTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find("[aria-label='Expand all sections']").Click();
 
@@ -1425,6 +1611,7 @@ public class ExtractionReviewListDefaultExpansionTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find("[aria-label='Collapse all sections']").Click();
 
@@ -1445,6 +1632,7 @@ public class ExtractionReviewListDefaultExpansionTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find(".filter-chip-requirement").Click();
 
@@ -1464,6 +1652,7 @@ public class ExtractionReviewListDefaultExpansionTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         // Manually expand the first subgroup (Auth)
         cut.FindAll(".subsection-toggle")[0].Click();

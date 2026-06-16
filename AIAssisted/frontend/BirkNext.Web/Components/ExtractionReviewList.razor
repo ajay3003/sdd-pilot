@@ -6,6 +6,7 @@
 @inject ICreateScenariosMutation CreateScenariosMutation
 @inject ISaveReviewedCandidatesMutation SaveReviewedCandidatesMutation
 @inject ISaveCandidateLinksMutation SaveCandidateLinksMutation
+@inject IGetReviewedCandidatesQuery GetReviewedCandidatesQuery
 @inject ILogger<ExtractionReviewList> Logger
 @inject IExtractionSessionService SessionService
 
@@ -49,7 +50,7 @@ else
         }
 
         @{
-            var rNewCount       = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.New);
+            var rNewCount       = PipelineResult.Candidates.Count(c => c.ReviewStatus is CandidateReviewStatus.New or CandidateReviewStatus.AutoAccepted);
             var rAcceptedCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted);
             var rRejectedCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Rejected);
             var rNeedsRevCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.NeedsReview);
@@ -570,7 +571,7 @@ else
         ?? (IReadOnlyList<ExtractionCandidate>)Array.Empty<ExtractionCandidate>();
 
     private bool HasPendingSelected =>
-        SelectedCandidates.Any(c => c.ReviewStatus is CandidateReviewStatus.New or CandidateReviewStatus.NeedsReview);
+        SelectedCandidates.Any(c => c.ReviewStatus is CandidateReviewStatus.New or CandidateReviewStatus.AutoAccepted or CandidateReviewStatus.NeedsReview);
 
     private bool HasAcceptedUnsavedSelected =>
         SelectedCandidates.Any(c => c.ReviewStatus == CandidateReviewStatus.Accepted
@@ -620,6 +621,8 @@ else
                 _sessionId = InitialSession.SessionId;
                 RestoreFromSession(InitialSession);
                 _showRestoreNotice = true;
+                // Auto-persist the restored session artifacts to server
+                _ = AutoPersistSessionArtifactsAsync();
             }
             else
             {
@@ -644,7 +647,86 @@ else
                         _sectionExpanded[kind] = true;
                 }
                 _ = SaveSessionAsync();
+                // Async: restore prior manual review statuses from server, then auto-persist
+                _ = RestoreAndPersistAsync();
             }
+        }
+    }
+
+    private async Task RestoreAndPersistAsync()
+    {
+        await RestorePriorReviewStatusesFromServerAsync();
+        await AutoPersistSessionArtifactsAsync();
+        StateHasChanged();
+    }
+
+    private async Task RestorePriorReviewStatusesFromServerAsync()
+    {
+        if (PipelineResult is null) return;
+        try
+        {
+            var result = await GetReviewedCandidatesQuery.ExecuteAsync(ProjectId, null);
+            if (result?.Data?.ReviewedCandidates is not { } serverRecords) return;
+
+            var serverById = serverRecords
+                .Where(r => r.CandidateId is not null)
+                .ToDictionary(
+                    r => Guid.Parse(r.CandidateId!),
+                    r => r.ReviewStatus);
+
+            foreach (var candidate in PipelineResult.Candidates)
+            {
+                if (!serverById.TryGetValue(candidate.CandidateId, out var priorStatus)) continue;
+                // Only restore manually-set statuses; don't overwrite with AutoAccepted/New
+                if (priorStatus is CandidateReviewStatus.Accepted
+                    or CandidateReviewStatus.Rejected
+                    or CandidateReviewStatus.NeedsReview)
+                {
+                    candidate.ReviewStatus = priorStatus;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Non-fatal: could not restore prior review statuses from server");
+        }
+    }
+
+    private async Task AutoPersistSessionArtifactsAsync()
+    {
+        if (PipelineResult is null || PipelineResult.Candidates.Count == 0) return;
+        try
+        {
+            var items = PipelineResult.Candidates
+                .Select(c => new SaveReviewedCandidateItemInput
+                {
+                    CandidateId    = c.CandidateId.ToString(),
+                    Title          = c.Title,
+                    Classification = c.Classification,
+                    ReviewStatus   = c.ReviewStatus,
+                    SourceDocument = null,
+                    SourceSection  = c.ContextHeading,
+                    ProjectId      = ProjectId,
+                    ReviewedBy     = null,
+                    ReviewedAt     = c.ReviewStatus is CandidateReviewStatus.Accepted
+                                     or CandidateReviewStatus.Rejected
+                                     or CandidateReviewStatus.NeedsReview
+                                         ? DateTimeOffset.UtcNow
+                                         : null,
+                })
+                .ToList();
+
+            var input = new SaveReviewedCandidatesInput
+            {
+                Items     = items,
+                SessionId = _sessionId,
+            };
+
+            await SaveReviewedCandidatesMutation.ExecuteAsync(input);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Non-fatal: auto-persist of session artifacts failed");
         }
     }
 
@@ -736,7 +818,13 @@ else
         if (_searchTerm.Length > 0)
             source = source.Where(c => c.Title.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase));
         if (_activeReviewFilter is not null)
-            source = source.Where(c => c.ReviewStatus == _activeReviewFilter);
+        {
+            // Treat AutoAccepted as equivalent to New for filter purposes (both are "unreviewed")
+            if (_activeReviewFilter == CandidateReviewStatus.New)
+                source = source.Where(c => c.ReviewStatus is CandidateReviewStatus.New or CandidateReviewStatus.AutoAccepted);
+            else
+                source = source.Where(c => c.ReviewStatus == _activeReviewFilter);
+        }
         if (_activeLinkFilter is not null)
         {
             source = _activeLinkFilter switch
@@ -1278,6 +1366,7 @@ else
             var items = PipelineResult.Candidates
                 .Select(c => new SaveReviewedCandidateItemInput
                 {
+                    CandidateId    = c.CandidateId.ToString(),
                     Title          = c.Title,
                     Classification = c.Classification,
                     ReviewStatus   = c.ReviewStatus,
@@ -1285,7 +1374,9 @@ else
                     SourceSection  = c.ContextHeading,
                     ProjectId      = ProjectId,
                     ReviewedBy     = null,
-                    ReviewedAt     = c.ReviewStatus != CandidateReviewStatus.New
+                    ReviewedAt     = c.ReviewStatus is CandidateReviewStatus.Accepted
+                                     or CandidateReviewStatus.Rejected
+                                     or CandidateReviewStatus.NeedsReview
                                          ? DateTimeOffset.UtcNow
                                          : null,
                 })
