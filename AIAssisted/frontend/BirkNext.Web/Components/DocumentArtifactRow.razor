@@ -2,7 +2,7 @@
 @using BirkNext.Web.Models
 
 <div class="doc-artifact-row doc-artifact-@CssKey(Artifact.ArtifactType) @ReviewCssClass @(Artifact.LinkedCandidate is null ? "doc-artifact-spec-only" : "") @(IsSelected ? "is-selected" : "")"
-     data-testid="doc-artifact-row">
+     data-testid="candidate-row">
 
     <div class="doc-artifact-select">
         @if (Artifact.LinkedCandidate is not null)
@@ -11,7 +11,7 @@
                    checked="@IsSelected"
                    @onchange="HandleCheckboxChange"
                    disabled="@(Artifact.LinkedCandidate.SaveState == CandidateSaveState.Saved)"
-                   data-testid="doc-artifact-checkbox"
+                   data-testid="candidate-checkbox"
                    aria-label="Select: @Artifact.Title" />
         }
     </div>
@@ -29,11 +29,15 @@
             }
             @if (Artifact.LinkedCandidate?.SaveState == CandidateSaveState.Saved)
             {
-                <span class="save-badge-saved" data-testid="doc-save-saved">Saved</span>
+                <span class="save-badge-saved" data-testid="save-saved">Saved</span>
             }
             else if (Artifact.LinkedCandidate?.SaveState is CandidateSaveState.Saving or CandidateSaveState.Retrying)
             {
                 <span class="save-spinner" aria-label="Saving...">Saving…</span>
+            }
+            @if (Artifact.LinkedCandidate?.SaveState == CandidateSaveState.Failed)
+            {
+                <span class="save-badge-error" data-testid="save-error">@(Artifact.LinkedCandidate.SaveError ?? "Save failed")</span>
             }
         </div>
 
@@ -104,7 +108,7 @@
                 <button type="button"
                         class="link-indicator @(Links.Count == 0 ? "is-empty" : "") @(IsLinkPanelOpen ? "is-open" : "")"
                         @onclick="() => OnOpenLinkPanel.InvokeAsync(Artifact.LinkedCandidate)"
-                        data-testid="doc-link-indicator"
+                        data-testid="link-indicator"
                         aria-label="Links (@(IsLinkPanelOpen ? "collapse" : "expand"))">
                     @if (Links.Count == 0)
                     {

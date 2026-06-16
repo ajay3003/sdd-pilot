@@ -74,6 +74,17 @@ public class ExtractionReviewListTests : BunitContext
             needsClarificationCount: nc);
     }
 
+    private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut)
+    {
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+    }
+
+    private static void SelectAndAcceptFirst(IRenderedComponent<ExtractionReviewList> cut)
+    {
+        cut.Find("[data-testid='candidate-checkbox']").Change(true);
+        cut.Find(".bulk-review-accept").Click();
+    }
+
     private static IOperationResult<ICreateScenariosResult> MakeSuccessOperationResult(string scenarioId = "sc-1")
     {
         var mockScenario = new Mock<ICreateScenarios_CreateScenarios_Results_Scenario>();
@@ -142,6 +153,33 @@ public class ExtractionReviewListTests : BunitContext
     }
 
     [Fact]
+    public void SpecificationReview_Tabs_AreInQaPriorityOrder()
+    {
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult()));
+
+        var tabs = cut.FindAll(".view-mode-tab").Select(t => t.TextContent.Trim()).ToList();
+
+        tabs.Should().HaveCountGreaterThanOrEqualTo(5);
+        tabs[0].Should().Contain("Traceability & Coverage");
+        tabs[1].Should().Contain("Flow View");
+        tabs[2].Should().Contain("Document View");
+        tabs[3].Should().Contain("Spec Explorer");
+        tabs[4].Should().Contain("Architecture View");
+    }
+
+    [Fact]
+    public void SpecificationReview_DefaultTabAfterAnalysis_IsTraceabilityCoverage()
+    {
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult()));
+
+        var activeTab = cut.FindAll(".view-mode-tab").Single(t => t.ClassList.Contains("is-active"));
+        activeTab.TextContent.Should().Contain("Traceability & Coverage");
+        cut.Markup.Should().Contain("tv-root");
+    }
+
+    [Fact]
     public void CountSummaryHeader_ShowsCorrectTotals()
     {
         var candidates = new List<ExtractionCandidate>
@@ -154,6 +192,7 @@ public class ExtractionReviewListTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         var summary = cut.Find("[data-testid='candidate-summary']").TextContent;
         summary.Should().Contain("4 review candidates found");
@@ -174,10 +213,13 @@ public class ExtractionReviewListTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
-        cut.Find("[data-testid='group-requirement']").Should().NotBeNull();
-        cut.Find("[data-testid='group-test']").Should().NotBeNull();
-        cut.Find("[data-testid='group-needs-clarification']").Should().NotBeNull();
+        var rows = cut.FindAll("[data-testid='candidate-row']");
+        rows.Should().HaveCount(3);
+        rows.Select(r => r.TextContent).Should().Contain(t => t.Contains("REQUIREMENT"));
+        rows.Select(r => r.TextContent).Should().Contain(t => t.Contains("TEST"));
+        rows.Select(r => r.TextContent).Should().Contain(t => t.Contains("CLARIFICATION"));
     }
 
     [Fact]
@@ -191,6 +233,7 @@ public class ExtractionReviewListTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         var checkboxes = cut.FindAll("[data-testid='candidate-checkbox']");
         checkboxes.Should().AllSatisfy(cb => cb.HasAttribute("checked").Should().BeFalse());
@@ -201,6 +244,7 @@ public class ExtractionReviewListTests : BunitContext
     {
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult()));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='confirm-save-button']").HasAttribute("disabled").Should().BeTrue();
     }
@@ -210,8 +254,9 @@ public class ExtractionReviewListTests : BunitContext
     {
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult()));
+        OpenDocumentView(cut);
 
-        cut.Find("[data-testid='candidate-checkbox']").Change(true);
+        SelectAndAcceptFirst(cut);
 
         await cut.WaitForStateAsync(
             () => !cut.Find("[data-testid='confirm-save-button']").HasAttribute("disabled"),
@@ -229,8 +274,9 @@ public class ExtractionReviewListTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult()));
+        OpenDocumentView(cut);
 
-        cut.Find("[data-testid='candidate-checkbox']").Change(true);
+        SelectAndAcceptFirst(cut);
 
         await cut.WaitForStateAsync(
             () => !cut.Find("[data-testid='confirm-save-button']").HasAttribute("disabled"),
@@ -254,8 +300,9 @@ public class ExtractionReviewListTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult()));
+        OpenDocumentView(cut);
 
-        cut.Find("[data-testid='candidate-checkbox']").Change(true);
+        SelectAndAcceptFirst(cut);
 
         await cut.WaitForStateAsync(
             () => !cut.Find("[data-testid='confirm-save-button']").HasAttribute("disabled"),
@@ -279,8 +326,9 @@ public class ExtractionReviewListTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult()));
+        OpenDocumentView(cut);
 
-        cut.Find("[data-testid='candidate-checkbox']").Change(true);
+        SelectAndAcceptFirst(cut);
 
         await cut.WaitForStateAsync(
             () => !cut.Find("[data-testid='confirm-save-button']").HasAttribute("disabled"),
@@ -308,6 +356,7 @@ public class ExtractionReviewListTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         var traceability = cut.Find(".traceability-filter").TextContent;
 
@@ -324,6 +373,7 @@ public class ExtractionReviewListTests : BunitContext
     {
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult()));
+        OpenDocumentView(cut);
 
         cut.FindAll("[data-testid='coverage-dashboard']").Should().BeEmpty();
         cut.FindAll("[data-testid='candidate-row']").Should().NotBeEmpty();
@@ -338,12 +388,13 @@ public class ExtractionReviewListTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult([requirement, test])));
+        OpenDocumentView(cut);
 
         AddFirstAvailableLinkFromFirstRow(cut);
 
         cut.FindAll("[data-testid='link-indicator']")
             .Select(i => i.TextContent)
-            .Should().Contain(t => t.Contains("1 test"));
+            .Should().Contain(t => t.Contains("1 link"));
 
         ClickTraceabilityFilter(cut, "Requirements with tests");
 
@@ -362,6 +413,7 @@ public class ExtractionReviewListTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult([linkedRequirement, unlinkedRequirement, test])));
+        OpenDocumentView(cut);
 
         AddFirstAvailableLinkFromFirstRow(cut);
         ClickTraceabilityFilter(cut, "Requirements without tests");
@@ -382,6 +434,7 @@ public class ExtractionReviewListTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult([requirement, linkedTest, unlinkedTest])));
+        OpenDocumentView(cut);
 
         AddFirstAvailableLinkFromFirstRow(cut);
         ClickTraceabilityFilter(cut, "Tests without requirements");
@@ -401,6 +454,7 @@ public class ExtractionReviewListTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult([requirement, linkedClarification, unlinkedClarification])));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='link-indicator']").Click();
         cut.Find("[data-testid='link-section-clarifications'] [data-testid='link-add-btn']").Click();
@@ -439,6 +493,7 @@ public class ExtractionReviewListTests : BunitContext
     {
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult()));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='link-indicator']").Click();
 
@@ -450,6 +505,7 @@ public class ExtractionReviewListTests : BunitContext
     {
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult()));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='link-indicator']").Click();
         cut.Find("[data-testid='link-drawer-close']").Click();
@@ -462,6 +518,7 @@ public class ExtractionReviewListTests : BunitContext
     {
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult()));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='link-indicator']").Click();
         cut.Find(".link-drawer-overlay").Click();
@@ -474,6 +531,7 @@ public class ExtractionReviewListTests : BunitContext
     {
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult()));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='link-indicator']").Click();
         cut.Find("[data-testid='link-drawer']").KeyDown("Escape");
@@ -491,6 +549,7 @@ public class ExtractionReviewListTests : BunitContext
 
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult(candidates)));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='link-indicator']").Click();
 
@@ -565,6 +624,18 @@ public class ExtractionReviewListObservabilityTests : BunitContext
         return ExtractionPipelineResult.Success(candidates, 100, 5, 10, req, 0, 0);
     }
 
+    private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut)
+    {
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+    }
+
+    private static void SelectAndAcceptFirst(IRenderedComponent<ExtractionReviewList> cut)
+    {
+        OpenDocumentView(cut);
+        cut.Find("[data-testid='candidate-checkbox']").Change(true);
+        cut.Find(".bulk-review-accept").Click();
+    }
+
     private static IOperationResult<ICreateScenariosResult> MakeSuccessOperationResult()
     {
         var mockScenario = new Mock<ICreateScenarios_CreateScenarios_Results_Scenario>();
@@ -614,7 +685,7 @@ public class ExtractionReviewListObservabilityTests : BunitContext
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult()));
 
-        cut.Find("[data-testid='candidate-checkbox']").Change(true);
+        SelectAndAcceptFirst(cut);
         await cut.WaitForStateAsync(
             () => !cut.Find("[data-testid='confirm-save-button']").HasAttribute("disabled"),
             timeout: TimeSpan.FromSeconds(1));

@@ -113,6 +113,27 @@
     margin: 1.5rem 0 0.75rem;
 }
 
+.ug-feature-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--clr-text-primary);
+    margin: 1.25rem 0 0.55rem;
+}
+
+.ug-code-block {
+    margin: 0.85rem 0 1.25rem;
+    padding: 0.85rem 1rem;
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.5rem;
+    color: var(--clr-text-primary);
+    font-family: monospace;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    overflow-x: auto;
+    white-space: pre;
+}
+
 /* ── Section 1: Capabilities grid ───────────────────────────────────────── */
 
 .ug-cap-grid {

@@ -234,7 +234,7 @@
     justify-content: space-between;
     gap: 0.75rem;
     flex-wrap: wrap;
-    margin-bottom: 1.25rem;
+    margin-bottom: 0.4rem;
 }
 
 .filter-chips {
@@ -577,6 +577,14 @@
     flex-shrink: 0;
 }
 
+.analysis-workflow-hint {
+    margin: 0 0 1.25rem;
+    max-width: 880px;
+    color: var(--clr-text-muted, #64748b);
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
+
 /* ── Capability view type sub-groups ── */
 .cap-type-subgroup {
     padding: 0 0.875rem 0.375rem;
@@ -780,4 +788,3 @@
     font-size: 0.78rem;
     margin: 0;
 }
-

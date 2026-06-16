@@ -23,10 +23,14 @@ public sealed class TracedRequirement
 {
     public required Guid CandidateId { get; init; }
     public required string Title { get; init; }
+    public string? FullContent { get; init; }
     public string? FrId { get; init; }
     public string? UserStoryId { get; init; }
+    public string? UserStorySource { get; init; }
     public List<ExtractionCandidate> LinkedTests { get; init; } = [];
     public List<string> LinkedScIds { get; init; } = [];
+    public string? SuccessCriteriaSource { get; init; }
+    public string? CoverageReason { get; init; }
     public TraceCoverageStatus Status { get; init; }
     public TraceArtifactType ArtifactType { get; init; } = TraceArtifactType.Requirement;
 
@@ -50,14 +54,20 @@ public sealed class TraceabilityModel
     public List<ExtractionCandidate> OrphanedTests { get; init; } = [];
 
     public required int TotalTests { get; init; }
+    public int TotalCandidates { get; init; }
+    public int RequirementCandidateCount { get; init; }
+    public int DerivedRequirementCount { get; init; }
 
     public bool IsEmpty => Requirements.Count == 0 && SuccessCriteria.Count == 0;
 
     public int EligibleCount      => Requirements.Count(r => r.IsEligible);
     public int CoveredCount       => Requirements.Count(r => r.IsEligible && r.Status == TraceCoverageStatus.Covered);
+    public int MissingTestsCount  => Requirements.Count(r => r.IsEligible && r.Status == TraceCoverageStatus.MissingTests);
+    public int MissingUserStoryCount => Requirements.Count(r => r.IsEligible && string.IsNullOrWhiteSpace(r.UserStoryId));
+    public int MissingSuccessCriteriaCount => Requirements.Count(r => r.IsEligible && r.LinkedScIds.Count == 0);
+    public int OrphanTestCount    => OrphanedTests.Count;
     public int CoveragePercent    => EligibleCount == 0 ? 0 : CoveredCount * 100 / EligibleCount;
-    public int GapCount           => Requirements.Count(r => r.IsEligible && r.Status == TraceCoverageStatus.MissingTests)
-                                   + OrphanedTests.Count;
+    public int GapCount           => MissingTestsCount + MissingUserStoryCount + MissingSuccessCriteriaCount + OrphanTestCount;
 
     public int RequirementCount    => Requirements.Count(r => r.ArtifactType == TraceArtifactType.Requirement);
     public int ClarificationCount  => Requirements.Count(r => r.ArtifactType == TraceArtifactType.Clarification);

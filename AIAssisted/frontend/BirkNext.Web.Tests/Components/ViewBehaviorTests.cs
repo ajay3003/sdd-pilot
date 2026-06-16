@@ -1,6 +1,8 @@
 using BirkNext.Web.Components;
 using BirkNext.Web.GraphQL;
 using BirkNext.Web.Models;
+using BirkNext.Web.Pages;
+using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
 
@@ -91,7 +93,7 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
-        cut.Find(".tv-chip-req").TextContent.Should().Contain("1 Requirement",
+        cut.Find(".tv-chip-req").TextContent.Should().Contain("Coverage Requirements: 1",
             "Clarifications and Q/A session items must not count as coverage-eligible requirements");
     }
 
@@ -216,8 +218,8 @@ public class ViewBehaviorTests : BunitContext
         matrixText.Should().NotContain("presentation reads");
         matrixText.Should().NotContain("BirkId");
         matrixText.Should().NotContain("Draft");
-        cut.Find(".tv-chip-req").TextContent.Should().Contain("1 Requirement");
-        cut.Find(".tv-chip-gap").TextContent.Should().Contain("1 Gap");
+        cut.Find(".tv-chip-req").TextContent.Should().Contain("Coverage Requirements: 1");
+        cut.Find(".tv-chip-gap").TextContent.Should().Contain("2 Gaps");
     }
 
     [Fact]
@@ -240,6 +242,297 @@ public class ViewBehaviorTests : BunitContext
         fr001Text.Should().Contain("national ID");
         fr001Text.Should().Contain("DUF number");
         fr001Text.Should().Contain("BirkID");
+    }
+
+    [Fact]
+    public async Task Traceability_RequirementCountLabelsAreConsistent()
+    {
+        var (specMarkdown, candidates) = await LoadPersonSpecExtractionAsync();
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.SpecMarkdown, specMarkdown);
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.Find(".tv-metrics").TextContent.Should().Contain("Coverage Requirements: 33");
+        cut.Find(".tv-metrics").TextContent.Should().Contain("Requirement Candidates:");
+    }
+
+    [Fact]
+    public async Task Traceability_MatrixRowsAreExplicitFrsOnly()
+    {
+        var (specMarkdown, candidates) = await LoadPersonSpecExtractionAsync();
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.SpecMarkdown, specMarkdown);
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.FindAll(".tv-matrix-row").Should().HaveCount(33);
+    }
+
+    [Fact]
+    public async Task Traceability_GraphGroupsByUserStory()
+    {
+        var (specMarkdown, candidates) = await LoadPersonSpecExtractionAsync();
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.SpecMarkdown, specMarkdown);
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.FindAll("button").First(b => b.TextContent.Contains("Graph")).Click();
+
+        var graphText = cut.Find(".tv-graph").TextContent;
+        graphText.Should().Contain("US1");
+        graphText.Should().Contain("US2");
+        graphText.Should().Contain("US3");
+        graphText.Should().Contain("US4");
+        graphText.Should().Contain("US5");
+        graphText.Should().Contain("US6");
+        graphText.Should().Contain("Cross-cutting / Platform");
+    }
+
+    [Fact]
+    public async Task Traceability_ArtifactBreakdownFiltersCorrectly()
+    {
+        var (specMarkdown, candidates) = await LoadPersonSpecExtractionAsync();
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.SpecMarkdown, specMarkdown);
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.Find(".tv-breakdown-clarification").Click();
+
+        var panel = cut.Find("[data-testid='noneligible-artifacts-panel']");
+        panel.TextContent.Should().Contain("Clarification");
+        panel.TextContent.Should().NotContain("Assumption");
+    }
+
+    [Fact]
+    public async Task Traceability_DetailsPanelShowsFullFrContent()
+    {
+        var (specMarkdown, candidates) = await LoadPersonSpecExtractionAsync();
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.SpecMarkdown, specMarkdown);
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.FindAll(".tv-matrix-row").First(r => r.TextContent.Contains("FR-002")).Click();
+
+        var detailText = cut.Find("[data-testid='tv-detail-full-content']").TextContent;
+        detailText.Should().Contain("Levels 0 and 1");
+        detailText.Should().Contain("Kode 6 / Kode 7");
+        cut.Find(".tv-req-detail").TextContent.Should().Contain("Coverage Reason");
+    }
+
+    [Fact]
+    public void Traceability_ShowsMissingUserStoryCount()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("The system MUST validate a submitted profile", ScenarioKind.Requirement, "Functional Requirements"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.FindAll("button").First(b => b.TextContent.Contains("Gaps")).Click();
+
+        cut.Find("[data-testid='gap-missing-user-story']").TextContent.Should().Contain("Missing User Story");
+        cut.Find("[data-testid='gap-missing-user-story']").TextContent.Should().Contain("1");
+    }
+
+    [Fact]
+    public void Traceability_ShowsMissingSuccessCriteriaCount()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.FindAll("button").First(b => b.TextContent.Contains("Gaps")).Click();
+
+        cut.Find("[data-testid='gap-missing-success-criteria']").TextContent.Should().Contain("Missing Success Criteria");
+        cut.Find("[data-testid='gap-missing-success-criteria']").TextContent.Should().Contain("1");
+    }
+
+    [Fact]
+    public void Traceability_ExplainsCoverageRequirements()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+            MakeCandidate("How should timeout work?", ScenarioKind.NeedsClarification, "Clarifications"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        var info = cut.Find(".tv-chip-req .tv-info");
+        info.GetAttribute("title").Should().Contain("Coverage Requirements are requirements included in coverage calculations");
+        info.GetAttribute("title").Should().Contain("Clarifications");
+        info.GetAttribute("title").Should().Contain("Architecture Notes");
+    }
+
+    [Fact]
+    public void Traceability_GraphAndMatrixHelpText()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.Find("[data-testid='traceability-matrix-help']").TextContent.Should().Contain("Requirement-first coverage analysis");
+
+        cut.FindAll("button").First(b => b.TextContent.Contains("Graph")).Click();
+
+        cut.Find("[data-testid='traceability-graph-help']").TextContent.Should().Contain("User Story-first relationship analysis");
+        cut.Find("[data-testid='traceability-graph-help']").TextContent.Should().Contain("User Story");
+        cut.Find("[data-testid='traceability-graph-help']").TextContent.Should().Contain("Tasks");
+    }
+
+    [Fact]
+    public void Traceability_RequirementDetailShowsCoverageReason()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.Find(".tv-matrix-row").Click();
+
+        var detailText = cut.Find(".tv-req-detail").TextContent;
+        detailText.Should().Contain("Requirement ID");
+        detailText.Should().Contain("Coverage Eligible");
+        detailText.Should().Contain("Coverage Status");
+        detailText.Should().Contain("Coverage Reason");
+        detailText.Should().Contain("No linked acceptance tests were found");
+    }
+
+    [Fact]
+    public void Traceability_HealthDashboardDisplaysCounts()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+            MakeCandidate("Test: search returns results", ScenarioKind.Test, "US1: Search"),
+            MakeCandidate("Unlinked test", ScenarioKind.Test, "US2: Other"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        var dashboard = cut.Find("[data-testid='traceability-health-dashboard']").TextContent;
+        dashboard.Should().Contain("Coverage Requirements");
+        dashboard.Should().Contain("Covered");
+        dashboard.Should().Contain("Missing Tests");
+        dashboard.Should().Contain("Missing User Stories");
+        dashboard.Should().Contain("Missing Success Criteria");
+        dashboard.Should().Contain("Orphan Tests");
+    }
+
+    [Fact]
+    public void Traceability_SuggestedLinksPlaceholderVisible()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.FindAll("button").First(b => b.TextContent.Contains("Suggested Links")).Click();
+
+        cut.Find("[data-testid='suggested-links-placeholder']").TextContent
+            .Should().Contain("Automatic traceability suggestions are not yet available");
+    }
+
+    [Fact]
+    public void UserGuide_ExplainsRequirementVsUserStoryViews()
+    {
+        var cut = Render<UserGuide>();
+
+        var guideText = cut.Markup;
+        guideText.Should().Contain("Matrix View Is Requirement-Centric");
+        guideText.Should().Contain("Graph View Is User Story-Centric");
+        guideText.Should().Contain("Coverage Requirements");
+        guideText.Should().Contain("Missing User Story");
+        guideText.Should().Contain("Missing Success Criteria");
+        guideText.Should().Contain("Missing Tests");
+        guideText.Should().Contain("Orphan Tests");
+    }
+
+    [Fact]
+    public void UserGuide_ReflectsTraceabilityFirstWorkflow()
+    {
+        var cut = Render<UserGuide>();
+
+        var text = cut.Markup;
+        text.IndexOf("Traceability &amp; Coverage", StringComparison.Ordinal)
+            .Should().BeLessThan(text.IndexOf("Flow View", StringComparison.Ordinal));
+        text.Should().Contain("default</em> view shown after analysis");
+        text.Should().Contain("QA risk picture first");
+        text.Should().Contain("Document View");
+        text.Should().Contain("Spec Explorer");
+        text.Should().Contain("Architecture View");
+    }
+
+    [Fact]
+    public void RecommendedWorkflow_ReflectsTraceabilityFirstWorkflow()
+    {
+        var cut = Render<RecommendedWorkflow>();
+
+        var text = cut.Markup;
+        text.Should().Contain("Start in Traceability &amp; Coverage");
+        text.Should().Contain("default tab");
+        text.Should().Contain("Inspect business flow in Flow View");
+        text.Should().Contain("Review extracted artifacts in Document View");
+        text.Should().Contain("Navigate structure in Spec Explorer");
+        text.Should().Contain("Inspect architecture in Architecture View");
     }
 
     // =========================================================================
@@ -711,5 +1004,19 @@ public class ViewBehaviorTests : BunitContext
         }
 
         throw new FileNotFoundException("Could not locate examples/personSpec.md from test output directory.");
+    }
+
+    private static async Task<(string SpecMarkdown, IReadOnlyList<ExtractionCandidate> Candidates)> LoadPersonSpecExtractionAsync()
+    {
+        var specMarkdown = await File.ReadAllTextAsync(FindPersonSpecPath());
+        var service = new ScenarioExtractionService(new ExtractionConfiguration
+        {
+            MaxInputLengthChars = 50_000,
+            MinCandidateLengthChars = 3,
+            MaxLineLengthForPatternMatching = 2_000,
+        });
+        var result = await service.ExtractAsync(specMarkdown);
+        result.Status.Should().Be(PipelineStatus.Success);
+        return (specMarkdown, result.Candidates);
     }
 }

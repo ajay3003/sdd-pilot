@@ -264,10 +264,10 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td><strong>Document View</strong></td>
+                        <td><strong>Traceability &amp; Coverage</strong></td>
                         <td>Specification Review</td>
                         <td class="ug-td-mono">/extract</td>
-                        <td>Analyse a spec → click <strong>Document View</strong> tab in Analysis Results</td>
+                        <td>Analyse a spec → active by default in Analysis Results</td>
                     </tr>
                     <tr>
                         <td><strong>Flow View</strong></td>
@@ -276,22 +276,22 @@
                         <td>Analyse a spec → click <strong>Flow View</strong> tab in Analysis Results</td>
                     </tr>
                     <tr>
-                        <td><strong>Traceability View</strong></td>
+                        <td><strong>Document View</strong></td>
                         <td>Specification Review</td>
                         <td class="ug-td-mono">/extract</td>
-                        <td>Analyse a spec → active by default in Analysis Results</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Architecture View</strong></td>
-                        <td>Specification Review</td>
-                        <td class="ug-td-mono">/extract</td>
-                        <td>Analyse a spec → click <strong>Architecture View</strong> tab in Analysis Results</td>
+                        <td>Analyse a spec → click <strong>Document View</strong> tab in Analysis Results</td>
                     </tr>
                     <tr>
                         <td><strong>Spec Explorer</strong></td>
                         <td>Specification Review</td>
                         <td class="ug-td-mono">/extract</td>
                         <td>Analyse a spec → click <strong>Spec Explorer</strong> tab in Analysis Results</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Architecture View</strong></td>
+                        <td>Specification Review</td>
+                        <td class="ug-td-mono">/extract</td>
+                        <td>Analyse a spec → click <strong>Architecture View</strong> tab in Analysis Results</td>
                     </tr>
                     <tr>
                         <td><strong>Task Explorer</strong></td>
@@ -333,11 +333,11 @@
             <li>Planning test coverage from a feature or journey perspective</li>
         </ul>
 
-        <h3 class="ug-subsection-title" id="disc-traceability-view">Traceability View (Analysis Tab)</h3>
-        <p><strong>Purpose:</strong> Shows traceability relationships between the requirements, tests, and clarifications extracted in the current analysis session. This is the <em>default</em> view shown after analysis. Use it to identify coverage gaps: requirements without tests, tests without requirements, and unresolved clarification items.</p>
-        <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>. The Traceability View tab is active by default in Analysis Results.</p>
+        <h3 class="ug-subsection-title" id="disc-traceability-view">Traceability &amp; Coverage (Analysis Tab)</h3>
+        <p><strong>Purpose:</strong> Shows the QA risk picture first: coverage status, missing tests, orphan tests, missing success criteria, missing user story mappings, and relationship gaps. This is the <em>default</em> view shown after analysis because it answers what is covered, what is missing, and what should be fixed next.</p>
+        <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>. The Traceability &amp; Coverage tab is active by default in Analysis Results.</p>
         <div class="ug-callout ug-callout-tip">
-            <strong>Note:</strong> This is different from the standalone <a href="/traceability" class="ug-inline-link">Traceability &amp; Coverage</a> page. The Traceability View tab shows relationships <em>within a single analysis session</em>. The standalone page covers accepted artifacts across the full project library.
+            <strong>Note:</strong> This is different from the standalone <a href="/traceability" class="ug-inline-link">Traceability &amp; Coverage</a> page. The embedded Traceability &amp; Coverage tab shows relationships <em>within a single analysis session</em>. The standalone page covers accepted artifacts across the full project library.
         </div>
         <p><strong>When to use:</strong></p>
         <ul class="ug-fd-list">
@@ -345,6 +345,151 @@
             <li>Finding tests that are not linked to any requirement</li>
             <li>Reviewing unresolved clarification items before accepting candidates</li>
         </ul>
+
+        <h4 class="ug-feature-title">Understanding Traceability</h4>
+        <p>Traceability connects business intent, requirements, validation, and implementation evidence. It helps answer practical review questions:</p>
+        <ul class="ug-fd-list">
+            <li>Which requirements are covered by tests?</li>
+            <li>Which user stories are fully validated?</li>
+            <li>Which requirements are missing coverage?</li>
+            <li>Which tests are not linked to requirements?</li>
+            <li>Which implementation tasks support a requirement?</li>
+        </ul>
+
+        <h4 class="ug-feature-title">Traceability Model</h4>
+        <p>The model is hierarchical. User Stories describe the business need. Requirements describe specific system behavior. Success Criteria describe measurable outcomes. Tests verify requirements. Tasks describe the implementation work that supports those requirements.</p>
+        <div class="ug-callout ug-callout-tip">
+            <strong>Traceability hierarchy:</strong>
+            Business Goal &darr; User Story &darr; Requirement (FR) &darr; Success Criteria &darr; Acceptance Tests &darr; Implementation Tasks
+        </div>
+        <div class="ug-table-scroll">
+            <table class="ug-table">
+                <thead>
+                    <tr>
+                        <th>Layer</th>
+                        <th>Purpose</th>
+                        <th>Example</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>User Story</strong></td>
+                        <td>Describes a user or business need.</td>
+                        <td>US1 - Search for Children</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Requirement</strong></td>
+                        <td>Defines specific system behavior that can be covered.</td>
+                        <td>FR-001 Search by Name / National ID / DUF / BirkID</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Success Criteria</strong></td>
+                        <td>Defines measurable outcomes that the requirement should satisfy.</td>
+                        <td>SC-001 search usability, SC-003 security filtering</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Acceptance Test</strong></td>
+                        <td>Verifies that the requirement behaves as expected.</td>
+                        <td>Test-001, Test-002, Test-003</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Implementation Task</strong></td>
+                        <td>Shows the delivery work that implements or supports the requirement.</td>
+                        <td>Task-014, Task-015</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <pre class="ug-code-block"><code>US1 - Search for Children
+|- FR-001 Search by Name / National ID / DUF / BirkID
+|  |- SC-001
+|  |- Test-001
+|  |- Test-002
+|  `- Task-014
+|
+`- FR-002 Security Filtering
+   |- SC-003
+   |- Test-003
+   `- Task-015</code></pre>
+
+        <h4 class="ug-feature-title">Why Matrix View Is Requirement-Centric</h4>
+        <p>Coverage is calculated at requirement level. A User Story may contain many requirements, and each requirement can have a different coverage status. For that reason, Matrix View uses <strong>Requirement</strong>, <strong>User Story</strong>, <strong>Tests</strong>, <strong>Success Criteria</strong>, and <strong>Coverage Status</strong> as its primary columns instead of treating the User Story as the coverage unit.</p>
+
+        <h4 class="ug-feature-title">Why Graph View Is User Story-Centric</h4>
+        <p>Graph View starts with User Stories because it is a business-oriented relationship view. Use it when you want to understand how specification, validation, and implementation connect across the chain: User Story &rarr; Requirements &rarr; Success Criteria &rarr; Tests &rarr; Tasks.</p>
+
+        <h4 class="ug-feature-title">Traceability &amp; Coverage Tabs</h4>
+        <ul class="ug-fd-list">
+            <li><strong>Matrix:</strong> Requirement-first coverage analysis for coverage-eligible requirements.</li>
+            <li><strong>Requirements:</strong> Detailed requirement inspection, including User Story, Success Criteria, Tests, Tasks, coverage status, and coverage reason.</li>
+            <li><strong>Artifacts:</strong> Supporting context such as Clarifications, Decisions, Assumptions, Architecture Notes, and Metadata.</li>
+            <li><strong>Gaps:</strong> Actionable diagnostics for Missing User Story, Missing Success Criteria, Missing Tests, and Orphan Tests.</li>
+            <li><strong>Graph:</strong> User Story-first relationship analysis showing how User Stories connect to Requirements, Success Criteria, Tests, and Tasks.</li>
+        </ul>
+
+        <h4 class="ug-feature-title">Coverage Calculation</h4>
+        <p>Coverage is calculated from coverage-eligible requirements only. By default, that means explicit Functional Requirements such as FR-001, FR-002, and FR-025. A requirement is covered when it has at least one confirmed or deterministic linked test, or when it is explicitly marked as covered by a deterministic traceability rule.</p>
+        <p><strong>Coverage Requirements</strong> are the requirements included in coverage calculations. Extracted clarifications, decisions, assumptions, architecture notes, metadata, bullet details, and other supporting artifacts are not counted as coverage requirements.</p>
+        <div class="ug-table-scroll">
+            <table class="ug-table">
+                <thead>
+                    <tr>
+                        <th>Requirement</th>
+                        <th>Tests</th>
+                        <th>Success Criteria</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>FR-001</strong></td>
+                        <td>3</td>
+                        <td>1</td>
+                        <td>Covered</td>
+                    </tr>
+                    <tr>
+                        <td><strong>FR-025</strong></td>
+                        <td>0</td>
+                        <td>0</td>
+                        <td>Missing Tests</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h4 class="ug-feature-title">What Does Not Contribute To Coverage</h4>
+        <p>Supporting artifacts provide important context, but they are not requirements and do not require tests. They appear in the Artifacts tab and do not affect the coverage denominator or missing-test gap count.</p>
+        <ul class="ug-fd-list">
+            <li>Clarifications</li>
+            <li>Decisions</li>
+            <li>Assumptions</li>
+            <li>Architecture Notes</li>
+            <li>Metadata</li>
+        </ul>
+
+        <h4 class="ug-feature-title">User Story Coverage</h4>
+        <p>User Story coverage is derived from the coverage status of the requirements inside that story. For example, if US1 contains FR-001 Covered, FR-002 Covered, and FR-003 Missing Tests, then US1 is partially covered.</p>
+
+        <h4 class="ug-feature-title">Success Criteria Coverage</h4>
+        <p>Success Criteria help determine whether requirements satisfy business outcomes. They provide an additional validation layer between Requirements and Tests, so reviewers can see not only whether a requirement has tests, but whether those tests support the intended outcome.</p>
+
+        <h4 class="ug-feature-title">Gap Categories</h4>
+        <ul class="ug-fd-list">
+            <li><strong>Missing User Story:</strong> A coverage requirement is not mapped to a User Story, so business ownership is unclear.</li>
+            <li><strong>Missing Success Criteria:</strong> A coverage requirement has no linked measurable outcome.</li>
+            <li><strong>Missing Tests:</strong> A coverage requirement has no linked acceptance tests.</li>
+            <li><strong>Orphan Tests:</strong> A test exists but is not linked to any coverage requirement.</li>
+        </ul>
+
+        <h4 class="ug-feature-title">Recommended Review Order</h4>
+        <ol class="ug-fd-list">
+            <li><strong>Matrix:</strong> Understand overall requirement coverage.</li>
+            <li><strong>Gaps:</strong> Identify missing coverage.</li>
+            <li><strong>Requirements:</strong> Investigate specific requirements.</li>
+            <li><strong>Artifacts:</strong> Review assumptions, decisions, and clarifications.</li>
+            <li><strong>Graph:</strong> Understand the relationships across user stories, requirements, tests, success criteria, and tasks.</li>
+        </ol>
 
         <h3 class="ug-subsection-title" id="disc-architecture-view">Architecture View</h3>
         <p><strong>Purpose:</strong> Organises extracted candidates around technical concerns and architectural boundaries. Architecture View groups items by technical area (Security, API, Integration, Domain, etc.) — helping architects and senior developers assess the systemic scope of the specification.</p>
@@ -599,9 +744,9 @@
             ["Deep feature analysis — use the specific feature page"]),
 
         new("spec-review", "Specification Review", "Review", "review", "/extract",
-            "Upload and review a spec.md file; extract and classify candidates. Analysis results include Document, Flow, Traceability, Architecture, and Spec Explorer views.",
+            "Upload and review a spec.md file; extract and classify candidates. Analysis results open in Traceability & Coverage first, then Flow View, Document View, Spec Explorer, and Architecture View.",
             "spec.md",
-            "Extracted requirements, tests, and clarifications; Document, Flow, Traceability, Architecture, and Spec Explorer views",
+            "Extracted requirements, tests, and clarifications; Traceability & Coverage, Flow View, Document View, Spec Explorer, and Architecture View",
             "When starting work on a new feature or reviewing an updated spec.",
             ["Testers", "Test Leads", "Product Owners"],
             ["Starting a new feature", "Reviewing a spec update", "Exploring spec structure or flow with embedded views"],
@@ -758,8 +903,8 @@
     private static readonly FaqItem[] AllFaq =
     [
         new("embedded-views",
-            "Where are Spec Explorer, Task Explorer, Flow View, Traceability View, and Architecture View?",
-            "<p><strong>Spec Explorer</strong> tabs (Flow View, Traceability View, Architecture View, Spec Explorer) are embedded inside <strong>Specification Review</strong> (<a href='/extract'>/extract</a>) and appear automatically after a successful spec analysis.</p><p><strong>Task Explorer</strong> exists in two forms:</p><ul><li><strong>Standalone Task Explorer</strong> (<a href='/task-explorer'>/task-explorer</a>) — a dedicated menu item in the Analysis section. Upload or paste a tasks.md file to explore the implementation plan independently of any spec alignment.</li><li><strong>Task Explorer tab inside Implementation Review</strong> (<a href='/task-alignment'>/task-alignment</a>) — the same explorer enriched with spec alignment data after a full analysis. Use this when you want to explore tasks in the context of their spec coverage and risk.</li></ul><p>Once analysis is complete, switching tabs does not require re-uploading files — the session is preserved automatically. See the <a href='#discovery'>Feature Discovery</a> section for full details.</p>"),
+            "Where are Traceability & Coverage, Flow View, Document View, Spec Explorer, Task Explorer, and Architecture View?",
+            "<p><strong>Specification Review</strong> tabs are embedded inside <strong>Specification Review</strong> (<a href='/extract'>/extract</a>) and appear automatically after a successful spec analysis in this order: Traceability &amp; Coverage, Flow View, Document View, Spec Explorer, Architecture View.</p><p><strong>Task Explorer</strong> exists in two forms:</p><ul><li><strong>Standalone Task Explorer</strong> (<a href='/task-explorer'>/task-explorer</a>) — a dedicated menu item in the Analysis section. Upload or paste a tasks.md file to explore the implementation plan independently of any spec alignment.</li><li><strong>Task Explorer tab inside Implementation Review</strong> (<a href='/task-alignment'>/task-alignment</a>) — the same explorer enriched with spec alignment data after a full analysis. Use this when you want to explore tasks in the context of their spec coverage and risk.</li></ul><p>Once analysis is complete, switching tabs does not require re-uploading files — the session is preserved automatically. See the <a href='#discovery'>Feature Discovery</a> section for full details.</p>"),
 
         new("drift-vs-review",
             "What is the difference between Spec Drift and Implementation Review?",

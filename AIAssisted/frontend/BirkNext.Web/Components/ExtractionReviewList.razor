@@ -34,8 +34,7 @@ else
     <div class="extraction-review-list">
         @if (_activeViewMode != ExtractionViewMode.Architecture
              && _activeViewMode != ExtractionViewMode.Traceability
-             && _activeViewMode != ExtractionViewMode.Capability
-             && _activeViewMode != ExtractionViewMode.Extraction)
+             && _activeViewMode != ExtractionViewMode.Capability)
         {
         <p class="candidate-summary" data-testid="candidate-summary">
             @PipelineResult.Candidates.Count review candidates found -
@@ -89,11 +88,11 @@ else
 
         <div class="view-mode-tabs" role="tablist" aria-label="Grouping view">
             <button type="button" role="tab"
-                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Extraction ? "is-active" : "")"
-                    aria-selected="@(_activeViewMode == ExtractionViewMode.Extraction)"
-                    title="Shows the original specification structure."
-                    @onclick="() => SetViewMode(ExtractionViewMode.Extraction)">
-                <span class="tab-icon" aria-hidden="true">📄</span>Document View
+                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Traceability ? "is-active" : "")"
+                    aria-selected="@(_activeViewMode == ExtractionViewMode.Traceability)"
+                    title="Default QA risk view: coverage, gaps, orphan tests, user story links, success criteria and tasks."
+                    @onclick="() => SetViewMode(ExtractionViewMode.Traceability)">
+                <span class="tab-icon" aria-hidden="true">🔗</span>Traceability &amp; Coverage
             </button>
             <button type="button" role="tab"
                     class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Capability ? "is-active" : "")"
@@ -103,18 +102,11 @@ else
                 <span class="tab-icon" aria-hidden="true">🔀</span>Flow View
             </button>
             <button type="button" role="tab"
-                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Traceability ? "is-active" : "")"
-                    aria-selected="@(_activeViewMode == ExtractionViewMode.Traceability)"
-                    title="Shows relationships between requirements, tests, clarifications and code."
-                    @onclick="() => SetViewMode(ExtractionViewMode.Traceability)">
-                <span class="tab-icon" aria-hidden="true">🔗</span>Traceability View
-            </button>
-            <button type="button" role="tab"
-                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Architecture ? "is-active" : "")"
-                    aria-selected="@(_activeViewMode == ExtractionViewMode.Architecture)"
-                    title="Shows technical concerns, integrations and system boundaries."
-                    @onclick="() => SetViewMode(ExtractionViewMode.Architecture)">
-                <span class="tab-icon" aria-hidden="true">🏗</span>Architecture View
+                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Extraction ? "is-active" : "")"
+                    aria-selected="@(_activeViewMode == ExtractionViewMode.Extraction)"
+                    title="Shows extracted artifacts in the original specification structure."
+                    @onclick="() => SetViewMode(ExtractionViewMode.Extraction)">
+                <span class="tab-icon" aria-hidden="true">📄</span>Document View
             </button>
             <button type="button" role="tab"
                     class="view-mode-tab @(_activeViewMode == ExtractionViewMode.SpecExplorer ? "is-active" : "")"
@@ -123,13 +115,23 @@ else
                     @onclick="() => SetViewMode(ExtractionViewMode.SpecExplorer)">
                 <span class="tab-icon" aria-hidden="true">🌳</span>Spec Explorer
             </button>
+            <button type="button" role="tab"
+                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Architecture ? "is-active" : "")"
+                    aria-selected="@(_activeViewMode == ExtractionViewMode.Architecture)"
+                    title="Shows technical concerns, integrations and system boundaries."
+                    @onclick="() => SetViewMode(ExtractionViewMode.Architecture)">
+                <span class="tab-icon" aria-hidden="true">🏗</span>Architecture View
+            </button>
+        </div>
+
+        <div class="analysis-workflow-hint" data-testid="analysis-workflow-hint">
+            Start in Traceability &amp; Coverage to review coverage and gaps, then use Flow View for business flow, Document View for extracted artifacts, Spec Explorer for structure, and Architecture View for technical concerns.
         </div>
 
         @if (_activeViewMode != ExtractionViewMode.SpecExplorer
              && _activeViewMode != ExtractionViewMode.Architecture
              && _activeViewMode != ExtractionViewMode.Traceability
-             && _activeViewMode != ExtractionViewMode.Capability
-             && _activeViewMode != ExtractionViewMode.Extraction)
+             && _activeViewMode != ExtractionViewMode.Capability)
         {
         <div class="filter-toolbar">
             <div class="filter-chips" role="group" aria-label="Filter by type" hidden="@(_activeViewMode == ExtractionViewMode.Traceability ? "hidden" : null)">
@@ -289,6 +291,10 @@ else
             var testGroups          = GetTestGroups(visibleTests);
             var clrGroups           = GetClarificationGroups(visibleNeeds);
             var anyVisible          = visibleRequirements.Count > 0 || visibleTests.Count > 0 || visibleNeeds.Count > 0;
+            var visibleDocumentCandidates = visibleRequirements
+                .Concat(visibleTests)
+                .Concat(visibleNeeds)
+                .ToList();
         }
 
         @if (_activeViewMode != ExtractionViewMode.SpecExplorer)
@@ -392,7 +398,7 @@ else
         @if (_activeViewMode == ExtractionViewMode.Extraction)
         {
             <DocumentView SpecMarkdown="@SpecMarkdown"
-                          Candidates="@(PipelineResult?.Candidates ?? [])"
+                          Candidates="@visibleDocumentCandidates"
                           Links="@_links"
                           OnSelectionToggled="HandleSelectionToggled"
                           OnReviewStatusChanged="HandleReviewStatusChanged"
@@ -499,6 +505,14 @@ else
                             }
                         </button>
                     }
+                    else
+                    {
+                        <button type="button" class="btn-primary" disabled
+                                title="Accept selected artifacts before saving them to the QA Artifact Library."
+                                data-testid="confirm-save-button">
+                            Save Accepted Artifacts
+                        </button>
+                    }
                 }
                 else if (_selectedIds.Count == 0)
                 {
@@ -581,7 +595,7 @@ else
     private readonly Dictionary<string, bool> _clrSubsectionExpanded = new();
     private readonly Dictionary<string, bool> _capabilityGroupExpanded = new();
     private readonly Dictionary<string, bool> _architectureGroupExpanded = new();
-    private ExtractionViewMode _activeViewMode = ExtractionViewMode.Extraction;
+    private ExtractionViewMode _activeViewMode = ExtractionViewMode.Traceability;
     private readonly List<CandidateLinkEntry> _links = new();
     private ExtractionCandidate? _linkModalCandidate;
     private ExtractionCandidate? _prevLinkModalCandidate;
@@ -615,7 +629,7 @@ else
                 _activeReviewFilter = null;
                 _activeLinkFilter = null;
                 _searchTerm = string.Empty;
-                _activeViewMode = ExtractionViewMode.Extraction;
+                _activeViewMode = ExtractionViewMode.Traceability;
                 _sectionExpanded.Clear();
                 _reqSubsectionExpanded.Clear();
                 _testSubsectionExpanded.Clear();
@@ -1485,7 +1499,9 @@ else
         _activeReviewFilter = snapshot.ActiveReviewFilter;
         _activeLinkFilter = snapshot.ActiveLinkFilter;
         _searchTerm = snapshot.SearchTerm;
-        _activeViewMode = snapshot.ActiveViewMode;
+        _activeViewMode = snapshot.HasActiveViewMode
+            ? snapshot.ActiveViewMode
+            : ExtractionViewMode.Traceability;
 
         _sectionExpanded.Clear();
         foreach (var kv in snapshot.SectionExpanded)
@@ -1574,6 +1590,7 @@ else
             ActiveLinkFilter = _activeLinkFilter,
             SearchTerm = _searchTerm,
             ActiveViewMode = _activeViewMode,
+            HasActiveViewMode = true,
             SpecMarkdown = SpecMarkdown,
             SectionExpanded = _sectionExpanded.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
             ReqSubsectionExpanded = new Dictionary<string, bool>(_reqSubsectionExpanded),

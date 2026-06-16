@@ -4,7 +4,7 @@
 @if (_model is null)
 {
     <div class="tv-empty">
-        <p class="tv-empty-msg">Run spec extraction to build the traceability model.</p>
+        <p class="tv-empty-msg">Building traceability model...</p>
     </div>
 }
 else if (_model.IsEmpty)
@@ -19,7 +19,17 @@ else
 
     @* ── Metric chips ─────────────────────────────────────────────────── *@
     <div class="tv-metrics" role="list" aria-label="Coverage metrics">
-        <span class="tv-metric-chip tv-chip-req" role="listitem">📋 @_model.EligibleCount @(_model.EligibleCount == 1 ? "Requirement" : "Requirements")</span>
+        <span class="tv-metric-chip" role="listitem">Total Candidates: @_model.TotalCandidates</span>
+        <span class="tv-metric-chip" role="listitem">Requirement Candidates: @_model.RequirementCandidateCount</span>
+        <span class="tv-metric-chip tv-chip-req" role="listitem">
+            Coverage Requirements: @_model.EligibleCount
+            <span class="tv-info"
+                  title="Coverage Requirements are requirements included in coverage calculations. Excluded artifacts: Clarifications, Decisions, Assumptions, Architecture Notes, and Metadata. These artifacts provide context but do not require test coverage.">i</span>
+        </span>
+        @if (_model.DerivedRequirementCount > 0)
+        {
+            <span class="tv-metric-chip" role="listitem">Derived Requirements: @_model.DerivedRequirementCount</span>
+        }
         <span class="tv-metric-chip tv-chip-test" role="listitem">🧪 @_model.TotalTests @(_model.TotalTests == 1 ? "Test" : "Tests")</span>
         @if (_model.SuccessCriteria.Count > 0)
         {
@@ -34,36 +44,45 @@ else
         }
     </div>
 
+    <div class="tv-health" data-testid="traceability-health-dashboard" aria-label="Traceability health summary">
+        <div class="tv-health-item"><span>Coverage Requirements</span><strong>@_model.EligibleCount</strong></div>
+        <div class="tv-health-item"><span>Covered</span><strong>@_model.CoveredCount</strong></div>
+        <div class="tv-health-item"><span>Missing Tests</span><strong>@_model.MissingTestsCount</strong></div>
+        <div class="tv-health-item"><span>Missing User Stories</span><strong>@_model.MissingUserStoryCount</strong></div>
+        <div class="tv-health-item"><span>Missing Success Criteria</span><strong>@_model.MissingSuccessCriteriaCount</strong></div>
+        <div class="tv-health-item"><span>Orphan Tests</span><strong>@_model.OrphanTestCount</strong></div>
+    </div>
+
     @* ── Artifact breakdown (shown only when non-eligible artifacts exist) ── *@
     @if (_model.HasNonEligibleArtifacts)
     {
         <div class="tv-artifact-breakdown" data-testid="artifact-breakdown">
             <span class="tv-breakdown-label">Artifact Breakdown:</span>
-            <span class="tv-breakdown-chip tv-breakdown-req">@_model.RequirementCount @(_model.RequirementCount == 1 ? "Requirement" : "Requirements")</span>
+            <button type="button" class="tv-breakdown-chip tv-breakdown-req" @onclick="ShowRequirementsMatrix">Coverage Requirements @_model.RequirementCount</button>
             @if (_model.SuccessCriteria.Count > 0)
             {
                 <span class="tv-breakdown-chip tv-breakdown-sc">@_model.SuccessCriteria.Count SC</span>
             }
-            <span class="tv-breakdown-chip tv-breakdown-test">@_model.TotalTests @(_model.TotalTests == 1 ? "Test" : "Tests")</span>
+            <button type="button" class="tv-breakdown-chip tv-breakdown-test" @onclick="ShowTestsList">Tests @_model.TotalTests</button>
             @if (_model.ClarificationCount > 0)
             {
-                <span class="tv-breakdown-chip tv-breakdown-clarification">@_model.ClarificationCount @(_model.ClarificationCount == 1 ? "Clarification" : "Clarifications")</span>
+                <button type="button" class="tv-breakdown-chip tv-breakdown-clarification" @onclick="() => ShowArtifacts(TraceArtifactType.Clarification)">Clarifications @_model.ClarificationCount</button>
             }
             @if (_model.DecisionCount > 0)
             {
-                <span class="tv-breakdown-chip tv-breakdown-decision">@_model.DecisionCount @(_model.DecisionCount == 1 ? "Decision" : "Decisions")</span>
+                <button type="button" class="tv-breakdown-chip tv-breakdown-decision" @onclick="() => ShowArtifacts(TraceArtifactType.Decision)">Decisions @_model.DecisionCount</button>
             }
             @if (_model.AssumptionCount > 0)
             {
-                <span class="tv-breakdown-chip tv-breakdown-assumption">@_model.AssumptionCount @(_model.AssumptionCount == 1 ? "Assumption" : "Assumptions")</span>
+                <button type="button" class="tv-breakdown-chip tv-breakdown-assumption" @onclick="() => ShowArtifacts(TraceArtifactType.Assumption)">Assumptions @_model.AssumptionCount</button>
             }
             @if (_model.ArchitectureNoteCount > 0)
             {
-                <span class="tv-breakdown-chip tv-breakdown-arch">@_model.ArchitectureNoteCount Architecture @(_model.ArchitectureNoteCount == 1 ? "Note" : "Notes")</span>
+                <button type="button" class="tv-breakdown-chip tv-breakdown-arch" @onclick="() => ShowArtifacts(TraceArtifactType.ArchitectureNote)">Architecture Notes @_model.ArchitectureNoteCount</button>
             }
             @if (_model.MetadataCount > 0)
             {
-                <span class="tv-breakdown-chip tv-breakdown-meta">@_model.MetadataCount @(_model.MetadataCount == 1 ? "Metadata item" : "Metadata items")</span>
+                <button type="button" class="tv-breakdown-chip tv-breakdown-meta" @onclick="() => ShowArtifacts(TraceArtifactType.Metadata)">Metadata @_model.MetadataCount</button>
             }
         </div>
     }
@@ -94,6 +113,9 @@ else
         <button type="button" role="tab" class="tv-toggle-btn @(_subView == TvSubView.Graph ? "is-active" : "")"
                 aria-selected="@(_subView == TvSubView.Graph)"
                 @onclick='() => _subView = TvSubView.Graph'>🌿 Graph</button>
+        <button type="button" role="tab" class="tv-toggle-btn @(_subView == TvSubView.SuggestedLinks ? "is-active" : "")"
+                aria-selected="@(_subView == TvSubView.SuggestedLinks)"
+                @onclick='() => _subView = TvSubView.SuggestedLinks'>Suggested Links</button>
     </div>
 
     @* ════════════════════════════════════════════════════════════════════ *@
@@ -102,6 +124,10 @@ else
 
     @if (_subView == TvSubView.Matrix)
     {
+        <div class="tv-help-panel" data-testid="traceability-matrix-help">
+            <strong>Matrix View:</strong> Requirement-first coverage analysis. Use this view to see each coverage requirement, its User Story, linked tests, linked Success Criteria, and coverage status.
+        </div>
+
         <div class="tv-matrix-filter" role="group" aria-label="Matrix filter">
             <button type="button" class="tv-filter-chip @(_matrixFilter == null && !_showOrphanedInMatrix ? "is-active" : "")"
                     @onclick='() => SetFilter(null)'>All <span class="tv-chip-count">@_model.EligibleCount</span></button>
@@ -179,11 +205,11 @@ else
                                 <td class="tv-col-us">
                                     @if (req.UserStoryId is not null)
                                     {
-                                        <span class="tv-us-badge">@req.UserStoryId</span>
+                                        <span class="tv-us-badge" title="@req.UserStorySource">@req.UserStoryId</span>
                                     }
                                     else
                                     {
-                                        <span class="tv-dim">—</span>
+                                        <span class="tv-dim">Unassigned</span>
                                     }
                                 </td>
                                 <td class="tv-col-tests">
@@ -224,6 +250,7 @@ else
     {
         var artifactGroups = _model.Requirements
             .Where(r => !r.IsEligible)
+            .Where(r => _artifactFilter is null || r.ArtifactType == _artifactFilter)
             .GroupBy(r => r.ArtifactType)
             .OrderBy(g => ArtifactTypeLabel(g.Key))
             .ToList();
@@ -321,6 +348,11 @@ else
 
                     <div class="tv-det-title" title="@sel.Title">@sel.Title</div>
 
+                    <div class="tv-det-section">
+                        <div class="tv-det-label">Requirement ID</div>
+                        <span>@(sel.FrId ?? sel.CandidateId.ToString())</span>
+                    </div>
+
                     @* Coverage eligibility indicator *@
                     <div class="tv-det-section tv-det-eligibility">
                         <div class="tv-det-label">Coverage Eligible</div>
@@ -334,13 +366,27 @@ else
                         }
                     </div>
 
-                    @if (sel.UserStoryId is not null)
-                    {
-                        <div class="tv-det-section">
-                            <div class="tv-det-label">User Story</div>
+                    <div class="tv-det-section">
+                        <div class="tv-det-label">Full FR Text</div>
+                        <div class="tv-det-full-content" data-testid="tv-detail-full-content">@(sel.FullContent ?? sel.Title)</div>
+                    </div>
+
+                    <div class="tv-det-section">
+                        <div class="tv-det-label">Linked User Story</div>
+                        @if (sel.UserStoryId is not null)
+                        {
                             <span class="tv-us-badge">@sel.UserStoryId</span>
-                        </div>
-                    }
+                            @if (sel.UserStorySource is not null)
+                            {
+                                <span class="tv-dim">(@sel.UserStorySource)</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="tv-dim">Unassigned</span>
+                            <div class="tv-warning-text">Missing User Story mapping. Link this requirement to a user story to make business coverage clear.</div>
+                        }
+                    </div>
 
                     @if (sel.IsEligible)
                     {
@@ -370,7 +416,12 @@ else
                     @if (sel.LinkedScIds.Count > 0)
                     {
                         <div class="tv-det-section">
-                            <div class="tv-det-label">Success Criteria</div>
+                            <div class="tv-det-label">Linked Success Criteria</div>
+                            <span class="tv-eligible-yes">@sel.LinkedScIds.Count Success Criteria linked</span>
+                            @if (sel.SuccessCriteriaSource is not null)
+                            {
+                                <div class="tv-dim">@sel.SuccessCriteriaSource</div>
+                            }
                             <div class="tv-sc-chips">
                                 @foreach (var scId in sel.LinkedScIds)
                                 {
@@ -380,19 +431,42 @@ else
                             </div>
                         </div>
                     }
+                    else if (sel.IsEligible)
+                    {
+                        <div class="tv-det-section">
+                            <div class="tv-det-label">
+                                Success Criteria Status
+                                <span class="tv-info"
+                                      title="Success Criteria describe measurable outcomes. If none are linked, either the specification has no Success Criteria or the mapping could not connect them to this requirement.">i</span>
+                            </div>
+                            @if (_model.SuccessCriteria.Count == 0)
+                            {
+                                <span class="tv-missing-badge">No Success Criteria found</span>
+                            }
+                            else
+                            {
+                                <span class="tv-missing-badge">Success Criteria could not be mapped</span>
+                            }
+                        </div>
+                    }
 
                     @if (sel.IsEligible)
                     {
                         <div class="tv-det-section">
-                            <div class="tv-det-label">Task Links</div>
+                            <div class="tv-det-label">Tasks</div>
+                            <span class="tv-dim">Task link status: open Task Explorer to inspect implementation alignment.</span>
                             <button type="button" class="tv-task-btn"
                                     @onclick='() => OnOpenInTaskExplorer.InvokeAsync(sel.FrId ?? sel.Title)'>
                                 Open in Task Explorer →
                             </button>
+                            <button type="button" class="tv-task-btn"
+                                    @onclick="() => OpenInGraph(sel)">
+                                Open in Graph
+                            </button>
                         </div>
 
                         <div class="tv-det-section tv-det-impact">
-                            <div class="tv-det-label">Impact</div>
+                            <div class="tv-det-label">Coverage Status</div>
                             <span class="tv-impact-item">@sel.LinkedTests.Count tests</span>
                             @if (sel.LinkedScIds.Count > 0)
                             {
@@ -404,6 +478,10 @@ else
                                 <span class="tv-impact-sep">·</span>
                                 <span class="tv-impact-item">@sel.UserStoryId</span>
                             }
+                        </div>
+                        <div class="tv-det-section">
+                            <div class="tv-det-label">Coverage Reason</div>
+                            <span class="tv-dim">@sel.CoverageReason</span>
                         </div>
                     }
                 }
@@ -478,11 +556,13 @@ else
     {
         @* Only coverage-eligible requirements without tests count as gaps *@
         var reqsNoTests   = _model.Requirements.Where(r => r.IsEligible && r.Status == TraceCoverageStatus.MissingTests).ToList();
+        var reqsNoUserStory = _model.Requirements.Where(r => r.IsEligible && string.IsNullOrWhiteSpace(r.UserStoryId)).ToList();
+        var reqsNoSc = _model.Requirements.Where(r => r.IsEligible && r.LinkedScIds.Count == 0).ToList();
         var scNoFr        = _model.SuccessCriteria.Where(s => s.LinkedFrIds.Count == 0).ToList();
         var scNoTests     = _model.SuccessCriteria.Where(s => s.LinkedFrIds.Count > 0 && s.LinkedTestCount == 0).ToList();
         var orphanTests   = _model.OrphanedTests;
 
-        @if (reqsNoTests.Count == 0 && orphanTests.Count == 0 && scNoFr.Count == 0 && scNoTests.Count == 0)
+        @if (reqsNoTests.Count == 0 && reqsNoUserStory.Count == 0 && reqsNoSc.Count == 0 && orphanTests.Count == 0 && scNoFr.Count == 0 && scNoTests.Count == 0)
         {
             <div class="tv-gap-allgood">
                 <span class="tv-gap-allgood-icon">🎉</span>
@@ -507,6 +587,58 @@ else
                         {
                             <ul class="tv-gap-items">
                                 @foreach (var req in reqsNoTests)
+                                {
+                                    var reqCap = req;
+                                    <li><button type="button" class="tv-gap-item-btn" @onclick="() => NavigateToRequirement(reqCap)">
+                                        @if (req.FrId is not null) { <span class="tv-fr-badge tv-fr-sm">@req.FrId</span> }
+                                        @TruncateTitle(req.Title, 80)
+                                    </button></li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                }
+
+                @* Requirements without user story links *@
+                @if (reqsNoUserStory.Count > 0)
+                {
+                    <div class="tv-gap-section @(_gapExpanded["reqs-no-us"] ? "is-open" : "")" data-testid="gap-missing-user-story">
+                        <button type="button" class="tv-gap-header" @onclick='() => ToggleGap("reqs-no-us")'>
+                            <span class="tv-gap-chevron">@(_gapExpanded["reqs-no-us"] ? "▾" : "▸")</span>
+                            <span class="tv-gap-icon">US</span>
+                            Missing User Story
+                            <span class="tv-gap-count">@reqsNoUserStory.Count</span>
+                        </button>
+                        @if (_gapExpanded["reqs-no-us"])
+                        {
+                            <ul class="tv-gap-items">
+                                @foreach (var req in reqsNoUserStory)
+                                {
+                                    var reqCap = req;
+                                    <li><button type="button" class="tv-gap-item-btn" @onclick="() => NavigateToRequirement(reqCap)">
+                                        @if (req.FrId is not null) { <span class="tv-fr-badge tv-fr-sm">@req.FrId</span> }
+                                        @TruncateTitle(req.Title, 80)
+                                    </button></li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                }
+
+                @* Requirements without success criteria links *@
+                @if (reqsNoSc.Count > 0)
+                {
+                    <div class="tv-gap-section @(_gapExpanded["reqs-no-sc"] ? "is-open" : "")" data-testid="gap-missing-success-criteria">
+                        <button type="button" class="tv-gap-header" @onclick='() => ToggleGap("reqs-no-sc")'>
+                            <span class="tv-gap-chevron">@(_gapExpanded["reqs-no-sc"] ? "▾" : "▸")</span>
+                            <span class="tv-gap-icon">SC</span>
+                            Missing Success Criteria
+                            <span class="tv-gap-count">@reqsNoSc.Count</span>
+                        </button>
+                        @if (_gapExpanded["reqs-no-sc"])
+                        {
+                            <ul class="tv-gap-items">
+                                @foreach (var req in reqsNoSc)
                                 {
                                     var reqCap = req;
                                     <li><button type="button" class="tv-gap-item-btn" @onclick="() => NavigateToRequirement(reqCap)">
@@ -604,22 +736,29 @@ else
         @* Graph shows only coverage-eligible requirements *@
         var usGroups = _model.Requirements
             .Where(r => r.IsEligible)
-            .GroupBy(r => r.UserStoryId ?? "__none__")
-            .OrderBy(g => g.Key == "__none__" ? "zzz" : g.Key)
+            .GroupBy(r => r.UserStoryId ?? "Unassigned")
+            .OrderBy(g => GraphGroupOrder(g.Key))
             .ToList();
+
+        <div class="tv-help-panel" data-testid="traceability-graph-help">
+            <strong>Graph View:</strong> User Story-first relationship analysis. Hierarchy: User Story &rarr; Requirement &rarr; Success Criteria &rarr; Tests &rarr; Tasks. Counts show visible coverage requirements and their linked tests inside each User Story group.
+        </div>
 
         <div class="tv-graph" role="tree">
             @foreach (var group in usGroups)
             {
                 var groupKey = group.Key;
-                var groupLabel = groupKey == "__none__" ? "No User Story assigned" : "👤 " + groupKey;
+                var groupLabel = groupKey == "Unassigned" ? "Unassigned" : "👤 " + groupKey;
                 var isGroupOpen = !_graphExpanded.TryGetValue("us-" + groupKey, out var gv) || gv;
+                var groupTests = group.SelectMany(r => r.LinkedTests).DistinctBy(t => t.CandidateId).Count();
+                var groupCovered = group.Count(r => r.Status == TraceCoverageStatus.Covered);
+                var groupMissing = group.Count(r => r.Status == TraceCoverageStatus.MissingTests);
 
                 <div class="tv-graph-group" role="treeitem" aria-expanded="@isGroupOpen.ToString().ToLowerInvariant()">
                     <button type="button" class="tv-graph-group-btn" @onclick='() => ToggleGraph("us-" + groupKey)'>
                         <span class="tv-graph-chevron">@(isGroupOpen ? "▾" : "▸")</span>
                         @groupLabel
-                        <span class="tv-graph-count">@group.Count() reqs</span>
+                        <span class="tv-graph-count">@group.Count() Requirements · @groupTests Tests · @groupCovered Covered Requirements · @groupMissing Missing Requirements</span>
                     </button>
 
                     @if (isGroupOpen)
@@ -713,6 +852,14 @@ else
         </div>
     }
 
+    @if (_subView == TvSubView.SuggestedLinks)
+    {
+        <div class="tv-suggested-links" data-testid="suggested-links-placeholder">
+            <div class="tv-section-label">Suggested Links</div>
+            <p>Automatic traceability suggestions are not yet available.</p>
+        </div>
+    }
+
 </div>
 }
 
@@ -722,7 +869,7 @@ else
     [Parameter] public IReadOnlyList<CandidateLinkEntry> Links { get; set; } = [];
     [Parameter] public EventCallback<string> OnOpenInTaskExplorer { get; set; }
 
-    private enum TvSubView { Matrix, Requirements, Artifacts, ScCoverage, Gaps, Graph }
+    private enum TvSubView { Matrix, Requirements, Artifacts, ScCoverage, Gaps, Graph, SuggestedLinks }
 
     private TvSubView _subView = TvSubView.Matrix;
     private TraceabilityModel? _model;
@@ -735,6 +882,7 @@ else
     // Matrix state
     private TraceCoverageStatus? _matrixFilter;
     private bool _showOrphanedInMatrix;
+    private TraceArtifactType? _artifactFilter;
 
     // Requirements sub-view
     private string _reqSearch = string.Empty;
@@ -744,6 +892,8 @@ else
     private readonly Dictionary<string, bool> _gapExpanded = new()
     {
         ["reqs-no-tests"] = true,
+        ["reqs-no-us"]    = true,
+        ["reqs-no-sc"]    = true,
         ["orphan-tests"]  = true,
         ["sc-no-fr"]      = true,
         ["sc-no-tests"]   = true,
@@ -765,6 +915,7 @@ else
         _lastLinks      = Links;
         _selectedReqId  = null;
         _matrixFilter   = null;
+        _artifactFilter = null;
         _showOrphanedInMatrix = false;
 
         _model = TraceabilityModelBuilder.Build(SpecMarkdown, Candidates, Links);
@@ -807,6 +958,14 @@ else
         if (req is not null) NavigateToRequirement(req);
     }
 
+    private void OpenInGraph(TracedRequirement req)
+    {
+        _subView = TvSubView.Graph;
+        var groupKey = req.UserStoryId ?? "Unassigned";
+        _graphExpanded["us-" + groupKey] = true;
+        _graphExpanded["req-" + req.CandidateId] = true;
+    }
+
     private void SetFilter(TraceCoverageStatus? status)
     {
         _matrixFilter            = status;
@@ -817,6 +976,26 @@ else
     {
         _matrixFilter            = null;
         _showOrphanedInMatrix    = true;
+    }
+
+    private void ShowRequirementsMatrix()
+    {
+        _subView = TvSubView.Matrix;
+        _artifactFilter = null;
+        SetFilter(null);
+    }
+
+    private void ShowTestsList()
+    {
+        _subView = TvSubView.Matrix;
+        _artifactFilter = null;
+        SetOrphanedFilter();
+    }
+
+    private void ShowArtifacts(TraceArtifactType artifactType)
+    {
+        _subView = TvSubView.Artifacts;
+        _artifactFilter = artifactType;
     }
 
     private void ToggleGap(string key)
@@ -859,6 +1038,19 @@ else
         TraceArtifactType.ArchitectureNote => "arch-note",
         TraceArtifactType.Metadata        => "metadata",
         _                                 => "requirement",
+    };
+
+    private static string GraphGroupOrder(string key) => key switch
+    {
+        "US1" => "01",
+        "US2" => "02",
+        "US3" => "03",
+        "US4" => "04",
+        "US5" => "05",
+        "US6" => "06",
+        "Cross-cutting / Platform" => "90",
+        "Unassigned" => "99",
+        _ => key,
     };
 
     private static string TruncateTitle(string s, int max)

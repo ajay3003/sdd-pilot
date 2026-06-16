@@ -111,6 +111,83 @@ public sealed class TraceabilityModelBuilderTests
             .Should().BeEquivalentTo(ExpectedPersonSpecFrIds());
     }
 
+    [Fact]
+    public async Task Traceability_DefaultCoverageDenominator_Is33ExplicitFrs()
+    {
+        var model = await BuildPersonTraceabilityModelAsync();
+
+        model.EligibleCount.Should().Be(33);
+        model.RequirementCount.Should().Be(33);
+        model.Requirements.Where(r => r.IsEligible).Should().OnlyContain(r => r.FrId != null);
+    }
+
+    [Fact]
+    public async Task Traceability_DoesNotRenderFr002BulletsAsRows()
+    {
+        var model = await BuildPersonTraceabilityModelAsync();
+
+        model.Requirements.Where(r => r.IsEligible && r.Title.StartsWith("Levels 0 and 1", StringComparison.OrdinalIgnoreCase))
+            .Should().BeEmpty();
+        model.Requirements.Where(r => r.IsEligible && r.Title.StartsWith("Kode 6 / Kode 7", StringComparison.OrdinalIgnoreCase))
+            .Should().BeEmpty();
+        model.Requirements.Single(r => r.FrId == "FR-002").FullContent.Should().Contain("Levels 0 and 1");
+    }
+
+    [Fact]
+    public async Task Traceability_DoesNotRenderFr025EventListAsRows()
+    {
+        var model = await BuildPersonTraceabilityModelAsync();
+
+        model.Requirements.Where(r => r.IsEligible && r.Title.Contains("person.person", StringComparison.OrdinalIgnoreCase))
+            .Should().ContainSingle(r => r.FrId == "FR-025");
+        model.Requirements.Where(r => r.IsEligible && r.FrId != "FR-025")
+            .Should().NotContain(r => r.Title.Contains("PersonOpprettet", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Traceability_DoesNotRenderFr029OperationsAsRows()
+    {
+        var model = await BuildPersonTraceabilityModelAsync();
+
+        model.Requirements.Where(r => r.IsEligible)
+            .Should().NotContain(r => r.Title.TrimStart().StartsWith("- `Person:", StringComparison.OrdinalIgnoreCase));
+        Eligible(model, "FR-029").FullContent.Should().Contain("Person:SeRevisjonslogg");
+    }
+
+    [Fact]
+    public async Task Traceability_MatrixRowsAreExplicitFrsOnly()
+    {
+        var model = await BuildPersonTraceabilityModelAsync();
+
+        model.Requirements.Where(r => r.IsEligible).Should().HaveCount(33);
+        model.Requirements.Where(r => r.IsEligible).Select(r => r.FrId)
+            .Should().BeEquivalentTo(ExpectedPersonSpecFrIds());
+    }
+
+    [Fact]
+    public async Task Traceability_UserStoryColumnPopulatesForKnownFrs()
+    {
+        var model = await BuildPersonTraceabilityModelAsync();
+
+        Eligible(model, "FR-001").UserStoryId.Should().Be("US1");
+        Eligible(model, "FR-008").UserStoryId.Should().Be("US2");
+        Eligible(model, "FR-013").UserStoryId.Should().Be("US3");
+        Eligible(model, "FR-017").UserStoryId.Should().Be("US4");
+        Eligible(model, "FR-020").UserStoryId.Should().Be("US5");
+        Eligible(model, "FR-025").UserStoryId.Should().Be("US6");
+        Eligible(model, "FR-029").UserStoryId.Should().Be("Cross-cutting / Platform");
+    }
+
+    [Fact]
+    public async Task Traceability_SuccessCriteriaLinksPopulateForKnownFrs()
+    {
+        var model = await BuildPersonTraceabilityModelAsync();
+
+        Eligible(model, "FR-001").LinkedScIds.Should().Contain("SC-001");
+        Eligible(model, "FR-029").LinkedScIds.Should().Contain("SC-007");
+        Eligible(model, "FR-026").LinkedScIds.Should().Contain("SC-006");
+    }
+
     private static ExtractionCandidate Candidate(
         string title,
         ScenarioKind kind = ScenarioKind.Requirement,
@@ -132,6 +209,17 @@ public sealed class TraceabilityModelBuilderTests
             MinCandidateLengthChars = 3,
             MaxLineLengthForPatternMatching = 2_000,
         });
+
+    private static async Task<TraceabilityModel> BuildPersonTraceabilityModelAsync()
+    {
+        var specMarkdown = await File.ReadAllTextAsync(FindPersonSpecPath());
+        var extraction = await BuildExtractionService().ExtractAsync(specMarkdown);
+        extraction.Status.Should().Be(PipelineStatus.Success);
+        return TraceabilityModelBuilder.Build(specMarkdown, extraction.Candidates, []);
+    }
+
+    private static TracedRequirement Eligible(TraceabilityModel model, string frId) =>
+        model.Requirements.Single(r => r.IsEligible && r.FrId == frId);
 
     private static string FindPersonSpecPath()
     {

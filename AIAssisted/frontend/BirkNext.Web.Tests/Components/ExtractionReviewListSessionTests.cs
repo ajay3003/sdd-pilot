@@ -64,7 +64,9 @@ public class ExtractionReviewListSessionTests : BunitContext
         IEnumerable<CandidateSnapshot>? candidates = null,
         ScenarioKind? activeFilter = null,
         string searchTerm = "",
-        List<Guid>? selectedIds = null) => new()
+        List<Guid>? selectedIds = null,
+        ExtractionViewMode activeViewMode = ExtractionViewMode.Extraction,
+        bool hasActiveViewMode = true) => new()
         {
             SessionId = "review-list-test-session",
             Timestamp = DateTimeOffset.UtcNow,
@@ -77,7 +79,14 @@ public class ExtractionReviewListSessionTests : BunitContext
             ActiveFilter = activeFilter,
             SearchTerm = searchTerm,
             SelectedIds = selectedIds ?? [],
+            ActiveViewMode = activeViewMode,
+            HasActiveViewMode = hasActiveViewMode,
         };
+
+    private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut)
+    {
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+    }
 
     // ── Restore notice ───────────────────────────────────────────────────────
 
@@ -149,11 +158,42 @@ public class ExtractionReviewListSessionTests : BunitContext
         var cut = Render<ExtractionReviewList>(p => p
             .Add(c => c.PipelineResult, pipelineResult)
             .Add(c => c.InitialSession, snapshot));
+        OpenDocumentView(cut);
 
         cut.Find(".filter-chip-requirement").ClassList
             .Should().Contain("is-active", "REQUIREMENT filter chip must be active after session restore");
         cut.FindAll("[data-testid='candidate-row']")
             .Should().HaveCount(1, "only the requirement candidate should be visible when filter is active");
+    }
+
+    [Fact]
+    public void SpecificationReview_RestoredSession_PreservesLastSelectedTab()
+    {
+        var snapshot = MakeSnapshot(activeViewMode: ExtractionViewMode.SpecExplorer, hasActiveViewMode: true);
+        var pipelineResult = ExtractionPipelineResult.Restore(snapshot);
+
+        var cut = Render<ExtractionReviewList>(p => p
+            .Add(c => c.PipelineResult, pipelineResult)
+            .Add(c => c.InitialSession, snapshot));
+
+        cut.FindAll(".view-mode-tab")
+            .First(t => t.TextContent.Contains("Spec Explorer"))
+            .ClassList.Should().Contain("is-active");
+    }
+
+    [Fact]
+    public void SpecificationReview_RestoredSessionWithoutTab_DefaultsToTraceabilityCoverage()
+    {
+        var snapshot = MakeSnapshot(activeViewMode: ExtractionViewMode.Extraction, hasActiveViewMode: false);
+        var pipelineResult = ExtractionPipelineResult.Restore(snapshot);
+
+        var cut = Render<ExtractionReviewList>(p => p
+            .Add(c => c.PipelineResult, pipelineResult)
+            .Add(c => c.InitialSession, snapshot));
+
+        cut.FindAll(".view-mode-tab")
+            .First(t => t.TextContent.Contains("Traceability & Coverage"))
+            .ClassList.Should().Contain("is-active");
     }
 
     [Fact]
@@ -165,6 +205,7 @@ public class ExtractionReviewListSessionTests : BunitContext
         var cut = Render<ExtractionReviewList>(p => p
             .Add(c => c.PipelineResult, pipelineResult)
             .Add(c => c.InitialSession, snapshot));
+        OpenDocumentView(cut);
 
         cut.Find("input[type='search']").GetAttribute("value")
             .Should().Be("login", "search term must be restored from session snapshot");
@@ -181,6 +222,7 @@ public class ExtractionReviewListSessionTests : BunitContext
         var cut = Render<ExtractionReviewList>(p => p
             .Add(c => c.PipelineResult, pipelineResult)
             .Add(c => c.InitialSession, snapshot));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='candidate-checkbox']").HasAttribute("checked")
             .Should().BeTrue("restored candidate with IsSelected=true must render with checkbox checked");
@@ -196,6 +238,7 @@ public class ExtractionReviewListSessionTests : BunitContext
         var cut = Render<ExtractionReviewList>(p => p
             .Add(c => c.PipelineResult, pipelineResult)
             .Add(c => c.InitialSession, snapshot));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='candidate-row']").ClassList
             .Should().Contain("is-review-accepted",
@@ -213,6 +256,7 @@ public class ExtractionReviewListSessionTests : BunitContext
         var cut = Render<ExtractionReviewList>(p => p
             .Add(c => c.PipelineResult, pipelineResult)
             .Add(c => c.InitialSession, snapshot));
+        OpenDocumentView(cut);
 
         cut.Find(".filter-chip-requirement").Click();
 
@@ -233,6 +277,7 @@ public class ExtractionReviewListSessionTests : BunitContext
         var cut = Render<ExtractionReviewList>(p => p
             .Add(c => c.PipelineResult, pipelineResult)
             .Add(c => c.InitialSession, snapshot));
+        OpenDocumentView(cut);
 
         cut.Find("input[type='search']").Input("login");
 
@@ -253,6 +298,7 @@ public class ExtractionReviewListSessionTests : BunitContext
         var cut = Render<ExtractionReviewList>(p => p
             .Add(c => c.PipelineResult, pipelineResult)
             .Add(c => c.InitialSession, snapshot));
+        OpenDocumentView(cut);
 
         cut.Find("[data-testid='candidate-checkbox']").Change(true);
 

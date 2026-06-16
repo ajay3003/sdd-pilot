@@ -25,6 +25,7 @@ public sealed class ExtractionSessionSnapshot
     public Dictionary<string, bool> CapabilityGroupExpanded { get; init; } = [];
     public Dictionary<string, bool> ArchitectureGroupExpanded { get; init; } = [];
     public ExtractionViewMode ActiveViewMode { get; init; } = ExtractionViewMode.Extraction;
+    public bool HasActiveViewMode { get; init; }
     public string SpecMarkdown { get; init; } = string.Empty;
 }
 

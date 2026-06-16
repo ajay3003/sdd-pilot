@@ -54,6 +54,64 @@
 .tv-chip-cov-ok   { background: #f59e0b; }
 .tv-chip-cov-bad  { background: #ef4444; }
 
+.tv-info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    font-size: 0.62rem;
+    font-weight: 800;
+    cursor: help;
+}
+
+.tv-health {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.tv-health-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.55rem 0.65rem;
+    background: var(--clr-surface-1, #1e293b);
+    border: 1px solid var(--clr-border, #334155);
+    border-radius: 6px;
+}
+
+.tv-health-item span {
+    color: var(--clr-text-subtle, #94a3b8);
+    font-size: 0.66rem;
+    font-weight: 600;
+}
+
+.tv-health-item strong {
+    color: var(--clr-text, #e2e8f0);
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.tv-help-panel,
+.tv-suggested-links {
+    padding: 0.75rem 0.9rem;
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.22);
+    border-radius: 6px;
+    color: var(--clr-text-subtle, #94a3b8);
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
+
+.tv-help-panel strong,
+.tv-suggested-links strong {
+    color: var(--clr-text, #e2e8f0);
+}
+
 /* ── Sub-view toggle ──────────────────────────────────────────────────────── */
 
 .tv-toggle {
@@ -161,6 +219,13 @@
 .tv-sc-id-sm { font-size: 0.65rem; font-weight: 700; color: #c4b5fd; padding: 0.08rem 0.35rem; background: rgba(139,92,246,0.12); border-radius: 3px; }
 
 .tv-dim { color: var(--clr-text-subtle, #64748b); font-size: 0.72rem; }
+
+.tv-warning-text {
+    margin-top: 0.35rem;
+    color: #fbbf24;
+    font-size: 0.72rem;
+    line-height: 1.4;
+}
 
 .tv-missing-badge {
     display: inline-block;
@@ -815,6 +880,18 @@
     border: 1px solid;
     font-weight: 600;
     white-space: nowrap;
+    cursor: pointer;
+}
+
+.tv-breakdown-chip:hover {
+    filter: brightness(0.97);
+}
+
+.tv-det-full-content {
+    white-space: pre-wrap;
+    color: #334155;
+    font-size: 0.875rem;
+    line-height: 1.45;
 }
 
 .tv-breakdown-req          { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
