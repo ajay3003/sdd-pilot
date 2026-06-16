@@ -1100,6 +1100,123 @@ public sealed class ScenarioExtractionServiceTests
         result.NeedsClarificationCount.Should().Be(0,
             "narrative documentation labels must be suppressed by Stage 6.5 (NarrativeContext signal)");
     }
+
+    // =========================================================================
+    // Stage 3 — Paragraph consolidation: consecutive ParagraphLine blocks merged
+    // =========================================================================
+
+    [Fact]
+    public async Task ClarificationParagraph_ProducesSingleCandidate()
+    {
+        // A multi-sentence clarification paragraph (no blank line between sentences) must
+        // produce one candidate, not one per sentence.
+        const string input = """
+            # Clarifications
+
+            The Service Bus topic contains only UUIDs and metadata.
+            No names, national IDs, addresses, or family data are published.
+            """;
+
+        var result = await ExtractAsync(input);
+
+        result.Candidates.Should().ContainSingle(
+            "the two paragraph lines share a paragraph boundary and must be consolidated");
+        result.Candidates[0].Title.Should()
+            .Contain("UUIDs").And.Contain("national IDs",
+                "the merged candidate must include text from both original lines");
+    }
+
+    [Fact]
+    public async Task ClarificationBlock_DoesNotSplitPerSentence()
+    {
+        // Five sentences in one paragraph must yield exactly one candidate.
+        const string input = """
+            The system uses event sourcing.
+            Events are stored in the event store.
+            The event store is append-only.
+            Consumers receive events via subscriptions.
+            Subscriptions are managed by the service mesh.
+            """;
+
+        var result = await ExtractAsync(input);
+
+        result.Candidates.Should().ContainSingle(
+            "all five lines belong to the same paragraph and must not be split into separate candidates");
+    }
+
+    [Fact]
+    public async Task OrphanSentence_IsMergedIntoParentCandidate()
+    {
+        // A trailing fragment ("calls.") that follows a full sentence in the same paragraph
+        // must be merged into the parent candidate rather than emitted as a standalone fragment.
+        const string input = """
+            This was clarified in the design calls.
+            The anomaly is logged with full context.
+            """;
+
+        var result = await ExtractAsync(input);
+
+        result.Candidates.Should().ContainSingle(
+            "the short trailing fragment must be part of the merged paragraph candidate");
+        result.Candidates[0].Title.Should().Contain("clarified").And.Contain("anomaly");
+    }
+
+    [Fact]
+    public async Task QaResponse_ProducesSingleClarification()
+    {
+        // A Q/A block where the question and answer are on adjacent lines (no blank between)
+        // must produce a single candidate — the answer is continuation of the same block.
+        const string input = """
+            Q: How is data published?
+            A: Only UUIDs and metadata are published. No personal data is included.
+            """;
+
+        var result = await ExtractAsync(input);
+
+        result.Candidates.Should().ContainSingle(
+            "Q and A on adjacent lines form one paragraph block");
+    }
+
+    [Fact]
+    public async Task FragmentOnlyLine_NotGeneratedAsCandidate()
+    {
+        // Short fragments that appear between other sentences in the same paragraph must be
+        // absorbed into the merged block, not emitted as standalone single-word candidates.
+        const string input = """
+            The retry policy uses exponential backoff.
+            Availability.
+            The timeout is configurable per environment.
+            """;
+
+        var result = await ExtractAsync(input);
+
+        result.Candidates.Should().ContainSingle(
+            "the fragment 'Availability.' must be merged into the surrounding paragraph");
+        result.Candidates[0].Title.Should()
+            .Contain("retry").And.Contain("timeout",
+                "the merged candidate must span all three lines");
+    }
+
+    [Fact]
+    public async Task CandidateCount_ReducedAfterConsolidation()
+    {
+        // Two paragraphs separated by a blank line produce two candidates, not one per sentence.
+        // Paragraph 1: two sentences. Paragraph 2: two sentences.
+        const string input = """
+            The system validates input on every request.
+            Validation failures are rejected with HTTP 400.
+
+            Successful responses are logged with a correlation ID.
+            The log entry includes the request duration.
+            """;
+
+        var result = await ExtractAsync(input);
+
+        result.Candidates.Should().HaveCount(2,
+            "two blank-line-separated paragraphs must each produce exactly one candidate");
+        result.Candidates.Should().AllSatisfy(c =>
+            c.Title.Should().NotBeNullOrWhiteSpace());
+    }
 }
 
 // T093 ─────────────────────────────────────────────────────────────────────────

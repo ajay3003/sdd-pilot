@@ -182,6 +182,19 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
         bool inFencedCode = false;
         bool seenNonEmptyLine = false;
 
+        // Consecutive paragraph lines (not separated by a blank line or structural block) are
+        // accumulated here and flushed as a single ParagraphLine block. This prevents every
+        // hard-wrapped sentence in a multi-sentence paragraph from becoming its own candidate.
+        var paragraphBuf = new List<string>();
+        string? paragraphHeading = null;
+
+        void FlushParagraph()
+        {
+            if (paragraphBuf.Count == 0) return;
+            blocks.Add(new TextBlock(string.Join(" ", paragraphBuf), BlockType.ParagraphLine, 0, paragraphHeading));
+            paragraphBuf.Clear();
+        }
+
         for (int i = 0; i < lines.Length; i++)
         {
             var line = lines[i];
@@ -190,6 +203,7 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
             // YAML front matter: only possible before any non-empty content.
             if (!seenNonEmptyLine && !inFencedCode && trimmed == "---")
             {
+                FlushParagraph();
                 blocks.Add(new TextBlock(line, BlockType.YamlFrontMatter, 0, currentHeading));
                 i++;
                 while (i < lines.Length)
@@ -211,6 +225,7 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
             // Fenced code block toggle (``` ... ```)
             if (trimmed.StartsWith("```"))
             {
+                FlushParagraph();
                 inFencedCode = !inFencedCode;
                 blocks.Add(new TextBlock(line, BlockType.FencedCodeBlock, 0, currentHeading));
                 continue;
@@ -222,9 +237,10 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
                 continue;
             }
 
-            // Empty line
+            // Empty line — paragraph boundary: flush any accumulated paragraph lines.
             if (string.IsNullOrWhiteSpace(line))
             {
+                FlushParagraph();
                 blocks.Add(new TextBlock(line, BlockType.Empty, 0, currentHeading));
                 continue;
             }
@@ -232,6 +248,7 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
             // HTML comment
             if (trimmed.StartsWith("<!--"))
             {
+                FlushParagraph();
                 blocks.Add(new TextBlock(line, BlockType.HtmlComment, 0, currentHeading));
                 continue;
             }
@@ -239,6 +256,7 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
             // ATX heading (#, ##, ###, ...)
             if (trimmed.StartsWith("#"))
             {
+                FlushParagraph();
                 var headingText = trimmed.TrimStart('#').Trim();
                 blocks.Add(new TextBlock(line, BlockType.Heading, 0, currentHeading));
                 currentHeading = headingText; // update AFTER the heading block uses the old value
@@ -248,6 +266,7 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
             // Horizontal rule: 3+ identical chars (-, *, _) optionally with spaces
             if (IsHorizontalRule(trimmed))
             {
+                FlushParagraph();
                 blocks.Add(new TextBlock(line, BlockType.HorizontalRule, 0, currentHeading));
                 continue;
             }
@@ -255,6 +274,7 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
             // Blockquote
             if (trimmed.StartsWith(">"))
             {
+                FlushParagraph();
                 blocks.Add(new TextBlock(line, BlockType.Blockquote, 0, currentHeading));
                 continue;
             }
@@ -262,6 +282,7 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
             // Unordered list item (-, *, + followed by space)
             if (IsUnorderedListItem(trimmed))
             {
+                FlushParagraph();
                 int indent = (line.Length - trimmed.Length) / 2;
                 blocks.Add(new TextBlock(line, BlockType.UnorderedListItem, indent, currentHeading));
                 continue;
@@ -270,6 +291,7 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
             // Ordered list item (N. followed by space)
             if (IsOrderedListItem(trimmed))
             {
+                FlushParagraph();
                 int indent = (line.Length - trimmed.Length) / 2;
                 blocks.Add(new TextBlock(line, BlockType.OrderedListItem, indent, currentHeading));
                 continue;
@@ -278,6 +300,7 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
             // Table rows — use look-ahead to detect header vs body
             if (trimmed.StartsWith("|"))
             {
+                FlushParagraph();
                 BlockType tableType;
                 if (IsTableSeparator(trimmed))
                 {
@@ -295,9 +318,15 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
                 continue;
             }
 
-            // Paragraph line (catch-all)
-            blocks.Add(new TextBlock(line, BlockType.ParagraphLine, 0, currentHeading));
+            // Paragraph line (catch-all) — accumulate consecutive lines into a single block.
+            // The buffer is flushed by blank lines, headings, list items, and any structural block.
+            if (paragraphBuf.Count == 0)
+                paragraphHeading = currentHeading;
+            paragraphBuf.Add(trimmed);
         }
+
+        // Flush any paragraph that reached the end of input without a trailing blank line.
+        FlushParagraph();
 
         return blocks;
     }
