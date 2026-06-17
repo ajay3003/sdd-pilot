@@ -64,8 +64,7 @@
         <!-- Header bar -->
         <div class="se-header">
             <div class="se-header-left">
-                <span class="se-header-title">Spec Explorer</span>
-                <span class="se-header-stat">@_tree.Health.TotalHeadings headings · @_tree.Health.TotalItems items</span>
+                <span class="se-header-title">Specification Structure</span>
             </div>
             <div class="se-header-right">
                 <div class="se-view-toggle" role="group" aria-label="View mode">
@@ -85,113 +84,8 @@
 
         <section class="se-purpose" data-testid="se-purpose">
             <strong>Specification Structure Explorer</strong>
-            <span>Use this view to understand specification structure, browse sections and headings, see section health, and navigate into Traceability. It complements Traceability &amp; Coverage and Flow View; it does not replace them.</span>
+            <span>Browse the specification hierarchy, section requirements, tests, and clarifications. Use Traceability &amp; Coverage for analytics and Flow View for release readiness.</span>
         </section>
-
-        <!-- Health summary -->
-        @if (HasHealthData)
-        {
-            <div class="se-health-row">
-                @if (_tree.Health.TotalHeadings > 0)
-                {
-                    <div class="se-health-card">
-                        <div class="se-health-value">@_tree.Health.TotalHeadings</div>
-                        <div class="se-health-label">Headings</div>
-                    </div>
-                }
-                @if (_tree.Health.UserStories > 0)
-                {
-                    <div class="se-health-card se-hcard-us">
-                        <div class="se-health-value">@_tree.Health.UserStories</div>
-                        <div class="se-health-label">User Stories</div>
-                    </div>
-                }
-                @if (_tree.Health.Requirements > 0)
-                {
-                    <div class="se-health-card se-hcard-req">
-                        <div class="se-health-value">@_tree.Health.Requirements</div>
-                        <div class="se-health-label">Requirements</div>
-                    </div>
-                }
-                @if (_tree.Health.Tests > 0 || _tree.Health.BddScenarios > 0)
-                {
-                    var testTotal = _tree.Health.Tests;
-                    <div class="se-health-card se-hcard-test">
-                        <div class="se-health-value">@testTotal</div>
-                        <div class="se-health-label">Tests</div>
-                    </div>
-                }
-                @if (_tree.Health.BddScenarios > 0)
-                {
-                    <div class="se-health-card se-hcard-bdd">
-                        <div class="se-health-value">@_tree.Health.BddScenarios</div>
-                        <div class="se-health-label">Scenarios</div>
-                    </div>
-                }
-                @if (_tree.Health.Clarifications > 0)
-                {
-                    <div class="se-health-card se-hcard-clr">
-                        <div class="se-health-value">@_tree.Health.Clarifications</div>
-                        <div class="se-health-label">Clarifications</div>
-                    </div>
-                }
-                @if (_tree.Health.Decisions > 0)
-                {
-                    <div class="se-health-card se-hcard-decision">
-                        <div class="se-health-value">@_tree.Health.Decisions</div>
-                        <div class="se-health-label">Decisions</div>
-                    </div>
-                }
-                @if (_tree.Health.SuccessCriteria > 0)
-                {
-                    <div class="se-health-card se-hcard-sc">
-                        <div class="se-health-value">@_tree.Health.SuccessCriteria</div>
-                        <div class="se-health-label">Success Criteria</div>
-                    </div>
-                }
-                @if (_tree.Health.Entities > 0)
-                {
-                    <div class="se-health-card se-hcard-ent">
-                        <div class="se-health-value">@_tree.Health.Entities</div>
-                        <div class="se-health-label">Entities</div>
-                    </div>
-                }
-                @if (_tree.Health.Assumptions > 0)
-                {
-                    <div class="se-health-card se-hcard-assume">
-                        <div class="se-health-value">@_tree.Health.Assumptions</div>
-                        <div class="se-health-label">Assumptions</div>
-                    </div>
-                }
-                @if (_tree.Health.EdgeCases > 0)
-                {
-                    <div class="se-health-card se-hcard-edge">
-                        <div class="se-health-value">@_tree.Health.EdgeCases</div>
-                        <div class="se-health-label">Edge Cases</div>
-                    </div>
-                }
-                @if (_tree.Health.TablesDetected > 0)
-                {
-                    <div class="se-health-card se-hcard-tbl">
-                        <div class="se-health-value">@_tree.Health.TablesDetected</div>
-                        <div class="se-health-label">Tables</div>
-                    </div>
-                }
-            </div>
-        }
-
-        @if (Candidates is { Count: > 0 })
-        {
-            var cReqs = Candidates.Count(c => c.Classification == ScenarioKind.Requirement);
-            var cTests = Candidates.Count(c => c.Classification == ScenarioKind.Test);
-            var cClrs = Candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification);
-            <div class="se-candidate-strip" data-testid="se-candidate-strip">
-                <span class="se-candidate-label">Extracted:</span>
-                <span class="se-cand-chip se-cand-req">Requirements (@cReqs)</span>
-                <span class="se-cand-chip se-cand-test">Tests (@cTests)</span>
-                @if (cClrs > 0) { <span class="se-cand-chip se-cand-clr">Clarifications (@cClrs)</span> }
-            </div>
-        }
 
         @if (_tree.Health.Requirements == 0)
         {
@@ -227,35 +121,24 @@
             }
         </div>
 
-        <div class="se-quick-filters" role="group" aria-label="Spec Explorer quick filters" data-testid="se-quick-filters">
-            <button class="se-filter-chip @(_sectionFilter == SectionFilter.All ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.All)">All Sections</button>
-            <button class="se-filter-chip @(_sectionFilter == SectionFilter.Covered ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.Covered)">Covered</button>
-            <button class="se-filter-chip @(_sectionFilter == SectionFilter.Partial ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.Partial)">Partial</button>
-            <button class="se-filter-chip @(_sectionFilter == SectionFilter.MissingCoverage ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.MissingCoverage)">Missing Coverage</button>
-            <button class="se-filter-chip @(_sectionFilter == SectionFilter.HasClarifications ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.HasClarifications)">Has Clarifications</button>
-            <button class="se-filter-chip @(_sectionFilter == SectionFilter.HasEdgeCases ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.HasEdgeCases)">Has Edge Cases</button>
-            <button class="se-filter-chip @(_sectionFilter == SectionFilter.HighRiskSections ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.HighRiskSections)">High Risk Sections</button>
-        </div>
-
-        @if (MissingSectionCount > 0)
+        @if (MissingCoverageSectionCount > 0)
         {
-            <div class="se-missing-banner" role="status" data-testid="se-missing-banner">
-                @MissingSectionCount section@(MissingSectionCount != 1 ? "s" : "") missing coverage — <a href="/traceability" class="se-missing-link">open Traceability to close gaps.</a>
+            <div class="se-coverage-callout" role="status" data-testid="se-coverage-callout">
+                <div class="se-coverage-callout-copy">
+                    <span class="se-coverage-callout-icon" aria-hidden="true">&#9888;</span>
+                    <strong>@MissingCoverageSectionCount section@(MissingCoverageSectionCount == 1 ? "" : "s") @(MissingCoverageSectionCount == 1 ? "needs" : "need") coverage attention</strong>
+                </div>
+                <button class="se-coverage-callout-action" @onclick="() => SetSectionFilter(SectionFilter.MissingCoverage)">
+                    Review Coverage Gaps -&gt;
+                </button>
             </div>
         }
 
-        @if (TopSectionNodes.Count >= 5)
-        {
-            <nav class="se-section-nav" aria-label="Jump to section" data-testid="se-section-nav">
-                @foreach (var sec in TopSectionNodes)
-                {
-                    var secNode = sec;
-                    <button class="se-section-nav-btn" @onclick="() => JumpToSection(secNode.Id)" title="@secNode.Title">
-                        @(secNode.Title.Length > 28 ? secNode.Title[..28] + "…" : secNode.Title)
-                    </button>
-                }
-            </nav>
-        }
+        <div class="se-quick-filters" role="group" aria-label="Spec Explorer quick filters" data-testid="se-quick-filters">
+            <button class="se-filter-chip @(_sectionFilter == SectionFilter.All ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.All)">All</button>
+            <button class="se-filter-chip @(_sectionFilter == SectionFilter.MissingCoverage ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.MissingCoverage)">Missing Coverage</button>
+            <button class="se-filter-chip @(_sectionFilter == SectionFilter.Covered ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.Covered)">Covered</button>
+        </div>
 
         <!-- Main layout: tree/map + details panel -->
         <div class="se-main @(_selectedNodeId is not null ? "has-details" : "")">
@@ -375,25 +258,13 @@
 
                             @if (sectionHealth is not null && sectionHealth.Status != CoverageState.Unknown)
                             {
-                                <span class="se-section-health" data-testid="se-section-health">
-                                    <span class="se-coverage se-cov-@sectionHealth.Status.ToString().ToLower()" title="@CoverageTitle(sectionHealth.Status)" data-testid="se-coverage-label">
-                                        @CoverageIcon(sectionHealth.Status) @CoverageTitle(sectionHealth.Status)
-                                    </span>
-                                    @if (sectionHealth.Clarifications > 0)
-                                    {
-                                        <span class="se-health-mini se-clr-hint">@sectionHealth.Clarifications clr</span>
-                                    }
+                                <span class="se-section-status se-status-@SectionStatusClass(sectionHealth.Status)" data-testid="se-section-health">
+                                    @SectionStatusLabel(sectionHealth.Status)
                                 </span>
                                 @if (_isMapView)
                                 {
                                     <span class="se-map-structure" data-testid="se-map-structure">Heading -&gt; Requirements -&gt; Tests -&gt; Success Criteria</span>
                                 }
-                            }
-                            else if (reqDetail is not null)
-                            {
-                                <span class="se-coverage se-cov-@reqDetail.Status.ToString().ToLower()" title="@CoverageTitle(reqDetail.Status)" data-testid="se-coverage-label">
-                                    @CoverageIcon(reqDetail.Status) @CoverageTitle(reqDetail.Status)
-                                </span>
                             }
 
                             <button class="se-hide-btn"
@@ -436,7 +307,6 @@
                                 <div class="se-summary-grid">
                                     <span>Requirements: <strong>@selectedHealth.Requirements</strong></span>
                                     <span>Clarifications: <strong>@selectedHealth.Clarifications</strong></span>
-                                    <span>Coverage: <strong>@CoverageIcon(selectedHealth.Status) @CoverageTitle(selectedHealth.Status)</strong></span>
                                 </div>
                                 @if (selectedHealth.UserStories.Count > 0)
                                 {
@@ -596,24 +466,6 @@
                             </div>
                         }
 
-                        @* ── Coverage ──────────────────────────────────────────── *@
-                        @if (selected.Coverage != CoverageState.Unknown)
-                        {
-                            <div class="se-details-section">
-                                <div class="se-details-label">Coverage</div>
-                                <span class="se-coverage-badge se-cov-@selected.Coverage.ToString().ToLower()">
-                                    @CoverageIcon(selected.Coverage) @CoverageTitle(selected.Coverage)
-                                </span>
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="se-details-section">
-                                <div class="se-details-label">Coverage</div>
-                                <span class="se-coverage-none">No coverage data — run extraction for full analysis.</span>
-                            </div>
-                        }
-
                         @* ── Table details ─────────────────────────────────────── *@
                         @if (selected.NodeType == SpecNodeType.TableSection)
                         {
@@ -751,14 +603,6 @@
             </div>
         }
 
-        @if (HasCoverageData)
-        {
-            <div class="se-legend">
-                <span class="se-legend-item">Covered</span>
-                <span class="se-legend-item">Partial</span>
-                <span class="se-legend-item">Missing</span>
-            </div>
-        }
     }
 </div>
 
@@ -783,12 +627,8 @@
     private enum SectionFilter
     {
         All,
-        Covered,
-        Partial,
         MissingCoverage,
-        HasClarifications,
-        HasEdgeCases,
-        HighRiskSections,
+        Covered,
     }
 
     private sealed record SectionHealth(
@@ -833,17 +673,12 @@
 
     private bool CanBuild => !string.IsNullOrWhiteSpace(_specText);
 
-    private bool HasHealthData =>
-        _tree is not null && (_tree.Health.TotalItems > 0 || _tree.Health.TotalHeadings > 0);
+    private int MissingCoverageSectionCount =>
+        _tree is null
+            ? 0
+            : GetAllNodes(_tree.Roots)
+                .Count(n => n.HeadingLevel > 0 && GetSectionHealth(n).Status == CoverageState.Missing);
 
-    private bool HasCoverageData =>
-        _tree is not null && _flatCache.Any(r => r.Node.Coverage != CoverageState.Unknown);
-
-    private int MissingSectionCount =>
-        _flatCache.Count(r => r.Node.HeadingLevel > 0 && r.Node.Coverage == CoverageState.Missing);
-
-    private IReadOnlyList<SpecNode> TopSectionNodes =>
-        _tree?.Roots.Where(n => n.HeadingLevel > 0).Take(20).ToList() ?? [];
 
     private void OnFileImported(string content)
     {
@@ -1000,13 +835,6 @@
         RefreshFlatCache();
     }
 
-    private void JumpToSection(string id)
-    {
-        _expandedIds.Add(id);
-        _selectedNodeId = id;
-        RefreshFlatCache();
-    }
-
     private static int CountLines(string text) => text.Split('\n').Length;
 
     // ── Table cross-reference lookup ──────────────────────────────────────────
@@ -1134,19 +962,27 @@
         var health = GetSectionHealth(node);
         return _sectionFilter switch
         {
-            SectionFilter.Covered => health.Status == CoverageState.Covered,
-            SectionFilter.Partial => health.Status == CoverageState.Partial,
             SectionFilter.MissingCoverage => health.Status == CoverageState.Missing,
-            SectionFilter.HasClarifications => health.Clarifications > 0,
-            SectionFilter.HasEdgeCases => node.Semantics == SectionSemantics.EdgeCases
-                || node.Title.Contains("edge", StringComparison.OrdinalIgnoreCase)
-                || GetAllNodes([node]).Any(n => n.NodeType == SpecNodeType.EdgeCase),
-            SectionFilter.HighRiskSections => node.Semantics is SectionSemantics.Security or SectionSemantics.Performance or SectionSemantics.EdgeCases
-                || node.Title.Contains("security", StringComparison.OrdinalIgnoreCase)
-                || node.Title.Contains("risk", StringComparison.OrdinalIgnoreCase),
+            SectionFilter.Covered => health.Status == CoverageState.Covered,
             _ => true,
         };
     }
+
+    private static string SectionStatusLabel(CoverageState status) => status switch
+    {
+        CoverageState.Covered => "Healthy",
+        CoverageState.Partial => "Partial",
+        CoverageState.Missing => "Needs Attention",
+        _ => "",
+    };
+
+    private static string SectionStatusClass(CoverageState status) => status switch
+    {
+        CoverageState.Covered => "healthy",
+        CoverageState.Partial => "partial",
+        CoverageState.Missing => "attention",
+        _ => "",
+    };
 
     private static IReadOnlyList<string> ExtractUserStoryLabels(string text)
     {
@@ -1260,14 +1096,6 @@
         TableType.ApiSpec        => "API Spec",
         TableType.DependencyMap  => "Dependencies",
         _                        => "Table",
-    };
-
-    private static string CoverageIcon(CoverageState s) => s switch
-    {
-        CoverageState.Covered => "✅",
-        CoverageState.Partial => "⚠",
-        CoverageState.Missing => "❌",
-        _ => "",
     };
 
     private static string CoverageTitle(CoverageState s) => s switch

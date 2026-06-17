@@ -44,6 +44,14 @@ public class ExtractionReviewListTests : BunitContext
             .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
         Services.AddSingleton(mockGetReviewed.Object);
 
+        var featureVisibility = new FeatureVisibilityService();
+        featureVisibility.ApplyLocalFlags(new FeatureVisibilityDto
+        {
+            EnableExtractionReview = true,
+            EnableArchitectureView = true
+        });
+        Services.AddSingleton(featureVisibility);
+
         Services.AddLogging();
     }
 
@@ -172,6 +180,30 @@ public class ExtractionReviewListTests : BunitContext
         tabs[2].Should().Contain("Spec Explorer");
         tabs[3].Should().Contain("Extraction Review");
         tabs[4].Should().Contain("Architecture View");
+    }
+
+    [Fact]
+    public void SpecificationReview_HidesAdvancedTabsWhenFeatureFlagsAreDisabled()
+    {
+        Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto
+        {
+            EnableExtractionReview = false,
+            EnableArchitectureView = false
+        });
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult()));
+
+        var tabs = cut.FindAll(".view-mode-tab").Select(t => t.TextContent.Trim()).ToList();
+
+        tabs.Should().HaveCount(3);
+        tabs[0].Should().Contain("Traceability & Coverage");
+        tabs[1].Should().Contain("Flow View");
+        tabs[2].Should().Contain("Spec Explorer");
+        cut.Markup.Should().NotContain("Extraction Review");
+        cut.Markup.Should().NotContain("Architecture View");
+        cut.Find("[data-testid='analysis-workflow-hint']").TextContent
+            .Should().NotContain("extraction quality");
     }
 
     [Fact]
@@ -815,6 +847,14 @@ public class ExtractionReviewListObservabilityTests : BunitContext
             .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
         Services.AddSingleton(mockGetReviewed.Object);
+
+        var featureVisibility = new FeatureVisibilityService();
+        featureVisibility.ApplyLocalFlags(new FeatureVisibilityDto
+        {
+            EnableExtractionReview = true,
+            EnableArchitectureView = true
+        });
+        Services.AddSingleton(featureVisibility);
     }
 
     private static ExtractionCandidate MakeCandidate(string title = "sentinel-candidate-title") => new()
@@ -974,6 +1014,14 @@ public class TestSubsectionGroupingTests : BunitContext
             .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
         Services.AddSingleton(mockGetReviewed.Object);
+
+        var featureVisibility = new FeatureVisibilityService();
+        featureVisibility.ApplyLocalFlags(new FeatureVisibilityDto
+        {
+            EnableExtractionReview = true,
+            EnableArchitectureView = true
+        });
+        Services.AddSingleton(featureVisibility);
 
         Services.AddLogging();
     }
@@ -1170,6 +1218,14 @@ public class ClarificationSubsectionGroupingTests : BunitContext
             .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
         Services.AddSingleton(mockGetReviewed.Object);
+
+        var featureVisibility = new FeatureVisibilityService();
+        featureVisibility.ApplyLocalFlags(new FeatureVisibilityDto
+        {
+            EnableExtractionReview = true,
+            EnableArchitectureView = true
+        });
+        Services.AddSingleton(featureVisibility);
 
         Services.AddLogging();
     }
@@ -1382,6 +1438,14 @@ public class RequirementSubsectionGroupingTests : BunitContext
             .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
         Services.AddSingleton(mockGetReviewed.Object);
+
+        var featureVisibility = new FeatureVisibilityService();
+        featureVisibility.ApplyLocalFlags(new FeatureVisibilityDto
+        {
+            EnableExtractionReview = true,
+            EnableArchitectureView = true
+        });
+        Services.AddSingleton(featureVisibility);
 
         Services.AddLogging();
     }
@@ -1597,6 +1661,14 @@ public class ExtractionReviewListDefaultExpansionTests : BunitContext
             .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
         Services.AddSingleton(mockGetReviewed.Object);
+
+        var featureVisibility = new FeatureVisibilityService();
+        featureVisibility.ApplyLocalFlags(new FeatureVisibilityDto
+        {
+            EnableExtractionReview = true,
+            EnableArchitectureView = true
+        });
+        Services.AddSingleton(featureVisibility);
 
         Services.AddLogging();
     }

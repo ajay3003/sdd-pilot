@@ -44,6 +44,14 @@ public class ExtractionReviewListSessionTests : BunitContext
             .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
         Services.AddSingleton(mockGetReviewed.Object);
 
+        var featureVisibility = new FeatureVisibilityService();
+        featureVisibility.ApplyLocalFlags(new FeatureVisibilityDto
+        {
+            EnableExtractionReview = true,
+            EnableArchitectureView = true
+        });
+        Services.AddSingleton(featureVisibility);
+
         Services.AddLogging();
     }
 

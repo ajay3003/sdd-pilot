@@ -9,6 +9,7 @@
 @inject IGetReviewedCandidatesQuery GetReviewedCandidatesQuery
 @inject ILogger<ExtractionReviewList> Logger
 @inject IExtractionSessionService SessionService
+@inject FeatureVisibilityService FeatureViz
 
 @if (PipelineResult is null)
 {
@@ -27,7 +28,7 @@
             <li>Coverage Analysis</li>
             <li>Suggested Traceability Links</li>
         </ul>
-        <p class="empty-state-flow">Analyze &rarr; Traceability &amp; Coverage &rarr; Optional Extraction Review</p>
+        <p class="empty-state-flow">Analyze &rarr; Traceability &amp; Coverage &rarr; Flow View &rarr; Spec Explorer</p>
     </div>
 }
 else
@@ -111,27 +112,33 @@ else
                     @onclick="() => SetViewMode(ExtractionViewMode.SpecExplorer)">
                 <span class="tab-icon" aria-hidden="true">🌳</span>Spec Explorer
             </button>
-            <button type="button" role="tab"
-                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Extraction ? "is-active" : "")"
-                    aria-selected="@(_activeViewMode == ExtractionViewMode.Extraction)"
-                    title="Advanced optional quality-control workspace for reviewing AI extraction quality."
-                    @onclick="() => SetViewMode(ExtractionViewMode.Extraction)">
-                <span class="tab-icon" aria-hidden="true">📄</span>Extraction Review
-            </button>
-            <button type="button" role="tab"
-                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Architecture ? "is-active" : "")"
-                    aria-selected="@(_activeViewMode == ExtractionViewMode.Architecture)"
-                    title="Shows technical concerns, integrations and system boundaries."
-                    @onclick="() => SetViewMode(ExtractionViewMode.Architecture)">
-                <span class="tab-icon" aria-hidden="true">🏗</span>Architecture View
-            </button>
+            @if (ShowExtractionReview)
+            {
+                <button type="button" role="tab"
+                        class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Extraction ? "is-active" : "")"
+                        aria-selected="@(_activeViewMode == ExtractionViewMode.Extraction)"
+                        title="Advanced optional quality-control workspace for reviewing AI extraction quality."
+                        @onclick="() => SetViewMode(ExtractionViewMode.Extraction)">
+                    <span class="tab-icon" aria-hidden="true">📄</span>Extraction Review
+                </button>
+            }
+            @if (ShowArchitectureView)
+            {
+                <button type="button" role="tab"
+                        class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Architecture ? "is-active" : "")"
+                        aria-selected="@(_activeViewMode == ExtractionViewMode.Architecture)"
+                        title="Shows technical concerns, integrations and system boundaries."
+                        @onclick="() => SetViewMode(ExtractionViewMode.Architecture)">
+                    <span class="tab-icon" aria-hidden="true">🏗</span>Architecture View
+                </button>
+            }
         </div>
 
         <div class="analysis-workflow-hint" data-testid="analysis-workflow-hint">
-            Analyze, then start in Traceability &amp; Coverage to review coverage and gaps. Use Flow View for QA readiness, Spec Explorer for structure, and Extraction Review only when extraction quality needs verification.
+            Analyze, then start in Traceability &amp; Coverage to review coverage and gaps. Use Flow View for QA readiness and Spec Explorer for structure.
         </div>
 
-        @if (_activeViewMode == ExtractionViewMode.Extraction)
+        @if (_activeViewMode == ExtractionViewMode.Extraction && ShowExtractionReview)
         {
             <section class="extraction-review-banner" data-testid="extraction-review-banner" aria-labelledby="extraction-review-banner-title">
                 <div>
@@ -467,7 +474,7 @@ else
         }
         } @* end @if (_activeViewMode != ExtractionViewMode.SpecExplorer) *@
 
-        @if (_activeViewMode == ExtractionViewMode.Extraction)
+        @if (_activeViewMode == ExtractionViewMode.Extraction && ShowExtractionReview)
         {
             <DocumentView SpecMarkdown="@SpecMarkdown"
                           Candidates="@visibleDocumentCandidates"
@@ -493,7 +500,7 @@ else
                               OnOpenInTaskExplorer="@HandleOpenInTaskExplorer" />
         }
 
-        @if (_activeViewMode == ExtractionViewMode.Architecture)
+        @if (_activeViewMode == ExtractionViewMode.Architecture && ShowArchitectureView)
         {
             <ArchitectureView SpecMarkdown="@SpecMarkdown"
                               Candidates="@(PipelineResult?.Candidates ?? [])" />
@@ -676,6 +683,9 @@ else
     private bool _initialSessionConsumed;
     private bool _showRestoreNotice;
 
+    private bool ShowExtractionReview => FeatureViz.EnableExtractionReview;
+    private bool ShowArchitectureView => FeatureViz.EnableArchitectureView;
+
     protected override void OnParametersSet()
     {
         if (!ReferenceEquals(PipelineResult, _previousPipelineResult))
@@ -692,6 +702,7 @@ else
                 _initialSessionConsumed = true;
                 _sessionId = InitialSession.SessionId;
                 RestoreFromSession(InitialSession);
+                EnsureActiveViewModeAvailable();
                 _showRestoreNotice = true;
                 // Auto-persist the restored session artifacts to server
                 _ = AutoPersistSessionArtifactsAsync();
@@ -718,6 +729,7 @@ else
                     foreach (var kind in PipelineResult.Candidates.Select(c => c.Classification).Distinct())
                         _sectionExpanded[kind] = true;
                 }
+                EnsureActiveViewModeAvailable();
                 _ = SaveSessionAsync();
                 // Async: restore prior manual review statuses from server, then auto-persist
                 _ = RestoreAndPersistAsync();
@@ -1004,7 +1016,27 @@ else
     private void HandleClearLinkFilter() { _activeLinkFilter = null; _ = SaveSessionAsync(); }
     private void HandleSetLinkFilter(LinkFilter filter) { _activeLinkFilter = filter; _ = SaveSessionAsync(); }
 
-    private void SetViewMode(ExtractionViewMode mode) { _activeViewMode = mode; _ = SaveSessionAsync(); }
+    private void SetViewMode(ExtractionViewMode mode)
+    {
+        if (!IsViewModeAvailable(mode))
+            mode = ExtractionViewMode.Traceability;
+
+        _activeViewMode = mode;
+        _ = SaveSessionAsync();
+    }
+
+    private void EnsureActiveViewModeAvailable()
+    {
+        if (!IsViewModeAvailable(_activeViewMode))
+            _activeViewMode = ExtractionViewMode.Traceability;
+    }
+
+    private bool IsViewModeAvailable(ExtractionViewMode mode) => mode switch
+    {
+        ExtractionViewMode.Extraction => ShowExtractionReview,
+        ExtractionViewMode.Architecture => ShowArchitectureView,
+        _ => true,
+    };
 
     private IEnumerable<string> GetAllCapabilityGroupKeys() =>
         PipelineResult is null ? [] : CapabilityMapper.Map(PipelineResult.Candidates).Select(g => g.Key);

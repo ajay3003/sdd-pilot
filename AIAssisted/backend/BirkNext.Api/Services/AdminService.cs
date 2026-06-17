@@ -31,6 +31,8 @@ public class AdminService
 
     private static readonly IReadOnlyList<(string Key, string Label)> AdvancedFeatures =
     [
+        ("EnableExtractionReview", "Enable Extraction Review"),
+        ("EnableArchitectureView", "Enable Architecture View"),
         ("CreateTestScenario",  "Create Test Scenario"),
         ("LegacyTraceabilityNavigationEnabled", "Legacy Traceability Navigation"),
         ("TraceabilitySuggestions", "Traceability Suggestions"),
@@ -194,6 +196,8 @@ public class AdminService
             TaskExplorer         = s.GetValue("TaskExplorer",         true),
             AiChangeReview       = s.GetValue("AiChangeReview",       true),
             QaReadiness          = s.GetValue("QaReadiness",          true),
+            EnableExtractionReview = s.GetValue("EnableExtractionReview", false),
+            EnableArchitectureView = s.GetValue("EnableArchitectureView", false),
             AdminSystemSettings  = s.GetValue("AdminSystemSettings",  true)
         };
     }

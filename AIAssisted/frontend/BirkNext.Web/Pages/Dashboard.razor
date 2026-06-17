@@ -9,17 +9,20 @@
 <PageTitle>Dashboard</PageTitle>
 
 <div class="dashboard-page">
-    <h1>Dashboard</h1>
-    <p class="page-lead">Track coverage health, traceability status, and specification alignment across your project.</p>
+    <h1>Project Dashboard</h1>
+    <p class="page-lead">Coverage, risks, and recommended actions for the current review set.</p>
 </div>
 
-<div class="dashboard-onboarding-card" data-testid="onboarding-card">
-    <div class="dashboard-onboarding-text">
-        <strong>New to QA Review Studio?</strong>
-        <span>Follow the recommended workflow to get started with the platform step by step.</span>
+@if (!_isLoading && _metrics.RequirementCount == 0 && _metrics.TestCount == 0 && _metrics.ClarificationCount == 0)
+{
+    <div class="dashboard-onboarding-card" data-testid="onboarding-card">
+        <div class="dashboard-onboarding-text">
+            <strong>New to QA Review Studio?</strong>
+            <span>Follow the recommended workflow to get started with the platform step by step.</span>
+        </div>
+        <a href="getting-started" class="btn-primary dashboard-onboarding-btn">Start Recommended Workflow</a>
     </div>
-    <a href="getting-started" class="btn-primary dashboard-onboarding-btn">Start Recommended Workflow</a>
-</div>
+}
 
 @if (_isLoading)
 {

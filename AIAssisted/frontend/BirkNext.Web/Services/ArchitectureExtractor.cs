@@ -1,19 +1,20 @@
 using System.Text.RegularExpressions;
+using BirkNext.Web.GraphQL;
 using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
 
 /// <summary>
 /// Extracts an architecture model from a parsed SpecTree.
-/// Operates on spec structure (ApiSurfaceItem, Entity, Assumption, etc.)
-/// and full-text regex patterns — NOT on extraction candidates.
+/// Operates on spec structure (ApiSurfaceItem, Entity, Assumption, etc.),
+/// full-text regex patterns, and extraction candidates.
 /// </summary>
 public static class ArchitectureExtractor
 {
     // ── Regexes ──────────────────────────────────────────────────────────────
 
     private static readonly Regex ServiceRe = new(
-        @"\b(\p{Lu}[\p{L}\p{N}]+(?:\s\p{Lu}[\p{L}\p{N}]+)*\s+(?:Module|Service|Adapter|Gateway|Worker|Processor|Handler|Manager))\b",
+        @"\b(\p{Lu}[\p{L}\p{N}]+(?:\s\p{Lu}[\p{L}\p{N}]+)*\s+(?:Module|Service|Adapter|Gateway|Worker|Processor|Handler|Manager|Layer|Ingestion|Platform|Registry))\b",
         RegexOptions.Compiled);
 
     private static readonly Regex DomainEventRe = new(
@@ -81,6 +82,16 @@ public static class ArchitectureExtractor
          "Records all data access operations for compliance and audit trail"),
     ];
 
+    // ── Named service components ──────────────────────────────────────────────
+    // Generic architectural components that are named but don't follow the Module/Service suffix pattern.
+
+    private static readonly (string Name, string[] SearchTerms, string Description)[] NamedServiceComponents =
+    [
+        ("Reference Data",
+         ["reference data"],
+         "Lookup and classification data shared across modules"),
+    ];
+
     // ── Infrastructure components ─────────────────────────────────────────────
 
     private static readonly (string Name, string[] SearchTerms, string Description)[] InfrastructureItems =
@@ -127,19 +138,46 @@ public static class ArchitectureExtractor
 
     // ── Main entry point ─────────────────────────────────────────────────────
 
-    public static ArchitectureModel Extract(SpecTree tree)
+    /// <summary>
+    /// Extract an architecture model from a SpecTree plus optional raw source text and extraction candidates.
+    /// Providing rawMarkdown ensures code-fence and prose content skipped by the parser is still scanned.
+    /// Providing candidates allows extraction even when SpecMarkdown is unavailable.
+    /// </summary>
+    public static ArchitectureModel Extract(
+        SpecTree tree,
+        string? rawMarkdown = null,
+        IReadOnlyList<ExtractionCandidate>? candidates = null)
     {
         var elements = new List<ArchElement>();
         var nodesWithSection = FlattenWithSections(tree.Roots).ToList();
         var allNodes = nodesWithSection.Select(x => x.Node).ToList();
 
-        var fullText = string.Join("\n", allNodes.Select(GetNodeText));
+        // Build candidate text supplement (titles + context headings)
+        var candidateText = candidates is { Count: > 0 }
+            ? string.Join("\n", candidates.Select(c => $"{c.ContextHeading ?? ""} {c.Title}"))
+            : "";
+
+        // fullText combines all text sources for Pass 3 named lookups
+        var treeText = string.Join("\n", allNodes.Select(GetNodeText));
+        var fullText = string.Join("\n", new[] { treeText, rawMarkdown, candidateText }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
 
         // Pass 1 — Structured spec nodes
         ExtractFromStructuredNodes(nodesWithSection, elements);
 
-        // Pass 2 — Regex scan over section-grouped text
+        // Pass 2 — Regex scan over section-grouped tree text
         ExtractViaRegex(nodesWithSection, elements);
+
+        // Pass 2b — Regex scan of supplement text (raw markdown + candidates)
+        // Catches content in code blocks, prose not parsed into nodes, and candidate-level text.
+        var supplementText = string.Join("\n", new[] { rawMarkdown, candidateText }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (!string.IsNullOrWhiteSpace(supplementText))
+        {
+            var suppFrIds = ExtractFrIds(supplementText);
+            var suppUsIds = ExtractUsIds(supplementText);
+            ScanSectionBlock("Specification", supplementText, suppFrIds, suppUsIds, elements);
+        }
 
         // Pass 3 — Named full-text lookups
         ExtractNamedElements(fullText, nodesWithSection, elements);
@@ -209,113 +247,121 @@ public static class ArchitectureExtractor
         List<(SpecNode Node, string Section)> nodesWithSection,
         List<ArchElement> elements)
     {
-        // Build section-grouped text blocks for efficient scanning
         var sections = BuildSectionBlocks(nodesWithSection);
-
         foreach (var (sectionName, sectionText, frIds, usIds) in sections)
+            ScanSectionBlock(sectionName, sectionText, frIds, usIds, elements);
+    }
+
+    /// <summary>
+    /// Shared regex scan logic applied to a single named text block.
+    /// Used by both the section-grouped tree scan (Pass 2) and the supplement scan (Pass 2b).
+    /// </summary>
+    private static void ScanSectionBlock(
+        string sectionName, string sectionText,
+        List<string> frIds, List<string> usIds,
+        List<ArchElement> elements)
+    {
+        // Services / Modules / Layers / Adapters
+        foreach (Match m in ServiceRe.Matches(sectionText))
         {
-            // Services
-            foreach (Match m in ServiceRe.Matches(sectionText))
+            var name = NormalizeName(m.Value);
+            if (FalseServices.Contains(name)) continue;
+            AddOrMerge(elements, new ArchElement
             {
-                var name = NormalizeName(m.Value);
-                if (FalseServices.Contains(name)) continue;
-                AddOrMerge(elements, new ArchElement
-                {
-                    Name = name,
-                    ElementType = ArchElementType.Service,
-                    SourceSections = [sectionName],
-                    RelatedFrIds = frIds,
-                    RelatedUsIds = usIds,
-                });
-            }
+                Name = name,
+                ElementType = ArchElementType.Service,
+                SourceSections = [sectionName],
+                RelatedFrIds = frIds,
+                RelatedUsIds = usIds,
+            });
+        }
 
-            // Domain events
-            foreach (Match m in DomainEventRe.Matches(sectionText))
+        // Domain events
+        foreach (Match m in DomainEventRe.Matches(sectionText))
+        {
+            AddOrMerge(elements, new ArchElement
             {
-                AddOrMerge(elements, new ArchElement
-                {
-                    Name = m.Value,
-                    ElementType = ArchElementType.DomainEvent,
-                    SourceSections = [sectionName],
-                    RelatedFrIds = frIds,
-                    RelatedUsIds = usIds,
-                });
-            }
+                Name = m.Value,
+                ElementType = ArchElementType.DomainEvent,
+                SourceSections = [sectionName],
+                RelatedFrIds = frIds,
+                RelatedUsIds = usIds,
+            });
+        }
 
-            // Permissions
-            foreach (Match m in PermissionRe.Matches(sectionText))
+        // Permissions
+        foreach (Match m in PermissionRe.Matches(sectionText))
+        {
+            var permName = "Person:" + m.Groups[1].Value;
+            AddOrMerge(elements, new ArchElement
             {
-                var permName = "Person:" + m.Groups[1].Value;
-                AddOrMerge(elements, new ArchElement
-                {
-                    Name = permName,
-                    ElementType = ArchElementType.Security,
-                    Description = "Operation-based access control permission",
-                    SourceSections = [sectionName],
-                    RelatedFrIds = frIds,
-                    RelatedUsIds = usIds,
-                });
-            }
+                Name = permName,
+                ElementType = ArchElementType.Security,
+                Description = "Operation-based access control permission",
+                SourceSections = [sectionName],
+                RelatedFrIds = frIds,
+                RelatedUsIds = usIds,
+            });
+        }
 
-            // Topic names (e.g. "person.person topic")
-            foreach (Match m in TopicRe.Matches(sectionText))
+        // Topic names (e.g. "person.person topic")
+        foreach (Match m in TopicRe.Matches(sectionText))
+        {
+            var topicName = m.Groups[1].Value + " topic";
+            AddOrMerge(elements, new ArchElement
             {
-                var topicName = m.Groups[1].Value + " topic";
+                Name = topicName,
+                ElementType = ArchElementType.Messaging,
+                SourceSections = [sectionName],
+                RelatedFrIds = frIds,
+                RelatedUsIds = usIds,
+            });
+        }
+
+        // Queue names
+        foreach (Match m in QueueRe.Matches(sectionText))
+        {
+            var qName = m.Groups[1].Value.Trim();
+            if (qName.Length > 3 && !string.Equals(qName, "the", StringComparison.OrdinalIgnoreCase))
+            {
                 AddOrMerge(elements, new ArchElement
                 {
-                    Name = topicName,
+                    Name = qName + " queue",
                     ElementType = ArchElementType.Messaging,
                     SourceSections = [sectionName],
                     RelatedFrIds = frIds,
                     RelatedUsIds = usIds,
                 });
             }
+        }
 
-            // Queue names (e.g. "operasjonsregistrering queue")
-            foreach (Match m in QueueRe.Matches(sectionText))
+        // Service Bus
+        if (sectionText.Contains("service bus", StringComparison.OrdinalIgnoreCase))
+        {
+            AddOrMerge(elements, new ArchElement
             {
-                var qName = m.Groups[1].Value.Trim();
-                if (qName.Length > 3 && !string.Equals(qName, "the", StringComparison.OrdinalIgnoreCase))
-                {
-                    AddOrMerge(elements, new ArchElement
-                    {
-                        Name = qName + " queue",
-                        ElementType = ArchElementType.Messaging,
-                        SourceSections = [sectionName],
-                        RelatedFrIds = frIds,
-                        RelatedUsIds = usIds,
-                    });
-                }
-            }
+                Name = "Azure Service Bus",
+                ElementType = ArchElementType.Messaging,
+                Description = "Message broker for domain events, audit messages, and operational queues",
+                SourceSections = [sectionName],
+                RelatedFrIds = frIds,
+                RelatedUsIds = usIds,
+            });
+        }
 
-            // Service Bus
-            if (sectionText.Contains("service bus", StringComparison.OrdinalIgnoreCase))
+        // Persistence names
+        foreach (Match m in PersistenceNameRe.Matches(sectionText))
+        {
+            var name = m.Value;
+            if (FalsePersistence.Contains(name)) continue;
+            AddOrMerge(elements, new ArchElement
             {
-                AddOrMerge(elements, new ArchElement
-                {
-                    Name = "Azure Service Bus",
-                    ElementType = ArchElementType.Messaging,
-                    Description = "Message broker for domain events, audit messages, and operational queues",
-                    SourceSections = [sectionName],
-                    RelatedFrIds = frIds,
-                    RelatedUsIds = usIds,
-                });
-            }
-
-            // Persistence names
-            foreach (Match m in PersistenceNameRe.Matches(sectionText))
-            {
-                var name = m.Value;
-                if (FalsePersistence.Contains(name)) continue;
-                AddOrMerge(elements, new ArchElement
-                {
-                    Name = name,
-                    ElementType = ArchElementType.Persistence,
-                    SourceSections = [sectionName],
-                    RelatedFrIds = frIds,
-                    RelatedUsIds = usIds,
-                });
-            }
+                Name = name,
+                ElementType = ArchElementType.Persistence,
+                SourceSections = [sectionName],
+                RelatedFrIds = frIds,
+                RelatedUsIds = usIds,
+            });
         }
     }
 
@@ -347,6 +393,24 @@ public static class ArchitectureExtractor
             });
         }
 
+        // Named service components (architectural components not matching suffix patterns)
+        foreach (var (name, searchTerms, desc) in NamedServiceComponents)
+        {
+            if (!searchTerms.Any(t => fullText.Contains(t, StringComparison.OrdinalIgnoreCase))) continue;
+            var matchingNodes = nodesWithSection
+                .Where(x => searchTerms.Any(t => GetNodeText(x.Node).Contains(t, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+            var sections = matchingNodes.Select(x => x.Section).Distinct().ToList();
+            if (sections.Count == 0) sections = ["Components"];
+            AddOrMerge(elements, new ArchElement
+            {
+                Name = name,
+                ElementType = ArchElementType.Service,
+                Description = desc,
+                SourceSections = sections,
+            });
+        }
+
         // Architecture patterns
         foreach (var (name, keywords, desc) in ArchPatterns)
         {
@@ -369,7 +433,7 @@ public static class ArchitectureExtractor
         (string Name, string[] Terms, string Desc)[] apiLookups =
         [
             ("GraphQL", ["graphql"], "GraphQL query/mutation API"),
-            ("REST API", ["rest api", "restful api", "rest endpoint"], "RESTful HTTP API"),
+            ("REST API", ["rest api", "restful api", "rest endpoint", "rest ingestion"], "RESTful HTTP API"),
         ];
         foreach (var (aName, terms, aDesc) in apiLookups)
         {

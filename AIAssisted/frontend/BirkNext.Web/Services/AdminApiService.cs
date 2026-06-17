@@ -251,5 +251,7 @@ public class FeatureVisibilityDto
     [JsonPropertyName("taskExplorer")]         public bool TaskExplorer         { get; set; } = true;
     [JsonPropertyName("aiChangeReview")]       public bool AiChangeReview       { get; set; } = true;
     [JsonPropertyName("qaReadiness")]          public bool QaReadiness          { get; set; } = true;
+    [JsonPropertyName("enableExtractionReview")] public bool EnableExtractionReview { get; set; } = false;
+    [JsonPropertyName("enableArchitectureView")] public bool EnableArchitectureView { get; set; } = false;
     [JsonPropertyName("adminSystemSettings")]  public bool AdminSystemSettings  { get; set; } = true;
 }

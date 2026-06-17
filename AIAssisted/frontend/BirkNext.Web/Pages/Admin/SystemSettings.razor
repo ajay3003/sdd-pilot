@@ -428,10 +428,25 @@ else if (_settings is not null)
 
                     <div class="fv-tier">
                         <div class="fv-tier-header">
+                            <span class="fv-tier-label">Advanced Analysis Features</span>
+                            <span class="fv-tier-hint">Hidden by default</span>
+                        </div>
+                        @foreach (var entry in AdvancedAnalysisFeatureEntries)
+                        {
+                            <FeatureRow Label="@entry.Label"
+                                        Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
+                                        IsLocked="false"
+                                        IsEditMode="@_isEditMode"
+                                        OnToggle="@(v => ToggleFeature(entry.Key, v))" />
+                        }
+                    </div>
+
+                    <div class="fv-tier">
+                        <div class="fv-tier-header">
                             <span class="fv-tier-label">Advanced</span>
                             <span class="fv-tier-hint">Hidden by default</span>
                         </div>
-                        @foreach (var entry in _editableSettings.FeatureVisibility.Advanced)
+                        @foreach (var entry in OtherAdvancedFeatureEntries)
                         {
                             <FeatureRow Label="@entry.Label"
                                         Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
@@ -548,6 +563,21 @@ else if (_settings is not null)
     private bool    _resetSuccess;
 
     private bool _copiedDiag;
+
+    private static readonly HashSet<string> AdvancedAnalysisFeatureKeys =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "EnableExtractionReview",
+            "EnableArchitectureView"
+        };
+
+    private IEnumerable<FeatureEntryDto> AdvancedAnalysisFeatureEntries =>
+        _editableSettings?.FeatureVisibility.Advanced
+            .Where(e => AdvancedAnalysisFeatureKeys.Contains(e.Key)) ?? [];
+
+    private IEnumerable<FeatureEntryDto> OtherAdvancedFeatureEntries =>
+        _editableSettings?.FeatureVisibility.Advanced
+            .Where(e => !AdvancedAnalysisFeatureKeys.Contains(e.Key)) ?? [];
 
     protected override async Task OnInitializedAsync()
     {

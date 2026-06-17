@@ -21,6 +21,7 @@ public class ExtractionTraceabilityTests : BunitContext
         Services.AddSingleton(new Mock<IGetReviewedCandidatesQuery>().Object);
         Services.AddSingleton(new Mock<IExtractionSessionService>().Object);
         Services.AddSingleton<ILogger<ExtractionReviewList>>(NullLogger<ExtractionReviewList>.Instance);
+        Services.AddSingleton<FeatureVisibilityService>();
     }
 
     private static ExtractionPipelineResult NoResults() =>
@@ -61,12 +62,12 @@ public class ExtractionTraceabilityTests : BunitContext
     }
 
     [Fact]
-    public void ExtractionReview_IsSeparateRoute()
+    public void ExtractionReview_IsAdvancedViewMode()
     {
         var cut = Render<ExtractionReviewList>(p => p
             .Add(x => x.PipelineResult, NoResults()));
 
-        cut.Markup.Should().Contain("Optional Extraction Review");
+        cut.Markup.Should().NotContain("Optional Extraction Review");
         ExtractionViewMode.Traceability.Should().NotBe(ExtractionViewMode.Extraction);
     }
 

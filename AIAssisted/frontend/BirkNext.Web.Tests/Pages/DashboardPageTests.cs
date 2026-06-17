@@ -41,19 +41,12 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var dashboard = cut.Find("[data-testid='coverage-dashboard']").TextContent;
-            dashboard.Should().Contain("QA Health Score");
-            dashboard.Should().Contain("No Data");
-            dashboard.Should().Contain("Run a specification review to generate QA health, coverage, risk, and traceability metrics.");
             dashboard.Should().Contain("--");
             dashboard.Should().Contain("Coverage");
             dashboard.Should().Contain("Coverage Requirements");
-            dashboard.Should().Contain("Open Risks");
             dashboard.Should().Contain("Traceability");
             dashboard.Should().Contain("Top QA Risks");
-            dashboard.Should().Contain("Quality Overview");
-            dashboard.Should().Contain("Test Coverage Breakdown");
-            cut.Find("[data-testid='dashboard-empty-state'] a[href='extract']").Should().NotBeNull();
-            cut.FindAll("[data-testid='dashboard-health-card']").Should().HaveCount(6);
+            cut.FindAll("[data-testid='dashboard-health-card']").Should().HaveCount(4);
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -80,17 +73,15 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var dashboard = cut.Find("[data-testid='coverage-dashboard']").TextContent;
-            dashboard.Should().Contain("QA Health Score");
             dashboard.Should().Contain("Coverage");
             dashboard.Should().Contain("Coverage Requirements");
             dashboard.Should().Contain("Traceability");
             dashboard.Should().Contain("Top QA Risks");
             dashboard.Should().Contain("Test coverage below 70%");
             dashboard.Should().Contain("clarification item");
-            dashboard.Should().Contain("Quality Overview");
             dashboard.Should().Contain("Covered");
             dashboard.Should().Contain("Missing Tests");
-            cut.FindAll("[data-testid='dashboard-health-card']").Should().HaveCount(6);
+            cut.FindAll("[data-testid='dashboard-health-card']").Should().HaveCount(4);
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -114,7 +105,7 @@ public class DashboardPageTests : BunitContext
         {
             cut.Find("[data-testid='dashboard-load-error']")
                 .TextContent.Should().Contain("couldn't load dashboard data");
-            cut.Find("[data-testid='coverage-dashboard']").TextContent.Should().Contain("No Data");
+            cut.Find("[data-testid='coverage-dashboard']").TextContent.Should().Contain("--");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 

@@ -1,13 +1,82 @@
 .traceability-page {
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1rem;
     padding: 1.5rem 2rem 3rem;
     max-width: 1100px;
 }
 
 .traceability-hero {
-    padding-bottom: 0.5rem;
+    padding-bottom: 0.25rem;
+}
+
+/* ─── Tab bar ───────────────────────────────────────────────────────────── */
+
+.trace-tab-bar {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 0;
+    margin-bottom: 0.25rem;
+}
+
+.trace-tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.5rem 0.9rem;
+    border: none;
+    border-radius: var(--radius-md, 6px) var(--radius-md, 6px) 0 0;
+    background: transparent;
+    color: var(--clr-text-muted, #64748b);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.13s ease, background 0.13s ease;
+    bottom: -2px;
+}
+
+.trace-tab:hover {
+    color: var(--clr-text-heading, #0f172a);
+    background: #f8fafc;
+}
+
+.trace-tab.is-active {
+    color: var(--clr-primary, #2563eb);
+    background: #ffffff;
+    border: 2px solid #e2e8f0;
+    border-bottom-color: #ffffff;
+    font-weight: 700;
+}
+
+.trace-tab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.35rem;
+    padding: 0.06rem 0.34rem;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.68rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.trace-tab.is-active .trace-tab-badge {
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.trace-tab-badge-risk {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.trace-tab.is-active .trace-tab-badge-risk {
+    background: #fee2e2;
+    color: #b91c1c;
 }
 
 /* ─── Clickable KPI cards ───────────────────────────────────────────────── */

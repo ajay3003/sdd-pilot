@@ -108,6 +108,8 @@ public class FeatureVisibilityInfo
     public bool TaskExplorer { get; set; } = true;
     public bool AiChangeReview { get; set; } = true;
     public bool QaReadiness { get; set; } = true;
+    public bool EnableExtractionReview { get; set; } = false;
+    public bool EnableArchitectureView { get; set; } = false;
     public bool AdminSystemSettings { get; set; } = true;
 }
 

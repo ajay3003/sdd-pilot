@@ -20,7 +20,7 @@ public class FeatureVisibilityService
         }
         catch
         {
-            // Backend unavailable — keep all-true defaults so the app remains usable.
+            // Backend unavailable — keep standard workflow defaults so the app remains usable.
         }
         finally
         {
@@ -48,6 +48,8 @@ public class FeatureVisibilityService
     public bool TaskExplorer         => _flags.TaskExplorer;
     public bool AiChangeReview       => _flags.AiChangeReview;
     public bool QaReadiness          => _flags.QaReadiness;
+    public bool EnableExtractionReview => _flags.EnableExtractionReview;
+    public bool EnableArchitectureView => _flags.EnableArchitectureView;
     public bool AdminSystemSettings  => _flags.AdminSystemSettings;
 
     // Section-level helpers: show the section header only if at least one child item is visible.

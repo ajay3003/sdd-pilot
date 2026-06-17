@@ -574,7 +574,7 @@ public class ViewBehaviorTests : BunitContext
     }
 
     [Fact]
-    public void UserGuide_ExplainsExtractionReviewPurpose()
+    public void UserGuide_DescribesStandardSpecificationReviewWorkflow()
     {
         var cut = Render<UserGuide>();
 
@@ -583,14 +583,10 @@ public class ViewBehaviorTests : BunitContext
             .Should().BeLessThan(text.IndexOf("Flow View", StringComparison.Ordinal));
         text.Should().Contain("default</em> view shown after analysis");
         text.Should().Contain("QA risk picture first");
-        text.Should().Contain("Extraction Review");
-        text.Should().Contain("Validate and improve extraction quality");
-        text.Should().Contain("Most testers will start in Traceability &amp; Coverage and may never need Extraction Review");
-        text.Should().Contain("AutoAccepted");
-        text.Should().Contain("Link Related Candidates");
-        text.Should().Contain("These changes affect Traceability &amp; Coverage calculations");
         text.Should().Contain("Spec Explorer");
-        text.Should().Contain("Architecture View");
+        text.Should().Contain("Flow View");
+        text.Should().NotContain("Extraction Review");
+        text.Should().NotContain("Architecture View");
     }
 
     [Fact]
@@ -603,10 +599,9 @@ public class ViewBehaviorTests : BunitContext
         text.Should().Contain("Review coverage and gaps");
         text.Should().Contain("Use Flow View for QA readiness");
         text.Should().Contain("Use Spec Explorer for specification structure");
-        text.Should().Contain("Use Extraction Review only when extraction quality needs verification");
-        text.Should().Contain("optional advanced extraction quality control");
-        text.Should().Contain("Inspect architecture in Architecture View");
-        text.Should().NotContain("Review extracted" + " artifacts in " + "Extraction Review");
+        text.Should().NotContain("Extraction Review");
+        text.Should().NotContain("Architecture View");
+        text.Should().NotContain("optional advanced extraction quality control");
     }
 
     // =========================================================================
@@ -634,6 +629,35 @@ public class ViewBehaviorTests : BunitContext
         cut.FindAll(".fv-lane").Should().HaveCount(2, "one lane per distinct ContextHeading");
     }
 
+    [Fact]
+    public void FlowView_DoesNotRenderSpecificationStructureGroups()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST validate input", ScenarioKind.Requirement, "Functional Requirements"),
+            MakeCandidate("FR-002: The system MUST expose search APIs", ScenarioKind.Requirement, "API Surface"),
+            MakeCandidate("FR-003: The system MUST persist person records", ScenarioKind.Requirement, "Key Entities"),
+            MakeCandidate("FR-004: The system MUST handle timeout errors", ScenarioKind.Requirement, "Edge Cases"),
+            MakeCandidate("FR-005: The system MUST rely on configured roles", ScenarioKind.Requirement, "Assumptions"),
+            MakeCandidate("FR-006: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+        ];
+
+        var cut = Render<FlowView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        var text = cut.Markup;
+        cut.FindAll(".fv-lane").Should().ContainSingle("only user story lanes should render");
+        text.Should().Contain("Search");
+        text.Should().NotContain("Functional Requirements");
+        text.Should().NotContain("API Surface");
+        text.Should().NotContain("Key Entities");
+        text.Should().NotContain("Edge Cases");
+        text.Should().NotContain("Assumptions");
+    }
+
     // =========================================================================
     // FlowView — Session Q/A and decision lane handling
     // =========================================================================
@@ -652,9 +676,9 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
-        cut.FindAll(".fv-lane-decision").Should().HaveCount(1,
-            "Session date heading must produce a decision lane, not a regular story lane");
-        cut.Find(".fv-type-pill-decisions").Should().NotBeNull();
+        cut.FindAll(".fv-lane").Should().BeEmpty(
+            "Flow View is a User Story readiness board and must not render decision/session lanes");
+        cut.FindAll(".fv-type-pill-decisions").Should().BeEmpty();
         cut.FindAll(".fv-cov-missingtests").Should().BeEmpty(
             "Decision items must not carry a 'Missing Tests' coverage status");
     }
@@ -676,8 +700,8 @@ public class ViewBehaviorTests : BunitContext
 
         cut.FindAll(".fv-chip-gap").Should().BeEmpty(
             "Decisions & Clarifications must not count as coverage gaps");
-        cut.FindAll("[data-testid='gap-explanation-panel']").Should().BeEmpty(
-            "Gap explanation panel must not appear when all items are decision items");
+        cut.FindAll("[data-testid='fv-work-queue']").Should().BeEmpty(
+            "Coverage Summary must not appear when all items are decision items");
     }
 
     // =========================================================================
@@ -734,7 +758,7 @@ public class ViewBehaviorTests : BunitContext
     // =========================================================================
 
     [Fact]
-    public void FlowView_ShowsGapExplanationPanel()
+    public void FlowView_ShowsCoverageSummary()
     {
         IReadOnlyList<ExtractionCandidate> candidates =
         [
@@ -748,8 +772,9 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
-        cut.Find("[data-testid='gap-explanation-panel']").Should().NotBeNull(
-            "Gap explanation panel must appear when requirements have no test coverage");
+        var summary = cut.Find("[data-testid='fv-work-queue']");
+        summary.Should().NotBeNull("Coverage Summary must appear when stories have readiness gaps");
+        summary.TextContent.Should().Contain("Coverage Summary");
     }
 
     // =========================================================================
@@ -873,9 +898,9 @@ public class ViewBehaviorTests : BunitContext
 
         // Story has a requirement with no test → Missing Tests health
         cut.FindAll("[data-testid='fv-health-badge']").Should().NotBeEmpty(
-            "story header must show a health badge");
-        cut.Find("[data-testid='fv-health-badge']").TextContent.Should().Contain("Missing Tests",
-            "story with untested requirement must show Missing Tests health badge");
+            "story header must show a readiness status");
+        cut.Find("[data-testid='fv-health-badge']").TextContent.Should().Contain("Blocked",
+            "story with untested requirement must show Blocked readiness status");
     }
 
     [Fact]
@@ -915,7 +940,7 @@ public class ViewBehaviorTests : BunitContext
 
         // Health badge must mention Missing SC or Missing Tests (story has no SC)
         var healthBadge = cut.Find("[data-testid='fv-health-badge']");
-        healthBadge.Should().NotBeNull("health badge must be present");
+        healthBadge.TextContent.Should().Contain("Status:");
 
         // SC step must show the missing badge inside the expanded lane
         cut.FindAll("[data-testid='fv-sc-missing-badge']").Should().NotBeEmpty(
@@ -936,11 +961,11 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
-        // Task step must show "Tasks not imported" rather than ambiguous "No task links found yet"
+        // Task step must show explicit implementation-link status.
         cut.FindAll("[data-testid='fv-tasks-not-imported']").Should().NotBeEmpty(
-            "task step must show an explicit 'Tasks not imported' message");
-        cut.Find("[data-testid='fv-tasks-not-imported']").TextContent.Should().Contain("not imported",
-            "task placeholder must explain tasks are not yet imported rather than just 'no links'");
+            "task step must show an explicit implementation-link message");
+        cut.Find("[data-testid='fv-tasks-not-imported']").TextContent.Should().Contain("No implementation links",
+            "task placeholder must explain implementation links are missing");
     }
 
     [Fact]
@@ -1041,12 +1066,12 @@ public class ViewBehaviorTests : BunitContext
 
         // Both stories are missing tests → work queue must appear
         var queue = cut.Find("[data-testid='fv-work-queue']");
-        queue.Should().NotBeNull("QA work queue must appear when there are actionable gaps");
+        queue.Should().NotBeNull("Coverage Summary must appear when there are actionable gaps");
 
         // Coverage issues are collapsed by default — expand to see the breakdown
         cut.Find("[data-testid='fv-work-queue'] .fv-work-queue-header").Click();
-        cut.Find("[data-testid='fv-work-queue']").TextContent.Should().Contain("missing tests",
-            "expanded coverage issues must describe stories missing tests");
+        cut.Find("[data-testid='fv-work-queue']").TextContent.Should().Contain("Missing Tests",
+            "expanded coverage summary must describe stories missing tests");
     }
 
     [Fact]
@@ -1056,13 +1081,13 @@ public class ViewBehaviorTests : BunitContext
 
         var text = cut.Markup;
         text.Should().Contain("QA Readiness",              "User Guide must explain the QA Readiness score");
-        text.Should().Contain("Story Health",              "User Guide must explain story health badges");
-        text.Should().Contain("Missing Tests",             "User Guide must describe the Missing Tests health state");
-        text.Should().Contain("Missing Success Criteria",  "User Guide must describe the Missing Success Criteria health state");
+        text.Should().Contain("Story Readiness Status",    "User Guide must explain readiness status");
+        text.Should().Contain("Blocked",                   "User Guide must describe blocked stories");
+        text.Should().Contain("At Risk",                   "User Guide must describe at-risk stories");
         text.Should().Contain("Priority Sorting",          "User Guide must explain priority sorting");
         text.Should().Contain("Flow View Filters",         "User Guide must describe the filter chips");
-        text.Should().Contain("QA Work Queue",             "User Guide must describe the work queue section");
-        text.Should().Contain("Tasks not imported",        "User Guide must explain the task coverage status message");
+        text.Should().Contain("Coverage Summary",          "User Guide must describe the consolidated coverage section");
+        text.Should().Contain("No implementation links",   "User Guide must explain the implementation status message");
     }
 
     // =========================================================================
@@ -1390,11 +1415,11 @@ public class ViewBehaviorTests : BunitContext
     }
 
     // =========================================================================
-    // T18 — SpecExplorer: candidate count strip shows extraction-derived counts
+    // T18 — SpecExplorer: duplicate extraction metrics stay out of the structure view
     // =========================================================================
 
     [Fact]
-    public void SpecExplorer_CandidateCountStripShowsExtractionCounts()
+    public void SpecExplorer_DoesNotShowExtractedMetricsStrip()
     {
         IReadOnlyList<ExtractionCandidate> candidates =
         [
@@ -1420,10 +1445,9 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.IsEmbeddedInReview, true);
         });
 
-        var strip = cut.Find("[data-testid='se-candidate-strip']");
-        strip.TextContent.Should().Contain("Requirements (2)", "strip must show candidate-derived requirement count");
-        strip.TextContent.Should().Contain("Tests (1)",        "strip must show candidate-derived test count");
-        strip.TextContent.Should().Contain("Clarifications (1)", "strip must show candidate-derived clarification count");
+        cut.FindAll("[data-testid='se-candidate-strip']").Should().BeEmpty(
+            "Spec Explorer should not duplicate extracted artifact metrics shown elsewhere");
+        cut.Markup.Should().NotContain("Extracted:");
     }
 
     // =========================================================================
@@ -1466,19 +1490,18 @@ public class ViewBehaviorTests : BunitContext
         var health = cut.FindAll("[data-testid='se-section-health']");
         health.Should().NotBeEmpty();
         health.Select(h => h.TextContent).Should().Contain(t =>
-            t.Contains("Covered") || t.Contains("Partial") || t.Contains("Missing"),
-            "section health must show coverage state");
+            t.Contains("Healthy") || t.Contains("Partial") || t.Contains("Needs Attention"),
+            "section health must show simplified section status");
     }
 
     [Fact]
-    public void SpecExplorer_UsesExplicitCoverageLabels()
+    public void SpecExplorer_PromotesCoverageAttention()
     {
         var cut = RenderSpecExplorerWithTraceability();
 
-        var labels = cut.FindAll("[data-testid='se-coverage-label']").Select(e => e.TextContent).ToList();
-        labels.Should().Contain(t => t.Contains("Covered"));
-        labels.Should().Contain(t => t.Contains("Partial"));
-        labels.Should().Contain(t => t.Contains("Missing"));
+        var callout = cut.Find("[data-testid='se-coverage-callout']");
+        callout.TextContent.Should().Contain("coverage attention");
+        callout.TextContent.Should().Contain("Review Coverage Gaps");
     }
 
     [Fact]
@@ -1533,7 +1556,7 @@ public class ViewBehaviorTests : BunitContext
         summary.Should().Contain("Heading Summary");
         summary.Should().Contain("Requirements:");
         summary.Should().Contain("Clarifications:");
-        summary.Should().Contain("Coverage:");
+        summary.Should().NotContain("Coverage:");
         summary.Should().NotContain("Top gaps", "top gap details belong in Traceability, not Spec Explorer");
     }
 
@@ -1553,11 +1576,19 @@ public class ViewBehaviorTests : BunitContext
     {
         var cut = RenderSpecExplorerWithTraceability();
 
+        var filters = cut.Find("[data-testid='se-quick-filters']").TextContent;
+        filters.Should().Contain("All");
+        filters.Should().Contain("Missing Coverage");
+        filters.Should().Contain("Covered");
+        filters.Should().NotContain("Has Clarifications");
+        filters.Should().NotContain("Has Edge Cases");
+        filters.Should().NotContain("High Risk Sections");
+
         cut.FindAll(".se-filter-chip").First(b => b.TextContent.Contains("Missing Coverage")).Click();
 
         var rows = cut.FindAll(".se-row").Select(r => r.TextContent).ToList();
         rows.Should().Contain(t => t.Contains("Security"));
-        rows.Should().NotContain(t => t.Contains("API Surface") && t.Contains("Covered"));
+        rows.Should().NotContain(t => t.Contains("API Surface") && t.Contains("Healthy"));
     }
 
     [Fact]
@@ -1584,8 +1615,8 @@ public class ViewBehaviorTests : BunitContext
         text.Should().Contain("Spec Explorer is the specification structure and navigation layer");
         text.Should().Contain("Traceability &amp; Coverage is for coverage analysis");
         text.Should().Contain("Flow View is for QA readiness");
-        text.Should().Contain("Extraction Review is for extraction quality review");
-        text.Should().Contain("Architecture View is for technical assumptions and architecture");
+        text.Should().NotContain("Extraction Review is for extraction quality review");
+        text.Should().NotContain("Architecture View is for technical assumptions and architecture");
     }
 
     [Fact]

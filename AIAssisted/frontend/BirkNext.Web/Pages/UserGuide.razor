@@ -272,22 +272,10 @@
                         <td>Analyse a spec → click <strong>Flow View</strong> tab in Analysis Results</td>
                     </tr>
                     <tr>
-                        <td><strong>Extraction Review</strong></td>
-                        <td>Specification Review</td>
-                        <td class="ug-td-mono">/extract</td>
-                        <td>Analyse a spec → click <strong>Extraction Review</strong> tab in Analysis Results</td>
-                    </tr>
-                    <tr>
                         <td><strong>Spec Explorer</strong></td>
                         <td>Specification Review</td>
                         <td class="ug-td-mono">/extract</td>
                         <td>Analyse a spec → click <strong>Spec Explorer</strong> tab in Analysis Results</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Architecture View</strong></td>
-                        <td>Specification Review</td>
-                        <td class="ug-td-mono">/extract</td>
-                        <td>Analyse a spec → click <strong>Architecture View</strong> tab in Analysis Results</td>
                     </tr>
                     <tr>
                         <td><strong>Task Explorer</strong></td>
@@ -317,14 +305,14 @@
             <li>Using Map View to understand Heading to Requirements to Tests to Success Criteria structure</li>
         </ul>
         <div class="ug-callout ug-callout-tip">
-            <strong>Role clarity:</strong> Traceability &amp; Coverage is for coverage analysis. Flow View is for QA readiness. Spec Explorer is for specification structure and navigation. Extraction Review is for extraction quality review. Architecture View is for technical assumptions and architecture.
+            <strong>Role clarity:</strong> Traceability &amp; Coverage is for coverage analysis. Flow View is for QA readiness. Spec Explorer is for specification structure and navigation.
         </div>
         <div class="ug-callout ug-callout-tip">
             <strong>Note:</strong> Spec Explorer is not a standalone menu item. It only appears after a successful Specification Review analysis. Refreshing the page will restore the Spec Explorer from the saved session automatically.
         </div>
 
         <h3 class="ug-subsection-title" id="disc-flow-view">Flow View</h3>
-        <p><strong>Purpose:</strong> A QA Readiness dashboard for User Stories. Flow View groups requirements, acceptance tests, success criteria, and implementation tasks by user story — and surfaces gaps, health status, and readiness scores without requiring manual inspection of each story. It answers: <em>What is ready for testing? What is missing? What should be fixed next?</em></p>
+        <p><strong>Purpose:</strong> A QA Readiness dashboard for User Stories. Flow View groups requirements, acceptance tests, success criteria, and implementation tasks by user story — and surfaces gaps, readiness status, and QA Ready scores without requiring manual inspection of each story. It answers: <em>Which User Stories are ready for QA and release?</em></p>
         <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>, then click the <strong>Flow View</strong> tab in the Analysis Results area.</p>
         <p><strong>When to use:</strong></p>
         <ul class="ug-fd-list">
@@ -334,30 +322,29 @@
             <li>Understanding user journeys and business workflows captured in the spec</li>
         </ul>
 
-        <h4 class="ug-feature-title">Story Health Badges</h4>
-        <p>Each user story shows a health badge in its header — visible without expanding the story:</p>
+        <h4 class="ug-feature-title">Story Readiness Status</h4>
+        <p>Each user story shows a single readiness status in its header — visible without expanding the story:</p>
         <ul class="ug-fd-list">
-            <li><strong>✓ Covered</strong> — all requirements have tests and at least one success criterion is linked.</li>
-            <li><strong>⚠ Missing Tests</strong> — one or more requirements have no linked acceptance tests.</li>
-            <li><strong>⚠ Missing Success Criteria</strong> — all requirements are covered by tests, but no success criteria are defined.</li>
-            <li><strong>⚠ Partial Coverage</strong> — some requirements are covered, others are not.</li>
-            <li><strong>⚠ Missing User Story Mapping</strong> — requirements exist but are not assigned to any user story.</li>
+            <li><strong>Ready</strong> — requirements, tests, success criteria, and implementation links are present.</li>
+            <li><strong>At Risk</strong> — tests exist, but success criteria or implementation links are missing.</li>
+            <li><strong>Blocked</strong> — requirements are missing linked acceptance tests.</li>
         </ul>
 
         <h4 class="ug-feature-title">QA Readiness Score</h4>
-        <p>Every story shows a QA Readiness percentage based on two dimensions:</p>
+        <p>Every story header makes <strong>QA Ready %</strong> the primary story metric. The percentage is based on two dimensions:</p>
         <ul class="ug-fd-list">
             <li><strong>Test coverage (50%)</strong> — the proportion of requirements that have at least one linked acceptance test.</li>
             <li><strong>Success Criteria presence (50%)</strong> — whether at least one success criterion is linked to the story.</li>
         </ul>
         <p>A score of 100% means all requirements are covered and success criteria are present. The breakdown panel shows requirements covered / total, success criteria count, total tests, and task status.</p>
 
-        <h4 class="ug-feature-title">QA Work Queue</h4>
-        <p>At the top of Flow View, the <strong>What needs attention?</strong> work queue surfaces the highest-priority gaps immediately. Each item is clickable and filters the story list to show only the affected stories:</p>
+        <h4 class="ug-feature-title">Coverage Summary</h4>
+        <p>At the top of Flow View, the <strong>Coverage Summary</strong> consolidates the story readiness gaps:</p>
         <ul class="ug-fd-list">
-            <li>Stories missing tests</li>
-            <li>Stories missing success criteria</li>
-            <li>Requirements missing tests (gap count)</li>
+            <li>Missing Tests</li>
+            <li>Missing Success Criteria</li>
+            <li>Missing User Stories</li>
+            <li>Missing Implementation Links</li>
         </ul>
 
         <h4 class="ug-feature-title">Flow View Filters</h4>
@@ -367,7 +354,7 @@
             <li><strong>Covered</strong> — stories with full test coverage and success criteria.</li>
             <li><strong>Missing Tests</strong> — stories where at least one requirement has no linked tests.</li>
             <li><strong>Missing Success Criteria</strong> — stories with test coverage but no success criteria.</li>
-            <li><strong>Ready For Testing</strong> — stories that meet the covered threshold.</li>
+            <li><strong>Ready</strong> — stories with ready release status.</li>
             <li><strong>High Priority (P1)</strong> — stories tagged as P1 in the specification.</li>
         </ul>
 
@@ -378,41 +365,7 @@
         <p>When a story has no linked success criteria, a prominent <strong>⚠ Missing Success Criteria</strong> badge appears in the story header (visible when collapsed) and inside the Success Criteria step. Success Criteria define measurable outcomes and are required for a story to reach 100% QA Readiness.</p>
 
         <h4 class="ug-feature-title">Task Coverage Status</h4>
-        <p>The Implementation Tasks step distinguishes between: <strong>Tasks not imported</strong> (no tasks.md has been uploaded) and tasks linked to requirements (shown when task import is available). Use Task Explorer or Import tasks.md to add task coverage.</p>
-
-        <h3 class="ug-subsection-title" id="disc-extraction-review">Extraction Review</h3>
-        <p><strong>Purpose:</strong> Validate and improve extraction quality. Extraction Review is an advanced, optional quality-control workspace for accepting, rejecting, diagnosing, and linking AI-extracted artifacts.</p>
-        <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>, then click the <strong>Extraction Review</strong> tab in the Analysis Results area.</p>
-        <p><strong>When to use:</strong> Most testers will start in Traceability &amp; Coverage and may never need Extraction Review. Use it when extraction quality needs verification, when artifacts need manual correction, or when traceability relationships need adjustment.</p>
-        <div class="ug-table-scroll">
-            <table class="ug-table">
-                <thead>
-                    <tr>
-                        <th>Review Status</th>
-                        <th>Meaning</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>AutoAccepted</strong></td>
-                        <td>Automatically extracted and included.</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Manually Accepted</strong></td>
-                        <td>Reviewed and confirmed.</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Needs Review</strong></td>
-                        <td>Potential issue requiring attention.</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Rejected</strong></td>
-                        <td>Excluded from Traceability calculations.</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-        <p><strong>Link Related Candidates:</strong> Use the right-side panel to connect requirements to tests, connect requirements to success criteria, improve traceability coverage, and correct extraction relationships. These changes affect Traceability &amp; Coverage calculations.</p>
+        <p>The Implementation step shows <strong>No implementation links</strong> until tasks are connected. Use <strong>Open Task Explorer</strong>, <strong>Link Tasks</strong>, or <strong>Import Tasks</strong> to add implementation coverage.</p>
 
         <h3 class="ug-subsection-title" id="disc-traceability-view">Traceability &amp; Coverage (Analysis Tab)</h3>
         <p><strong>Purpose:</strong> Shows the QA risk picture first: coverage status, missing tests, orphan tests, missing success criteria, missing user story mappings, and relationship gaps. This is the <em>default</em> view shown after analysis because it answers what is covered, what is missing, and what should be fixed next.</p>
@@ -590,16 +543,6 @@
             <li><strong>Artifacts:</strong> Review assumptions, decisions, and clarifications.</li>
             <li><strong>Graph:</strong> Understand the relationships across user stories, requirements, tests, success criteria, and tasks.</li>
         </ol>
-
-        <h3 class="ug-subsection-title" id="disc-architecture-view">Architecture View</h3>
-        <p><strong>Purpose:</strong> Organises extracted candidates around technical concerns and architectural boundaries. Architecture View groups items by technical area (Security, API, Integration, Domain, etc.) — helping architects and senior developers assess the systemic scope of the specification.</p>
-        <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>, then click the <strong>Architecture View</strong> tab in the Analysis Results area.</p>
-        <p><strong>When to use:</strong></p>
-        <ul class="ug-fd-list">
-            <li>Reviewing a specification from an architecture or systems perspective</li>
-            <li>Identifying cross-cutting concerns and integration points captured in the spec</li>
-            <li>Assessing technical risk areas before implementation planning</li>
-        </ul>
 
         <h3 class="ug-subsection-title" id="disc-task-explorer">Task Explorer</h3>
         <p><strong>Purpose:</strong> Task Explorer is the <strong>Implementation Coverage</strong> workspace. It answers whether the specification is being implemented: which requirements have tasks, which requirements are missing implementation, which success criteria lack task coverage, and where delivery risk exists.</p>
@@ -819,7 +762,7 @@
         ("Scrum Master", "Monitor delivery quality, spot scope changes in Spec Drift, and track QA health on the Dashboard."),
         ("Product Owner", "Review spec alignment, verify requirements are covered, and assess impact of change requests."),
         ("Developer", "Validate implementation plans against the spec using Implementation Review before writing code."),
-        ("Architect", "Use Architecture View, Task Explorer, and Impact Analysis to understand systemic effects of architectural changes."),
+        ("Architect", "Use Task Explorer and Impact Analysis to understand systemic effects of architectural changes."),
     ];
 
     // ── Feature matrix ────────────────────────────────────────────────────
@@ -841,9 +784,9 @@
             ["Deep feature analysis — use the specific feature page"]),
 
         new("spec-review", "Specification Review", "Review", "review", "/extract",
-            "Upload and review a spec.md file; extract and classify candidates. Analysis results open in Traceability & Coverage first, then Flow View, Spec Explorer, optional Extraction Review, and Architecture View.",
+            "Upload and review a spec.md file; extract and classify candidates. Analysis results open in Traceability & Coverage first, then Flow View and Spec Explorer.",
             "spec.md",
-            "Extracted requirements, tests, and clarifications; Traceability & Coverage, Flow View, Spec Explorer, optional Extraction Review, and Architecture View",
+            "Extracted requirements, tests, and clarifications; Traceability & Coverage, Flow View, and Spec Explorer",
             "When starting work on a new feature or reviewing an updated spec.",
             ["Testers", "Test Leads", "Product Owners"],
             ["Starting a new feature", "Reviewing a spec update", "Exploring spec structure or flow with embedded views"],
@@ -955,8 +898,8 @@
     private static readonly FaqItem[] AllFaq =
     [
         new("embedded-views",
-            "Where are Traceability & Coverage, Flow View, Extraction Review, Spec Explorer, Task Explorer, and Architecture View?",
-            "<p><strong>Specification Review</strong> tabs are embedded inside <strong>Specification Review</strong> (<a href='/extract'>/extract</a>) and appear automatically after a successful spec analysis in this order: Traceability &amp; Coverage, Flow View, Spec Explorer, optional Extraction Review, Architecture View.</p><p><strong>Task Explorer</strong> exists in two forms:</p><ul><li><strong>Standalone Task Explorer</strong> (<a href='/task-explorer'>/task-explorer</a>) — a dedicated menu item in the Analysis section. Upload or paste a tasks.md file to explore the implementation plan independently of any spec alignment.</li><li><strong>Task Explorer tab inside Implementation Review</strong> (<a href='/task-alignment'>/task-alignment</a>) — the same explorer enriched with spec alignment data after a full analysis. Use this when you want to explore tasks in the context of their spec coverage and risk.</li></ul><p>Once analysis is complete, switching tabs does not require re-uploading files — the session is preserved automatically. See the <a href='#discovery'>Feature Discovery</a> section for full details.</p>"),
+            "Where are Traceability & Coverage, Flow View, Spec Explorer, and Task Explorer?",
+            "<p><strong>Specification Review</strong> tabs are embedded inside <strong>Specification Review</strong> (<a href='/extract'>/extract</a>) and appear automatically after a successful spec analysis in this order: Traceability &amp; Coverage, Flow View, Spec Explorer.</p><p><strong>Task Explorer</strong> exists in two forms:</p><ul><li><strong>Standalone Task Explorer</strong> (<a href='/task-explorer'>/task-explorer</a>) — a dedicated menu item in the Analysis section. Upload or paste a tasks.md file to explore the implementation plan independently of any spec alignment.</li><li><strong>Task Explorer tab inside Implementation Review</strong> (<a href='/task-alignment'>/task-alignment</a>) — the same explorer enriched with spec alignment data after a full analysis. Use this when you want to explore tasks in the context of their spec coverage and risk.</li></ul><p>Once analysis is complete, switching tabs does not require re-uploading files — the session is preserved automatically. See the <a href='#discovery'>Feature Discovery</a> section for full details.</p>"),
 
         new("drift-vs-review",
             "What is the difference between Spec Drift and Implementation Review?",

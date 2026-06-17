@@ -18,15 +18,15 @@ else if (_extractionError is not null)
 else if (_model is null)
 {
     <div class="av-empty" data-testid="av-not-generated">
-        <p class="av-empty-msg">No architecture mappings available yet.</p>
-        <p class="av-empty-hint">Analyze a specification to generate architecture structure and traceability links.</p>
+        <p class="av-empty-msg">No architecture data available yet.</p>
+        <p class="av-empty-hint">Upload or paste a specification to generate the architecture structure automatically.</p>
     </div>
 }
 else if (_model.IsEmpty)
 {
     <div class="av-empty" data-testid="av-empty">
         <p class="av-empty-msg">No architecture elements found in this specification.</p>
-        <p class="av-empty-hint">Run a Traceability analysis to generate architecture links.</p>
+        <p class="av-empty-hint">The specification may not contain recognisable API, service, entity, or event definitions. Check that the spec has section headings and structured content.</p>
         <a href="/traceability" class="av-empty-action">Open Traceability &amp; Coverage →</a>
     </div>
 }
@@ -505,6 +505,7 @@ else
     private AvViewMode _viewMode = AvViewMode.Elements;
     private ArchitectureModel? _model;
     private string? _lastMarkdown;
+    private IReadOnlyList<ExtractionCandidate> _lastCandidates = [];
     private ArchElement? _selected;
     private string? _selectedId;
     private readonly Dictionary<ArchElementType, bool> _expanded = [];
@@ -513,21 +514,35 @@ else
 
     protected override void OnParametersSet()
     {
-        if (string.Equals(SpecMarkdown, _lastMarkdown, StringComparison.Ordinal)) return;
+        var markdownChanged = !string.Equals(SpecMarkdown, _lastMarkdown, StringComparison.Ordinal);
+        var candidatesChanged = !ReferenceEquals(Candidates, _lastCandidates);
+
+        if (!markdownChanged && !candidatesChanged) return;
+
         _lastMarkdown = SpecMarkdown;
+        _lastCandidates = Candidates;
         _selected = null;
         _selectedId = null;
         _extractionError = null;
         _model = null;
         _isLoading = false;
 
-        if (string.IsNullOrWhiteSpace(SpecMarkdown)) return;
+        var hasMarkdown = !string.IsNullOrWhiteSpace(SpecMarkdown);
+        if (!hasMarkdown && Candidates.Count == 0) return;
 
         _isLoading = true;
         try
         {
-            var tree = SpecExplorerService.Parse(SpecMarkdown);
-            _model = ArchitectureExtractor.Extract(tree);
+            // Parse the spec tree when markdown is available; fall back to an empty tree so
+            // Pass 2b (supplement scan) and Pass 3 (named lookups) still run on candidate text.
+            var tree = hasMarkdown
+                ? SpecExplorerService.Parse(SpecMarkdown!)
+                : SpecExplorerService.Parse(string.Empty);
+
+            _model = ArchitectureExtractor.Extract(
+                tree,
+                rawMarkdown: hasMarkdown ? SpecMarkdown : null,
+                candidates: Candidates.Count > 0 ? Candidates : null);
         }
         catch (Exception ex)
         {

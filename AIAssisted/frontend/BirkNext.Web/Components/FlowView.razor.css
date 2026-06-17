@@ -88,6 +88,18 @@
 .fv-wq-reqs { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
 .fv-wq-reqs:hover { background: #ffedd5; }
 
+.fv-wq-impl { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.fv-wq-impl:hover { background: #dbeafe; }
+
+.fv-work-queue-item:disabled {
+    cursor: default;
+    opacity: 0.75;
+}
+
+.fv-work-queue-item:disabled:hover {
+    text-decoration: none;
+}
+
 .fv-wq-icon { font-size: 0.85rem; }
 
 /* ── Filter chips ───────────────────────────────────────────────────── */
@@ -157,6 +169,23 @@
 .fv-health-covered  { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
 .fv-health-warn     { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
 .fv-health-partial  { background: #fff1f2; color: #be123c; border: 1px solid #fda4af; }
+.fv-health-ready    { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+.fv-health-risk     { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+.fv-health-blocked  { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+
+.fv-qa-ready-pill,
+.fv-readiness-status {
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 2px 9px;
+    border-radius: 100px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.fv-readiness-status {
+    font-weight: 700;
+}
 
 /* ── Collapsed summary (extra detail) ──────────────────────────────── */
 

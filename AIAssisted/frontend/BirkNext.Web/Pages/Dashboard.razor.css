@@ -1,3 +1,19 @@
+.dashboard-page {
+    margin-bottom: 0.75rem;
+}
+
+.dashboard-page h1 {
+    margin: 0 0 0.2rem;
+    font-size: 1.4rem;
+    font-weight: 800;
+}
+
+.dashboard-page .page-lead {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--clr-text-subtle, #64748b);
+}
+
 .dashboard-load-error {
     padding: 0.875rem 1rem;
     border: 1px solid #fecaca;
