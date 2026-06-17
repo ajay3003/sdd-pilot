@@ -408,6 +408,10 @@ public static class ArchitectureExtractor
         if (apiMatch.Success)
             return (CleanName(apiMatch.Groups["name"].Value), text);
 
+        var leadingConcept = LeadingNamedConceptRe.Match(text);
+        if (leadingConcept.Success)
+            return (CleanName(leadingConcept.Groups["name"].Value), text);
+
         return null;
     }
 
@@ -416,6 +420,8 @@ public static class ArchitectureExtractor
         var combined = NormalizeText($"{heading} {name} {context}");
         var normalizedName = NormalizeText(name);
 
+        if (NormalizeText(heading).Contains("external system"))
+            return ArchElementType.ExternalSystem;
         if (ContainsAny(normalizedName, ["graphql", "rest", "grpc", "soap", "api", "endpoint", "interface"]))
             return ArchElementType.Api;
         if (ContainsAny(normalizedName, ["topic", "queue", "message bus", "service bus", "event bus", "event hub", "webhook"]))
