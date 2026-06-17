@@ -113,6 +113,31 @@ Use **Create Test Scenario** for:
 
 The manual creation page should not require a type selector because manually created scenarios are always TEST artifacts.
 
+## Task Explorer
+
+Task Explorer parses a `tasks.md` file into a navigable hierarchy of phases, user stories, task groups, and tables.
+
+Use it to understand:
+
+- Task structure and completion status
+- FR / SC linkage and coverage
+- Implementation gaps and delivery risk
+
+### Task Changes
+
+Task change analysis is part of Task Explorer, not a separate tool.
+
+Open **Task Explorer → Changes tab** to compare two versions of `tasks.md`. The Changes view shows:
+
+- Added, removed, and modified tasks
+- Scope expansions and reductions
+- Risk classification by affected area
+- Regression candidates
+
+The current tasks.md is pre-filled from the loaded tree. Paste or import the previous version to run the comparison.
+
+---
+
 ## Specification Review Session
 
 After running **Analyze Specification**, the current review session should remain available when navigating away and back.
@@ -319,7 +344,7 @@ Override flags in `appsettings.Local.json` (never edit `appsettings.json` direct
 ```json
 "FeatureVisibility": {
   "SpecDrift": true,
-  "TaskDeltas": true
+  "TaskExplorer": true
 }
 ```
 
@@ -327,7 +352,7 @@ Environment variables can also override flags:
 
 ```
 FeatureVisibility__SpecDrift=true
-FeatureVisibility__TaskDeltas=true
+FeatureVisibility__TaskExplorer=true
 ```
 
 ### When to use this

@@ -975,3 +975,219 @@ button.te-ref-chip:hover {
         min-width: 56px;
     }
 }
+
+.te-implementation-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.6rem;
+    margin: 0.25rem 0 0.75rem;
+}
+
+.te-implementation-card,
+.te-risk-summary,
+.te-impact-view,
+.te-link-visualization,
+.te-task-details-card {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.375rem;
+}
+
+.te-implementation-card {
+    padding: 0.7rem;
+    min-height: 86px;
+}
+
+.te-implementation-card-primary {
+    border-color: rgba(20, 184, 166, 0.32);
+}
+
+.te-section-kicker {
+    font-size: 0.64rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(45, 212, 191, 0.95);
+}
+
+.te-implementation-percent {
+    font-size: 1.65rem;
+    font-weight: 800;
+    color: var(--clr-text-primary);
+    margin-top: 0.2rem;
+}
+
+.te-implementation-value {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--clr-text-primary);
+}
+
+.te-implementation-card-label,
+.te-risk-note {
+    font-size: 0.72rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.35;
+}
+
+.te-coverage-pill,
+.te-risk-severity {
+    display: inline-flex;
+    margin-top: 0.45rem;
+    padding: 0.14rem 0.45rem;
+    border-radius: 0.25rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.te-coverage-pill.covered,
+.te-risk-severity-low {
+    background: rgba(74, 222, 128, 0.12);
+    color: #86efac;
+}
+
+.te-coverage-pill.partial,
+.te-risk-severity-medium {
+    background: rgba(251, 191, 36, 0.13);
+    color: #fde68a;
+}
+
+.te-coverage-pill.missing,
+.te-risk-severity-high {
+    background: rgba(248, 113, 113, 0.13);
+    color: #fca5a5;
+}
+
+.te-risk-summary {
+    padding: 0.8rem;
+    margin-bottom: 0.75rem;
+}
+
+.te-risk-summary-header,
+.te-impact-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: 0.65rem;
+}
+
+.te-risk-summary h3,
+.te-impact-header h3 {
+    font-size: 0.92rem;
+    margin: 0.1rem 0 0;
+    color: var(--clr-text-primary);
+}
+
+.te-risk-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.5rem;
+}
+
+.te-risk-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.55rem;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 0.35rem;
+}
+
+.te-risk-count {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: var(--clr-text-primary);
+}
+
+.te-risk-label {
+    font-size: 0.72rem;
+    color: var(--clr-text-subtle);
+}
+
+.te-impact-view {
+    padding: 0.8rem;
+    min-height: 420px;
+}
+
+.te-impact-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 0.6rem;
+}
+
+.te-impact-group {
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    border-radius: 0.35rem;
+    padding: 0.65rem;
+}
+
+.te-impact-group h4 {
+    margin: 0 0 0.45rem;
+    font-size: 0.78rem;
+    color: var(--clr-text-primary);
+}
+
+.te-impact-list {
+    margin: 0;
+    padding-left: 1rem;
+    color: var(--clr-text-subtle);
+    font-size: 0.74rem;
+    line-height: 1.55;
+}
+
+.te-impact-empty {
+    margin: 0;
+    color: var(--clr-text-subtle);
+    font-size: 0.74rem;
+}
+
+.te-link-visualization {
+    margin-top: 0.7rem;
+    padding: 0.65rem;
+}
+
+.te-link-chain {
+    display: inline-flex;
+    margin: 0.35rem 0.35rem 0 0;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    background: rgba(45, 212, 191, 0.08);
+    color: var(--clr-text-subtle);
+    font-size: 0.72rem;
+}
+
+.te-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
+    margin: 0.3rem 0 0;
+}
+
+.te-detail-grid dt {
+    font-size: 0.64rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--clr-text-subtle);
+}
+
+.te-detail-grid dd {
+    margin: 0.08rem 0 0;
+    font-size: 0.75rem;
+    color: var(--clr-text-primary);
+    word-break: break-word;
+}
+
+.te-traceability-link {
+    margin-top: 0.65rem;
+    background: rgba(20, 184, 166, 0.16);
+    border: 1px solid rgba(20, 184, 166, 0.35);
+    color: #5eead4;
+    border-radius: 0.3rem;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+}

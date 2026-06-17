@@ -35,6 +35,259 @@
 .fv-chip-cov-bad  { background: #fff1f2; color: #be123c; border-color: #fecdd3; }
 .fv-chip-gap      { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
 
+/* ── QA Work Queue ──────────────────────────────────────────────────── */
+
+.fv-work-queue {
+    margin-bottom: 14px;
+    padding: 12px 16px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 10px;
+    border-left: 3px solid #f59e0b;
+}
+
+.fv-work-queue-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #78350f;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+}
+
+.fv-work-queue-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.fv-work-queue-item {
+    all: unset;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 100px;
+    font-size: 0.77rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.fv-work-queue-item:hover {
+    text-decoration: underline;
+}
+
+.fv-wq-tests { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
+.fv-wq-tests:hover { background: #fecaca; }
+
+.fv-wq-sc { background: #f3e8ff; color: #7c3aed; border-color: #d8b4fe; }
+.fv-wq-sc:hover { background: #ede9fe; }
+
+.fv-wq-reqs { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+.fv-wq-reqs:hover { background: #ffedd5; }
+
+.fv-wq-icon { font-size: 0.85rem; }
+
+/* ── Filter chips ───────────────────────────────────────────────────── */
+
+.fv-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+.fv-filter-chip {
+    all: unset;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    user-select: none;
+}
+
+.fv-filter-chip:hover {
+    background: #e2e8f0;
+    color: #1e293b;
+}
+
+.fv-filter-chip.fv-filter-active {
+    background: #1d4ed8;
+    color: #fff;
+    border-color: #1d4ed8;
+}
+
+/* ── Priority badge ─────────────────────────────────────────────────── */
+
+.fv-priority-badge {
+    font-size: 0.65rem;
+    font-weight: 800;
+    padding: 1px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    letter-spacing: 0.04em;
+    font-family: ui-monospace, monospace;
+}
+
+.fv-priority-p1 { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
+.fv-priority-p2 { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
+.fv-priority-p3 { background: #fefce8; color: #854d0e; border: 1px solid #fde047; }
+
+/* ── Health badge ───────────────────────────────────────────────────── */
+
+.fv-health-badge {
+    font-size: 0.69rem;
+    font-weight: 700;
+    padding: 2px 9px;
+    border-radius: 100px;
+    flex-shrink: 0;
+    white-space: nowrap;
+    cursor: default;
+}
+
+.fv-health-covered  { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+.fv-health-warn     { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+.fv-health-partial  { background: #fff1f2; color: #be123c; border: 1px solid #fda4af; }
+
+/* ── Collapsed summary (extra detail) ──────────────────────────────── */
+
+.fv-lane-collapsed-summary {
+    font-size: 0.77rem;
+    color: #64748b;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+/* ── Readiness panel ────────────────────────────────────────────────── */
+
+.fv-readiness-panel {
+    width: 100%;
+    max-width: 700px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.fv-readiness-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.fv-readiness-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.fv-readiness-score {
+    font-size: 1rem;
+    font-weight: 800;
+    padding: 2px 10px;
+    border-radius: 8px;
+}
+
+.fv-readiness-good { color: #15803d; background: #dcfce7; }
+.fv-readiness-ok   { color: #854d0e; background: #fef9c3; }
+.fv-readiness-bad  { color: #b91c1c; background: #fee2e2; }
+
+.fv-readiness-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.fv-rb-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 80px;
+}
+
+.fv-rb-label {
+    font-size: 0.68rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.fv-rb-value {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.fv-rb-missing { color: #b91c1c; }
+.fv-rb-na      { color: #94a3b8; font-weight: 400; font-style: italic; }
+
+.fv-connector-sm {
+    width: 2px;
+    min-height: 12px;
+    background: #e2e8f0;
+    margin-left: 30px;
+    flex-shrink: 0;
+}
+
+/* ── Missing SC step variant ────────────────────────────────────────── */
+
+.fv-step-sc-missing .fv-step-header {
+    background: #faf5ff;
+    border-left: 3px solid #c084fc;
+}
+
+.fv-sc-missing-badge {
+    font-size: 0.69rem;
+    font-weight: 700;
+    padding: 2px 9px;
+    border-radius: 100px;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.fv-sc-missing-hint {
+    font-size: 0.8rem;
+    color: #7c3aed;
+    font-style: italic;
+    padding: 2px 0;
+}
+
+/* ── Filter empty state ─────────────────────────────────────────────── */
+
+.fv-filter-empty {
+    padding: 24px;
+    text-align: center;
+    color: #64748b;
+    font-size: 0.88rem;
+    border: 1px dashed #e2e8f0;
+    border-radius: 10px;
+}
+
+.fv-filter-reset {
+    all: unset;
+    cursor: pointer;
+    color: #2563eb;
+    font-weight: 600;
+    text-decoration: underline;
+}
+
 /* ── Story lane container ───────────────────────────────────────────── */
 
 .fv-lane {
@@ -793,4 +1046,109 @@
 .fv-gap-note {
     color: #94a3b8;
     font-style: italic;
+}
+
+/* ── Summary strip ──────────────────────────────────────────────────── */
+
+.fv-summary-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem 0.5rem;
+    padding: 10px 0 18px;
+    font-size: 0.83rem;
+    font-weight: 500;
+    color: var(--clr-text-primary);
+}
+
+.fv-sum-sep {
+    color: var(--clr-text-subtle, #9ca3af);
+    font-weight: 300;
+    user-select: none;
+}
+
+.fv-sum-item { white-space: nowrap; }
+
+.fv-sum-stories { color: #1d4ed8; }
+.fv-sum-reqs    { color: #15803d; }
+.fv-sum-tests   { color: #0f766e; }
+.fv-sum-gaps    { color: #9a3412; font-weight: 600; }
+
+.fv-sum-cov-good { color: #15803d; font-weight: 600; }
+.fv-sum-cov-ok   { color: #854d0e; font-weight: 600; }
+.fv-sum-cov-bad  { color: #be123c; font-weight: 600; }
+
+/* ── Work queue — collapsible header ────────────────────────────────── */
+
+.fv-work-queue-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 6px 0;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #92400e;
+    text-align: left;
+}
+
+.fv-work-queue-header:hover {
+    color: #78350f;
+}
+
+.fv-wq-title-icon {
+    font-size: 0.85rem;
+}
+
+.fv-wq-count-badge {
+    margin-left: auto;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: #fde68a;
+    color: #92400e;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+/* ── Readiness panel — collapsible header ───────────────────────────── */
+
+.fv-readiness-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 4px 0;
+    cursor: pointer;
+    text-align: left;
+}
+
+.fv-readiness-chevron {
+    margin-left: auto;
+    font-size: 0.65rem;
+    opacity: 0.6;
+}
+
+/* ── Implementation manage button ───────────────────────────────────── */
+
+.fv-impl-manage-btn {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 3px 10px;
+    font-size: 0.75rem;
+    color: var(--clr-accent, #2563eb);
+    background: none;
+    border: 1px solid currentColor;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0.8;
+}
+
+.fv-impl-manage-btn:hover {
+    opacity: 1;
+    background: var(--clr-accent-light, #eff6ff);
 }

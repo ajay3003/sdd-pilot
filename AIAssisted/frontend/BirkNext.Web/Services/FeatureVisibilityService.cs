@@ -35,9 +35,10 @@ public class FeatureVisibilityService
     public bool SpecificationReview  => _flags.SpecificationReview;
     public bool QaArtifactLibrary    => _flags.QaArtifactLibrary;
     public bool CreateTestScenario   => _flags.CreateTestScenario;
-    public bool TraceabilityCoverage    => _flags.TraceabilityCoverage;
-    public bool TraceabilitySuggestions => _flags.TraceabilitySuggestions;
-    public bool CodeTraceability        => _flags.CodeTraceability;
+    public bool LegacyTraceabilityNavigationEnabled => _flags.LegacyTraceabilityNavigationEnabled;
+    public bool TraceabilityCoverage    => LegacyTraceabilityNavigationEnabled && _flags.TraceabilityCoverage;
+    public bool TraceabilitySuggestions => LegacyTraceabilityNavigationEnabled && _flags.TraceabilitySuggestions;
+    public bool CodeTraceability        => LegacyTraceabilityNavigationEnabled && _flags.CodeTraceability;
     public bool SpecComparison       => _flags.SpecComparison;
     public bool SpecificationDeltas  => _flags.SpecificationDeltas;
     public bool TaskDeltas           => _flags.TaskDeltas;
@@ -53,9 +54,15 @@ public class FeatureVisibilityService
     public bool ShowSectionGettingStarted => RecommendedWorkflow || UserGuide;
     public bool ShowSectionReview         => Dashboard || SpecificationReview;
     public bool ShowSectionLibrary        => QaArtifactLibrary || CreateTestScenario;
-    public bool ShowSectionTraceability   => TraceabilityCoverage || TraceabilitySuggestions || CodeTraceability;
-    public bool ShowSectionAnalysis       => SpecComparison || SpecificationDeltas || TaskDeltas
-                                             || ImpactAnalysis || SpecDrift || ImplementationReview || TaskExplorer;
+    public bool ShowSectionTraceability   => LegacyTraceabilityNavigationEnabled
+                                             && (TraceabilityCoverage || TraceabilitySuggestions || CodeTraceability);
+    public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || TaskExplorer;
     public bool ShowSectionAiReview       => AiChangeReview || QaReadiness;
     public bool ShowSectionAdmin          => AdminSystemSettings;
+
+    public void ApplyLocalFlags(FeatureVisibilityDto flags)
+    {
+        _flags = flags;
+        IsLoaded = true;
+    }
 }

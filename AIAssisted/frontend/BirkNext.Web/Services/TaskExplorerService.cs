@@ -656,6 +656,16 @@ public static class TaskExplorerService
             "Unresolved"        => node.NodeType == TaskNodeType.TableTaskRef && node.IsUnresolved,
             "TestingTasks"      => node.NodeType == TaskNodeType.Task && node.IsTestingTask,
             "SecurityTasks"     => node.NodeType == TaskNodeType.Task && node.IsSecurityTask,
+            "MissingImplementation" => node.NodeType == TaskNodeType.Task
+                                   && node.ReferencedFrIds.Count == 0
+                                   && node.ReferencedScIds.Count == 0,
+            "PartialCoverage"   => node.NodeType == TaskNodeType.Task
+                                   && (node.ReferencedFrIds.Count == 0 || node.ReferencedScIds.Count == 0),
+            "OnlyUserStories"   => node.NodeType == TaskNodeType.UserStoryGroup
+                                   || (node.NodeType == TaskNodeType.Task && !string.IsNullOrWhiteSpace(node.UserStoryTag))
+                                   || node.Title.Contains("US", StringComparison.OrdinalIgnoreCase),
+            "OnlyRequirements"  => node.ReferencedFrIds.Count > 0,
+            "OnlySuccessCriteria" => node.ReferencedScIds.Count > 0,
             "NoLinks"           => node.NodeType == TaskNodeType.Task
                                    && node.ReferencedFrIds.Count == 0
                                    && node.ReferencedScIds.Count == 0,

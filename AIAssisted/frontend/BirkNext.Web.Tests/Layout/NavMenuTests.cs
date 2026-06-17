@@ -1,7 +1,9 @@
 using BirkNext.Web.Layout;
+using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BirkNext.Web.Tests.Layout;
@@ -27,28 +29,46 @@ public class NavMenuTests : BunitContext
         navText.Should().Contain("Specification Review");
         navText.Should().Contain("QA Artifact Library");
         navText.Should().Contain("Create Test Scenario");
-        navText.Should().Contain("Spec Comparison");
-        navText.Should().Contain("Specification Deltas");
+        navText.Should().NotContain("Spec Comparison");
+        navText.Should().NotContain("Specification Deltas");
 
         navText.IndexOf("Dashboard", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Review", StringComparison.Ordinal));
         navText.IndexOf("Specification Review", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("QA Artifact Library", StringComparison.Ordinal));
         navText.IndexOf("QA Artifact Library", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Create Test Scenario", StringComparison.Ordinal));
-        navText.IndexOf("Create Test Scenario", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Spec Comparison", StringComparison.Ordinal));
-        navText.IndexOf("Spec Comparison", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Deltas", StringComparison.Ordinal));
 
         cut.Find("a[href='dashboard']").Should().NotBeNull();
         cut.Find("a[href='extract']").Should().NotBeNull();
         cut.Find("a[href='scenarios']").Should().NotBeNull();
         cut.Find("a[href='scenarios/new']").Should().NotBeNull();
-        cut.Find("a[href='compare']").Should().NotBeNull();
-        cut.Find("a[href='compare/reviews']").Should().NotBeNull();
+        cut.FindAll("a[href='compare']").Should().BeEmpty();
+        cut.FindAll("a[href='compare/reviews']").Should().BeEmpty();
         cut.Find("a[href='dashboard'] .nav-icon-dashboard").Should().NotBeNull();
-        cut.Find("a[href='compare'] .nav-icon-compare").Should().NotBeNull();
     }
 
     [Fact]
-    public void TraceabilitySidebar_DoesNotOverlapLabels()
+    public void Navigation_HidesLegacyTraceabilityGroupByDefault()
     {
+        var cut = Render<NavMenu>();
+
+        var navText = cut.Find("nav").TextContent;
+        navText.Should().NotContain("Traceability");
+        navText.Should().NotContain("Traceability & Coverage");
+        navText.Should().NotContain("Traceability Suggestions");
+        navText.Should().NotContain("Code Traceability");
+
+        cut.FindAll("a[href='traceability']").Should().BeEmpty();
+        cut.FindAll("a[href='traceability/suggestions']").Should().BeEmpty();
+        cut.FindAll("a[href='code-traceability']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Navigation_ShowsLegacyTraceabilityGroup_WhenFeatureFlagEnabled()
+    {
+        Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto
+        {
+            LegacyTraceabilityNavigationEnabled = true
+        });
+
         var cut = Render<NavMenu>();
 
         var navText = cut.Find("nav").TextContent;
@@ -56,19 +76,22 @@ public class NavMenuTests : BunitContext
         navText.Should().Contain("Traceability Suggestions");
         navText.Should().Contain("Code Traceability");
 
-        // All three links must render as distinct anchor elements
         cut.Find("a[href='traceability']").Should().NotBeNull();
         cut.Find("a[href='traceability/suggestions']").Should().NotBeNull();
         cut.Find("a[href='code-traceability']").Should().NotBeNull();
 
-        // The link must not carry an inline height that clips multi-line text
         var traceLink = cut.Find("a[href='traceability']");
         (traceLink.GetAttribute("style") ?? string.Empty).Should().NotContain("height:");
     }
 
     [Fact]
-    public void TraceabilityNavigation_RendersCorrectHierarchy()
+    public void TraceabilityNavigation_RendersCorrectHierarchy_WhenFeatureFlagEnabled()
     {
+        Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto
+        {
+            LegacyTraceabilityNavigationEnabled = true
+        });
+
         var cut = Render<NavMenu>();
 
         var navText = cut.Find("nav").TextContent;
@@ -81,4 +104,20 @@ public class NavMenuTests : BunitContext
         navText.IndexOf("Traceability Suggestions", StringComparison.Ordinal)
             .Should().BeLessThan(navText.IndexOf("Code Traceability", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void LegacyTraceabilityRoutes_StillResolve()
+    {
+        RoutesFor<Traceability>().Should().Contain("/traceability");
+        RoutesFor<TraceabilitySuggestions>().Should().Contain("/traceability/suggestions");
+        RoutesFor<TraceabilitySuggestions>().Should().Contain("/traceability-suggestions");
+        RoutesFor<CodeTraceability>().Should().Contain("/code-traceability");
+    }
+
+    private static IReadOnlyList<string> RoutesFor<TComponent>() =>
+        typeof(TComponent)
+            .GetCustomAttributes(typeof(RouteAttribute), inherit: false)
+            .Cast<RouteAttribute>()
+            .Select(a => a.Template)
+            .ToList();
 }

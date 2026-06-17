@@ -81,6 +81,23 @@ public class CandidateLinkPanelTests : BunitContext
     }
 
     [Fact]
+    public void ExtractionReview_ExplainsLinkingPanel()
+    {
+        var req = Candidate("FR-001: system validates credentials", ScenarioKind.Requirement);
+
+        var cut = Render<CandidateLinkPanel>(p => p
+            .Add(c => c.Candidate, req)
+            .Add(c => c.LinkableCandidates, Array.Empty<ExtractionCandidate>()));
+
+        var help = cut.Find("[data-testid='link-panel-help']").TextContent;
+        help.Should().Contain("connect requirements to tests");
+        help.Should().Contain("connect requirements to success criteria");
+        help.Should().Contain("improve traceability coverage");
+        help.Should().Contain("correct extraction relationships");
+        help.Should().Contain("affect Traceability & Coverage calculations");
+    }
+
+    [Fact]
     public void TestCandidate_ShowsRequirementsAndClarificationsSections()
     {
         var test = Candidate("Given login When valid Then success", ScenarioKind.Test);

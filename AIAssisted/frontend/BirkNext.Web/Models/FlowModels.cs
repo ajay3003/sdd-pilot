@@ -2,6 +2,16 @@ namespace BirkNext.Web.Models;
 
 public enum FlowCoverageStatus { Covered, Partial, MissingTests, NoRequirements }
 
+public enum StoryHealthStatus
+{
+    Covered,
+    MissingTests,
+    MissingSuccessCriteria,
+    MissingUserStoryMapping,
+    Partial,
+    NoRequirements,
+}
+
 public sealed class FlowTest
 {
     public required string Title { get; init; }
@@ -42,6 +52,7 @@ public sealed class FlowStory
     public List<FlowSc> SuccessCriteria { get; init; } = [];
     public bool IsUnmapped { get; init; }
     public bool IsDecisionLane { get; init; }
+    public int Priority { get; init; } // 1=P1, 2=P2, 3=P3, 0=unspecified
 
     public int CoveredReqCount => Requirements.Count(r => r.HasTests);
 
@@ -51,6 +62,31 @@ public sealed class FlowStory
         CoveredReqCount == Requirements.Count ? FlowCoverageStatus.Covered :
         CoveredReqCount == 0       ? FlowCoverageStatus.MissingTests :
                                      FlowCoverageStatus.Partial;
+
+    public StoryHealthStatus HealthStatus
+    {
+        get
+        {
+            if (IsUnmapped)          return StoryHealthStatus.MissingUserStoryMapping;
+            if (IsDecisionLane || Requirements.Count == 0) return StoryHealthStatus.NoRequirements;
+            if (CoveredReqCount == 0) return StoryHealthStatus.MissingTests;
+            if (CoveredReqCount < Requirements.Count) return StoryHealthStatus.Partial;
+            if (SuccessCriteria.Count == 0) return StoryHealthStatus.MissingSuccessCriteria;
+            return StoryHealthStatus.Covered;
+        }
+    }
+
+    /// <summary>0–100. Based on test coverage (50%) + success criteria presence (50%).</summary>
+    public int QaReadinessScore
+    {
+        get
+        {
+            if (IsDecisionLane || Requirements.Count == 0) return 0;
+            var testScore = CoveredReqCount * 50 / Requirements.Count;
+            var scScore   = SuccessCriteria.Count > 0 ? 50 : 0;
+            return testScore + scScore;
+        }
+    }
 }
 
 public sealed class FlowModel
@@ -99,4 +135,12 @@ public sealed class FlowModel
     /// <summary>Total items in decision / clarification lanes (not counted toward gaps).</summary>
     public int DecisionItemCount =>
         Stories.Where(s => s.IsDecisionLane).Sum(s => s.Requirements.Count);
+
+    public int StoriesMissingTests =>
+        Stories.Count(s => !s.IsUnmapped && !s.IsDecisionLane && s.Requirements.Count > 0
+                           && s.CoveredReqCount < s.Requirements.Count);
+
+    public int StoriesMissingSuccessCriteria =>
+        Stories.Count(s => !s.IsUnmapped && !s.IsDecisionLane && s.Requirements.Count > 0
+                           && s.SuccessCriteria.Count == 0);
 }

@@ -788,3 +788,124 @@
     font-size: 0.78rem;
     margin: 0;
 }
+.extraction-review-banner {
+    margin: 0 0 1rem;
+    padding: 1rem 1.125rem;
+    max-width: 980px;
+    background: #f8fafc;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-left: 4px solid var(--clr-primary, #2563eb);
+    border-radius: 8px;
+}
+
+.advanced-feature-label {
+    margin-bottom: 0.25rem;
+    color: var(--clr-primary, #2563eb);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.extraction-review-banner h2 {
+    margin: 0 0 0.35rem;
+    color: var(--clr-text-heading, #0f172a);
+    font-size: 1rem;
+    line-height: 1.25;
+}
+
+.extraction-review-banner p {
+    margin: 0 0 0.625rem;
+    color: var(--clr-text-muted, #475569);
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+
+.extraction-review-banner ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.35rem 1rem;
+    margin: 0 0 0.625rem;
+    padding-left: 1.1rem;
+    color: var(--clr-text-body, #1e293b);
+    font-size: 0.8rem;
+}
+
+.extraction-review-optional-note {
+    margin-bottom: 0 !important;
+    font-weight: 700;
+}
+
+.extraction-health-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.625rem;
+    max-width: 980px;
+    margin: 0 0 1rem;
+}
+
+.extraction-health-card {
+    min-height: 76px;
+    padding: 0.75rem;
+    background: var(--clr-surface-white, #ffffff);
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: 8px;
+}
+
+.health-value {
+    display: block;
+    color: var(--clr-text-heading, #0f172a);
+    font-size: 1.2rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.health-label {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--clr-text-muted, #475569);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.health-detail {
+    display: block;
+    margin-top: 0.2rem;
+    color: var(--clr-text-subtle, #64748b);
+    font-size: 0.68rem;
+}
+
+.review-status-help {
+    max-width: 980px;
+    margin: 0 0 1rem;
+    padding: 0.875rem 1rem;
+    background: var(--clr-surface-white, #ffffff);
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: 8px;
+}
+
+.review-status-help h3 {
+    margin: 0 0 0.625rem;
+    color: var(--clr-text-heading, #0f172a);
+    font-size: 0.9rem;
+}
+
+.review-status-help dl {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 0.625rem;
+    margin: 0;
+}
+
+.review-status-help dt {
+    color: var(--clr-text-heading, #0f172a);
+    font-size: 0.75rem;
+    font-weight: 800;
+}
+
+.review-status-help dd {
+    margin: 0.15rem 0 0;
+    color: var(--clr-text-muted, #475569);
+    font-size: 0.74rem;
+    line-height: 1.45;
+}

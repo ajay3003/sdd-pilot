@@ -91,7 +91,7 @@ public class ExtractionReviewListSessionTests : BunitContext
 
     private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut)
     {
-        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Extraction Review")).Click();
     }
 
     // ── Restore notice ───────────────────────────────────────────────────────

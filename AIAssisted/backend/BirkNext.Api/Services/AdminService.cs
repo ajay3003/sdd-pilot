@@ -32,6 +32,8 @@ public class AdminService
     private static readonly IReadOnlyList<(string Key, string Label)> AdvancedFeatures =
     [
         ("CreateTestScenario",  "Create Test Scenario"),
+        ("LegacyTraceabilityNavigationEnabled", "Legacy Traceability Navigation"),
+        ("TraceabilitySuggestions", "Traceability Suggestions"),
         ("CodeTraceability",    "Code Traceability"),
         ("SpecComparison",      "Spec Comparison"),
         ("SpecificationDeltas", "Specification Deltas"),
@@ -179,7 +181,9 @@ public class AdminService
             SpecificationReview  = s.GetValue("SpecificationReview",  true),
             QaArtifactLibrary    = s.GetValue("QaArtifactLibrary",    true),
             CreateTestScenario   = s.GetValue("CreateTestScenario",   true),
+            LegacyTraceabilityNavigationEnabled = s.GetValue("LegacyTraceabilityNavigationEnabled", false),
             TraceabilityCoverage = s.GetValue("TraceabilityCoverage", true),
+            TraceabilitySuggestions = s.GetValue("TraceabilitySuggestions", true),
             CodeTraceability     = s.GetValue("CodeTraceability",     true),
             SpecComparison       = s.GetValue("SpecComparison",       true),
             SpecificationDeltas  = s.GetValue("SpecificationDeltas",  true),

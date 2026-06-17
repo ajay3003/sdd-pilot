@@ -6,298 +6,47 @@
 <PageTitle>QA Artifact Library</PageTitle>
 
 <div class="artifact-library-shell">
+
+    <!-- ── Hero: purpose + counts ─────────────────────────────────────── -->
     <section class="artifact-hero" aria-label="QA artifact library summary">
         <div>
-            <div class="workflow-step-badge"><a href="getting-started" class="workflow-step-link">Workflow</a> · Step @WorkflowCurrentStep of 7</div>
             <p class="section-kicker">QA Knowledge Base</p>
             <h1>QA Artifact Library</h1>
-            <p class="page-lead">Store, review, and trace requirements, tests, clarifications, and their relationships.</p>
+            <p class="page-lead">Store, discover, reuse, and curate QA assets across specifications and projects.</p>
         </div>
-        <div class="artifact-hero-metrics" aria-label="Knowledge base health">
-            <div class="artifact-health-panel qa-status-panel status-@QaStatusTone">
-                <span class="qa-status-label">@QaStatus</span>
-                <span>QA status</span>
-            </div>
+        <div class="artifact-hero-metrics" aria-label="Asset summary">
             <div class="artifact-health-panel">
                 <span class="artifact-health-score">@_scenarios.Count</span>
-                <span>Total artifacts</span>
+                <span>Published Assets</span>
             </div>
             <div class="artifact-health-panel">
-                <span class="artifact-health-score">@(RequirementCount > 0 ? $"{CoveragePercent}%" : "—")</span>
-                <span>Requirement coverage</span>
+                <span class="artifact-health-score">@TestCount</span>
+                <span>Tests</span>
             </div>
-            <div class="artifact-health-panel @(WorkflowStage == LibraryWorkflowStage.CoverageEstablished && RequiresCoverageAttention ? "artifact-health-attention" : "")">
-                <span class="artifact-health-score">@(WorkflowStage == LibraryWorkflowStage.CoverageEstablished ? AttentionCount.ToString() : "—")</span>
-                <span>Quality risks</span>
+            <div class="artifact-health-panel">
+                <span class="artifact-health-score">@RequirementCount</span>
+                <span>Requirements</span>
+            </div>
+            <div class="artifact-health-panel">
+                <span class="artifact-health-score">@ClarificationCount</span>
+                <span>Clarifications</span>
             </div>
         </div>
     </section>
 
-    <section class="workflow-banner" aria-label="Workflow progress">
-        <div class="workflow-banner-header">
-            <p class="section-kicker">Workflow Progress</p>
-            <span>Step @WorkflowCurrentStep of 7</span>
-        </div>
-        <ol class="workflow-steps" aria-label="Workflow steps">
-            @for (var _s = 1; _s <= 7; _s++)
-            {
-                var _sCss = _s < WorkflowCurrentStep ? "step-done" : _s == WorkflowCurrentStep ? "step-active" : "step-pending";
-                <li class="workflow-step @_sCss">
-                    <span class="step-indicator">@(_s < WorkflowCurrentStep ? "✓" : _s.ToString())</span>
-                    <span class="step-label">@WorkflowStepLabel(_s)</span>
-                </li>
-            }
-        </ol>
-        <p class="workflow-hint">@WorkflowCurrentHint</p>
-    </section>
-
-    <section class="traceability-health-strip health-@TraceabilityHealthTone" aria-label="Traceability health">
+    <!-- ── Traceability redirect note ─────────────────────────────────── -->
+    <div class="ql-traceability-redirect" role="note" data-testid="ql-traceability-redirect">
+        <span class="ql-redirect-icon" aria-hidden="true">ℹ</span>
         <div>
-            <p class="section-kicker">Traceability Health</p>
-            <h2>@TraceabilityHealthTitle</h2>
-            <span>@TraceabilityHealthSubtitle</span>
+            <strong>Coverage analysis belongs in Traceability &amp; Coverage.</strong>
+            For coverage gaps, missing tests, orphan tests, and requirement coverage metrics, use
+            <a href="extract">Traceability &amp; Coverage</a> (available after specification analysis)
+            or the <a href="traceability">standalone Traceability page</a>.
+            This library is a repository of reusable QA assets.
         </div>
-        <div class="health-bar" aria-hidden="true">
-            <span style="width: @TraceabilityBarPercent%"></span>
-        </div>
-    </section>
+    </div>
 
-    <section class="artifact-metrics-grid" aria-label="Artifact summary metrics">
-        <div class="artifact-metric metric-total">
-            <strong>@_scenarios.Count</strong>
-            <span>Total Artifacts</span>
-        </div>
-        <div class="artifact-metric metric-requirements">
-            <strong>@RequirementCount</strong>
-            <span>Requirements</span>
-        </div>
-        <div class="artifact-metric metric-tests">
-            <strong>@TestCount</strong>
-            <span>Tests</span>
-        </div>
-        <div class="artifact-metric metric-clarifications">
-            <strong>@ClarificationCount</strong>
-            <span>Clarifications</span>
-        </div>
-        <div class="artifact-metric metric-traceability">
-            <strong>@TraceabilityPercent%</strong>
-            <span>Traceability</span>
-        </div>
-    </section>
-
-    <section class="traceability-panel" aria-label="Traceability overview">
-        <div>
-            <p class="section-kicker">Relationships</p>
-            <h2>Coverage Map</h2>
-        </div>
-        <div class="traceability-stats">
-            <div>
-                <strong>@CoveredRequirementCount</strong>
-                <span>covered requirements</span>
-            </div>
-            <div>
-                <strong>@RequirementsWithoutTests</strong>
-                <span>requirements without tests</span>
-            </div>
-            <div>
-                <strong>@RelationshipCount</strong>
-                <span>saved relationships</span>
-            </div>
-        </div>
-    </section>
-
-    <section class="release-readiness-card release-@ReleaseReadinessTone" aria-label="Release readiness summary">
-        <div>
-            <p class="section-kicker">Release Readiness</p>
-            <h2>@ReleaseReadiness</h2>
-            <p>@ReleaseReadinessDetail</p>
-        </div>
-        <ul class="release-reason-list" aria-label="Release readiness reasons">
-            @foreach (var reason in ReleaseReasons)
-            {
-                <li>@reason</li>
-            }
-        </ul>
-    </section>
-
-    <section class="recommended-actions-panel" aria-label="Recommended actions">
-        <div class="recommended-actions-header">
-            <div>
-                <p class="section-kicker">Recommended Actions</p>
-                <h2>What should be fixed next?</h2>
-            </div>
-            <span>@RecommendedActions.Count action@(Plural(RecommendedActions.Count))</span>
-        </div>
-        @if (RecommendedActions.Count == 0)
-        {
-            <div class="recommended-action-empty">No immediate action required.</div>
-        }
-        else
-        {
-            <ol class="recommended-action-list">
-                @foreach (var action in RecommendedActions)
-                {
-                    <li class="@(action.IsDisabled ? "action-disabled" : "")">
-                        <strong>
-                            @if (action.Href is not null && !action.IsDisabled)
-                            {
-                                <a href="@action.Href">@action.Title</a>
-                            }
-                            else
-                            {
-                                @action.Title
-                            }
-                        </strong>
-                        <span>@action.Detail</span>
-                    </li>
-                }
-            </ol>
-        }
-    </section>
-
-    @if (RequirementCount > 0 && TestCount > 0)
-    {
-        <section class="traceability-breakdown-panel" aria-label="Traceability breakdown">
-            <div class="traceability-breakdown-item">
-                <strong>@CoveredRequirementCount / @RequirementCount</strong>
-                <span>Requirements covered</span>
-            </div>
-            <div class="traceability-breakdown-item risk">
-                <strong>@RequirementsWithoutTests</strong>
-                <span>Uncovered requirements</span>
-            </div>
-            <div class="traceability-breakdown-item">
-                <strong>@TestsWithRequirements / @TestCount</strong>
-                <span>Tests mapped</span>
-            </div>
-            <div class="traceability-breakdown-item risk">
-                <strong>@UnmappedTestCount</strong>
-                <span>Unmapped tests</span>
-            </div>
-            <div class="traceability-breakdown-item">
-                <strong>@LinkedClarificationCount / @ClarificationCount</strong>
-                <span>Clarifications linked</span>
-            </div>
-            <div class="traceability-breakdown-item risk">
-                <strong>@UnlinkedClarificationCount</strong>
-                <span>Unlinked clarifications</span>
-            </div>
-        </section>
-    }
-
-    <section class="coverage-gap-card @(RequiresCoverageAttention ? "coverage-gap-attention" : "coverage-gap-clear")" aria-label="Traceability gaps summary">
-        <div class="coverage-gap-main">
-            <p class="section-kicker">Traceability Gaps</p>
-            <h2>@TraceabilityGapHeadline</h2>
-            <p>@CoverageGapDetail</p>
-        </div>
-        @if (WorkflowStage >= LibraryWorkflowStage.TraceabilityMissing)
-        {
-            <div class="coverage-gap-metrics">
-                <div>
-                    <strong>@RequirementsWithoutTests</strong>
-                    <span>uncovered requirements</span>
-                </div>
-                <div>
-                    <strong>@UnmappedTestCount</strong>
-                    <span>unmapped tests</span>
-                </div>
-                <div>
-                    <strong>@UnlinkedClarificationCount</strong>
-                    <span>unlinked clarifications</span>
-                </div>
-            </div>
-        }
-        else
-        {
-            <div class="coverage-gap-setup-hint">
-                @if (WorkflowStage == LibraryWorkflowStage.RequirementsNotImported)
-                {
-                    <a href="/extract" class="btn-primary btn-sm">Import Requirements</a>
-                }
-                else if (WorkflowStage == LibraryWorkflowStage.TestsMissing)
-                {
-                    <a href="/extract" class="btn-primary btn-sm">Import Tests</a>
-                }
-            </div>
-        }
-    </section>
-
-    @if (_pendingSuggestionCount > 0)
-    {
-        <div class="pending-suggestions-banner" role="status">
-            <div class="pending-suggestions-info">
-                <strong>@_pendingSuggestionCount traceability suggestion@(_pendingSuggestionCount == 1 ? "" : "s") ready for review</strong>
-                @if (_highConfidenceSuggestionCount > 0)
-                {
-                    <span class="pending-suggestions-tag">@_highConfidenceSuggestionCount high confidence</span>
-                }
-            </div>
-            <a href="traceability/suggestions" class="btn-primary btn-sm">Review Suggestions</a>
-        </div>
-    }
-
-    <section class="requirement-map-panel" aria-label="Requirement to test mapping">
-        <div class="requirement-map-header">
-            <div>
-                <p class="section-kicker">Requirement to Test Map</p>
-                <h2>Requirement -> Test Coverage</h2>
-            </div>
-            <span>@CoveredRequirementCount of @RequirementCount covered</span>
-        </div>
-        @if (RequirementItems.Count == 0)
-        {
-            <div class="mapping-empty">
-                @if (WorkflowStage == LibraryWorkflowStage.RequirementsNotImported || WorkflowStage == LibraryWorkflowStage.NoArtifacts)
-                {
-                    <span>No requirements have been imported into the QA Library.</span>
-                    <br />
-                    <a href="/extract" class="btn-primary btn-sm" style="display: inline-flex; margin-top: 0.65rem;">Import Requirements</a>
-                }
-                else
-                {
-                    <span>No requirements saved yet.</span>
-                }
-            </div>
-        }
-        else
-        {
-            <div class="mapping-list">
-                @foreach (var requirement in RequirementItems)
-                {
-                    var linkedTests = GetLinkedArtifacts(requirement.Id, "Test");
-                    <div class="mapping-row @(linkedTests.Count > 0 ? "mapping-covered" : "mapping-uncovered")">
-                        <div class="mapping-requirement">
-                            <strong>@requirement.Title</strong>
-                            @if (linkedTests.Count == 0)
-                            {
-                                <span>No linked tests</span>
-                                <p>Create or link at least one test scenario.</p>
-                            }
-                            else
-                            {
-                                <span>@linkedTests.Count linked test@Plural(linkedTests.Count)</span>
-                            }
-                        </div>
-                        <div class="mapping-tests">
-                            @if (linkedTests.Count == 0)
-                            {
-                                <span class="mapping-test-empty">No tests mapped</span>
-                            }
-                            else
-                            {
-                                @foreach (var test in linkedTests)
-                                {
-                                    <span class="mapping-test-pill">@test.Title</span>
-                                }
-                            }
-                        </div>
-                    </div>
-                }
-            </div>
-        }
-    </section>
-
+    <!-- ── Artifact list ──────────────────────────────────────────────── -->
     <section class="scenarios-section">
         <div class="toolbar knowledge-toolbar">
             <span class="toolbar-meta">
@@ -336,7 +85,7 @@
         </div>
 
         <div class="filter-chip-grid" aria-label="Artifact filters">
-            <button type="button" class="library-filter-chip @(IsTypeFilter("") && IsRelationshipFilter("") ? "is-active" : "")" @onclick='ClearAllFilters'>
+            <button type="button" class="library-filter-chip @(IsTypeFilter("") && IsRelationshipFilter("") ? "is-active" : "")" @onclick="ClearAllFilters">
                 All <span>@_scenarios.Count</span>
             </button>
             <button type="button" class="library-filter-chip chip-requirement @(IsTypeFilter("Requirement") ? "is-active" : "")" @onclick='() => SetTypeFilter("Requirement")'>
@@ -348,11 +97,9 @@
             <button type="button" class="library-filter-chip chip-clarification @(IsTypeFilter("NeedsClarification") ? "is-active" : "")" @onclick='() => SetTypeFilter("NeedsClarification")'>
                 Clarifications <span>@ClarificationCount</span>
             </button>
-            <button type="button" class="library-filter-chip @(IsRelationshipFilter("linked") ? "is-active" : "")" @onclick='() => SetRelationshipFilter("linked")'>
+            <button type="button" class="library-filter-chip @(IsRelationshipFilter("linked") ? "is-active" : "")" @onclick='() => SetRelationshipFilter("linked")'
+                    data-testid="ql-filter-linked">
                 Linked <span>@LinkedArtifactCount</span>
-            </button>
-            <button type="button" class="library-filter-chip @(IsRelationshipFilter("gaps") ? "is-active" : "")" @onclick='() => SetRelationshipFilter("gaps")'>
-                Coverage Gaps <span>@AttentionCount</span>
             </button>
         </div>
 
@@ -375,22 +122,18 @@
         {
             var isDragEnabled = _filterKind == "Test" && string.IsNullOrEmpty(_searchQuery) && string.IsNullOrEmpty(_relationshipFilter);
             var testItems = FilteredScenarios.Where(s => s.Kind == "Test").ToList();
-            var reqItems = FilteredScenarios.Where(s => s.Kind == "Requirement").ToList();
-            var clrItems = FilteredScenarios.Where(s => s.Kind == "NeedsClarification").ToList();
+            var reqItems  = FilteredScenarios.Where(s => s.Kind == "Requirement").ToList();
+            var clrItems  = FilteredScenarios.Where(s => s.Kind == "NeedsClarification").ToList();
             var anyVisible = testItems.Count > 0 || reqItems.Count > 0 || clrItems.Count > 0;
+
             @if (!anyVisible)
             {
                 <div class="empty-state empty-state-dashed" data-testid="empty-state">
                     @if (_scenarios.Count == 0)
                     {
-                        <h3>Why create scenarios?</h3>
-                        <p>Scenarios improve:</p>
-                        <ol>
-                            <li>Requirement coverage</li>
-                            <li>Traceability</li>
-                            <li>QA Health Score</li>
-                            <li>Release readiness</li>
-                        </ol>
+                        <h3>No published assets yet</h3>
+                        <p>Publish QA assets from Specification Review to build your team's knowledge base.</p>
+                        <p>Published assets are available for reuse across specifications and projects.</p>
                         <div class="empty-state-actions">
                             <a href="/extract">Analyze Specification</a>
                             <a href="scenarios/new">Create Test Scenario</a>
@@ -409,7 +152,7 @@
                     <section class="artifact-group" data-testid="group-requirements">
                         <div class="artifact-group-heading">
                             <h2 class="artifact-group-header">Requirements</h2>
-                            <span>@CoveredRequirementCount of @RequirementCount covered</span>
+                            <span>@RequirementCount saved</span>
                         </div>
                         <ScenarioList
                             Scenarios="reqItems"
@@ -424,7 +167,7 @@
                     <section class="artifact-group" data-testid="group-tests">
                         <div class="artifact-group-heading">
                             <h2 class="artifact-group-header">Tests</h2>
-                            <span>@TestsWithRequirements of @TestCount traced</span>
+                            <span>@TestCount saved</span>
                         </div>
                         @if (isDragEnabled)
                         {
@@ -469,16 +212,14 @@
     private IReadOnlyList<ScenarioListItem> _scenarios = [];
     private IReadOnlyList<ArtifactLink> _links = [];
     private bool _isLoading;
-    private string _searchQuery = string.Empty;
-    private string _filterKind = string.Empty;
+    private string _searchQuery     = string.Empty;
+    private string _filterKind      = string.Empty;
     private string _relationshipFilter = string.Empty;
     private string? _loadError;
     private bool _linksUnavailable;
     private string? _deletingId;
     private Dictionary<string, string> _deleteErrors = [];
     private string? _reorderError;
-    private int _pendingSuggestionCount;
-    private int _highConfidenceSuggestionCount;
 
     private IReadOnlyList<ScenarioListItem> FilteredScenarios =>
         _scenarios
@@ -490,279 +231,17 @@
                  (s.Description?.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ?? false)))
             .ToList();
 
-    private enum LibraryWorkflowStage
-    {
-        NoArtifacts,
-        RequirementsNotImported,
-        TestsMissing,
-        TraceabilityMissing,
-        CoverageEstablished,
-    }
-
-    private LibraryWorkflowStage WorkflowStage =>
-        _scenarios.Count == 0
-            ? LibraryWorkflowStage.NoArtifacts
-            : RequirementCount == 0
-                ? LibraryWorkflowStage.RequirementsNotImported
-                : TestCount == 0
-                    ? LibraryWorkflowStage.TestsMissing
-                    : RelationshipCount == 0
-                        ? LibraryWorkflowStage.TraceabilityMissing
-                        : LibraryWorkflowStage.CoverageEstablished;
-
-    private int RequirementCount => CountKind("Requirement");
-    private int TestCount => CountKind("Test");
-    private int ClarificationCount => CountKind("NeedsClarification");
-    private int RelationshipCount => _links.Count;
-    private IReadOnlyList<ScenarioListItem> RequirementItems => _scenarios.Where(s => s.Kind == "Requirement").ToList();
-    private int CoveredRequirementCount => _scenarios.Count(s => s.Kind == "Requirement" && GetRelationshipSummary(s.Id).LinkedTests > 0);
-    private int RequirementsWithoutTests => Math.Max(0, RequirementCount - CoveredRequirementCount);
-    private int TestsWithRequirements => _scenarios.Count(s => s.Kind == "Test" && GetRelationshipSummary(s.Id).LinkedRequirements > 0);
-    private int UnmappedTestCount => Math.Max(0, TestCount - TestsWithRequirements);
-    private int LinkedClarificationCount => _scenarios.Count(s => s.Kind == "NeedsClarification" && GetRelationshipSummary(s.Id).HasTraceability);
-    private int UnlinkedClarificationCount => _scenarios.Count(s => s.Kind == "NeedsClarification" && !GetRelationshipSummary(s.Id).HasTraceability);
-    private int AttentionCount => _scenarios.Count(s => GetRelationshipSummary(s.Id).RequiresAttention);
+    private int RequirementCount    => CountKind("Requirement");
+    private int TestCount           => CountKind("Test");
+    private int ClarificationCount  => CountKind("NeedsClarification");
     private int LinkedArtifactCount => _scenarios.Count(s => GetRelationshipSummary(s.Id).HasTraceability);
-    private bool RequiresCoverageAttention =>
-        WorkflowStage == LibraryWorkflowStage.CoverageEstablished &&
-        (RequirementsWithoutTests > 0 || UnmappedTestCount > 0 || UnlinkedClarificationCount > 0);
-    private int CoveragePercent => WorkflowStage == LibraryWorkflowStage.CoverageEstablished
-        ? Percent(CoveredRequirementCount, RequirementCount)
-        : 0;
-    private int TraceabilityPercent => WorkflowStage == LibraryWorkflowStage.CoverageEstablished
-        ? Percent(_scenarios.Count(s => GetRelationshipSummary(s.Id).HasTraceability), _scenarios.Count)
-        : 0;
-    private string QaStatus => WorkflowStage switch
-    {
-        LibraryWorkflowStage.NoArtifacts             => "No Data",
-        LibraryWorkflowStage.RequirementsNotImported => "Requirements Not Imported",
-        LibraryWorkflowStage.TestsMissing            => "Tests Missing",
-        LibraryWorkflowStage.TraceabilityMissing     => "Traceability Missing",
-        LibraryWorkflowStage.CoverageEstablished     =>
-            RequirementsWithoutTests > 0 ? "At Risk"
-            : AttentionCount > 0        ? "Attention"
-            : "Healthy",
-        _ => "No Data",
-    };
-    private string QaStatusTone => QaStatus switch
-    {
-        "Healthy"                   => "healthy",
-        "Attention"                 => "attention",
-        "At Risk"                   => "risk",
-        "Traceability Missing"      => "attention",
-        "Requirements Not Imported" => "empty",
-        "Tests Missing"             => "empty",
-        _ => "empty",
-    };
-    private string ReleaseReadiness => WorkflowStage switch
-    {
-        LibraryWorkflowStage.NoArtifacts             => "Not Started",
-        LibraryWorkflowStage.RequirementsNotImported => "Incomplete Setup",
-        LibraryWorkflowStage.TestsMissing            => "Incomplete Setup",
-        LibraryWorkflowStage.TraceabilityMissing     => "Incomplete Setup",
-        LibraryWorkflowStage.CoverageEstablished     =>
-            QaStatus == "Healthy"   ? "Ready"
-            : QaStatus == "Attention" ? "Needs Review"
-            : "Not Ready",
-        _ => "Not Started",
-    };
-    private string ReleaseReadinessTone => ReleaseReadiness switch
-    {
-        "Ready"        => "ready",
-        "Needs Review" => "review",
-        _ => "not-ready",
-    };
-    private string ReleaseReadinessDetail => WorkflowStage switch
-    {
-        LibraryWorkflowStage.NoArtifacts             => "Import requirements and tests before assessing release readiness.",
-        LibraryWorkflowStage.RequirementsNotImported => "Requirements must be imported before release readiness can be assessed.",
-        LibraryWorkflowStage.TestsMissing            => "Acceptance tests must be imported before release readiness can be assessed.",
-        LibraryWorkflowStage.TraceabilityMissing     => "Traceability links must be created before release readiness can be assessed.",
-        LibraryWorkflowStage.CoverageEstablished     => ReleaseReadiness switch
-        {
-            "Ready"        => "Traceability is connected and no quality risks are currently visible.",
-            "Needs Review" => "Some traceability items need review before release confidence is clear.",
-            _              => "Traceability gaps must be resolved before this library is release-ready.",
-        },
-        _ => "Import requirements and tests before assessing release readiness.",
-    };
-    private IReadOnlyList<string> ReleaseReasons
-    {
-        get
-        {
-            var reasons = new List<string>();
-            switch (WorkflowStage)
-            {
-                case LibraryWorkflowStage.NoArtifacts:
-                    reasons.Add("No saved artifacts");
-                    break;
-                case LibraryWorkflowStage.RequirementsNotImported:
-                    reasons.Add("Requirements not imported");
-                    if (TestCount > 0) reasons.Add($"{TestCount} test{Plural(TestCount)} without requirements");
-                    break;
-                case LibraryWorkflowStage.TestsMissing:
-                    reasons.Add($"{RequirementCount} requirement{Plural(RequirementCount)} imported");
-                    reasons.Add("No tests available for coverage");
-                    break;
-                case LibraryWorkflowStage.TraceabilityMissing:
-                    reasons.Add($"{RequirementCount} requirement{Plural(RequirementCount)} imported");
-                    reasons.Add($"{TestCount} test{Plural(TestCount)} imported");
-                    reasons.Add("No traceability relationships created");
-                    break;
-                case LibraryWorkflowStage.CoverageEstablished:
-                    if (RequirementsWithoutTests > 0) reasons.Add($"{RequirementsWithoutTests} uncovered requirement{Plural(RequirementsWithoutTests)}");
-                    if (UnmappedTestCount > 0) reasons.Add($"{UnmappedTestCount} unmapped test{Plural(UnmappedTestCount)}");
-                    if (UnlinkedClarificationCount > 0) reasons.Add($"{UnlinkedClarificationCount} unlinked clarification{Plural(UnlinkedClarificationCount)}");
-                    if (reasons.Count == 0) reasons.Add("No release blockers visible");
-                    break;
-            }
-            return reasons;
-        }
-    }
-    private IReadOnlyList<RecommendedAction> RecommendedActions
-    {
-        get
-        {
-            var actions = new List<RecommendedAction>();
 
-            switch (WorkflowStage)
-            {
-                case LibraryWorkflowStage.NoArtifacts:
-                    actions.Add(new("Analyze a specification", "Use the Spec Analysis tool to extract requirements, tests, and clarifications.", "/extract"));
-                    actions.Add(new("Create a manual test scenario", "Add individual test scenarios to the library.", "/scenarios/new"));
-                    break;
-
-                case LibraryWorkflowStage.RequirementsNotImported:
-                    actions.Add(new("Import Requirements", "Tests exist but no requirements are available. Return to specification review to accept and save requirement artifacts.", "/extract"));
-                    actions.Add(new("Return to Specification Review", "Accept requirement artifacts from a previous analysis session.", "/extract"));
-                    actions.Add(new("Generate Traceability Suggestions", "Available after requirements have been imported.", IsDisabled: true));
-                    break;
-
-                case LibraryWorkflowStage.TestsMissing:
-                    actions.Add(new("Import Tests", "Requirements imported. Accept and save test artifacts to enable traceability analysis.", "/extract"));
-                    actions.Add(new("Return to Specification Review", "Accept test artifacts from a previous analysis session.", "/extract"));
-                    break;
-
-                case LibraryWorkflowStage.TraceabilityMissing:
-                    if (_pendingSuggestionCount > 0)
-                    {
-                        actions.Add(new("Review Suggested Links", $"{_pendingSuggestionCount} suggestion{Plural(_pendingSuggestionCount)} are ready for review.", "traceability/suggestions"));
-                        if (_highConfidenceSuggestionCount > 0)
-                            actions.Add(new("Accept High Confidence Links", $"{_highConfidenceSuggestionCount} high-confidence suggestion{Plural(_highConfidenceSuggestionCount)} can be accepted.", "traceability/suggestions"));
-                    }
-                    else
-                    {
-                        actions.Add(new("Generate Traceability Suggestions", "Requirements and tests exist. Generate AI-suggested links based on semantic similarity and ID references.", "traceability/suggestions"));
-                        actions.Add(new("Create Traceability Relationships", "Manually create relationships between requirements and tests.", "traceability"));
-                    }
-                    break;
-
-                case LibraryWorkflowStage.CoverageEstablished:
-                    if (_pendingSuggestionCount > 0)
-                    {
-                        actions.Add(new("Review Suggested Links", $"{_pendingSuggestionCount} suggestion{Plural(_pendingSuggestionCount)} are ready for review.", "traceability/suggestions"));
-                        if (_highConfidenceSuggestionCount > 0)
-                            actions.Add(new("Accept High Confidence Links", $"{_highConfidenceSuggestionCount} high-confidence suggestion{Plural(_highConfidenceSuggestionCount)} can be bulk-accepted.", "traceability/suggestions"));
-                    }
-                    else if (RequiresCoverageAttention)
-                    {
-                        if (RequirementsWithoutTests > 0)
-                            actions.Add(new("Resolve Coverage Gaps", $"{RequirementsWithoutTests} requirement{Plural(RequirementsWithoutTests)} still need test coverage.", "/extract"));
-                        if (UnmappedTestCount > 0)
-                            actions.Add(new("Map Orphaned Tests", $"{UnmappedTestCount} test{Plural(UnmappedTestCount)} are not linked to any requirement.", "traceability"));
-                        foreach (var req in RequirementItems.Where(r => GetRelationshipSummary(r.Id).LinkedTests == 0).Take(2))
-                            actions.Add(new($"Cover: {ShortTitle(req.Title)}", "Create or link at least one test."));
-                        if (UnlinkedClarificationCount > 0)
-                            actions.Add(new("Link Open Clarifications", $"{UnlinkedClarificationCount} clarification{Plural(UnlinkedClarificationCount)} need traceability links.", "traceability"));
-                    }
-                    break;
-            }
-
-            return actions.Take(5).ToList();
-        }
-    }
-    private string TraceabilityGapHeadline => WorkflowStage switch
-    {
-        LibraryWorkflowStage.NoArtifacts             => "No artifacts to analyze",
-        LibraryWorkflowStage.RequirementsNotImported => "Requirements not yet imported",
-        LibraryWorkflowStage.TestsMissing            => "Tests not yet imported",
-        LibraryWorkflowStage.TraceabilityMissing     => "Traceability not yet established",
-        LibraryWorkflowStage.CoverageEstablished     => RequiresCoverageAttention ? "Traceability needs attention" : "Coverage is clear",
-        _ => "No artifacts to analyze",
-    };
-    private string CoverageGapDetail => WorkflowStage switch
-    {
-        LibraryWorkflowStage.NoArtifacts             => "Import requirements and tests to begin traceability analysis.",
-        LibraryWorkflowStage.RequirementsNotImported => "No requirements have been imported. Requirements are needed before traceability gaps can be measured.",
-        LibraryWorkflowStage.TestsMissing            => "Requirements are imported. Import tests to enable coverage and traceability analysis.",
-        LibraryWorkflowStage.TraceabilityMissing     => "Requirements and tests exist but no traceability links have been established. Generate suggestions or create relationships manually.",
-        LibraryWorkflowStage.CoverageEstablished     =>
-            RequirementsWithoutTests > 0
-                ? $"{RequirementsWithoutTests} requirement{Plural(RequirementsWithoutTests)} need test coverage before the library is traceability-ready."
-                : UnmappedTestCount > 0
-                    ? $"{UnmappedTestCount} test{Plural(UnmappedTestCount)} are not mapped to requirements yet."
-                    : UnlinkedClarificationCount > 0
-                        ? $"{UnlinkedClarificationCount} clarification{Plural(UnlinkedClarificationCount)} are not connected to source artifacts."
-                        : "Requirements, tests, and clarification relationships are connected.",
-        _ => "Import requirements and tests to begin traceability analysis.",
-    };
-    private string TraceabilityHealthTitle => WorkflowStage switch
-    {
-        LibraryWorkflowStage.CoverageEstablished => $"{TraceabilityPercent}% Covered",
-        LibraryWorkflowStage.TraceabilityMissing => "Not Established",
-        _ => "Not Available",
-    };
-    private string TraceabilityHealthSubtitle => WorkflowStage switch
-    {
-        LibraryWorkflowStage.CoverageEstablished     => $"Requirements Covered: {CoveredRequirementCount}/{RequirementCount}",
-        LibraryWorkflowStage.TraceabilityMissing     => "Create traceability links to see coverage",
-        LibraryWorkflowStage.RequirementsNotImported => "Import requirements to enable traceability",
-        LibraryWorkflowStage.TestsMissing            => "Import tests to enable traceability",
-        _ => "Import artifacts to enable traceability",
-    };
-    private string TraceabilityHealthTone => WorkflowStage == LibraryWorkflowStage.CoverageEstablished ? QaStatusTone : "empty";
-    private int TraceabilityBarPercent => WorkflowStage == LibraryWorkflowStage.CoverageEstablished ? TraceabilityPercent : 0;
-    private int WorkflowCurrentStep => WorkflowStage switch
-    {
-        LibraryWorkflowStage.NoArtifacts             => 1,
-        LibraryWorkflowStage.RequirementsNotImported => 3,
-        LibraryWorkflowStage.TestsMissing            => 3,
-        LibraryWorkflowStage.TraceabilityMissing     => _pendingSuggestionCount > 0 ? 5 : 4,
-        LibraryWorkflowStage.CoverageEstablished     => _pendingSuggestionCount > 0 ? 5 : 7,
-        _ => 1,
-    };
-    private string WorkflowCurrentHint => WorkflowStage switch
-    {
-        LibraryWorkflowStage.NoArtifacts             => "Start by analyzing a specification to extract requirements, tests, and clarifications.",
-        LibraryWorkflowStage.RequirementsNotImported => "Requirements have not yet been imported. Return to Specification Review to accept and save requirement artifacts.",
-        LibraryWorkflowStage.TestsMissing            => "Requirements imported. Return to Specification Review to accept and save acceptance test artifacts.",
-        LibraryWorkflowStage.TraceabilityMissing     => _pendingSuggestionCount > 0
-            ? $"{_pendingSuggestionCount} traceability suggestion{Plural(_pendingSuggestionCount)} ready for review. Accept or reject to establish coverage."
-            : "Requirements and tests exist. Generate AI-suggested traceability links or create relationships manually.",
-        LibraryWorkflowStage.CoverageEstablished     => _pendingSuggestionCount > 0
-            ? $"{_pendingSuggestionCount} suggested link{Plural(_pendingSuggestionCount)} still pending review."
-            : RequiresCoverageAttention
-                ? $"Coverage established. {RequirementsWithoutTests + UnmappedTestCount} gap{Plural(RequirementsWithoutTests + UnmappedTestCount)} remaining."
-                : "Coverage is fully established. The library is release-ready.",
-        _ => string.Empty,
-    };
-    private static string WorkflowStepLabel(int step) => step switch
-    {
-        1 => "Analyze Specification",
-        2 => "Accept Artifacts",
-        3 => "Save Artifacts",
-        4 => "Generate Suggestions",
-        5 => "Review Links",
-        6 => "Confirm Links",
-        7 => "Coverage Dashboard",
-        _ => string.Empty,
-    };
     private IReadOnlyDictionary<string, ArtifactRelationshipSummary> RelationshipSummaries =>
         _scenarios.ToDictionary(s => s.Id, s => GetRelationshipSummary(s.Id), StringComparer.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {
-        await Task.WhenAll(LoadScenariosAsync(), LoadSuggestionCountAsync());
+        await LoadScenariosAsync();
     }
 
     private async Task LoadScenariosAsync()
@@ -804,20 +283,6 @@
 
             _isLoading = false;
         }
-    }
-
-    private async Task LoadSuggestionCountAsync()
-    {
-        try
-        {
-            var result = await Client.GetCoverageSummary.ExecuteAsync(ProjectId);
-            if (result.Data is { } data)
-            {
-                _pendingSuggestionCount = data.CoverageSummary.PendingSuggestionCount;
-                _highConfidenceSuggestionCount = data.CoverageSummary.HighConfidenceSuggestionCount;
-            }
-        }
-        catch { }
     }
 
     private async Task LoadLinksAsync()
@@ -898,7 +363,7 @@
         {
             var input = new ReorderTestScenariosInput
             {
-                ProjectId = ProjectId,
+                ProjectId  = ProjectId,
                 OrderedIds = reorderedTests.Select(s => s.Id).ToList(),
             };
             var result = await Client.ReorderTestScenarios.ExecuteAsync(input);
@@ -916,35 +381,26 @@
 
     private int CountKind(string kind) => _scenarios.Count(s => s.Kind == kind);
 
-    private bool IsTypeFilter(string kind) => _filterKind == kind;
+    private bool IsTypeFilter(string kind)         => _filterKind == kind;
     private bool IsRelationshipFilter(string filter) => _relationshipFilter == filter;
-    private void SetTypeFilter(string kind) => _filterKind = kind;
+    private void SetTypeFilter(string kind)          => _filterKind = kind;
     private void SetRelationshipFilter(string filter) => _relationshipFilter = filter;
     private void ClearAllFilters()
     {
-        _filterKind = string.Empty;
+        _filterKind        = string.Empty;
         _relationshipFilter = string.Empty;
     }
 
     private bool MatchesRelationshipFilter(ScenarioListItem scenario)
     {
         if (string.IsNullOrEmpty(_relationshipFilter))
-        {
             return true;
-        }
 
         var summary = GetRelationshipSummary(scenario.Id);
         return _relationshipFilter switch
         {
             "linked" => summary.HasTraceability,
-            "gaps" => scenario.Kind switch
-            {
-                "Requirement" => summary.LinkedTests == 0,
-                "Test" => summary.LinkedRequirements == 0,
-                "NeedsClarification" => !summary.HasTraceability,
-                _ => !summary.HasTraceability,
-            },
-            _ => true,
+            _        => true,
         };
     }
 
@@ -956,43 +412,35 @@
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var linkedRequirements = linkedIds.Count(id => KindOf(id) == "Requirement");
-        var linkedTests = linkedIds.Count(id => KindOf(id) == "Test");
+        var linkedRequirements   = linkedIds.Count(id => KindOf(id) == "Requirement");
+        var linkedTests          = linkedIds.Count(id => KindOf(id) == "Test");
         var linkedClarifications = linkedIds.Count(id => KindOf(id) == "NeedsClarification");
-        var scenarioKind = KindOf(scenarioId);
-        var hasTraceability = linkedIds.Count > 0;
+        var scenarioKind         = KindOf(scenarioId);
+        var hasTraceability      = linkedIds.Count > 0;
 
-        var label = scenarioKind switch
+        var stateLabel = scenarioKind switch
         {
-            "Requirement" => linkedTests > 0 ? "Covered" : "Not Covered",
-            "Test" => linkedRequirements > 0 ? "Linked" : "Unmapped",
-            "NeedsClarification" => hasTraceability ? "Linked" : "Unmapped",
-            _ => hasTraceability ? "Linked" : "Unmapped",
+            "Requirement"       => linkedTests > 0           ? "Covered"  : "Not Covered",
+            "Test"              => linkedRequirements > 0    ? "Linked"   : "Unmapped",
+            "NeedsClarification"=> hasTraceability           ? "Linked"   : "Unmapped",
+            _                   => hasTraceability           ? "Linked"   : "Unmapped",
         };
 
         var stateTone = scenarioKind switch
         {
-            "Requirement" => linkedTests > 0 ? "covered" : "uncovered",
-            "Test" => linkedRequirements > 0 ? "linked" : "unmapped",
-            "NeedsClarification" => hasTraceability ? "linked" : "unmapped",
-            _ => hasTraceability ? "linked" : "unmapped",
-        };
-
-        var stateLabel = scenarioKind switch
-        {
-            "Requirement" => linkedTests > 0 ? "Covered" : "Not Covered",
-            "Test" => linkedRequirements > 0 ? "Linked" : "Unmapped",
-            "NeedsClarification" => hasTraceability ? "Linked" : "Unmapped",
-            _ => hasTraceability ? "Linked" : "Unmapped",
+            "Requirement"       => linkedTests > 0           ? "covered"  : "uncovered",
+            "Test"              => linkedRequirements > 0    ? "linked"   : "unmapped",
+            "NeedsClarification"=> hasTraceability           ? "linked"   : "unmapped",
+            _                   => hasTraceability           ? "linked"   : "unmapped",
         };
 
         var requiresAttention = stateTone is "uncovered" or "unmapped";
         var recommendedAction = scenarioKind switch
         {
-            "Requirement" when linkedTests == 0 => "Create or link a test.",
-            "Test" when linkedRequirements == 0 => "Link this test to a requirement.",
-            "NeedsClarification" when !hasTraceability => "Link clarification to a requirement or test.",
-            _ => null,
+            "Requirement" when linkedTests == 0           => "Create or link a test.",
+            "Test" when linkedRequirements == 0           => "Link this test to a requirement.",
+            "NeedsClarification" when !hasTraceability    => "Link clarification to a requirement or test.",
+            _                                             => null,
         };
 
         return new ArtifactRelationshipSummary(
@@ -1000,7 +448,7 @@
             linkedTests,
             linkedClarifications,
             hasTraceability,
-            label,
+            stateLabel,
             stateLabel,
             stateTone,
             requiresAttention,
@@ -1023,12 +471,7 @@
     private string? KindOf(string scenarioId) =>
         _scenarios.FirstOrDefault(s => string.Equals(s.Id, scenarioId, StringComparison.OrdinalIgnoreCase))?.Kind;
 
-    private static int Percent(int numerator, int denominator) =>
-        denominator == 0 ? 0 : (int)Math.Round(numerator * 100.0 / denominator);
-
     private static string Plural(int count) => count == 1 ? string.Empty : "s";
-    private static string ShortTitle(string title) => title.Length <= 52 ? title : $"{title[..49]}...";
 
     private sealed record ArtifactLink(string SourceId, string TargetId, CandidateLinkType LinkType);
-    private sealed record RecommendedAction(string Title, string Detail, string? Href = null, bool IsDisabled = false);
 }

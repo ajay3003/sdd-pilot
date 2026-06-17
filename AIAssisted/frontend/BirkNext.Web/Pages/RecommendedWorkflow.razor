@@ -24,23 +24,24 @@
                 </div>
             </div>
             <div class="rw-phase-body">
-                <p class="rw-goal"><strong>Goal:</strong> Understand and extract QA candidates from your specification document.</p>
+                <p class="rw-goal"><strong>Goal:</strong> Analyze the specification and move directly into traceability, coverage, and QA readiness review.</p>
                 <div class="rw-phase-columns">
                     <div>
                         <div class="rw-col-label">Actions</div>
                         <ul class="rw-phase-actions">
                             <li>Open Specification Review and paste or import your spec.md</li>
                             <li>Run analysis to extract requirements, tests, and clarifications</li>
-                            <li>Start in Traceability &amp; Coverage, the default tab, to review coverage, gaps, orphan tests, missing success criteria, and missing user story mappings</li>
-                            <li>Inspect business flow in Flow View</li>
-                            <li>Review extracted artifacts in Document View</li>
-                            <li>Navigate structure in Spec Explorer</li>
+                            <li>Open Traceability &amp; Coverage first to review coverage and gaps</li>
+                            <li>Review coverage and gaps, including orphan tests, missing success criteria, and missing user story mappings</li>
+                            <li>Use Flow View for QA readiness</li>
+                            <li>Use Spec Explorer for specification structure</li>
+                            <li>Use Extraction Review only when extraction quality needs verification</li>
                             <li>Inspect architecture in Architecture View</li>
                         </ul>
                     </div>
                     <div>
                         <div class="rw-col-label">Outcome</div>
-                        <p class="rw-outcome-text">A traceability-first QA risk picture, followed by detailed flow, artifact, structure, and architecture review.</p>
+                        <p class="rw-outcome-text">A traceability-first QA risk picture, with optional advanced extraction quality control when the AI output needs verification.</p>
                     </div>
                 </div>
                 <a href="extract" class="rw-cta">Open Specification Review →</a>
@@ -54,24 +55,25 @@
             <div class="rw-phase-header">
                 <div class="rw-phase-num">2</div>
                 <div class="rw-phase-titles">
-                    <div class="rw-phase-label">Phase 2</div>
-                    <div class="rw-phase-name">Build QA Knowledge</div>
+                    <div class="rw-phase-label">Phase 2 — Optional</div>
+                    <div class="rw-phase-name">Publish to QA Artifact Library</div>
                 </div>
             </div>
             <div class="rw-phase-body">
-                <p class="rw-goal"><strong>Goal:</strong> Accept reviewed candidates into the QA Artifact Library to build a reusable knowledge base.</p>
+                <p class="rw-goal"><strong>Goal:</strong> Optionally publish curated QA assets to the library for reuse across specifications and projects. Traceability &amp; Coverage works without this step — skip it if you only need coverage analysis.</p>
                 <div class="rw-phase-columns">
                     <div>
                         <div class="rw-col-label">Actions</div>
                         <ul class="rw-phase-actions">
-                            <li>Accept or reject each candidate in Specification Review</li>
-                            <li>Open the QA Artifact Library to browse saved artifacts</li>
+                            <li>Traceability &amp; Coverage is available immediately after analysis — no publishing required</li>
+                            <li>Optionally publish useful assets to the QA Artifact Library for reuse</li>
+                            <li>Use Extraction Review to inspect or correct extraction quality before publishing</li>
                             <li>Create additional test scenarios manually if needed</li>
                         </ul>
                     </div>
                     <div>
                         <div class="rw-col-label">Outcome</div>
-                        <p class="rw-outcome-text">A versioned, reusable QA knowledge base of accepted requirements, tests, and clarifications.</p>
+                        <p class="rw-outcome-text">A reusable QA knowledge base of curated assets. Testers who skip this phase have full Traceability &amp; Coverage access immediately after analysis.</p>
                     </div>
                 </div>
                 <a href="scenarios" class="rw-cta">Open QA Artifact Library →</a>
@@ -95,7 +97,7 @@
                     <div>
                         <div class="rw-col-label">Actions</div>
                         <ul class="rw-phase-actions">
-                            <li>Open Traceability &amp; Coverage</li>
+                            <li>Open Specification Review and use the Traceability &amp; Coverage tab</li>
                             <li>Review requirement-to-test links</li>
                             <li>Identify requirements without tests and tests without requirements</li>
                             <li>Resolve or flag unlinked clarification items</li>
@@ -103,10 +105,10 @@
                     </div>
                     <div>
                         <div class="rw-col-label">Outcome</div>
-                        <p class="rw-outcome-text">Full visibility of coverage across saved artifacts — requirements covered, gaps identified, traceability established.</p>
+                        <p class="rw-outcome-text">Full visibility of coverage inside the active Specification Review session: requirements covered, gaps identified, traceability established.</p>
                     </div>
                 </div>
-                <a href="traceability" class="rw-cta">Open Traceability &amp; Coverage →</a>
+                <a href="extract" class="rw-cta">Open Specification Review -></a>
             </div>
         </div>
 
@@ -160,9 +162,8 @@
                     <div>
                         <div class="rw-col-label">Tools in this phase</div>
                         <ul class="rw-phase-actions">
-                            <li><a href="compare" class="rw-inline-link">Spec Comparison</a> — Side-by-side view of two spec versions</li>
-                            <li><a href="compare/reviews" class="rw-inline-link">Specification Deltas</a> — Added, removed, and modified requirements</li>
-                            <li><a href="task-deltas" class="rw-inline-link">Task Deltas</a> — Scope changes and risk in tasks.md</li>
+                            <li><a href="spec-drift?tab=changes" class="rw-inline-link">Spec Drift → Changes</a> — Specification changes, delta reviews, and coverage impact</li>
+                            <li><a href="task-explorer?view=changes" class="rw-inline-link">Task Explorer → Changes</a> — Scope changes and risk in tasks.md</li>
                             <li><a href="impact-analysis" class="rw-inline-link">Impact Analysis</a> — Systemic regression scope</li>
                             <li><a href="spec-drift" class="rw-inline-link">Spec Drift</a> — Coverage gaps and drift over time</li>
                         </ul>

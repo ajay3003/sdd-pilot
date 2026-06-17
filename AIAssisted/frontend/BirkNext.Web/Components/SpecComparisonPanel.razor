@@ -10,9 +10,9 @@
     <section class="compare-section compare-section-inputs" data-testid="spec-inputs-section">
         <div class="comparison-header">
             <div>
-                <p class="section-kicker">Delta Inputs</p>
+                <p class="section-kicker">Spec Inputs</p>
                 <h2>Specification Versions</h2>
-                <span>Load the approved baseline and the updated draft, then run deterministic delta analysis.</span>
+                <span>Load the approved baseline and the updated draft to detect what changed.</span>
             </div>
         </div>
 
@@ -96,7 +96,7 @@
                 <li>Check removed requirements</li>
                 <li>Identify new clarification risks</li>
                 <li>Assess test coverage impact</li>
-                <li>Save delta review</li>
+                <li>Save comparison</li>
             </ol>
         </div>
 
@@ -108,10 +108,10 @@
         <div class="comparison-actions">
             <div class="comparison-safety-note">
                 <strong>Safe comparison</strong>
-                <span>Comparison does not modify saved QA artifacts until a delta review is accepted or saved.</span>
+                <span>Comparison does not modify saved QA artifacts until a comparison is accepted or saved.</span>
             </div>
             <div class="comparison-action-buttons">
-                <a href="compare/reviews" class="btn-secondary">Cancel</a>
+                <a href="spec-drift?tab=changes" class="btn-secondary">Cancel</a>
                 <button type="button"
                         class="btn-primary"
                         @onclick="RunComparison"
@@ -135,15 +135,15 @@
         <section class="compare-section compare-section-save" data-testid="save-review-section">
             <div class="save-review-header">
                 <div>
-                    <p class="section-kicker">Delta Review</p>
-                    <h2>Save Delta Review</h2>
+                    <p class="section-kicker">Comparison</p>
+                    <h2>Save Comparison</h2>
                     <span>Persist this comparison after the QA impact has been reviewed.</span>
                 </div>
             </div>
             @if (_saveSuccess)
             {
                 <p class="save-review-success" data-testid="save-review-success">
-                    Saved. <a href="compare/reviews">View all delta reviews -></a>
+                    Saved. <a href="spec-drift?tab=changes">View all comparisons -></a>
                 </p>
             }
             else
@@ -155,7 +155,7 @@
                            @bind:event="oninput"
                            placeholder="Review title"
                            disabled="@_isSaving"
-                           aria-label="Delta review title"
+                           aria-label="Comparison title"
                            data-testid="review-title-input" />
                     @if (_saveTitleError is not null)
                     {
@@ -167,7 +167,7 @@
                                 @onclick="SaveReviewAsync"
                                 disabled="@_isSaving"
                                 data-testid="save-review-button">
-                            @(_isSaving ? "Saving..." : "Save Delta Review")
+                            @(_isSaving ? "Saving..." : "Save Comparison")
                         </button>
                     </div>
                     @if (_saveError is not null)
@@ -184,11 +184,11 @@
             <div class="delta-results-heading">
                 <div>
                     <p class="section-kicker">Analysis Results</p>
-                    <h2>Delta Results</h2>
+                    <h2>Changes</h2>
                 </div>
-                <span>Baseline -> Updated -> Delta Review -> QA Impact</span>
+                <span>Baseline -> Updated -> Comparison -> QA Impact</span>
             </div>
-            <div class="delta-placeholder-dashboard" aria-label="Delta summary placeholders">
+            <div class="delta-placeholder-dashboard" aria-label="Change summary placeholders">
                 <div><strong>0</strong><span>Added</span></div>
                 <div><strong>0</strong><span>Changed</span></div>
                 <div><strong>0</strong><span>Removed</span></div>
@@ -197,7 +197,7 @@
                 <div><strong>0</strong><span>Traceability Impact</span></div>
             </div>
             <div class="delta-empty-message">
-                <h3>No delta review yet</h3>
+                <h3>No comparison yet</h3>
                 <p>Run a comparison to identify:</p>
                 <ul>
                     <li>Added items</li>
@@ -259,7 +259,7 @@
 
         if (string.IsNullOrWhiteSpace(_oldSpecText) || string.IsNullOrWhiteSpace(_newSpecText))
         {
-            _validationMessage = "Provide both old and new specification text before running delta analysis.";
+            _validationMessage = "Provide both old and new specification text before detecting changes.";
             return;
         }
 
@@ -278,7 +278,7 @@
             _saveSuccess = false;
             _saveError = null;
             _saveTitleError = null;
-            _reviewTitle = $"Delta Review – spec – {DateTime.Now:yyyy-MM-dd}";
+            _reviewTitle = $"Comparison – spec – {DateTime.Now:yyyy-MM-dd}";
         }
         catch (Exception)
         {

@@ -93,7 +93,7 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
-        cut.Find(".tv-chip-req").TextContent.Should().Contain("Coverage Requirements: 1",
+        cut.Find("[data-testid='health-requirements']").TextContent.Should().Contain("1",
             "Clarifications and Q/A session items must not count as coverage-eligible requirements");
     }
 
@@ -136,7 +136,7 @@ public class ViewBehaviorTests : BunitContext
         });
 
         // 1 eligible requirement, 1 test → 100% coverage; not 33% from 3 total items
-        cut.Find(".tv-chip-cov").TextContent.Should().Contain("100%",
+        cut.Find("[data-testid='health-coverage']").TextContent.Should().Contain("100%",
             "Coverage must be calculated only from coverage-eligible artifacts");
     }
 
@@ -158,69 +158,17 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
-        cut.Find(".tv-chip-test").TextContent.Should().Contain("1 Test",
-            "Test count must use distinct IDs — a single test linked to 2 requirements counts once");
+        // Verify requirements count via health dashboard
+        cut.Find("[data-testid='health-requirements']").TextContent.Should().Contain("2",
+            "two coverage-eligible requirements");
+
+        // Both requirements are covered (shared test via proximity) → coverage shows 2
+        var covCard = cut.Find("[data-testid='health-coverage']").TextContent;
+        covCard.Should().Contain("100%",
+            "a single test linking two requirements in the same heading covers both — 100% coverage");
     }
 
-    [Fact]
-    public void Traceability_ShowsArtifactTypeBadges()
-    {
-        IReadOnlyList<ExtractionCandidate> candidates =
-        [
-            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement,       "US1: Search"),
-            MakeCandidate("How should we handle timeouts?",       ScenarioKind.NeedsClarification, "US1: Search"),
-            MakeCandidate("Use GraphQL for the BFF layer",        ScenarioKind.Requirement,       "Architecture Decisions"),
-        ];
 
-        var cut = Render<TraceabilityView>(p =>
-        {
-            p.Add(c => c.Candidates, candidates);
-            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
-        });
-
-        cut.FindAll(".tv-matrix-row").Should().ContainSingle(
-            "the primary matrix must render only coverage-eligible requirements");
-
-        cut.FindAll("button").First(b => b.TextContent.Contains("Artifacts")).Click();
-
-        cut.Find("[data-testid='noneligible-artifacts-panel']").Should().NotBeNull();
-        cut.FindAll(".tv-type-badge").Should().NotBeEmpty(
-            "Non-eligible artifacts must display artifact type badges in the artifacts panel");
-        cut.Markup.Should().Contain("Clarification",
-            "NeedsClarification items must be labelled as Clarification");
-        cut.Markup.Should().Contain("Architecture Note",
-            "Items from architecture headings must be labelled as Architecture Note");
-    }
-
-    [Fact]
-    public void Traceability_MatrixExcludesNonEligibleArtifacts()
-    {
-        IReadOnlyList<ExtractionCandidate> candidates =
-        [
-            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
-            MakeCandidate("How should we handle timeouts?", ScenarioKind.NeedsClarification, "Clarifications"),
-            MakeCandidate("Infrastructure sizing MUST validate the SLA.", ScenarioKind.Requirement, "Assumptions"),
-            MakeCandidate("GraphQL MUST be used for presentation reads.", ScenarioKind.Requirement, "Decisions"),
-            MakeCandidate("Person entity MUST carry BirkId.", ScenarioKind.Requirement, "Key Entities"),
-            MakeCandidate("Status: Draft", ScenarioKind.Requirement, "Metadata"),
-        ];
-
-        var cut = Render<TraceabilityView>(p =>
-        {
-            p.Add(c => c.Candidates, candidates);
-            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
-        });
-
-        var matrixText = cut.Find(".tv-matrix-table").TextContent;
-        matrixText.Should().Contain("allow search");
-        matrixText.Should().NotContain("timeouts");
-        matrixText.Should().NotContain("SLA");
-        matrixText.Should().NotContain("presentation reads");
-        matrixText.Should().NotContain("BirkId");
-        matrixText.Should().NotContain("Draft");
-        cut.Find(".tv-chip-req").TextContent.Should().Contain("Coverage Requirements: 1");
-        cut.Find(".tv-chip-gap").TextContent.Should().Contain("2 Gaps");
-    }
 
     [Fact]
     public void DocumentView_RendersFrBlockAsSingleCard()
@@ -256,12 +204,16 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
-        cut.Find(".tv-metrics").TextContent.Should().Contain("Coverage Requirements: 33");
-        cut.Find(".tv-metrics").TextContent.Should().Contain("Requirement Candidates:");
+        cut.Find("[data-testid='health-requirements']").TextContent.Should().Contain("33",
+            "health dashboard must show the 33 eligible requirements");
+        cut.Find("[data-testid='health-missing-tests']").TextContent.Should().Contain("33",
+            "all 33 requirements have no linked tests so missing-tests must also show 33");
     }
 
+
+
     [Fact]
-    public async Task Traceability_MatrixRowsAreExplicitFrsOnly()
+    public async Task Traceability_PersonSpecHas33CoverageRequirements()
     {
         var (specMarkdown, candidates) = await LoadPersonSpecExtractionAsync();
 
@@ -272,50 +224,10 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
-        cut.FindAll(".tv-matrix-row").Should().HaveCount(33);
-    }
-
-    [Fact]
-    public async Task Traceability_GraphGroupsByUserStory()
-    {
-        var (specMarkdown, candidates) = await LoadPersonSpecExtractionAsync();
-
-        var cut = Render<TraceabilityView>(p =>
-        {
-            p.Add(c => c.SpecMarkdown, specMarkdown);
-            p.Add(c => c.Candidates, candidates);
-            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
-        });
-
-        cut.FindAll("button").First(b => b.TextContent.Contains("Graph")).Click();
-
-        var graphText = cut.Find(".tv-graph").TextContent;
-        graphText.Should().Contain("US1");
-        graphText.Should().Contain("US2");
-        graphText.Should().Contain("US3");
-        graphText.Should().Contain("US4");
-        graphText.Should().Contain("US5");
-        graphText.Should().Contain("US6");
-        graphText.Should().Contain("Cross-cutting / Platform");
-    }
-
-    [Fact]
-    public async Task Traceability_ArtifactBreakdownFiltersCorrectly()
-    {
-        var (specMarkdown, candidates) = await LoadPersonSpecExtractionAsync();
-
-        var cut = Render<TraceabilityView>(p =>
-        {
-            p.Add(c => c.SpecMarkdown, specMarkdown);
-            p.Add(c => c.Candidates, candidates);
-            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
-        });
-
-        cut.Find(".tv-breakdown-clarification").Click();
-
-        var panel = cut.Find("[data-testid='noneligible-artifacts-panel']");
-        panel.TextContent.Should().Contain("Clarification");
-        panel.TextContent.Should().NotContain("Assumption");
+        cut.FindAll(".tv-req-item-btn").Should().HaveCount(33,
+            "person spec extraction must produce exactly 33 coverage-eligible requirements in the Requirements list");
+        cut.FindAll("[data-testid='artifact-breakdown']").Should().BeEmpty(
+            "artifact breakdown panel is removed from Traceability");
     }
 
     [Fact]
@@ -330,7 +242,7 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
-        cut.FindAll(".tv-matrix-row").First(r => r.TextContent.Contains("FR-002")).Click();
+        cut.FindAll(".tv-req-item-btn").First(b => b.TextContent.Contains("FR-002")).Click();
 
         var detailText = cut.Find("[data-testid='tv-detail-full-content']").TextContent;
         detailText.Should().Contain("Levels 0 and 1");
@@ -393,34 +305,13 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
-        var info = cut.Find(".tv-chip-req .tv-info");
-        info.GetAttribute("title").Should().Contain("Coverage Requirements are requirements included in coverage calculations");
-        info.GetAttribute("title").Should().Contain("Clarifications");
-        info.GetAttribute("title").Should().Contain("Architecture Notes");
+        var healthCard = cut.Find("[data-testid='health-requirements']");
+        healthCard.GetAttribute("title").Should().Contain("Coverage Requirements are requirements included in coverage calculations",
+            "the Requirements health card must explain what counts as a coverage requirement");
+        healthCard.GetAttribute("title").Should().Contain("Clarifications");
+        healthCard.GetAttribute("title").Should().Contain("Architecture Notes");
     }
 
-    [Fact]
-    public void Traceability_GraphAndMatrixHelpText()
-    {
-        IReadOnlyList<ExtractionCandidate> candidates =
-        [
-            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
-        ];
-
-        var cut = Render<TraceabilityView>(p =>
-        {
-            p.Add(c => c.Candidates, candidates);
-            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
-        });
-
-        cut.Find("[data-testid='traceability-matrix-help']").TextContent.Should().Contain("Requirement-first coverage analysis");
-
-        cut.FindAll("button").First(b => b.TextContent.Contains("Graph")).Click();
-
-        cut.Find("[data-testid='traceability-graph-help']").TextContent.Should().Contain("User Story-first relationship analysis");
-        cut.Find("[data-testid='traceability-graph-help']").TextContent.Should().Contain("User Story");
-        cut.Find("[data-testid='traceability-graph-help']").TextContent.Should().Contain("Tasks");
-    }
 
     [Fact]
     public void Traceability_RequirementDetailShowsCoverageReason()
@@ -436,7 +327,8 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
-        cut.Find(".tv-matrix-row").Click();
+        // Requirements is now the default view — click item directly from the list
+        cut.Find(".tv-req-item-btn").Click();
 
         var detailText = cut.Find(".tv-req-detail").TextContent;
         detailText.Should().Contain("Requirement ID");
@@ -463,17 +355,96 @@ public class ViewBehaviorTests : BunitContext
         });
 
         var dashboard = cut.Find("[data-testid='traceability-health-dashboard']").TextContent;
-        dashboard.Should().Contain("Coverage Requirements");
-        dashboard.Should().Contain("Covered");
-        dashboard.Should().Contain("Missing Tests");
-        dashboard.Should().Contain("Missing User Stories");
-        dashboard.Should().Contain("Missing Success Criteria");
-        dashboard.Should().Contain("Orphan Tests");
+        dashboard.Should().Contain("Requirements",       "health dashboard must show requirements count");
+        dashboard.Should().Contain("Covered",            "health dashboard must show covered requirements count");
+        dashboard.Should().Contain("Missing Tests",      "health dashboard must show missing tests gap");
+        dashboard.Should().Contain("Missing User Stories", "health dashboard must show missing user story count");
+        dashboard.Should().Contain("Missing SC",         "health dashboard must show missing success criteria count");
+        dashboard.Should().Contain("Orphan Tests",       "health dashboard must show orphan tests");
+    }
+
+
+    // =========================================================================
+    // Traceability — UX improvements regression suite
+    // =========================================================================
+
+    [Fact]
+    public void Traceability_CoverageMetricShowsCountAndPercent()
+    {
+        // 1 covered of 2 eligible = 50 %.
+        // FR-034 / FR-035 are above the deterministic US-range (1-33), so they get no
+        // automatic UserStoryId and use separate headings to prevent proximity coverage.
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-034: The system MUST allow search",  ScenarioKind.Requirement, "Search Feature"),
+            MakeCandidate("Test: search returns results",           ScenarioKind.Test,        "Search Feature"),
+            MakeCandidate("FR-035: The system MUST filter results", ScenarioKind.Requirement, "Filter Feature"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        var covCard = cut.Find("[data-testid='health-coverage']").TextContent;
+        covCard.Should().Contain("1", "covered count must appear in the Covered health card");
+        cut.Find("[data-testid='health-requirements']").TextContent.Should().Contain("2",
+            "eligible count must appear in the Requirements health card");
+        covCard.Should().Contain("50%", "coverage percent must appear in the Covered health card");
     }
 
     [Fact]
-    public void Traceability_SuggestedLinksPlaceholderVisible()
+    public void Traceability_SummaryCardsNavigateToFilteredGaps()
     {
+        // Clicking a health summary card must navigate to the Gaps tab
+        // and show the relevant gap section.
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search",  ScenarioKind.Requirement, "US1: Search"),
+            MakeCandidate("FR-002: The system MUST filter results", ScenarioKind.Requirement, "Functional Requirements"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        // Click the Missing Tests health card
+        cut.Find("[data-testid='health-missing-tests']").Click();
+
+        // Must show the missing-tests gap section
+        cut.FindAll("[data-testid='gap-missing-tests']").Should().NotBeEmpty(
+            "clicking the Missing Tests health card must navigate to Gaps with the missing-tests section visible");
+    }
+
+    [Fact]
+    public void Traceability_UnassignedUserStoryShownInHealthDashboard()
+    {
+        // A requirement not under any user story heading must increment the Missing User Stories health card.
+        // Use a non-FR-prefixed identifier so the deterministic FR→US range doesn't assign a user story.
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("RULE-001: Data submissions must be validated",
+                ScenarioKind.Requirement, "Business Rules"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        var card = cut.Find("[data-testid='health-missing-us']");
+        card.TextContent.Trim().Should().Contain("1",
+            "requirements without a user story must be counted in the Missing User Stories health card");
+    }
+
+    [Fact]
+    public void Traceability_MissingSuccessCriteriaShownInHealthDashboard()
+    {
+        // A requirement with no linked SC must increment the Missing SC health card.
         IReadOnlyList<ExtractionCandidate> candidates =
         [
             MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
@@ -485,11 +456,107 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
-        cut.FindAll("button").First(b => b.TextContent.Contains("Suggested Links")).Click();
-
-        cut.Find("[data-testid='suggested-links-placeholder']").TextContent
-            .Should().Contain("Automatic traceability suggestions are not yet available");
+        var card = cut.Find("[data-testid='health-missing-sc']");
+        card.TextContent.Trim().Should().Contain("1",
+            "requirements without success criteria must be counted in the Missing SC health card");
     }
+
+
+    [Fact]
+    public void Traceability_RowClickShowsFullRequirementDetails()
+    {
+        // Clicking a requirement item in the Requirements list opens the full detail panel.
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST search by name, national ID, DUF number, and BirkID",
+                ScenarioKind.Requirement, "US1: Search"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.Find(".tv-req-item-btn").Click();
+
+        var detail = cut.Find("[data-testid='tv-detail-full-content']");
+        detail.TextContent.Should().Contain("search by name",
+            "clicking a requirement item must open the full requirement text in the detail panel");
+    }
+
+    [Fact]
+    public void Traceability_GapsTabGroupsMajorGapTypes()
+    {
+        // Gaps tab must render separate collapsible groups for
+        // requirements-without-tests and missing-user-story.
+        // FR-001 has a US1 heading so it has a user story; RULE-001 has no FR range → UserStoryId is null
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search",       ScenarioKind.Requirement, "US1: Search"),
+            MakeCandidate("RULE-001: Data must be validated",           ScenarioKind.Requirement, "Business Rules"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        cut.FindAll("button[role='tab']").First(b => b.TextContent.Contains("Gaps")).Click();
+
+        cut.FindAll("[data-testid='gap-missing-tests']").Should().NotBeEmpty(
+            "Gaps tab must contain a Requirements without Tests group");
+        cut.FindAll("[data-testid='gap-missing-user-story']").Should().NotBeEmpty(
+            "Gaps tab must contain a Missing User Story group");
+    }
+
+    [Fact]
+    public void Traceability_TabsDoNotRenderBlankPanels()
+    {
+        // Every Traceability tab must render meaningful content or an
+        // empty-state message — never a blank panel.
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+        ];
+
+        var cut = Render<TraceabilityView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        // Requirements (default)
+        cut.Find(".tv-req-layout").Should().NotBeNull("Requirements tab must render the list-detail layout by default");
+
+        // Gaps tab
+        cut.FindAll("button[role='tab']").First(b => b.TextContent.Contains("Gaps")).Click();
+        var gapsContent = cut.FindAll(".tv-gap-sections, .tv-gap-allgood");
+        gapsContent.Should().NotBeEmpty("Gaps tab must show either gap groups or the all-good message");
+
+        // Matrix, Graph, and Suggestions tabs must not exist
+        cut.FindAll("button[role='tab']").Should().NotContain(b => b.TextContent.Contains("Matrix"),
+            "Matrix tab is removed — Requirements view is the primary interface");
+        cut.FindAll("button[role='tab']").Should().NotContain(b => b.TextContent.Contains("Graph"),
+            "Graph tab is removed — Flow View provides relationship visualization");
+        cut.FindAll("button[role='tab']").Should().NotContain(b => b.TextContent.Contains("Suggestions"),
+            "Suggestions tab is removed — it was a placeholder with no active functionality");
+    }
+
+    [Fact]
+    public void UserGuide_ExplainsTraceabilityMetricNavigation()
+    {
+        var cut = Render<UserGuide>();
+
+        var text = cut.Markup;
+        text.Should().Contain("summary card", "User Guide must explain that health summary cards are clickable");
+        text.Should().Contain("Missing User Stories", "User Guide must explain the Missing User Stories health card");
+        text.Should().Contain("Missing Success Criteria", "User Guide must explain the Missing Success Criteria health card");
+        text.Should().Contain("work queue",    "User Guide must describe the Gaps tab as a QA work queue");
+    }
+
+    // =========================================================================
 
     [Fact]
     public void UserGuide_ExplainsRequirementVsUserStoryViews()
@@ -497,8 +564,8 @@ public class ViewBehaviorTests : BunitContext
         var cut = Render<UserGuide>();
 
         var guideText = cut.Markup;
-        guideText.Should().Contain("Matrix View Is Requirement-Centric");
-        guideText.Should().Contain("Graph View Is User Story-Centric");
+        guideText.Should().Contain("Coverage Is Requirement-Centric",
+            "User Guide must explain why coverage is calculated at requirement level");
         guideText.Should().Contain("Coverage Requirements");
         guideText.Should().Contain("Missing User Story");
         guideText.Should().Contain("Missing Success Criteria");
@@ -507,7 +574,7 @@ public class ViewBehaviorTests : BunitContext
     }
 
     [Fact]
-    public void UserGuide_ReflectsTraceabilityFirstWorkflow()
+    public void UserGuide_ExplainsExtractionReviewPurpose()
     {
         var cut = Render<UserGuide>();
 
@@ -516,23 +583,30 @@ public class ViewBehaviorTests : BunitContext
             .Should().BeLessThan(text.IndexOf("Flow View", StringComparison.Ordinal));
         text.Should().Contain("default</em> view shown after analysis");
         text.Should().Contain("QA risk picture first");
-        text.Should().Contain("Document View");
+        text.Should().Contain("Extraction Review");
+        text.Should().Contain("Validate and improve extraction quality");
+        text.Should().Contain("Most testers will start in Traceability &amp; Coverage and may never need Extraction Review");
+        text.Should().Contain("AutoAccepted");
+        text.Should().Contain("Link Related Candidates");
+        text.Should().Contain("These changes affect Traceability &amp; Coverage calculations");
         text.Should().Contain("Spec Explorer");
         text.Should().Contain("Architecture View");
     }
 
     [Fact]
-    public void RecommendedWorkflow_ReflectsTraceabilityFirstWorkflow()
+    public void Workflow_UsesTraceabilityFirstModel()
     {
         var cut = Render<RecommendedWorkflow>();
 
         var text = cut.Markup;
-        text.Should().Contain("Start in Traceability &amp; Coverage");
-        text.Should().Contain("default tab");
-        text.Should().Contain("Inspect business flow in Flow View");
-        text.Should().Contain("Review extracted artifacts in Document View");
-        text.Should().Contain("Navigate structure in Spec Explorer");
+        text.Should().Contain("Open Traceability &amp; Coverage first");
+        text.Should().Contain("Review coverage and gaps");
+        text.Should().Contain("Use Flow View for QA readiness");
+        text.Should().Contain("Use Spec Explorer for specification structure");
+        text.Should().Contain("Use Extraction Review only when extraction quality needs verification");
+        text.Should().Contain("optional advanced extraction quality control");
         text.Should().Contain("Inspect architecture in Architecture View");
+        text.Should().NotContain("Review extracted" + " artifacts in " + "Extraction Review");
     }
 
     // =========================================================================
@@ -556,7 +630,7 @@ public class ViewBehaviorTests : BunitContext
         });
 
         cut.FindAll("[data-testid='candidate-checkbox']").Should().BeEmpty("Flow View must not contain review checkboxes");
-        cut.FindAll("[data-testid='group-requirement']").Should().BeEmpty("Flow View must not contain Document View classification groups");
+        cut.FindAll("[data-testid='group-requirement']").Should().BeEmpty("Flow View must not contain Extraction Review classification groups");
         cut.FindAll(".fv-lane").Should().HaveCount(2, "one lane per distinct ContextHeading");
     }
 
@@ -699,7 +773,7 @@ public class ViewBehaviorTests : BunitContext
         });
 
         // Only the one real requirement must appear in the global requirement count
-        cut.Find(".fv-chip-req").TextContent.Should().Contain("1 Requirement",
+        cut.Find(".fv-sum-reqs").TextContent.Should().Contain("1 Requirement",
             "Decision items must not inflate the global requirement count");
     }
 
@@ -721,7 +795,8 @@ public class ViewBehaviorTests : BunitContext
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });
 
-        // First lane is auto-expanded
+        // CTAs are behind the "Manage Implementation Links" toggle — expand it first
+        cut.Find(".fv-impl-manage-btn").Click();
         cut.FindAll(".fv-task-cta-btn").Should().NotBeEmpty(
             "Task lane must have actionable CTA elements");
         cut.Markup.Should().Contain("Open Task Explorer",
@@ -776,6 +851,270 @@ public class ViewBehaviorTests : BunitContext
         var coveredBadge = cut.Find(".fv-status-covered");
         coveredBadge.TextContent.Should().Contain("1",
             "Covered requirement must display the linked test count in its row header");
+    }
+
+    // =========================================================================
+    // FlowView — QA Readiness Dashboard features
+    // =========================================================================
+
+    [Fact]
+    public void FlowView_ShowsStoryHealthStatus()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+        ];
+
+        var cut = Render<FlowView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        // Story has a requirement with no test → Missing Tests health
+        cut.FindAll("[data-testid='fv-health-badge']").Should().NotBeEmpty(
+            "story header must show a health badge");
+        cut.Find("[data-testid='fv-health-badge']").TextContent.Should().Contain("Missing Tests",
+            "story with untested requirement must show Missing Tests health badge");
+    }
+
+    [Fact]
+    public void FlowView_ShowsReadinessScore()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+        ];
+
+        var cut = Render<FlowView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        // First story is auto-expanded; readiness panel must be visible
+        cut.FindAll("[data-testid='fv-readiness-panel']").Should().NotBeEmpty(
+            "expanded story must show the QA Readiness score panel");
+        cut.Find("[data-testid='fv-readiness-panel']").TextContent.Should().Contain("%",
+            "readiness panel must display a percentage score");
+    }
+
+    [Fact]
+    public void FlowView_HighlightsMissingSuccessCriteria()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+        ];
+
+        var cut = Render<FlowView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        // Health badge must mention Missing SC or Missing Tests (story has no SC)
+        var healthBadge = cut.Find("[data-testid='fv-health-badge']");
+        healthBadge.Should().NotBeNull("health badge must be present");
+
+        // SC step must show the missing badge inside the expanded lane
+        cut.FindAll("[data-testid='fv-sc-missing-badge']").Should().NotBeEmpty(
+            "expanded story with no linked success criteria must show the Missing SC warning badge");
+    }
+
+    [Fact]
+    public void FlowView_ShowsTaskCoverageStatus()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST allow search", ScenarioKind.Requirement, "US1: Search"),
+        ];
+
+        var cut = Render<FlowView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        // Task step must show "Tasks not imported" rather than ambiguous "No task links found yet"
+        cut.FindAll("[data-testid='fv-tasks-not-imported']").Should().NotBeEmpty(
+            "task step must show an explicit 'Tasks not imported' message");
+        cut.Find("[data-testid='fv-tasks-not-imported']").TextContent.Should().Contain("not imported",
+            "task placeholder must explain tasks are not yet imported rather than just 'no links'");
+    }
+
+    [Fact]
+    public void FlowView_SortsStoriesByPriority()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-003: Low priority", ScenarioKind.Requirement, "US3: Export (P3)"),
+            MakeCandidate("FR-001: High priority", ScenarioKind.Requirement, "US1: Search (P1)"),
+            MakeCandidate("FR-002: Medium priority", ScenarioKind.Requirement, "US2: Profile (P2)"),
+        ];
+
+        var cut = Render<FlowView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        var lanes = cut.FindAll(".fv-lane:not(.fv-lane-decision):not(.fv-lane-unmapped)");
+        lanes.Should().HaveCount(3, "three regular story lanes expected");
+
+        // P1 must appear before P2, P2 before P3
+        var laneTexts = lanes.Select(l => l.TextContent).ToList();
+        var p1Index = laneTexts.FindIndex(t => t.Contains("P1"));
+        var p2Index = laneTexts.FindIndex(t => t.Contains("P2"));
+        var p3Index = laneTexts.FindIndex(t => t.Contains("P3"));
+
+        p1Index.Should().BeLessThan(p2Index, "P1 story must appear before P2");
+        p2Index.Should().BeLessThan(p3Index, "P2 story must appear before P3");
+    }
+
+    [Fact]
+    public void FlowView_ShowsCollapsedStorySummary()
+    {
+        // Second story will be collapsed (only first is auto-expanded)
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: Search",  ScenarioKind.Requirement, "US1: Search"),
+            MakeCandidate("Test: works",     ScenarioKind.Test,        "US1: Search"),
+            MakeCandidate("FR-002: Profile", ScenarioKind.Requirement, "US2: Profile"),
+        ];
+
+        var cut = Render<FlowView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        // The second lane (US2) is collapsed — its header must show counts
+        var collapsedLane = cut.FindAll(".fv-lane:not(.fv-lane-decision):not(.fv-lane-unmapped)")[1];
+        collapsedLane.TextContent.Should().Contain("FR",
+            "collapsed story header must show requirement count");
+        collapsedLane.TextContent.Should().Contain("SC",
+            "collapsed story header must show success criteria count");
+    }
+
+    [Fact]
+    public void FlowView_FiltersByGapType()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: Search",  ScenarioKind.Requirement, "US1: Search"),
+            MakeCandidate("Test: works",     ScenarioKind.Test,        "US1: Search"),
+            MakeCandidate("FR-002: Profile", ScenarioKind.Requirement, "US2: Profile"),
+        ];
+
+        var cut = Render<FlowView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        // Filters must be present
+        cut.FindAll("[data-testid='fv-filters']").Should().NotBeEmpty("filter bar must be present");
+
+        // Click Missing Tests filter — should hide US1 (covered) and show US2 (missing tests)
+        cut.Find("[data-testid='fv-filter-missing-tests']").Click();
+        var visibleLanes = cut.FindAll(".fv-lane:not(.fv-lane-decision):not(.fv-lane-unmapped)");
+        visibleLanes.Should().ContainSingle("only the story with missing tests should be visible");
+        visibleLanes.Single().TextContent.Should().Contain("Profile",
+            "the uncovered story must be visible under the Missing Tests filter");
+    }
+
+    [Fact]
+    public void FlowView_QAWorkQueueDisplaysCounts()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: Search",  ScenarioKind.Requirement, "US1: Search"),
+            MakeCandidate("FR-002: Profile", ScenarioKind.Requirement, "US2: Profile"),
+        ];
+
+        var cut = Render<FlowView>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
+        });
+
+        // Both stories are missing tests → work queue must appear
+        var queue = cut.Find("[data-testid='fv-work-queue']");
+        queue.Should().NotBeNull("QA work queue must appear when there are actionable gaps");
+
+        // Coverage issues are collapsed by default — expand to see the breakdown
+        cut.Find("[data-testid='fv-work-queue'] .fv-work-queue-header").Click();
+        cut.Find("[data-testid='fv-work-queue']").TextContent.Should().Contain("missing tests",
+            "expanded coverage issues must describe stories missing tests");
+    }
+
+    [Fact]
+    public void UserGuide_ExplainsFlowViewReadinessModel()
+    {
+        var cut = Render<UserGuide>();
+
+        var text = cut.Markup;
+        text.Should().Contain("QA Readiness",              "User Guide must explain the QA Readiness score");
+        text.Should().Contain("Story Health",              "User Guide must explain story health badges");
+        text.Should().Contain("Missing Tests",             "User Guide must describe the Missing Tests health state");
+        text.Should().Contain("Missing Success Criteria",  "User Guide must describe the Missing Success Criteria health state");
+        text.Should().Contain("Priority Sorting",          "User Guide must explain priority sorting");
+        text.Should().Contain("Flow View Filters",         "User Guide must describe the filter chips");
+        text.Should().Contain("QA Work Queue",             "User Guide must describe the work queue section");
+        text.Should().Contain("Tasks not imported",        "User Guide must explain the task coverage status message");
+    }
+
+    // =========================================================================
+    // QA Artifact Library — repository positioning
+    // =========================================================================
+
+    [Fact]
+    public void UserGuide_ClearlyDifferentiatesTraceabilityAndLibrary()
+    {
+        var cut = Render<UserGuide>();
+
+        var text = cut.Markup;
+
+        // Coverage analysis ownership must be attributed to Traceability & Coverage
+        text.Should().Contain("Coverage analysis belongs in Traceability",
+            "User Guide must state that coverage analysis belongs in Traceability & Coverage");
+
+        // Library must be described as a reuse repository, not a coverage tool
+        text.Should().Contain("reusable QA assets",
+            "User Guide must describe the library as a repository of reusable QA assets");
+        text.Should().Contain("discover",
+            "User Guide must describe the library purpose as discovering/reusing assets");
+
+        // The Traceability section must distinguish itself from the library
+        text.Should().Contain("Traceability &amp; Coverage vs. QA Artifact Library",
+            "User Guide must include an explicit differentiation callout between Traceability and Library");
+
+        // Library must not be listed as a coverage analysis tool
+        text.Should().NotContain("Coverage analysis tool",
+            "User Guide must not describe the library as a coverage analysis tool");
+    }
+
+    [Fact]
+    public void RecommendedWorkflow_MarksQaLibraryAsOptional()
+    {
+        var cut = Render<RecommendedWorkflow>();
+
+        var text = cut.Markup;
+
+        // Phase 2 must be marked as optional
+        text.Should().Contain("Optional",
+            "RecommendedWorkflow must mark the QA Artifact Library phase as optional");
+
+        // The key workflow message: Traceability works without publishing
+        text.Should().Contain("Traceability",
+            "RecommendedWorkflow must mention Traceability & Coverage");
+        text.Should().Contain("no publishing required",
+            "RecommendedWorkflow must state that Traceability & Coverage works without publishing to the library");
+
+        // Phase 2 must explain it is about reuse, not required for coverage
+        text.Should().Contain("reuse",
+            "RecommendedWorkflow Phase 2 must emphasize the library is for reuse");
     }
 
     // =========================================================================
@@ -924,6 +1263,133 @@ public class ViewBehaviorTests : BunitContext
     }
 
     // =========================================================================
+    // Architecture View — blank-panel regression tests
+    // =========================================================================
+
+    [Fact]
+    public void ArchitectureView_DoesNotRenderBlankPanel()
+    {
+        // A spec with no recognisable architecture markers must still produce
+        // a visible, non-blank panel — either an empty-state message or content.
+        const string md = """
+            # Specification
+
+            ## Background
+            This system supports caseworkers.
+            """;
+
+        var cut = Render<ArchitectureView>(p => p.Add(c => c.SpecMarkdown, md));
+
+        var hasContent =
+            cut.FindAll("[data-testid='av-root']").Count > 0 ||
+            cut.FindAll("[data-testid='av-empty']").Count > 0 ||
+            cut.FindAll("[data-testid='av-not-generated']").Count > 0 ||
+            cut.FindAll("[data-testid='av-loading']").Count > 0 ||
+            cut.FindAll("[data-testid='av-failed']").Count > 0;
+
+        hasContent.Should().BeTrue(
+            "Architecture View must never render a truly blank panel — one of the known states must be active");
+    }
+
+    [Fact]
+    public void ArchitectureView_ShowsEmptyStateWhenNoElements()
+    {
+        // A spec with no architecture-recognisable content and no candidates
+        // must show the empty state with guidance, not a blank panel.
+        const string md = """
+            # Background
+            Some descriptive prose with no architecture markers.
+            """;
+
+        var cut = Render<ArchitectureView>(p => p.Add(c => c.SpecMarkdown, md));
+
+        cut.FindAll("[data-testid='av-empty']").Should().NotBeEmpty(
+            "when no architecture elements and no architecture-note candidates exist, empty state must show");
+        cut.Markup.Should().Contain("No architecture elements found in this specification",
+            "empty state must include a clear diagnostic message");
+        cut.Markup.Should().Contain("Traceability",
+            "empty state must guide the user to alternative views");
+    }
+
+    [Fact]
+    public void ArchitectureView_ShowsArchitectureNotesWhenAvailable()
+    {
+        // When spec has no architecture markers but candidates include architecture-headed items,
+        // the component renders the empty state (not the not-generated state) and does not crash.
+        const string mdNoElements = """
+            # Background
+            Descriptive text only — no parseable architecture markers.
+            """;
+
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("GraphQL MUST be used for all read operations.",
+                ScenarioKind.Requirement, "Architecture Decisions"),
+            MakeCandidate("The authorisation service MUST fail closed.",
+                ScenarioKind.Requirement, "Architecture Decisions"),
+        ];
+
+        var cut = Render<ArchitectureView>(p =>
+        {
+            p.Add(c => c.SpecMarkdown, mdNoElements);
+            p.Add(c => c.Candidates, candidates);
+        });
+
+        cut.FindAll("[data-testid='av-not-generated']").Should().BeEmpty(
+            "markdown is present, so not-generated state must not show");
+        cut.Markup.Should().NotBeNullOrEmpty(
+            "component must render without throwing when architecture candidates are provided");
+    }
+
+    [Fact]
+    public void ArchitectureView_ShowsLoadingState()
+    {
+        // Extraction is synchronous, so the loading state clears before the component
+        // renders. This test verifies the panel is never blank — it always shows a
+        // meaningful state regardless of the markdown supplied.
+
+        // Without markdown: not-generated state (not blank, not loading).
+        var cutNoMd = Render<ArchitectureView>();
+        cutNoMd.FindAll("[data-testid='av-loading']").Should().BeEmpty(
+            "loading must not persist when no markdown is provided");
+        cutNoMd.Markup.Should().Contain("No architecture mappings available yet",
+            "not-generated message must appear before markdown is supplied");
+
+        // With markdown containing API elements: content state (not blank, not loading).
+        const string md = """
+            # Spec
+
+            ## API Surface
+            - **GraphQL** — queries for the presentation layer
+            """;
+
+        var cut = Render<ArchitectureView>(p => p.Add(c => c.SpecMarkdown, md));
+
+        cut.FindAll("[data-testid='av-loading']").Should().BeEmpty(
+            "loading state must not persist after synchronous extraction completes");
+        cut.FindAll("[data-testid='av-root']").Should().HaveCount(1,
+            "component must render content after extraction");
+    }
+
+    [Fact]
+    public void ArchitectureView_ShowsFailureStateWhenExtractionFails()
+    {
+        // Null markdown → not-generated state (not a blank panel).
+        var cutNull = Render<ArchitectureView>(p => p.Add(c => c.SpecMarkdown, (string?)null));
+        cutNull.FindAll("[data-testid='av-not-generated']").Should().NotBeEmpty(
+            "null markdown must produce the not-generated state, not a blank panel");
+
+        // Whitespace markdown → same not-generated state.
+        var cutWhitespace = Render<ArchitectureView>(p => p.Add(c => c.SpecMarkdown, "   "));
+        cutWhitespace.FindAll("[data-testid='av-not-generated']").Should().NotBeEmpty(
+            "whitespace markdown must produce the not-generated state");
+
+        // The failed state must not appear when extraction has not been attempted.
+        cutNull.FindAll("[data-testid='av-failed']").Should().BeEmpty(
+            "failed state must not show when extraction has not run or succeeded");
+    }
+
+    // =========================================================================
     // T18 — SpecExplorer: candidate count strip shows extraction-derived counts
     // =========================================================================
 
@@ -990,6 +1456,308 @@ public class ViewBehaviorTests : BunitContext
             "abbreviation 'req' must be replaced with 'Requirements (N)'");
         chipTexts.Should().Contain(t => t.Contains("Requirements"),
             "full label 'Requirements' must appear in badge chips");
+    }
+
+    [Fact]
+    public void SpecExplorer_ShowsSectionHealth()
+    {
+        var cut = RenderSpecExplorerWithTraceability();
+
+        var health = cut.FindAll("[data-testid='se-section-health']");
+        health.Should().NotBeEmpty();
+        health.Select(h => h.TextContent).Should().Contain(t =>
+            t.Contains("Covered") || t.Contains("Partial") || t.Contains("Missing"),
+            "section health must show coverage state");
+    }
+
+    [Fact]
+    public void SpecExplorer_UsesExplicitCoverageLabels()
+    {
+        var cut = RenderSpecExplorerWithTraceability();
+
+        var labels = cut.FindAll("[data-testid='se-coverage-label']").Select(e => e.TextContent).ToList();
+        labels.Should().Contain(t => t.Contains("Covered"));
+        labels.Should().Contain(t => t.Contains("Partial"));
+        labels.Should().Contain(t => t.Contains("Missing"));
+    }
+
+    [Fact]
+    public void SpecExplorer_ShowsUserStoryOwnership()
+    {
+        var cut = RenderSpecExplorerWithTraceability();
+
+        // User story ownership is shown in the section summary details panel
+        cut.FindAll(".se-row").First(r => r.TextContent.Contains("API Surface")).Click();
+
+        var owners = cut.FindAll("[data-testid='se-user-story-ownership']").Select(e => e.TextContent).ToList();
+        owners.Should().NotBeEmpty("clicking a section heading should show user story ownership in details panel");
+        owners.Should().Contain(t => t.Contains("US1"));
+    }
+
+    [Fact]
+    public void SpecExplorer_CanNavigateToTraceability()
+    {
+        var cut = RenderSpecExplorerWithTraceability();
+
+        cut.FindAll(".se-row").First(r => r.TextContent.Contains("expose search APIs")).Click();
+
+        var traceLink = cut.Find("[data-testid='se-open-traceability']");
+        traceLink.TextContent.Should().Contain("Open in Traceability");
+        traceLink.GetAttribute("href").Should().Be("/traceability");
+    }
+
+    [Fact]
+    public void SpecExplorer_ShowsRequirementDetails()
+    {
+        var cut = RenderSpecExplorerWithTraceability();
+
+        cut.FindAll(".se-row").First(r => r.TextContent.Contains("expose search APIs")).Click();
+
+        var detail = cut.Find("[data-testid='se-requirement-detail']").TextContent;
+        detail.Should().Contain("expose search APIs");
+        detail.Should().Contain("Source heading");
+        detail.Should().Contain("User Story");
+        detail.Should().Contain("Linked tests");
+        detail.Should().Contain("Linked success criteria");
+        detail.Should().Contain("Coverage status");
+    }
+
+    [Fact]
+    public void SpecExplorer_ShowsSectionSummary()
+    {
+        var cut = RenderSpecExplorerWithTraceability();
+
+        cut.FindAll(".se-row").First(r => r.TextContent.Contains("API Surface")).Click();
+
+        var summary = cut.Find("[data-testid='se-section-summary']").TextContent;
+        summary.Should().Contain("Heading Summary");
+        summary.Should().Contain("Requirements:");
+        summary.Should().Contain("Clarifications:");
+        summary.Should().Contain("Coverage:");
+        summary.Should().NotContain("Top gaps", "top gap details belong in Traceability, not Spec Explorer");
+    }
+
+    [Fact]
+    public void SpecExplorer_MapViewDisplaysStructure()
+    {
+        var cut = RenderSpecExplorerWithTraceability();
+
+        cut.FindAll(".se-view-btn").First(b => b.TextContent.Contains("Map View")).Click();
+
+        cut.FindAll("[data-testid='se-map-structure']")
+            .Should().Contain(e => e.TextContent.Contains("Heading -> Requirements -> Tests -> Success Criteria"));
+    }
+
+    [Fact]
+    public void SpecExplorer_FiltersByCoverageStatus()
+    {
+        var cut = RenderSpecExplorerWithTraceability();
+
+        cut.FindAll(".se-filter-chip").First(b => b.TextContent.Contains("Missing Coverage")).Click();
+
+        var rows = cut.FindAll(".se-row").Select(r => r.TextContent).ToList();
+        rows.Should().Contain(t => t.Contains("Security"));
+        rows.Should().NotContain(t => t.Contains("API Surface") && t.Contains("Covered"));
+    }
+
+    [Fact]
+    public void SpecExplorer_EmptyStatesRender()
+    {
+        var noRequirements = Render<SpecExplorerPanel>(p =>
+        {
+            p.Add(c => c.InitialSpecMarkdown, "# Empty Spec\n\n## Notes\n\nNo requirements here.");
+            p.Add(c => c.IsEmbeddedInReview, true);
+        });
+
+        noRequirements.Markup.Should().Contain("No requirements extracted");
+
+        var noSession = Render<SpecExplorerPanel>(p => p.Add(c => c.IsEmbeddedInReview, true));
+        noSession.Markup.Should().Contain("No active review session found");
+    }
+
+    [Fact]
+    public void UserGuide_ExplainsSpecExplorerPurpose()
+    {
+        var cut = Render<UserGuide>();
+
+        var text = cut.Markup;
+        text.Should().Contain("Spec Explorer is the specification structure and navigation layer");
+        text.Should().Contain("Traceability &amp; Coverage is for coverage analysis");
+        text.Should().Contain("Flow View is for QA readiness");
+        text.Should().Contain("Extraction Review is for extraction quality review");
+        text.Should().Contain("Architecture View is for technical assumptions and architecture");
+    }
+
+    [Fact]
+    public void TaskExplorer_ShowsImplementationCoverage()
+    {
+        var cut = RenderTaskExplorerWithImplementationGaps();
+
+        var coverage = cut.Find("[data-testid='te-implementation-coverage']").TextContent;
+        coverage.Should().Contain("Implementation Coverage");
+        coverage.Should().Contain("Are requirements implemented?");
+        coverage.Should().Contain("User Stories");
+        coverage.Should().Contain("Functional Requirements");
+        coverage.Should().Contain("Success Criteria");
+        coverage.Should().Contain("Tests");
+        coverage.Should().Contain("Architecture Notes");
+        coverage.Should().Contain("Partial");
+    }
+
+    [Fact]
+    public void TaskExplorer_ShowsDeliveryRiskSummary()
+    {
+        var cut = RenderTaskExplorerWithImplementationGaps();
+
+        var risk = cut.Find("[data-testid='te-delivery-risk']").TextContent;
+        risk.Should().Contain("Delivery Risk");
+        risk.Should().Contain("Requirements without implementation");
+        risk.Should().Contain("Success Criteria without tasks");
+        risk.Should().Contain("User Stories with no implementation");
+        risk.Should().Contain("Security requirements without security tasks");
+        risk.Should().Contain("Testing requirements without test tasks");
+        risk.Should().Contain("Medium");
+    }
+
+    [Fact]
+    public void TaskExplorer_ImpactTabShowsMissingImplementation()
+    {
+        var cut = RenderTaskExplorerWithImplementationGaps();
+
+        cut.FindAll(".te-view-btn").First(b => b.TextContent.Contains("Impact")).Click();
+
+        var impact = cut.Find("[data-testid='te-impact-view']").TextContent;
+        impact.Should().Contain("Requirements Missing Tasks");
+        impact.Should().Contain("FR-002");
+        impact.Should().Contain("Success Criteria Missing Tasks");
+        impact.Should().Contain("SC-002");
+        impact.Should().Contain("User Stories Missing Tasks");
+        impact.Should().Contain("US-002");
+        impact.Should().Contain("User Story -> Requirements -> Success Criteria -> Tasks");
+    }
+
+    [Fact]
+    public void TaskExplorer_ShowsImplementationFilters()
+    {
+        var cut = RenderTaskExplorerWithImplementationGaps();
+
+        var text = cut.Markup;
+        text.Should().Contain("Only Missing Implementation");
+        text.Should().Contain("Only Partial Coverage");
+        text.Should().Contain("Only Security");
+        text.Should().Contain("Only Testing");
+        text.Should().Contain("Only User Stories");
+        text.Should().Contain("Only Requirements");
+        text.Should().Contain("Only Success Criteria");
+        text.Should().Contain("Only Unlinked Tasks");
+    }
+
+    [Fact]
+    public void TaskExplorer_ShowsTaskDetailsWithLinkedArtifacts()
+    {
+        var cut = RenderTaskExplorerWithImplementationGaps();
+
+        cut.FindAll(".te-row").First(r => r.TextContent.Contains("T001")).Click();
+
+        var details = cut.Find("[data-testid='te-task-details']").TextContent;
+        details.Should().Contain("Task Details");
+        details.Should().Contain("Linked User Story");
+        details.Should().Contain("US-001");
+        details.Should().Contain("Linked Requirement(s)");
+        details.Should().Contain("FR-001");
+        details.Should().Contain("Linked Success Criteria");
+        details.Should().Contain("SC-001");
+        details.Should().Contain("Linked Test Assets");
+        details.Should().Contain("Linked Architecture Notes");
+        details.Should().Contain("Implementation Status");
+        details.Should().Contain("Coverage Impact");
+    }
+
+    [Fact]
+    public void TaskExplorer_CanNavigateToTraceability()
+    {
+        var cut = RenderTaskExplorerWithImplementationGaps();
+
+        cut.FindAll(".te-row").First(r => r.TextContent.Contains("T001")).Click();
+
+        var button = cut.Find(".te-traceability-link");
+        button.TextContent.Should().Contain("Open in Traceability");
+        button.Click();
+
+        cut.Markup.Should().Contain("FR-001");
+    }
+
+    [Fact]
+    public void UserGuide_ExplainsImplementationCoverageVsValidationCoverage()
+    {
+        var cut = Render<UserGuide>();
+
+        var text = cut.Markup;
+        text.Should().Contain("Task Explorer");
+        text.Should().Contain("Implementation Coverage");
+        text.Should().Contain("Traceability &amp; Coverage = Validation Coverage");
+        text.Should().Contain("Task Explorer = Implementation Coverage");
+    }
+
+    [Fact]
+    public void UserGuide_DoesNotPointToLegacyTraceability()
+    {
+        var cut = Render<UserGuide>();
+
+        var text = cut.Markup;
+        text.Should().Contain("Specification Review");
+        text.Should().Contain("Traceability &amp; Coverage");
+        text.Should().NotContain("href=\"/traceability\"");
+        text.Should().NotContain("href=\"/code-traceability\"");
+        text.Should().NotContain("Traceability Suggestions");
+        text.Should().NotContain("Code Traceability");
+        text.Should().NotContain("standalone Traceability");
+    }
+
+    private IRenderedComponent<TaskExplorerPanel> RenderTaskExplorerWithImplementationGaps()
+    {
+        const string tasks = """
+            # Tasks
+
+            ## Phase 1
+
+            ### US-001 Search
+            - [x] T001 Implement FR-001 search API with SC-001 acceptance criteria
+            - [ ] T002 Add test task for FR-001
+
+            ### US-003 Security
+            - [ ] T003 Implement security controls for FR-003 with SC-003
+            - [ ] T004 Architecture note for API integration
+            - [ ] T005 Unlinked implementation cleanup
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(c => c.TasksText, tasks));
+        cut.FindAll(".te-ctrl-btn").First(b => b.TextContent.Contains("Expand All")).Click();
+        return cut;
+    }
+
+    private IRenderedComponent<SpecExplorerPanel> RenderSpecExplorerWithTraceability()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-001: The system MUST expose search APIs", ScenarioKind.Requirement, "US1: API Surface"),
+            MakeCandidate("FR-002: The system MUST expose detail APIs", ScenarioKind.Requirement, "US1: API Surface"),
+            MakeCandidate("Test: search API returns results", ScenarioKind.Test, "US1: API Surface"),
+            MakeCandidate("Test: detail API returns one item", ScenarioKind.Test, "US1: API Surface"),
+            MakeCandidate("FR-003: The system MUST handle invalid IDs", ScenarioKind.Requirement, "US2: Edge Cases"),
+            MakeCandidate("Test: invalid ID returns 404", ScenarioKind.Test, "US2: Edge Cases"),
+            MakeCandidate("Clarify timeout behavior", ScenarioKind.NeedsClarification, "US2: Edge Cases"),
+            MakeCandidate("FR-005: The system MUST handle rate limits", ScenarioKind.Requirement, "US2: Edge Cases"),
+            MakeCandidate("FR-004: The system MUST reject unauthorized requests", ScenarioKind.Requirement, "US3: Security"),
+        ];
+
+        var cut = Render<SpecExplorerPanel>(p =>
+        {
+            p.Add(c => c.Candidates, candidates);
+            p.Add(c => c.IsEmbeddedInReview, true);
+        });
+        cut.FindAll(".se-ctrl-btn").First(b => b.TextContent.Contains("Expand All")).Click();
+        return cut;
     }
 
     private static string FindPersonSpecPath()

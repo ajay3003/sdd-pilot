@@ -6,6 +6,7 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @inject IBirkNextClient Client
+@inject NavigationManager NavigationManager
 
 <PageTitle>Delta Reviews</PageTitle>
 
@@ -130,6 +131,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        NavigationManager.NavigateTo("/spec-drift?tab=changes", replace: true);
         await LoadReviewsAsync();
     }
 

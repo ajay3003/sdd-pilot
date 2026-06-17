@@ -17,6 +17,22 @@
     font-size: 0.9rem;
 }
 
+.av-empty-hint {
+    color: var(--clr-text-subtle, #475569);
+    font-size: 0.78rem;
+    margin-top: 0.35rem;
+}
+
+.av-empty-action {
+    display: inline-block;
+    margin-top: 0.75rem;
+    font-size: 0.8rem;
+    color: var(--clr-accent, #3b82f6);
+    text-decoration: none;
+}
+
+.av-empty-action:hover { text-decoration: underline; }
+
 /* ── Metric chips ─────────────────────────────────────────────────────────── */
 
 .av-metrics {
@@ -473,6 +489,74 @@
 .av-cat-securityboundary { border-left: 3px solid #f43f5e !important; }
 .av-diag-securityboundary { background: rgba(244, 63, 94, 0.18); border-color: #f43f5e; }
 .av-detail-header-securityboundary { border-bottom-color: #f43f5e; }
+
+/* ── Coverage dots (tree items) ──────────────────────────────────────────── */
+
+.av-cov-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.av-cov-dot-covered  { background: #22c55e; }
+.av-cov-dot-partial  { background: #f59e0b; }
+.av-cov-dot-missing  { background: #475569; }
+
+/* ── Coverage badge (detail panel) ───────────────────────────────────────── */
+
+.av-coverage-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.av-coverage-badge {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.av-cov-covered { background: rgba(34, 197, 94, 0.15); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.3); }
+.av-cov-partial  { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.3); }
+.av-cov-missing  { background: rgba(71, 85, 105, 0.2); color: #94a3b8; border: 1px solid rgba(71, 85, 105, 0.3); }
+
+.av-coverage-hint {
+    font-size: 0.7rem;
+    color: var(--clr-text-subtle, #64748b);
+}
+
+/* ── Source links ─────────────────────────────────────────────────────────── */
+
+.av-source-links {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.av-source-link {
+    font-size: 0.72rem;
+    color: var(--clr-accent, #3b82f6);
+    text-decoration: none;
+    display: inline-block;
+}
+
+.av-source-link:hover { text-decoration: underline; }
+
+.av-diag-links {
+    display: flex;
+    gap: 0.75rem;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.av-diag-link { font-size: 0.68rem; white-space: nowrap; }
 
 /* IntegrationPoint — cyan */
 .av-chip-integrationpoint { background: #06b6d4; }

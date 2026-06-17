@@ -15,6 +15,7 @@ public static class FlowModelBuilder
     // A heading is a decision lane if it starts with an ISO date or is a Q/A clarification session.
     // Matches ISO date anywhere in heading so "Session 2026-03-06" is caught as a decision lane.
     private static readonly Regex DateHeadingRe = new(@"\b\d{4}-\d{2}-\d{2}\b", RegexOptions.Compiled);
+    private static readonly Regex PriorityRe    = new(@"\(P([1-3])\)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static FlowModel Build(
         string? specMarkdown,
@@ -200,6 +201,7 @@ public static class FlowModelBuilder
                 Key             = isUnmapped ? "unassigned" : heading,
                 Title           = isUnmapped ? "Unassigned" : StripIdPrefix(heading),
                 StoryId         = ExtractUsId(heading),
+                Priority        = isUnmapped ? 0 : ExtractPriority(heading),
                 Requirements    = flowReqs,
                 AllTests        = allTests,
                 SuccessCriteria = flowScs,
@@ -214,9 +216,18 @@ public static class FlowModelBuilder
             .DistinctBy(s => s.SpecItemId, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        // Sort: mapped stories by priority (P1 first, then P2/P3, then unspecified),
+        // then unmapped, then decision lanes — preserving document order within each group.
+        var sorted = stories
+            .Where(s => !s.IsUnmapped && !s.IsDecisionLane)
+            .OrderBy(s => s.Priority == 0 ? int.MaxValue : s.Priority)
+            .Concat(stories.Where(s => s.IsUnmapped))
+            .Concat(stories.Where(s => s.IsDecisionLane))
+            .ToList();
+
         return new FlowModel
         {
-            Stories                  = stories,
+            Stories                  = sorted,
             UnlinkedSuccessCriteria  = unlinkedScs,
         };
     }
@@ -273,6 +284,11 @@ public static class FlowModelBuilder
 
     private static string? ExtractUsId(string heading) =>
         UsIdRe.Match(heading) is { Success: true } m ? m.Value : null;
+
+    private static int ExtractPriority(string heading) =>
+        PriorityRe.Match(heading) is { Success: true } m
+            ? int.TryParse(m.Groups[1].Value, out var p) ? p : 0
+            : 0;
 
     private static string? FirstMatch(Regex re, string? text) =>
         text is null ? null : re.Match(text) is { Success: true } m ? m.Value : null;

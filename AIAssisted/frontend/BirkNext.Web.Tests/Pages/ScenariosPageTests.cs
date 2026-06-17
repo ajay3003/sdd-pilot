@@ -515,6 +515,122 @@ public class ScenariosPageTests : BunitContext
         rows[1].TextContent.Should().Contain("First test");
     }
 
+    // ── QA Library repository positioning ────────────────────────────────────
+
+    [Fact]
+    public void ScenariosPage_DoesNotShowCoverageMetricsDashboard()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult(
+            [
+                MakeScenario("sc-1", "Login requirement", null, ScenarioKind.Requirement),
+                MakeScenario("sc-2", "Login test", null, ScenarioKind.Test),
+            ]));
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.WaitForAssertion(() =>
+            cut.Markup.Should().NotContain("Loading scenarios"),
+            timeout: TimeSpan.FromSeconds(1));
+
+        // Coverage dashboard sections must not exist in the library
+        cut.Markup.Should().NotContain("Coverage Map",              "Coverage Map belongs in Traceability & Coverage");
+        cut.Markup.Should().NotContain("Traceability Health",       "Traceability Health strip belongs in Traceability & Coverage");
+        cut.Markup.Should().NotContain("Release Readiness",         "Release Readiness belongs in Traceability & Coverage");
+        cut.Markup.Should().NotContain("Recommended Actions",       "Coverage-oriented recommended actions belong in Traceability & Coverage");
+        cut.Markup.Should().NotContain("Requirement coverage",      "Coverage % metric belongs in Traceability & Coverage");
+        cut.Markup.Should().NotContain("Requirements Not Imported", "Import workflow belongs in Specification Review, not the library");
+        cut.Markup.Should().NotContain("Import Requirements",       "Import Requirements CTA belongs in Specification Review");
+    }
+
+    [Fact]
+    public void ScenariosPage_ShowsTraceabilityRedirectNote()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult([]));
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        // The page must have a note directing coverage analysis to Traceability & Coverage
+        var note = cut.Find("[data-testid='ql-traceability-redirect']");
+        note.Should().NotBeNull("library must show a redirect note pointing coverage analysis to Traceability & Coverage");
+        note.TextContent.Should().Contain("Traceability",
+            "redirect note must name Traceability & Coverage as the coverage workspace");
+        note.TextContent.Should().Contain("reusable",
+            "redirect note must describe the library as a reuse repository");
+    }
+
+    [Fact]
+    public void ScenariosPage_DoesNotShowCoverageGapsFilter()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult(
+            [
+                MakeScenario("sc-1", "Login requirement", null, ScenarioKind.Requirement),
+            ]));
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.WaitForAssertion(() =>
+            cut.Markup.Should().NotContain("Loading scenarios"),
+            timeout: TimeSpan.FromSeconds(1));
+
+        // Coverage Gaps filter chip must not exist — it implies the library is a coverage tool
+        cut.Markup.Should().NotContain("Coverage Gaps",
+            "Coverage Gaps filter belongs in Traceability & Coverage, not the library");
+    }
+
+    [Fact]
+    public void ScenariosPage_ShowsRepositoryPurposeAssetCounts()
+    {
+        var mockQuery = new Mock<IGetScenariosQuery>();
+        mockQuery
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeGetScenariosResult(
+            [
+                MakeScenario("sc-1", "Login requirement", null, ScenarioKind.Requirement),
+                MakeScenario("sc-2", "Login test", null, ScenarioKind.Test),
+                MakeScenario("sc-3", "Another test", null, ScenarioKind.Test),
+            ]));
+
+        var mockClient = new Mock<IBirkNextClient>();
+        mockClient.Setup(c => c.GetScenarios).Returns(mockQuery.Object);
+        Services.AddSingleton(mockClient.Object);
+
+        var cut = Render<Scenarios>();
+
+        cut.WaitForAssertion(() =>
+            cut.Markup.Should().NotContain("Loading scenarios"),
+            timeout: TimeSpan.FromSeconds(1));
+
+        // Hero must frame the library as an asset store (not a coverage tool)
+        cut.Find("h1").TextContent.Should().Be("QA Artifact Library");
+        cut.Markup.Should().Contain("Published Assets",
+            "hero must use asset-repository language, not coverage language");
+        cut.Markup.Should().NotContain("Requirement coverage",
+            "coverage percentage metric must not appear in the library hero");
+        cut.Markup.Should().NotContain("Quality risks",
+            "risk-indicator metric belongs in Traceability & Coverage");
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static IOperationResult<IGetScenariosResult> MakeGetScenariosResult(

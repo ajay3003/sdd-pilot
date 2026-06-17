@@ -108,27 +108,11 @@
         @if (FeatureViz.ShowSectionAnalysis)
         {
             <div class="nav-section px-3">Analysis</div>
-            @if (FeatureViz.SpecComparison)
+            @if (FeatureViz.SpecDrift)
             {
                 <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="compare">
-                        <span class="nav-icon nav-icon-compare" aria-hidden="true"></span> Spec Comparison
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.SpecificationDeltas)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="compare/reviews">
-                        <span class="nav-icon nav-icon-delta-reviews" aria-hidden="true"></span> Specification Deltas
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.TaskDeltas)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="task-deltas" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-task-deltas" aria-hidden="true"></span> Task Deltas
+                    <NavLink class="nav-link" href="spec-drift" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-spec-drift" aria-hidden="true"></span> Spec Drift
                     </NavLink>
                 </div>
             }
@@ -137,14 +121,6 @@
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="impact-analysis" Match="NavLinkMatch.All">
                         <span class="nav-icon nav-icon-impact-analysis" aria-hidden="true"></span> Impact Analysis
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.SpecDrift)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="spec-drift" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-spec-drift" aria-hidden="true"></span> Spec Drift
                     </NavLink>
                 </div>
             }

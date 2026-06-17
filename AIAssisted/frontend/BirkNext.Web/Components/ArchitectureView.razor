@@ -1,21 +1,38 @@
+@using BirkNext.Web.GraphQL
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 
-@if (_model is null)
+@if (_isLoading)
 {
-    <div class="av-empty">
-        <p class="av-empty-msg">Architecture analysis has not been generated. Load a specification to analyse its architecture.</p>
+    <div class="av-loading" data-testid="av-loading">
+        <p class="av-loading-msg">Building architecture model...</p>
+    </div>
+}
+else if (_extractionError is not null)
+{
+    <div class="av-failed" data-testid="av-failed">
+        <p class="av-failed-msg">Architecture analysis failed.</p>
+        <pre class="av-failed-detail">@_extractionError</pre>
+    </div>
+}
+else if (_model is null)
+{
+    <div class="av-empty" data-testid="av-not-generated">
+        <p class="av-empty-msg">No architecture mappings available yet.</p>
+        <p class="av-empty-hint">Analyze a specification to generate architecture structure and traceability links.</p>
     </div>
 }
 else if (_model.IsEmpty)
 {
-    <div class="av-empty">
-        <p class="av-empty-msg">No architecture elements could be extracted from this specification.</p>
+    <div class="av-empty" data-testid="av-empty">
+        <p class="av-empty-msg">No architecture elements found in this specification.</p>
+        <p class="av-empty-hint">Run a Traceability analysis to generate architecture links.</p>
+        <a href="/traceability" class="av-empty-action">Open Traceability &amp; Coverage →</a>
     </div>
 }
 else
 {
-    <div class="av-root">
+    <div class="av-root" data-testid="av-root">
 
         @* ── Metric chips ─────────────────────────────────────────────────── *@
         <div class="av-metrics" role="list" aria-label="Architecture element counts">
@@ -70,6 +87,9 @@ else
                                     @foreach (var item in items)
                                     {
                                         var itemCap = item;
+                                        var itemCov = GetCoverage(item);
+                                        var itemCovClass = itemCov == AvCoverageStatus.Covered ? "covered"
+                                            : itemCov == AvCoverageStatus.Partial ? "partial" : "missing";
                                         <li role="treeitem">
                                             <button type="button"
                                                     class="av-item-btn @(_selectedId == item.Id ? "is-selected" : "")"
@@ -80,6 +100,9 @@ else
                                                 {
                                                     <span class="av-item-badge">FR:@item.RelatedFrIds.Count</span>
                                                 }
+                                                <span class="av-cov-dot av-cov-dot-@itemCovClass"
+                                                      title="Coverage: @CoverageLabel(itemCov)"
+                                                      aria-label="Coverage: @CoverageLabel(itemCov)"></span>
                                             </button>
                                         </li>
                                     }
@@ -94,6 +117,10 @@ else
                     @if (_selected is not null)
                     {
                         var typeMeta = Categories.FirstOrDefault(c => c.Type == _selected.ElementType);
+                        var selCov = GetCoverage(_selected);
+                        var selCovClass = selCov == AvCoverageStatus.Covered ? "covered"
+                            : selCov == AvCoverageStatus.Partial ? "partial" : "missing";
+                        var selTestCount = GetLinkedTestCount(_selected);
                         <div class="av-detail-header av-detail-header-@_selected.ElementType.ToString().ToLowerInvariant()">
                             <span class="av-detail-icon">@typeMeta.Icon</span>
                             <h3 class="av-detail-name">@_selected.Name</h3>
@@ -175,6 +202,25 @@ else
                                 </ul>
                             </div>
                         }
+
+                        <div class="av-detail-section">
+                            <div class="av-detail-label">Coverage</div>
+                            <div class="av-coverage-row">
+                                <span class="av-coverage-badge av-cov-@selCovClass" data-testid="av-coverage-badge">@CoverageLabel(selCov)</span>
+                                @if (selTestCount > 0)
+                                {
+                                    <span class="av-coverage-hint">@selTestCount test@(selTestCount == 1 ? "" : "s") in scope</span>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="av-detail-section" data-testid="av-source-links">
+                            <div class="av-detail-label">Traceability</div>
+                            <div class="av-source-links">
+                                <a href="/spec-drift?tab=changes" class="av-source-link" data-testid="av-link-spec-drift">Open in Spec Drift →</a>
+                                <a href="/traceability" class="av-source-link" data-testid="av-link-traceability">Open in Traceability →</a>
+                            </div>
+                        </div>
                     }
                     else
                     {
@@ -418,6 +464,10 @@ else
                                 }
                             </span>
                         }
+                        <div class="av-diag-links">
+                            <a href="/spec-drift?tab=changes" class="av-source-link av-diag-link">Spec Drift →</a>
+                            <a href="/traceability" class="av-source-link av-diag-link">Traceability →</a>
+                        </div>
                     </div>
                 }
 
@@ -429,6 +479,7 @@ else
 
 @code {
     [Parameter] public string? SpecMarkdown { get; set; }
+    [Parameter] public IReadOnlyList<ExtractionCandidate> Candidates { get; set; } = [];
 
     private static readonly (ArchElementType Type, string Label, string Icon)[] Categories =
     [
@@ -449,6 +500,7 @@ else
     ];
 
     private enum AvViewMode { Elements, Diagram }
+    private enum AvCoverageStatus { Missing, Partial, Covered }
 
     private AvViewMode _viewMode = AvViewMode.Elements;
     private ArchitectureModel? _model;
@@ -456,6 +508,8 @@ else
     private ArchElement? _selected;
     private string? _selectedId;
     private readonly Dictionary<ArchElementType, bool> _expanded = [];
+    private bool _isLoading;
+    private string? _extractionError;
 
     protected override void OnParametersSet()
     {
@@ -463,16 +517,47 @@ else
         _lastMarkdown = SpecMarkdown;
         _selected = null;
         _selectedId = null;
+        _extractionError = null;
+        _model = null;
+        _isLoading = false;
 
-        if (string.IsNullOrWhiteSpace(SpecMarkdown))
+        if (string.IsNullOrWhiteSpace(SpecMarkdown)) return;
+
+        _isLoading = true;
+        try
         {
-            _model = null;
-            return;
+            var tree = SpecExplorerService.Parse(SpecMarkdown);
+            _model = ArchitectureExtractor.Extract(tree);
         }
-
-        var tree = SpecExplorerService.Parse(SpecMarkdown);
-        _model = ArchitectureExtractor.Extract(tree);
+        catch (Exception ex)
+        {
+            _extractionError = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
     }
+
+    private AvCoverageStatus GetCoverage(ArchElement el)
+    {
+        if (el.RelatedFrIds.Count == 0) return AvCoverageStatus.Missing;
+        return GetLinkedTestCount(el) > 0 ? AvCoverageStatus.Covered : AvCoverageStatus.Partial;
+    }
+
+    private int GetLinkedTestCount(ArchElement el) =>
+        Candidates.Count(c =>
+            c.Classification == ScenarioKind.Test &&
+            el.SourceSections.Any(s =>
+                (c.ContextHeading ?? "").Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                s.Contains(c.ContextHeading ?? "", StringComparison.OrdinalIgnoreCase)));
+
+    private static string CoverageLabel(AvCoverageStatus s) => s switch
+    {
+        AvCoverageStatus.Covered => "Covered",
+        AvCoverageStatus.Partial => "Partial",
+        _                        => "Missing",
+    };
 
     private void ToggleCategory(ArchElementType type)
     {

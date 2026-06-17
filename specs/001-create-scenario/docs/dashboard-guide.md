@@ -2,16 +2,19 @@
 
 ## Overview
 
-The Dashboard provides a high-level view of specification quality, review progress, test coverage, traceability, and QA risks.
+The Dashboard is the executive QA summary for the current specification. It surfaces traceability KPIs, implementation coverage, test coverage health, and open QA risks in one place.
 
-Its purpose is to help reviewers, testers, product owners, and development teams quickly understand:
+Its purpose is to help test leads, product owners, and development teams quickly understand:
 
 * The overall health of a specification
-* Areas that require attention
-* Review progress
-* Test coverage status
+* Traceability and coverage status
+* Implementation coverage
 * Outstanding QA risks
 * Recommended next actions
+
+For detailed coverage validation, use **Traceability & Coverage**.
+
+For implementation status, use **Task Explorer**.
 
 ---
 
@@ -21,7 +24,7 @@ The QA Health Score is the primary indicator of specification readiness.
 
 The score combines several quality signals:
 
-* Review Progress
+* Implementation Coverage
 * Requirement Coverage
 * Traceability
 * Open Risks
@@ -46,43 +49,19 @@ This indicates that most requirements are reviewed, covered by tests, and proper
 
 # Coverage
 
-Coverage measures how many requirements are linked to at least one test.
+The Dashboard surfaces three coverage KPIs drawn from traceability data:
 
-### Formula
+| KPI | What it shows |
+|---|---|
+| Coverage Requirements | Total requirements in scope |
+| Covered Requirements | Requirements linked to at least one test |
+| Implementation Coverage | Percentage of requirements with test coverage |
 
-Coverage = Requirements with Tests ÷ Total Requirements
-
-### Example
-
-24 requirements exist.
-
-22 requirements have at least one linked test.
-
-Coverage = 91%
+These values reflect what is recorded in **Traceability & Coverage**. To investigate gaps or update links, open that view directly.
 
 ### Why It Matters
 
 Requirements without tests may represent unverified functionality and increase delivery risk.
-
----
-
-# Review Progress
-
-Review Progress shows how many extracted review candidates have been reviewed by a human.
-
-### Formula
-
-Reviewed Candidates ÷ Total Candidates
-
-### Example
-
-72 reviewed candidates out of 92 total candidates.
-
-Review Progress = 78%
-
-### Why It Matters
-
-Unreviewed candidates may contain useful requirements, tests, or clarification items that have not yet been accepted or rejected.
 
 ---
 
@@ -169,7 +148,7 @@ The Quality Overview provides a summary of saved review artifacts.
 
 ## Requirements
 
-Accepted requirements extracted from specifications.
+Requirements identified in the specification.
 
 ### Example
 
@@ -197,33 +176,23 @@ Questions or ambiguities that require resolution.
 
 ---
 
-## Saved Items
+## Missing Tests
 
-Total number of review artifacts saved in the system.
+Requirements that have no linked test.
 
 ### Example
 
-92 Saved Items
+2 Missing Tests
 
 ---
 
-## Accepted
+## Orphan Tests
 
-Items approved by reviewers.
-
-### Example
-
-74 Accepted
-
----
-
-## Rejected
-
-Items rejected by reviewers.
+Tests that are not linked to any requirement.
 
 ### Example
 
-18 Rejected
+5 Orphan Tests
 
 ---
 
@@ -314,7 +283,6 @@ Tests that do not match a predefined category.
 * Aim for high Coverage and Traceability.
 * Resolve Clarifications early.
 * Keep Open Risks low.
-* Review all extracted candidates.
 * Ensure every requirement has at least one test.
 * Use traceability links consistently.
 * Monitor trends over time rather than relying on a single score.

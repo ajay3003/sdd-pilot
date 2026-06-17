@@ -5,11 +5,11 @@
     <div class="delta-results-heading">
         <div>
             <p class="section-kicker">Analysis Results</p>
-            <h2>Delta Results</h2>
+            <h2>Changes</h2>
         </div>
-        <span>Baseline -> Updated -> Delta Review -> QA Impact</span>
+        <span>Baseline -> Updated -> Comparison -> QA Impact</span>
     </div>
-    <div class="delta-dashboard" aria-label="Delta summary" data-testid="delta-dashboard">
+    <div class="delta-dashboard" aria-label="Change summary" data-testid="delta-dashboard">
         <button type="button" class="delta-summary-tile delta-added" @onclick="@(() => _activeStatus = SpecDeltaStatus.Added)">
             <span>@AddedCount</span>
             <small>Added</small>
@@ -44,7 +44,7 @@
             <h2>Change Explorer</h2>
         </div>
     </div>
-    <div class="delta-filter-row" role="toolbar" aria-label="Delta filters">
+    <div class="delta-filter-row" role="toolbar" aria-label="Change filters">
         <span class="filter-group-label" aria-hidden="true">Type</span>
         <button type="button"
                 class="filter-chip @(_activeKind is null ? "is-active" : "")"
@@ -69,7 +69,7 @@
 
         <span class="filter-group-divider" aria-hidden="true"></span>
 
-        <span class="filter-group-label" aria-hidden="true">Delta</span>
+        <span class="filter-group-label" aria-hidden="true">Status</span>
         <button type="button"
                 class="filter-chip @(_activeStatus is null ? "is-active" : "")"
                 aria-pressed="@(_activeStatus is null ? "true" : "false")"

@@ -1,28 +1,10 @@
-@page "/task-deltas"
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
-@using BirkNext.Web.Components
-@inject NavigationManager NavigationManager
 
-<PageTitle>Task Deltas</PageTitle>
-
-<div class="delta-page">
+<div class="tc-changes-panel" data-testid="tc-changes-panel">
 
     @if (_report is null)
     {
-        <div class="delta-hero">
-            <h1 class="delta-hero-title">Task Deltas</h1>
-            <p class="delta-hero-sub">Compare two versions of a tasks.md file to surface added, removed, and modified tasks — with scope analysis and risk classification.</p>
-        </div>
-
-        <div class="delta-info-panel">
-            <strong>Best for:</strong>
-            <span class="delta-bestfor-badge">Sprint planning reviews</span>
-            <span class="delta-bestfor-badge">Scope change tracking</span>
-            <span class="delta-bestfor-badge">Regression risk assessment</span>
-            <span class="delta-scope-note">Supports T001-format and checkbox task lists. Scope changes are detected from keywords and line additions.</span>
-        </div>
-
         <div class="delta-inputs-row">
             <div class="delta-input-panel">
                 <div class="delta-input-header">
@@ -30,13 +12,13 @@
                 </div>
                 <SpecificationImport
                     @ref="_oldImportRef"
-                    InputId="old-tasks-input"
+                    InputId="tc-old-tasks-input"
                     OnFileImported="OnOldFileImported"
                     OnFileRemoved="OnOldFileRemoved"
                     IsDisabled="false" />
                 <textarea
                     class="delta-textarea"
-                    placeholder="Or paste old tasks.md content here..."
+                    placeholder="Or paste previous tasks.md content here..."
                     rows="10"
                     @bind="_oldTasksText"></textarea>
                 @if (!string.IsNullOrWhiteSpace(_oldTasksText))
@@ -52,17 +34,17 @@
 
             <div class="delta-input-panel">
                 <div class="delta-input-header">
-                    <span class="delta-input-label delta-label-new">Updated (tasks-v2.md)</span>
+                    <span class="delta-input-label delta-label-new">Current (tasks.md)</span>
                 </div>
                 <SpecificationImport
                     @ref="_newImportRef"
-                    InputId="new-tasks-input"
+                    InputId="tc-new-tasks-input"
                     OnFileImported="OnNewFileImported"
                     OnFileRemoved="OnNewFileRemoved"
                     IsDisabled="false" />
                 <textarea
                     class="delta-textarea"
-                    placeholder="Or paste new tasks.md content here..."
+                    placeholder="Or paste current tasks.md content here..."
                     rows="10"
                     @bind="_newTasksText"></textarea>
                 @if (!string.IsNullOrWhiteSpace(_newTasksText))
@@ -80,7 +62,7 @@
                 class="delta-analyse-btn"
                 disabled="@(!CanAnalyse)"
                 @onclick="RunAnalysis">
-                Compare Tasks
+                Analyze Changes
             </button>
             @if (!CanAnalyse)
             {
@@ -92,7 +74,7 @@
     {
         <div class="delta-results-header">
             <div>
-                <h1 class="delta-results-title">Task Deltas</h1>
+                <h3 class="delta-results-title">Task Changes</h3>
                 <p class="delta-results-sub">
                     @if (_report.TotalChanges == 0)
                     {
@@ -302,14 +284,6 @@
                 }
             </div>
 
-            <div class="delta-action-bar">
-                <button class="delta-open-impl-btn" disabled
-                        title="Deep-link prefill not yet implemented — open Implementation Review from the footer and paste tasks-v2.md manually.">
-                    Open Changed Tasks in Implementation Review
-                </button>
-                <span class="delta-action-note">Use the Implementation Review link below to analyse the updated tasks.md with full spec alignment.</span>
-            </div>
-
             <div class="delta-findings">
                 @{
                     var filtered = GetFiltered();
@@ -500,26 +474,11 @@
                 }
             </div>
         }
-
-        <div class="delta-chain-footer">
-            <span class="delta-chain-step delta-chain-file">tasks-v1.md</span>
-            <span class="delta-chain-arrow">→</span>
-            <span class="delta-chain-step delta-chain-file">tasks-v2.md</span>
-            <span class="delta-chain-arrow">→</span>
-            <span class="delta-chain-step delta-chain-active">Task Deltas</span>
-            <span class="delta-chain-arrow">→</span>
-            <NavLink href="task-alignment" class="delta-chain-step delta-chain-link">Implementation Review</NavLink>
-            <span class="delta-chain-arrow">→</span>
-            <NavLink href="impact-analysis" class="delta-chain-step delta-chain-link">Impact Analysis</NavLink>
-        </div>
     }
 </div>
 
 @code {
-    protected override void OnInitialized()
-    {
-        NavigationManager.NavigateTo("/task-explorer?view=changes", replace: true);
-    }
+    [Parameter] public string CurrentTasksText { get; set; } = string.Empty;
 
     private TaskDeltaReport? _report;
     private string _oldTasksText = string.Empty;
@@ -529,6 +488,12 @@
 
     private SpecificationImport? _oldImportRef;
     private SpecificationImport? _newImportRef;
+
+    protected override void OnParametersSet()
+    {
+        if (string.IsNullOrEmpty(_newTasksText) && !string.IsNullOrEmpty(CurrentTasksText))
+            _newTasksText = CurrentTasksText;
+    }
 
     private bool CanAnalyse =>
         !string.IsNullOrWhiteSpace(_oldTasksText) && !string.IsNullOrWhiteSpace(_newTasksText);
@@ -562,7 +527,7 @@
     {
         _report = null;
         _oldTasksText = string.Empty;
-        _newTasksText = string.Empty;
+        _newTasksText = CurrentTasksText;
         _activeFilter = null;
         _expanded.Clear();
         _oldImportRef?.Reset();
@@ -580,22 +545,22 @@
         if (_report is null) return [];
         return _activeFilter switch
         {
-            "Added" => _report.Findings.Where(f => f.DeltaType == DeltaType.Added).ToList(),
-            "Removed" => _report.Findings.Where(f => f.DeltaType == DeltaType.Removed).ToList(),
-            "Modified" => _report.Findings.Where(f => f.DeltaType == DeltaType.Modified).ToList(),
-            "StatusChanged" => _report.Findings.Where(f => f.DeltaType == DeltaType.StatusChanged).ToList(),
-            "ScopeExpansion" => _report.Findings.Where(f => f.ScopeChange == ScopeChangeKind.Expansion).ToList(),
-            "ScopeReduction" => _report.Findings.Where(f => f.ScopeChange == ScopeChangeKind.Reduction).ToList(),
-            "HighRisk" => _report.Findings.Where(f => f.RiskLevel == ImpactLevel.High).ToList(),
+            "Added"             => _report.Findings.Where(f => f.DeltaType == DeltaType.Added).ToList(),
+            "Removed"           => _report.Findings.Where(f => f.DeltaType == DeltaType.Removed).ToList(),
+            "Modified"          => _report.Findings.Where(f => f.DeltaType == DeltaType.Modified).ToList(),
+            "StatusChanged"     => _report.Findings.Where(f => f.DeltaType == DeltaType.StatusChanged).ToList(),
+            "ScopeExpansion"    => _report.Findings.Where(f => f.ScopeChange == ScopeChangeKind.Expansion).ToList(),
+            "ScopeReduction"    => _report.Findings.Where(f => f.ScopeChange == ScopeChangeKind.Reduction).ToList(),
+            "HighRisk"          => _report.Findings.Where(f => f.RiskLevel == ImpactLevel.High).ToList(),
             "RegressionCandidate" => _report.Findings.Where(f => f.IsRegressionCandidate).ToList(),
-            "NeedsReview" => _report.Findings.Where(f => f.SpecCoverage == DeltaSpecCoverage.NeedsReview).ToList(),
+            "NeedsReview"       => _report.Findings.Where(f => f.SpecCoverage == DeltaSpecCoverage.NeedsReview).ToList(),
             "PossibleDeviation" => _report.Findings.Where(f => f.SpecCoverage == DeltaSpecCoverage.PossibleDeviation).ToList(),
-            "SpecLinked" => _report.Findings.Where(f => f.SpecCoverage == DeltaSpecCoverage.Linked).ToList(),
-            "TechnicalOnly" => _report.Findings.Where(f => f.SpecCoverage == DeltaSpecCoverage.NotApplicable).ToList(),
-            "HasFrLinks" => _report.Findings.Where(f => f.ReferencedFrIds.Count > 0).ToList(),
-            "HasScLinks" => _report.Findings.Where(f => f.ReferencedScIds.Count > 0).ToList(),
-            "HasTableLinks" => _report.Findings.Where(f => f.HasTableLinks).ToList(),
-            _ => _report.Findings,
+            "SpecLinked"        => _report.Findings.Where(f => f.SpecCoverage == DeltaSpecCoverage.Linked).ToList(),
+            "TechnicalOnly"     => _report.Findings.Where(f => f.SpecCoverage == DeltaSpecCoverage.NotApplicable).ToList(),
+            "HasFrLinks"        => _report.Findings.Where(f => f.ReferencedFrIds.Count > 0).ToList(),
+            "HasScLinks"        => _report.Findings.Where(f => f.ReferencedScIds.Count > 0).ToList(),
+            "HasTableLinks"     => _report.Findings.Where(f => f.HasTableLinks).ToList(),
+            _                   => _report.Findings,
         };
     }
 
@@ -603,47 +568,47 @@
 
     private static string DeltaTypeLabel(DeltaType t) => t switch
     {
-        DeltaType.Added => "+ Added",
-        DeltaType.Removed => "− Removed",
-        DeltaType.Modified => "~ Modified",
+        DeltaType.Added         => "+ Added",
+        DeltaType.Removed       => "− Removed",
+        DeltaType.Modified      => "~ Modified",
         DeltaType.StatusChanged => "✓ Status Changed",
-        _ => t.ToString(),
+        _                       => t.ToString(),
     };
 
     private static string ScopeLabel(ScopeChangeKind s) => s switch
     {
         ScopeChangeKind.Expansion => "↑ Scope Expansion",
         ScopeChangeKind.Reduction => "↓ Scope Reduction",
-        _ => string.Empty,
+        _                         => string.Empty,
     };
 
     private static string RiskLabel(ImpactLevel l) => l switch
     {
-        ImpactLevel.High => "High Risk",
-        ImpactLevel.Medium => "Medium Risk",
-        ImpactLevel.Low => "Low Risk",
+        ImpactLevel.High    => "High Risk",
+        ImpactLevel.Medium  => "Medium Risk",
+        ImpactLevel.Low     => "Low Risk",
         ImpactLevel.Unknown => "Unknown Risk",
-        _ => l.ToString(),
+        _                   => l.ToString(),
     };
 
     private static string CoverageLabel(DeltaSpecCoverage c) => c switch
     {
-        DeltaSpecCoverage.Linked => "Spec Linked",
-        DeltaSpecCoverage.NeedsReview => "Needs Review",
+        DeltaSpecCoverage.Linked           => "Spec Linked",
+        DeltaSpecCoverage.NeedsReview      => "Needs Review",
         DeltaSpecCoverage.PossibleDeviation => "Possible Deviation",
-        DeltaSpecCoverage.NotApplicable => "Technical Only",
-        _ => c.ToString(),
+        DeltaSpecCoverage.NotApplicable    => "Technical Only",
+        _                                  => c.ToString(),
     };
 
     private static string DeltaTypeClass(TaskDeltaFinding f) => f switch
     {
-        { DeltaType: DeltaType.Added } => "delta-card-added",
-        { DeltaType: DeltaType.Removed } => "delta-card-removed",
-        { DeltaType: DeltaType.Modified, ScopeChange: ScopeChangeKind.Expansion } => "delta-card-expansion",
-        { DeltaType: DeltaType.Modified, ScopeChange: ScopeChangeKind.Reduction } => "delta-card-reduction",
-        { DeltaType: DeltaType.Modified } => "delta-card-modified",
-        { DeltaType: DeltaType.StatusChanged } => "delta-card-status",
-        _ => string.Empty,
+        { DeltaType: DeltaType.Added }                                               => "delta-card-added",
+        { DeltaType: DeltaType.Removed }                                             => "delta-card-removed",
+        { DeltaType: DeltaType.Modified, ScopeChange: ScopeChangeKind.Expansion }   => "delta-card-expansion",
+        { DeltaType: DeltaType.Modified, ScopeChange: ScopeChangeKind.Reduction }   => "delta-card-reduction",
+        { DeltaType: DeltaType.Modified }                                            => "delta-card-modified",
+        { DeltaType: DeltaType.StatusChanged }                                       => "delta-card-status",
+        _                                                                            => string.Empty,
     };
 
     private static string AreaGroup(AffectedArea area) => area switch
@@ -659,45 +624,45 @@
 
     private static string AreaShortLabel(AffectedArea area) => area switch
     {
-        AffectedArea.Security => "Sec",
-        AffectedArea.Authorization => "Auth",
-        AffectedArea.Search => "Search",
-        AffectedArea.Profile => "Profile",
-        AffectedArea.AccessManagement => "Access",
-        AffectedArea.ReferenceData => "RefData",
-        AffectedArea.Ingestion => "Ingest",
-        AffectedArea.DomainEvents => "Events",
-        AffectedArea.Audit => "Audit",
+        AffectedArea.Security            => "Sec",
+        AffectedArea.Authorization       => "Auth",
+        AffectedArea.Search              => "Search",
+        AffectedArea.Profile             => "Profile",
+        AffectedArea.AccessManagement    => "Access",
+        AffectedArea.ReferenceData       => "RefData",
+        AffectedArea.Ingestion           => "Ingest",
+        AffectedArea.DomainEvents        => "Events",
+        AffectedArea.Audit               => "Audit",
         AffectedArea.OperationRegistration => "OpReg",
-        AffectedArea.HealthMonitoring => "Health",
-        AffectedArea.Infrastructure => "Infra",
-        AffectedArea.BusinessRules => "BizRules",
-        AffectedArea.Workflow => "Workflow",
-        AffectedArea.Validation => "Validate",
-        AffectedArea.Testing => "Tests",
-        AffectedArea.ExceptionHandling => "Errors",
-        _ => area.ToString(),
+        AffectedArea.HealthMonitoring    => "Health",
+        AffectedArea.Infrastructure      => "Infra",
+        AffectedArea.BusinessRules       => "BizRules",
+        AffectedArea.Workflow            => "Workflow",
+        AffectedArea.Validation          => "Validate",
+        AffectedArea.Testing             => "Tests",
+        AffectedArea.ExceptionHandling   => "Errors",
+        _                                => area.ToString(),
     };
 
     private static string AreaLabel(AffectedArea area) => area switch
     {
-        AffectedArea.Security => "Security",
-        AffectedArea.Authorization => "Authorization",
-        AffectedArea.Search => "Search",
-        AffectedArea.Profile => "Profile",
-        AffectedArea.AccessManagement => "Access Management",
-        AffectedArea.ReferenceData => "Reference Data",
-        AffectedArea.Ingestion => "Ingestion",
-        AffectedArea.DomainEvents => "Domain Events",
-        AffectedArea.Audit => "Audit",
+        AffectedArea.Security            => "Security",
+        AffectedArea.Authorization       => "Authorization",
+        AffectedArea.Search              => "Search",
+        AffectedArea.Profile             => "Profile",
+        AffectedArea.AccessManagement    => "Access Management",
+        AffectedArea.ReferenceData       => "Reference Data",
+        AffectedArea.Ingestion           => "Ingestion",
+        AffectedArea.DomainEvents        => "Domain Events",
+        AffectedArea.Audit               => "Audit",
         AffectedArea.OperationRegistration => "Operation Registration",
-        AffectedArea.HealthMonitoring => "Health Monitoring",
-        AffectedArea.Infrastructure => "Infrastructure",
-        AffectedArea.BusinessRules => "Business Rules",
-        AffectedArea.Workflow => "Workflow",
-        AffectedArea.Validation => "Validation",
-        AffectedArea.Testing => "Testing",
-        AffectedArea.ExceptionHandling => "Exception Handling",
-        _ => area.ToString(),
+        AffectedArea.HealthMonitoring    => "Health Monitoring",
+        AffectedArea.Infrastructure      => "Infrastructure",
+        AffectedArea.BusinessRules       => "Business Rules",
+        AffectedArea.Workflow            => "Workflow",
+        AffectedArea.Validation          => "Validation",
+        AffectedArea.Testing             => "Testing",
+        AffectedArea.ExceptionHandling   => "Exception Handling",
+        _                                => area.ToString(),
     };
 }

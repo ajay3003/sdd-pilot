@@ -19,15 +19,15 @@
 {
     <div class="empty-state-container">
         <div class="review-empty-icon" aria-hidden="true"></div>
-        <h3>No review candidates yet</h3>
-        <p data-testid="empty-state">Analyze a specification to generate review-ready QA candidates.</p>
+        <h3>No artifacts require review</h3>
+        <p data-testid="empty-state">No traceability data available yet. Analyze a specification to generate coverage data for Traceability &amp; Coverage.</p>
         <ul>
             <li>Requirements</li>
             <li>Test Cases</li>
-            <li>Clarifications</li>
-            <li>Review Suggestions</li>
+            <li>Coverage Analysis</li>
+            <li>Suggested Traceability Links</li>
         </ul>
-        <p class="empty-state-flow">Review &rarr; Accept &rarr; Save &rarr; Track on Dashboard</p>
+        <p class="empty-state-flow">Analyze &rarr; Traceability &amp; Coverage &rarr; Optional Extraction Review</p>
     </div>
 }
 else
@@ -38,10 +38,10 @@ else
              && _activeViewMode != ExtractionViewMode.Capability)
         {
         <p class="candidate-summary" data-testid="candidate-summary">
-            @PipelineResult.Candidates.Count review candidates found -
-            @PipelineResult.RequirementCount REQUIREMENT,
-            @PipelineResult.TestCount TEST,
-            @PipelineResult.NeedsClarificationCount NEEDS_CLARIFICATION
+            @PipelineResult.Candidates.Count artifacts extracted —
+            @PipelineResult.RequirementCount requirement@(PipelineResult.RequirementCount == 1 ? "" : "s"),
+            @PipelineResult.TestCount test@(PipelineResult.TestCount == 1 ? "" : "s"),
+            @PipelineResult.NeedsClarificationCount clarification@(PipelineResult.NeedsClarificationCount == 1 ? "" : "s")
             @if (PipelineResult.Profile != ExtractionProfile.Default)
             {
                 <span class="profile-badge" data-testid="profile-badge">@PipelineResult.Profile</span>
@@ -54,6 +54,8 @@ else
             var rAcceptedCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted);
             var rRejectedCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Rejected);
             var rNeedsRevCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.NeedsReview);
+            var linkSuggestionsCount = _links.Count;
+            var coverageExcludedCount = rRejectedCount;
             var hasNonNewStatus = rAcceptedCount > 0 || rRejectedCount > 0 || rNeedsRevCount > 0;
             var totalCandidates = PipelineResult.Candidates.Count;
             var reviewedCount = rAcceptedCount + rRejectedCount + rNeedsRevCount;
@@ -103,18 +105,18 @@ else
                 <span class="tab-icon" aria-hidden="true">🔀</span>Flow View
             </button>
             <button type="button" role="tab"
-                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Extraction ? "is-active" : "")"
-                    aria-selected="@(_activeViewMode == ExtractionViewMode.Extraction)"
-                    title="Shows extracted artifacts in the original specification structure."
-                    @onclick="() => SetViewMode(ExtractionViewMode.Extraction)">
-                <span class="tab-icon" aria-hidden="true">📄</span>Document View
-            </button>
-            <button type="button" role="tab"
                     class="view-mode-tab @(_activeViewMode == ExtractionViewMode.SpecExplorer ? "is-active" : "")"
                     aria-selected="@(_activeViewMode == ExtractionViewMode.SpecExplorer)"
                     title="Navigable hierarchical tree of the full specification."
                     @onclick="() => SetViewMode(ExtractionViewMode.SpecExplorer)">
                 <span class="tab-icon" aria-hidden="true">🌳</span>Spec Explorer
+            </button>
+            <button type="button" role="tab"
+                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Extraction ? "is-active" : "")"
+                    aria-selected="@(_activeViewMode == ExtractionViewMode.Extraction)"
+                    title="Advanced optional quality-control workspace for reviewing AI extraction quality."
+                    @onclick="() => SetViewMode(ExtractionViewMode.Extraction)">
+                <span class="tab-icon" aria-hidden="true">📄</span>Extraction Review
             </button>
             <button type="button" role="tab"
                     class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Architecture ? "is-active" : "")"
@@ -126,8 +128,77 @@ else
         </div>
 
         <div class="analysis-workflow-hint" data-testid="analysis-workflow-hint">
-            Start in Traceability &amp; Coverage to review coverage and gaps, then use Flow View for business flow, Document View for extracted artifacts, Spec Explorer for structure, and Architecture View for technical concerns.
+            Analyze, then start in Traceability &amp; Coverage to review coverage and gaps. Use Flow View for QA readiness, Spec Explorer for structure, and Extraction Review only when extraction quality needs verification.
         </div>
+
+        @if (_activeViewMode == ExtractionViewMode.Extraction)
+        {
+            <section class="extraction-review-banner" data-testid="extraction-review-banner" aria-labelledby="extraction-review-banner-title">
+                <div>
+                    <div class="advanced-feature-label">Advanced optional quality control</div>
+                    <h2 id="extraction-review-banner-title">Extraction Review</h2>
+                    <p>Artifacts have already been extracted and are available in Traceability &amp; Coverage. Use this page when you want to review AI extraction quality before or after normal QA analysis.</p>
+                    <ul>
+                        <li>Review extraction quality</li>
+                        <li>Accept or reject extracted artifacts</li>
+                        <li>Link related artifacts</li>
+                        <li>Correct traceability relationships</li>
+                        <li>Diagnose extraction issues</li>
+                    </ul>
+                    <p class="extraction-review-optional-note">This step is optional for normal testing workflows.</p>
+                </div>
+            </section>
+
+            <section class="extraction-health-summary" data-testid="extraction-health-summary" aria-label="Extraction health summary">
+                <div class="extraction-health-card">
+                    <span class="health-value">@rNewCount</span>
+                    <span class="health-label">AutoAccepted</span>
+                </div>
+                <div class="extraction-health-card">
+                    <span class="health-value">@rAcceptedCount</span>
+                    <span class="health-label">Manually Accepted</span>
+                </div>
+                <div class="extraction-health-card">
+                    <span class="health-value">@rNeedsRevCount</span>
+                    <span class="health-label">Needs Review</span>
+                </div>
+                <div class="extraction-health-card">
+                    <span class="health-value">@rRejectedCount</span>
+                    <span class="health-label">Rejected</span>
+                </div>
+                <div class="extraction-health-card">
+                    <span class="health-value">@linkSuggestionsCount</span>
+                    <span class="health-label">Link Suggestions</span>
+                </div>
+                <div class="extraction-health-card extraction-health-impact">
+                    <span class="health-value">@coverageExcludedCount</span>
+                    <span class="health-label">Coverage Impact</span>
+                    <span class="health-detail">artifacts currently excluded</span>
+                </div>
+            </section>
+
+            <section class="review-status-help" data-testid="review-status-help" aria-label="Review status meanings">
+                <h3>Review Status</h3>
+                <dl>
+                    <div>
+                        <dt>AutoAccepted</dt>
+                        <dd>Automatically extracted and included.</dd>
+                    </div>
+                    <div>
+                        <dt>Manually Accepted</dt>
+                        <dd>Reviewed and confirmed.</dd>
+                    </div>
+                    <div>
+                        <dt>Needs Review</dt>
+                        <dd>Potential issue requiring attention.</dd>
+                    </div>
+                    <div>
+                        <dt>Rejected</dt>
+                        <dd>Excluded from Traceability calculations.</dd>
+                    </div>
+                </dl>
+            </section>
+        }
 
         @if (_activeViewMode != ExtractionViewMode.SpecExplorer
              && _activeViewMode != ExtractionViewMode.Architecture
@@ -424,7 +495,8 @@ else
 
         @if (_activeViewMode == ExtractionViewMode.Architecture)
         {
-            <ArchitectureView SpecMarkdown="@SpecMarkdown" />
+            <ArchitectureView SpecMarkdown="@SpecMarkdown"
+                              Candidates="@(PipelineResult?.Candidates ?? [])" />
         }
 
         @if (_activeViewMode == ExtractionViewMode.SpecExplorer)

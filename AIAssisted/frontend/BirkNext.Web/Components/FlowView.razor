@@ -9,48 +9,97 @@
 
 <div class="flow-view">
 
-    @* ── Top metrics ─────────────────────────────────────────────────── *@
-    <div class="fv-metrics" role="region" aria-label="Flow summary">
-        <span class="fv-metric-chip fv-chip-story">
-            <span aria-hidden="true">👤</span>
-            @_model.Stories.Count(s => !s.IsUnmapped && !s.IsDecisionLane) User @(_model.Stories.Count(s => !s.IsUnmapped && !s.IsDecisionLane) == 1 ? "Story" : "Stories")
-        </span>
-        <span class="fv-metric-chip fv-chip-req">
-            <span aria-hidden="true">📋</span>
-            @_model.TotalRequirements @(_model.TotalRequirements == 1 ? "Requirement" : "Requirements")
-        </span>
-        <span class="fv-metric-chip fv-chip-test">
-            <span aria-hidden="true">🧪</span>
-            @_model.TotalTests @(_model.TotalTests == 1 ? "Test" : "Tests")
-        </span>
-        @if (_model.TotalSc > 0)
-        {
-            <span class="fv-metric-chip fv-chip-sc">
-                <span aria-hidden="true">✅</span>
-                @_model.TotalSc SC
-            </span>
-        }
-        @{
-            var covPct = _model.CoveragePercent;
-            var covClass = covPct >= 80 ? "fv-chip-cov-good" : covPct >= 50 ? "fv-chip-cov-ok" : "fv-chip-cov-bad";
-        }
-        <span class="fv-metric-chip @covClass">
-            <span aria-hidden="true">📊</span>
-            @covPct% Coverage
-        </span>
+    @* ── Summary strip ───────────────────────────────────────────────── *@
+    @{
+        var storyCount = _model.Stories.Count(s => !s.IsUnmapped && !s.IsDecisionLane);
+        var covPct = _model.CoveragePercent;
+        var covClass = covPct >= 80 ? "fv-sum-cov-good" : covPct >= 50 ? "fv-sum-cov-ok" : "fv-sum-cov-bad";
+    }
+    <div class="fv-summary-strip" role="region" aria-label="Flow summary" data-testid="fv-summary-strip">
+        <span class="fv-sum-item fv-sum-stories">@storyCount User @(storyCount == 1 ? "Story" : "Stories")</span>
+        <span class="fv-sum-sep" aria-hidden="true">|</span>
+        <span class="fv-sum-item fv-sum-reqs">@_model.TotalRequirements @(_model.TotalRequirements == 1 ? "Requirement" : "Requirements")</span>
+        <span class="fv-sum-sep" aria-hidden="true">|</span>
+        <span class="fv-sum-item fv-sum-tests">@_model.TotalTests @(_model.TotalTests == 1 ? "Test" : "Tests")</span>
+        <span class="fv-sum-sep" aria-hidden="true">|</span>
+        <span class="fv-sum-item @covClass" title="Requirement-level test coverage across all mapped user stories">@covPct% Coverage</span>
         @if (_model.GapCount > 0)
         {
-            <span class="fv-metric-chip fv-chip-gap">
-                <span aria-hidden="true">⚠️</span>
-                @_model.GapCount @(_model.GapCount == 1 ? "Gap" : "Gaps")
-            </span>
+            <span class="fv-sum-sep" aria-hidden="true">|</span>
+            <span class="fv-sum-item fv-sum-gaps">@_model.GapCount @(_model.GapCount == 1 ? "Gap" : "Gaps")</span>
         }
     </div>
 
-    @* ── Metrics scope note ───────────────────────────────────────────── *@
+    @* ── Purpose note ─────────────────────────────────────────────────── *@
     @if (_model.Stories.Count > 0)
     {
-        <p class="fv-metrics-note">Metrics are specification-wide. Per-section coverage is shown on each lane.</p>
+        <p class="fv-metrics-note">User Story readiness view — see which stories are ready, blocked, or need attention.</p>
+    }
+
+    @* ── Filter chips + Coverage Issues ─────────────────────────────── *@
+    @{
+        var mappedStories = _model.Stories.Where(s => !s.IsUnmapped && !s.IsDecisionLane).ToList();
+        var hasWorkQueueItems = _model.StoriesMissingTests > 0
+                             || _model.StoriesMissingSuccessCriteria > 0
+                             || _model.GapCount > 0;
+    }
+    @if (mappedStories.Count > 0)
+    {
+        <div class="fv-filters" role="group" aria-label="Story filters" data-testid="fv-filters">
+            @foreach (var (label, key, testId) in FilterOptions)
+            {
+                <button type="button"
+                        class="fv-filter-chip @(_activeFilter == key ? "fv-filter-active" : "")"
+                        @onclick="() => SetFilter(key)"
+                        data-testid="@testId">
+                    @label
+                </button>
+            }
+        </div>
+    }
+
+    @if (hasWorkQueueItems)
+    {
+        <div class="fv-work-queue" role="region" aria-label="Coverage issues" data-testid="fv-work-queue">
+            <button type="button" class="fv-work-queue-header" @onclick="ToggleCoverageIssues" aria-expanded="@_coverageIssuesExpanded">
+                <span class="fv-lane-chevron" aria-hidden="true">@(_coverageIssuesExpanded ? "▼" : "▶")</span>
+                <span class="fv-wq-title-icon" aria-hidden="true">⚠</span>
+                <span class="fv-work-queue-title">Coverage Issues</span>
+                <span class="fv-wq-count-badge">@_model.GapCount</span>
+            </button>
+            @if (_coverageIssuesExpanded)
+            {
+                <div class="fv-work-queue-items">
+                    @if (_model.StoriesMissingTests > 0)
+                    {
+                        <button type="button" class="fv-work-queue-item fv-wq-tests"
+                                @onclick='() => SetFilter("MissingTests")'
+                                title="Click to filter stories missing tests">
+                            <span class="fv-wq-icon" aria-hidden="true">⚠</span>
+                            <span>@_model.StoriesMissingTests @(_model.StoriesMissingTests == 1 ? "story" : "stories") missing tests</span>
+                        </button>
+                    }
+                    @if (_model.StoriesMissingSuccessCriteria > 0)
+                    {
+                        <button type="button" class="fv-work-queue-item fv-wq-sc"
+                                @onclick='() => SetFilter("MissingSuccessCriteria")'
+                                title="Click to filter stories missing success criteria">
+                            <span class="fv-wq-icon" aria-hidden="true">⚠</span>
+                            <span>@_model.StoriesMissingSuccessCriteria @(_model.StoriesMissingSuccessCriteria == 1 ? "story" : "stories") missing success criteria</span>
+                        </button>
+                    }
+                    @if (_model.GapCount > 0)
+                    {
+                        <button type="button" class="fv-work-queue-item fv-wq-reqs"
+                                @onclick='() => SetFilter("MissingTests")'
+                                title="Click to filter stories with uncovered requirements">
+                            <span class="fv-wq-icon" aria-hidden="true">⚠</span>
+                            <span>@_model.GapCount @(_model.GapCount == 1 ? "requirement" : "requirements") missing tests</span>
+                        </button>
+                    }
+                </div>
+            }
+        </div>
     }
 
     @* ── Gap explanation panel ────────────────────────────────────────── *@
@@ -149,7 +198,7 @@
     }
     else
     {
-        @foreach (var story in _model.Stories)
+        @foreach (var story in FilteredStories)
         {
             var isExpanded = _expanded.GetValueOrDefault(story.Key);
             var covCss = story.CoverageStatus.ToString().ToLowerInvariant();
@@ -208,24 +257,75 @@
                             @onclick="() => ToggleLane(story.Key)"
                             aria-expanded="@isExpanded">
                         <span class="fv-lane-chevron" aria-hidden="true">@(isExpanded ? "▼" : "▶")</span>
+                        @if (story.Priority > 0)
+                        {
+                            <span class="fv-priority-badge fv-priority-p@(story.Priority)" title="Priority @story.Priority">P@(story.Priority)</span>
+                        }
                         @if (story.StoryId is not null)
                         {
                             <span class="fv-story-badge">@story.StoryId</span>
                         }
                         <span class="fv-lane-title">@story.Title</span>
-                        <span class="fv-lane-summary" aria-hidden="true">
-                            @story.Requirements.Count FR · @story.AllTests.Count tests
-                            @if (story.SuccessCriteria.Count > 0)
-                            {
-                                <text> · @story.SuccessCriteria.Count SC</text>
-                            }
-                        </span>
+                        @if (!isExpanded)
+                        {
+                            @* Collapsed summary — show key counts at a glance *@
+                            <span class="fv-lane-collapsed-summary" aria-hidden="true">
+                                @story.Requirements.Count FR · @story.AllTests.Count tests · SC: @story.SuccessCriteria.Count
+                            </span>
+                        }
+                        @* Health badge *@
+                        @{
+                            var (healthLabel, healthClass, healthIcon) = GetHealthBadge(story.HealthStatus);
+                        }
+                        @if (story.HealthStatus != StoryHealthStatus.NoRequirements)
+                        {
+                            <span class="fv-health-badge @healthClass" data-testid="fv-health-badge" title="@GetHealthTooltip(story)">
+                                @healthIcon @healthLabel
+                            </span>
+                        }
                         <span class="fv-cov-pill fv-cov-@covCss">@CovLabel(story.CoverageStatus)</span>
                     </button>
 
                     @if (isExpanded)
                     {
                         <div class="fv-lane-body">
+
+                            @* ── Readiness score panel ────────────────────────────────── *@
+                            @if (story.Requirements.Count > 0)
+                            {
+                                var readinessKey = "readiness-" + story.Key;
+                                var isReadinessExpanded = _expandedItems.GetValueOrDefault(readinessKey);
+                                <div class="fv-readiness-panel" data-testid="fv-readiness-panel">
+                                    <button type="button" class="fv-readiness-header" @onclick="() => ToggleItem(readinessKey)" aria-expanded="@isReadinessExpanded">
+                                        <span class="fv-readiness-label">QA Ready:</span>
+                                        <span class="fv-readiness-score @ReadinessScoreClass(story.QaReadinessScore)"
+                                              title="QA Readiness measures test coverage (50%) and success criteria presence (50%). A score of 100% means all requirements have tests and at least one success criterion is linked.">
+                                            @story.QaReadinessScore%
+                                        </span>
+                                        <span class="fv-lane-chevron fv-readiness-chevron" aria-hidden="true">@(isReadinessExpanded ? "▼" : "▶")</span>
+                                    </button>
+                                    @if (isReadinessExpanded)
+                                    {
+                                        <div class="fv-readiness-breakdown">
+                                            <span class="fv-rb-item">
+                                                <span class="fv-rb-label">Requirements</span>
+                                                <span class="fv-rb-value">@story.CoveredReqCount/@story.Requirements.Count</span>
+                                            </span>
+                                            <span class="fv-rb-item">
+                                                <span class="fv-rb-label">Success Criteria</span>
+                                                <span class="fv-rb-value @(story.SuccessCriteria.Count == 0 ? "fv-rb-missing" : "")">
+                                                    @(story.SuccessCriteria.Count == 0 ? "—" : story.SuccessCriteria.Count.ToString())
+                                                </span>
+                                            </span>
+                                            <span class="fv-rb-item">
+                                                <span class="fv-rb-label">Tests</span>
+                                                <span class="fv-rb-value">@story.AllTests.Count</span>
+                                            </span>
+                                        </div>
+                                    }
+                                </div>
+                                <div class="fv-connector fv-connector-sm" aria-hidden="true"></div>
+                            }
 
                             @* Context step *@
                             @if (story.ContextDescription is not null)
@@ -420,16 +520,20 @@
                             }
                             else if (story.Requirements.Count > 0)
                             {
-                                <div class="fv-step fv-step-sc">
+                                <div class="fv-step fv-step-sc fv-step-sc-missing">
                                     <div class="fv-step-header">
                                         <span class="fv-step-icon" aria-hidden="true">✅</span>
                                         <span class="fv-step-label">Success Criteria</span>
+                                        <span class="fv-sc-missing-badge" data-testid="fv-sc-missing-badge"
+                                              title="No success criteria are linked to this story's requirements. Success Criteria define measurable outcomes and are required for complete QA Readiness.">
+                                            ⚠ Missing Success Criteria
+                                        </span>
                                     </div>
                                     <div class="fv-step-body fv-sc-placeholder">
-                                        <span class="fv-empty-hint">No Success Criteria linked to this item yet.</span>
+                                        <span class="fv-sc-missing-hint">No Success Criteria linked to this story yet. Add success criteria to reach full QA Readiness.</span>
                                         @if (_model.TotalSc > 0)
                                         {
-                                            <span class="fv-sc-global-note">@_model.TotalSc Success @(_model.TotalSc == 1 ? "Criterion" : "Criteria") exist in this specification.</span>
+                                            <span class="fv-sc-global-note">@_model.TotalSc Success @(_model.TotalSc == 1 ? "Criterion" : "Criteria") exist in this specification but are not linked to this story's requirements.</span>
                                         }
                                     </div>
                                 </div>
@@ -439,19 +543,27 @@
                             @* Tasks step *@
                             @if (story.Requirements.Count > 0 || story.AllTests.Count > 0)
                             {
+                                var implKey = "impl-" + story.Key;
+                                var isImplExpanded = _expandedItems.GetValueOrDefault(implKey);
                                 <div class="fv-step fv-step-tasks">
                                     <div class="fv-step-header">
                                         <span class="fv-step-icon" aria-hidden="true">📌</span>
-                                        <span class="fv-step-label">Implementation Tasks</span>
+                                        <span class="fv-step-label">Implementation</span>
                                         <span class="fv-step-count fv-count-na">—</span>
                                     </div>
                                     <div class="fv-step-body fv-step-body-placeholder">
-                                        <span class="fv-placeholder-hint">No task links found yet.</span>
-                                        <div class="fv-task-cta-row">
-                                            <a href="/task-explorer" class="fv-task-cta-btn">Open Task Explorer</a>
-                                            <button type="button" class="fv-task-cta-btn" disabled title="Upload a tasks.md file to import task links">Import tasks.md</button>
-                                            <button type="button" class="fv-task-cta-btn" disabled title="Run task alignment to automatically link tasks to requirements">Run Task Alignment</button>
-                                        </div>
+                                        <span class="fv-placeholder-hint" data-testid="fv-tasks-not-imported">Not linked — Tasks not imported.</span>
+                                        <button type="button" class="fv-impl-manage-btn" @onclick="() => ToggleItem(implKey)">
+                                            @(isImplExpanded ? "▲ Hide" : "▼ Manage Implementation Links")
+                                        </button>
+                                        @if (isImplExpanded)
+                                        {
+                                            <div class="fv-task-cta-row">
+                                                <a href="/task-explorer" class="fv-task-cta-btn">Open Task Explorer</a>
+                                                <button type="button" class="fv-task-cta-btn" disabled title="Upload a tasks.md file to import task links">Import tasks.md</button>
+                                                <button type="button" class="fv-task-cta-btn" disabled title="Run task alignment to automatically link tasks to requirements">Run Task Alignment</button>
+                                            </div>
+                                        }
                                     </div>
                                 </div>
                             }
@@ -459,6 +571,13 @@
                         </div>
                     }
                 }
+            </div>
+        }
+
+        @if (_activeFilter != "All" && !FilteredStories.Any())
+        {
+            <div class="fv-filter-empty">
+                <p>No stories match the current filter. <button type="button" class="fv-filter-reset" @onclick='() => SetFilter("All")'>Show all stories</button></p>
             </div>
         }
     }
@@ -477,8 +596,32 @@
 
     private readonly Dictionary<string, bool> _expanded      = [];
     private readonly Dictionary<string, bool> _expandedItems = [];
-    private bool _scSectionExpanded = true;
+    private bool _scSectionExpanded = false;
     private bool _gapPanelExpanded;
+    private bool _coverageIssuesExpanded;
+    private string _activeFilter = "All";
+
+    private static readonly (string Label, string Key, string TestId)[] FilterOptions =
+    [
+        ("All",                    "All",                    "fv-filter-all"),
+        ("Covered",                "Covered",                "fv-filter-covered"),
+        ("Missing Tests",          "MissingTests",           "fv-filter-missing-tests"),
+        ("Missing Success Criteria","MissingSuccessCriteria","fv-filter-missing-sc"),
+        ("Ready For Testing",      "ReadyForTesting",        "fv-filter-ready"),
+        ("High Priority (P1)",     "HighPriority",           "fv-filter-high-priority"),
+    ];
+
+    private IEnumerable<FlowStory> FilteredStories => _model is null
+        ? []
+        : _activeFilter switch
+        {
+            "Covered"                => _model.Stories.Where(s => s.HealthStatus == StoryHealthStatus.Covered),
+            "MissingTests"           => _model.Stories.Where(s => s.HealthStatus is StoryHealthStatus.MissingTests or StoryHealthStatus.Partial),
+            "MissingSuccessCriteria" => _model.Stories.Where(s => !s.IsDecisionLane && !s.IsUnmapped && s.SuccessCriteria.Count == 0 && s.Requirements.Count > 0),
+            "ReadyForTesting"        => _model.Stories.Where(s => s.HealthStatus == StoryHealthStatus.Covered),
+            "HighPriority"           => _model.Stories.Where(s => s.Priority == 1),
+            _                        => _model.Stories,
+        };
 
     protected override void OnParametersSet()
     {
@@ -494,6 +637,7 @@
         _model = FlowModelBuilder.Build(SpecMarkdown, Candidates, Links);
         _expanded.Clear();
         _expandedItems.Clear();
+        _activeFilter = "All";
 
         // Expand the first mapped non-decision story by default
         var first = _model.Stories.FirstOrDefault(s => !s.IsUnmapped && !s.IsDecisionLane)
@@ -513,6 +657,14 @@
     private void ToggleGapPanel() =>
         _gapPanelExpanded = !_gapPanelExpanded;
 
+    private void ToggleCoverageIssues() =>
+        _coverageIssuesExpanded = !_coverageIssuesExpanded;
+
+    private void SetFilter(string key)
+    {
+        _activeFilter = key;
+    }
+
     private static string CovLabel(FlowCoverageStatus s) => s switch
     {
         FlowCoverageStatus.Covered        => "Covered",
@@ -521,4 +673,29 @@
         FlowCoverageStatus.NoRequirements => "No Requirements",
         _ => s.ToString(),
     };
+
+    private static (string Label, string CssClass, string Icon) GetHealthBadge(StoryHealthStatus h) => h switch
+    {
+        StoryHealthStatus.Covered                  => ("Covered",                  "fv-health-covered",  "✓"),
+        StoryHealthStatus.MissingTests             => ("Missing Tests",            "fv-health-warn",     "⚠"),
+        StoryHealthStatus.MissingSuccessCriteria   => ("Missing Success Criteria", "fv-health-warn",     "⚠"),
+        StoryHealthStatus.MissingUserStoryMapping  => ("Missing User Story Mapping","fv-health-warn",    "⚠"),
+        StoryHealthStatus.Partial                  => ("Partial Coverage",         "fv-health-partial",  "⚠"),
+        _                                          => ("",                         "",                   ""),
+    };
+
+    private static string GetHealthTooltip(FlowStory s) => s.HealthStatus switch
+    {
+        StoryHealthStatus.Covered                => $"All {s.Requirements.Count} requirement(s) have tests and success criteria are linked.",
+        StoryHealthStatus.MissingTests           => $"{s.Requirements.Count - s.CoveredReqCount} of {s.Requirements.Count} requirement(s) have no linked tests.",
+        StoryHealthStatus.MissingSuccessCriteria => "All requirements are covered but no success criteria are linked. Add success criteria to reach full QA Readiness.",
+        StoryHealthStatus.MissingUserStoryMapping => "This lane contains requirements not mapped to a user story.",
+        StoryHealthStatus.Partial                => $"{s.CoveredReqCount} of {s.Requirements.Count} requirement(s) covered.",
+        _                                        => "",
+    };
+
+    private static string ReadinessScoreClass(int score) =>
+        score >= 80 ? "fv-readiness-good" :
+        score >= 50 ? "fv-readiness-ok"   :
+                      "fv-readiness-bad";
 }

@@ -82,7 +82,7 @@ public class ExtractionReviewListTests : BunitContext
 
     private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut)
     {
-        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Extraction Review")).Click();
     }
 
     private static void SelectAndAcceptFirst(IRenderedComponent<ExtractionReviewList> cut)
@@ -169,9 +169,20 @@ public class ExtractionReviewListTests : BunitContext
         tabs.Should().HaveCountGreaterThanOrEqualTo(5);
         tabs[0].Should().Contain("Traceability & Coverage");
         tabs[1].Should().Contain("Flow View");
-        tabs[2].Should().Contain("Document View");
-        tabs[3].Should().Contain("Spec Explorer");
+        tabs[2].Should().Contain("Spec Explorer");
+        tabs[3].Should().Contain("Extraction Review");
         tabs[4].Should().Contain("Architecture View");
+    }
+
+    [Fact]
+    public void ExtractionReview_UsesNewName()
+    {
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult()));
+
+        var text = cut.Markup;
+        text.Should().Contain("Extraction Review");
+        text.Should().NotContain("Document" + " View");
     }
 
     [Fact]
@@ -183,6 +194,76 @@ public class ExtractionReviewListTests : BunitContext
         var activeTab = cut.FindAll(".view-mode-tab").Single(t => t.ClassList.Contains("is-active"));
         activeTab.TextContent.Should().Contain("Traceability & Coverage");
         cut.Markup.Should().Contain("tv-root");
+    }
+
+    [Fact]
+    public void ExtractionReview_ShowsPurposeBanner()
+    {
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult()));
+        OpenDocumentView(cut);
+
+        var banner = cut.Find("[data-testid='extraction-review-banner']").TextContent;
+        banner.Should().Contain("Extraction Review");
+        banner.Should().Contain("Artifacts have already been extracted");
+        banner.Should().Contain("Review extraction quality");
+        banner.Should().Contain("This step is optional for normal testing workflows");
+    }
+
+    [Fact]
+    public void ExtractionReview_ExplainsReviewStatuses()
+    {
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult()));
+        OpenDocumentView(cut);
+
+        var help = cut.Find("[data-testid='review-status-help']").TextContent;
+        help.Should().Contain("AutoAccepted");
+        help.Should().Contain("Automatically extracted and included");
+        help.Should().Contain("Manually Accepted");
+        help.Should().Contain("Reviewed and confirmed");
+        help.Should().Contain("Needs Review");
+        help.Should().Contain("Potential issue requiring attention");
+        help.Should().Contain("Rejected");
+        help.Should().Contain("Excluded from Traceability calculations");
+    }
+
+    [Fact]
+    public void ExtractionReview_ShowsExtractionHealthSummary()
+    {
+        var rejected = MakeCandidate("FR-002: rejected", ScenarioKind.Requirement);
+        rejected.ReviewStatus = CandidateReviewStatus.Rejected;
+        var needsReview = MakeCandidate("FR-003: ambiguous", ScenarioKind.Requirement);
+        needsReview.ReviewStatus = CandidateReviewStatus.NeedsReview;
+        var accepted = MakeCandidate("FR-004: accepted", ScenarioKind.Requirement);
+        accepted.ReviewStatus = CandidateReviewStatus.Accepted;
+
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult([MakeCandidate(), rejected, needsReview, accepted])));
+        OpenDocumentView(cut);
+
+        var summary = cut.Find("[data-testid='extraction-health-summary']").TextContent;
+        summary.Should().Contain("AutoAccepted");
+        summary.Should().Contain("Needs Review");
+        summary.Should().Contain("Rejected");
+        summary.Should().Contain("Link Suggestions");
+        summary.Should().Contain("Coverage Impact");
+        summary.Should().Contain("artifacts currently excluded");
+    }
+
+    [Fact]
+    public void ExtractionReview_EmptyStatesRender()
+    {
+        var cut = Render<ExtractionReviewList>(p =>
+            p.Add(c => c.PipelineResult, MakeResult(status: PipelineStatus.NoResults)));
+
+        cut.Find("[data-testid='empty-state']").TextContent.Should().Contain("No extracted artifacts are available yet");
+
+        var panel = Render<CandidateLinkPanel>(p => p
+            .Add(c => c.Candidate, MakeCandidate())
+            .Add(c => c.LinkableCandidates, Array.Empty<ExtractionCandidate>()));
+
+        panel.Markup.Should().Contain("No suggested links available");
     }
 
     [Fact]
@@ -753,7 +834,7 @@ public class ExtractionReviewListObservabilityTests : BunitContext
 
     private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut)
     {
-        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Extraction Review")).Click();
     }
 
     private static void SelectAndAcceptFirst(IRenderedComponent<ExtractionReviewList> cut)
@@ -915,7 +996,7 @@ public class TestSubsectionGroupingTests : BunitContext
     }
 
     private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut) =>
-        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Extraction Review")).Click();
 
     [Fact]
     public void SameContextHeading_RenderedInSameSubsection()
@@ -1111,7 +1192,7 @@ public class ClarificationSubsectionGroupingTests : BunitContext
     }
 
     private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut) =>
-        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Extraction Review")).Click();
 
     [Fact]
     public void SameContextHeading_RenderedInSameSubsection()
@@ -1323,7 +1404,7 @@ public class RequirementSubsectionGroupingTests : BunitContext
     }
 
     private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut) =>
-        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Extraction Review")).Click();
 
     [Fact]
     public void SameContextHeading_RenderedInSameSubsection()
@@ -1538,7 +1619,7 @@ public class ExtractionReviewListDefaultExpansionTests : BunitContext
     }
 
     private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut) =>
-        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Document View")).Click();
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Extraction Review")).Click();
 
     [Fact]
     public void AfterExtraction_TopLevelSections_AreExpandedByDefault()

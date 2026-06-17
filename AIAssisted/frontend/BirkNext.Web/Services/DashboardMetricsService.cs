@@ -109,8 +109,8 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
             (tests.Count, testsLinkedPct),
             (clarifications.Count, clarificationsLinkedPct));
 
+        // Health score: coverage-based only — review progress is not a quality signal
         var qaBaseComponents = new List<int>();
-        if (candidates.Count > 0) qaBaseComponents.Add(reviewedPct);
         if (requirements.Count > 0) qaBaseComponents.Add(coveredPct);
         if (tests.Count + clarifications.Count > 0) qaBaseComponents.Add(traceabilityPercent);
         var qaBase = qaBaseComponents.Count > 0
@@ -123,7 +123,7 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
         if (requirements.Count > 0 && requirementsWithTests == 0) openRisksCount++;
         if (requirements.Count > 0 && coveredPct < 70 && requirementsWithTests > 0) openRisksCount++;
         if (unresolvedClarifications > 0) openRisksCount++;
-        if (candidates.Count > 0 && reviewedPct < 80) openRisksCount++;
+        if (testsWithoutRequirements > 0) openRisksCount++;
 
         return new DashboardMetrics(
             TotalCandidates: candidates.Count,

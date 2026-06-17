@@ -95,7 +95,9 @@ public class FeatureVisibilityInfo
     public bool SpecificationReview { get; set; } = true;
     public bool QaArtifactLibrary { get; set; } = true;
     public bool CreateTestScenario { get; set; } = true;
+    public bool LegacyTraceabilityNavigationEnabled { get; set; } = false;
     public bool TraceabilityCoverage { get; set; } = true;
+    public bool TraceabilitySuggestions { get; set; } = true;
     public bool CodeTraceability { get; set; } = true;
     public bool SpecComparison { get; set; } = true;
     public bool SpecificationDeltas { get; set; } = true;

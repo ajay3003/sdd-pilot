@@ -5,8 +5,12 @@
 
     <div class="link-panel-header">
         <div class="link-panel-title-row">
-            <span class="link-panel-title">Link related candidates</span>
+            <span class="link-panel-title">Suggested Traceability Links</span>
             <button type="button" class="link-panel-close" @onclick="OnClose" aria-label="Close link panel" data-testid="link-drawer-close">×</button>
+        </div>
+        <div class="link-panel-help" data-testid="link-panel-help">
+            <p>Connect requirements to tests and success criteria to improve traceability coverage.</p>
+            <p>These links affect Traceability &amp; Coverage calculations.</p>
         </div>
         <div class="link-panel-context">
             <span class="badge badge-@Candidate.Classification.ToString().ToLowerInvariant()">
@@ -23,8 +27,8 @@
     <div class="link-panel-search">
         <input type="search"
                class="link-search-input"
-               placeholder="Search candidates…"
-               aria-label="Search candidates"
+               placeholder="Search artifacts…"
+               aria-label="Search artifacts"
                data-testid="link-search"
                value="@_searchQuery"
                @oninput="e => _searchQuery = e.Value?.ToString() ?? string.Empty" />
@@ -35,31 +39,31 @@
         {
             @RenderSection("Tests", "tests", LinkedTests, FilteredAvailableTests,
                 c => AddLink(c, CandidateLinkType.RequirementTest),
-                "No tests available to link", "test")
+                "No suggested links available for tests.", "test")
 
             @RenderSection("Clarifications", "clarifications", LinkedClarifications, FilteredAvailableClarifications,
                 c => AddLink(c, CandidateLinkType.RequirementClarification),
-                "No clarifications available to link", "needsclarification")
+                "No suggested links available for success criteria.", "needsclarification")
         }
         else if (Candidate.Classification == ScenarioKind.Test)
         {
             @RenderSection("Requirements", "requirements", LinkedRequirements, FilteredAvailableRequirements,
                 c => AddLink(c, CandidateLinkType.RequirementTest),
-                "No requirements available to link", "requirement")
+                "No suggested links available for requirements.", "requirement")
 
             @RenderSection("Clarifications", "clarifications", LinkedClarifications, FilteredAvailableClarifications,
                 c => AddLink(c, CandidateLinkType.TestClarification),
-                "No clarifications available to link", "needsclarification")
+                "No suggested links available for success criteria.", "needsclarification")
         }
         else
         {
             @RenderSection("Requirements", "requirements", LinkedRequirements, FilteredAvailableRequirements,
                 c => AddLink(c, CandidateLinkType.RequirementClarification),
-                "No requirements available to link", "requirement")
+                "No suggested links available for requirements.", "requirement")
 
             @RenderSection("Tests", "tests", LinkedTests, FilteredAvailableTests,
                 c => AddLink(c, CandidateLinkType.TestClarification),
-                "No tests available to link", "test")
+                "No suggested links available for tests.", "test")
         }
     </div>
 

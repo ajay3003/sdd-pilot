@@ -1,0 +1,193 @@
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IBirkNextClient Client
+
+<div class="scp-panel" data-testid="scp-panel">
+
+    @if (_showCreate)
+    {
+        <div class="scp-create-header">
+            <button class="scp-back-btn" @onclick='() => _showCreate = false'>← Back to History</button>
+        </div>
+        <SpecComparisonPanel />
+    }
+    else
+    {
+        <section class="scp-kpi-grid" aria-label="Comparison executive summary">
+            <div class="scp-kpi-card">
+                <strong>@_reviews.Count</strong>
+                <span>Saved Reviews</span>
+            </div>
+            <div class="scp-kpi-card scp-kpi-added">
+                <strong>@AddedRequirements</strong>
+                <span>Added Requirements</span>
+            </div>
+            <div class="scp-kpi-card scp-kpi-changed">
+                <strong>@ChangedRequirements</strong>
+                <span>Changed Requirements</span>
+            </div>
+            <div class="scp-kpi-card scp-kpi-removed">
+                <strong>@RemovedRequirements</strong>
+                <span>Removed Requirements</span>
+            </div>
+            <div class="scp-kpi-card scp-kpi-coverage">
+                <strong>@CoverageImpactItems</strong>
+                <span>Coverage Impact Items</span>
+            </div>
+            <div class="scp-kpi-card scp-kpi-traceability">
+                <strong>@TraceabilityImpactItems</strong>
+                <span>Traceability Impact Items</span>
+            </div>
+        </section>
+
+        <section class="scp-impact-overview" aria-label="Impact overview">
+            <div class="scp-impact-header">
+                <div>
+                    <p class="section-kicker">Impact Overview</p>
+                    <h2>Change Impact Summary</h2>
+                </div>
+                <span>@RiskReviewCount review@(Plural(RiskReviewCount)) needing attention</span>
+            </div>
+            <div class="scp-impact-grid">
+                <div class="scp-impact-item scp-impact-added"><strong>@AddedRequirements</strong><span>Requirements Added</span></div>
+                <div class="scp-impact-item scp-impact-changed"><strong>@ChangedRequirements</strong><span>Requirements Changed</span></div>
+                <div class="scp-impact-item scp-impact-removed"><strong>@RemovedRequirements</strong><span>Requirements Removed</span></div>
+                <div class="scp-impact-item scp-impact-clarification"><strong>@ClarificationsAdded</strong><span>Clarifications Added</span></div>
+                <div class="scp-impact-item scp-impact-coverage"><strong>@CoverageGapsIntroduced</strong><span>Coverage Gaps Introduced</span></div>
+                <div class="scp-impact-item scp-impact-traceability"><strong>@TraceabilityImpactItems</strong><span>Traceability Links Affected</span></div>
+            </div>
+        </section>
+
+        <section class="scp-reviews-section">
+            <div class="scp-reviews-header">
+                <div>
+                    <p class="section-kicker">Review Timeline</p>
+                    <h2>Comparisons</h2>
+                </div>
+                <button class="scp-new-btn" @onclick='() => _showCreate = true'>New Comparison</button>
+            </div>
+            @if (_isLoading)
+            {
+                <p class="loading-state">Loading reviews...</p>
+            }
+            else if (_loadError is not null)
+            {
+                <div class="notification notification-error" role="alert" data-testid="scp-load-error">
+                    @_loadError
+                </div>
+            }
+            else
+            {
+                <QaDeltaReviewList Reviews="_reviews"
+                                   OnDeleteRequested="HandleDeleteAsync"
+                                   DeletingId="_deletingId"
+                                   DeleteErrors="_deleteErrors" />
+            }
+        </section>
+    }
+
+</div>
+
+@code {
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+
+    private bool _showCreate;
+    private IReadOnlyList<IGetQaDeltaReviews_QaDeltaReviews> _reviews = [];
+    private bool _isLoading;
+    private string? _loadError;
+    private string? _deletingId;
+    private Dictionary<string, string> _deleteErrors = [];
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
+
+    private IReadOnlyList<DeltaSummaryDto> Summaries => _reviews
+        .Select(r => TryParseSummary(r.SummaryJson))
+        .Where(s => s is not null)
+        .Cast<DeltaSummaryDto>()
+        .ToList();
+
+    private int AddedRequirements        => Summaries.Sum(s => s.AddedRequirements);
+    private int ChangedRequirements      => Summaries.Sum(s => s.ModifiedRequirements);
+    private int RemovedRequirements      => Summaries.Sum(s => s.RemovedRequirements);
+    private int CoverageImpactItems      => Summaries.Sum(s => s.PotentiallyImpactedTests + s.UncoveredRequirements);
+    private int TraceabilityImpactItems  => 0;
+    private int ClarificationsAdded      => Summaries.Sum(s => s.AddedClarifications + s.NewClarificationRisks);
+    private int CoverageGapsIntroduced   => Summaries.Sum(s => s.UncoveredRequirements);
+    private int RiskReviewCount          => Summaries.Count(s => s.RemovedRequirements > 0 || s.UncoveredRequirements > 0 || s.PotentiallyImpactedTests > 0);
+
+    protected override async Task OnInitializedAsync() => await LoadReviewsAsync();
+
+    private async Task LoadReviewsAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.GetQaDeltaReviews.ExecuteAsync(ProjectId);
+            if (result.Errors is { Count: > 0 })
+            {
+                _loadError = "We couldn't load comparisons right now. Please try again later.";
+                return;
+            }
+
+            if (result.Data is { } data)
+                _reviews = data.QaDeltaReviews.ToList();
+            else
+                _loadError = "We couldn't load comparisons right now. Please try again later.";
+        }
+        catch (Exception)
+        {
+            _loadError = "We couldn't load comparisons right now. Please try again later.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task HandleDeleteAsync(string id)
+    {
+        _deletingId = id;
+        _deleteErrors.Remove(id);
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.DeleteQaDeltaReview.ExecuteAsync(id);
+
+            if (result.Data?.DeleteQaDeltaReview is { Success: true })
+                _reviews = _reviews.Where(r => r.Id != id).ToList();
+            else
+            {
+                var msg = result.Data?.DeleteQaDeltaReview?.Errors?.FirstOrDefault()?.Message
+                          ?? "Something went wrong. Please try again.";
+                _deleteErrors[id] = msg;
+            }
+        }
+        catch (Exception)
+        {
+            _deleteErrors[id] = "Something went wrong. Please try again.";
+        }
+        finally
+        {
+            _deletingId = null;
+        }
+    }
+
+    private static DeltaSummaryDto? TryParseSummary(string summaryJson)
+    {
+        try { return JsonSerializer.Deserialize<DeltaSummaryDto>(summaryJson, JsonOptions); }
+        catch { return null; }
+    }
+
+    private static string Plural(int count) => count == 1 ? string.Empty : "s";
+}

@@ -8,27 +8,27 @@
 {
     <div class="review-list-empty" data-testid="review-list-empty">
         <div>
-            <p class="section-kicker">Delta Review History</p>
-            <h3>No Delta Reviews Yet</h3>
+            <p class="section-kicker">Comparison History</p>
+            <h3>No Comparisons Yet</h3>
             <p>Create your first comparison to begin tracking specification change history.</p>
         </div>
         <ol>
-            <li>Open Compare Specs</li>
+            <li>Open Spec Drift</li>
+            <li>Go to the Changes tab</li>
             <li>Compare baseline and updated specifications</li>
             <li>Review detected changes</li>
-            <li>Save Delta Review</li>
-            <li>Track impact here</li>
+            <li>Save Comparison</li>
         </ol>
         <div class="empty-review-actions">
-            <a class="btn-primary" href="compare">Compare Specifications</a>
-            <a class="btn-secondary" href="compare">Learn About Delta Reviews</a>
+            <a class="btn-primary" href="spec-drift?tab=changes">Start New Comparison</a>
+            <a class="btn-secondary" href="spec-drift?tab=changes">View All Comparisons</a>
         </div>
-        <p class="empty-review-note">Delta Reviews are generated from Compare Specs and help QA teams track specification evolution over time.</p>
+        <p class="empty-review-note">Comparisons are created in Spec Drift → Changes and help QA teams track specification evolution over time.</p>
     </div>
 }
 else
 {
-    <div class="review-timeline" aria-label="Saved delta review timeline">
+    <div class="review-timeline" aria-label="Saved comparison timeline">
         @foreach (var review in Reviews.OrderByDescending(r => r.CreatedAt))
         {
             var summary = TryParseSummary(review.SummaryJson);

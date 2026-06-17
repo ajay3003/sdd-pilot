@@ -221,3 +221,22 @@
 .link-panel-done {
     width: 100%;
 }
+.link-panel-help {
+    margin: 0 0 0.75rem;
+    padding: 0.625rem 0.75rem;
+    background: var(--clr-surface, #f8fafc);
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: 8px;
+}
+
+.link-panel-help p {
+    margin: 0;
+    color: var(--clr-text-muted, #475569);
+    font-size: 0.74rem;
+    line-height: 1.45;
+}
+
+.link-panel-help p + p {
+    margin-top: 0.35rem;
+    font-weight: 700;
+}

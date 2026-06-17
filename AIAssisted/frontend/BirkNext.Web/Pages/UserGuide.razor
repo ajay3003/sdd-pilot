@@ -128,24 +128,20 @@
             <div class="ug-flow-branches">
                 <h4 class="ug-branches-title">Optional branches</h4>
                 <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Specification Deltas</span>
+                    <span class="ug-branch-badge">Spec Drift → Changes</span>
                     <span class="ug-branch-when">When specification changes between versions</span>
                 </div>
                 <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Task Deltas</span>
+                    <span class="ug-branch-badge">Task Explorer → Changes</span>
                     <span class="ug-branch-when">When the implementation plan changes</span>
                 </div>
                 <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Code Traceability</span>
-                    <span class="ug-branch-when">When implementation evidence exists</span>
+                    <span class="ug-branch-badge">Implementation Review</span>
+                    <span class="ug-branch-when">When implementation coverage needs review</span>
                 </div>
                 <div class="ug-branch-item">
                     <span class="ug-branch-badge">AI Change Review</span>
                     <span class="ug-branch-when">When AI-generated changes need review</span>
-                </div>
-                <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Spec Comparison</span>
-                    <span class="ug-branch-when">When comparing two specification documents</span>
                 </div>
             </div>
         </div>
@@ -276,10 +272,10 @@
                         <td>Analyse a spec → click <strong>Flow View</strong> tab in Analysis Results</td>
                     </tr>
                     <tr>
-                        <td><strong>Document View</strong></td>
+                        <td><strong>Extraction Review</strong></td>
                         <td>Specification Review</td>
                         <td class="ug-td-mono">/extract</td>
-                        <td>Analyse a spec → click <strong>Document View</strong> tab in Analysis Results</td>
+                        <td>Analyse a spec → click <strong>Extraction Review</strong> tab in Analysis Results</td>
                     </tr>
                     <tr>
                         <td><strong>Spec Explorer</strong></td>
@@ -310,34 +306,122 @@
         </div>
 
         <h3 class="ug-subsection-title" id="disc-spec-explorer">Spec Explorer</h3>
-        <p><strong>Purpose:</strong> Transforms the specification into a navigable, filterable hierarchy of sections, requirements, user stories, acceptance tests, and tables. When used alongside extraction results, each section shows its coverage status.</p>
+        <p><strong>Purpose:</strong> Spec Explorer is the specification structure and navigation layer. Use it to understand how the specification is organized, browse sections and headings, see which artifacts belong to each section, identify healthy versus unhealthy sections, and navigate into Traceability.</p>
         <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>, then click the <strong>Spec Explorer</strong> tab in the Analysis Results area. The explorer builds automatically from the analysed spec — no re-upload required.</p>
         <p><strong>When to use:</strong></p>
         <ul class="ug-fd-list">
             <li>Navigating a large or complex specification by structure rather than by extracted item</li>
-            <li>Verifying that all heading sections are covered by extracted candidates</li>
-            <li>Identifying sections with Missing or Partial coverage</li>
-            <li>Exploring the document outline before accepting or rejecting candidates</li>
+            <li>Seeing section health, including requirements, tests, clarifications, coverage percentage, and explicit Covered, Partial, or Missing labels</li>
+            <li>Understanding User Story ownership without expanding every section</li>
+            <li>Opening a requirement or section and jumping into Traceability when coverage needs deeper analysis</li>
+            <li>Using Map View to understand Heading to Requirements to Tests to Success Criteria structure</li>
         </ul>
+        <div class="ug-callout ug-callout-tip">
+            <strong>Role clarity:</strong> Traceability &amp; Coverage is for coverage analysis. Flow View is for QA readiness. Spec Explorer is for specification structure and navigation. Extraction Review is for extraction quality review. Architecture View is for technical assumptions and architecture.
+        </div>
         <div class="ug-callout ug-callout-tip">
             <strong>Note:</strong> Spec Explorer is not a standalone menu item. It only appears after a successful Specification Review analysis. Refreshing the page will restore the Spec Explorer from the saved session automatically.
         </div>
 
         <h3 class="ug-subsection-title" id="disc-flow-view">Flow View</h3>
-        <p><strong>Purpose:</strong> Organises extracted candidates around business flows and user journeys rather than document structure. Flow View groups requirements, tests, and clarifications by capability — helping you see the functional intent behind the spec.</p>
+        <p><strong>Purpose:</strong> A QA Readiness dashboard for User Stories. Flow View groups requirements, acceptance tests, success criteria, and implementation tasks by user story — and surfaces gaps, health status, and readiness scores without requiring manual inspection of each story. It answers: <em>What is ready for testing? What is missing? What should be fixed next?</em></p>
         <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>, then click the <strong>Flow View</strong> tab in the Analysis Results area.</p>
         <p><strong>When to use:</strong></p>
         <ul class="ug-fd-list">
+            <li>Getting a business-level QA readiness picture before starting testing</li>
+            <li>Identifying which user stories are missing tests, success criteria, or task coverage</li>
+            <li>Prioritising QA work based on health status and story priority (P1 first)</li>
             <li>Understanding user journeys and business workflows captured in the spec</li>
-            <li>Reviewing candidates grouped by capability or functional area rather than document order</li>
-            <li>Planning test coverage from a feature or journey perspective</li>
         </ul>
+
+        <h4 class="ug-feature-title">Story Health Badges</h4>
+        <p>Each user story shows a health badge in its header — visible without expanding the story:</p>
+        <ul class="ug-fd-list">
+            <li><strong>✓ Covered</strong> — all requirements have tests and at least one success criterion is linked.</li>
+            <li><strong>⚠ Missing Tests</strong> — one or more requirements have no linked acceptance tests.</li>
+            <li><strong>⚠ Missing Success Criteria</strong> — all requirements are covered by tests, but no success criteria are defined.</li>
+            <li><strong>⚠ Partial Coverage</strong> — some requirements are covered, others are not.</li>
+            <li><strong>⚠ Missing User Story Mapping</strong> — requirements exist but are not assigned to any user story.</li>
+        </ul>
+
+        <h4 class="ug-feature-title">QA Readiness Score</h4>
+        <p>Every story shows a QA Readiness percentage based on two dimensions:</p>
+        <ul class="ug-fd-list">
+            <li><strong>Test coverage (50%)</strong> — the proportion of requirements that have at least one linked acceptance test.</li>
+            <li><strong>Success Criteria presence (50%)</strong> — whether at least one success criterion is linked to the story.</li>
+        </ul>
+        <p>A score of 100% means all requirements are covered and success criteria are present. The breakdown panel shows requirements covered / total, success criteria count, total tests, and task status.</p>
+
+        <h4 class="ug-feature-title">QA Work Queue</h4>
+        <p>At the top of Flow View, the <strong>What needs attention?</strong> work queue surfaces the highest-priority gaps immediately. Each item is clickable and filters the story list to show only the affected stories:</p>
+        <ul class="ug-fd-list">
+            <li>Stories missing tests</li>
+            <li>Stories missing success criteria</li>
+            <li>Requirements missing tests (gap count)</li>
+        </ul>
+
+        <h4 class="ug-feature-title">Flow View Filters</h4>
+        <p>Quick filter chips let you focus on specific gap types without scrolling through all stories:</p>
+        <ul class="ug-fd-list">
+            <li><strong>All</strong> — all user stories.</li>
+            <li><strong>Covered</strong> — stories with full test coverage and success criteria.</li>
+            <li><strong>Missing Tests</strong> — stories where at least one requirement has no linked tests.</li>
+            <li><strong>Missing Success Criteria</strong> — stories with test coverage but no success criteria.</li>
+            <li><strong>Ready For Testing</strong> — stories that meet the covered threshold.</li>
+            <li><strong>High Priority (P1)</strong> — stories tagged as P1 in the specification.</li>
+        </ul>
+
+        <h4 class="ug-feature-title">Priority Sorting</h4>
+        <p>Stories are sorted by priority — P1 first, then P2, then P3, then unspecified. Within the same priority level, document order is preserved. Priority is extracted from labels like <code>(P1)</code>, <code>(P2)</code>, <code>(P3)</code> in the story heading.</p>
+
+        <h4 class="ug-feature-title">Missing Success Criteria Warning</h4>
+        <p>When a story has no linked success criteria, a prominent <strong>⚠ Missing Success Criteria</strong> badge appears in the story header (visible when collapsed) and inside the Success Criteria step. Success Criteria define measurable outcomes and are required for a story to reach 100% QA Readiness.</p>
+
+        <h4 class="ug-feature-title">Task Coverage Status</h4>
+        <p>The Implementation Tasks step distinguishes between: <strong>Tasks not imported</strong> (no tasks.md has been uploaded) and tasks linked to requirements (shown when task import is available). Use Task Explorer or Import tasks.md to add task coverage.</p>
+
+        <h3 class="ug-subsection-title" id="disc-extraction-review">Extraction Review</h3>
+        <p><strong>Purpose:</strong> Validate and improve extraction quality. Extraction Review is an advanced, optional quality-control workspace for accepting, rejecting, diagnosing, and linking AI-extracted artifacts.</p>
+        <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>, then click the <strong>Extraction Review</strong> tab in the Analysis Results area.</p>
+        <p><strong>When to use:</strong> Most testers will start in Traceability &amp; Coverage and may never need Extraction Review. Use it when extraction quality needs verification, when artifacts need manual correction, or when traceability relationships need adjustment.</p>
+        <div class="ug-table-scroll">
+            <table class="ug-table">
+                <thead>
+                    <tr>
+                        <th>Review Status</th>
+                        <th>Meaning</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>AutoAccepted</strong></td>
+                        <td>Automatically extracted and included.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Manually Accepted</strong></td>
+                        <td>Reviewed and confirmed.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Needs Review</strong></td>
+                        <td>Potential issue requiring attention.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Rejected</strong></td>
+                        <td>Excluded from Traceability calculations.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <p><strong>Link Related Candidates:</strong> Use the right-side panel to connect requirements to tests, connect requirements to success criteria, improve traceability coverage, and correct extraction relationships. These changes affect Traceability &amp; Coverage calculations.</p>
 
         <h3 class="ug-subsection-title" id="disc-traceability-view">Traceability &amp; Coverage (Analysis Tab)</h3>
         <p><strong>Purpose:</strong> Shows the QA risk picture first: coverage status, missing tests, orphan tests, missing success criteria, missing user story mappings, and relationship gaps. This is the <em>default</em> view shown after analysis because it answers what is covered, what is missing, and what should be fixed next.</p>
         <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>. The Traceability &amp; Coverage tab is active by default in Analysis Results.</p>
         <div class="ug-callout ug-callout-tip">
-            <strong>Note:</strong> This is different from the standalone <a href="/traceability" class="ug-inline-link">Traceability &amp; Coverage</a> page. The embedded Traceability &amp; Coverage tab shows relationships <em>within a single analysis session</em>. The standalone page covers accepted artifacts across the full project library.
+            <strong>Note:</strong> Use Traceability &amp; Coverage from inside Specification Review. It shows relationships <em>within the current analysis session</em> and is the primary tester workspace for validation coverage.
+        </div>
+        <div class="ug-callout ug-callout-tip">
+            <strong>Traceability &amp; Coverage vs. QA Artifact Library:</strong> Coverage analysis belongs in Traceability &amp; Coverage — it is the single source of truth for coverage metrics, gap analysis, missing tests, orphan tests, and requirement relationships. The <a href="/scenarios" class="ug-inline-link">QA Artifact Library</a> is a separate repository for storing, discovering, and reusing curated QA assets — it does not calculate or display coverage metrics. Publishing to the library is optional; Traceability &amp; Coverage works without it.
         </div>
         <p><strong>When to use:</strong></p>
         <ul class="ug-fd-list">
@@ -413,19 +497,13 @@
    |- Test-003
    `- Task-015</code></pre>
 
-        <h4 class="ug-feature-title">Why Matrix View Is Requirement-Centric</h4>
-        <p>Coverage is calculated at requirement level. A User Story may contain many requirements, and each requirement can have a different coverage status. For that reason, Matrix View uses <strong>Requirement</strong>, <strong>User Story</strong>, <strong>Tests</strong>, <strong>Success Criteria</strong>, and <strong>Coverage Status</strong> as its primary columns instead of treating the User Story as the coverage unit.</p>
-
-        <h4 class="ug-feature-title">Why Graph View Is User Story-Centric</h4>
-        <p>Graph View starts with User Stories because it is a business-oriented relationship view. Use it when you want to understand how specification, validation, and implementation connect across the chain: User Story &rarr; Requirements &rarr; Success Criteria &rarr; Tests &rarr; Tasks.</p>
+        <h4 class="ug-feature-title">Why Coverage Is Requirement-Centric</h4>
+        <p>Coverage is calculated at requirement level. A User Story may contain many requirements, and each requirement can have a different coverage status. Traceability &amp; Coverage answers "which requirements are covered?" directly — selecting a requirement shows its User Story, linked tests, Success Criteria, coverage status, and coverage reason in a single view.</p>
 
         <h4 class="ug-feature-title">Traceability &amp; Coverage Tabs</h4>
         <ul class="ug-fd-list">
-            <li><strong>Matrix:</strong> Requirement-first coverage analysis for coverage-eligible requirements.</li>
-            <li><strong>Requirements:</strong> Detailed requirement inspection, including User Story, Success Criteria, Tests, Tasks, coverage status, and coverage reason.</li>
-            <li><strong>Artifacts:</strong> Supporting context such as Clarifications, Decisions, Assumptions, Architecture Notes, and Metadata.</li>
-            <li><strong>Gaps:</strong> Actionable diagnostics for Missing User Story, Missing Success Criteria, Missing Tests, and Orphan Tests.</li>
-            <li><strong>Graph:</strong> User Story-first relationship analysis showing how User Stories connect to Requirements, Success Criteria, Tests, and Tasks.</li>
+            <li><strong>Requirements:</strong> The primary view. Select any coverage requirement to inspect its User Story, Success Criteria, linked tests, Tasks, coverage status, and coverage reason. Search and filter the list to focus on specific areas.</li>
+            <li><strong>Gaps:</strong> Actionable diagnostics for Missing User Story, Missing Success Criteria, Missing Tests, and Orphan Tests. Clicking a health dashboard card navigates here automatically.</li>
         </ul>
 
         <h4 class="ug-feature-title">Coverage Calculation</h4>
@@ -482,11 +560,33 @@
             <li><strong>Orphan Tests:</strong> A test exists but is not linked to any coverage requirement.</li>
         </ul>
 
+        <h4 class="ug-feature-title">Navigating with Summary Cards</h4>
+        <p>The six <strong>summary cards</strong> at the top of Traceability &amp; Coverage are clickable and navigate directly to the relevant view. Click any card to jump there:</p>
+        <ul class="ug-fd-list">
+            <li><strong>Requirements</strong> — opens the Requirements tab showing all coverage requirements.</li>
+            <li><strong>Covered</strong> — opens the Requirements tab (search or scroll to see covered items).</li>
+            <li><strong>Missing Tests</strong> — opens the Gaps tab focused on requirements without tests.</li>
+            <li><strong>Missing User Stories</strong> — opens the Gaps tab focused on requirements with no user story mapping.</li>
+            <li><strong>Missing Success Criteria</strong> — opens the Gaps tab focused on requirements with no success criterion.</li>
+            <li><strong>Orphan Tests</strong> — opens the Gaps tab focused on tests not linked to any requirement.</li>
+        </ul>
+        <p>When navigating from a card to the Gaps tab, only the relevant gap group is shown. Use <strong>Show all gaps</strong> to return to the full list.</p>
+
+        <h4 class="ug-feature-title">Gaps Tab as QA Work Queue</h4>
+        <p>The <strong>Gaps</strong> tab organises outstanding traceability gaps into a prioritised work queue. Each gap group is collapsible and shows the count and affected items:</p>
+        <ul class="ug-fd-list">
+            <li><strong>Requirements without Tests</strong> — the most critical gap. Each item here is a requirement at risk of being unvalidated at release.</li>
+            <li><strong>Missing User Story</strong> — requirements without a business owner. Fixing these improves traceability and prioritisation clarity.</li>
+            <li><strong>Missing Success Criteria</strong> — requirements without a measurable outcome definition. Fixing these strengthens acceptance criteria.</li>
+            <li><strong>Orphaned Tests</strong> — tests not linked to any requirement. These may be redundant or may cover undocumented behaviour.</li>
+        </ul>
+        <p>Clicking an item in any gap group navigates to the Requirements tab with that requirement selected, showing its full details.</p>
+
         <h4 class="ug-feature-title">Recommended Review Order</h4>
         <ol class="ug-fd-list">
             <li><strong>Matrix:</strong> Understand overall requirement coverage.</li>
-            <li><strong>Gaps:</strong> Identify missing coverage.</li>
-            <li><strong>Requirements:</strong> Investigate specific requirements.</li>
+            <li><strong>Gaps:</strong> Identify missing coverage — use it as a QA work queue.</li>
+            <li><strong>Requirements:</strong> Investigate specific requirements with full details.</li>
             <li><strong>Artifacts:</strong> Review assumptions, decisions, and clarifications.</li>
             <li><strong>Graph:</strong> Understand the relationships across user stories, requirements, tests, success criteria, and tasks.</li>
         </ol>
@@ -502,16 +602,19 @@
         </ul>
 
         <h3 class="ug-subsection-title" id="disc-task-explorer">Task Explorer</h3>
-        <p><strong>Purpose:</strong> Transforms a tasks.md into a navigable hierarchy of phases, user story groups, task groups, and individual tasks. When analysed with spec.md, each task is enriched with alignment status (Spec Linked, Needs Review, Technical Only, Possible Deviation), risk level, and regression candidate flags.</p>
-        <p><strong>How to access:</strong> Upload both spec.md and tasks.md on <a href="/task-alignment" class="ug-inline-link">Implementation Review</a> and run analysis. Then click the <strong>Task Explorer</strong> tab in the results area. The explorer builds automatically — no re-upload required.</p>
+        <p><strong>Purpose:</strong> Task Explorer is the <strong>Implementation Coverage</strong> workspace. It answers whether the specification is being implemented: which requirements have tasks, which requirements are missing implementation, which success criteria lack task coverage, and where delivery risk exists.</p>
+        <p><strong>How to access:</strong> Upload both spec.md and tasks.md on <a href="/task-alignment" class="ug-inline-link">Implementation Review</a> and run analysis. Then click the <strong>Task Explorer</strong> tab in the results area. The explorer builds automatically.</p>
         <p><strong>When to use:</strong></p>
         <ul class="ug-fd-list">
-            <li>Getting a structural overview of a tasks.md file</li>
-            <li>Exploring spec alignment status, risk, and regression flags per phase or user story group</li>
-            <li>Drilling into individual tasks to see matched spec items and affected areas</li>
+            <li>Checking which user stories, functional requirements, success criteria, tests, and architecture notes have implementation tasks</li>
+            <li>Finding requirements, success criteria, security work, or testing work with missing implementation links</li>
+            <li>Using the Impact tab as a delivery-risk queue for missing implementation work</li>
+            <li>Drilling into individual tasks to see linked user stories, requirements, success criteria, test assets, architecture notes, implementation status, and coverage impact</li>
         </ul>
+        <p><strong>Traceability &amp; Coverage = Validation Coverage.</strong> Use it to answer whether requirements are tested and validated.</p>
+        <p><strong>Task Explorer = Implementation Coverage.</strong> Use it to answer whether requirements are implemented and whether delivery gaps remain.</p>
         <div class="ug-callout ug-callout-tip">
-            <strong>Note:</strong> Task Explorer is not a standalone menu item. It only appears after a successful Implementation Review analysis. The explorer can also be used standalone — without running alignment — by pasting tasks.md content directly.
+            <strong>Note:</strong> Task Explorer is not a standalone menu item. It only appears after a successful Implementation Review analysis. The explorer can also be used standalone by pasting tasks.md content directly.
         </div>
     </section>
 
@@ -549,7 +652,7 @@
                 </div>
                 <div class="ug-ai-concept">
                     <div class="ug-ai-concept-title">Traceability</div>
-                    <p>Maintain a complete chain from requirement to test. Use Traceability &amp; Coverage and Code Traceability to build and verify this chain.</p>
+                    <p>Maintain a complete chain from requirement to test. Use Specification Review -> Traceability &amp; Coverage for validation coverage, and Task Explorer for implementation coverage.</p>
                 </div>
                 <div class="ug-ai-concept">
                     <div class="ug-ai-concept-title">Regression Awareness</div>
@@ -600,9 +703,7 @@
                 <div class="ug-eco-flow">
                     <div class="ug-eco-node">Specification Review</div>
                     <div class="ug-eco-conn">↓</div>
-                    <div class="ug-eco-node">Specification Deltas</div>
-                    <div class="ug-eco-conn">↓</div>
-                    <div class="ug-eco-node">Task Deltas</div>
+                    <div class="ug-eco-node">Spec Drift</div>
                     <div class="ug-eco-conn">↓</div>
                     <div class="ug-eco-node">Implementation Review</div>
                     <div class="ug-eco-conn">↓</div>
@@ -621,8 +722,8 @@
                         <div class="ug-support-desc">Links requirements to tests and clarifications throughout the lifecycle.</div>
                     </div>
                     <div class="ug-support-item">
-                        <div class="ug-support-name">Code Traceability</div>
-                        <div class="ug-support-desc">Connects implementation evidence to requirements for deeper coverage analysis.</div>
+                        <div class="ug-support-name">Task Explorer</div>
+                        <div class="ug-support-desc">Connects implementation tasks to requirements for delivery-risk analysis.</div>
                     </div>
                     <div class="ug-support-item">
                         <div class="ug-support-name">Spec Drift</div>
@@ -631,10 +732,6 @@
                     <div class="ug-support-item">
                         <div class="ug-support-name">AI Change Review</div>
                         <div class="ug-support-desc">Reviews AI-generated implementation changes for alignment and quality concerns.</div>
-                    </div>
-                    <div class="ug-support-item">
-                        <div class="ug-support-name">Spec Comparison</div>
-                        <div class="ug-support-desc">Side-by-side comparison of two specification versions to identify differences.</div>
                     </div>
                 </div>
             </div>
@@ -719,10 +816,10 @@
     [
         ("Tester", "Use Spec Review, Traceability, Implementation Review and QA Readiness to plan and execute test coverage."),
         ("Test Lead", "Orchestrate analysis workflows, track regression candidates, and sign off on release readiness."),
-        ("Scrum Master", "Monitor delivery quality, spot scope changes with Task Deltas, and track QA health on the Dashboard."),
+        ("Scrum Master", "Monitor delivery quality, spot scope changes in Spec Drift, and track QA health on the Dashboard."),
         ("Product Owner", "Review spec alignment, verify requirements are covered, and assess impact of change requests."),
         ("Developer", "Validate implementation plans against the spec using Implementation Review before writing code."),
-        ("Architect", "Use Code Traceability and Impact Analysis to understand systemic effects of architectural changes."),
+        ("Architect", "Use Architecture View, Task Explorer, and Impact Analysis to understand systemic effects of architectural changes."),
     ];
 
     // ── Feature matrix ────────────────────────────────────────────────────
@@ -744,22 +841,22 @@
             ["Deep feature analysis — use the specific feature page"]),
 
         new("spec-review", "Specification Review", "Review", "review", "/extract",
-            "Upload and review a spec.md file; extract and classify candidates. Analysis results open in Traceability & Coverage first, then Flow View, Document View, Spec Explorer, and Architecture View.",
+            "Upload and review a spec.md file; extract and classify candidates. Analysis results open in Traceability & Coverage first, then Flow View, Spec Explorer, optional Extraction Review, and Architecture View.",
             "spec.md",
-            "Extracted requirements, tests, and clarifications; Traceability & Coverage, Flow View, Document View, Spec Explorer, and Architecture View",
+            "Extracted requirements, tests, and clarifications; Traceability & Coverage, Flow View, Spec Explorer, optional Extraction Review, and Architecture View",
             "When starting work on a new feature or reviewing an updated spec.",
             ["Testers", "Test Leads", "Product Owners"],
             ["Starting a new feature", "Reviewing a spec update", "Exploring spec structure or flow with embedded views"],
             ["When you have no specification document"]),
 
         new("artifact-library", "QA Artifact Library", "Library", "library", "/scenarios",
-            "Browse and manage all accepted QA artifacts — requirements, tests, and clarifications.",
-            "Accepted candidates from Specification Review",
-            "Organised artifact library with filters",
-            "Managing existing QA artifacts across features.",
+            "Store, discover, and reuse curated QA assets — test scenarios, acceptance tests, requirements, and clarifications published from Specification Review. Not a coverage analysis tool — use Traceability & Coverage for coverage metrics and gap analysis.",
+            "Published artifacts from Specification Review",
+            "Searchable library of reusable QA assets grouped by type",
+            "When you want to discover, reuse, or curate QA assets across specifications. Traceability & Coverage is the primary workspace for coverage analysis.",
             ["Testers", "Test Leads"],
-            ["Reviewing existing artifacts", "Planning test coverage"],
-            ["Creating net-new test scenarios — use Create Test Scenario"]),
+            ["Discovering existing QA assets for reuse across projects", "Curating a shared QA knowledge base for the team", "Publishing useful artifacts after analysis"],
+            ["Coverage analysis — use Traceability & Coverage", "Real-time analysis and gap detection — use Specification Review"]),
 
         new("create-scenario", "Create Test Scenario", "Library", "library", "/scenarios/new",
             "Manually create or refine structured test scenarios.",
@@ -769,51 +866,6 @@
             ["Testers", "Test Leads"],
             ["Creating exploratory or regression test cases", "Refining extracted candidates"],
             ["Bulk extraction — use Specification Review"]),
-
-        new("traceability", "Traceability & Coverage", "Traceability", "traceability", "/traceability",
-            "Link requirements to tests and clarifications; measure coverage.",
-            "Accepted artifacts",
-            "Coverage map, requirement-to-test threads",
-            "Understanding what is covered and what is missing.",
-            ["Testers", "Test Leads", "Product Owners"],
-            ["Planning test coverage", "Sprint retrospective quality reviews"],
-            ["Implementation-level analysis — use Implementation Review"]),
-
-        new("code-trace", "Code Traceability", "Traceability", "traceability", "/code-traceability",
-            "Connect implementation evidence (code references) to requirements.",
-            "Code references + requirements",
-            "Implementation coverage evidence",
-            "When implementation has started and you want to link code to spec.",
-            ["Developers", "Architects", "Test Leads"],
-            ["Post-implementation review", "Coverage evidence for compliance"],
-            ["Pre-implementation planning — use Implementation Review"]),
-
-        new("spec-compare", "Spec Comparison", "Analysis", "analysis", "/compare",
-            "Side-by-side comparison of two specification documents.",
-            "Two spec.md files",
-            "Diff view of specification changes",
-            "Comparing two versions of the same specification.",
-            ["Product Owners", "Test Leads", "Architects"],
-            ["Reviewing spec changes across sprints", "Change management reviews"],
-            ["Task-level changes — use Task Deltas"]),
-
-        new("spec-deltas", "Specification Deltas", "Analysis", "analysis", "/compare/reviews",
-            "Identify added, removed, and modified requirements between spec versions.",
-            "Two spec.md files",
-            "Delta report with Added, Removed, Modified items",
-            "When a specification changes and you need to understand the impact.",
-            ["Product Owners", "Test Leads", "Scrum Masters"],
-            ["Sprint-to-sprint spec changes", "Change request reviews"],
-            ["Implementation-level changes — use Task Deltas"]),
-
-        new("task-deltas", "Task Deltas", "Analysis", "analysis", "/task-deltas",
-            "Compare two versions of a tasks.md file to surface scope changes and risk.",
-            "Two tasks.md files",
-            "Delta report with scope expansion, risk, and spec coverage estimates",
-            "When the implementation plan changes and you need to understand risk.",
-            ["Developers", "Test Leads", "Scrum Masters"],
-            ["Sprint scope change reviews", "Implementation plan updates"],
-            ["Specification-level changes — use Specification Deltas"]),
 
         new("impact", "Impact Analysis", "Analysis", "analysis", "/impact-analysis",
             "Estimate the regression impact and risk footprint of a change.",
@@ -825,12 +877,12 @@
             ["Quick implementation plan review — use Implementation Review"]),
 
         new("spec-drift", "Spec Drift", "Analysis", "analysis", "/spec-drift",
-            "Detect coverage gaps, orphan tests, and drift indicators.",
+            "Detect coverage gaps, orphan tests, and drift indicators. The Changes tab tracks specification comparison history.",
             "spec.md + implementation evidence",
-            "Drift indicators, orphaned tests, uncovered requirements",
-            "Periodically throughout the project to prevent specification drift.",
-            ["Test Leads", "Architects"],
-            ["Mid-sprint quality checks", "Pre-release coverage validation"],
+            "Drift indicators, orphaned tests, uncovered requirements, comparison history",
+            "Periodically throughout the project to prevent specification drift, or when specifications change.",
+            ["Test Leads", "Architects", "Product Owners"],
+            ["Mid-sprint quality checks", "Pre-release coverage validation", "Tracking specification changes"],
             ["Initial implementation planning — use Implementation Review"]),
 
         new("impl-review", "Implementation Review", "Analysis", "analysis", "/task-alignment",
@@ -840,15 +892,15 @@
             "Before implementing or reviewing an implementation plan.",
             ["Test Leads", "Developers", "Architects"],
             ["Reviewing implementation plans", "Sprint planning QA gate", "Exploring task hierarchy with Task Explorer"],
-            ["Comparing specification versions — use Specification Deltas"]),
+            ["Comparing specification versions — use Spec Drift"]),
 
         new("task-explorer", "Task Explorer", "Analysis", "analysis", "/task-explorer",
-            "Explore a tasks.md implementation plan independently — browse phases, task groups, and tables without running spec alignment.",
+            "Review implementation coverage from tasks.md: linked requirements, missing implementation work, delivery risk, and task hierarchy.",
             "tasks.md",
-            "Interactive hierarchy of phases, user stories, task groups, and completion metrics",
-            "When you need to explore or review an implementation plan without a spec alignment workflow.",
+            "Implementation coverage summary, delivery-risk indicators, Impact tab, task details, and hierarchy",
+            "When you need to confirm whether specification work is implemented and where delivery gaps remain.",
             ["Developers", "Test Leads", "Scrum Masters"],
-            ["Exploring implementation plan structure", "Quick task hierarchy review", "Planning before Implementation Review"],
+            ["Finding unimplemented requirements", "Reviewing delivery risk", "Planning before Implementation Review"],
             ["Spec-aligned task analysis — use Implementation Review"]),
 
         new("ai-review", "AI Change Review", "AI Review", "ai", "/ai-change-auditor",
@@ -877,19 +929,19 @@
     private static readonly Workflow[] TypicalWorkflows =
     [
         new("New Feature",
-            ["Specification Review", "Accept Artifacts", "Traceability & Coverage", "Implementation Review", "Impact Analysis", "QA Readiness"],
-            "End-to-end quality validation for a new feature from spec to release."),
+            ["Specification Review", "Traceability & Coverage", "Flow View", "Implementation Review", "Impact Analysis", "QA Readiness"],
+            "End-to-end quality validation for a new feature from spec to release. QA Artifact Library is optional — publish assets only when building a reusable knowledge base."),
         new("Bug Fix",
             ["Implementation Review", "Risk & Testing", "Regression Candidates", "QA Readiness"],
             "Fast-path quality check for a targeted bug fix with regression scope."),
         new("Requirement Change",
-            ["Spec Comparison", "Specification Deltas", "Task Deltas", "Impact Analysis", "Implementation Review"],
+            ["Spec Drift", "Task Explorer", "Impact Analysis", "Implementation Review"],
             "When a requirement changes — trace from spec delta to implementation impact."),
         new("Production Incident",
             ["Root Cause", "Task Update", "Implementation Review", "Impact Analysis", "Regression Scope"],
             "After a production incident — scope the regression and identify related tasks."),
         new("AI Generated Change",
-            ["AI Change Review", "Code Traceability", "Spec Drift", "Impact Analysis"],
+            ["AI Change Review", "Implementation Review", "Spec Drift", "Impact Analysis"],
             "After AI generates implementation — review alignment, coverage, and risk."),
         new("Test Planning",
             ["Traceability & Coverage", "Spec Drift", "Implementation Review", "QA Readiness"],
@@ -903,20 +955,24 @@
     private static readonly FaqItem[] AllFaq =
     [
         new("embedded-views",
-            "Where are Traceability & Coverage, Flow View, Document View, Spec Explorer, Task Explorer, and Architecture View?",
-            "<p><strong>Specification Review</strong> tabs are embedded inside <strong>Specification Review</strong> (<a href='/extract'>/extract</a>) and appear automatically after a successful spec analysis in this order: Traceability &amp; Coverage, Flow View, Document View, Spec Explorer, Architecture View.</p><p><strong>Task Explorer</strong> exists in two forms:</p><ul><li><strong>Standalone Task Explorer</strong> (<a href='/task-explorer'>/task-explorer</a>) — a dedicated menu item in the Analysis section. Upload or paste a tasks.md file to explore the implementation plan independently of any spec alignment.</li><li><strong>Task Explorer tab inside Implementation Review</strong> (<a href='/task-alignment'>/task-alignment</a>) — the same explorer enriched with spec alignment data after a full analysis. Use this when you want to explore tasks in the context of their spec coverage and risk.</li></ul><p>Once analysis is complete, switching tabs does not require re-uploading files — the session is preserved automatically. See the <a href='#discovery'>Feature Discovery</a> section for full details.</p>"),
+            "Where are Traceability & Coverage, Flow View, Extraction Review, Spec Explorer, Task Explorer, and Architecture View?",
+            "<p><strong>Specification Review</strong> tabs are embedded inside <strong>Specification Review</strong> (<a href='/extract'>/extract</a>) and appear automatically after a successful spec analysis in this order: Traceability &amp; Coverage, Flow View, Spec Explorer, optional Extraction Review, Architecture View.</p><p><strong>Task Explorer</strong> exists in two forms:</p><ul><li><strong>Standalone Task Explorer</strong> (<a href='/task-explorer'>/task-explorer</a>) — a dedicated menu item in the Analysis section. Upload or paste a tasks.md file to explore the implementation plan independently of any spec alignment.</li><li><strong>Task Explorer tab inside Implementation Review</strong> (<a href='/task-alignment'>/task-alignment</a>) — the same explorer enriched with spec alignment data after a full analysis. Use this when you want to explore tasks in the context of their spec coverage and risk.</li></ul><p>Once analysis is complete, switching tabs does not require re-uploading files — the session is preserved automatically. See the <a href='#discovery'>Feature Discovery</a> section for full details.</p>"),
 
         new("drift-vs-review",
             "What is the difference between Spec Drift and Implementation Review?",
             "<p><strong>Implementation Review</strong> analyses your <em>implementation plan</em> (tasks.md) against the <em>specification</em> to surface alignment gaps, risk, and recommended tests. It answers: <em>Is my task list aligned to the spec?</em></p><p><strong>Spec Drift</strong> analyses the broader gap between what the <em>specification says</em> and what the <em>implementation covers</em> over time. It answers: <em>Has my codebase drifted away from the spec?</em></p>"),
 
+        new("spec-deltas-moved",
+            "Where did Specification Deltas go?",
+            "<p><strong>Specification Deltas</strong> has been merged into <strong>Spec Drift → Changes tab</strong> (<a href='/spec-drift?tab=changes'>/spec-drift</a>).</p><p>The Changes tab provides the same capability: paste a baseline and updated specification, run change detection, and save the result. All previously saved comparisons remain accessible in the Changes tab history.</p><p>There is no longer a separate Spec Comparison or Specification Deltas tool — <strong>Spec Drift is the only entry point for specification change analysis.</strong></p>"),
+
         new("impact-vs-risk",
             "What is the difference between Impact Analysis and Risk & Testing?",
             "<p><strong>Impact Analysis</strong> is a standalone feature that estimates the systemic regression impact of a change — which areas, components, and requirements are affected across the whole project.</p><p><strong>Risk &amp; Testing</strong> is the second tab within <strong>Implementation Review</strong> — it classifies each individual task by its change risk and suggests tests for it specifically. The scope is per-task, not project-wide.</p>"),
 
-        new("task-deltas",
-            "When should I use Task Deltas?",
-            "<p>Use <strong>Task Deltas</strong> when your implementation plan changes between sprints or planning iterations — for example when new tasks are added, existing tasks are expanded in scope, or tasks are removed.</p><p>It helps you answer: <em>What changed in our implementation plan, and what is the risk?</em> It is especially useful when AI generates or rewrites a tasks.md and you want to understand what shifted.</p>"),
+        new("task-changes",
+            "How do I track implementation plan changes?",
+            "<p>Use <strong>Task Explorer → Changes tab</strong> (<a href='/task-explorer?view=changes'>/task-explorer</a>) when your implementation plan changes between sprints or planning iterations — for example when new tasks are added, existing tasks are expanded in scope, or tasks are removed.</p><p>It helps you answer: <em>What changed in our implementation plan, and what is the risk?</em> It is especially useful when AI generates or rewrites a tasks.md and you want to understand what shifted.</p>"),
 
         new("spec-linked",
             "What does Spec Linked mean?",
@@ -939,3 +995,4 @@
             "<p><strong>QA Readiness</strong> is designed to be used at the end of the analysis chain after other features have been run. It synthesises findings from:</p><ul><li>Specification Review (extraction coverage)</li><li>Traceability &amp; Coverage (requirement-to-test links)</li><li>Implementation Review (alignment, risk, regression candidates)</li><li>Spec Drift (coverage gaps)</li><li>Impact Analysis (systemic risk)</li></ul><p>Use it as your final release gate check. The more analysis you have completed, the more accurate the readiness assessment.</p>"),
     ];
 }
+

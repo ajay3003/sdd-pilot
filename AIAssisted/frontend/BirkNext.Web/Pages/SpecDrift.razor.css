@@ -10,6 +10,38 @@
 
 .traceability-hero { padding-bottom: 0.5rem; }
 
+/* ─── Tab strip ──────────────────────────────────────────────────────────── */
+
+.sd-tab-strip {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--clr-border);
+    margin-bottom: 0;
+}
+
+.sd-tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--clr-text-subtle);
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 0.55rem 1.1rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    margin-bottom: -1px;
+}
+
+.sd-tab:hover {
+    color: var(--clr-text-primary);
+}
+
+.sd-tab.is-active {
+    color: var(--clr-text-primary);
+    border-bottom-color: #3b82f6;
+    font-weight: 600;
+}
+
 /* ─── KPI card drift variants ────────────────────────────────────────────── */
 
 .drift-kpi-high .kpi-marker  { background: #fff1f2; }
