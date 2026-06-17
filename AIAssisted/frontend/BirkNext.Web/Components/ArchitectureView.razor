@@ -34,6 +34,23 @@ else
 {
     <div class="av-root" data-testid="av-root">
 
+        @if (_model.Candidates.Count > 0)
+        {
+            <section class="av-candidates" data-testid="av-architecture-candidates">
+                <h3>Potential Architecture Elements</h3>
+                <ul class="av-candidate-list">
+                    @foreach (var candidate in _model.Candidates)
+                    {
+                        <li>
+                            <strong>@candidate.Name</strong>
+                            <span>@CategoryLabel(candidate.SuggestedType)</span>
+                            <small>@candidate.Reason</small>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
         @* ── Metric chips ─────────────────────────────────────────────────── *@
         <div class="av-metrics" role="list" aria-label="Architecture element counts">
             @foreach (var (type, label, icon) in Categories)
@@ -573,6 +590,9 @@ else
         AvCoverageStatus.Partial => "Partial",
         _                        => "Missing",
     };
+
+    private static string CategoryLabel(ArchElementType type) =>
+        Categories.FirstOrDefault(c => c.Type == type).Label ?? type.ToString();
 
     private void ToggleCategory(ArchElementType type)
     {

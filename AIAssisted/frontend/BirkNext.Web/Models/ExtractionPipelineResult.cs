@@ -13,6 +13,7 @@ public sealed class ExtractionPipelineResult
     public int TestCount { get; }
     public int NeedsClarificationCount { get; }
     public ExtractionProfile Profile { get; }
+    public string SpecMarkdown { get; }
 
     private ExtractionPipelineResult(
         PipelineStatus status,
@@ -23,7 +24,8 @@ public sealed class ExtractionPipelineResult
         int requirementCount,
         int testCount,
         int needsClarificationCount,
-        ExtractionProfile profile)
+        ExtractionProfile profile,
+        string specMarkdown = "")
     {
         if (requirementCount + testCount + needsClarificationCount != candidates.Count)
             throw new ArgumentException(
@@ -38,6 +40,7 @@ public sealed class ExtractionPipelineResult
         TestCount = testCount;
         NeedsClarificationCount = needsClarificationCount;
         Profile = profile;
+        SpecMarkdown = specMarkdown;
     }
 
     public static ExtractionPipelineResult Success(
@@ -48,7 +51,8 @@ public sealed class ExtractionPipelineResult
         int requirementCount,
         int testCount,
         int needsClarificationCount,
-        ExtractionProfile profile = ExtractionProfile.Default)
+        ExtractionProfile profile = ExtractionProfile.Default,
+        string specMarkdown = "")
         => new(
             PipelineStatus.Success,
             candidates,
@@ -58,7 +62,17 @@ public sealed class ExtractionPipelineResult
             requirementCount,
             testCount,
             needsClarificationCount,
-            profile);
+            profile,
+            specMarkdown);
+
+    /// <summary>
+    /// Returns a copy of this result with SpecMarkdown populated.
+    /// Called by ExtractionInput after the extraction service returns its result.
+    /// </summary>
+    public ExtractionPipelineResult WithSpecMarkdown(string markdown) =>
+        new(Status, Candidates, InputLengthChars, InputLineCount, DurationMs,
+            RequirementCount, TestCount, NeedsClarificationCount, Profile,
+            specMarkdown: markdown);
 
     public static ExtractionPipelineResult Restore(ExtractionSessionSnapshot snapshot)
     {
@@ -86,7 +100,8 @@ public sealed class ExtractionPipelineResult
             snapshot.Candidates.Count(c => c.Classification == ScenarioKind.Requirement),
             snapshot.Candidates.Count(c => c.Classification == ScenarioKind.Test),
             snapshot.Candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification),
-            snapshot.Profile);
+            snapshot.Profile,
+            specMarkdown: snapshot.SpecMarkdown);
     }
 
     public static ExtractionPipelineResult NonSuccess(

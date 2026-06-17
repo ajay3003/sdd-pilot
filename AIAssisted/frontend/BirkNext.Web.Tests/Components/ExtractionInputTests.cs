@@ -129,7 +129,11 @@ public class ExtractionInputTests : BunitContext
             () => receivedResult is not null,
             timeout: TimeSpan.FromSeconds(2));
 
-        receivedResult.Should().BeSameAs(pipelineResult);
+        // WithSpecMarkdown creates a new result object, so reference equality no longer holds.
+        // Verify the result carries the same candidates and has SpecMarkdown populated.
+        receivedResult!.Candidates.Should().BeEquivalentTo(pipelineResult.Candidates);
+        receivedResult.SpecMarkdown.Should().Be(specText,
+            "ExtractionInput attaches the raw input to the result via WithSpecMarkdown");
     }
 
     [Fact]
@@ -201,52 +205,53 @@ public class ExtractionInputTests : BunitContext
     }
 
     [Fact]
-    public async Task SuccessfulExtraction_RaisesOnSpecMarkdownCapturedWithRawInput()
+    public async Task SuccessfulExtraction_ResultContainsSpecMarkdown()
     {
         const string specText = "The system shall allow login.";
         _mockExtractionService
             .Setup(s => s.ExtractAsync(specText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeSuccessResult());
 
-        string? capturedMarkdown = null;
+        ExtractionPipelineResult? capturedResult = null;
 
         var cut = Render<ExtractionInput>(p =>
-            p.Add(c => c.OnSpecMarkdownCaptured, (string m) => { capturedMarkdown = m; }));
+            p.Add(c => c.OnExtractionCompleted, (ExtractionPipelineResult r) => { capturedResult = r; }));
 
         cut.Find("[data-testid='spec-textarea']").Input(specText);
         cut.Find("[data-testid='extract-button']").Click();
 
         await cut.WaitForStateAsync(
-            () => capturedMarkdown is not null,
+            () => capturedResult is not null,
             timeout: TimeSpan.FromSeconds(2));
 
-        capturedMarkdown.Should().Be(specText);
+        capturedResult!.SpecMarkdown.Should().Be(specText,
+            "ExtractionInput attaches _rawInput to the result so SpecMarkdown flows with the pipeline result");
     }
 
     [Fact]
-    public async Task SuccessfulExtraction_RaisesMarkdownCaptured_BeforeExtractionCompleted()
+    public async Task SuccessfulExtraction_ResultSpecMarkdown_IsRawInput()
     {
+        // Regression guard: the markdown that the user typed must equal the SpecMarkdown on the result.
         const string specText = "The system shall allow login.";
         _mockExtractionService
             .Setup(s => s.ExtractAsync(specText, It.IsAny<ExtractionProfile>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeSuccessResult());
 
-        var order = new List<string>();
+        ExtractionPipelineResult? capturedResult = null;
 
         var cut = Render<ExtractionInput>(p =>
-        {
-            p.Add(c => c.OnSpecMarkdownCaptured, (string _) => { order.Add("markdown"); });
-            p.Add(c => c.OnExtractionCompleted, (ExtractionPipelineResult _) => { order.Add("result"); });
-        });
+            p.Add(c => c.OnExtractionCompleted, (ExtractionPipelineResult r) => { capturedResult = r; }));
 
         cut.Find("[data-testid='spec-textarea']").Input(specText);
         cut.Find("[data-testid='extract-button']").Click();
 
         await cut.WaitForStateAsync(
-            () => order.Count >= 2,
+            () => capturedResult is not null,
             timeout: TimeSpan.FromSeconds(2));
 
-        order.Should().Equal("markdown", "result");
+        capturedResult!.SpecMarkdown.Should().NotBeNullOrEmpty(
+            "SpecMarkdown must be populated so ArchitectureExtractor receives rawMarkdown");
+        capturedResult.SpecMarkdown.Should().Be(specText);
     }
 }
 

@@ -1377,7 +1377,7 @@ public class ViewBehaviorTests : BunitContext
         var cutNoMd = Render<ArchitectureView>();
         cutNoMd.FindAll("[data-testid='av-loading']").Should().BeEmpty(
             "loading must not persist when no markdown is provided");
-        cutNoMd.Markup.Should().Contain("No architecture mappings available yet",
+        cutNoMd.Markup.Should().Contain("No architecture data available yet",
             "not-generated message must appear before markdown is supplied");
 
         // With markdown containing API elements: content state (not blank, not loading).

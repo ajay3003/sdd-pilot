@@ -42,8 +42,10 @@ public class ArchitectureViewTests : BunitContext
     }
 
     [Fact]
-    public void ArchitectureView_DoesNotRenderRawSpecDump()
+    public void ArchitectureView_WithNoMarkdown_DoesNotDumpRawSpecContent()
     {
+        // Regardless of whether the extractor finds elements or not, the view must never
+        // render raw spec text as-is. It shows either a structured model or an empty state.
         var archCandidates = new[]
         {
             MakeCandidate("Some API surface item", heading: "API Surface"),
@@ -54,9 +56,13 @@ public class ArchitectureViewTests : BunitContext
             .Add(x => x.SpecMarkdown, null)
             .Add(x => x.Candidates, archCandidates));
 
-        cut.Find("[data-testid='av-not-generated']").Should().NotBeNull();
+        // The view must not show a loading state or an error state.
+        cut.FindAll("[data-testid='av-loading']").Should().BeEmpty("loading must not persist");
+        cut.FindAll("[data-testid='av-failed']").Should().BeEmpty("no extraction error expected");
+        cut.Markup.Should().Contain("Potential Architecture Elements");
+
+        // Raw candidate titles must not be dumped as unstructured text blobs.
         cut.FindAll("[data-testid='av-arch-notes']").Should().BeEmpty();
-        cut.Markup.Should().Contain("No architecture mappings available yet");
     }
 
     [Fact]
