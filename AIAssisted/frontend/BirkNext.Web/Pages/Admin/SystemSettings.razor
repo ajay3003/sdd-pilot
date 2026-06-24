@@ -131,14 +131,42 @@ else if (_settings is not null)
                     </div>
                 </div>
 
-                <!-- Grouped feature sections -->
+                <!-- Feature count summary -->
+                <div class="fv-count-summary">
+                    <div class="fv-count-chip">
+                        <span class="fv-count-group">Review</span>
+                        <span class="fv-count-on">@ReviewEnabled enabled</span>
+                        <span class="fv-count-sep">/</span>
+                        <span class="fv-count-off">@(ReviewTotal - ReviewEnabled) disabled</span>
+                    </div>
+                    <div class="fv-count-chip">
+                        <span class="fv-count-group">Library</span>
+                        <span class="fv-count-on">@LibraryEnabled enabled</span>
+                        <span class="fv-count-sep">/</span>
+                        <span class="fv-count-off">@(LibraryTotal - LibraryEnabled) disabled</span>
+                    </div>
+                    <div class="fv-count-chip">
+                        <span class="fv-count-group">Analysis</span>
+                        <span class="fv-count-on">@AnalysisEnabled enabled</span>
+                        <span class="fv-count-sep">/</span>
+                        <span class="fv-count-off">@(AnalysisTotal - AnalysisEnabled) disabled</span>
+                    </div>
+                    <div class="fv-count-chip">
+                        <span class="fv-count-group">AI Review</span>
+                        <span class="fv-count-on">@AiEnabled enabled</span>
+                        <span class="fv-count-sep">/</span>
+                        <span class="fv-count-off">@(AiTotal - AiEnabled) disabled</span>
+                    </div>
+                </div>
+
+                <!-- Grouped feature sections — aligned with sidebar navigation -->
                 <div class="fv-sections-grid">
 
                     <div class="fv-section">
                         <div class="fv-section-header">
-                            <span class="fv-section-label">QA Analysis</span>
+                            <span class="fv-section-label">Review</span>
                         </div>
-                        @foreach (var entry in GetSectionEntries(QaAnalysisKeys))
+                        @foreach (var entry in GetSectionEntries(ReviewSectionKeys))
                         {
                             <FeatureRow Label="@entry.Label"
                                         Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
@@ -150,9 +178,23 @@ else if (_settings is not null)
 
                     <div class="fv-section">
                         <div class="fv-section-header">
-                            <span class="fv-section-label">Implementation Analysis</span>
+                            <span class="fv-section-label">Library</span>
                         </div>
-                        @foreach (var entry in GetSectionEntries(ImplementationAnalysisKeys))
+                        @foreach (var entry in GetSectionEntries(LibrarySectionKeys))
+                        {
+                            <FeatureRow Label="@entry.Label"
+                                        Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
+                                        IsLocked="false"
+                                        IsEditMode="@_isEditMode"
+                                        OnToggle="@(v => ToggleFeature(entry.Key, v))" />
+                        }
+                    </div>
+
+                    <div class="fv-section">
+                        <div class="fv-section-header">
+                            <span class="fv-section-label">Analysis</span>
+                        </div>
+                        @foreach (var entry in GetSectionEntries(AnalysisSectionKeys))
                         {
                             <FeatureRow Label="@entry.Label"
                                         Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
@@ -202,6 +244,54 @@ else if (_settings is not null)
                                     OnToggle="@(v => _editShowDiagnostics = v)" />
                     </div>
 
+                </div>
+
+                <!-- Menu Synchronization -->
+                <div class="fv-section fv-section-sync">
+                    <div class="fv-section-header">
+                        <span class="fv-section-label">Menu Synchronization</span>
+                        @if (UnflaggedList.Count > 0)
+                        {
+                            <span class="fv-sync-warn-badge">@UnflaggedList.Count warning(s)</span>
+                        }
+                        else
+                        {
+                            <span class="fv-section-hint">In sync</span>
+                        }
+                    </div>
+                    <div class="fv-sync-stats">
+                        <div class="fv-sync-stat">
+                            <span class="fv-sync-stat-value">@AllConfiguredCount</span>
+                            <span class="fv-sync-stat-label">Configured</span>
+                        </div>
+                        <div class="fv-sync-stat fv-sync-stat-on">
+                            <span class="fv-sync-stat-value">@AllVisibleCount</span>
+                            <span class="fv-sync-stat-label">Visible</span>
+                        </div>
+                        <div class="fv-sync-stat fv-sync-stat-off">
+                            <span class="fv-sync-stat-value">@AllHiddenCount</span>
+                            <span class="fv-sync-stat-label">Hidden</span>
+                        </div>
+                        <div class="fv-sync-stat fv-sync-stat-items">
+                            <span class="fv-sync-stat-value">@MenuItemRegistry.Length</span>
+                            <span class="fv-sync-stat-label">Menu Items</span>
+                        </div>
+                    </div>
+                    @if (UnflaggedList.Count > 0)
+                    {
+                        <div class="fv-sync-warnings">
+                            <div class="fv-sync-warn-title">Menu items with no visibility flag:</div>
+                            @foreach (var item in UnflaggedList)
+                            {
+                                <div class="fv-sync-warn-row">
+                                    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="color:var(--clr-warning,#f59e0b);flex-shrink:0">
+                                        <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+                                    </svg>
+                                    <span><strong>@item.Label</strong> — key <code>@item.Key</code> not found in feature configuration</span>
+                                </div>
+                            }
+                        </div>
+                    }
                 </div>
 
                 <!-- Retired Features — read-only -->
@@ -634,18 +724,24 @@ else if (_settings is not null)
     private bool _copiedDiag;
     private bool _showDeveloperDiagnostics;
 
-    // Feature section key sets for the new grouped layout
-    private static readonly HashSet<string> QaAnalysisKeys =
+    // Feature section key sets — aligned with sidebar navigation sections
+    private static readonly HashSet<string> ReviewSectionKeys =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "SpecificationReview", "QaArtifactLibrary", "TraceabilityCoverage",
-            "CreateTestScenario", "TraceabilitySuggestions", "SpecDrift"
+            "SpecificationReview", "ConstitutionExplorer", "PlanExplorer", "TaskExplorer"
         };
 
-    private static readonly HashSet<string> ImplementationAnalysisKeys =
+    private static readonly HashSet<string> LibrarySectionKeys =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "ImplementationReview", "TaskExplorer", "ImpactAnalysis", "CodeTraceability"
+            "QaArtifactLibrary", "CreateTestScenario"
+        };
+
+    private static readonly HashSet<string> AnalysisSectionKeys =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "SpecDrift", "ImpactAnalysis", "ArtifactTraceability", "ConstitutionCompliance",
+            "QaAuditor", "DeliveryReadiness", "ImplementationReview"
         };
 
     private static readonly HashSet<string> AiReviewKeys =
@@ -657,8 +753,29 @@ else if (_settings is not null)
     private static readonly HashSet<string> AdvancedOptionalKeys =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "EnableArchitectureView", "EnableExtractionReview", "LegacyTraceabilityNavigationEnabled"
+            "CodeTraceability", "EnableArchitectureView",
+            "EnableExtractionReview", "LegacyTraceabilityNavigationEnabled"
         };
+
+    // All known menu items with their flag keys (used for Menu Synchronization check)
+    private static readonly (string Label, string Key)[] MenuItemRegistry =
+    [
+        ("Specification Review",    "SpecificationReview"),
+        ("Constitution Explorer",   "ConstitutionExplorer"),
+        ("Plan Explorer",           "PlanExplorer"),
+        ("Task Explorer",           "TaskExplorer"),
+        ("QA Artifact Library",     "QaArtifactLibrary"),
+        ("Create Test Scenario",    "CreateTestScenario"),
+        ("Spec Drift",              "SpecDrift"),
+        ("Impact Analysis",         "ImpactAnalysis"),
+        ("Artifact Traceability",   "ArtifactTraceability"),
+        ("Constitution Compliance", "ConstitutionCompliance"),
+        ("QA Auditor",              "QaAuditor"),
+        ("Delivery Readiness",      "DeliveryReadiness"),
+        ("Implementation Review",   "ImplementationReview"),
+        ("AI Change Review",        "AiChangeReview"),
+        ("QA Readiness",            "QaReadiness"),
+    ];
 
     private IEnumerable<FeatureEntryDto> AllEditableFeatures =>
         _editableSettings?.FeatureVisibility.Core
@@ -666,6 +783,34 @@ else if (_settings is not null)
 
     private IEnumerable<FeatureEntryDto> GetSectionEntries(HashSet<string> keys) =>
         AllEditableFeatures.Where(e => keys.Contains(e.Key));
+
+    private int EnabledCount(HashSet<string> keys) =>
+        GetSectionEntries(keys).Count(e =>
+            _isEditMode ? _editFv.GetValueOrDefault(e.Key, e.Value) : e.Value);
+
+    private int TotalCount(HashSet<string> keys) =>
+        GetSectionEntries(keys).Count();
+
+    private IEnumerable<(string Label, string Key)> UnflaggedMenuItems =>
+        MenuItemRegistry.Where(item =>
+            !AllEditableFeatures.Any(e =>
+                string.Equals(e.Key, item.Key, StringComparison.OrdinalIgnoreCase)));
+
+    // Count summary properties for the template
+    private int ReviewEnabled   => EnabledCount(ReviewSectionKeys);
+    private int ReviewTotal     => TotalCount(ReviewSectionKeys);
+    private int LibraryEnabled  => EnabledCount(LibrarySectionKeys);
+    private int LibraryTotal    => TotalCount(LibrarySectionKeys);
+    private int AnalysisEnabled => EnabledCount(AnalysisSectionKeys);
+    private int AnalysisTotal   => TotalCount(AnalysisSectionKeys);
+    private int AiEnabled       => EnabledCount(AiReviewKeys);
+    private int AiTotal         => TotalCount(AiReviewKeys);
+
+    // Menu synchronization summary properties
+    private int AllConfiguredCount => AllEditableFeatures.Count();
+    private int AllVisibleCount    => AllEditableFeatures.Count(e => e.Value);
+    private int AllHiddenCount     => AllEditableFeatures.Count(e => !e.Value);
+    private List<(string Label, string Key)> UnflaggedList => UnflaggedMenuItems.ToList();
 
     protected override async Task OnInitializedAsync()
     {
