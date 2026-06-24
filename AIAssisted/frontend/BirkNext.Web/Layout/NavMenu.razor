@@ -188,6 +188,14 @@
                     </NavLink>
                 </div>
             }
+            @if (FeatureViz.ImplementationTraceability)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="implementation-traceability" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-task-alignment" aria-hidden="true"></span> Implementation Traceability
+                    </NavLink>
+                </div>
+            }
         }
 
         @if (FeatureViz.ShowSectionAiReview)

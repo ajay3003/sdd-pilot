@@ -3,6 +3,7 @@ using BirkNext.Api.Configuration;
 using BirkNext.Api.GraphQL;
 using BirkNext.Api.Middleware;
 using BirkNext.Api.Services;
+using BirkNext.Api.Services.ImplementationTraceability;
 using HotChocolate.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -68,6 +69,33 @@ builder.Services.AddScoped<AIChangeAuditService>();
 builder.Services.AddScoped<SpecDriftDetectionService>();
 builder.Services.AddScoped<CodeTraceabilityService>();
 builder.Services.AddScoped<AIQaAuditorService>();
+// ── Azure DevOps Implementation Traceability ────────────────────────────────
+builder.Services.Configure<AzureDevOpsOptions>(options =>
+{
+    builder.Configuration.GetSection(AzureDevOpsOptions.SectionName).Bind(options);
+    // Environment variable overrides appsettings — never log the value
+    var envPat = Environment.GetEnvironmentVariable("ADO_PAT");
+    if (!string.IsNullOrWhiteSpace(envPat))
+        options.Pat = envPat;
+});
+
+{
+    var adoEnabled  = builder.Configuration.GetValue<bool>($"{AzureDevOpsOptions.SectionName}:Enabled");
+    var configPat   = builder.Configuration.GetValue<string>($"{AzureDevOpsOptions.SectionName}:Pat") ?? string.Empty;
+    var adoEnvPat   = Environment.GetEnvironmentVariable("ADO_PAT") ?? string.Empty;
+    var hasValidPat = !string.IsNullOrWhiteSpace(configPat) || !string.IsNullOrWhiteSpace(adoEnvPat);
+
+    if (adoEnabled && hasValidPat)
+    {
+        builder.Services.AddHttpClient<AzureDevOpsImplementationEvidenceProvider>();
+        builder.Services.AddScoped<IImplementationEvidenceProvider, AzureDevOpsImplementationEvidenceProvider>();
+    }
+    else
+    {
+        builder.Services.AddScoped<IImplementationEvidenceProvider, MockImplementationEvidenceProvider>();
+    }
+}
+
 builder.Services.AddHttpClient("Anthropic", client =>
 {
     client.DefaultRequestHeaders.Add("x-api-key", builder.Configuration["Anthropic:ApiKey"] ?? string.Empty);

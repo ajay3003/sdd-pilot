@@ -22,11 +22,12 @@ public class AdminService
 
     private static readonly IReadOnlyList<(string Key, string Label)> CoreFeatures =
     [
-        ("SpecificationReview",  "Specification Review"),
-        ("QaArtifactLibrary",    "Spec Explorer"),
-        ("TraceabilityCoverage", "Traceability & Coverage"),
-        ("ImplementationReview", "Implementation Review"),
-        ("TaskExplorer",         "Task Explorer")
+        ("SpecificationReview",        "Specification Review"),
+        ("QaArtifactLibrary",          "Spec Explorer"),
+        ("TraceabilityCoverage",       "Traceability & Coverage"),
+        ("ImplementationReview",       "Implementation Review"),
+        ("ImplementationTraceability", "Implementation Traceability"),
+        ("TaskExplorer",               "Task Explorer")
     ];
 
     private static readonly IReadOnlyList<(string Key, string Label)> AdvancedFeatures =
@@ -189,8 +190,9 @@ public class AdminService
             TaskDeltas           = s.GetValue("TaskDeltas",           true),
             ImpactAnalysis       = s.GetValue("ImpactAnalysis",       true),
             SpecDrift            = s.GetValue("SpecDrift",            true),
-            ImplementationReview = s.GetValue("ImplementationReview", true),
-            TaskExplorer         = s.GetValue("TaskExplorer",         true),
+            ImplementationReview        = s.GetValue("ImplementationReview",        true),
+            ImplementationTraceability  = s.GetValue("ImplementationTraceability",  true),
+            TaskExplorer                = s.GetValue("TaskExplorer",                true),
             AiChangeReview       = s.GetValue("AiChangeReview",       true),
             QaReadiness          = s.GetValue("QaReadiness",          true),
             EnableExtractionReview = s.GetValue("EnableExtractionReview", false),

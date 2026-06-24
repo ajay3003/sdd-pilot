@@ -9,6 +9,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>BirkNext.Api.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="HotChocolate.AspNetCore" Version="14.*" />
     <PackageReference Include="HotChocolate.Data.EntityFramework" Version="14.*" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.16" />

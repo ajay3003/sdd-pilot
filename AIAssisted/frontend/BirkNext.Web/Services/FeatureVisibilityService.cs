@@ -45,6 +45,7 @@ public class FeatureVisibilityService
     public bool ImpactAnalysis       => _flags.ImpactAnalysis;
     public bool SpecDrift            => _flags.SpecDrift;
     public bool ImplementationReview => _flags.ImplementationReview;
+    public bool ImplementationTraceability => _flags.ImplementationTraceability;
     public bool TaskExplorer         => _flags.TaskExplorer;
     public bool ConstitutionExplorer => _flags.ConstitutionExplorer;
     public bool PlanExplorer           => _flags.PlanExplorer;
@@ -64,7 +65,7 @@ public class FeatureVisibilityService
     public bool ShowSectionLibrary        => QaArtifactLibrary || CreateTestScenario;
     public bool ShowSectionTraceability   => LegacyTraceabilityNavigationEnabled
                                              && (TraceabilityCoverage || TraceabilitySuggestions || CodeTraceability);
-    public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || ArtifactTraceability || ConstitutionCompliance || QaAuditor || DeliveryReadiness;
+    public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || ImplementationTraceability || ArtifactTraceability || ConstitutionCompliance || QaAuditor || DeliveryReadiness;
     public bool ShowSectionAiReview       => AiChangeReview || QaReadiness;
     public bool ShowSectionAdmin          => AdminSystemSettings;
 
