@@ -1,14 +1,285 @@
 @page "/ai-qa-auditor"
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
 @using BirkNext.Web.GraphQL
 @inject IBirkNextClient Client
+@inject IConstitutionAnalysisService ConstitutionService
+@inject IPlanAnalysisService PlanService
+@inject IQAReadinessService ReadinessService
 
 <PageTitle>QA Readiness</PageTitle>
 
 <div class="qa-auditor-page">
 
     <div class="qa-hero traceability-hero">
+        <p class="section-kicker">Executive Command Center</p>
         <h1 class="page-title">QA Readiness</h1>
-        <p class="page-subtitle">Executive quality dashboard — aggregates coverage, spec drift, impact analysis, and code traceability into a single quality score.</p>
+        <p class="page-subtitle">Assess cross-artifact readiness across Constitution, Specification, Plan, and Tasks. Answers whether the feature is ready for implementation, testing, and release.</p>
+    </div>
+
+    <!-- ══ Cross-Artifact Readiness Assessment ══════════════════════════════ -->
+    <div class="qr-section">
+
+        <!-- Artifact Input Panel -->
+        <div class="qr-input-panel">
+            <div class="qr-input-panel-header">
+                <span class="qr-input-panel-title">Load Artifacts</span>
+                @if (_readinessReport is not null)
+                {
+                    <button class="qr-input-panel-toggle" @onclick="() => _qrInputExpanded = !_qrInputExpanded">
+                        @(_qrInputExpanded ? "▾ Collapse" : "▸ Expand")
+                    </button>
+                }
+            </div>
+
+            @if (_qrInputExpanded)
+            {
+                <div class="qr-artifact-grid">
+
+                    <!-- Constitution (optional but enables compliance scoring) -->
+                    <div class="qr-artifact-card @(!string.IsNullOrEmpty(_qrConstitutionText) ? "is-loaded" : "")">
+                        <div class="qr-artifact-card-header">
+                            <span class="qr-artifact-icon" aria-hidden="true">📜</span>
+                            <span class="qr-artifact-name">Constitution</span>
+                            <span class="qr-artifact-status @(!string.IsNullOrEmpty(_qrConstitutionText) ? "is-loaded" : "")">
+                                @(!string.IsNullOrEmpty(_qrConstitutionText) ? "Loaded" : "Empty")
+                            </span>
+                        </div>
+                        <textarea class="qr-artifact-textarea" placeholder="Paste constitution.md here…" rows="3"
+                                  @bind="_qrConstitutionText"></textarea>
+                        @if (!string.IsNullOrEmpty(_qrConstitutionText))
+                        {
+                            <div class="qr-artifact-footer">
+                                <span>@_qrConstitutionText.Split('\n').Length lines</span>
+                                <button class="qr-artifact-clear" @onclick='() => _qrConstitutionText = string.Empty'>Clear</button>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Specification (required for spec score) -->
+                    <div class="qr-artifact-card @(!string.IsNullOrEmpty(_qrSpecText) ? "is-loaded" : "is-required")">
+                        <div class="qr-artifact-card-header">
+                            <span class="qr-artifact-icon" aria-hidden="true">📋</span>
+                            <span class="qr-artifact-name">Specification</span>
+                            <span class="qr-artifact-required-badge">Required</span>
+                            <span class="qr-artifact-status @(!string.IsNullOrEmpty(_qrSpecText) ? "is-loaded" : "")">
+                                @(!string.IsNullOrEmpty(_qrSpecText) ? "Loaded" : "Empty")
+                            </span>
+                        </div>
+                        <textarea class="qr-artifact-textarea" placeholder="Paste spec.md here…" rows="3"
+                                  @bind="_qrSpecText"></textarea>
+                        @if (!string.IsNullOrEmpty(_qrSpecText))
+                        {
+                            <div class="qr-artifact-footer">
+                                <span>@_qrSpecText.Split('\n').Length lines</span>
+                                <button class="qr-artifact-clear" @onclick='() => _qrSpecText = string.Empty'>Clear</button>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Plan -->
+                    <div class="qr-artifact-card @(!string.IsNullOrEmpty(_qrPlanText) ? "is-loaded" : "")">
+                        <div class="qr-artifact-card-header">
+                            <span class="qr-artifact-icon" aria-hidden="true">📐</span>
+                            <span class="qr-artifact-name">Plan</span>
+                            <span class="qr-artifact-status @(!string.IsNullOrEmpty(_qrPlanText) ? "is-loaded" : "")">
+                                @(!string.IsNullOrEmpty(_qrPlanText) ? "Loaded" : "Empty")
+                            </span>
+                        </div>
+                        <textarea class="qr-artifact-textarea" placeholder="Paste plan.md here…" rows="3"
+                                  @bind="_qrPlanText"></textarea>
+                        @if (!string.IsNullOrEmpty(_qrPlanText))
+                        {
+                            <div class="qr-artifact-footer">
+                                <span>@_qrPlanText.Split('\n').Length lines</span>
+                                <button class="qr-artifact-clear" @onclick='() => _qrPlanText = string.Empty'>Clear</button>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Tasks -->
+                    <div class="qr-artifact-card @(!string.IsNullOrEmpty(_qrTaskText) ? "is-loaded" : "")">
+                        <div class="qr-artifact-card-header">
+                            <span class="qr-artifact-icon" aria-hidden="true">✅</span>
+                            <span class="qr-artifact-name">Tasks</span>
+                            <span class="qr-artifact-status @(!string.IsNullOrEmpty(_qrTaskText) ? "is-loaded" : "")">
+                                @(!string.IsNullOrEmpty(_qrTaskText) ? "Loaded" : "Empty")
+                            </span>
+                        </div>
+                        <textarea class="qr-artifact-textarea" placeholder="Paste tasks.md here…" rows="3"
+                                  @bind="_qrTaskText"></textarea>
+                        @if (!string.IsNullOrEmpty(_qrTaskText))
+                        {
+                            <div class="qr-artifact-footer">
+                                <span>@_qrTaskText.Split('\n').Length lines</span>
+                                <button class="qr-artifact-clear" @onclick='() => _qrTaskText = string.Empty'>Clear</button>
+                            </div>
+                        }
+                    </div>
+
+                </div>
+
+                <div class="qr-analyze-bar">
+                    <span class="qr-loaded-summary">
+                        @if (string.IsNullOrWhiteSpace(_qrSpecText))
+                        { <span>Load at least a Specification to assess readiness</span> }
+                        else
+                        { <span>Specification loaded · @QrAdditionalCount additional artifact@(QrAdditionalCount != 1 ? "s" : "") loaded</span> }
+                    </span>
+                    <button class="qr-analyze-btn" disabled="@string.IsNullOrWhiteSpace(_qrSpecText)"
+                            @onclick="RunReadinessAssessment">
+                        Assess Readiness
+                    </button>
+                </div>
+            }
+        </div>
+
+        <!-- ── Report ──────────────────────────────────────────────────────── -->
+        @if (_readinessReport is not null)
+        {
+            <!-- Score ring + status -->
+            <div class="qr-score-row">
+                @RenderQrScoreRing(_readinessReport.OverallScore)
+                <div>
+                    <div class="qr-score-meta-title">@QrStatusLabel(_readinessReport.OverallStatus) Readiness</div>
+                    <div class="qr-score-meta-sub">
+                        @_readinessReport.OverallScore.ToString("0.#")% overall ·
+                        @_readinessReport.Scores.Count(s => s.IsAssessed) of 5 categories assessed
+                    </div>
+                    <span class="qr-status-badge qr-status-@QrStatusClass(_readinessReport.OverallStatus)">
+                        @QrStatusLabel(_readinessReport.OverallStatus)
+                    </span>
+                </div>
+            </div>
+
+            <!-- Category score cards -->
+            <div class="qr-category-grid">
+                @foreach (var score in _readinessReport.Scores)
+                {
+                    <div class='qr-category-card @(score.IsAssessed ? "is-" + QrStatusClass(score.Status) : "is-not-assessed")'
+                         @onclick="() => ToggleCategoryDetail(score.Category)"
+                         title="Click to see signals and weaknesses">
+                        <div class="qr-category-score">
+                            @(score.IsAssessed ? $"{score.Score:0.#}" : "—")
+                        </div>
+                        <div class="qr-category-name">@QrShortCategory(score.Category)</div>
+                        <div class="qr-category-status">
+                            @(score.IsAssessed ? QrStatusLabel(score.Status) : "Not loaded")
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- Expanded category detail -->
+            @if (_expandedCategory is not null)
+            {
+                var expandedScore = _readinessReport.Scores.FirstOrDefault(s => s.Category == _expandedCategory);
+                @if (expandedScore is not null && expandedScore.IsAssessed)
+                {
+                    <div class="qr-detail-panel">
+                        <div class="qr-detail-panel-title">@expandedScore.Category</div>
+                        @if (expandedScore.Signals.Count > 0)
+                        {
+                            <ul class="qr-signal-list">
+                                @foreach (var s in expandedScore.Signals)
+                                { <li>@s</li> }
+                            </ul>
+                        }
+                        @if (expandedScore.Weaknesses.Count > 0)
+                        {
+                            <ul class="qr-weak-list" style="margin-top:0.5rem;">
+                                @foreach (var w in expandedScore.Weaknesses)
+                                { <li>@w</li> }
+                            </ul>
+                        }
+                    </div>
+                }
+            }
+
+            <!-- Readiness gates -->
+            <div class="qr-section-header" style="margin-top:1rem;">
+                <span class="qr-section-title">Readiness Gates</span>
+            </div>
+            <div class="qr-gate-grid">
+                @foreach (var gate in _readinessReport.Gates)
+                {
+                    <div class='qr-gate-card @(gate.IsReady ? "is-ready" : "is-blocked")'>
+                        <div class="qr-gate-header">
+                            <span class="qr-gate-icon" aria-hidden="true">@(gate.IsReady ? "✅" : "🚫")</span>
+                            <span class="qr-gate-name">@gate.Name</span>
+                        </div>
+                        <div class="qr-gate-question">@gate.Question</div>
+                        @if (!gate.IsReady && !string.IsNullOrEmpty(gate.BlockReason))
+                        {
+                            <div class="qr-gate-reason">@gate.BlockReason</div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <!-- Gaps -->
+            @if (_readinessReport.Gaps.Count > 0)
+            {
+                <div class="qr-section-header" style="margin-top:1.25rem;">
+                    <span class="qr-section-title">Readiness Gaps</span>
+                    <span style="font-size:0.78rem;color:var(--clr-text-muted);">
+                        @_readinessReport.Gaps.Count gap@(_readinessReport.Gaps.Count != 1 ? "s" : "") · sorted by severity
+                    </span>
+                </div>
+                @foreach (var gap in _readinessReport.Gaps.Take(_gapShowAll ? 999 : 8))
+                {
+                    <div class="qr-gap-item sev-@gap.Severity.ToString().ToLowerInvariant()">
+                        <span class="qr-gap-cat">@QrShortCategory(gap.Category)</span>
+                        <span class="qr-sev-badge qr-sev-@gap.Severity.ToString().ToLowerInvariant()">@gap.Severity</span>
+                        <span>@gap.Description</span>
+                    </div>
+                }
+                @if (_readinessReport.Gaps.Count > 8 && !_gapShowAll)
+                {
+                    <button class="qr-analyze-btn" style="background:var(--clr-bg-subtle);color:var(--clr-primary);border:1px solid var(--clr-border);margin-top:0.25rem;"
+                            @onclick="() => _gapShowAll = true">
+                        Show all @_readinessReport.Gaps.Count gaps
+                    </button>
+                }
+            }
+
+            <!-- Recommendations -->
+            @if (_readinessReport.Recommendations.Count > 0)
+            {
+                <div class="qr-section-header" style="margin-top:1.25rem;">
+                    <span class="qr-section-title">Recommendations</span>
+                    <span style="font-size:0.78rem;color:var(--clr-text-muted);">
+                        @_readinessReport.Recommendations.Count recommendation@(_readinessReport.Recommendations.Count != 1 ? "s" : "") · highest priority first
+                    </span>
+                </div>
+                @foreach (var rec in _readinessReport.Recommendations.Take(_recShowAll ? 999 : 8))
+                {
+                    <div class="qr-rec-item">
+                        <span class="qr-rec-bullet" aria-hidden="true">→</span>
+                        <div>
+                            <p class="qr-rec-text">@rec.Text</p>
+                            <div class="qr-rec-meta">
+                                <span class="qr-rec-target">@rec.TargetArtifact</span>
+                                <span class="qr-sev-badge qr-sev-@rec.Priority.ToString().ToLowerInvariant()">@rec.Priority</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                @if (_readinessReport.Recommendations.Count > 8 && !_recShowAll)
+                {
+                    <button class="qr-analyze-btn" style="background:var(--clr-bg-subtle);color:var(--clr-primary);border:1px solid var(--clr-border);margin-top:0.25rem;"
+                            @onclick="() => _recShowAll = true">
+                        Show all @_readinessReport.Recommendations.Count recommendations
+                    </button>
+                }
+            }
+        }
+
+    </div><!-- /qr-section -->
+
+    <!-- ── Divider before legacy API section ──────────────────────────────── -->
+    <div class="qr-legacy-divider">
+        <span>Legacy API Quality Metrics</span>
     </div>
 
     @if (_loading)
@@ -368,4 +639,104 @@
 
     private string DriftKpiClass => (_report?.DriftFindingsCount ?? 0) == 0 ? "good"
         : (_report?.HighRiskDriftFindings ?? 0) > 0 ? "danger" : "warn";
+
+    // ── Cross-Artifact Readiness state ────────────────────────────────────────
+
+    private string _qrConstitutionText = string.Empty;
+    private string _qrSpecText         = string.Empty;
+    private string _qrPlanText         = string.Empty;
+    private string _qrTaskText         = string.Empty;
+    private QAReadinessReport? _readinessReport;
+    private bool _qrInputExpanded = true;
+    private string? _expandedCategory;
+    private bool _gapShowAll;
+    private bool _recShowAll;
+
+    private int QrAdditionalCount =>
+        (string.IsNullOrWhiteSpace(_qrConstitutionText) ? 0 : 1) +
+        (string.IsNullOrWhiteSpace(_qrPlanText) ? 0 : 1) +
+        (string.IsNullOrWhiteSpace(_qrTaskText) ? 0 : 1);
+
+    private void RunReadinessAssessment()
+    {
+        ConstitutionDocument? constitution = null;
+        SpecTree?             spec         = null;
+        PlanDocument?         plan         = null;
+        TaskTree?             tasks        = null;
+
+        if (!string.IsNullOrWhiteSpace(_qrConstitutionText))
+            constitution = ConstitutionService.Parse(_qrConstitutionText);
+        if (!string.IsNullOrWhiteSpace(_qrSpecText))
+            spec = SpecExplorerService.Parse(_qrSpecText);
+        if (!string.IsNullOrWhiteSpace(_qrPlanText))
+            plan = PlanService.Parse(_qrPlanText);
+        if (!string.IsNullOrWhiteSpace(_qrTaskText))
+            tasks = TaskExplorerService.Parse(_qrTaskText);
+
+        _readinessReport   = ReadinessService.Assess(constitution, spec, plan, tasks);
+        _qrInputExpanded   = false;
+        _expandedCategory  = null;
+        _gapShowAll        = false;
+        _recShowAll        = false;
+    }
+
+    private void ToggleCategoryDetail(string category)
+    {
+        _expandedCategory = _expandedCategory == category ? null : category;
+    }
+
+    // ── Readiness rendering helpers ───────────────────────────────────────────
+
+    private static string QrStatusClass(ReadinessStatus s) => s switch
+    {
+        ReadinessStatus.Ready       => "ready",
+        ReadinessStatus.MostlyReady => "mostly",
+        ReadinessStatus.NeedsWork   => "needs-work",
+        _                           => "not-ready",
+    };
+
+    private static string QrStatusLabel(ReadinessStatus s) => s switch
+    {
+        ReadinessStatus.Ready       => "Ready",
+        ReadinessStatus.MostlyReady => "Mostly Ready",
+        ReadinessStatus.NeedsWork   => "Needs Work",
+        _                           => "Not Ready",
+    };
+
+    private static string QrShortCategory(string category) => category switch
+    {
+        "Specification Quality" => "Spec",
+        "Plan Quality"          => "Plan",
+        "Task Readiness"        => "Tasks",
+        "Traceability"          => "Traceability",
+        "Compliance"            => "Compliance",
+        _                       => category,
+    };
+
+    private RenderFragment RenderQrScoreRing(double pct) => __builder =>
+    {
+        const int r  = 44;
+        const int cx = 60;
+        const int cy = 60;
+        var circumference = 2 * Math.PI * r;
+        var offset   = circumference - pct / 100.0 * circumference;
+        var variant  = pct >= 85 ? "is-ready" :
+                       pct >= 65 ? "is-mostly" :
+                       pct >= 40 ? "is-needs-work" : "is-not-ready";
+
+        var svgHtml = $"<svg viewBox=\"0 0 120 120\">" +
+                      $"<circle class=\"qr-score-ring-bg\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\" />" +
+                      $"<circle class=\"qr-score-ring-fill {variant}\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\"" +
+                      $" stroke-dasharray=\"{circumference:0.00}\" stroke-dashoffset=\"{offset:0.00}\" />" +
+                      $"</svg>";
+
+        __builder.OpenElement(0, "div");
+        __builder.AddAttribute(1, "class", "qr-score-ring");
+        __builder.AddMarkupContent(2, svgHtml);
+        __builder.OpenElement(3, "div");
+        __builder.AddAttribute(4, "class", "qr-score-label");
+        __builder.AddMarkupContent(5, $"{pct:0.#}<small>/ 100</small>");
+        __builder.CloseElement();
+        __builder.CloseElement();
+    };
 }
