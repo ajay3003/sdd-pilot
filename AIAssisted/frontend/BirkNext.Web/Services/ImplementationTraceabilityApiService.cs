@@ -3,6 +3,7 @@ using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
 
+
 public sealed class ImplementationTraceabilityApiService
 {
     private readonly HttpClient _client;
@@ -62,4 +63,31 @@ public sealed class ImplementationTraceabilityApiService
     public ImplementationTraceabilityReport? GetCached() => _cached;
 
     public void ClearCache() => _cached = null;
+
+    public async Task<AzureDevOpsConnectionTestResultDto> TestConnectionAsync()
+    {
+        try
+        {
+            var response = await _client.PostAsync(
+                "api/implementation-traceability/test-connection", null);
+
+            if (!response.IsSuccessStatusCode)
+                return new AzureDevOpsConnectionTestResultDto
+                {
+                    OverallSuccess = false,
+                    ErrorMessage   = $"Test failed (HTTP {(int)response.StatusCode}).",
+                };
+
+            return await response.Content.ReadFromJsonAsync<AzureDevOpsConnectionTestResultDto>()
+                   ?? new AzureDevOpsConnectionTestResultDto { OverallSuccess = false, ErrorMessage = "Empty response." };
+        }
+        catch
+        {
+            return new AzureDevOpsConnectionTestResultDto
+            {
+                OverallSuccess = false,
+                ErrorMessage   = "Could not reach the backend. Check that the server is running.",
+            };
+        }
+    }
 }

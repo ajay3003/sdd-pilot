@@ -1,4 +1,5 @@
 using BirkNext.Api.Configuration;
+using BirkNext.Api.Models.Admin;
 using BirkNext.Api.Services.ImplementationTraceability;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -10,16 +11,19 @@ namespace BirkNext.Api.Controllers;
 public class ImplementationTraceabilityController : ControllerBase
 {
     private readonly IImplementationEvidenceProvider _provider;
+    private readonly AzureDevOpsConnectionTester _tester;
     private readonly AzureDevOpsOptions _adoOptions;
     private readonly bool _usingMock;
     private readonly ILogger<ImplementationTraceabilityController> _logger;
 
     public ImplementationTraceabilityController(
         IImplementationEvidenceProvider provider,
+        AzureDevOpsConnectionTester tester,
         IOptions<AzureDevOpsOptions> adoOptions,
         ILogger<ImplementationTraceabilityController> logger)
     {
         _provider   = provider;
+        _tester     = tester;
         _adoOptions = adoOptions.Value;
         _usingMock  = provider is MockImplementationEvidenceProvider;
         _logger     = logger;
@@ -74,6 +78,31 @@ public class ImplementationTraceabilityController : ControllerBase
             {
                 message = "Failed to retrieve implementation evidence. Please try again.",
                 correlationId,
+            });
+        }
+    }
+
+    [HttpPost("test-connection")]
+    public async Task<IActionResult> TestConnection(CancellationToken ct)
+    {
+        _logger.LogInformation("Azure DevOps connection test requested");
+        try
+        {
+            var result = await _tester.TestAsync(ct);
+            return Ok(result);
+        }
+        catch (OperationCanceledException)
+        {
+            return StatusCode(499);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Azure DevOps connection test failed unexpectedly");
+            return StatusCode(500, new AzureDevOpsConnectionTestResult
+            {
+                OverallSuccess = false,
+                ErrorMessage   = "Connection test failed unexpectedly. Check the backend logs.",
+                Checks         = [],
             });
         }
     }

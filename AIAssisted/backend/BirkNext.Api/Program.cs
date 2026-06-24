@@ -96,6 +96,9 @@ builder.Services.Configure<AzureDevOpsOptions>(options =>
     }
 }
 
+// Connection tester is always registered — checks options at runtime.
+builder.Services.AddHttpClient<AzureDevOpsConnectionTester>();
+
 builder.Services.AddHttpClient("Anthropic", client =>
 {
     client.DefaultRequestHeaders.Add("x-api-key", builder.Configuration["Anthropic:ApiKey"] ?? string.Empty);

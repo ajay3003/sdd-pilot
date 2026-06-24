@@ -82,14 +82,41 @@ public class AdminApiService
 
 public class SystemSettingsDto
 {
-    [JsonPropertyName("application")] public ApplicationDto Application { get; set; } = new();
-    [JsonPropertyName("frontend")] public FrontendDto Frontend { get; set; } = new();
-    [JsonPropertyName("backend")] public BackendDto Backend { get; set; } = new();
-    [JsonPropertyName("database")] public DatabaseDto Database { get; set; } = new();
-    [JsonPropertyName("runtime")] public RuntimeDto Runtime { get; set; } = new();
-    [JsonPropertyName("logging")] public LoggingDto Logging { get; set; } = new();
-    [JsonPropertyName("maintenance")] public MaintenanceDto Maintenance { get; set; } = new();
+    [JsonPropertyName("application")]      public ApplicationDto      Application      { get; set; } = new();
+    [JsonPropertyName("frontend")]         public FrontendDto         Frontend         { get; set; } = new();
+    [JsonPropertyName("backend")]          public BackendDto          Backend          { get; set; } = new();
+    [JsonPropertyName("database")]         public DatabaseDto         Database         { get; set; } = new();
+    [JsonPropertyName("runtime")]          public RuntimeDto          Runtime          { get; set; } = new();
+    [JsonPropertyName("logging")]          public LoggingDto          Logging          { get; set; } = new();
+    [JsonPropertyName("maintenance")]      public MaintenanceDto      Maintenance      { get; set; } = new();
     [JsonPropertyName("featureVisibility")] public FeatureVisibilityDto FeatureVisibility { get; set; } = new();
+    [JsonPropertyName("azureDevOps")]      public AzureDevOpsInfoDto  AzureDevOps      { get; set; } = new();
+}
+
+public class AzureDevOpsInfoDto
+{
+    [JsonPropertyName("enabled")]         public bool   Enabled         { get; set; }
+    [JsonPropertyName("organizationUrl")] public string OrganizationUrl { get; set; } = "";
+    [JsonPropertyName("project")]         public string Project         { get; set; } = "";
+    [JsonPropertyName("repositoryId")]    public string RepositoryId    { get; set; } = "";
+    [JsonPropertyName("defaultBranch")]   public string DefaultBranch   { get; set; } = "main";
+    [JsonPropertyName("patConfigured")]   public bool   PatConfigured   { get; set; }
+    [JsonPropertyName("patSource")]       public string PatSource       { get; set; } = "Missing";
+    [JsonPropertyName("activelyUsed")]    public bool   ActivelyUsed    { get; set; }
+}
+
+public class AzureDevOpsConnectionTestResultDto
+{
+    [JsonPropertyName("overallSuccess")] public bool                          OverallSuccess { get; set; }
+    [JsonPropertyName("errorMessage")]   public string?                       ErrorMessage   { get; set; }
+    [JsonPropertyName("checks")]         public List<AzureDevOpsCheckDto>     Checks         { get; set; } = [];
+}
+
+public class AzureDevOpsCheckDto
+{
+    [JsonPropertyName("name")]    public string  Name    { get; set; } = "";
+    [JsonPropertyName("success")] public bool    Success { get; set; }
+    [JsonPropertyName("detail")]  public string? Detail  { get; set; }
 }
 
 public class ApplicationDto

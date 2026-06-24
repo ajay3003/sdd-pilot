@@ -10,6 +10,33 @@ public class SystemSettingsResponse
     public LoggingInfo Logging { get; set; } = new();
     public MaintenanceInfo Maintenance { get; set; } = new();
     public FeatureVisibilityInfo FeatureVisibility { get; set; } = new();
+    public AzureDevOpsInfo AzureDevOps { get; set; } = new();
+}
+
+public class AzureDevOpsInfo
+{
+    public bool Enabled { get; set; }
+    public string OrganizationUrl { get; set; } = "";
+    public string Project { get; set; } = "";
+    public string RepositoryId { get; set; } = "";
+    public string DefaultBranch { get; set; } = "main";
+    public bool PatConfigured { get; set; }
+    public string PatSource { get; set; } = "Missing"; // "EnvironmentVariable" | "Configuration" | "Missing"
+    public bool ActivelyUsed { get; set; }             // true = ADO provider selected at startup
+}
+
+public class AzureDevOpsConnectionTestResult
+{
+    public bool OverallSuccess { get; set; }
+    public string? ErrorMessage { get; set; }
+    public List<AzureDevOpsCheckResult> Checks { get; set; } = [];
+}
+
+public class AzureDevOpsCheckResult
+{
+    public string Name { get; set; } = "";
+    public bool Success { get; set; }
+    public string? Detail { get; set; }
 }
 
 public class ApplicationInfo

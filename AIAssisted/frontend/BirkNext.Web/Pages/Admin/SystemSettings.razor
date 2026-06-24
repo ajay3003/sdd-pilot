@@ -2,6 +2,7 @@
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
 @inject AdminApiService AdminApi
+@inject ImplementationTraceabilityApiService AdoApi
 @inject IJSRuntime JS
 
 <PageTitle>System Settings — QA Review Studio</PageTitle>
@@ -320,6 +321,118 @@ else if (_settings is not null)
             {
                 <p class="settings-card-note">Feature configuration not available. The feature list will appear after a successful backend connection.</p>
             }
+        </div>
+
+        <!-- Azure DevOps Integration -->
+        <div class="settings-card settings-card-full-width">
+            <div class="settings-card-title">Azure DevOps Integration</div>
+            <p class="settings-card-note">
+                Read-only configuration for Implementation Traceability. PAT must be set via <code>ADO_PAT</code> environment variable or <code>appsettings.Local.json</code> — it is never displayed here.
+            </p>
+
+            <div class="dev-diag-subgrid">
+                <div class="dev-diag-section">
+                    <div class="dev-diag-section-title">Configuration</div>
+                    <table class="settings-table">
+                        <tr>
+                            <td>Enabled</td>
+                            <td>
+                                <span class="settings-badge @(_settings.AzureDevOps.Enabled ? "settings-badge-local" : "")">
+                                    @(_settings.AzureDevOps.Enabled ? "Yes" : "No")
+                                </span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Connection Status</td>
+                            <td>
+                                <span class="settings-badge @(_settings.AzureDevOps.ActivelyUsed ? "settings-badge-local" : "settings-badge-shared")">
+                                    @(_settings.AzureDevOps.ActivelyUsed ? "Azure DevOps" : "Using Demo Data")
+                                </span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>PAT Status</td>
+                            <td>
+                                <span class="settings-badge @(_settings.AzureDevOps.PatConfigured ? "settings-badge-local" : "settings-badge-shared")">
+                                    @(_settings.AzureDevOps.PatConfigured ? "Configured" : "Missing")
+                                </span>
+                                @if (_settings.AzureDevOps.PatConfigured)
+                                {
+                                    <span style="margin-left:0.5rem;font-size:0.78rem;color:var(--clr-text-muted)">via @_settings.AzureDevOps.PatSource</span>
+                                }
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Organization URL</td>
+                            <td><span class="mono-chip">@(string.IsNullOrWhiteSpace(_settings.AzureDevOps.OrganizationUrl) ? "—" : _settings.AzureDevOps.OrganizationUrl)</span></td>
+                        </tr>
+                        <tr>
+                            <td>Project</td>
+                            <td><span class="mono-chip">@(string.IsNullOrWhiteSpace(_settings.AzureDevOps.Project) ? "—" : _settings.AzureDevOps.Project)</span></td>
+                        </tr>
+                        <tr>
+                            <td>Repository</td>
+                            <td><span class="mono-chip">@(string.IsNullOrWhiteSpace(_settings.AzureDevOps.RepositoryId) ? "—" : _settings.AzureDevOps.RepositoryId)</span></td>
+                        </tr>
+                        <tr>
+                            <td>Default Branch</td>
+                            <td><span class="mono-chip">@_settings.AzureDevOps.DefaultBranch</span></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div class="dev-diag-section">
+                    <div class="dev-diag-section-title">Test Connection</div>
+                    <p style="font-size:0.83rem;color:var(--clr-text-muted);margin:0 0 0.875rem">
+                        Verifies PAT authentication, organization URL, project, and repository.
+                    </p>
+
+                    @if (!_settings.AzureDevOps.PatConfigured)
+                    {
+                        <p class="settings-card-note" style="margin-bottom:0.75rem">
+                            PAT is not configured. Set <code>ADO_PAT</code> or add <code>AzureDevOps:Pat</code> to <code>appsettings.Local.json</code> and restart the backend.
+                        </p>
+                    }
+
+                    <button class="btn-secondary"
+                            @onclick="TestAdoConnectionAsync"
+                            disabled="@(!_settings.AzureDevOps.Enabled || _adoTestRunning)">
+                        @(_adoTestRunning ? "Testing…" : "Test Connection")
+                    </button>
+
+                    @if (_adoTestResult is not null)
+                    {
+                        <div style="margin-top:1rem">
+                            <div class="notification @(_adoTestResult.OverallSuccess ? "notification-success" : "notification-error")" role="status">
+                                @if (_adoTestResult.OverallSuccess)
+                                { <span>Connection successful.</span> }
+                                else
+                                { <span>Connection failed: @_adoTestResult.ErrorMessage</span> }
+                            </div>
+                            @if (_adoTestResult.Checks.Count > 0)
+                            {
+                                <table class="settings-table" style="margin-top:0.625rem">
+                                    @foreach (var check in _adoTestResult.Checks)
+                                    {
+                                        <tr>
+                                            <td>@check.Name</td>
+                                            <td>
+                                                <span class="settings-badge @(check.Success ? "settings-badge-local" : "settings-badge-shared")">
+                                                    @(check.Success ? "OK" : "Failed")
+                                                </span>
+                                                @if (!string.IsNullOrWhiteSpace(check.Detail))
+                                                {
+                                                    <span style="margin-left:0.5rem;font-size:0.78rem;color:var(--clr-text-muted)">@check.Detail</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </table>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
         </div>
 
         <!-- Developer Diagnostics (collapsible) -->
@@ -724,6 +837,10 @@ else if (_settings is not null)
     private bool _copiedDiag;
     private bool _showDeveloperDiagnostics;
 
+    // Azure DevOps connection test
+    private bool _adoTestRunning;
+    private AzureDevOpsConnectionTestResultDto? _adoTestResult;
+
     // Feature section key sets — aligned with sidebar navigation sections
     private static readonly HashSet<string> ReviewSectionKeys =
         new(StringComparer.OrdinalIgnoreCase)
@@ -741,7 +858,7 @@ else if (_settings is not null)
         new(StringComparer.OrdinalIgnoreCase)
         {
             "SpecDrift", "ImpactAnalysis", "ArtifactTraceability", "ConstitutionCompliance",
-            "QaAuditor", "DeliveryReadiness", "ImplementationReview"
+            "QaAuditor", "DeliveryReadiness", "ImplementationReview", "ImplementationTraceability"
         };
 
     private static readonly HashSet<string> AiReviewKeys =
@@ -772,8 +889,9 @@ else if (_settings is not null)
         ("Constitution Compliance", "ConstitutionCompliance"),
         ("QA Auditor",              "QaAuditor"),
         ("Delivery Readiness",      "DeliveryReadiness"),
-        ("Implementation Review",   "ImplementationReview"),
-        ("AI Change Review",        "AiChangeReview"),
+        ("Implementation Review",        "ImplementationReview"),
+        ("Implementation Traceability",  "ImplementationTraceability"),
+        ("AI Change Review",             "AiChangeReview"),
         ("QA Readiness",            "QaReadiness"),
     ];
 
@@ -948,6 +1066,16 @@ else if (_settings is not null)
             _editableSettings = et.Result;
             InitEditState();
         }
+    }
+
+    private async Task TestAdoConnectionAsync()
+    {
+        _adoTestRunning = true;
+        _adoTestResult  = null;
+        StateHasChanged();
+
+        _adoTestResult  = await AdoApi.TestConnectionAsync();
+        _adoTestRunning = false;
     }
 
     private static string OrUnknown(string? value) =>

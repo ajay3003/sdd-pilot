@@ -166,7 +166,38 @@ public class AdminService
                 DatabaseMode = dbMode,
                 ResetNotAllowedReason = resetNotAllowedReason
             },
-            FeatureVisibility = featureVisibility
+            FeatureVisibility = featureVisibility,
+            AzureDevOps = BuildAzureDevOpsInfo()
+        };
+    }
+
+    private AzureDevOpsInfo BuildAzureDevOpsInfo()
+    {
+        var enabled  = _config.GetValue<bool>("AzureDevOps:Enabled");
+        var orgUrl   = _config["AzureDevOps:OrganizationUrl"] ?? "";
+        var project  = _config["AzureDevOps:Project"] ?? "";
+        var repoId   = _config["AzureDevOps:RepositoryId"] ?? "";
+        var branch   = _config["AzureDevOps:DefaultBranch"] ?? "main";
+
+        // Check PAT source — never expose the value
+        var configPat = _config["AzureDevOps:Pat"] ?? "";
+        var envPat    = Environment.GetEnvironmentVariable("ADO_PAT") ?? "";
+
+        var patConfigured = !string.IsNullOrWhiteSpace(configPat) || !string.IsNullOrWhiteSpace(envPat);
+        var patSource = !string.IsNullOrWhiteSpace(envPat)    ? "EnvironmentVariable"
+                      : !string.IsNullOrWhiteSpace(configPat) ? "Configuration"
+                      : "Missing";
+
+        return new AzureDevOpsInfo
+        {
+            Enabled       = enabled,
+            OrganizationUrl = orgUrl,
+            Project       = project,
+            RepositoryId  = repoId,
+            DefaultBranch = branch,
+            PatConfigured = patConfigured,
+            PatSource     = patSource,
+            ActivelyUsed  = enabled && patConfigured,
         };
     }
 
