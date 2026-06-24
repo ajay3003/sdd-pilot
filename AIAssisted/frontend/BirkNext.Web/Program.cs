@@ -63,6 +63,7 @@ builder.Services.AddSingleton<IQAReadinessService, QAReadinessService>();
 builder.Services.AddSingleton<IQaAuditorService, QaAuditorService>();
 builder.Services.AddSingleton<IDeliveryReadinessAssessmentService, DeliveryReadinessService>();
 builder.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
+builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
 builder.Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
 
 await builder.Build().RunAsync();

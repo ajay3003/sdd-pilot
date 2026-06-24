@@ -5,6 +5,7 @@
 @inject IConstitutionAnalysisService ConstitutionService
 @inject IPlanAnalysisService PlanService
 @inject IConstitutionComplianceService ComplianceService
+@inject IDashboardSnapshotService DashboardSnapshot
 
 <PageTitle>Constitution Compliance</PageTitle>
 
@@ -586,6 +587,7 @@
             tasks = TaskExplorerService.Parse(_taskText);
 
         _report          = ComplianceService.Analyze(constitution, spec, plan, tasks);
+        DashboardSnapshot.Publish(_report);
         _tab             = "overview";
         _search          = string.Empty;
         _statusFilter    = null;

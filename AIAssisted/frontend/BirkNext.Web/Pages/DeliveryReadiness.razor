@@ -4,6 +4,7 @@
 @inject IConstitutionAnalysisService ConstitutionService
 @inject IPlanAnalysisService PlanService
 @inject IDeliveryReadinessAssessmentService ReadinessService
+@inject IDashboardSnapshotService DashboardSnapshot
 
 <div class="page-hero">
     <span class="section-kicker">Go / No-Go Assessment</span>
@@ -231,6 +232,7 @@
             : null;
 
         _report = ReadinessService.Assess(constitution, spec, plan, tasks);
+        DashboardSnapshot.Publish(_report);
         _inputExpanded = false;
         _tab = "overview";
     }

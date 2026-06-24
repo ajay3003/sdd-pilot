@@ -6,6 +6,7 @@
 @inject IConstitutionAnalysisService ConstitutionService
 @inject IPlanAnalysisService PlanService
 @inject IQAReadinessService ReadinessService
+@inject IDashboardSnapshotService DashboardSnapshot
 
 <PageTitle>QA Readiness</PageTitle>
 
@@ -674,6 +675,7 @@
             tasks = TaskExplorerService.Parse(_qrTaskText);
 
         _readinessReport   = ReadinessService.Assess(constitution, spec, plan, tasks);
+        DashboardSnapshot.Publish(_readinessReport);
         _qrInputExpanded   = false;
         _expandedCategory  = null;
         _gapShowAll        = false;

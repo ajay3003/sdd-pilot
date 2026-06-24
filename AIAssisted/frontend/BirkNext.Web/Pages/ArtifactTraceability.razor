@@ -5,6 +5,7 @@
 @inject IConstitutionAnalysisService ConstitutionService
 @inject IPlanAnalysisService PlanService
 @inject IArtifactTraceabilityService TraceabilityService
+@inject IDashboardSnapshotService DashboardSnapshot
 
 <PageTitle>Artifact Traceability</PageTitle>
 
@@ -786,6 +787,7 @@
             tasks = TaskExplorerService.Parse(_taskText);
 
         _report         = TraceabilityService.Analyze(constitution, spec, plan, tasks);
+        DashboardSnapshot.Publish(_report);
         _tab            = "overview";
         _search         = string.Empty;
         _statusFilter   = null;

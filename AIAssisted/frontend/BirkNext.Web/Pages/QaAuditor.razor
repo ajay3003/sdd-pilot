@@ -4,6 +4,7 @@
 @inject IConstitutionAnalysisService ConstitutionService
 @inject IPlanAnalysisService PlanService
 @inject IQaAuditorService AuditorService
+@inject IDashboardSnapshotService DashboardSnapshot
 
 <PageTitle>QA Auditor</PageTitle>
 
@@ -509,6 +510,7 @@
             tasks = TaskExplorerService.Parse(_taskText);
 
         _report       = AuditorService.Audit(constitution, spec, plan, tasks);
+        DashboardSnapshot.Publish(_report);
         _tab          = "overview";
         _search       = string.Empty;
         _sevFilter    = null;
