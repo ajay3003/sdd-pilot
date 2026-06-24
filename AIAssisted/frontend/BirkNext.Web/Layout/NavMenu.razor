@@ -164,6 +164,22 @@
                     </NavLink>
                 </div>
             }
+            @if (FeatureViz.QaAuditor)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="qa-auditor" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-qa-auditor" aria-hidden="true"></span> QA Auditor
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.DeliveryReadiness)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="delivery-readiness" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-delivery-readiness" aria-hidden="true"></span> Delivery Readiness
+                    </NavLink>
+                </div>
+            }
             @if (FeatureViz.ImplementationReview)
             {
                 <div class="nav-item px-3">

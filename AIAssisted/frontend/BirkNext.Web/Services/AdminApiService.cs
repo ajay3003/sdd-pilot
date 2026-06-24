@@ -257,5 +257,7 @@ public class FeatureVisibilityDto
     [JsonPropertyName("planExplorer")]              public bool PlanExplorer             { get; set; } = true;
     [JsonPropertyName("artifactTraceability")]        public bool ArtifactTraceability       { get; set; } = true;
     [JsonPropertyName("constitutionCompliance")]      public bool ConstitutionCompliance     { get; set; } = true;
+    [JsonPropertyName("qaAuditor")]                   public bool QaAuditor                  { get; set; } = true;
+    [JsonPropertyName("deliveryReadiness")]           public bool DeliveryReadiness          { get; set; } = true;
     [JsonPropertyName("adminSystemSettings")]         public bool AdminSystemSettings        { get; set; } = true;
 }

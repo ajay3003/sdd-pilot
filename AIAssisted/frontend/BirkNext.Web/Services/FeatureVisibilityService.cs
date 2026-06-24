@@ -50,6 +50,8 @@ public class FeatureVisibilityService
     public bool PlanExplorer           => _flags.PlanExplorer;
     public bool ArtifactTraceability     => _flags.ArtifactTraceability;
     public bool ConstitutionCompliance   => _flags.ConstitutionCompliance;
+    public bool QaAuditor               => _flags.QaAuditor;
+    public bool DeliveryReadiness       => _flags.DeliveryReadiness;
     public bool AiChangeReview           => _flags.AiChangeReview;
     public bool QaReadiness          => _flags.QaReadiness;
     public bool EnableExtractionReview => _flags.EnableExtractionReview;
@@ -62,7 +64,7 @@ public class FeatureVisibilityService
     public bool ShowSectionLibrary        => QaArtifactLibrary || CreateTestScenario;
     public bool ShowSectionTraceability   => LegacyTraceabilityNavigationEnabled
                                              && (TraceabilityCoverage || TraceabilitySuggestions || CodeTraceability);
-    public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || ArtifactTraceability || ConstitutionCompliance;
+    public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || ArtifactTraceability || ConstitutionCompliance || QaAuditor || DeliveryReadiness;
     public bool ShowSectionAiReview       => AiChangeReview || QaReadiness;
     public bool ShowSectionAdmin          => AdminSystemSettings;
 

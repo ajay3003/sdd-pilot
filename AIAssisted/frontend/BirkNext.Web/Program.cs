@@ -60,6 +60,8 @@ builder.Services.AddSingleton<IPlanAnalysisService, PlanAnalysisService>();
 builder.Services.AddSingleton<IArtifactTraceabilityService, ArtifactTraceabilityService>();
 builder.Services.AddSingleton<IConstitutionComplianceService, ConstitutionComplianceService>();
 builder.Services.AddSingleton<IQAReadinessService, QAReadinessService>();
+builder.Services.AddSingleton<IQaAuditorService, QaAuditorService>();
+builder.Services.AddSingleton<IDeliveryReadinessAssessmentService, DeliveryReadinessService>();
 builder.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
 builder.Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
 
