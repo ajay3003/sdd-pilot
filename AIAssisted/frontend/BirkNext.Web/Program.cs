@@ -55,6 +55,10 @@ builder.Services.AddScoped<IScenarioExtractionService>(sp =>
         sp.GetRequiredService<IExtractionRuleEngine>(),
         sp.GetRequiredService<ILogger<ScenarioExtractionService>>()));
 builder.Services.AddSingleton<ISpecComparisonService, SpecComparisonService>();
+builder.Services.AddSingleton<IConstitutionAnalysisService, ConstitutionAnalysisService>();
+builder.Services.AddSingleton<IPlanAnalysisService, PlanAnalysisService>();
+builder.Services.AddSingleton<IArtifactTraceabilityService, ArtifactTraceabilityService>();
+builder.Services.AddSingleton<IConstitutionComplianceService, ConstitutionComplianceService>();
 builder.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
 builder.Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
 

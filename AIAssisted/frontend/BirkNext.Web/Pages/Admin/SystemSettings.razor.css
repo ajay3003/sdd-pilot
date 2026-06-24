@@ -286,26 +286,22 @@
     border-color: var(--clr-border);
 }
 
-/* ── Feature visibility tiers ── */
+/* ── Feature visibility sections ── */
 
-.fv-tiers {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
-    gap: 0 1.75rem;
+.fv-section {
+    margin-top: 1.25rem;
+    padding-top: 1.125rem;
+    border-top: 1px solid var(--clr-border-subtle);
 }
 
-.fv-tier {
-    margin-bottom: 0.875rem;
-}
-
-.fv-tier-header {
+.fv-section-header {
     display: flex;
     align-items: baseline;
     gap: 0.4rem;
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.625rem;
 }
 
-.fv-tier-label {
+.fv-section-label {
     font-size: 0.7rem;
     font-weight: 700;
     color: var(--clr-text-muted);
@@ -313,9 +309,208 @@
     letter-spacing: 0.06em;
 }
 
-.fv-tier-hint {
+.fv-section-hint {
     font-size: 0.7rem;
     color: var(--clr-text-placeholder);
+}
+
+/* Platform section has no top border (it's the first section) */
+.fv-section-platform {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+/* ── Platform feature chips ── */
+
+.fv-platform-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.fv-platform-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    background: var(--clr-surface);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-pill);
+}
+
+.fv-platform-chip-label {
+    font-size: 0.83rem;
+    color: var(--clr-text-body);
+    font-weight: 500;
+}
+
+.fv-platform-chip-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-success);
+    background: var(--clr-success-bg);
+    border: 1px solid var(--clr-success-border);
+    border-radius: var(--radius-pill);
+    padding: 0.1rem 0.45rem;
+    white-space: nowrap;
+}
+
+/* ── Feature sections grid (QA, Implementation, AI, Advanced, Display) ── */
+
+.fv-sections-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0 2rem;
+}
+
+@media (max-width: 960px) {
+    .fv-sections-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .fv-sections-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ── Retired features ── */
+
+.fv-section-retired .fv-section-label {
+    color: var(--clr-text-placeholder);
+}
+
+.fv-retired-note {
+    font-size: 0.8rem;
+    color: var(--clr-text-placeholder);
+    font-style: italic;
+    margin: 0 0 0.625rem;
+    line-height: 1.5;
+}
+
+.fv-retired-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+}
+
+.fv-retired-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.275rem 0.6rem;
+    background: var(--clr-surface);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-pill);
+    opacity: 0.65;
+}
+
+.fv-retired-label {
+    font-size: 0.8rem;
+    color: var(--clr-text-muted);
+    text-decoration: line-through;
+    text-decoration-color: var(--clr-text-placeholder);
+}
+
+.fv-retired-badge {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-placeholder);
+    white-space: nowrap;
+}
+
+/* ── Developer Diagnostics collapsible ── */
+
+.dev-diag-card {
+    padding: 0;
+    overflow: hidden;
+}
+
+.dev-diag-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 1rem 1.25rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    gap: 1rem;
+    border-radius: var(--radius-lg);
+    transition: background-color var(--transition);
+}
+
+.dev-diag-toggle:hover {
+    background: var(--clr-surface);
+}
+
+.dev-diag-toggle-left {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.dev-diag-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--clr-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+}
+
+.dev-diag-subtitle {
+    font-size: 0.8rem;
+    color: var(--clr-text-placeholder);
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.dev-diag-chevron {
+    flex-shrink: 0;
+    color: var(--clr-text-placeholder);
+    transition: transform 0.2s ease;
+}
+
+.dev-diag-chevron-open {
+    transform: rotate(180deg);
+}
+
+.dev-diag-body {
+    padding: 0 1.25rem 1.25rem;
+}
+
+.dev-diag-subgrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--clr-border-subtle);
+}
+
+@media (max-width: 800px) {
+    .dev-diag-subgrid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.dev-diag-section-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--clr-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 0.625rem;
+    padding-bottom: 0.375rem;
+    border-bottom: 1px solid var(--clr-border-subtle);
 }
 
 /* ── Editable fields ── */

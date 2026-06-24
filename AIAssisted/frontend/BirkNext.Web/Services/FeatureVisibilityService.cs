@@ -46,7 +46,11 @@ public class FeatureVisibilityService
     public bool SpecDrift            => _flags.SpecDrift;
     public bool ImplementationReview => _flags.ImplementationReview;
     public bool TaskExplorer         => _flags.TaskExplorer;
-    public bool AiChangeReview       => _flags.AiChangeReview;
+    public bool ConstitutionExplorer => _flags.ConstitutionExplorer;
+    public bool PlanExplorer           => _flags.PlanExplorer;
+    public bool ArtifactTraceability     => _flags.ArtifactTraceability;
+    public bool ConstitutionCompliance   => _flags.ConstitutionCompliance;
+    public bool AiChangeReview           => _flags.AiChangeReview;
     public bool QaReadiness          => _flags.QaReadiness;
     public bool EnableExtractionReview => _flags.EnableExtractionReview;
     public bool EnableArchitectureView => _flags.EnableArchitectureView;
@@ -54,11 +58,11 @@ public class FeatureVisibilityService
 
     // Section-level helpers: show the section header only if at least one child item is visible.
     public bool ShowSectionGettingStarted => RecommendedWorkflow || UserGuide;
-    public bool ShowSectionReview         => Dashboard || SpecificationReview;
+    public bool ShowSectionReview         => Dashboard || SpecificationReview || ConstitutionExplorer || PlanExplorer || TaskExplorer;
     public bool ShowSectionLibrary        => QaArtifactLibrary || CreateTestScenario;
     public bool ShowSectionTraceability   => LegacyTraceabilityNavigationEnabled
                                              && (TraceabilityCoverage || TraceabilitySuggestions || CodeTraceability);
-    public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || TaskExplorer;
+    public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || ArtifactTraceability || ConstitutionCompliance;
     public bool ShowSectionAiReview       => AiChangeReview || QaReadiness;
     public bool ShowSectionAdmin          => AdminSystemSettings;
 

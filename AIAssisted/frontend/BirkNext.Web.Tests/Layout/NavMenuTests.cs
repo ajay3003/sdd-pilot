@@ -51,10 +51,11 @@ public class NavMenuTests : BunitContext
         var cut = Render<NavMenu>();
 
         var navText = cut.Find("nav").TextContent;
-        navText.Should().NotContain("Traceability");
+        // Legacy traceability group items should be hidden when LegacyTraceabilityNavigationEnabled = false
         navText.Should().NotContain("Traceability & Coverage");
         navText.Should().NotContain("Traceability Suggestions");
         navText.Should().NotContain("Code Traceability");
+        // "Artifact Traceability" is a distinct analysis feature and IS expected to show by default
 
         cut.FindAll("a[href='traceability']").Should().BeEmpty();
         cut.FindAll("a[href='traceability/suggestions']").Should().BeEmpty();

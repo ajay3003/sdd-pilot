@@ -23,7 +23,7 @@ public class AdminService
     private static readonly IReadOnlyList<(string Key, string Label)> CoreFeatures =
     [
         ("SpecificationReview",  "Specification Review"),
-        ("QaArtifactLibrary",    "QA Artifact Library"),
+        ("QaArtifactLibrary",    "Spec Explorer"),
         ("TraceabilityCoverage", "Traceability & Coverage"),
         ("ImplementationReview", "Implementation Review"),
         ("TaskExplorer",         "Task Explorer")
@@ -31,15 +31,12 @@ public class AdminService
 
     private static readonly IReadOnlyList<(string Key, string Label)> AdvancedFeatures =
     [
-        ("EnableExtractionReview", "Enable Extraction Review"),
-        ("EnableArchitectureView", "Enable Architecture View"),
+        ("EnableExtractionReview", "Extraction Review"),
+        ("EnableArchitectureView", "Architecture View"),
         ("CreateTestScenario",  "Create Test Scenario"),
         ("LegacyTraceabilityNavigationEnabled", "Legacy Traceability Navigation"),
         ("TraceabilitySuggestions", "Traceability Suggestions"),
         ("CodeTraceability",    "Code Traceability"),
-        ("SpecComparison",      "Spec Comparison"),
-        ("SpecificationDeltas", "Specification Deltas"),
-        ("TaskDeltas",          "Task Deltas"),
         ("ImpactAnalysis",      "Impact Analysis"),
         ("SpecDrift",           "Spec Drift"),
         ("AiChangeReview",      "AI Change Review"),

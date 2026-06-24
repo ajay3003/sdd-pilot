@@ -1,0 +1,1275 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IPlanAnalysisService AnalysisService
+
+<div class="pe-panel">
+
+    @if (_plan is null)
+    {
+        <!-- ── Empty / input state ───────────────────────────────────────── -->
+        <div class="pe-empty-state">
+            <div class="pe-empty-icon" aria-hidden="true">📐</div>
+            <h3 class="pe-empty-title">Plan Explorer</h3>
+            <p class="pe-empty-desc">Transform a plan.md into a navigable view of architecture decisions, risks, implementation phases, constitution gates, and testing strategy. Paste or import a plan file below.</p>
+
+            <div class="pe-input-area">
+                <div class="pe-input-header">
+                    <span class="pe-input-label">plan.md</span>
+                    <span class="pe-input-hint">Supports implementation plans, feature plans, and architecture plans</span>
+                </div>
+                <SpecificationImport
+                    @ref="_importRef"
+                    InputId="pe-file-input"
+                    OnFileImported="OnFileImported"
+                    OnFileRemoved="OnFileRemoved"
+                    IsDisabled="false" />
+                <textarea
+                    class="pe-textarea"
+                    placeholder="Or paste plan.md content here..."
+                    rows="12"
+                    @bind="_localText"></textarea>
+                @if (!string.IsNullOrWhiteSpace(_localText))
+                {
+                    var lineCount = _localText.Split('\n').Length;
+                    <div class="pe-input-footer">
+                        <span class="pe-input-stat">@lineCount lines · @_localText.Length chars</span>
+                        <button class="pe-clear-btn" @onclick="ClearInput">Clear</button>
+                    </div>
+                }
+            </div>
+
+            <button class="pe-build-btn" disabled="@(!CanBuild)" @onclick="BuildPlan">
+                Build Plan Explorer
+            </button>
+        </div>
+    }
+    else
+    {
+        <!-- ── Explorer state ────────────────────────────────────────────── -->
+
+        <!-- Header bar -->
+        <div class="pe-header">
+            <div class="pe-header-left">
+                <span class="pe-header-title">@_plan.Title</span>
+                @if (!string.IsNullOrEmpty(_plan.Status))
+                {
+                    <span class="pe-header-status pe-status-@StatusCssClass(_plan.Status)">@_plan.Status</span>
+                }
+            </div>
+            <div class="pe-header-right">
+                <div class="pe-view-toggle" role="group" aria-label="View mode">
+                    <button class='pe-view-btn @(_tab == "overview"       ? "is-active" : "")' @onclick='() => SetTab("overview")'>Overview</button>
+                    <button class='pe-view-btn @(_tab == "architecture"   ? "is-active" : "")' @onclick='() => SetTab("architecture")'>Architecture @AdrBadge</button>
+                    <button class='pe-view-btn @(_tab == "tech-context"   ? "is-active" : "")' @onclick='() => SetTab("tech-context")'>Technical Context</button>
+                    <button class='pe-view-btn @(_tab == "structure"      ? "is-active" : "")' @onclick='() => SetTab("structure")'>Project Structure</button>
+                    <button class='pe-view-btn @(_tab == "risks"          ? "is-active" : "")' @onclick='() => SetTab("risks")'>Risks @RiskBadge</button>
+                    <button class='pe-view-btn @(_tab == "complexity"     ? "is-active" : "")' @onclick='() => SetTab("complexity")'>Complexity @ComplexityBadge</button>
+                    <button class='pe-view-btn @(_tab == "phases"         ? "is-active" : "")' @onclick='() => SetTab("phases")'>Phases @PhasesBadge</button>
+                    <button class='pe-view-btn @(_tab == "testing"        ? "is-active" : "")' @onclick='() => SetTab("testing")'>Testing @TestingBadge</button>
+                    <button class='pe-view-btn @(_tab == "constitution"   ? "is-active" : "")' @onclick='() => SetTab("constitution")'>Constitution @ConstitutionBadge</button>
+                </div>
+                <button class="pe-reset-btn" @onclick="Reset">← New Plan</button>
+            </div>
+        </div>
+
+        <!-- Search bar -->
+        @if (_tab is "architecture" or "risks" or "complexity" or "constitution" or "phases" or "testing")
+        {
+            <div class="pe-search-bar">
+                <input
+                    type="search"
+                    class="pe-search"
+                    placeholder="@SearchPlaceholder"
+                    value="@_search"
+                    @oninput="HandleSearch"
+                    aria-label="Search plan" />
+                @if (!string.IsNullOrWhiteSpace(_search))
+                {
+                    <span class="pe-search-clear" @onclick="ClearSearch" title="Clear">×</span>
+                    <span class="pe-search-count">@SearchResultCount result@(SearchResultCount != 1 ? "s" : "")</span>
+                }
+            </div>
+        }
+
+        <!-- Risk severity + constraint type filter (risks tab) -->
+        @if (_tab == "risks")
+        {
+            <div class="pe-filter-strip" role="group" aria-label="Filter by severity">
+                <button class='pe-filter-chip @(_riskFilter is null ? "is-active" : "")' @onclick='() => SetRiskFilter(null)'>All Risks @(_plan.Risks.Count > 0 ? $"({_plan.Risks.Count})" : "")</button>
+                @if (_plan.Health.CriticalRisks > 0)
+                {
+                    <button class='pe-filter-chip pe-fc-critical @(_riskFilter == RiskSeverity.Critical ? "is-active" : "")' @onclick='() => SetRiskFilter(RiskSeverity.Critical)'>Critical (@_plan.Health.CriticalRisks)</button>
+                }
+                @if (_plan.Health.HighRisks > 0)
+                {
+                    <button class='pe-filter-chip pe-fc-high @(_riskFilter == RiskSeverity.High ? "is-active" : "")' @onclick='() => SetRiskFilter(RiskSeverity.High)'>High (@_plan.Health.HighRisks)</button>
+                }
+                @if (_plan.Health.MediumRisks > 0)
+                {
+                    <button class='pe-filter-chip pe-fc-medium @(_riskFilter == RiskSeverity.Medium ? "is-active" : "")' @onclick='() => SetRiskFilter(RiskSeverity.Medium)'>Medium (@_plan.Health.MediumRisks)</button>
+                }
+                @if (_plan.Health.LowRisks > 0)
+                {
+                    <button class='pe-filter-chip pe-fc-low @(_riskFilter == RiskSeverity.Low ? "is-active" : "")' @onclick='() => SetRiskFilter(RiskSeverity.Low)'>Low (@_plan.Health.LowRisks)</button>
+                }
+            </div>
+        }
+
+        <!-- Complexity level filter -->
+        @if (_tab == "complexity")
+        {
+            <div class="pe-filter-strip" role="group" aria-label="Filter by complexity">
+                <button class='pe-filter-chip @(_complexityFilter is null ? "is-active" : "")' @onclick='() => SetComplexityFilter(null)'>All</button>
+                <button class='pe-filter-chip pe-fc-critical @(_complexityFilter == ComplexityLevel.VeryHigh ? "is-active" : "")' @onclick='() => SetComplexityFilter(ComplexityLevel.VeryHigh)'>Very High</button>
+                <button class='pe-filter-chip pe-fc-high @(_complexityFilter == ComplexityLevel.High ? "is-active" : "")' @onclick='() => SetComplexityFilter(ComplexityLevel.High)'>High</button>
+                <button class='pe-filter-chip pe-fc-medium @(_complexityFilter == ComplexityLevel.Medium ? "is-active" : "")' @onclick='() => SetComplexityFilter(ComplexityLevel.Medium)'>Medium</button>
+                <button class='pe-filter-chip pe-fc-low @(_complexityFilter == ComplexityLevel.Low ? "is-active" : "")' @onclick='() => SetComplexityFilter(ComplexityLevel.Low)'>Low</button>
+            </div>
+        }
+
+        <!-- Constitution gate + check item filters -->
+        @if (_tab == "constitution")
+        {
+            <!-- Gate status filter (shown only when gates exist) -->
+            @if (_plan.Gates.Count > 0)
+            {
+                <div class="pe-filter-strip" role="group" aria-label="Filter gates by status">
+                    <button class='pe-filter-chip @(_gateFilter is null ? "is-active" : "")' @onclick='() => SetGateFilter(null)'>All Gates (@_plan.Gates.Count)</button>
+                    @if (_plan.Health.PassedGates > 0)
+                    {
+                        <button class='pe-filter-chip pe-fc-pass @(_gateFilter == PlanGateStatus.Pass ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Pass)'>Pass (@_plan.Health.PassedGates)</button>
+                    }
+                    @if (_plan.Health.WarningGates > 0)
+                    {
+                        <button class='pe-filter-chip pe-fc-warning @(_gateFilter == PlanGateStatus.Warning ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Warning)'>Warning (@_plan.Health.WarningGates)</button>
+                    }
+                    @if (_plan.Health.FailedGates > 0)
+                    {
+                        <button class='pe-filter-chip pe-fc-fail @(_gateFilter == PlanGateStatus.Fail ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Fail)'>Fail (@_plan.Health.FailedGates)</button>
+                    }
+                </div>
+            }
+            <!-- Check item status filter -->
+            @if (_plan.ConstitutionCheckItems.Count > 0)
+            {
+                <div class="pe-filter-strip" role="group" aria-label="Filter check items by status">
+                    <button class='pe-filter-chip @(_checkFilter is null ? "is-active" : "")' @onclick='() => SetCheckFilter(null)'>All Items</button>
+                    <button class='pe-filter-chip pe-fc-critical @(_checkFilter == ConstitutionCheckStatus.NonCompliant ? "is-active" : "")' @onclick='() => SetCheckFilter(ConstitutionCheckStatus.NonCompliant)'>Non-Compliant</button>
+                    <button class='pe-filter-chip pe-fc-medium @(_checkFilter == ConstitutionCheckStatus.NeedsReview ? "is-active" : "")' @onclick='() => SetCheckFilter(ConstitutionCheckStatus.NeedsReview)'>Needs Review</button>
+                    <button class='pe-filter-chip pe-fc-low @(_checkFilter == ConstitutionCheckStatus.Compliant ? "is-active" : "")' @onclick='() => SetCheckFilter(ConstitutionCheckStatus.Compliant)'>Compliant</button>
+                    <button class='pe-filter-chip @(_checkFilter == ConstitutionCheckStatus.NotApplicable ? "is-active" : "")' @onclick='() => SetCheckFilter(ConstitutionCheckStatus.NotApplicable)'>N/A</button>
+                </div>
+            }
+        }
+
+        <!-- Tab content -->
+        <div class="pe-tab-body">
+
+            @if (_tab == "overview")
+            {
+                <!-- ── Overview ──────────────────────────────────────────── -->
+                <div class="pe-overview">
+
+                    <!-- Summary block -->
+                    @if (!string.IsNullOrEmpty(_plan.Summary))
+                    {
+                        <div class="pe-summary-block">
+                            <div class="pe-summary-kicker">Plan Summary</div>
+                            <p class="pe-summary-text">@_plan.Summary</p>
+                        </div>
+                    }
+
+                    <!-- Metadata card -->
+                    <div class="pe-meta-card">
+                        <div class="pe-meta-grid">
+                            @if (!string.IsNullOrEmpty(_plan.FeatureName))
+                            {
+                                <div class="pe-meta-item">
+                                    <div class="pe-meta-label">Feature</div>
+                                    <div class="pe-meta-value">@_plan.FeatureName</div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_plan.Status))
+                            {
+                                <div class="pe-meta-item">
+                                    <div class="pe-meta-label">Status</div>
+                                    <div class="pe-meta-value">@_plan.Status</div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_plan.Branch))
+                            {
+                                <div class="pe-meta-item">
+                                    <div class="pe-meta-label">Branch</div>
+                                    <div class="pe-meta-value">@_plan.Branch</div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_plan.Author))
+                            {
+                                <div class="pe-meta-item">
+                                    <div class="pe-meta-label">Author</div>
+                                    <div class="pe-meta-value">@_plan.Author</div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_plan.Date))
+                            {
+                                <div class="pe-meta-item">
+                                    <div class="pe-meta-label">Date</div>
+                                    <div class="pe-meta-value">@_plan.Date</div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_plan.CreatedDate))
+                            {
+                                <div class="pe-meta-item">
+                                    <div class="pe-meta-label">Created</div>
+                                    <div class="pe-meta-value">@_plan.CreatedDate</div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_plan.LastUpdated))
+                            {
+                                <div class="pe-meta-item">
+                                    <div class="pe-meta-label">Last Updated</div>
+                                    <div class="pe-meta-value">@_plan.LastUpdated</div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_plan.SpecLink))
+                            {
+                                <div class="pe-meta-item">
+                                    <div class="pe-meta-label">Spec</div>
+                                    <div class="pe-meta-value">@_plan.SpecLink</div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_plan.InputSource))
+                            {
+                                <div class="pe-meta-item">
+                                    <div class="pe-meta-label">Input Source</div>
+                                    <div class="pe-meta-value">@_plan.InputSource</div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Health cards -->
+                    <div class="pe-health-row">
+                        @if (_plan.Health.TotalRisks > 0)
+                        {
+                            <div class="pe-health-card @(_plan.Health.CriticalRisks > 0 ? "pe-hcard-critical" : _plan.Health.HighRisks > 0 ? "pe-hcard-high" : "pe-hcard-medium")">
+                                <div class="pe-health-value">@_plan.Health.TotalRisks</div>
+                                <div class="pe-health-label">Risks</div>
+                            </div>
+                        }
+                        @if (_plan.Health.CriticalRisks > 0)
+                        {
+                            <div class="pe-health-card pe-hcard-critical">
+                                <div class="pe-health-value">@_plan.Health.CriticalRisks</div>
+                                <div class="pe-health-label">Critical</div>
+                            </div>
+                        }
+                        @if (_plan.Health.HighRisks > 0)
+                        {
+                            <div class="pe-health-card pe-hcard-high">
+                                <div class="pe-health-value">@_plan.Health.HighRisks</div>
+                                <div class="pe-health-label">High Risk</div>
+                            </div>
+                        }
+                        @if (_plan.Health.TotalArchitectureDecisions > 0)
+                        {
+                            <div class="pe-health-card pe-hcard-adr">
+                                <div class="pe-health-value">@_plan.Health.TotalArchitectureDecisions</div>
+                                <div class="pe-health-label">ADRs</div>
+                            </div>
+                        }
+                        @if (_plan.Health.TotalComplexityItems > 0)
+                        {
+                            <div class="pe-health-card @(_plan.Health.HighComplexityItems > 0 ? "pe-hcard-high" : "pe-hcard-medium")">
+                                <div class="pe-health-value">@_plan.Health.TotalComplexityItems</div>
+                                <div class="pe-health-label">Complexity</div>
+                            </div>
+                        }
+                        @if (_plan.Health.TotalPhases > 0)
+                        {
+                            <div class="pe-health-card pe-hcard-adr">
+                                <div class="pe-health-value">@_plan.Health.TotalPhases</div>
+                                <div class="pe-health-label">Phases</div>
+                            </div>
+                        }
+                        @if (_plan.Health.TotalConstitutionGates > 0)
+                        {
+                            <div class="pe-health-card @(_plan.Health.FailedGates > 0 ? "pe-hcard-critical" : _plan.Health.WarningGates > 0 ? "pe-hcard-medium" : "pe-hcard-ok")">
+                                <div class="pe-health-value">@_plan.Health.TotalConstitutionGates</div>
+                                <div class="pe-health-label">Gates</div>
+                            </div>
+                        }
+                        @if (_plan.Health.TotalDependencies > 0)
+                        {
+                            <div class="pe-health-card pe-hcard-dep">
+                                <div class="pe-health-value">@_plan.Health.TotalDependencies</div>
+                                <div class="pe-health-label">Dependencies</div>
+                            </div>
+                        }
+                        @if (_plan.Health.TotalMilestones > 0)
+                        {
+                            <div class="pe-health-card pe-hcard-milestone">
+                                <div class="pe-health-value">@_plan.Health.TotalMilestones</div>
+                                <div class="pe-health-label">Milestones</div>
+                            </div>
+                        }
+                        @if (_plan.Health.TotalConstitutionCheckItems > 0)
+                        {
+                            <div class="pe-health-card @(_plan.Health.NonCompliantItems > 0 ? "pe-hcard-critical" : _plan.Health.NeedsReviewItems > 0 ? "pe-hcard-medium" : "pe-hcard-ok")">
+                                <div class="pe-health-value">@_plan.Health.TotalConstitutionCheckItems</div>
+                                <div class="pe-health-label">Constitution</div>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Health indicators -->
+                    @if (_plan.Health.Indicators.Count > 0)
+                    {
+                        <div class="pe-health-indicators">
+                            @foreach (var ind in _plan.Health.Indicators)
+                            {
+                                <div class="pe-indicator pe-indicator-@ind.Level.ToString().ToLowerInvariant()">
+                                    <span class="pe-indicator-icon" aria-hidden="true">@ind.Icon</span>
+                                    <span class="pe-indicator-message">@ind.Message</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- Dependencies & Milestones summary -->
+                    @if (_plan.Dependencies.Count > 0 || _plan.Milestones.Count > 0)
+                    {
+                        <div class="pe-overview-secondary">
+                            @if (_plan.Dependencies.Count > 0)
+                            {
+                                <div class="pe-overview-card">
+                                    <div class="pe-overview-card-header">
+                                        <span class="pe-overview-card-title">Dependencies</span>
+                                        <span class="pe-overview-card-count">@_plan.Dependencies.Count</span>
+                                    </div>
+                                    <ul class="pe-overview-list">
+                                        @foreach (var dep in _plan.Dependencies.Take(6))
+                                        {
+                                            <li>
+                                                <span class="pe-dep-name">@dep.Name</span>
+                                                @if (!string.IsNullOrEmpty(dep.Version))
+                                                { <span class="pe-dep-version">@dep.Version</span> }
+                                                @if (dep.IsExternal)
+                                                { <span class="pe-dep-badge">External</span> }
+                                            </li>
+                                        }
+                                        @if (_plan.Dependencies.Count > 6)
+                                        { <li class="pe-overview-more">+@(_plan.Dependencies.Count - 6) more</li> }
+                                    </ul>
+                                </div>
+                            }
+                            @if (_plan.Milestones.Count > 0)
+                            {
+                                <div class="pe-overview-card">
+                                    <div class="pe-overview-card-header">
+                                        <span class="pe-overview-card-title">Milestones</span>
+                                        <span class="pe-overview-card-count">@_plan.Milestones.Count</span>
+                                    </div>
+                                    <ul class="pe-overview-list">
+                                        @foreach (var ms in _plan.Milestones)
+                                        {
+                                            <li>
+                                                <span class="pe-ms-title">@ms.Title</span>
+                                                @if (!string.IsNullOrEmpty(ms.TargetDate))
+                                                { <span class="pe-ms-date">@ms.TargetDate</span> }
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- Nav cards -->
+                    <div class="pe-nav-cards">
+                        @if (_plan.ArchitectureDecisions.Count > 0)
+                        {
+                            <button class="pe-nav-card" @onclick='() => SetTab("architecture")'>
+                                <div class="pe-nav-card-count">@_plan.ArchitectureDecisions.Count</div>
+                                <div class="pe-nav-card-label">Architecture Decisions</div>
+                                <div class="pe-nav-card-arrow">→</div>
+                            </button>
+                        }
+                        @if (_plan.Phases.Count > 0)
+                        {
+                            <button class="pe-nav-card" @onclick='() => SetTab("phases")'>
+                                <div class="pe-nav-card-count">@_plan.Phases.Count</div>
+                                <div class="pe-nav-card-label">Implementation Phases</div>
+                                <div class="pe-nav-card-arrow">→</div>
+                            </button>
+                        }
+                        @if (_plan.Risks.Count > 0)
+                        {
+                            <button class="pe-nav-card @(_plan.Health.CriticalRisks > 0 || _plan.Health.HighRisks > 0 ? "pe-nav-card-risk" : "")" @onclick='() => SetTab("risks")'>
+                                <div class="pe-nav-card-count">@_plan.Risks.Count</div>
+                                <div class="pe-nav-card-label">Risks</div>
+                                <div class="pe-nav-card-arrow">→</div>
+                            </button>
+                        }
+                        @if (_plan.ComplexityItems.Count > 0)
+                        {
+                            <button class="pe-nav-card" @onclick='() => SetTab("complexity")'>
+                                <div class="pe-nav-card-count">@_plan.ComplexityItems.Count</div>
+                                <div class="pe-nav-card-label">Complexity Items</div>
+                                <div class="pe-nav-card-arrow">→</div>
+                            </button>
+                        }
+                        @if (_plan.Gates.Count > 0 || _plan.ConstitutionCheckItems.Count > 0)
+                        {
+                            var constitutionCount = _plan.Gates.Count + _plan.ConstitutionCheckItems.Count;
+                            <button class="pe-nav-card" @onclick='() => SetTab("constitution")'>
+                                <div class="pe-nav-card-count">@constitutionCount</div>
+                                <div class="pe-nav-card-label">Constitution Gates</div>
+                                <div class="pe-nav-card-arrow">→</div>
+                            </button>
+                        }
+                    </div>
+
+                </div>
+            }
+
+            @if (_tab == "architecture")
+            {
+                <!-- ── Architecture Tab ───────────────────────────────────── -->
+                <div class="pe-architecture">
+                    @foreach (var sec in _plan.Sections.Where(s => s.SectionType == PlanSectionType.Architecture))
+                    {
+                        @RenderSectionBlocks(sec)
+                    }
+
+                    @if (!VisibleDecisions.Any() && !_plan.Sections.Any(s => s.SectionType == PlanSectionType.Architecture))
+                    {
+                        <div class="pe-empty-tab">
+                            @if (!string.IsNullOrWhiteSpace(_search))
+                            { <span>No architecture decisions match "<strong>@_search</strong>"</span> }
+                            else
+                            { <span>No architecture decisions found. Add an <code>## Architecture</code> section with <code>### Decision Title</code> or <code>### ADR-01: Title</code> headings.</span> }
+                        </div>
+                    }
+                    else if (VisibleDecisions.Any())
+                    {
+                        <div class="pe-adr-section">
+                            <div class="pe-section-kicker">Architecture Decision Records</div>
+                            @foreach (var adr in VisibleDecisions)
+                            {
+                                var isExpanded = _expanded.Contains(adr.NodeId);
+                                <div class="pe-adr-card @(isExpanded ? "is-expanded" : "")">
+                                    <button class="pe-adr-header" @onclick="() => Toggle(adr.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
+                                        <div class="pe-adr-header-left">
+                                            @if (!string.IsNullOrEmpty(adr.Id))
+                                            { <span class="pe-adr-id">@adr.Id</span> }
+                                            <span class="pe-adr-title">@adr.Title</span>
+                                        </div>
+                                        <span class="pe-expand-icon" aria-hidden="true">@(isExpanded ? "▾" : "▸")</span>
+                                    </button>
+                                    @if (isExpanded)
+                                    {
+                                        <div class="pe-adr-body">
+                                            @if (!string.IsNullOrEmpty(adr.Context))
+                                            {
+                                                <div class="pe-adr-section-block">
+                                                    <div class="pe-adr-section-label">Context</div>
+                                                    <p class="pe-adr-text">@adr.Context</p>
+                                                </div>
+                                            }
+                                            @if (!string.IsNullOrEmpty(adr.Decision))
+                                            {
+                                                <div class="pe-adr-section-block">
+                                                    <div class="pe-adr-section-label">Decision</div>
+                                                    <p class="pe-adr-text">@adr.Decision</p>
+                                                </div>
+                                            }
+                                            @if (!string.IsNullOrEmpty(adr.Rationale))
+                                            {
+                                                <div class="pe-adr-section-block">
+                                                    <div class="pe-adr-section-label">Rationale</div>
+                                                    <p class="pe-adr-text">@adr.Rationale</p>
+                                                </div>
+                                            }
+                                            @if (adr.Consequences.Count > 0)
+                                            {
+                                                <div class="pe-adr-section-block">
+                                                    <div class="pe-adr-section-label">Consequences</div>
+                                                    <ul class="pe-list">
+                                                        @foreach (var c in adr.Consequences) { <li>@c</li> }
+                                                    </ul>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (_tab == "tech-context")
+            {
+                <!-- ── Technical Context Tab ──────────────────────────────── -->
+                <div class="pe-tech-context">
+                    @{
+                        var techSections = _plan.Sections
+                            .Where(s => s.SectionType == PlanSectionType.TechnicalContext).ToList();
+                    }
+                    @if (techSections.Count == 0)
+                    {
+                        <div class="pe-empty-tab">
+                            <span>No technical context section found. Add a <code>## Technical Context</code> section to your plan.md.</span>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var sec in techSections)
+                        {
+                            @RenderSectionBlocks(sec)
+                        }
+                    }
+                </div>
+            }
+
+            @if (_tab == "structure")
+            {
+                <!-- ── Project Structure Tab ──────────────────────────────── -->
+                <div class="pe-structure">
+                    @{
+                        var structureSections = _plan.Sections
+                            .Where(s => s.SectionType == PlanSectionType.ProjectStructure).ToList();
+                    }
+                    @if (structureSections.Count == 0)
+                    {
+                        <div class="pe-empty-tab">
+                            <span>No project structure section found. Add a <code>## Project Structure</code> section to your plan.md.</span>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var sec in structureSections)
+                        {
+                            @RenderSectionBlocks(sec)
+                        }
+                    }
+                </div>
+            }
+
+            @if (_tab == "risks")
+            {
+                <!-- ── Risks Tab ──────────────────────────────────────────── -->
+                <div class="pe-risks">
+                    @{
+                        var visibleRisks = VisibleRisks.ToList();
+                        var riskGrouped = visibleRisks
+                            .GroupBy(r => r.Severity)
+                            .OrderByDescending(g => g.Key)
+                            .ToList();
+                    }
+                    @if (visibleRisks.Count == 0 && _plan.Constraints.Count == 0)
+                    {
+                        <div class="pe-empty-tab">
+                            @if (!string.IsNullOrWhiteSpace(_search) || _riskFilter is not null)
+                            { <span>No risks match the current filter.</span> }
+                            else
+                            { <span>No risks found. Add a <code>## Risks</code> section with <code>### High Risk: Title</code> items.</span> }
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var group in riskGrouped)
+                        {
+                            <div class="pe-risk-group">
+                                <div class="pe-risk-group-header pe-severity-header-@group.Key.ToString().ToLowerInvariant()">
+                                    <span class="pe-severity-dot pe-dot-@group.Key.ToString().ToLowerInvariant()" aria-hidden="true"></span>
+                                    @group.Key Risk (@group.Count())
+                                </div>
+                                @foreach (var risk in group)
+                                {
+                                    var isExpanded = _expanded.Contains(risk.NodeId);
+                                    <div class="pe-risk-card pe-risk-@risk.Severity.ToString().ToLowerInvariant() @(isExpanded ? "is-expanded" : "")">
+                                        <button class="pe-risk-header" @onclick="() => Toggle(risk.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
+                                            <div class="pe-risk-header-left">
+                                                <span class="pe-severity-badge pe-badge-@risk.Severity.ToString().ToLowerInvariant()">@risk.Severity</span>
+                                                <span class="pe-risk-title">@risk.Title</span>
+                                                @if (!string.IsNullOrEmpty(risk.Area))
+                                                { <span class="pe-risk-area">@risk.Area</span> }
+                                            </div>
+                                            <span class="pe-expand-icon" aria-hidden="true">@(isExpanded ? "▾" : "▸")</span>
+                                        </button>
+                                        @if (isExpanded)
+                                        {
+                                            <div class="pe-risk-body">
+                                                @if (!string.IsNullOrEmpty(risk.Description))
+                                                { <p class="pe-risk-desc">@risk.Description</p> }
+                                                @if (!string.IsNullOrEmpty(risk.Mitigation))
+                                                {
+                                                    <div class="pe-risk-mitigation">
+                                                        <span class="pe-risk-mitigation-label">Mitigation</span>
+                                                        <span class="pe-risk-mitigation-text">@risk.Mitigation</span>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <!-- Constraints & Performance Goals -->
+                        @if (_plan.Constraints.Count > 0 && string.IsNullOrWhiteSpace(_search) && _riskFilter is null)
+                        {
+                            <div class="pe-constraints">
+                                <div class="pe-constraints-section-header">Constraints &amp; Performance Goals</div>
+                                @{
+                                    var constraintGrouped = _plan.Constraints
+                                        .GroupBy(c => c.ConstraintType)
+                                        .OrderBy(g => (int)g.Key)
+                                        .ToList();
+                                }
+                                @foreach (var cgroup in constraintGrouped)
+                                {
+                                    <div class="pe-constraint-group">
+                                        @foreach (var constraint in cgroup)
+                                        {
+                                            <div class="pe-constraint-card pe-ctype-@ConstraintTypeCss(constraint.ConstraintType)">
+                                                <span class="pe-constraint-type-badge pe-cbadge-@ConstraintTypeCss(constraint.ConstraintType)">@ConstraintTypeLabel(constraint.ConstraintType)</span>
+                                                <div class="pe-constraint-body">
+                                                    <div class="pe-constraint-title">@constraint.Title</div>
+                                                    @if (!string.IsNullOrEmpty(constraint.Description))
+                                                    { <p class="pe-constraint-desc">@constraint.Description</p> }
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            @if (_tab == "complexity")
+            {
+                <!-- ── Complexity Tab ─────────────────────────────────────── -->
+                <div class="pe-complexity">
+                    @if (!VisibleComplexity.Any())
+                    {
+                        <div class="pe-empty-tab">
+                            @if (!string.IsNullOrWhiteSpace(_search) || _complexityFilter is not null)
+                            { <span>No complexity items match the current filter.</span> }
+                            else
+                            { <span>No complexity items found. Add a <code>## Complexity</code> section to your plan.md.</span> }
+                        </div>
+                    }
+                    else
+                    {
+                        @if (!_plan.Sections.Any(s => s.SectionType == PlanSectionType.Complexity))
+                        {
+                            <div class="pe-auto-generated-notice">
+                                <span class="pe-auto-generated-icon" aria-hidden="true">✦</span>
+                                Auto-generated from plan analysis — no dedicated Complexity section found.
+                            </div>
+                        }
+                        @foreach (var group in VisibleComplexity.GroupBy(c => c.Level).OrderByDescending(g => g.Key))
+                        {
+                            <div class="pe-complexity-group">
+                                <div class="pe-complexity-group-header pe-complexity-header-@group.Key.ToString().ToLowerInvariant()">
+                                    @ComplexityLevelLabel(group.Key) Complexity (@group.Count())
+                                </div>
+                                @foreach (var item in group)
+                                {
+                                    var isExpanded = _expanded.Contains(item.NodeId);
+                                    <div class="pe-complexity-card pe-complexity-@item.Level.ToString().ToLowerInvariant() @(isExpanded ? "is-expanded" : "")">
+                                        <button class="pe-complexity-header" @onclick="() => Toggle(item.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
+                                            <div class="pe-complexity-header-left">
+                                                <span class="pe-complexity-badge pe-cbadge-@item.Level.ToString().ToLowerInvariant()">@ComplexityLevelLabel(item.Level)</span>
+                                                <span class="pe-complexity-area">@item.Area</span>
+                                            </div>
+                                            <span class="pe-expand-icon" aria-hidden="true">@(isExpanded ? "▾" : "▸")</span>
+                                        </button>
+                                        @if (isExpanded)
+                                        {
+                                            <div class="pe-complexity-body">
+                                                @if (!string.IsNullOrEmpty(item.Notes))
+                                                { <p class="pe-complexity-notes">@item.Notes</p> }
+                                                @if (item.Factors.Count > 0)
+                                                {
+                                                    <div class="pe-complexity-factors">
+                                                        <div class="pe-complexity-factors-label">Contributing Factors</div>
+                                                        <ul class="pe-list">
+                                                            @foreach (var f in item.Factors) { <li>@f</li> }
+                                                        </ul>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            @if (_tab == "phases")
+            {
+                <!-- ── Implementation Phases Tab ──────────────────────────── -->
+                <div class="pe-phases">
+                    @{
+                        var visiblePhases = VisiblePhases.ToList();
+                    }
+                    @if (visiblePhases.Count == 0)
+                    {
+                        <div class="pe-empty-tab">
+                            @if (!string.IsNullOrWhiteSpace(_search))
+                            { <span>No phases match "<strong>@_search</strong>"</span> }
+                            else
+                            { <span>No implementation phases found. Add an <code>## Implementation</code> section with <code>### Phase 1: Title</code> headings.</span> }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="pe-phase-timeline">
+                            @foreach (var phase in visiblePhases)
+                            {
+                                var isExpanded = _expanded.Contains(phase.NodeId);
+                                var phaseClass = phase.PhaseNumber == 0 ? "is-pre" : phase.PhaseNumber == 99 ? "is-post" : string.Empty;
+                                var phaseLabel = phase.PhaseNumber == 0 ? "Pre" : phase.PhaseNumber == 99 ? "Post" : $"P{phase.PhaseNumber}";
+                                <div class="pe-phase-item @phaseClass @(isExpanded ? "is-expanded" : "")">
+                                    <div class="pe-phase-node">
+                                        <span class="pe-phase-number">@phaseLabel</span>
+                                    </div>
+                                    <div class="pe-phase-card">
+                                        <button class="pe-phase-header" @onclick="() => Toggle(phase.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
+                                            <div class="pe-phase-header-left">
+                                                <span class="pe-phase-label">@phaseLabel</span>
+                                                <span class="pe-phase-title-text">@phase.Title</span>
+                                            </div>
+                                            <div style="display:flex;align-items:center;gap:.5rem;">
+                                                @if (phase.Tasks.Count > 0)
+                                                { <span class="pe-phase-task-count">@phase.Tasks.Count task@(phase.Tasks.Count != 1 ? "s" : "")</span> }
+                                                <span class="pe-expand-icon" aria-hidden="true">@(isExpanded ? "▾" : "▸")</span>
+                                            </div>
+                                        </button>
+                                        @if (isExpanded)
+                                        {
+                                            <div class="pe-phase-body">
+                                                @if (!string.IsNullOrEmpty(phase.Description))
+                                                { <p class="pe-adr-text">@phase.Description</p> }
+                                                @if (phase.Tasks.Count > 0)
+                                                {
+                                                    <div>
+                                                        <div class="pe-phase-section-label">Tasks</div>
+                                                        <ul class="pe-phase-task-list">
+                                                            @foreach (var task in phase.Tasks) { <li>@task</li> }
+                                                        </ul>
+                                                    </div>
+                                                }
+                                                @if (phase.Checks.Count > 0)
+                                                {
+                                                    <div class="pe-phase-checks">
+                                                        <div class="pe-phase-section-label">Checks / Gates</div>
+                                                        <ul class="pe-phase-check-list">
+                                                            @foreach (var check in phase.Checks) { <li>@check</li> }
+                                                        </ul>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (_tab == "testing")
+            {
+                <!-- ── Testing Tab ────────────────────────────────────────── -->
+                <div class="pe-testing">
+                    @{
+                        var testing = _plan.TestingInfo;
+                    }
+                    @if (testing is null)
+                    {
+                        <div class="pe-empty-tab">
+                            <span>No testing section found. Add a <code>## Testing</code> section to your plan.md.</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <!-- Frameworks -->
+                        @if (testing.Frameworks.Count > 0)
+                        {
+                            <div class="pe-testing-frameworks">
+                                <div class="pe-testing-section-title" style="width:100%;margin-bottom:0;">Frameworks &amp; Libraries</div>
+                                @foreach (var fw in testing.Frameworks)
+                                {
+                                    <span class="pe-framework-chip">@fw</span>
+                                }
+                            </div>
+                        }
+
+                        <!-- Gate refs -->
+                        @if (testing.GateRefs.Count > 0)
+                        {
+                            <div class="pe-testing-section">
+                                <div class="pe-testing-section-title">Constitution Gate References</div>
+                                <div class="pe-testing-gate-refs">
+                                    @foreach (var ref_ in testing.GateRefs)
+                                    {
+                                        <span class="pe-testing-gate-ref">@ref_</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Test folders -->
+                        @if (testing.TestFolders.Count > 0)
+                        {
+                            <div class="pe-testing-section">
+                                <div class="pe-testing-section-title">Test Paths</div>
+                                <div class="pe-testing-folders">
+                                    @foreach (var folder in testing.TestFolders)
+                                    {
+                                        <span class="pe-testing-folder">📁 @folder</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Test classes -->
+                        @if (testing.TestClasses.Count > 0)
+                        {
+                            <div class="pe-testing-section">
+                                <div class="pe-testing-section-title">Test Classes Detected</div>
+                                <div class="pe-testing-folders">
+                                    @foreach (var cls in testing.TestClasses)
+                                    {
+                                        <span class="pe-testing-folder">🔬 @cls</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Free-form blocks -->
+                        @foreach (var block in testing.Blocks.Where(b => b.HasContent || b.SubHeading is not null))
+                        {
+                            <div class="pe-testing-section">
+                                @if (!string.IsNullOrEmpty(block.SubHeading))
+                                {
+                                    <div class="pe-testing-section-title">@block.SubHeading</div>
+                                }
+                                @if (block.IsCodeBlock)
+                                {
+                                    <pre class="pe-code-block"><code>@block.CodeBlock</code></pre>
+                                }
+                                else
+                                {
+                                    @if (!string.IsNullOrEmpty(block.Paragraph))
+                                    { <p class="pe-section-para">@block.Paragraph</p> }
+                                    @if (block.BulletPoints.Count > 0)
+                                    {
+                                        <ul class="pe-section-list">
+                                            @foreach (var pt in block.BulletPoints) { <li>@pt</li> }
+                                        </ul>
+                                    }
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            @if (_tab == "constitution")
+            {
+                <!-- ── Constitution Check Tab ─────────────────────────────── -->
+                <div class="pe-constitution-check">
+
+                    <!-- Gate table (table-based, rendered first) -->
+                    @if (VisibleGates.Any())
+                    {
+                        <div class="pe-gate-table-wrap">
+                            <table class="pe-gate-table" aria-label="Constitution gates">
+                                <thead>
+                                    <tr>
+                                        <th>Gate</th>
+                                        <th>Rule</th>
+                                        <th>Status</th>
+                                        <th>Evidence</th>
+                                        <th>Notes</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var gate in VisibleGates)
+                                    {
+                                        <tr>
+                                            <td class="pe-gate-label">@gate.Gate</td>
+                                            <td class="pe-gate-rule">@(string.IsNullOrEmpty(gate.RuleId) ? gate.Principle : gate.RuleId)</td>
+                                            <td>
+                                                <span class="pe-gate-status @GateStatusCss(gate.Status)">
+                                                    @GateStatusIcon(gate.Status) @GateStatusLabel(gate.Status)
+                                                </span>
+                                            </td>
+                                            <td class="pe-gate-evidence">@(gate.Evidence ?? string.Empty)</td>
+                                            <td class="pe-gate-notes">@(gate.Notes ?? string.Empty)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
+                    <!-- Heading-based check items -->
+                    @if (!VisibleChecks.Any() && !VisibleGates.Any())
+                    {
+                        <div class="pe-empty-tab">
+                            @if (!string.IsNullOrWhiteSpace(_search) || _checkFilter is not null || _gateFilter is not null)
+                            { <span>No constitution check items match the current filter.</span> }
+                            else
+                            { <span>No constitution check items found. Add a <code>## Constitution Check</code> section with rule IDs (PP-01, PS-07) or a gate table.</span> }
+                        </div>
+                    }
+                    else if (VisibleChecks.Any())
+                    {
+                        @if (VisibleGates.Any())
+                        {
+                            <div class="pe-constraints-section-header">Detailed Check Items</div>
+                        }
+                        @foreach (var group in VisibleChecks.GroupBy(c => c.Status).OrderBy(g => (int)g.Key))
+                        {
+                            <div class="pe-check-group">
+                                <div class="pe-check-group-header pe-check-header-@CheckStatusCss(group.Key)">
+                                    @CheckStatusLabel(group.Key) (@group.Count())
+                                </div>
+                                @foreach (var item in group)
+                                {
+                                    var isExpanded = _expanded.Contains(item.NodeId);
+                                    <div class="pe-check-card pe-check-@CheckStatusCss(item.Status) @(isExpanded ? "is-expanded" : "")">
+                                        <button class="pe-check-header" @onclick="() => Toggle(item.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
+                                            <div class="pe-check-header-left">
+                                                @if (!string.IsNullOrEmpty(item.RuleId))
+                                                { <span class="pe-rule-id-badge">@item.RuleId</span> }
+                                                <span class="pe-check-title">@item.Title</span>
+                                            </div>
+                                            <div class="pe-check-header-right">
+                                                <span class="pe-check-status-badge pe-check-badge-@CheckStatusCss(item.Status)">@CheckStatusLabel(item.Status)</span>
+                                                <span class="pe-expand-icon" aria-hidden="true">@(isExpanded ? "▾" : "▸")</span>
+                                            </div>
+                                        </button>
+                                        @if (isExpanded && !string.IsNullOrEmpty(item.Notes))
+                                        {
+                                            <div class="pe-check-body">
+                                                <p class="pe-check-notes">@item.Notes</p>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+
+                </div>
+            }
+
+        </div>
+    }
+
+</div>
+
+@code {
+    [Parameter] public string PlanText { get; set; } = string.Empty;
+    [Parameter] public string? InitialView { get; set; }
+    [Parameter] public EventCallback<string> OnBuilt { get; set; }
+
+    private PlanDocument? _plan;
+    private string _localText = string.Empty;
+    private string _tab = "overview";
+    private string _search = string.Empty;
+    private HashSet<string> _expanded = [];
+    private SpecificationImport? _importRef;
+
+    private RiskSeverity? _riskFilter;
+    private ComplexityLevel? _complexityFilter;
+    private ConstitutionCheckStatus? _checkFilter;
+    private PlanGateStatus? _gateFilter;
+
+    private bool CanBuild => !string.IsNullOrWhiteSpace(_localText);
+
+    private string SearchPlaceholder => _tab switch
+    {
+        "architecture" => "Search by ADR ID, title, context, or decision...",
+        "risks"        => "Search by title, description, severity, or area...",
+        "complexity"   => "Search by area, level, or factor...",
+        "phases"       => "Search by phase title, description, or task...",
+        "testing"      => "Search testing content...",
+        "constitution" => "Search by rule ID (PP-01), gate, or status...",
+        _              => "Search...",
+    };
+
+    private IEnumerable<PlanArchitectureDecision> VisibleDecisions =>
+        _plan is null ? [] : AnalysisService.SearchDecisions(_plan.ArchitectureDecisions, _search);
+
+    private IEnumerable<PlanRisk> VisibleRisks
+    {
+        get
+        {
+            if (_plan is null) return [];
+            var items = AnalysisService.FilterRisksBySeverity(_plan.Risks, _riskFilter);
+            return AnalysisService.SearchRisks(items, _search);
+        }
+    }
+
+    private IEnumerable<PlanComplexityItem> VisibleComplexity
+    {
+        get
+        {
+            if (_plan is null) return [];
+            var items = AnalysisService.FilterComplexityByLevel(_plan.ComplexityItems, _complexityFilter);
+            return AnalysisService.SearchComplexity(items, _search);
+        }
+    }
+
+    private IEnumerable<PlanConstitutionCheckItem> VisibleChecks
+    {
+        get
+        {
+            if (_plan is null) return [];
+            var items = AnalysisService.FilterCheckByStatus(_plan.ConstitutionCheckItems, _checkFilter);
+            return AnalysisService.SearchConstitutionCheck(items, _search);
+        }
+    }
+
+    private IEnumerable<PlanGate> VisibleGates
+    {
+        get
+        {
+            if (_plan is null) return [];
+            var items = AnalysisService.FilterGatesByStatus(_plan.Gates, _gateFilter);
+            return AnalysisService.SearchGates(items, _search);
+        }
+    }
+
+    private IEnumerable<PlanImplementationPhase> VisiblePhases =>
+        _plan is null ? [] : AnalysisService.SearchPhases(_plan.Phases, _search);
+
+    private int SearchResultCount => _tab switch
+    {
+        "architecture" => VisibleDecisions.Count(),
+        "risks"        => VisibleRisks.Count(),
+        "complexity"   => VisibleComplexity.Count(),
+        "phases"       => VisiblePhases.Count(),
+        "constitution" => VisibleGates.Count() + VisibleChecks.Count(),
+        _              => 0,
+    };
+
+    private string AdrBadge         => _plan?.ArchitectureDecisions.Count > 0 ? $"({_plan.ArchitectureDecisions.Count})" : string.Empty;
+    private string RiskBadge         => _plan?.Risks.Count > 0 ? $"({_plan.Risks.Count})" : string.Empty;
+    private string ComplexityBadge   => _plan?.ComplexityItems.Count > 0 ? $"({_plan.ComplexityItems.Count})" : string.Empty;
+    private string PhasesBadge       => _plan?.Phases.Count > 0 ? $"({_plan.Phases.Count})" : string.Empty;
+    private string TestingBadge      => _plan?.TestingInfo is not null ? "(✓)" : string.Empty;
+    private string ConstitutionBadge
+    {
+        get
+        {
+            if (_plan is null) return string.Empty;
+            var total = _plan.Gates.Count + _plan.ConstitutionCheckItems.Count;
+            return total > 0 ? $"({total})" : string.Empty;
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrWhiteSpace(PlanText) && _plan is null)
+        {
+            _localText = PlanText;
+            BuildPlan();
+        }
+        if (InitialView is not null && _plan is not null)
+            _tab = InitialView;
+    }
+
+    private void BuildPlan()
+    {
+        if (string.IsNullOrWhiteSpace(_localText)) return;
+        _plan = AnalysisService.Parse(_localText);
+        _expanded = [];
+        _search = string.Empty;
+        _riskFilter = null;
+        _complexityFilter = null;
+        _checkFilter = null;
+        _gateFilter = null;
+        _tab = InitialView ?? "overview";
+        _ = OnBuilt.InvokeAsync(_localText);
+    }
+
+    private void Reset()
+    {
+        _plan = null;
+        _localText = string.Empty;
+        _tab = "overview";
+        _search = string.Empty;
+        _expanded = [];
+        _riskFilter = null;
+        _complexityFilter = null;
+        _checkFilter = null;
+        _gateFilter = null;
+        _importRef?.Reset();
+    }
+
+    private void ClearInput() { _localText = string.Empty; _importRef?.Reset(); }
+    private void SetTab(string tab) { _tab = tab; _search = string.Empty; }
+    private void HandleSearch(ChangeEventArgs e) => _search = e.Value?.ToString() ?? string.Empty;
+    private void ClearSearch() => _search = string.Empty;
+    private void Toggle(string id) { if (!_expanded.Add(id)) _expanded.Remove(id); }
+    private void SetRiskFilter(RiskSeverity? v) { _riskFilter = v; _search = string.Empty; }
+    private void SetComplexityFilter(ComplexityLevel? v) { _complexityFilter = v; _search = string.Empty; }
+    private void SetCheckFilter(ConstitutionCheckStatus? v) { _checkFilter = v; _search = string.Empty; }
+    private void SetGateFilter(PlanGateStatus? v) { _gateFilter = v; _search = string.Empty; }
+    private void OnFileImported(string t) => _localText = t;
+    private void OnFileRemoved() => _localText = string.Empty;
+
+    private static string StatusCssClass(string? status)
+    {
+        if (status is null) return "unknown";
+        var s = status.ToLowerInvariant();
+        if (s.Contains("draft") || s.Contains("progress") || s.Contains("wip")) return "draft";
+        if (s.Contains("complete") || s.Contains("done") || s.Contains("approved")) return "complete";
+        if (s.Contains("review")) return "review";
+        return "other";
+    }
+
+    private static string ComplexityLevelLabel(ComplexityLevel level) => level switch
+    {
+        ComplexityLevel.VeryHigh => "Very High",
+        ComplexityLevel.High     => "High",
+        ComplexityLevel.Medium   => "Medium",
+        ComplexityLevel.Low      => "Low",
+        _                        => level.ToString(),
+    };
+
+    private static string CheckStatusLabel(ConstitutionCheckStatus s) => s switch
+    {
+        ConstitutionCheckStatus.Compliant      => "Compliant",
+        ConstitutionCheckStatus.NonCompliant   => "Non-Compliant",
+        ConstitutionCheckStatus.NeedsReview    => "Needs Review",
+        ConstitutionCheckStatus.NotApplicable  => "N/A",
+        _                                      => s.ToString(),
+    };
+
+    private static string CheckStatusCss(ConstitutionCheckStatus s) => s switch
+    {
+        ConstitutionCheckStatus.Compliant      => "compliant",
+        ConstitutionCheckStatus.NonCompliant   => "noncompliant",
+        ConstitutionCheckStatus.NeedsReview    => "review",
+        ConstitutionCheckStatus.NotApplicable  => "na",
+        _                                      => "other",
+    };
+
+    private static string GateStatusLabel(PlanGateStatus s) => s switch
+    {
+        PlanGateStatus.Pass          => "PASS",
+        PlanGateStatus.Warning       => "WARNING",
+        PlanGateStatus.Fail          => "FAIL",
+        PlanGateStatus.NotApplicable => "N/A",
+        _                            => s.ToString(),
+    };
+
+    private static string GateStatusCss(PlanGateStatus s) => s switch
+    {
+        PlanGateStatus.Pass          => "pe-gate-pass",
+        PlanGateStatus.Warning       => "pe-gate-warning",
+        PlanGateStatus.Fail          => "pe-gate-fail",
+        PlanGateStatus.NotApplicable => "pe-gate-na",
+        _                            => "pe-gate-na",
+    };
+
+    private static string GateStatusIcon(PlanGateStatus s) => s switch
+    {
+        PlanGateStatus.Pass          => "✓",
+        PlanGateStatus.Warning       => "⚠",
+        PlanGateStatus.Fail          => "✗",
+        PlanGateStatus.NotApplicable => "–",
+        _                            => string.Empty,
+    };
+
+    private static string ConstraintTypeCss(ConstraintType t) => t switch
+    {
+        ConstraintType.PerformanceGoal        => "performancegoal",
+        ConstraintType.ScaleScope             => "scalescope",
+        ConstraintType.ComplexityJustification => "complexityjustif",
+        ConstraintType.NoViolation            => "noviolation",
+        _                                     => "constraint",
+    };
+
+    private static string ConstraintTypeLabel(ConstraintType t) => t switch
+    {
+        ConstraintType.PerformanceGoal         => "Performance Goal",
+        ConstraintType.ScaleScope              => "Scale / Scope",
+        ConstraintType.ComplexityJustification => "Complexity",
+        ConstraintType.NoViolation             => "No Violation",
+        _                                      => "Constraint",
+    };
+
+    // ── Section block renderer ─────────────────────────────────────────────
+
+    private RenderFragment RenderSectionBlocks(PlanSection section) => __builder =>
+    {
+        __builder.OpenElement(0, "div");
+        __builder.AddAttribute(1, "class", "pe-section-content");
+
+        foreach (var block in section.Blocks.Where(b => b.HasContent || b.SubHeading is not null))
+        {
+            __builder.OpenElement(2, "div");
+            __builder.AddAttribute(3, "class", "pe-section-block");
+
+            if (!string.IsNullOrEmpty(block.SubHeading))
+            {
+                __builder.OpenElement(4, "h4");
+                __builder.AddAttribute(5, "class", "pe-section-subheading");
+                __builder.AddContent(6, block.SubHeading);
+                __builder.CloseElement();
+            }
+
+            if (block.IsCodeBlock)
+            {
+                __builder.OpenElement(7, "pre");
+                __builder.AddAttribute(8, "class", "pe-code-block");
+                __builder.OpenElement(9, "code");
+                __builder.AddContent(10, block.CodeBlock);
+                __builder.CloseElement();
+                __builder.CloseElement();
+            }
+            else
+            {
+                if (!string.IsNullOrEmpty(block.Paragraph))
+                {
+                    __builder.OpenElement(11, "p");
+                    __builder.AddAttribute(12, "class", "pe-section-para");
+                    __builder.AddContent(13, block.Paragraph);
+                    __builder.CloseElement();
+                }
+                if (block.BulletPoints.Count > 0)
+                {
+                    __builder.OpenElement(14, "ul");
+                    __builder.AddAttribute(15, "class", "pe-section-list");
+                    foreach (var point in block.BulletPoints)
+                    {
+                        __builder.OpenElement(16, "li");
+                        __builder.AddContent(17, point);
+                        __builder.CloseElement();
+                    }
+                    __builder.CloseElement();
+                }
+            }
+
+            __builder.CloseElement(); // block
+        }
+
+        __builder.CloseElement(); // section-content
+    };
+}

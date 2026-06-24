@@ -1,0 +1,83 @@
+@page "/constitution-explorer"
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+
+<PageTitle>Constitution Explorer — QA Review Studio</PageTitle>
+
+<div class="ce-page">
+
+    <div class="ce-page-header">
+        <div class="ce-page-header-inner">
+            <div class="ce-page-title-row">
+                <span class="ce-page-icon" aria-hidden="true">⚖️</span>
+                <div>
+                    <h1 class="ce-page-title">Constitution Explorer</h1>
+                    <p class="ce-page-subtitle">Navigate and analyze constitution.md files — review principles, standards, constraints, and governance in one place.</p>
+                </div>
+            </div>
+            <div class="ce-page-context-note">
+                <span class="ce-context-label">Governance Review</span>
+                <span class="ce-context-sep">·</span>
+                <span class="ce-context-desc">Paste or import a constitution.md to explore its structure</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="ce-page-body">
+        <ConstitutionExplorerPanel
+            ConstitutionText="@_initialText"
+            InitialView="@_initialView"
+            OnBuilt="OnDocumentBuilt" />
+    </div>
+
+</div>
+
+@code {
+    private string _initialText = string.Empty;
+    private string? _initialView;
+
+    private const string StorageKey = "ce-standalone-constitution";
+
+    protected override void OnInitialized()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var view))
+            _initialView = view;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            var saved = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey);
+            if (!string.IsNullOrWhiteSpace(saved) && saved != _initialText)
+            {
+                _initialText = saved;
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // localStorage unavailable — continue without restore
+        }
+    }
+
+    private async Task OnDocumentBuilt(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", StorageKey, text);
+        }
+        catch
+        {
+            // ignore storage errors
+        }
+    }
+}

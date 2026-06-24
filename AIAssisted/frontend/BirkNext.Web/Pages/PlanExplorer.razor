@@ -1,0 +1,83 @@
+@page "/plan-explorer"
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+
+<PageTitle>Plan Explorer — QA Review Studio</PageTitle>
+
+<div class="pe-page">
+
+    <div class="pe-page-header">
+        <div class="pe-page-header-inner">
+            <div class="pe-page-title-row">
+                <span class="pe-page-icon" aria-hidden="true">📐</span>
+                <div>
+                    <h1 class="pe-page-title">Plan Explorer</h1>
+                    <p class="pe-page-subtitle">Navigate and analyze plan.md artifacts — review architecture decisions, risks, complexity, and constitution compliance in one place.</p>
+                </div>
+            </div>
+            <div class="pe-page-context-note">
+                <span class="pe-context-label">Implementation Plan Review</span>
+                <span class="pe-context-sep">·</span>
+                <span class="pe-context-desc">Paste or import a plan.md to explore its structure</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="pe-page-body">
+        <PlanExplorerPanel
+            PlanText="@_initialText"
+            InitialView="@_initialView"
+            OnBuilt="OnPlanBuilt" />
+    </div>
+
+</div>
+
+@code {
+    private string _initialText = string.Empty;
+    private string? _initialView;
+
+    private const string StorageKey = "pe-standalone-plan";
+
+    protected override void OnInitialized()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var view))
+            _initialView = view;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            var saved = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey);
+            if (!string.IsNullOrWhiteSpace(saved) && saved != _initialText)
+            {
+                _initialText = saved;
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // localStorage unavailable — continue without restore
+        }
+    }
+
+    private async Task OnPlanBuilt(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", StorageKey, text);
+        }
+        catch
+        {
+            // ignore storage errors
+        }
+    }
+}

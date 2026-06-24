@@ -253,5 +253,9 @@ public class FeatureVisibilityDto
     [JsonPropertyName("qaReadiness")]          public bool QaReadiness          { get; set; } = true;
     [JsonPropertyName("enableExtractionReview")] public bool EnableExtractionReview { get; set; } = false;
     [JsonPropertyName("enableArchitectureView")] public bool EnableArchitectureView { get; set; } = false;
-    [JsonPropertyName("adminSystemSettings")]  public bool AdminSystemSettings  { get; set; } = true;
+    [JsonPropertyName("constitutionExplorer")]  public bool ConstitutionExplorer  { get; set; } = true;
+    [JsonPropertyName("planExplorer")]              public bool PlanExplorer             { get; set; } = true;
+    [JsonPropertyName("artifactTraceability")]        public bool ArtifactTraceability       { get; set; } = true;
+    [JsonPropertyName("constitutionCompliance")]      public bool ConstitutionCompliance     { get; set; } = true;
+    [JsonPropertyName("adminSystemSettings")]         public bool AdminSystemSettings        { get; set; } = true;
 }

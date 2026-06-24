@@ -53,6 +53,30 @@
                     </NavLink>
                 </div>
             }
+            @if (FeatureViz.ConstitutionExplorer)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="constitution-explorer" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-constitution" aria-hidden="true"></span> Constitution Explorer
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.PlanExplorer)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="plan-explorer" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-plan-explorer" aria-hidden="true"></span> Plan Explorer
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.TaskExplorer)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="task-explorer" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-task-explorer" aria-hidden="true"></span> Task Explorer
+                    </NavLink>
+                </div>
+            }
         }
 
         @if (FeatureViz.ShowSectionLibrary)
@@ -124,19 +148,27 @@
                     </NavLink>
                 </div>
             }
+            @if (FeatureViz.ArtifactTraceability)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="artifact-traceability" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-artifact-traceability" aria-hidden="true"></span> Artifact Traceability
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.ConstitutionCompliance)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="constitution-compliance" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Constitution Compliance
+                    </NavLink>
+                </div>
+            }
             @if (FeatureViz.ImplementationReview)
             {
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="task-alignment" Match="NavLinkMatch.All">
                         <span class="nav-icon nav-icon-task-alignment" aria-hidden="true"></span> Implementation Review
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.TaskExplorer)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="task-explorer" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-task-explorer" aria-hidden="true"></span> Task Explorer
                     </NavLink>
                 </div>
             }
