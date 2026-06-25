@@ -1,0 +1,22 @@
+@* Page-level header: h1 + optional lead on left, actions on right.
+   Usage: <PageHeader Title="…" Description="…"><button>…</button></PageHeader> *@
+
+<div class="page-header">
+    <div class="page-header-left">
+        <h1>@Title</h1>
+        @if (!string.IsNullOrWhiteSpace(Description))
+        {
+            <p class="page-lead">@Description</p>
+        }
+    </div>
+    @if (ChildContent is not null)
+    {
+        <div class="page-header-actions">@ChildContent</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title    { get; set; } = "";
+    [Parameter]                 public string? Description { get; set; }
+    [Parameter]                 public RenderFragment? ChildContent { get; set; }
+}

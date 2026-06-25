@@ -1,0 +1,37 @@
+@* Semantic fill bar for scores and coverage ratios.
+   Value: 0–100. Variant: "success" | "warning" | "danger" | "info" | "accent" | "neutral"
+   Size: "sm" (default 6px) | "md" (8px) | "lg" (12px)
+   Usage: <ProgressBar Value="72" Variant="success" ShowLabel /> *@
+
+<div class="progress-bar @_sizeClass"
+     role="progressbar"
+     aria-valuenow="@_clamped"
+     aria-valuemin="0"
+     aria-valuemax="100"
+     aria-label="@(Label ?? $"{_clamped:F0}%")">
+    <div class="progress-fill progress-fill-@(Variant ?? "success")"
+         style="width:@(_clamped.ToString("F1"))%">
+    </div>
+</div>
+@if (ShowLabel)
+{
+    <span class="text-subtle" style="font-size:0.78rem;margin-top:0.2rem;display:block">
+        @(Label ?? $"{_clamped:F0}%")
+    </span>
+}
+
+@code {
+    [Parameter, EditorRequired] public double  Value     { get; set; }
+    [Parameter]                 public string? Variant   { get; set; }
+    [Parameter]                 public string? Size      { get; set; }
+    [Parameter]                 public bool    ShowLabel { get; set; }
+    [Parameter]                 public string? Label     { get; set; }
+
+    private double _clamped   => Math.Clamp(Value, 0, 100);
+    private string _sizeClass => Size switch
+    {
+        "md" => "progress-bar-md",
+        "lg" => "progress-bar-lg",
+        _    => ""
+    };
+}

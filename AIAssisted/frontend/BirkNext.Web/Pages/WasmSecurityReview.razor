@@ -8,14 +8,8 @@
 
 <div class="wsr-page">
 
-    <section class="traceability-hero">
-        <p class="section-kicker">Client Security Analysis</p>
-        <h1>Blazor WASM Security Review</h1>
-        <p class="page-lead">
-            Scan a deployed Blazor WebAssembly application for client-specific security risks:
-            exposed secrets, direct backend URLs, missing headers, insecure token storage patterns, and more.
-        </p>
-    </section>
+    <PageHeader Title="Blazor WASM Security Review"
+                Description="Scan a deployed Blazor WebAssembly application for client-specific security risks: exposed secrets, direct backend URLs, missing headers, insecure token storage patterns, and more." />
 
     @* ── Review Target card ────────────────────────────────────────────────── *@
     <div class="wsr-target-card">
@@ -27,14 +21,14 @@
                 </a>
                 @if (_report is not null)
                 {
-                    <button class="btn-secondary" @onclick="RefreshContext">Refresh</button>
+                    <SecondaryButton OnClick="RefreshContext">Refresh</SecondaryButton>
                 }
-                <button class="btn-primary" @onclick="RunScan"
-                        disabled="@(_scanning || _context is null || !_context.HasTargetUrl)"
-                        aria-label="Run Blazor WASM Security Review">
+                <PrimaryButton OnClick="RunScan"
+                               Disabled="@(_scanning || _context is null || !_context.HasTargetUrl)"
+                               aria-label="Run Blazor WASM Security Review">
                     @if (_scanning) { <span class="wsr-spinner" aria-hidden="true">⟳</span> }
                     @(_scanning ? "Scanning…" : "Run Security Review")
-                </button>
+                </PrimaryButton>
             </div>
         </div>
 
@@ -74,12 +68,8 @@
                 <div class="wsr-target-item">
                     <span class="wsr-target-label">Auth Status</span>
                     <div class="wsr-target-value">
-                        @if (_context.IsAuthenticatedSessionAvailable)
-                        { <span class="wsr-session-ok">Authenticated</span> }
-                        else if (_context.RequiresAuthentication)
-                        { <span class="wsr-session-warn">Session unavailable</span> }
-                        else
-                        { <span class="wsr-session-anon">Not required</span> }
+                        <StatusChip Status="@(_context.IsAuthenticatedSessionAvailable ? "healthy" : _context.RequiresAuthentication ? "warning" : "neutral")"
+                                    Label="@(_context.IsAuthenticatedSessionAvailable ? "Authenticated" : _context.RequiresAuthentication ? "Session unavailable" : "Not required")" />
                     </div>
                 </div>
                 @if (!string.IsNullOrWhiteSpace(_context.ActiveProfile.ExpectedApiGateway))
@@ -190,32 +180,15 @@
 
         @* ── Scan Summary Strip ───────────────────────────────────────────── *@
         <div class="wsr-summary-strip" aria-label="Scan summary">
-            <div class="wsr-summary-card">
-                <span class="wsr-summary-value">@h.AssetsScanned</span>
-                <span class="wsr-summary-label">Assets Scanned</span>
-            </div>
-            <div class="wsr-summary-card">
-                <span class="wsr-summary-value">@h.EndpointsDiscovered</span>
-                <span class="wsr-summary-label">Endpoints</span>
-            </div>
-            <div class="wsr-summary-card">
-                <span class="wsr-summary-value">@h.HeadersChecked</span>
-                <span class="wsr-summary-label">Headers Checked</span>
-            </div>
-            <div class="wsr-summary-card">
-                <span class="wsr-summary-value">@report.ConfigurationSummary.Count</span>
-                <span class="wsr-summary-label">Config Entries</span>
-            </div>
-            <div class="wsr-summary-card @(h.FindingsCount > 0 ? "wsr-summary-card-warn" : "wsr-summary-card-ok")">
-                <span class="wsr-summary-value">@h.FindingsCount</span>
-                <span class="wsr-summary-label">Findings</span>
-            </div>
+            <MetricCard Value="@h.AssetsScanned.ToString()" Label="Assets Scanned" />
+            <MetricCard Value="@h.EndpointsDiscovered.ToString()" Label="Endpoints" />
+            <MetricCard Value="@h.HeadersChecked.ToString()" Label="Headers Checked" />
+            <MetricCard Value="@report.ConfigurationSummary.Count.ToString()" Label="Config Entries" />
+            <MetricCard Value="@h.FindingsCount.ToString()" Label="Findings"
+                        Variant="@(h.FindingsCount > 0 ? "danger" : "success")" />
             @if (report.IsBlazorWasm)
             {
-                <div class="wsr-summary-card wsr-summary-card-highlight">
-                    <span class="wsr-summary-value wsr-summary-check">✓</span>
-                    <span class="wsr-summary-label">Blazor WASM</span>
-                </div>
+                <MetricCard Value="✓" Label="Blazor WASM" Variant="success" />
             }
         </div>
 
@@ -276,7 +249,7 @@
         var categorySummaries = ComputeCategorySummaries(report).ToList();
         @if (categorySummaries.Count > 0)
         {
-            <h2 class="wsr-section-heading">Category Scores</h2>
+            <SectionHeader Title="Category Scores" />
             <div class="wsr-category-score-grid" role="list" aria-label="Security category scores">
                 @foreach (var cat in categorySummaries)
                 {
@@ -304,22 +277,14 @@
         var topRisks = report.Findings.OrderBy(f => f.Severity).Take(3).ToList();
         @if (topRisks.Count > 0)
         {
-            <h2 class="wsr-section-heading">Top Risks</h2>
-            <div class="wsr-risk-cards">
+            <SectionHeader Title="Top Risks" />
+            <div class="issue-cards">
                 @foreach (var risk in topRisks)
                 {
-                    var sevCls = risk.Severity.ToString().ToLowerInvariant();
-                    <div class="wsr-risk-card wsr-risk-@sevCls">
-                        <div class="wsr-risk-header">
-                            <span class="wsr-sev-badge wsr-sev-@sevCls" aria-label="Severity: @risk.Severity">@risk.Severity</span>
-                            <span class="wsr-risk-cat">@CategoryLabel(risk.Category)</span>
-                        </div>
-                        <div class="wsr-risk-title">@risk.Title</div>
-                        @if (!string.IsNullOrEmpty(risk.Description))
-                        { <div class="wsr-risk-desc">@risk.Description</div> }
-                        @if (!string.IsNullOrEmpty(risk.Recommendation))
-                        { <div class="wsr-risk-rec">@risk.Recommendation</div> }
-                    </div>
+                    <IssueCard Severity="@risk.Severity.ToString()"
+                               Component="@CategoryLabel(risk.Category)"
+                               Description="@(string.IsNullOrEmpty(risk.Description) ? risk.Title : $"{risk.Title} — {risk.Description}")"
+                               SuggestedFix="@risk.Recommendation" />
                 }
             </div>
         }
@@ -328,16 +293,11 @@
         var topRecs = report.Recommendations.Take(3).ToList();
         @if (topRecs.Count > 0)
         {
-            <h2 class="wsr-section-heading">Top Recommendations</h2>
-            <div class="wsr-rec-top-cards">
-                @foreach (var (rec, recIdx) in topRecs.Select((r, i) => (r, i + 1)))
+            <SectionHeader Title="Top Recommendations" />
+            <div class="rec-cards">
+                @foreach (var rec in topRecs)
                 {
-                    <div class="wsr-rec-top-card">
-                        <div class="wsr-rec-top-num" aria-hidden="true">@recIdx</div>
-                        <div class="wsr-rec-top-body">
-                            <div class="wsr-rec-top-text">@rec</div>
-                        </div>
-                    </div>
+                    <RecommendationCard Title="@rec" />
                 }
             </div>
         }
@@ -388,46 +348,23 @@
                     Context about this security scan. The security score, category breakdown, risks, and recommendations are shown above.
                 </p>
 
-                <h2 class="wsr-section-heading">Scan Context</h2>
-                <div class="wsr-context-grid">
-                    <div class="wsr-context-item">
-                        <span class="wsr-context-key">Scan Mode</span>
-                        <span class="wsr-context-val">
-                            @if (_context?.IsAuthenticatedSessionAvailable == true)
-                            { <span class="wsr-badge-ok">Authenticated</span> }
-                            else
-                            { <span class="wsr-badge-neutral">Anonymous Only</span> }
-                        </span>
-                    </div>
-                    <div class="wsr-context-item">
-                        <span class="wsr-context-key">Auth Required</span>
-                        <span class="wsr-context-val">@(_context?.RequiresAuthentication == true ? "Yes" : "No")</span>
-                    </div>
-                    <div class="wsr-context-item">
-                        <span class="wsr-context-key">Authentication Type</span>
-                        <span class="wsr-context-val">@(_context?.AuthenticationType.ToString() ?? "None")</span>
-                    </div>
-                    <div class="wsr-context-item">
-                        <span class="wsr-context-key">Configuration Source</span>
-                        <span class="wsr-context-val">Frontend Analysis Settings — @(_context?.ActiveProfile.Name ?? "Unknown")</span>
-                    </div>
-                    <div class="wsr-context-item">
-                        <span class="wsr-context-key">Target</span>
-                        <code class="wsr-context-val">@report.TargetUrl</code>
-                    </div>
-                    <div class="wsr-context-item">
-                        <span class="wsr-context-key">Scan Completed</span>
-                        <span class="wsr-context-val">@report.ScannedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</span>
-                    </div>
-                    <div class="wsr-context-item">
-                        <span class="wsr-context-key">Blazor WASM</span>
-                        <span class="wsr-context-val">@(report.IsBlazorWasm ? "Detected" : "Not detected")</span>
-                    </div>
-                </div>
+                <SectionHeader Title="Scan Context" />
+                <KeyValueList>
+                    <InfoRow Label="Scan Mode">
+                        <StatusChip Status="@(_context?.IsAuthenticatedSessionAvailable == true ? "healthy" : "neutral")"
+                                    Label="@(_context?.IsAuthenticatedSessionAvailable == true ? "Authenticated" : "Anonymous Only")" />
+                    </InfoRow>
+                    <InfoRow Label="Auth Required" Value="@(_context?.RequiresAuthentication == true ? "Yes" : "No")" />
+                    <InfoRow Label="Authentication Type" Value="@(_context?.AuthenticationType.ToString() ?? "None")" />
+                    <InfoRow Label="Configuration Source" Value="@($"Frontend Analysis Settings — {_context?.ActiveProfile.Name ?? "Unknown"}")" />
+                    <InfoRow Label="Target" Value="@report.TargetUrl" />
+                    <InfoRow Label="Scan Completed" Value="@(report.ScannedAt.ToString("yyyy-MM-dd HH:mm:ss") + " UTC")" />
+                    <InfoRow Label="Blazor WASM" Value="@(report.IsBlazorWasm ? "Detected" : "Not detected")" />
+                </KeyValueList>
 
                 @if (report.Limitations.Count > 0)
                 {
-                    <h2 class="wsr-section-heading">Scanner Limitations</h2>
+                    <SectionHeader Title="Scanner Limitations" />
                     <ul class="wsr-limitations-list">
                         @foreach (var l in report.Limitations) { <li>@l</li> }
                     </ul>
@@ -521,61 +458,32 @@
                              || f.Category == WasmSecurityCategory.TokenStorage)
                     .OrderBy(f => f.Severity)
                     .ToList();
-                <h2 class="wsr-section-heading">Authentication Configuration</h2>
-                <div class="wsr-context-grid">
-                    <div class="wsr-context-item">
-                        <span class="wsr-context-key">Required</span>
-                        <span class="wsr-context-val">
-                            @if (_context?.RequiresAuthentication == true)
-                            { <span class="wsr-auth-tag">Required</span> }
-                            else
-                            { <span>No</span> }
-                        </span>
-                    </div>
-                    <div class="wsr-context-item">
-                        <span class="wsr-context-key">Type</span>
-                        <span class="wsr-context-val">@(_context?.AuthenticationType.ToString() ?? "None")</span>
-                    </div>
-                    <div class="wsr-context-item">
-                        <span class="wsr-context-key">Session Status</span>
-                        <span class="wsr-context-val">
-                            @if (_context?.IsAuthenticatedSessionAvailable == true)
-                            { <span class="wsr-badge-ok">Authenticated</span> }
-                            else if (_context?.RequiresAuthentication == true)
-                            { <span class="wsr-badge-warn">Session unavailable — anonymous checks only</span> }
-                            else
-                            { <span class="wsr-badge-neutral">Not required</span> }
-                        </span>
-                    </div>
+                <SectionHeader Title="Authentication Configuration" />
+                <KeyValueList>
+                    <InfoRow Label="Required">
+                        <StatusChip Status="@(_context?.RequiresAuthentication == true ? "warning" : "neutral")"
+                                    Label="@(_context?.RequiresAuthentication == true ? "Required" : "No")" />
+                    </InfoRow>
+                    <InfoRow Label="Type" Value="@(_context?.AuthenticationType.ToString() ?? "None")" />
+                    <InfoRow Label="Session Status">
+                        <StatusChip Status="@(_context?.IsAuthenticatedSessionAvailable == true ? "healthy" : _context?.RequiresAuthentication == true ? "warning" : "neutral")"
+                                    Label="@(_context?.IsAuthenticatedSessionAvailable == true ? "Authenticated" : _context?.RequiresAuthentication == true ? "Session unavailable — anonymous checks only" : "Not required")" />
+                    </InfoRow>
                     @if (!string.IsNullOrWhiteSpace(_context?.SecuritySettings.ExpectedAuthority))
                     {
-                        <div class="wsr-context-item">
-                            <span class="wsr-context-key">Expected Authority</span>
-                            <code class="wsr-context-val">@_context!.SecuritySettings.ExpectedAuthority</code>
-                        </div>
+                        <InfoRow Label="Expected Authority" Value="@_context!.SecuritySettings.ExpectedAuthority" />
                     }
                     @if (!string.IsNullOrWhiteSpace(_context?.ActiveProfile.ExpectedApiGateway))
                     {
-                        <div class="wsr-context-item">
-                            <span class="wsr-context-key">API Gateway</span>
-                            <code class="wsr-context-val">@_context!.ActiveProfile.ExpectedApiGateway</code>
-                        </div>
+                        <InfoRow Label="API Gateway" Value="@_context!.ActiveProfile.ExpectedApiGateway" />
                     }
-                    <div class="wsr-context-item">
-                        <span class="wsr-context-key">Scan Mode</span>
-                        <span class="wsr-context-val">
-                            @if (_context?.IsAuthenticatedSessionAvailable == true)
-                            { <span class="wsr-badge-ok">Authenticated</span> }
-                            else
-                            { <span class="wsr-badge-neutral">Anonymous Only</span> }
-                        </span>
-                    </div>
-                </div>
+                    <InfoRow Label="Scan Mode">
+                        <StatusChip Status="@(_context?.IsAuthenticatedSessionAvailable == true ? "healthy" : "neutral")"
+                                    Label="@(_context?.IsAuthenticatedSessionAvailable == true ? "Authenticated" : "Anonymous Only")" />
+                    </InfoRow>
+                </KeyValueList>
 
-                <h2 class="wsr-section-heading">
-                    Authentication Findings
-                    <span class="wsr-tab-count">@authFindings.Count</span>
-                </h2>
+                <SectionHeader Title="@("Authentication Findings (" + authFindings.Count + ")")" />
                 @if (authFindings.Count == 0)
                 {
                     <p class="wsr-empty-tab">No authentication findings — authentication configuration looks good.</p>
@@ -605,10 +513,7 @@
                     or configuration endpoints.
                 </p>
 
-                <h2 class="wsr-section-heading">
-                    Secrets &amp; Sensitive Data Findings
-                    <span class="wsr-tab-count">@secretFindings.Count</span>
-                </h2>
+                <SectionHeader Title="@("Secrets & Sensitive Data Findings (" + secretFindings.Count + ")")" />
                 @if (secretFindings.Count == 0)
                 {
                     <p class="wsr-empty-tab">No secrets exposure findings — no hardcoded credentials or sensitive values detected.</p>
@@ -796,7 +701,7 @@
 
                 @if (report.Limitations.Count > 0)
                 {
-                    <h2 class="wsr-section-heading">Scanner Limitations</h2>
+                    <SectionHeader Title="Scanner Limitations" />
                     <ul class="wsr-limitations-list">
                         @foreach (var l in report.Limitations) { <li>@l</li> }
                     </ul>
@@ -808,25 +713,20 @@
     else if (!_scanning)
     {
         @* ── Empty state ─────────────────────────────────────────────────── *@
-        <div class="wsr-empty-state" role="status">
-            <div class="wsr-empty-icon" aria-hidden="true">🔒</div>
-            <h2 class="wsr-empty-heading">Ready to scan</h2>
-            <p class="wsr-empty-desc">
-                Run a security review to analyse authentication, security headers, configuration exposure,
-                secrets, and backend endpoint patterns for your Blazor WASM application.
-            </p>
-            <button class="btn-primary" @onclick="RunScan"
-                    disabled="@(_context is null || !_context?.HasTargetUrl == true)"
-                    aria-label="Run Blazor WASM Security Review">
+        <EmptyState Icon="🔒" Title="Ready to scan"
+                    Description="Run a security review to analyse authentication, security headers, configuration exposure, secrets, and backend endpoint patterns for your Blazor WASM application.">
+            <PrimaryButton OnClick="RunScan"
+                           Disabled="@(_context is null || !_context?.HasTargetUrl == true)"
+                           aria-label="Run Blazor WASM Security Review">
                 Run Security Review
-            </button>
+            </PrimaryButton>
             @if (_context is not null && !_context.HasTargetUrl)
             {
                 <p class="wsr-empty-note">
                     Configure a target URL in <a href="/admin/system-settings">Frontend Analysis Settings</a>.
                 </p>
             }
-        </div>
+        </EmptyState>
     }
 
 </div>

@@ -1,0 +1,26 @@
+@* Consistent empty/zero-data panel with optional icon, title, description, and action buttons.
+   Usage: <EmptyState Icon="📋" Title="No data" Description="…"><button>Run</button></EmptyState> *@
+
+<div class="empty-state @(Dashed ? "empty-state-dashed" : "")">
+    @if (!string.IsNullOrWhiteSpace(Icon))
+    {
+        <span class="empty-state-icon" aria-hidden="true">@Icon</span>
+    }
+    <div class="empty-state-title">@Title</div>
+    @if (!string.IsNullOrWhiteSpace(Description))
+    {
+        <p class="empty-state-desc">@Description</p>
+    }
+    @if (ChildContent is not null)
+    {
+        <div class="empty-state-actions">@ChildContent</div>
+    }
+</div>
+
+@code {
+    [Parameter]                 public string? Icon        { get; set; }
+    [Parameter, EditorRequired] public string Title        { get; set; } = "No data";
+    [Parameter]                 public string? Description { get; set; }
+    [Parameter]                 public RenderFragment? ChildContent { get; set; }
+    [Parameter]                 public bool Dashed         { get; set; }
+}

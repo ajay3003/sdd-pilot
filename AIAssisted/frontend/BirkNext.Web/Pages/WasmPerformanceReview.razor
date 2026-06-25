@@ -8,15 +8,8 @@
 
 <div class="wpr-page">
 
-    <section class="traceability-hero">
-        <p class="section-kicker">Client Performance Analysis</p>
-        <h1>Blazor WASM Performance Review</h1>
-        <p class="page-lead">
-            Analyse a deployed Blazor WebAssembly application for client-side and
-            architecture-specific performance issues: bundle size, compression, caching,
-            startup waterfall, and Blazor runtime patterns.
-        </p>
-    </section>
+    <PageHeader Title="Blazor WASM Performance Review"
+                Description="Analyse a deployed Blazor WebAssembly application for client-side and architecture-specific performance issues: bundle size, compression, caching, startup waterfall, and Blazor runtime patterns." />
 
     @* ── Review Target Card ───────────────────────────────────────────────── *@
     <div class="wpr-target-card">
@@ -28,14 +21,14 @@
                 </a>
                 @if (_report is not null)
                 {
-                    <button class="btn-secondary" @onclick="RefreshContext">Refresh</button>
+                    <SecondaryButton OnClick="RefreshContext">Refresh</SecondaryButton>
                 }
-                <button class="btn-primary" @onclick="RunReview"
-                        disabled="@(_running || _context is null || !_context.HasTargetUrl)"
-                        aria-label="Run Blazor WASM Performance Review">
+                <PrimaryButton OnClick="RunReview"
+                               Disabled="@(_running || _context is null || !_context.HasTargetUrl)"
+                               aria-label="Run Blazor WASM Performance Review">
                     @if (_running) { <span class="wpr-spinner" aria-hidden="true">⟳</span> }
                     @(_running ? "Analysing…" : "Run Performance Review")
-                </button>
+                </PrimaryButton>
             </div>
         </div>
 
@@ -83,10 +76,8 @@
                     <div class="wpr-target-item">
                         <span class="wpr-target-label">Auth Status</span>
                         <div class="wpr-target-value">
-                            @if (_context.IsAuthenticatedSessionAvailable)
-                            { <span class="wpr-session-ok">Authenticated</span> }
-                            else
-                            { <span class="wpr-session-anon">Anonymous</span> }
+                            <StatusChip Status="@(_context.IsAuthenticatedSessionAvailable ? "healthy" : "neutral")"
+                                        Label="@(_context.IsAuthenticatedSessionAvailable ? "Authenticated" : "Anonymous")" />
                         </div>
                     </div>
                     @if (_report.ApiAnalysis is not null)
@@ -166,52 +157,28 @@
 
         @* ── Scan Summary Strip ───────────────────────────────────────────── *@
         <div class="wpr-summary-strip" aria-label="Scan summary">
-            <div class="wpr-summary-card">
-                <span class="wpr-summary-value">@h.AssetsDiscovered</span>
-                <span class="wpr-summary-label">Assets</span>
-            </div>
+            <MetricCard Value="@h.AssetsDiscovered.ToString()" Label="Assets" />
             @if (_report.StartupMetrics is not null)
             {
-                <div class="wpr-summary-card">
-                    <span class="wpr-summary-value">@_report.StartupMetrics.StartupRequestCount</span>
-                    <span class="wpr-summary-label">Startup Requests</span>
-                </div>
+                <MetricCard Value="@_report.StartupMetrics.StartupRequestCount.ToString()" Label="Startup Requests" />
             }
             @if (_report.ApiAnalysis?.HasOpenApi == true)
             {
-                <div class="wpr-summary-card">
-                    <span class="wpr-summary-value">@_report.ApiAnalysis.RestEndpointCount</span>
-                    <span class="wpr-summary-label">REST Endpoints</span>
-                </div>
+                <MetricCard Value="@_report.ApiAnalysis.RestEndpointCount.ToString()" Label="REST Endpoints" />
             }
             @if (_report.ApiAnalysis?.HasGraphQL == true)
             {
-                <div class="wpr-summary-card">
-                    <span class="wpr-summary-value">@_report.ApiAnalysis.GraphQLOperations.Count</span>
-                    <span class="wpr-summary-label">GraphQL Ops</span>
-                </div>
+                <MetricCard Value="@_report.ApiAnalysis.GraphQLOperations.Count.ToString()" Label="GraphQL Ops" />
             }
             @if (_report.StartupMetrics is not null)
             {
-                <div class="wpr-summary-card">
-                    <span class="wpr-summary-value">@FormatBytes(_report.StartupMetrics.FrameworkDownloadBytes)</span>
-                    <span class="wpr-summary-label">Framework Size</span>
-                </div>
-                <div class="wpr-summary-card">
-                    <span class="wpr-summary-value">@FormatBytes(_report.StartupMetrics.ApplicationDownloadBytes)</span>
-                    <span class="wpr-summary-label">App Size</span>
-                </div>
+                <MetricCard Value="@FormatBytes(_report.StartupMetrics.FrameworkDownloadBytes)" Label="Framework Size" />
+                <MetricCard Value="@FormatBytes(_report.StartupMetrics.ApplicationDownloadBytes)" Label="App Size" />
             }
-            <div class="wpr-summary-card">
-                <span class="wpr-summary-value">@FormatBytes(h.TotalTransferBytes)</span>
-                <span class="wpr-summary-label">Total Transfer</span>
-            </div>
+            <MetricCard Value="@FormatBytes(h.TotalTransferBytes)" Label="Total Transfer" />
             @if (_report.IsBlazorWasm)
             {
-                <div class="wpr-summary-card wpr-summary-card-highlight">
-                    <span class="wpr-summary-value wpr-summary-check">✓</span>
-                    <span class="wpr-summary-label">Blazor WASM</span>
-                </div>
+                <MetricCard Value="✓" Label="Blazor WASM" Variant="success" />
             }
         </div>
 
@@ -265,7 +232,7 @@
             </div>
 
             @* ── Category Scores ──────────────────────────────────────────── *@
-            <h2 class="wpr-section-heading">Category Scores</h2>
+            <SectionHeader Title="Category Scores" />
             <div class="wpr-category-grid" role="list" aria-label="Performance category scores">
                 @foreach (var cat in rdy.Categories)
                 {
@@ -291,22 +258,14 @@
             @* ── Top Risks ────────────────────────────────────────────────── *@
             @if (rdy.TopRisks.Count > 0)
             {
-                <h2 class="wpr-section-heading">Top Risks</h2>
-                <div class="wpr-risk-cards">
+                <SectionHeader Title="Top Risks" />
+                <div class="issue-cards">
                     @foreach (var risk in rdy.TopRisks)
                     {
-                        var sevCls = risk.Severity.ToString().ToLower();
-                        <div class="wpr-risk-card wpr-risk-@sevCls">
-                            <div class="wpr-risk-header">
-                                <span class="wpr-sev-badge wpr-sev-@sevCls" aria-label="Severity: @risk.Severity">@risk.Severity</span>
-                                <span class="wpr-risk-cat">@CategoryLabel(risk.Category)</span>
-                            </div>
-                            <div class="wpr-risk-title">@risk.Title</div>
-                            @if (!string.IsNullOrEmpty(risk.Description))
-                            { <div class="wpr-risk-desc">@risk.Description</div> }
-                            @if (!string.IsNullOrEmpty(risk.Recommendation))
-                            { <div class="wpr-risk-rec">@risk.Recommendation</div> }
-                        </div>
+                        <IssueCard Severity="@risk.Severity.ToString()"
+                                   Component="@CategoryLabel(risk.Category)"
+                                   Description="@(string.IsNullOrEmpty(risk.Description) ? risk.Title : $"{risk.Title} — {risk.Description}")"
+                                   SuggestedFix="@risk.Recommendation" />
                     }
                 </div>
             }
@@ -314,21 +273,12 @@
             @* ── Top Recommendations ──────────────────────────────────────── *@
             @if (rdy.TopRecommendations.Count > 0)
             {
-                <h2 class="wpr-section-heading">Top Recommendations</h2>
-                <div class="wpr-rec-top-cards">
-                    @{ int recIdx = 0; }
+                <SectionHeader Title="Top Recommendations" />
+                <div class="rec-cards">
                     @foreach (var rec in rdy.TopRecommendations)
                     {
-                        recIdx++;
-                        <div class="wpr-rec-top-card">
-                            <div class="wpr-rec-top-num" aria-hidden="true">@recIdx</div>
-                            <div class="wpr-rec-top-body">
-                                <div class="wpr-rec-top-title">@rec.Title</div>
-                                <div class="wpr-rec-top-cat">@CategoryLabel(rec.Category)</div>
-                                @if (!string.IsNullOrEmpty(rec.Description))
-                                { <div class="wpr-rec-top-desc">@rec.Description</div> }
-                            </div>
-                        </div>
+                        <RecommendationCard Title="@rec.Title"
+                                            Description="@(string.IsNullOrEmpty(rec.Description) ? CategoryLabel(rec.Category) : $"{CategoryLabel(rec.Category)} — {rec.Description}")" />
                     }
                 </div>
             }
@@ -379,58 +329,24 @@
                     The readiness score, category breakdown, risks, and recommendations are shown above.
                 </p>
 
-                <h2 class="wpr-section-heading">Scan Context</h2>
-                <div class="wpr-context-grid">
-                    <div class="wpr-context-item">
-                        <span class="wpr-context-key">Scan Type</span>
-                        <span class="wpr-context-val">
-                            @if (_context?.IsAuthenticatedSessionAvailable == true)
-                            { <span class="wpr-badge-ok">Authenticated</span> }
-                            else
-                            { <span class="wpr-badge-neutral">Anonymous Only</span> }
-                        </span>
-                    </div>
-                    <div class="wpr-context-item">
-                        <span class="wpr-context-key">Auth Required</span>
-                        <span class="wpr-context-val">@(_context?.RequiresAuthentication == true ? "Yes" : "No")</span>
-                    </div>
-                    <div class="wpr-context-item">
-                        <span class="wpr-context-key">GraphQL Analysis</span>
-                        <span class="wpr-context-val">
-                            @(_report.ApiAnalysis?.HasGraphQL == true
-                                ? $"Detected — {_report.ApiAnalysis.GraphQLOperations.Count} operation(s)"
-                                : "Not detected")
-                        </span>
-                    </div>
-                    <div class="wpr-context-item">
-                        <span class="wpr-context-key">REST Analysis</span>
-                        <span class="wpr-context-val">
-                            @(_report.ApiAnalysis?.HasOpenApi == true
-                                ? $"Detected — {_report.ApiAnalysis.RestEndpointCount} endpoint(s)"
-                                : "Not detected")
-                        </span>
-                    </div>
-                    <div class="wpr-context-item">
-                        <span class="wpr-context-key">Configuration Source</span>
-                        <span class="wpr-context-val">Frontend Analysis Settings — @(_context?.ActiveProfile.Name ?? "Unknown")</span>
-                    </div>
-                    <div class="wpr-context-item">
-                        <span class="wpr-context-key">Threshold Mode</span>
-                        <span class="wpr-context-val">@(_context?.PerformanceThresholds.Mode.ToString() ?? "Default")</span>
-                    </div>
-                    <div class="wpr-context-item">
-                        <span class="wpr-context-key">Target</span>
-                        <code class="wpr-context-val">@_report.TargetUrl</code>
-                    </div>
-                    <div class="wpr-context-item">
-                        <span class="wpr-context-key">Scan Completed</span>
-                        <span class="wpr-context-val">@_report.ReviewedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</span>
-                    </div>
-                </div>
+                <SectionHeader Title="Scan Context" />
+                <KeyValueList>
+                    <InfoRow Label="Scan Type">
+                        <StatusChip Status="@(_context?.IsAuthenticatedSessionAvailable == true ? "healthy" : "neutral")"
+                                    Label="@(_context?.IsAuthenticatedSessionAvailable == true ? "Authenticated" : "Anonymous Only")" />
+                    </InfoRow>
+                    <InfoRow Label="Auth Required" Value="@(_context?.RequiresAuthentication == true ? "Yes" : "No")" />
+                    <InfoRow Label="GraphQL Analysis" Value="@(_report.ApiAnalysis?.HasGraphQL == true ? $"Detected — {_report.ApiAnalysis.GraphQLOperations.Count} operation(s)" : "Not detected")" />
+                    <InfoRow Label="REST Analysis" Value="@(_report.ApiAnalysis?.HasOpenApi == true ? $"Detected — {_report.ApiAnalysis.RestEndpointCount} endpoint(s)" : "Not detected")" />
+                    <InfoRow Label="Configuration Source" Value="@($"Frontend Analysis Settings — {_context?.ActiveProfile.Name ?? "Unknown"}")" />
+                    <InfoRow Label="Threshold Mode" Value="@(_context?.PerformanceThresholds.Mode.ToString() ?? "Default")" />
+                    <InfoRow Label="Target" Value="@_report.TargetUrl" />
+                    <InfoRow Label="Scan Completed" Value="@(_report.ReviewedAt.ToString("yyyy-MM-dd HH:mm:ss") + " UTC")" />
+                </KeyValueList>
 
                 @if (_report.Limitations.Count > 0)
                 {
-                    <h2 class="wpr-section-heading">Analysis Limitations</h2>
+                    <SectionHeader Title="Analysis Limitations" />
                     <ul class="wpr-limitations-list">
                         @foreach (var lim in _report.Limitations) { <li>@lim</li> }
                     </ul>
@@ -455,7 +371,7 @@
 
                 @if (_report.StartupMetrics is not null)
                 {
-                    <h2 class="wpr-section-heading">Startup Metrics</h2>
+                    <SectionHeader Title="Startup Metrics" />
                     <div class="wpr-metric-grid">
                         @foreach (var m in _report.Metrics)
                         {
@@ -470,7 +386,7 @@
 
                     @if (_report.Findings.Any(f => f.Category == PerformanceCategory.Startup))
                     {
-                        <h2 class="wpr-section-heading">Startup Findings (@StartupFindingCount())</h2>
+                        <SectionHeader Title="@("Startup Findings (" + StartupFindingCount() + ")")" />
                         <div class="wpr-findings-list">
                             @foreach (var f in StartupFindings())
                             { @FindingCard(f) }
@@ -594,7 +510,7 @@
 
                     @if (api.HasGraphQL)
                     {
-                        <h2 class="wpr-section-heading">GraphQL Operations</h2>
+                        <SectionHeader Title="GraphQL Operations" />
 
                         <div class="wpr-api-endpoint-info">
                             <span class="wpr-api-badge wpr-api-graphql">GraphQL</span>
@@ -654,7 +570,7 @@
                         </div>
                     }
 
-                    <h2 class="wpr-section-heading">REST Endpoints</h2>
+                    <SectionHeader Title="REST Endpoints" />
 
                     @if (api.HasOpenApi)
                     {
@@ -700,7 +616,7 @@
 
                     @if (api.Findings.Count > 0)
                     {
-                        <h2 class="wpr-section-heading">API Findings (@api.Findings.Count)</h2>
+                        <SectionHeader Title="@("API Findings (" + api.Findings.Count + ")")" />
                         <div class="wpr-findings-list">
                             @foreach (var f in api.Findings.OrderBy(f => f.Severity))
                             { @FindingCard(f) }
@@ -726,7 +642,7 @@
                     var cch = _report.CachingAnalysis;
                     var m   = cch.Metrics;
 
-                    <h2 class="wpr-section-heading">Compression &amp; Cache Summary</h2>
+                    <SectionHeader Title="Compression &amp; Cache Summary" />
                     <div class="wpr-metric-grid">
                         <div class="wpr-metric-card @(m.CompressedAssets == m.TotalAssets && m.TotalAssets > 0 ? "wpr-metric-good" : m.CompressedAssets > 0 ? "wpr-metric-warning" : "wpr-metric-poor")">
                             <span class="wpr-metric-value">@m.CompressedAssets / @m.TotalAssets</span>
@@ -753,7 +669,7 @@
 
                     @if (cch.AssetSummaries.Count > 0)
                     {
-                        <h2 class="wpr-section-heading">Asset Detail</h2>
+                        <SectionHeader Title="Asset Detail" />
 
                         <div class="wpr-filter-chips wpr-cch-filters" role="group" aria-label="Filter caching view">
                             <button class="wpr-filter-chip @(_cchFilter == "all"          ? "is-active" : "")" @onclick='() => _cchFilter = "all"'>All (@cch.AssetSummaries.Count)</button>
@@ -799,7 +715,7 @@
 
                     @if (cch.Findings.Count > 0)
                     {
-                        <h2 class="wpr-section-heading">Caching &amp; Compression Findings (@cch.Findings.Count)</h2>
+                        <SectionHeader Title="@("Caching &amp; Compression Findings (" + cch.Findings.Count + ")")" />
                         <div class="wpr-findings-list">
                             @foreach (var f in cch.Findings.OrderBy(f => f.Severity))
                             { @FindingCard(f) }
@@ -860,25 +776,20 @@
     else if (!_running)
     {
         @* ── Empty state ─────────────────────────────────────────────────── *@
-        <div class="wpr-empty-state" role="status">
-            <div class="wpr-empty-icon" aria-hidden="true">⚡</div>
-            <h2 class="wpr-empty-heading">Ready to analyse</h2>
-            <p class="wpr-empty-desc">
-                Run a performance review to get a readiness score, category analysis,
-                top risks, and actionable recommendations for your Blazor WASM application.
-            </p>
-            <button class="btn-primary" @onclick="RunReview"
-                    disabled="@(_context is null || !_context?.HasTargetUrl == true)"
-                    aria-label="Run Blazor WASM Performance Review">
+        <EmptyState Icon="⚡" Title="Ready to analyse"
+                    Description="Run a performance review to get a readiness score, category analysis, top risks, and actionable recommendations for your Blazor WASM application.">
+            <PrimaryButton OnClick="RunReview"
+                           Disabled="@(_context is null || !_context?.HasTargetUrl == true)"
+                           aria-label="Run Blazor WASM Performance Review">
                 Run Performance Review
-            </button>
+            </PrimaryButton>
             @if (_context is not null && !_context.HasTargetUrl)
             {
                 <p class="wpr-empty-note">
                     Configure a target URL in <a href="/admin/system-settings">Frontend Analysis Settings</a>.
                 </p>
             }
-        </div>
+        </EmptyState>
     }
 
 </div>

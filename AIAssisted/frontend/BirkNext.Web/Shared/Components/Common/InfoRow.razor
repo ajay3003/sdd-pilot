@@ -1,0 +1,17 @@
+@* Single key-value display row. Use inside KeyValueList.
+   Usage: <InfoRow Label="Environment" Value="Production" />
+   or: <InfoRow Label="Status"><StatusChip Status="healthy" /></InfoRow> *@
+
+<div class="info-row">
+    <span class="info-row-label">@Label</span>
+    <span class="info-row-value">
+        @if (ChildContent is not null) { @ChildContent }
+        else { @(Value ?? "—") }
+    </span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label        { get; set; } = "";
+    [Parameter]                 public string? Value       { get; set; }
+    [Parameter]                 public RenderFragment? ChildContent { get; set; }
+}

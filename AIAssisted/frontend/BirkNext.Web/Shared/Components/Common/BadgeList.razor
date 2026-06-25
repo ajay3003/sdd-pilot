@@ -1,0 +1,17 @@
+@* Horizontal wrapping list of string badges/chips.
+   Usage: <BadgeList Items="@myList" ItemClass="badge badge-requirement" />
+   or: <BadgeList><span class="badge">…</span></BadgeList> *@
+
+<div class="badge-list">
+    @foreach (var item in Items)
+    {
+        <span class="@ItemClass">@item</span>
+    }
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public IEnumerable<string> Items        { get; set; } = [];
+    [Parameter] public string              ItemClass    { get; set; } = "badge badge-requirement";
+    [Parameter] public RenderFragment?     ChildContent { get; set; }
+}

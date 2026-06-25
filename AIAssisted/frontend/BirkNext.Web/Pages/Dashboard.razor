@@ -110,10 +110,7 @@ else
 
     @* ══ 3 · Governance Status ════════════════════════════════════════════════ *@
     <section class="db-section">
-        <div class="db-section-header">
-            <h2 class="db-section-title">Governance Status</h2>
-            <span class="db-section-hint">Loaded · Reviewed · Analyzed</span>
-        </div>
+        <SectionHeader Title="Governance Status" Description="Loaded · Reviewed · Analyzed" />
         <div class="db-artifact-grid">
 
             <div class="db-artifact-card db-artifact-constitution @(_constitutionLoaded ? "db-artifact-loaded" : "")">
@@ -205,9 +202,7 @@ else
 
     @* ══ 4 · Project Health ═══════════════════════════════════════════════════ *@
     <section class="db-section">
-        <div class="db-section-header">
-            <h2 class="db-section-title">Project Health</h2>
-        </div>
+        <SectionHeader Title="Project Health" />
         <div class="db-health-bars">
             @HealthBar("Governance",   _governanceLoadPercent, true)
             @HealthBar("Traceability", _traceabilityScore,     _traceabilityHasData)
@@ -223,10 +218,7 @@ else
 
     @* ══ 5 · Analysis Summary ════════════════════════════════════════════════ *@
     <section class="db-section">
-        <div class="db-section-header">
-            <h2 class="db-section-title">Analysis Summary</h2>
-            <span class="db-section-hint">Run each analysis to populate</span>
-        </div>
+        <SectionHeader Title="Analysis Summary" Description="Run each analysis to populate" />
         <div class="db-analysis-grid">
 
             @* Artifact Traceability *@
@@ -383,9 +375,7 @@ else
 
     @* ══ 6 · Recent Activity ══════════════════════════════════════════════════ *@
     <section class="db-section">
-        <div class="db-section-header">
-            <h2 class="db-section-title">Recent Activity</h2>
-        </div>
+        <SectionHeader Title="Recent Activity" />
         <div class="db-timeline">
             @{
                 bool anyActivity = false;
@@ -501,47 +491,31 @@ else
 
     @* ══ 7 · Top Risks ════════════════════════════════════════════════════════ *@
     <section class="db-section">
-        <div class="db-section-header">
-            <h2 class="db-section-title">Top Risks</h2>
-        </div>
+        <SectionHeader Title="Top Risks" />
         @{
             var topRisks = _topRisks.ToList();
         }
         @if (topRisks.Count > 0)
         {
-            <div class="db-risk-cards">
+            <div class="issue-cards">
                 @foreach (var (Title, Severity, Category, Detail) in topRisks)
                 {
-                    <div class="db-risk-card db-risk-@Severity.ToLowerInvariant()">
-                        <div class="db-risk-header">
-                            <span class="db-risk-sev db-risk-sev-@Severity.ToLowerInvariant()">@Severity</span>
-                            <span class="db-risk-cat">@Category</span>
-                        </div>
-                        <div class="db-risk-title">@Title</div>
-                        @if (!string.IsNullOrEmpty(Detail))
-                        { <div class="db-risk-detail">@Detail</div> }
-                    </div>
+                    <IssueCard Severity="@Severity" Component="@Category" Description="@Title" SuggestedFix="@Detail" />
                 }
             </div>
         }
         else
         {
-            <div class="db-section-empty">
-                No risks detected.
-                Run QA Auditor or Delivery Readiness to surface governance risks.
-                <div class="db-empty-actions">
-                    <a href="qa-auditor" class="db-qa-btn">Run QA Auditor</a>
-                    <a href="delivery-readiness" class="db-qa-btn">Run Delivery Readiness</a>
-                </div>
-            </div>
+            <EmptyState Title="No risks detected." Description="Run QA Auditor or Delivery Readiness to surface governance risks.">
+                <a href="qa-auditor" class="db-qa-btn">Run QA Auditor</a>
+                <a href="delivery-readiness" class="db-qa-btn">Run Delivery Readiness</a>
+            </EmptyState>
         }
     </section>
 
     @* ══ 8 · Top Recommendations ══════════════════════════════════════════════ *@
     <section class="db-section">
-        <div class="db-section-header">
-            <h2 class="db-section-title">Top Recommendations</h2>
-        </div>
+        <SectionHeader Title="Top Recommendations" />
         @{
             var topRecs = _topRecs.ToList();
         }
@@ -567,18 +541,13 @@ else
         }
         else
         {
-            <div class="db-section-empty">
-                No recommendations yet.
-                Run QA Auditor or Delivery Readiness to generate actionable recommendations.
-            </div>
+            <EmptyState Title="No recommendations yet." Description="Run QA Auditor or Delivery Readiness to generate actionable recommendations." />
         }
     </section>
 
     @* ══ 9 · Readiness Summary ════════════════════════════════════════════════ *@
     <section class="db-section">
-        <div class="db-section-header">
-            <h2 class="db-section-title">Readiness Summary</h2>
-        </div>
+        <SectionHeader Title="Readiness Summary" />
         <div class="db-readiness-grid">
             @ReadinessCard("Development", Snapshot.DeliveryReport?.DevelopmentDecision.State, Snapshot.DeliveryReport?.Health.DevelopmentScore, "delivery-readiness")
             @ReadinessCard("Testing",     Snapshot.DeliveryReport?.TestingDecision.State,     Snapshot.DeliveryReport?.Health.TestingScore,     "delivery-readiness")
@@ -591,10 +560,11 @@ else
     @if (_perfReport is not null)
     {
         <section class="db-section">
-            <div class="db-section-header">
-                <h2 class="db-section-title">Performance Summary</h2>
-                <a href="wasm-performance-review" class="db-summary-open">Open Performance Review →</a>
-            </div>
+            <SectionHeader Title="Performance Summary">
+                <Actions>
+                    <a href="wasm-performance-review" class="db-summary-open">Open Performance Review →</a>
+                </Actions>
+            </SectionHeader>
             <div class="db-perf-summary">
                 @if (_perfReport.ReadinessReport is { HasData: true } perfDetail)
                 {
@@ -631,24 +601,19 @@ else
 
     @* ══ 11 · Security Summary ════════════════════════════════════════════════ *@
     <section class="db-section">
-        <div class="db-section-header">
-            <h2 class="db-section-title">Security Summary</h2>
-            <a href="wasm-security-review" class="db-summary-open">Open Security Review →</a>
-        </div>
-        <div class="db-section-empty">
-            No security scan has been run this session.
-            Open WASM Security Review to analyse headers, authentication, configuration, and exposures.
-            <div class="db-empty-actions">
-                <a href="wasm-security-review" class="btn-primary db-empty-cta">Open WASM Security Review</a>
-            </div>
-        </div>
+        <SectionHeader Title="Security Summary">
+            <Actions>
+                <a href="wasm-security-review" class="db-summary-open">Open Security Review →</a>
+            </Actions>
+        </SectionHeader>
+        <EmptyState Title="No security scan has been run this session." Description="Open WASM Security Review to analyse headers, authentication, configuration, and exposures.">
+            <a href="wasm-security-review" class="btn-primary db-empty-cta">Open WASM Security Review</a>
+        </EmptyState>
     </section>
 
     @* ══ 12 · Quick Actions ═══════════════════════════════════════════════════ *@
     <section class="db-section">
-        <div class="db-section-header">
-            <h2 class="db-section-title">Quick Actions</h2>
-        </div>
+        <SectionHeader Title="Quick Actions" />
         <div class="db-quick-actions">
             <div class="db-qa-group">
                 <div class="db-qa-group-label">Review</div>

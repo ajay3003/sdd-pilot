@@ -1,0 +1,29 @@
+@* Label + fill bar + value display in a three-column grid row.
+   Auto-selects variant from the score ratio when Variant is not set.
+   Usage: <HealthBar Label="Coverage" Value="72" MaxValue="100" ValueLabel="72%" /> *@
+
+<div class="health-bar-row">
+    <span class="health-bar-label">@Label</span>
+    <div class="progress-bar">
+        <div class="progress-fill progress-fill-@(Variant ?? _autoVariant)"
+             style="width:@(_pct.ToString("F1"))%">
+        </div>
+    </div>
+    <span class="health-bar-value">@(ValueLabel ?? Value.ToString("F0"))</span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label       { get; set; } = "";
+    [Parameter, EditorRequired] public double Value       { get; set; }
+    [Parameter]                 public double MaxValue    { get; set; } = 100;
+    [Parameter]                 public string? Variant    { get; set; }
+    [Parameter]                 public string? ValueLabel { get; set; }
+
+    private double _pct         => MaxValue > 0 ? Math.Clamp(Value / MaxValue * 100, 0, 100) : 0;
+    private string _autoVariant => _pct switch
+    {
+        >= 75 => "success",
+        >= 40 => "warning",
+        _     => "danger"
+    };
+}

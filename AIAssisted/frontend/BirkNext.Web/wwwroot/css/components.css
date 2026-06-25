@@ -936,3 +936,51 @@
 .gap-sm { gap: 0.375rem; }
 .gap-md { gap: 0.75rem; }
 .gap-lg { gap: 1.25rem; }
+
+
+/* ======================================================
+   INFO ROW / KEY-VALUE LIST
+   Used by InfoRow + KeyValueList shared components.
+   ====================================================== */
+
+.kv-list { display: flex; flex-direction: column; }
+
+.info-row {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 0.5rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--clr-border-subtle);
+    font-size: 0.855rem;
+    align-items: baseline;
+}
+
+.info-row:last-child { border-bottom: none; }
+
+.info-row-label {
+    color: var(--clr-text-muted);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.info-row-value {
+    color: var(--clr-text-body);
+    word-break: break-word;
+}
+
+@media (max-width: 540px) {
+    .info-row { grid-template-columns: 1fr; gap: 0.1rem; }
+}
+
+
+/* ======================================================
+   BADGE LIST
+   Used by BadgeList shared component.
+   ====================================================== */
+
+.badge-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    align-items: center;
+}

@@ -1,0 +1,30 @@
+@* Action-oriented finding card with optional icon, priority badge, and description.
+   Priority: "high" | "medium" | "low"
+   Usage: <RecommendationCard Title="…" Description="…" Priority="high" /> *@
+
+<div class="rec-card">
+    @if (Icon is not null)
+    {
+        <div class="rec-icon">@Icon</div>
+    }
+    <div class="rec-content">
+        <div class="rec-title">@Title</div>
+        @if (!string.IsNullOrWhiteSpace(Description))
+        {
+            <div class="rec-desc">@Description</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Priority))
+        {
+            <div class="rec-priority rec-priority-@Priority.ToLowerInvariant()">
+                @(Priority[0..1].ToUpperInvariant() + Priority[1..]) priority
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title        { get; set; } = "";
+    [Parameter]                 public string Description  { get; set; } = "";
+    [Parameter]                 public string? Priority    { get; set; }
+    [Parameter]                 public RenderFragment? Icon { get; set; }
+}
