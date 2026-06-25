@@ -26,8 +26,9 @@ public class AdminService
         ("QaArtifactLibrary",          "Spec Explorer"),
         ("TraceabilityCoverage",       "Traceability & Coverage"),
         ("ImplementationReview",       "Implementation Review"),
-        ("ImplementationTraceability", "Implementation Traceability"),
-        ("TaskExplorer",               "Task Explorer")
+        ("ImplementationTraceability",  "Implementation Traceability"),
+        ("BlazorWasmSecurityReview",    "Blazor WASM Security Review"),
+        ("TaskExplorer",                "Task Explorer")
     ];
 
     private static readonly IReadOnlyList<(string Key, string Label)> AdvancedFeatures =
@@ -223,6 +224,7 @@ public class AdminService
             SpecDrift            = s.GetValue("SpecDrift",            true),
             ImplementationReview        = s.GetValue("ImplementationReview",        true),
             ImplementationTraceability  = s.GetValue("ImplementationTraceability",  true),
+            BlazorWasmSecurityReview    = s.GetValue("BlazorWasmSecurityReview",    true),
             TaskExplorer                = s.GetValue("TaskExplorer",                true),
             AiChangeReview       = s.GetValue("AiChangeReview",       true),
             QaReadiness          = s.GetValue("QaReadiness",          true),

@@ -1,0 +1,618 @@
+@page "/wasm-security-review"
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject WasmSecurityApiService Scanner
+
+<PageTitle>Blazor WASM Security Review</PageTitle>
+
+<div class="wsr-page">
+
+    <section class="traceability-hero">
+        <p class="section-kicker">Client Security Analysis</p>
+        <h1>Blazor WASM Security Review</h1>
+        <p class="page-lead">
+            Scan a deployed Blazor WebAssembly application for client-specific security risks:
+            exposed secrets, direct backend URLs, missing headers, insecure token storage patterns, and more.
+        </p>
+    </section>
+
+    @* ── Input panel ────────────────────────────────────────────────────── *@
+    <div class="wsr-input-panel">
+        <div class="wsr-input-panel-header">
+            <span class="wsr-input-panel-title">Scan Target</span>
+            @if (_report is not null)
+            {
+                <button class="wsr-input-toggle" @onclick="ToggleInput">
+                    @(_inputExpanded ? "▾ Collapse" : "▸ Expand")
+                </button>
+            }
+        </div>
+
+        @if (_inputExpanded)
+        {
+            <div class="wsr-input-grid">
+                <div class="wsr-input-col wsr-input-col-wide">
+                    <label for="wsr-url" class="wsr-input-label">
+                        Target URL <span class="wsr-required">*</span>
+                    </label>
+                    <input id="wsr-url"
+                           type="url"
+                           class="wsr-text-input @(_attempted && string.IsNullOrWhiteSpace(_targetUrl) ? "wsr-invalid" : "")"
+                           placeholder="https://myapp.example.no"
+                           @bind="_targetUrl"
+                           @bind:event="oninput" />
+                    @if (_attempted && string.IsNullOrWhiteSpace(_targetUrl))
+                    {
+                        <p class="wsr-field-error" role="alert">Target URL is required.</p>
+                    }
+                </div>
+
+                <div class="wsr-input-col">
+                    <label for="wsr-env" class="wsr-input-label">Environment <span class="wsr-hint">(optional)</span></label>
+                    <input id="wsr-env" type="text" class="wsr-text-input" placeholder="Production" @bind="_environmentName" />
+                </div>
+
+                <div class="wsr-input-col">
+                    <label for="wsr-gateway" class="wsr-input-label">Expected API gateway base path <span class="wsr-hint">(optional)</span></label>
+                    <input id="wsr-gateway" type="text" class="wsr-text-input" placeholder="https://apim.example.no" @bind="_apiGateway" />
+                </div>
+
+                <div class="wsr-input-col">
+                    <label for="wsr-hosts" class="wsr-input-label">Allowed backend hostnames <span class="wsr-hint">(comma-separated)</span></label>
+                    <input id="wsr-hosts" type="text" class="wsr-text-input" placeholder="api.example.no, auth.example.no" @bind="_allowedHosts" />
+                </div>
+
+                <div class="wsr-input-col">
+                    <label for="wsr-authority" class="wsr-input-label">Expected OIDC authority <span class="wsr-hint">(optional)</span></label>
+                    <input id="wsr-authority" type="text" class="wsr-text-input" placeholder="mytenant.onmicrosoft.com" @bind="_allowedAuthority" />
+                </div>
+            </div>
+
+            <div class="wsr-input-actions">
+                <button class="btn-primary" @onclick="RunScan" disabled="@_scanning">
+                    @if (_scanning)
+                    { <span class="wsr-spinner" aria-hidden="true">⟳</span> }
+                    Scan Application
+                </button>
+                @if (_scanning)
+                {
+                    <span class="wsr-scanning-note" aria-live="polite">
+                        Fetching assets and running checks…
+                    </span>
+                }
+            </div>
+
+            @if (_error is not null)
+            {
+                <div class="wsr-error-banner" role="alert">
+                    <span aria-hidden="true">✗</span> @_error
+                </div>
+            }
+        }
+    </div>
+
+    @* ── Non-Blazor warning ─────────────────────────────────────────────── *@
+    @if (_report is not null && !_report.IsBlazorWasm)
+    {
+        <div class="wsr-banner wsr-banner-warn" role="status">
+            <span aria-hidden="true">⚠</span>
+            Target does not appear to be a Blazor WebAssembly application.
+            Results may be incomplete.
+        </div>
+    }
+
+    @* ── Report ─────────────────────────────────────────────────────────── *@
+    @if (_report is not null)
+    {
+        var report = _report;
+
+        @* ── Health bar ── *@
+        <div class="wsr-health-bar" role="region" aria-label="Security score">
+            <div class="wsr-score-ring @ScoreClass(report.Health.Score)">
+                <span class="wsr-score-value">@report.Health.Score</span>
+                <span class="wsr-score-label">/ 100</span>
+            </div>
+            <div class="wsr-health-counts">
+                @if (report.Health.Critical > 0)
+                { <span class="wsr-sev-badge wsr-sev-critical">@report.Health.Critical Critical</span> }
+                @if (report.Health.High > 0)
+                { <span class="wsr-sev-badge wsr-sev-high">@report.Health.High High</span> }
+                @if (report.Health.Medium > 0)
+                { <span class="wsr-sev-badge wsr-sev-medium">@report.Health.Medium Medium</span> }
+                @if (report.Health.Low > 0)
+                { <span class="wsr-sev-badge wsr-sev-low">@report.Health.Low Low</span> }
+                @if (report.Health.Info > 0)
+                { <span class="wsr-sev-badge wsr-sev-info">@report.Health.Info Info</span> }
+            </div>
+            <div class="wsr-health-stats">
+                <span class="wsr-stat">@report.Health.AssetsScanned assets</span>
+                <span class="wsr-stat">@report.Health.FindingsCount findings</span>
+                <span class="wsr-stat">@report.Health.EndpointsDiscovered endpoints</span>
+                <span class="wsr-stat">@report.Health.HeadersChecked headers checked</span>
+            </div>
+        </div>
+
+        @* ── Tabs ── *@
+        <div class="wsr-tab-bar" role="tablist">
+            <button class="wsr-tab @(_tab == "overview"      ? "is-active" : "")" @onclick='() => SetTab("overview")'      role="tab">Overview</button>
+            <button class="wsr-tab @(_tab == "findings"      ? "is-active" : "")" @onclick='() => SetTab("findings")'      role="tab">
+                Findings
+                @if (report.Health.Critical + report.Health.High > 0)
+                { <span class="wsr-tab-badge wsr-tab-badge-warn">@(report.Health.Critical + report.Health.High)</span> }
+            </button>
+            <button class="wsr-tab @(_tab == "assets"        ? "is-active" : "")" @onclick='() => SetTab("assets")'        role="tab">Discovered Assets <span class="wsr-tab-count">(@report.Assets.Count)</span></button>
+            <button class="wsr-tab @(_tab == "endpoints"     ? "is-active" : "")" @onclick='() => SetTab("endpoints")'     role="tab">Endpoints <span class="wsr-tab-count">(@report.Endpoints.Count)</span></button>
+            <button class="wsr-tab @(_tab == "configuration" ? "is-active" : "")" @onclick='() => SetTab("configuration")' role="tab">Configuration</button>
+            <button class="wsr-tab @(_tab == "headers"       ? "is-active" : "")" @onclick='() => SetTab("headers")'       role="tab">Headers</button>
+            <button class="wsr-tab @(_tab == "recommendations" ? "is-active" : "")" @onclick='() => SetTab("recommendations")' role="tab">Recommendations</button>
+        </div>
+
+        <div class="wsr-tab-body">
+
+            @* ── Overview ── *@
+            @if (_tab == "overview")
+            {
+                <div class="wsr-overview">
+                    <div class="wsr-overview-meta">
+                        <span><strong>Target:</strong> @report.TargetUrl</span>
+                        <span><strong>Scanned:</strong> @report.ScannedAt.ToString("yyyy-MM-dd HH:mm") UTC</span>
+                        <span><strong>Blazor WASM:</strong> @(report.IsBlazorWasm ? "Detected" : "Not detected")</span>
+                    </div>
+
+                    @if (report.Health.Critical > 0 || report.Health.High > 0)
+                    {
+                        <div class="wsr-attention-box wsr-attention-critical">
+                            <span class="wsr-attention-icon" aria-hidden="true">⚠</span>
+                            <div>
+                                <strong>Immediate attention required</strong>
+                                <p>@(report.Health.Critical) critical and @(report.Health.High) high severity findings. Review the Findings tab.</p>
+                            </div>
+                        </div>
+                    }
+
+                    @* Category summary *@
+                    <div class="wsr-category-grid">
+                        @foreach (var group in report.Findings.GroupBy(f => f.Category).OrderBy(g => g.Min(f => f.Severity)))
+                        {
+                            var worst = group.Min(f => f.Severity);
+                            <div class="wsr-cat-card wsr-cat-@worst.ToString().ToLowerInvariant()">
+                                <span class="wsr-cat-name">@CategoryLabel(group.Key)</span>
+                                <span class="wsr-cat-count">@group.Count() finding@(group.Count() == 1 ? "" : "s")</span>
+                                <span class="wsr-sev-badge wsr-sev-@worst.ToString().ToLowerInvariant()">@worst</span>
+                            </div>
+                        }
+                    </div>
+
+                    @if (report.Limitations.Count > 0)
+                    {
+                        <div class="wsr-limitations">
+                            <div class="wsr-limitations-title">Scanner limitations</div>
+                            <ul class="wsr-limitations-list">
+                                @foreach (var l in report.Limitations)
+                                { <li>@l</li> }
+                            </ul>
+                        </div>
+                    }
+                </div>
+            }
+
+            @* ── Findings ── *@
+            @if (_tab == "findings")
+            {
+                <div class="wsr-findings-toolbar" role="group" aria-label="Filter findings">
+                    <input type="search"
+                           class="wsr-search"
+                           placeholder="Search findings…"
+                           value="@_findingSearch"
+                           @oninput="e => _findingSearch = e.Value?.ToString() ?? string.Empty" />
+
+                    <div class="wsr-filter-chips">
+                        @foreach (var sev in Enum.GetValues<WasmSecuritySeverity>())
+                        {
+                            var count = report.Findings.Count(f => f.Severity == sev);
+                            if (count == 0) continue;
+                            <button class="wsr-filter-chip wsr-sev-@sev.ToString().ToLowerInvariant() @(_sevFilter == sev ? "is-active" : "")"
+                                    @onclick="() => ToggleSev(sev)"
+                                    aria-pressed="@(_sevFilter == sev)">
+                                @sev <span class="wsr-chip-count">@count</span>
+                            </button>
+                        }
+                        @if (_sevFilter is not null || !string.IsNullOrEmpty(_findingSearch))
+                        {
+                            <button class="wsr-filter-chip" @onclick="ClearFilters">Clear ×</button>
+                        }
+                    </div>
+                </div>
+
+                @if (!FilteredFindings(report.Findings).Any())
+                {
+                    <div class="wsr-empty-tab">No findings match the current filter.</div>
+                }
+                else
+                {
+                    <section class="wsr-findings-list" aria-label="Security findings">
+                        @foreach (var f in FilteredFindings(report.Findings))
+                        {
+                            var expanded = _expandedFindings.Contains(f.Id);
+                            <div class="wsr-finding wsr-finding-@f.Severity.ToString().ToLowerInvariant()">
+                                <button class="wsr-finding-toggle"
+                                        @onclick="() => ToggleFinding(f.Id)"
+                                        aria-expanded="@expanded">
+                                    <span class="wsr-sev-badge wsr-sev-@f.Severity.ToString().ToLowerInvariant()">@f.Severity</span>
+                                    <span class="wsr-finding-title">@f.Title</span>
+                                    <span class="wsr-cat-chip">@CategoryLabel(f.Category)</span>
+                                    @if (!string.IsNullOrEmpty(f.ConstitutionRule))
+                                    { <span class="wsr-rule-chip">@f.ConstitutionRule</span> }
+                                    <span class="wsr-chevron" aria-hidden="true">@(expanded ? "▲" : "▼")</span>
+                                </button>
+
+                                @if (expanded)
+                                {
+                                    <div class="wsr-finding-body">
+                                        <div class="wsr-detail-row">
+                                            <span class="wsr-detail-label">Description</span>
+                                            <p class="wsr-detail-text">@f.Description</p>
+                                        </div>
+                                        <div class="wsr-detail-row">
+                                            <span class="wsr-detail-label">Recommendation</span>
+                                            <p class="wsr-detail-text wsr-detail-action">@f.Recommendation</p>
+                                        </div>
+                                        @if (f.Evidence.Count > 0)
+                                        {
+                                            <div class="wsr-detail-row">
+                                                <span class="wsr-detail-label">Evidence</span>
+                                                <table class="wsr-evidence-table">
+                                                    @foreach (var ev in f.Evidence)
+                                                    {
+                                                        <tr>
+                                                            <td class="wsr-ev-key">@ev.Key</td>
+                                                            <td class="wsr-ev-val">@ev.MaskedValue</td>
+                                                            <td class="wsr-ev-ctx">@ev.Context</td>
+                                                        </tr>
+                                                    }
+                                                </table>
+                                            </div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(f.ConstitutionRule))
+                                        {
+                                            <div class="wsr-detail-row">
+                                                <span class="wsr-detail-label">Constitution Rule</span>
+                                                <span class="wsr-rule-chip">@f.ConstitutionRule</span>
+                                                @if (!string.IsNullOrEmpty(f.ConstitutionRuleTitle))
+                                                { <span class="wsr-rule-title">@f.ConstitutionRuleTitle</span> }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </section>
+                }
+            }
+
+            @* ── Discovered Assets ── *@
+            @if (_tab == "assets")
+            {
+                @if (!report.Assets.Any())
+                {
+                    <div class="wsr-empty-tab">No assets discovered.</div>
+                }
+                else
+                {
+                    <div class="wsr-table-wrap">
+                        <table class="wsr-table" aria-label="Discovered assets">
+                            <thead>
+                                <tr>
+                                    <th>Asset</th>
+                                    <th>Type</th>
+                                    <th>Status</th>
+                                    <th>Size</th>
+                                    <th>Analyzed</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var a in report.Assets)
+                                {
+                                    <tr>
+                                        <td class="wsr-mono">@TrimUrl(a.Url)</td>
+                                        <td><span class="wsr-type-badge">@a.AssetType</span></td>
+                                        <td>
+                                            <span class="wsr-status-badge @(a.Status == "200 OK" ? "wsr-status-ok" : "wsr-status-miss")">
+                                                @a.Status
+                                            </span>
+                                        </td>
+                                        <td>@(a.SizeBytes.HasValue ? FormatBytes(a.SizeBytes.Value) : "—")</td>
+                                        <td>@(a.Analyzed ? "✓" : "—")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+
+            @* ── Endpoints ── *@
+            @if (_tab == "endpoints")
+            {
+                @if (!report.Endpoints.Any())
+                {
+                    <div class="wsr-empty-tab">No endpoints discovered in scanned assets.</div>
+                }
+                else
+                {
+                    @foreach (var group in report.Endpoints
+                        .GroupBy(e => e.Classification)
+                        .OrderBy(g => EndpointGroupOrder(g.Key)))
+                    {
+                        <div class="wsr-endpoint-group">
+                            <div class="wsr-endpoint-group-title @EndpointGroupClass(group.Key)">
+                                @group.Key <span class="wsr-chip-count">(@group.Count())</span>
+                            </div>
+                            @foreach (var ep in group)
+                            {
+                                <div class="wsr-endpoint-row">
+                                    <span class="wsr-mono wsr-endpoint-url">@ep.Url</span>
+                                    <span class="wsr-endpoint-source">@ep.FoundIn</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            }
+
+            @* ── Configuration ── *@
+            @if (_tab == "configuration")
+            {
+                @if (!report.ConfigurationSummary.Any())
+                {
+                    <div class="wsr-empty-tab">No accessible configuration files found.</div>
+                }
+                else
+                {
+                    <p class="wsr-tab-note">
+                        Configuration values from publicly accessible appsettings files.
+                        Sensitive values are masked. Keys flagged with a finding require action.
+                    </p>
+                    <div class="wsr-table-wrap">
+                        <table class="wsr-table" aria-label="Configuration entries">
+                            <thead>
+                                <tr><th>Key</th><th>Value</th><th>Finding</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var entry in report.ConfigurationSummary)
+                                {
+                                    <tr class="@(entry.HasFinding ? "wsr-row-finding" : "")">
+                                        <td class="wsr-mono">@entry.Key</td>
+                                        <td class="wsr-mono">@entry.MaskedValue</td>
+                                        <td>
+                                            @if (entry.HasFinding && entry.FindingSeverity.HasValue)
+                                            {
+                                                <span class="wsr-sev-badge wsr-sev-@entry.FindingSeverity.Value.ToString().ToLowerInvariant()">
+                                                    @entry.FindingSeverity.Value
+                                                </span>
+                                            }
+                                            else
+                                            { <span>—</span> }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+
+            @* ── Headers ── *@
+            @if (_tab == "headers")
+            {
+                @if (!report.Headers.Any())
+                {
+                    <div class="wsr-empty-tab">Headers could not be retrieved.</div>
+                }
+                else
+                {
+                    <div class="wsr-table-wrap">
+                        <table class="wsr-table" aria-label="Security headers">
+                            <thead>
+                                <tr><th>Header</th><th>Status</th><th>Value</th><th>Recommendation</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var h in report.Headers)
+                                {
+                                    <tr>
+                                        <td class="wsr-mono">@h.Header</td>
+                                        <td>
+                                            <span class="wsr-status-badge @(h.Status == "Present" ? "wsr-status-ok" : "wsr-status-miss")">
+                                                @h.Status
+                                            </span>
+                                        </td>
+                                        <td class="wsr-mono">@(h.Value ?? "—")</td>
+                                        <td>@(h.Status == "Missing" ? h.Recommendation : "—")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+
+            @* ── Recommendations ── *@
+            @if (_tab == "recommendations")
+            {
+                @if (!report.Recommendations.Any())
+                {
+                    <div class="wsr-empty-tab">No recommendations generated.</div>
+                }
+                else
+                {
+                    <ul class="wsr-rec-list">
+                        @foreach (var rec in report.Recommendations)
+                        { <li class="wsr-rec-item">@rec</li> }
+                    </ul>
+                }
+
+                @if (report.Limitations.Count > 0)
+                {
+                    <div class="wsr-limitations" style="margin-top:2rem">
+                        <div class="wsr-limitations-title">Scanner limitations</div>
+                        <ul class="wsr-limitations-list">
+                            @foreach (var l in report.Limitations)
+                            { <li>@l</li> }
+                        </ul>
+                    </div>
+                }
+            }
+
+        </div>
+    }
+
+</div>
+
+@code {
+    private string  _targetUrl        = string.Empty;
+    private string? _environmentName;
+    private string? _apiGateway;
+    private string  _allowedHosts     = string.Empty;
+    private string? _allowedAuthority;
+
+    private bool    _scanning;
+    private bool    _attempted;
+    private bool    _inputExpanded = true;
+    private string? _error;
+
+    private WasmSecurityReviewReport? _report;
+    private string _tab = "overview";
+
+    private string?               _findingSearch;
+    private WasmSecuritySeverity? _sevFilter;
+    private readonly HashSet<string> _expandedFindings = [];
+
+    protected override void OnInitialized()
+    {
+        _report = Scanner.GetCached();
+        if (_report is not null) _inputExpanded = false;
+    }
+
+    private async Task RunScan()
+    {
+        _attempted = true;
+        if (string.IsNullOrWhiteSpace(_targetUrl)) return;
+
+        _scanning = true;
+        _error    = null;
+        StateHasChanged();
+
+        var hosts = _allowedHosts
+            .Split([',', ' '], StringSplitOptions.RemoveEmptyEntries)
+            .Select(h => h.Trim())
+            .Where(h => h.Length > 0)
+            .ToList();
+
+        var request = new WasmScanRequest
+        {
+            TargetUrl               = _targetUrl.Trim(),
+            EnvironmentName         = _environmentName,
+            ExpectedApiGatewayBasePath = _apiGateway,
+            AllowedBackendHostnames = hosts,
+            AllowedAuthority        = _allowedAuthority,
+        };
+
+        var (report, error) = await Scanner.ScanAsync(request);
+        _report   = report;
+        _error    = error;
+        _scanning = false;
+
+        if (_report is not null)
+        {
+            _tab          = "overview";
+            _inputExpanded = false;
+            _expandedFindings.Clear();
+            _findingSearch = null;
+            _sevFilter     = null;
+        }
+    }
+
+    private void ToggleInput() => _inputExpanded = !_inputExpanded;
+
+    private void SetTab(string tab)
+    {
+        _tab           = tab;
+        _findingSearch = null;
+        _sevFilter     = null;
+    }
+
+    private void ToggleFinding(string id)
+    {
+        if (!_expandedFindings.Remove(id))
+            _expandedFindings.Add(id);
+    }
+
+    private void ToggleSev(WasmSecuritySeverity sev) =>
+        _sevFilter = _sevFilter == sev ? null : sev;
+
+    private void ClearFilters()
+    {
+        _sevFilter     = null;
+        _findingSearch = null;
+    }
+
+    private IEnumerable<WasmSecurityFinding> FilteredFindings(
+        IReadOnlyList<WasmSecurityFinding> all)
+    {
+        var q = all.AsEnumerable();
+        if (_sevFilter.HasValue) q = q.Where(f => f.Severity == _sevFilter.Value);
+        if (!string.IsNullOrWhiteSpace(_findingSearch))
+        {
+            var term = _findingSearch.Trim();
+            q = q.Where(f =>
+                f.Title.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                f.Description.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                CategoryLabel(f.Category).Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+        return q;
+    }
+
+    private static string ScoreClass(int score) =>
+        score >= 80 ? "wsr-score-good" : score >= 50 ? "wsr-score-warn" : "wsr-score-bad";
+
+    private static string CategoryLabel(WasmSecurityCategory c) => c switch
+    {
+        WasmSecurityCategory.SecretsExposure           => "Secrets Exposure",
+        WasmSecurityCategory.BackendEndpointExposure   => "Backend Endpoints",
+        WasmSecurityCategory.AuthenticationConfiguration => "Auth Config",
+        WasmSecurityCategory.TokenStorage              => "Token Storage",
+        WasmSecurityCategory.BrowserStorage            => "Browser Storage",
+        WasmSecurityCategory.SourceMapExposure         => "Source Maps",
+        WasmSecurityCategory.DebugArtifactExposure     => "Debug Artifacts",
+        WasmSecurityCategory.SecurityHeaders           => "Security Headers",
+        WasmSecurityCategory.CorsConfiguration         => "CORS",
+        WasmSecurityCategory.SensitiveDataExposure     => "Sensitive Data",
+        WasmSecurityCategory.BlazorSpecific            => "Blazor Specific",
+        WasmSecurityCategory.DevelopmentArtifact       => "Dev Artifacts",
+        WasmSecurityCategory.ConfigurationExposure     => "Config Exposure",
+        _                                              => c.ToString(),
+    };
+
+    private static int EndpointGroupOrder(string cls) => cls switch
+    {
+        "Suspicious" => 0, "Localhost" => 1, "Insecure" => 2,
+        "Internal" => 3, "Unknown" => 4, _ => 5,
+    };
+
+    private static string EndpointGroupClass(string cls) => cls switch
+    {
+        "Suspicious" or "Localhost" or "Insecure" => "wsr-ep-group-warn",
+        "Internal" => "wsr-ep-group-caution",
+        _ => "",
+    };
+
+    private static string TrimUrl(string url) =>
+        url.Length > 80 ? "…" + url[^77..] : url;
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024} KB";
+        return $"{bytes / 1024 / 1024} MB";
+    }
+}

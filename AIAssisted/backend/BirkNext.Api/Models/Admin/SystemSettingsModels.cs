@@ -133,6 +133,7 @@ public class FeatureVisibilityInfo
     public bool SpecDrift { get; set; } = true;
     public bool ImplementationReview { get; set; } = true;
     public bool ImplementationTraceability { get; set; } = true;
+    public bool BlazorWasmSecurityReview { get; set; } = true;
     public bool TaskExplorer { get; set; } = true;
     public bool AiChangeReview { get; set; } = true;
     public bool QaReadiness { get; set; } = true;

@@ -858,7 +858,7 @@ else if (_settings is not null)
         new(StringComparer.OrdinalIgnoreCase)
         {
             "SpecDrift", "ImpactAnalysis", "ArtifactTraceability", "ConstitutionCompliance",
-            "QaAuditor", "DeliveryReadiness", "ImplementationReview", "ImplementationTraceability"
+            "BlazorWasmSecurityReview", "QaAuditor", "DeliveryReadiness", "ImplementationReview", "ImplementationTraceability"
         };
 
     private static readonly HashSet<string> AiReviewKeys =
@@ -891,6 +891,7 @@ else if (_settings is not null)
         ("Delivery Readiness",      "DeliveryReadiness"),
         ("Implementation Review",        "ImplementationReview"),
         ("Implementation Traceability",  "ImplementationTraceability"),
+        ("WASM Security Review",         "BlazorWasmSecurityReview"),
         ("AI Change Review",             "AiChangeReview"),
         ("QA Readiness",            "QaReadiness"),
     ];

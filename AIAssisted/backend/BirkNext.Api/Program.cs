@@ -4,6 +4,8 @@ using BirkNext.Api.GraphQL;
 using BirkNext.Api.Middleware;
 using BirkNext.Api.Services;
 using BirkNext.Api.Services.ImplementationTraceability;
+using BirkNext.Api.Services.WasmPerformance;
+using BirkNext.Api.Services.WasmSecurity;
 using HotChocolate.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -98,6 +100,26 @@ builder.Services.Configure<AzureDevOpsOptions>(options =>
 
 // Connection tester is always registered — checks options at runtime.
 builder.Services.AddHttpClient<AzureDevOpsConnectionTester>();
+
+// Blazor WASM Security Review
+builder.Services.AddHttpClient<IBlazorWasmSecurityReviewService, BlazorWasmSecurityReviewService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-WasmSecurityScanner/1.0");
+});
+
+// Blazor WASM Performance Review — asset discovery + startup analysis
+builder.Services.AddHttpClient<IWasmAssetDiscoveryService, WasmAssetDiscoveryService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(120);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-WasmPerfScanner/1.0");
+});
+builder.Services.AddSingleton<IWasmStartupAnalysisService, WasmStartupAnalysisService>();
+builder.Services.AddHttpClient<IWasmApiAnalysisService, WasmApiAnalysisService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-WasmPerfScanner/1.0");
+});
 
 builder.Services.AddHttpClient("Anthropic", client =>
 {

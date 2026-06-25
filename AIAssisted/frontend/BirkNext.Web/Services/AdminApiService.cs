@@ -276,6 +276,8 @@ public class FeatureVisibilityDto
     [JsonPropertyName("specDrift")]            public bool SpecDrift            { get; set; } = true;
     [JsonPropertyName("implementationReview")]       public bool ImplementationReview       { get; set; } = true;
     [JsonPropertyName("implementationTraceability")] public bool ImplementationTraceability { get; set; } = true;
+    [JsonPropertyName("blazorWasmSecurityReview")]        public bool BlazorWasmSecurityReview        { get; set; } = true;
+    [JsonPropertyName("blazorWasmPerformanceReview")]     public bool BlazorWasmPerformanceReview     { get; set; } = true;
     [JsonPropertyName("taskExplorer")]         public bool TaskExplorer         { get; set; } = true;
     [JsonPropertyName("aiChangeReview")]       public bool AiChangeReview       { get; set; } = true;
     [JsonPropertyName("qaReadiness")]          public bool QaReadiness          { get; set; } = true;
