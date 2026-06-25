@@ -77,6 +77,108 @@ public sealed class WasmAssetDiscoveryRequest
     public string TargetUrl { get; init; } = "";
 }
 
+public enum PerformanceReadinessState
+{
+    Ready            = 0,
+    MostlyReady      = 1,
+    NeedsImprovement = 2,
+    HighRisk         = 3,
+    NotAssessed      = 4
+}
+
+public sealed class PerformanceCategorySummary
+{
+    [JsonPropertyName("categoryName")]
+    public string CategoryName { get; init; } = "";
+
+    [JsonPropertyName("category")]
+    public PerformanceCategory Category { get; init; }
+
+    [JsonPropertyName("score")]
+    public int Score { get; init; }
+
+    [JsonPropertyName("state")]
+    public PerformanceReadinessState State { get; init; }
+
+    [JsonPropertyName("findingsCount")]
+    public int FindingsCount { get; init; }
+
+    [JsonPropertyName("criticalCount")]
+    public int CriticalCount { get; init; }
+
+    [JsonPropertyName("highCount")]
+    public int HighCount { get; init; }
+
+    [JsonPropertyName("mediumCount")]
+    public int MediumCount { get; init; }
+
+    [JsonPropertyName("lowCount")]
+    public int LowCount { get; init; }
+
+    [JsonPropertyName("wasAssessed")]
+    public bool WasAssessed { get; init; }
+}
+
+public sealed class PerformanceReadinessHealth
+{
+    [JsonPropertyName("overallScore")]
+    public int OverallScore { get; init; }
+
+    [JsonPropertyName("startupScore")]
+    public int StartupScore { get; init; }
+
+    [JsonPropertyName("apiScore")]
+    public int ApiScore { get; init; }
+
+    [JsonPropertyName("graphQlScore")]
+    public int GraphQlScore { get; init; }
+
+    [JsonPropertyName("cachingScore")]
+    public int CachingScore { get; init; }
+
+    [JsonPropertyName("compressionScore")]
+    public int CompressionScore { get; init; }
+
+    [JsonPropertyName("architectureScore")]
+    public int ArchitectureScore { get; init; }
+
+    [JsonPropertyName("criticalFindings")]
+    public int CriticalFindings { get; init; }
+
+    [JsonPropertyName("highFindings")]
+    public int HighFindings { get; init; }
+
+    [JsonPropertyName("mediumFindings")]
+    public int MediumFindings { get; init; }
+
+    [JsonPropertyName("lowFindings")]
+    public int LowFindings { get; init; }
+}
+
+public sealed class PerformanceReadinessReport
+{
+    [JsonPropertyName("overallScore")]
+    public int OverallScore { get; init; }
+
+    [JsonPropertyName("overallState")]
+    public PerformanceReadinessState OverallState { get; init; }
+
+    [JsonPropertyName("categories")]
+    public List<PerformanceCategorySummary> Categories { get; init; } = [];
+
+    [JsonPropertyName("topRisks")]
+    public List<PerformanceFinding> TopRisks { get; init; } = [];
+
+    [JsonPropertyName("topRecommendations")]
+    public List<PerformanceRecommendation> TopRecommendations { get; init; } = [];
+
+    [JsonPropertyName("health")]
+    public PerformanceReadinessHealth Health { get; init; } = new();
+
+    [JsonPropertyName("hasData")]
+    public bool HasData { get; init; }
+}
+
 public sealed class WasmAssetDiscoveryResult
 {
     [JsonPropertyName("targetUrl")]
@@ -105,6 +207,12 @@ public sealed class WasmAssetDiscoveryResult
 
     [JsonPropertyName("apiAnalysis")]
     public ApiAnalysisResult? ApiAnalysis { get; init; }
+
+    [JsonPropertyName("cachingAnalysis")]
+    public CachingAnalysisResult? CachingAnalysis { get; init; }
+
+    [JsonPropertyName("readinessReport")]
+    public PerformanceReadinessReport? ReadinessReport { get; init; }
 
     [JsonPropertyName("error")]
     public string? Error { get; init; }
@@ -210,6 +318,94 @@ public sealed class PerformanceRecommendation
 
     [JsonPropertyName("category")]
     public PerformanceCategory Category { get; init; }
+}
+
+public enum CacheStatus
+{
+    ProperlyOptimized = 0,
+    WeaklyCached      = 1,
+    NotCached         = 2,
+    Unknown           = 3
+}
+
+public enum CompressionStatus
+{
+    Brotli        = 0,
+    Gzip          = 1,
+    Other         = 2,
+    NotCompressed = 3
+}
+
+public sealed class AssetCachingSummary
+{
+    [JsonPropertyName("url")]
+    public string Url { get; init; } = "";
+
+    [JsonPropertyName("type")]
+    public AssetType Type { get; init; }
+
+    [JsonPropertyName("contentEncoding")]
+    public string? ContentEncoding { get; init; }
+
+    [JsonPropertyName("cacheControl")]
+    public string? CacheControl { get; init; }
+
+    [JsonPropertyName("hasETag")]
+    public bool HasETag { get; init; }
+
+    [JsonPropertyName("hasLastModified")]
+    public bool HasLastModified { get; init; }
+
+    [JsonPropertyName("sizeBytes")]
+    public long SizeBytes { get; init; }
+
+    [JsonPropertyName("cacheStatus")]
+    public CacheStatus CacheStatus { get; init; }
+
+    [JsonPropertyName("compressionStatus")]
+    public CompressionStatus CompressionStatus { get; init; }
+
+    [JsonPropertyName("recommendation")]
+    public string? Recommendation { get; init; }
+}
+
+public sealed class CachingMetrics
+{
+    [JsonPropertyName("totalAssets")]
+    public int TotalAssets { get; init; }
+
+    [JsonPropertyName("compressedAssets")]
+    public int CompressedAssets { get; init; }
+
+    [JsonPropertyName("brotliAssets")]
+    public int BrotliAssets { get; init; }
+
+    [JsonPropertyName("gzipAssets")]
+    public int GzipAssets { get; init; }
+
+    [JsonPropertyName("cacheOptimizedAssets")]
+    public int CacheOptimizedAssets { get; init; }
+
+    [JsonPropertyName("assetsWithoutCacheHeaders")]
+    public int AssetsWithoutCacheHeaders { get; init; }
+
+    [JsonPropertyName("uncompressedLargeAssets")]
+    public int UncompressedLargeAssets { get; init; }
+}
+
+public sealed class CachingAnalysisResult
+{
+    [JsonPropertyName("metrics")]
+    public CachingMetrics Metrics { get; init; } = new();
+
+    [JsonPropertyName("assetSummaries")]
+    public List<AssetCachingSummary> AssetSummaries { get; init; } = [];
+
+    [JsonPropertyName("findings")]
+    public List<PerformanceFinding> Findings { get; init; } = [];
+
+    [JsonPropertyName("recommendations")]
+    public List<PerformanceRecommendation> Recommendations { get; init; } = [];
 }
 
 public enum GraphQLOperationType { Query = 0, Mutation = 1, Subscription = 2, Unknown = 3 }
@@ -326,11 +522,13 @@ public sealed class WasmPerformanceReviewReport
     public PerformanceHealth Health { get; init; } = new();
     public StartupMetrics? StartupMetrics { get; init; }
     public ApiAnalysisResult? ApiAnalysis { get; init; }
+    public CachingAnalysisResult? CachingAnalysis { get; init; }
     public List<PerformanceFinding> Findings { get; init; } = [];
     public List<DiscoveredAsset> Assets { get; init; } = [];
     public List<ApiCallSummary> ApiCalls { get; init; } = [];
     public List<PerformanceMetric> Metrics { get; init; } = [];
     public List<PerformanceRecommendation> Recommendations { get; init; } = [];
+    public PerformanceReadinessReport? ReadinessReport { get; init; }
     public List<string> Limitations { get; init; } = [];
     public bool IsBlazorWasm { get; init; }
     public string? ErrorMessage { get; init; }

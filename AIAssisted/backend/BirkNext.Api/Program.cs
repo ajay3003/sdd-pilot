@@ -115,11 +115,13 @@ builder.Services.AddHttpClient<IWasmAssetDiscoveryService, WasmAssetDiscoverySer
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-WasmPerfScanner/1.0");
 });
 builder.Services.AddSingleton<IWasmStartupAnalysisService, WasmStartupAnalysisService>();
+builder.Services.AddSingleton<IWasmCachingAnalysisService, WasmCachingAnalysisService>();
 builder.Services.AddHttpClient<IWasmApiAnalysisService, WasmApiAnalysisService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-WasmPerfScanner/1.0");
 });
+builder.Services.AddSingleton<IWasmPerformanceReadinessService, WasmPerformanceReadinessService>();
 
 builder.Services.AddHttpClient("Anthropic", client =>
 {

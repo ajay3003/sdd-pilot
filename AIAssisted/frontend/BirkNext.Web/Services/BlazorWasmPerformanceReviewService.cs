@@ -85,6 +85,20 @@ public sealed class BlazorWasmPerformanceReviewService : IBlazorWasmPerformanceR
                 }));
         }
 
+        if (result.CachingAnalysis is not null)
+        {
+            allFindings.AddRange(result.CachingAnalysis.Findings);
+            var apiOffset = result.Recommendations.Count + (result.ApiAnalysis?.Recommendations.Count ?? 0);
+            allRecs.AddRange(result.CachingAnalysis.Recommendations
+                .Select(r => new PerformanceRecommendation
+                {
+                    Priority    = apiOffset + r.Priority,
+                    Title       = r.Title,
+                    Description = r.Description,
+                    Category    = r.Category
+                }));
+        }
+
         var report = new WasmPerformanceReviewReport
         {
             TargetUrl       = targetUrl,
@@ -93,6 +107,8 @@ public sealed class BlazorWasmPerformanceReviewService : IBlazorWasmPerformanceR
             Assets          = result.Assets,
             StartupMetrics  = result.StartupMetrics,
             ApiAnalysis     = result.ApiAnalysis,
+            CachingAnalysis = result.CachingAnalysis,
+            ReadinessReport = result.ReadinessReport,
             Findings        = allFindings,
             Metrics         = result.Metrics,
             Recommendations = allRecs,
@@ -109,9 +125,10 @@ public sealed class BlazorWasmPerformanceReviewService : IBlazorWasmPerformanceR
             },
             Limitations =
             [
-                "Phase 4 complete: startup analysis and API probing active. Caching and runtime analysis not yet implemented.",
+                "Phase 5 complete: startup, caching & compression, and API analysis are active.",
                 "API operations shown are those observed during the automated scan; runtime request interception requires browser instrumentation.",
-                "Runtime metrics (FCP, LCP, TTI) require browser instrumentation."
+                "Runtime metrics (FCP, LCP, TTI) require browser instrumentation.",
+                "Blazor runtime analysis not yet implemented."
             ]
         };
 

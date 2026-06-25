@@ -50,6 +50,8 @@ public sealed class WasmAssetDiscoveryResult
     public List<PerformanceMetric>                 Metrics          { get; init; } = [];
     public List<PerformanceRecommendation>         Recommendations  { get; init; } = [];
     public ApiAnalysisResult?                      ApiAnalysis      { get; init; }
+    public CachingAnalysisResult?                  CachingAnalysis  { get; init; }
+    public PerformanceReadinessReport?             ReadinessReport  { get; init; }
     public string?                                 Error            { get; init; }
 }
 

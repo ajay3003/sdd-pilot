@@ -7,20 +7,26 @@ namespace BirkNext.Api.Controllers;
 [Route("api/wasm-performance")]
 public class WasmPerformanceController : ControllerBase
 {
-    private readonly IWasmAssetDiscoveryService  _discovery;
-    private readonly IWasmStartupAnalysisService _startup;
-    private readonly IWasmApiAnalysisService     _api;
+    private readonly IWasmAssetDiscoveryService          _discovery;
+    private readonly IWasmStartupAnalysisService         _startup;
+    private readonly IWasmCachingAnalysisService         _caching;
+    private readonly IWasmApiAnalysisService             _api;
+    private readonly IWasmPerformanceReadinessService    _readiness;
     private readonly ILogger<WasmPerformanceController> _logger;
 
     public WasmPerformanceController(
-        IWasmAssetDiscoveryService  discovery,
-        IWasmStartupAnalysisService startup,
-        IWasmApiAnalysisService     api,
+        IWasmAssetDiscoveryService          discovery,
+        IWasmStartupAnalysisService         startup,
+        IWasmCachingAnalysisService         caching,
+        IWasmApiAnalysisService             api,
+        IWasmPerformanceReadinessService    readiness,
         ILogger<WasmPerformanceController> logger)
     {
         _discovery = discovery;
         _startup   = startup;
+        _caching   = caching;
         _api       = api;
+        _readiness = readiness;
         _logger    = logger;
     }
 
@@ -47,14 +53,18 @@ public class WasmPerformanceController : ControllerBase
             if (discovery.Error is not null)
                 return Ok(discovery);
 
-            // Startup analysis is synchronous; API analysis makes HTTP probes — run in parallel
-            var startupAnalysis = _startup.Analyze(discovery.Assets);
-            var apiTask         = _api.AnalyzeAsync(request.TargetUrl, ct: ct);
+            // Start async API probe immediately so it runs while synchronous analyses execute
+            var apiTask = _api.AnalyzeAsync(request.TargetUrl, ct: ct);
 
+            // Synchronous analyses — pure computation over discovered assets (milliseconds)
+            var startupAnalysis  = _startup.Analyze(discovery.Assets);
+            var cachingAnalysis  = _caching.Analyze(discovery.Assets);
+
+            // Wait for API probing to complete
             await apiTask;
-            var apiAnalysis = apiTask.Result;
 
-            return Ok(new WasmAssetDiscoveryResult
+            // Build intermediate result so readiness service can aggregate all phase outputs
+            var intermediate = new WasmAssetDiscoveryResult
             {
                 TargetUrl       = discovery.TargetUrl,
                 DiscoveredAt    = discovery.DiscoveredAt,
@@ -64,7 +74,23 @@ public class WasmPerformanceController : ControllerBase
                 Findings        = startupAnalysis.Findings.ToList(),
                 Metrics         = startupAnalysis.DisplayMetrics.ToList(),
                 Recommendations = startupAnalysis.Recommendations.ToList(),
-                ApiAnalysis     = apiAnalysis
+                ApiAnalysis     = apiTask.Result,
+                CachingAnalysis = cachingAnalysis
+            };
+
+            return Ok(new WasmAssetDiscoveryResult
+            {
+                TargetUrl       = intermediate.TargetUrl,
+                DiscoveredAt    = intermediate.DiscoveredAt,
+                IsBlazorWasm    = intermediate.IsBlazorWasm,
+                Assets          = intermediate.Assets,
+                StartupMetrics  = intermediate.StartupMetrics,
+                Findings        = intermediate.Findings,
+                Metrics         = intermediate.Metrics,
+                Recommendations = intermediate.Recommendations,
+                ApiAnalysis     = intermediate.ApiAnalysis,
+                CachingAnalysis = intermediate.CachingAnalysis,
+                ReadinessReport = _readiness.GenerateReport(intermediate)
             });
         }
         catch (OperationCanceledException)

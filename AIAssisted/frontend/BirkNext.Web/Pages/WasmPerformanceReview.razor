@@ -112,77 +112,164 @@
 
         <div class="wpr-tab-body">
 
-            @* ── Overview ────────────────────────────────────────────────── *@
+            @* ── Overview / Readiness Dashboard ───────────────────────────── *@
             @if (_tab == "overview")
             {
-                @if (_report.Assets.Count > 0)
+                var rdy = _report.ReadinessReport;
+
+                @if (rdy is not null && rdy.HasData)
                 {
-                    <h2 class="wpr-section-heading">Asset Inventory</h2>
-                    <div class="wpr-overview-stats">
-                        <div class="wpr-stat-card">
-                            <span class="wpr-stat-value">@SuccessAssets().Count</span>
-                            <span class="wpr-stat-label">Assets loaded</span>
+                    @* Overall readiness card *@
+                    <h2 class="wpr-section-heading">Performance Readiness</h2>
+                    <div class="wpr-rdy-overall-card @ReadinessStateClass(rdy.OverallState)">
+                        <div class="wpr-rdy-overall-left">
+                            <div class="wpr-rdy-overall-score">@rdy.OverallScore</div>
+                            <div class="wpr-rdy-overall-state">@ReadinessStateLabel(rdy.OverallState)</div>
                         </div>
-                        <div class="wpr-stat-card">
-                            <span class="wpr-stat-value">@FormatBytes(SuccessAssets().Sum(a => a.ContentLength ?? a.DownloadedBytes))</span>
-                            <span class="wpr-stat-label">Est. total size</span>
+                        <div class="wpr-rdy-overall-right">
+                            @if (rdy.Health.CriticalFindings > 0)
+                            {
+                                <span class="wpr-sev-badge wpr-sev-critical">@rdy.Health.CriticalFindings Critical</span>
+                            }
+                            @if (rdy.Health.HighFindings > 0)
+                            {
+                                <span class="wpr-sev-badge wpr-sev-high">@rdy.Health.HighFindings High</span>
+                            }
+                            @if (rdy.Health.MediumFindings > 0)
+                            {
+                                <span class="wpr-sev-badge wpr-sev-medium">@rdy.Health.MediumFindings Medium</span>
+                            }
+                            @if (rdy.Health.LowFindings > 0)
+                            {
+                                <span class="wpr-sev-badge wpr-sev-low">@rdy.Health.LowFindings Low</span>
+                            }
+                            @if (rdy.Health.CriticalFindings == 0 && rdy.Health.HighFindings == 0 &&
+                                 rdy.Health.MediumFindings == 0 && rdy.Health.LowFindings == 0)
+                            {
+                                <span class="wpr-rdy-all-clear">No actionable findings</span>
+                            }
                         </div>
-                        <div class="wpr-stat-card @(CompressedCount() == SuccessAssets().Count ? "" : "wpr-stat-warn")">
-                            <span class="wpr-stat-value">@CompressedCount() / @SuccessAssets().Count</span>
-                            <span class="wpr-stat-label">Compressed</span>
-                        </div>
-                        <div class="wpr-stat-card @(CachedCount() == SuccessAssets().Count ? "" : "wpr-stat-warn")">
-                            <span class="wpr-stat-value">@CachedCount() / @SuccessAssets().Count</span>
-                            <span class="wpr-stat-label">Cache headers</span>
-                        </div>
-                        @if (ErrorAssetCount() > 0)
-                        {
-                            <div class="wpr-stat-card wpr-stat-warn">
-                                <span class="wpr-stat-value">@ErrorAssetCount()</span>
-                                <span class="wpr-stat-label">Errors / missing</span>
-                            </div>
-                        }
                     </div>
 
-                    <h2 class="wpr-section-heading">By Asset Type</h2>
-                    <div class="wpr-category-list">
-                        @foreach (var grp in _report.Assets.GroupBy(a => a.Type).OrderBy(g => g.Key))
+                    @* Category score grid *@
+                    <h2 class="wpr-section-heading">Category Scores</h2>
+                    <div class="wpr-rdy-score-grid">
+                        @foreach (var cat in rdy.Categories)
                         {
-                            var grpBytes = grp.Where(a => a.StatusCode is >= 200 and < 300)
-                                              .Sum(a => a.ContentLength ?? a.DownloadedBytes);
-                            <div class="wpr-category-row">
-                                <span class="wpr-category-label">@AssetTypeLabel(grp.Key)</span>
-                                <span class="wpr-category-count">@grp.Count() asset@(grp.Count() != 1 ? "s" : "")</span>
-                                <span class="wpr-category-size">@FormatBytes(grpBytes)</span>
-                            </div>
-                        }
-                    </div>
-                }
-
-                @if (_report.Findings.Count > 0)
-                {
-                    <h2 class="wpr-section-heading">Findings by Category</h2>
-                    <div class="wpr-category-list">
-                        @foreach (var grp in _report.Findings.GroupBy(f => f.Category).OrderBy(g => g.Min(f => f.Severity)))
-                        {
-                            <div class="wpr-category-row">
-                                <span class="wpr-category-label">@CategoryLabel(grp.Key)</span>
-                                <span class="wpr-category-count">@grp.Count() finding@(grp.Count() != 1 ? "s" : "")</span>
-                                <div class="wpr-category-badges">
-                                    @foreach (var f in grp.OrderBy(f => f.Severity))
-                                    { <span class="wpr-sev-badge wpr-sev-@f.Severity.ToString().ToLower()">@f.Severity</span> }
+                            <button class="wpr-rdy-category-card @ReadinessStateClass(cat.State)"
+                                    @onclick="() => SetTab(DrilldownTab(cat.CategoryName))"
+                                    title="Explore @cat.CategoryName details">
+                                <div class="wpr-rdy-cat-name">@cat.CategoryName</div>
+                                <div class="wpr-rdy-cat-score @(cat.WasAssessed ? "" : "wpr-rdy-score-na")">
+                                    @(cat.WasAssessed ? cat.Score.ToString() : "—")
                                 </div>
-                            </div>
+                                <div class="wpr-rdy-cat-state">@ReadinessStateLabel(cat.State)</div>
+                                @if (cat.WasAssessed && cat.FindingsCount > 0)
+                                {
+                                    <div class="wpr-rdy-cat-findings">@cat.FindingsCount finding@(cat.FindingsCount != 1 ? "s" : "")</div>
+                                }
+                                @if (cat.WasAssessed && cat.FindingsCount == 0)
+                                {
+                                    <div class="wpr-rdy-cat-findings">No issues</div>
+                                }
+                                @if (!cat.WasAssessed)
+                                {
+                                    <div class="wpr-rdy-cat-findings">Not assessed</div>
+                                }
+                            </button>
                         }
                     </div>
-                }
 
-                @if (_report.Limitations.Count > 0)
+                    @* Top risks *@
+                    @if (rdy.TopRisks.Count > 0)
+                    {
+                        <h2 class="wpr-section-heading">Top Risks</h2>
+                        <div class="wpr-rdy-risk-list">
+                            @foreach (var risk in rdy.TopRisks)
+                            {
+                                <div class="wpr-rdy-risk-item">
+                                    <span class="wpr-sev-badge wpr-sev-@(risk.Severity.ToString().ToLower())">@risk.Severity</span>
+                                    <span class="wpr-rdy-risk-title">@risk.Title</span>
+                                    <span class="wpr-rdy-risk-id">@risk.Id</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* Top recommendations *@
+                    @if (rdy.TopRecommendations.Count > 0)
+                    {
+                        <h2 class="wpr-section-heading">Top Recommendations</h2>
+                        <ol class="wpr-rdy-top-recs">
+                            @foreach (var rec in rdy.TopRecommendations)
+                            {
+                                <li class="wpr-rdy-top-rec">
+                                    <strong class="wpr-rdy-top-rec-title">@rec.Title</strong>
+                                    <p class="wpr-rdy-top-rec-desc">@rec.Description</p>
+                                </li>
+                            }
+                        </ol>
+                    }
+
+                    @* Drill-down links *@
+                    <div class="wpr-rdy-drill-links">
+                        <span class="wpr-rdy-drill-label">Explore details:</span>
+                        <button class="wpr-link-btn" @onclick='() => SetTab("startup")'>Startup Analysis →</button>
+                        <button class="wpr-link-btn" @onclick='() => SetTab("api")'>API Analysis →</button>
+                        <button class="wpr-link-btn" @onclick='() => SetTab("caching")'>Caching &amp; Compression →</button>
+                        <button class="wpr-link-btn" @onclick='() => SetTab("recs")'>All Recommendations →</button>
+                    </div>
+
+                    @if (_report.Limitations.Count > 0)
+                    {
+                        <h2 class="wpr-section-heading">Limitations</h2>
+                        <ul class="wpr-limitations-list">
+                            @foreach (var lim in _report.Limitations) { <li>@lim</li> }
+                        </ul>
+                    }
+                }
+                else
                 {
-                    <h2 class="wpr-section-heading">Limitations</h2>
-                    <ul class="wpr-limitations-list">
-                        @foreach (var lim in _report.Limitations) { <li>@lim</li> }
-                    </ul>
+                    <div class="wpr-rdy-empty">
+                        <p class="wpr-rdy-empty-msg">No performance analysis available. Run a Blazor WASM Performance Review to generate a readiness assessment.</p>
+                    </div>
+
+                    @if (_report.Assets.Count > 0)
+                    {
+                        <h2 class="wpr-section-heading">Asset Inventory</h2>
+                        <div class="wpr-overview-stats">
+                            <div class="wpr-stat-card">
+                                <span class="wpr-stat-value">@SuccessAssets().Count</span>
+                                <span class="wpr-stat-label">Assets loaded</span>
+                            </div>
+                            <div class="wpr-stat-card">
+                                <span class="wpr-stat-value">@FormatBytes(SuccessAssets().Sum(a => a.ContentLength ?? a.DownloadedBytes))</span>
+                                <span class="wpr-stat-label">Est. total size</span>
+                            </div>
+                        </div>
+
+                        <h2 class="wpr-section-heading">By Asset Type</h2>
+                        <div class="wpr-category-list">
+                            @foreach (var grp in _report.Assets.GroupBy(a => a.Type).OrderBy(g => g.Key))
+                            {
+                                var grpBytes = grp.Where(a => a.StatusCode is >= 200 and < 300)
+                                                  .Sum(a => a.ContentLength ?? a.DownloadedBytes);
+                                <div class="wpr-category-row">
+                                    <span class="wpr-category-label">@AssetTypeLabel(grp.Key)</span>
+                                    <span class="wpr-category-count">@grp.Count() asset@(grp.Count() != 1 ? "s" : "")</span>
+                                    <span class="wpr-category-size">@FormatBytes(grpBytes)</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (_report.Limitations.Count > 0)
+                    {
+                        <h2 class="wpr-section-heading">Limitations</h2>
+                        <ul class="wpr-limitations-list">
+                            @foreach (var lim in _report.Limitations) { <li>@lim</li> }
+                        </ul>
+                    }
                 }
             }
 
@@ -467,18 +554,106 @@
             @if (_tab == "caching")
             {
                 <p class="wpr-tab-intro">
-                    Caching strategy and compression effectiveness for static assets and API responses.
+                    HTTP caching and compression analysis for Blazor framework assets and static files.
+                    Checks Cache-Control, ETag, and Content-Encoding headers against recommended practices.
                 </p>
-                @if (!_report.Findings.Any(f => f.Category is PerformanceCategory.Caching or PerformanceCategory.Compression or PerformanceCategory.Network))
+
+                @if (_report.CachingAnalysis is null)
                 {
-                    <p class="wpr-empty-tab">Caching &amp; compression analysis not yet implemented.</p>
+                    <p class="wpr-empty-tab">Run a review to see caching &amp; compression analysis.</p>
                 }
                 else
                 {
-                    <div class="wpr-findings-list">
-                        @foreach (var f in _report.Findings.Where(f => f.Category is PerformanceCategory.Caching or PerformanceCategory.Compression or PerformanceCategory.Network).OrderBy(f => f.Severity))
-                        { @FindingCard(f) }
+                    var cch = _report.CachingAnalysis;
+                    var m   = cch.Metrics;
+
+                    @* ── Summary cards ───────────────────────────────────────── *@
+                    <h2 class="wpr-section-heading">Compression &amp; Cache Summary</h2>
+                    <div class="wpr-metric-grid">
+                        <div class="wpr-metric-card @(m.CompressedAssets == m.TotalAssets && m.TotalAssets > 0 ? "wpr-metric-good" : m.CompressedAssets > 0 ? "wpr-metric-warning" : "wpr-metric-poor")">
+                            <span class="wpr-metric-value">@m.CompressedAssets / @m.TotalAssets</span>
+                            <span class="wpr-metric-label">Compressed assets</span>
+                        </div>
+                        <div class="wpr-metric-card @(m.BrotliAssets > 0 ? "wpr-metric-good" : "wpr-metric-poor")">
+                            <span class="wpr-metric-value">@m.BrotliAssets</span>
+                            <span class="wpr-metric-label">Brotli</span>
+                            @if (m.GzipAssets > 0)
+                            {
+                                <span class="wpr-metric-threshold">GZip: @m.GzipAssets</span>
+                            }
+                        </div>
+                        <div class="wpr-metric-card @(m.CacheOptimizedAssets == m.TotalAssets && m.TotalAssets > 0 ? "wpr-metric-good" : m.CacheOptimizedAssets > 0 ? "wpr-metric-warning" : "wpr-metric-poor")">
+                            <span class="wpr-metric-value">@m.CacheOptimizedAssets</span>
+                            <span class="wpr-metric-label">Cache optimised</span>
+                        </div>
+                        <div class="wpr-metric-card @(m.AssetsWithoutCacheHeaders == 0 ? "wpr-metric-good" : "wpr-metric-poor")">
+                            <span class="wpr-metric-value">@m.AssetsWithoutCacheHeaders</span>
+                            <span class="wpr-metric-label">Missing cache headers</span>
+                        </div>
+                        <div class="wpr-metric-card @(m.UncompressedLargeAssets == 0 ? "wpr-metric-good" : "wpr-metric-poor")">
+                            <span class="wpr-metric-value">@m.UncompressedLargeAssets</span>
+                            <span class="wpr-metric-label">Large uncompressed</span>
+                        </div>
                     </div>
+
+                    @* ── Asset filter + table ─────────────────────────────────── *@
+                    @if (cch.AssetSummaries.Count > 0)
+                    {
+                        <h2 class="wpr-section-heading">Asset Detail</h2>
+
+                        <div class="wpr-filter-chips wpr-cch-filters">
+                            <button class="wpr-filter-chip @(_cchFilter == "all"         ? "is-active" : "")" @onclick='() => _cchFilter = "all"'>All (@cch.AssetSummaries.Count)</button>
+                            <button class="wpr-filter-chip @(_cchFilter == "framework"   ? "is-active" : "")" @onclick='() => _cchFilter = "framework"'>Framework (@CachingCount("framework"))</button>
+                            <button class="wpr-filter-chip @(_cchFilter == "uncompressed"? "is-active" : "")" @onclick='() => _cchFilter = "uncompressed"'>Not Compressed (@CachingCount("uncompressed"))</button>
+                            <button class="wpr-filter-chip @(_cchFilter == "uncached"    ? "is-active" : "")" @onclick='() => _cchFilter = "uncached"'>Not Cached (@CachingCount("uncached"))</button>
+                        </div>
+
+                        <div class="wpr-table-wrap">
+                            <table class="wpr-table">
+                                <thead>
+                                    <tr>
+                                        <th>Asset</th>
+                                        <th>Type</th>
+                                        <th>Cache-Control</th>
+                                        <th>ETag</th>
+                                        <th>Encoding</th>
+                                        <th>Size</th>
+                                        <th>Status</th>
+                                        <th>Recommendation</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var s in FilteredCachingSummaries().Take(100))
+                                    {
+                                        <tr>
+                                            <td class="wpr-asset-url" title="@s.Url">@TrimUrl(s.Url)</td>
+                                            <td><span class="wpr-type-chip">@AssetTypeLabel(s.Type)</span></td>
+                                            <td class="wpr-cache-cell" title="@(s.CacheControl ?? "")">@(s.CacheControl is null ? "—" : TruncateCache(s.CacheControl))</td>
+                                            <td class="wpr-cch-etag">@(s.HasETag ? "✓" : "—")</td>
+                                            <td>@CchEncodingBadge(s.CompressionStatus)</td>
+                                            <td class="wpr-num">@(s.SizeBytes > 0 ? FormatBytes(s.SizeBytes) : "—")</td>
+                                            <td>@CchStatusBadge(s)</td>
+                                            <td class="wpr-gql-rec">@(s.Recommendation ?? "—")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        @if (FilteredCachingSummaries().Count() > 100)
+                        {
+                            <p class="wpr-api-scan-note">Showing first 100 of @FilteredCachingSummaries().Count() filtered assets.</p>
+                        }
+                    }
+
+                    @* ── Findings ─────────────────────────────────────────────── *@
+                    @if (cch.Findings.Count > 0)
+                    {
+                        <h2 class="wpr-section-heading">Caching &amp; Compression Findings (@cch.Findings.Count)</h2>
+                        <div class="wpr-findings-list">
+                            @foreach (var f in cch.Findings.OrderBy(f => f.Severity))
+                            { @FindingCard(f) }
+                        </div>
+                    }
                 }
             }
 
@@ -658,6 +833,19 @@
     .wpr-status-err  { color: #f38ba8; font-weight: 600; }
     .wpr-method-badge { background: color-mix(in srgb, var(--accent, #7c8cf8) 15%, transparent); border-radius: 3px; font-size: 0.72rem; font-weight: 600; padding: 1px 6px; }
 
+    /* Caching & Compression tab */
+    .wpr-cch-filters { margin-bottom: 0.75rem; }
+    .wpr-cch-etag { text-align: center; font-size: 0.85rem; color: #a6e3a1; }
+    .wpr-cch-enc { border-radius: 3px; font-size: 0.7rem; font-weight: 700; padding: 1px 7px; text-transform: uppercase; letter-spacing: .04em; }
+    .wpr-cch-enc-br   { background: color-mix(in srgb, #a6e3a1 18%, transparent); border: 1px solid #a6e3a1; color: #a6e3a1; }
+    .wpr-cch-enc-gz   { background: color-mix(in srgb, #f9e2af 18%, transparent); border: 1px solid #f9e2af; color: #f9e2af; }
+    .wpr-cch-enc-other{ background: var(--surface, #181825); border: 1px solid var(--border, #3a3a4a); opacity: 0.7; }
+    .wpr-cch-enc-none { background: color-mix(in srgb, #f38ba8 12%, transparent); border: 1px solid #f38ba8; color: #f38ba8; }
+    .wpr-cch-status { border-radius: 4px; font-size: 0.72rem; font-weight: 600; padding: 2px 8px; white-space: nowrap; }
+    .wpr-cch-status-ok      { background: color-mix(in srgb, #a6e3a1 18%, transparent); border: 1px solid #a6e3a1; color: #a6e3a1; }
+    .wpr-cch-status-partial { background: color-mix(in srgb, #f9e2af 18%, transparent); border: 1px solid #f9e2af; color: #f9e2af; }
+    .wpr-cch-status-poor    { background: color-mix(in srgb, #f38ba8 18%, transparent); border: 1px solid #f38ba8; color: #f38ba8; }
+
     /* API Analysis tab */
     .wpr-api-endpoint-info { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; background: var(--surface-raised, #1e1e2e); border: 1px solid var(--border, #3a3a4a); border-radius: 7px; padding: 0.6rem 1rem; margin-bottom: 0.75rem; font-size: 0.85rem; }
     .wpr-api-endpoint-url { font-family: monospace; font-size: 0.78rem; opacity: 0.8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 400px; }
@@ -707,6 +895,57 @@
     .wpr-rec-priority { background: var(--surface, #181825); border: 1px solid var(--border, #3a3a4a); border-radius: 50%; font-size: 0.75rem; font-weight: 700; min-width: 26px; text-align: center; padding: 1px 6px; }
     .wpr-rec-title { font-weight: 600; font-size: 0.9rem; }
     .wpr-rec-desc { font-size: 0.85rem; line-height: 1.6; margin: 0; opacity: 0.8; }
+
+    /* Readiness Dashboard */
+    .wpr-rdy-overall-card { align-items: center; border: 2px solid var(--border, #3a3a4a); border-radius: 10px; display: flex; flex-wrap: wrap; gap: 1.25rem; justify-content: space-between; margin-bottom: 1.75rem; padding: 1.25rem 1.75rem; }
+    .wpr-rdy-overall-card.wpr-rdy-good     { border-color: #a6e3a1; }
+    .wpr-rdy-overall-card.wpr-rdy-warning  { border-color: #f9e2af; }
+    .wpr-rdy-overall-card.wpr-rdy-poor     { border-color: #fab387; }
+    .wpr-rdy-overall-card.wpr-rdy-critical { border-color: #f38ba8; }
+    .wpr-rdy-overall-left { display: flex; align-items: baseline; gap: 1rem; }
+    .wpr-rdy-overall-score { font-size: 2.75rem; font-weight: 800; font-family: monospace; line-height: 1; }
+    .wpr-rdy-overall-card.wpr-rdy-good     .wpr-rdy-overall-score { color: #a6e3a1; }
+    .wpr-rdy-overall-card.wpr-rdy-warning  .wpr-rdy-overall-score { color: #f9e2af; }
+    .wpr-rdy-overall-card.wpr-rdy-poor     .wpr-rdy-overall-score { color: #fab387; }
+    .wpr-rdy-overall-card.wpr-rdy-critical .wpr-rdy-overall-score { color: #f38ba8; }
+    .wpr-rdy-overall-card.wpr-rdy-unknown  .wpr-rdy-overall-score { color: var(--text-muted, #888); }
+    .wpr-rdy-overall-state { font-size: 1.1rem; font-weight: 600; }
+    .wpr-rdy-overall-right { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    .wpr-rdy-all-clear { font-size: 0.82rem; color: #a6e3a1; opacity: 0.85; }
+
+    .wpr-rdy-score-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); margin-bottom: 1.75rem; }
+    .wpr-rdy-category-card { background: var(--surface-raised, #1e1e2e); border: 2px solid var(--border, #3a3a4a); border-radius: 8px; color: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 0.25rem; padding: 1rem 1.1rem; text-align: left; transition: border-color .15s, background .12s; }
+    .wpr-rdy-category-card:hover { background: color-mix(in srgb, var(--accent, #7c8cf8) 5%, transparent); }
+    .wpr-rdy-category-card.wpr-rdy-good     { border-color: #a6e3a1; }
+    .wpr-rdy-category-card.wpr-rdy-warning  { border-color: #f9e2af; }
+    .wpr-rdy-category-card.wpr-rdy-poor     { border-color: #fab387; }
+    .wpr-rdy-category-card.wpr-rdy-critical { border-color: #f38ba8; }
+    .wpr-rdy-category-card.wpr-rdy-unknown  { border-style: dashed; opacity: 0.7; }
+    .wpr-rdy-cat-name { font-size: 0.78rem; font-weight: 600; opacity: 0.7; text-transform: uppercase; letter-spacing: .04em; }
+    .wpr-rdy-cat-score { font-size: 1.6rem; font-weight: 800; font-family: monospace; line-height: 1.15; }
+    .wpr-rdy-category-card.wpr-rdy-good     .wpr-rdy-cat-score { color: #a6e3a1; }
+    .wpr-rdy-category-card.wpr-rdy-warning  .wpr-rdy-cat-score { color: #f9e2af; }
+    .wpr-rdy-category-card.wpr-rdy-poor     .wpr-rdy-cat-score { color: #fab387; }
+    .wpr-rdy-category-card.wpr-rdy-critical .wpr-rdy-cat-score { color: #f38ba8; }
+    .wpr-rdy-score-na { opacity: 0.4; }
+    .wpr-rdy-cat-state { font-size: 0.72rem; font-weight: 600; }
+    .wpr-rdy-cat-findings { font-size: 0.7rem; opacity: 0.55; margin-top: 0.2rem; }
+
+    .wpr-rdy-risk-list { display: flex; flex-direction: column; gap: 0.45rem; margin-bottom: 1.5rem; }
+    .wpr-rdy-risk-item { align-items: center; background: var(--surface-raised, #1e1e2e); border: 1px solid var(--border, #3a3a4a); border-radius: 6px; display: flex; flex-wrap: wrap; gap: 0.6rem; padding: 0.55rem 0.9rem; }
+    .wpr-rdy-risk-title { font-size: 0.875rem; font-weight: 500; flex: 1 1 auto; }
+    .wpr-rdy-risk-id { font-family: monospace; font-size: 0.7rem; opacity: 0.4; }
+
+    .wpr-rdy-top-recs { display: flex; flex-direction: column; gap: 0.5rem; margin: 0 0 1.5rem; padding-left: 1.25rem; }
+    .wpr-rdy-top-rec { padding: 0.6rem 0; }
+    .wpr-rdy-top-rec-title { font-size: 0.875rem; font-weight: 600; }
+    .wpr-rdy-top-rec-desc { font-size: 0.82rem; line-height: 1.55; margin: 0.2rem 0 0; opacity: 0.7; }
+
+    .wpr-rdy-drill-links { align-items: center; border-top: 1px solid var(--border, #3a3a4a); display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.75rem; padding-top: 1rem; }
+    .wpr-rdy-drill-label { font-size: 0.8rem; font-weight: 500; opacity: 0.6; }
+
+    .wpr-rdy-empty { border: 1px dashed var(--border, #3a3a4a); border-radius: 8px; margin-bottom: 1.5rem; padding: 1.5rem 2rem; text-align: center; }
+    .wpr-rdy-empty-msg { font-size: 0.9rem; opacity: 0.65; margin: 0; }
 </style>
 
 @code {
@@ -788,6 +1027,97 @@
     {
         _assetSearch     = "";
         _assetTypeFilter = null;
+    }
+
+    // ── Readiness dashboard helpers ──────────────────────────────────────────
+
+    private static string ReadinessStateLabel(PerformanceReadinessState state) => state switch
+    {
+        PerformanceReadinessState.Ready            => "Ready",
+        PerformanceReadinessState.MostlyReady      => "Mostly Ready",
+        PerformanceReadinessState.NeedsImprovement => "Needs Improvement",
+        PerformanceReadinessState.HighRisk         => "High Risk",
+        _                               => "Not Assessed"
+    };
+
+    private static string ReadinessStateClass(PerformanceReadinessState state) => state switch
+    {
+        PerformanceReadinessState.Ready            => "wpr-rdy-good",
+        PerformanceReadinessState.MostlyReady      => "wpr-rdy-warning",
+        PerformanceReadinessState.NeedsImprovement => "wpr-rdy-poor",
+        PerformanceReadinessState.HighRisk         => "wpr-rdy-critical",
+        _                               => "wpr-rdy-unknown"
+    };
+
+    private static string DrilldownTab(string categoryName) => categoryName switch
+    {
+        "Startup"      => "startup",
+        "API"          => "api",
+        "GraphQL"      => "api",
+        "Caching"      => "caching",
+        "Compression"  => "caching",
+        "Architecture" => "blazor",
+        _              => "assets"
+    };
+
+    // ── Caching & Compression tab state and helpers ──────────────────────────
+
+    private string _cchFilter = "all";
+
+    private IEnumerable<AssetCachingSummary> FilteredCachingSummaries()
+    {
+        if (_report?.CachingAnalysis is null) return [];
+        var all = _report.CachingAnalysis.AssetSummaries;
+        return _cchFilter switch
+        {
+            "framework"    => all.Where(s => IsCachingFrameworkType(s.Type)),
+            "uncompressed" => all.Where(s => s.CompressionStatus == CompressionStatus.NotCompressed),
+            "uncached"     => all.Where(s => s.CacheStatus == CacheStatus.NotCached),
+            _              => all
+        };
+    }
+
+    private int CachingCount(string filter)
+    {
+        if (_report?.CachingAnalysis is null) return 0;
+        var all = _report.CachingAnalysis.AssetSummaries;
+        return filter switch
+        {
+            "framework"    => all.Count(s => IsCachingFrameworkType(s.Type)),
+            "uncompressed" => all.Count(s => s.CompressionStatus == CompressionStatus.NotCompressed),
+            "uncached"     => all.Count(s => s.CacheStatus == CacheStatus.NotCached),
+            _              => all.Count
+        };
+    }
+
+    private static bool IsCachingFrameworkType(AssetType t) =>
+        t is AssetType.FrameworkDll or AssetType.WasmRuntime or AssetType.FrameworkJs
+          or AssetType.ApplicationDll or AssetType.SatelliteAssembly;
+
+    private static MarkupString CchEncodingBadge(CompressionStatus status)
+    {
+        var (cls, label) = status switch
+        {
+            CompressionStatus.Brotli        => ("wpr-cch-enc-br",   "br"),
+            CompressionStatus.Gzip          => ("wpr-cch-enc-gz",   "gzip"),
+            CompressionStatus.Other         => ("wpr-cch-enc-other","other"),
+            _                               => ("wpr-cch-enc-none", "none")
+        };
+        return new MarkupString($"<span class=\"wpr-cch-enc {cls}\">{label}</span>");
+    }
+
+    private static MarkupString CchStatusBadge(AssetCachingSummary s)
+    {
+        bool compressed = s.CompressionStatus != CompressionStatus.NotCompressed;
+        bool cached     = s.CacheStatus == CacheStatus.ProperlyOptimized;
+        var (cls, label) = (compressed, cached) switch
+        {
+            (true,  true)  => ("wpr-cch-status-ok",      "Optimised"),
+            (true,  false) => ("wpr-cch-status-partial",  "Compressed"),
+            (false, true)  => ("wpr-cch-status-partial",  "Cached"),
+            _              => ("wpr-cch-status-poor",     "Not optimised")
+        };
+        return new MarkupString($"<span class=\"wpr-cch-status {cls}\">{label}</span>");
     }
 
     // ── Startup tab helpers ──────────────────────────────────────────────────
