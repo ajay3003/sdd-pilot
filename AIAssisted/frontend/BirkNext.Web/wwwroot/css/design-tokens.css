@@ -68,10 +68,33 @@
     --clr-review-needsreview-border:  var(--clr-warning-border);
     --clr-review-needsreview-bg-light: var(--clr-warning-bg-light);
 
+    /* ── Info ── */
+    --clr-info:            #1d4ed8;
+    --clr-info-bg:         #dbeafe;
+    --clr-info-bg-light:   #eff6ff;
+    --clr-info-border:     #bfdbfe;
+
+    /* ── Accent (violet) ── */
+    --clr-accent:          #7c3aed;
+    --clr-accent-bg:       #ede9fe;
+    --clr-accent-border:   #ddd6fe;
+
+    /* ── Danger extra ── */
+    --clr-danger-bg-light: #fff1f2;
+
+    /* ── Typography ── */
+    --font-mono: 'Consolas', 'Courier New', monospace;
+
+    /* ── Shadows ── */
+    --shadow-sm:   0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04);
+    --shadow-md:   0 4px 6px rgba(0, 0, 0, 0.05);
+
     /* ── Geometry ── */
     --radius-sm:   4px;
     --radius-md:   6px;
     --radius-lg:   8px;
+    --radius-xl:   12px;
     --radius-pill: 10px;
 
     /* ── Transitions ── */

@@ -389,3 +389,550 @@
 .workflow-step-link:hover {
     text-decoration: underline;
 }
+
+
+/* ======================================================
+   PAGE HEADER
+   Standard top-of-page layout: title+lead left, actions right.
+   Usage: <div class="page-header"><div class="page-header-left">…</div><div class="page-header-actions">…</div></div>
+   ====================================================== */
+
+.page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.page-header-left { flex: 1; min-width: 0; }
+
+.page-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    padding-top: 0.25rem;
+    flex-wrap: wrap;
+}
+
+
+/* ======================================================
+   SECTION HEADER
+   Within-page section: title+desc left, actions right.
+   Usage: <div class="section-header"><div class="section-header-left">…</div><div class="section-header-actions">…</div></div>
+   ====================================================== */
+
+.section-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.875rem;
+    flex-wrap: wrap;
+}
+
+.section-header-left { flex: 1; }
+
+.section-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--clr-text-heading);
+    margin: 0 0 0.15rem;
+}
+
+.section-desc {
+    font-size: 0.82rem;
+    color: var(--clr-text-muted);
+    margin: 0;
+    line-height: 1.5;
+}
+
+.section-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-shrink: 0;
+}
+
+
+/* ======================================================
+   STATUS CHIPS
+   Semantic health/status indicator with dot prefix.
+   Usage: <span class="status-chip status-chip-healthy">Healthy</span>
+   ====================================================== */
+
+.status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-pill);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    border: 1px solid transparent;
+}
+
+.status-chip::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+}
+
+.status-chip-healthy      { background: var(--clr-success-bg);   color: var(--clr-success);          border-color: var(--clr-success-border); }
+.status-chip-ready        { background: var(--clr-success-bg);   color: var(--clr-success);          border-color: var(--clr-success-border); }
+.status-chip-warning      { background: var(--clr-warning-bg);   color: var(--clr-warning);          border-color: var(--clr-warning-border); }
+.status-chip-critical     { background: var(--clr-danger-bg);    color: var(--clr-danger);           border-color: var(--clr-danger-border); }
+.status-chip-info         { background: var(--clr-info-bg);      color: var(--clr-info);             border-color: var(--clr-info-border); }
+.status-chip-neutral      { background: var(--clr-surface);      color: var(--clr-text-muted);       border-color: var(--clr-border); }
+.status-chip-not-assessed { background: var(--clr-surface);      color: var(--clr-text-placeholder); border-color: var(--clr-border); }
+.status-chip-partial      { background: var(--clr-accent-bg);    color: var(--clr-accent);           border-color: var(--clr-accent-border); }
+
+
+/* ======================================================
+   STANDARD CARD
+   Consistent card primitive: header / body / footer.
+   Usage: <div class="card"><div class="card-header">…</div><div class="card-body">…</div></div>
+   ====================================================== */
+
+.card {
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.875rem 1.125rem;
+    background: var(--clr-surface);
+    border-bottom: 1px solid var(--clr-border-subtle);
+    flex-wrap: wrap;
+}
+
+.card-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--clr-text-heading);
+    margin: 0;
+}
+
+.card-body {
+    padding: 1.125rem;
+}
+
+.card-footer {
+    padding: 0.75rem 1.125rem;
+    border-top: 1px solid var(--clr-border-subtle);
+    background: var(--clr-surface);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+
+/* ======================================================
+   METRIC CARDS
+   Numeric KPI display with optional trend indicator.
+   Usage: <div class="metric-card"><div class="metric-value">42</div><div class="metric-label">Issues</div></div>
+   ====================================================== */
+
+.metric-card {
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+    box-shadow: var(--shadow-card);
+}
+
+.metric-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--clr-text-heading);
+    line-height: 1;
+    margin-bottom: 0.25rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.metric-label {
+    font-size: 0.775rem;
+    font-weight: 600;
+    color: var(--clr-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.metric-sublabel {
+    font-size: 0.75rem;
+    color: var(--clr-text-placeholder);
+    margin-top: 0.15rem;
+}
+
+.metric-trend-up   { color: var(--clr-success); font-size: 0.78rem; font-weight: 600; }
+.metric-trend-down { color: var(--clr-danger);  font-size: 0.78rem; font-weight: 600; }
+
+/* Responsive metric grids */
+.metric-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+.metric-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+.metric-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
+.metric-grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.75rem; }
+
+@media (max-width: 1000px) {
+    .metric-grid-5 { grid-template-columns: repeat(3, 1fr); }
+    .metric-grid-4 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 680px) {
+    .metric-grid-5,
+    .metric-grid-4,
+    .metric-grid-3 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 420px) {
+    .metric-grid-5,
+    .metric-grid-4,
+    .metric-grid-3,
+    .metric-grid-2 { grid-template-columns: 1fr; }
+}
+
+
+/* ======================================================
+   ISSUE CARDS
+   Structured finding display with left severity border.
+   Usage: <div class="issue-card issue-card-error"><span class="issue-sev issue-sev-error">Error</span><div class="issue-content">…</div></div>
+   ====================================================== */
+
+.issue-cards { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.issue-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    padding: 0.625rem 0.875rem;
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-left-width: 3px;
+    border-radius: var(--radius-md);
+}
+
+.issue-card-critical { border-left-color: var(--clr-danger);  background: var(--clr-danger-bg);  border-color: var(--clr-danger-border); }
+.issue-card-error    { border-left-color: var(--clr-danger);  background: var(--clr-danger-bg);  border-color: var(--clr-danger-border); }
+.issue-card-warning  { border-left-color: var(--clr-warning); background: var(--clr-warning-bg); border-color: var(--clr-warning-border); }
+.issue-card-info     { border-left-color: var(--clr-info);    background: var(--clr-info-bg);    border-color: var(--clr-info-border); }
+.issue-card-success  { border-left-color: var(--clr-success); background: var(--clr-success-bg); border-color: var(--clr-success-border); }
+
+.issue-sev {
+    flex-shrink: 0;
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.1rem 0.4rem;
+    border-radius: var(--radius-pill);
+    margin-top: 0.1rem;
+    white-space: nowrap;
+}
+
+.issue-sev-critical { background: var(--clr-danger-bg);  color: var(--clr-danger);  border: 1px solid var(--clr-danger-border); }
+.issue-sev-error    { background: var(--clr-danger-bg);  color: var(--clr-danger);  border: 1px solid var(--clr-danger-border); }
+.issue-sev-warning  { background: var(--clr-warning-bg); color: var(--clr-warning); border: 1px solid var(--clr-warning-border); }
+.issue-sev-info     { background: var(--clr-info-bg);    color: var(--clr-info);    border: 1px solid var(--clr-info-border); }
+.issue-sev-success  { background: var(--clr-success-bg); color: var(--clr-success); border: 1px solid var(--clr-success-border); }
+
+.issue-content    { flex: 1; min-width: 0; }
+.issue-component  { font-size: 0.72rem; font-weight: 600; color: var(--clr-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.15rem; }
+.issue-body       { font-size: 0.845rem; color: var(--clr-text-body); line-height: 1.5; }
+.issue-fix        { font-size: 0.79rem; color: var(--clr-text-subtle); margin-top: 0.25rem; font-style: italic; }
+
+
+/* ======================================================
+   RECOMMENDATION CARDS
+   Action-oriented finding with icon accent.
+   ====================================================== */
+
+.rec-cards { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.rec-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+}
+
+.rec-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    background: var(--clr-info-bg);
+    color: var(--clr-info);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.rec-content  { flex: 1; min-width: 0; }
+.rec-title    { font-size: 0.845rem; font-weight: 600; color: var(--clr-text-heading); margin-bottom: 0.15rem; }
+.rec-desc     { font-size: 0.8rem;   color: var(--clr-text-muted);  line-height: 1.5; }
+.rec-priority { font-size: 0.68rem;  font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.rec-priority-high   { color: var(--clr-danger); }
+.rec-priority-medium { color: var(--clr-warning); }
+.rec-priority-low    { color: var(--clr-text-subtle); }
+
+
+/* ======================================================
+   PROGRESS BARS
+   Semantic fill bars for scores and coverage.
+   Usage: <div class="progress-bar"><div class="progress-fill progress-fill-success" style="width:72%"></div></div>
+   ====================================================== */
+
+.progress-bar {
+    height: 6px;
+    background: var(--clr-border);
+    border-radius: var(--radius-pill);
+    overflow: hidden;
+}
+
+.progress-bar-md { height: 8px; }
+.progress-bar-lg { height: 12px; }
+
+.progress-fill {
+    height: 100%;
+    border-radius: var(--radius-pill);
+    background: var(--clr-primary);
+    transition: width 0.3s ease;
+}
+
+.progress-fill-success { background: var(--clr-success); }
+.progress-fill-warning { background: var(--clr-warning); }
+.progress-fill-danger  { background: var(--clr-danger); }
+.progress-fill-info    { background: var(--clr-info); }
+.progress-fill-accent  { background: var(--clr-accent); }
+.progress-fill-neutral { background: var(--clr-text-muted); }
+
+
+/* ======================================================
+   BUTTONS — extended
+   ====================================================== */
+
+.btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.825rem;
+    font-weight: 500;
+    color: var(--clr-text-muted);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background-color var(--transition), color var(--transition);
+    white-space: nowrap;
+}
+
+.btn-ghost:hover:not(:disabled) {
+    background: var(--clr-surface);
+    color: var(--clr-text-body);
+}
+
+.btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-danger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.55rem 1.25rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: white;
+    background: var(--clr-danger);
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background-color var(--transition), opacity var(--transition);
+    white-space: nowrap;
+}
+
+.btn-danger:hover:not(:disabled) { background: #b91c1c; }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    font-size: 0.875rem;
+    color: var(--clr-text-muted);
+    background: transparent;
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background-color var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.btn-icon:hover:not(:disabled) {
+    background: var(--clr-surface);
+    border-color: var(--clr-border-hover);
+    color: var(--clr-text-body);
+}
+
+.btn-icon:disabled { opacity: 0.45; cursor: not-allowed; }
+
+
+/* ======================================================
+   SUMMARY PANEL
+   Horizontal stat strip for executive summaries.
+   Usage: <div class="summary-panel"><div class="summary-stat"><span class="summary-stat-value">12</span><span class="summary-stat-label">Issues</span></div></div>
+   ====================================================== */
+
+.summary-panel {
+    background: var(--clr-surface);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+}
+
+.summary-panel-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--clr-text-muted);
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--clr-border-subtle);
+}
+
+.summary-stats {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.summary-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.summary-stat-value {
+    font-size: 1.375rem;
+    font-weight: 700;
+    color: var(--clr-text-heading);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.summary-stat-label {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--clr-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* Colored value variants */
+.summary-stat-value-success { color: var(--clr-success); }
+.summary-stat-value-warning { color: var(--clr-warning); }
+.summary-stat-value-danger  { color: var(--clr-danger); }
+.summary-stat-value-info    { color: var(--clr-info); }
+
+
+/* ======================================================
+   HEALTH BAR
+   Horizontal score display: label + bar + value.
+   ====================================================== */
+
+.health-bar-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 48px;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.825rem;
+}
+
+.health-bar-label { color: var(--clr-text-body); font-weight: 500; }
+.health-bar-value { color: var(--clr-text-heading); font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+
+
+/* ======================================================
+   EMPTY STATE — enhanced
+   ====================================================== */
+
+.empty-state-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    display: block;
+    opacity: 0.45;
+}
+
+.empty-state-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--clr-text-subtle);
+    margin: 0 0 0.25rem;
+}
+
+.empty-state-desc {
+    font-size: 0.845rem;
+    color: var(--clr-text-muted);
+    margin: 0 0 1.25rem;
+    line-height: 1.55;
+}
+
+
+/* ======================================================
+   UTILITY CLASSES
+   ====================================================== */
+
+/* Monospace text */
+.mono { font-family: var(--font-mono); font-size: 0.88em; }
+
+/* Layout helpers */
+.flex-between { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.flex-start   { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.flex-col     { display: flex; flex-direction: column; gap: 0.5rem; }
+
+/* Typography helpers */
+.text-muted       { color: var(--clr-text-muted); }
+.text-subtle      { color: var(--clr-text-subtle); }
+.text-placeholder { color: var(--clr-text-placeholder); }
+.text-heading     { color: var(--clr-text-heading); }
+.text-success     { color: var(--clr-success); }
+.text-warning     { color: var(--clr-warning); }
+.text-danger      { color: var(--clr-danger); }
+.text-info        { color: var(--clr-info); }
+
+/* Spacing helpers */
+.mb-0  { margin-bottom: 0; }
+.mb-sm { margin-bottom: 0.5rem; }
+.mb-md { margin-bottom: 1rem; }
+.mb-lg { margin-bottom: 1.5rem; }
+
+.mt-0  { margin-top: 0; }
+.mt-sm { margin-top: 0.5rem; }
+.mt-md { margin-top: 1rem; }
+.mt-lg { margin-top: 1.5rem; }
+
+/* Gap helpers for flex/grid parents */
+.gap-sm { gap: 0.375rem; }
+.gap-md { gap: 0.75rem; }
+.gap-lg { gap: 1.25rem; }
