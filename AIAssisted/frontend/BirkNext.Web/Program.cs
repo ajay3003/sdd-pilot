@@ -72,6 +72,10 @@ builder.Services.AddHttpClient<ImplementationTraceabilityApiService>(client =>
 builder.Services.AddHttpClient<WasmSecurityApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
+builder.Services.AddSingleton<IFrontendAnalysisSettingsService, FrontendAnalysisSettingsService>();
+builder.Services.AddSingleton<IAuthenticatedBrowserSessionService, PlaceholderAuthenticatedBrowserSessionService>();
+builder.Services.AddSingleton<IFrontendAnalysisContextFactory, FrontendAnalysisContextFactory>();
+
 builder.Services.AddHttpClient<IBlazorWasmPerformanceReviewService, BlazorWasmPerformanceReviewService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 

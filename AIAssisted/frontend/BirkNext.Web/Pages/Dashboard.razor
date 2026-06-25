@@ -6,17 +6,12 @@
 @inject IBirkNextClient Client
 @inject IDashboardMetricsService MetricsService
 @inject IDashboardSnapshotService Snapshot
+@inject IBlazorWasmPerformanceReviewService PerformanceService
 @inject NavigationManager Navigation
 
 <PageTitle>Dashboard</PageTitle>
 
-<div class="dashboard-page">
-    <div class="db-hero">
-        <h1>SDD Governance Dashboard</h1>
-        <p class="db-hero-lead">Executive overview of the full SDD governance chain — artifacts, traceability, compliance, quality, and readiness.</p>
-    </div>
-</div>
-
+@* ── Onboarding ───────────────────────────────────────────────────────────── *@
 @if (!_isLoading && _metrics.TotalCandidates == 0 && !_hasAnySnapshot)
 {
     <div class="dashboard-onboarding-card" data-testid="onboarding-card">
@@ -41,32 +36,93 @@ else
         </div>
     }
 
-    <!-- ══ Phase 1 · SDD Governance Overview ════════════════════════════════ -->
+    @* ══ 1 · Executive Header ═════════════════════════════════════════════════ *@
+    <div class="db-exec-header">
+        <div class="db-exec-header-left">
+            <h1 class="db-exec-title">SDD Governance Dashboard</h1>
+            <div class="db-exec-chips">
+                <span class="db-exec-chip db-exec-chip-phase">@_projectPhase</span>
+                @if (_hasAnyScore)
+                {
+                    <span class="db-exec-chip db-exec-chip-@(_overallScore >= 80 ? "good" : _overallScore >= 50 ? "warn" : "poor")">@_overallScoreLabel</span>
+                }
+                @if (_hasAnySnapshot)
+                {
+                    <span class="db-exec-chip db-exec-chip-neutral">This session</span>
+                }
+            </div>
+        </div>
+        <div class="db-exec-header-right">
+            <div class="db-exec-score-ring @_overallScoreClass" aria-label="Overall health score: @(_hasAnyScore ? _overallScore.ToString("0") + " out of 100" : "No data")">
+                <span class="db-exec-score-val">@(_hasAnyScore ? _overallScore.ToString("0") : "—")</span>
+                <span class="db-exec-score-sub">@(_hasAnyScore ? "/ 100" : "No data")</span>
+            </div>
+        </div>
+    </div>
+
+    @* ══ 2 · Executive KPI Cards ══════════════════════════════════════════════ *@
+    <div class="db-kpi-strip" aria-label="Key performance indicators">
+        <div class="db-kpi-card">
+            <span class="db-kpi-label">Governance</span>
+            <span class="db-kpi-value">@_governanceLoadPercent%</span>
+            <span class="db-kpi-status @(_governanceLoadPercent == 100 ? "db-status-healthy" : _governanceLoadPercent > 0 ? "db-status-warning" : "db-status-notrun")">
+                @(_governanceLoadPercent == 100 ? "Complete" : _governanceLoadPercent > 0 ? "Partial" : "Setup")
+            </span>
+        </div>
+        <div class="db-kpi-card">
+            <span class="db-kpi-label">Traceability</span>
+            <span class="db-kpi-value">@TraceabilityHealthVal</span>
+            <span class="db-kpi-status @KpiStatusClass(_traceabilityScore, _traceabilityHasData)">@KpiStatusLabel(_traceabilityScore, _traceabilityHasData)</span>
+        </div>
+        <div class="db-kpi-card">
+            <span class="db-kpi-label">Compliance</span>
+            <span class="db-kpi-value">@ComplianceHealthVal</span>
+            <span class="db-kpi-status @KpiStatusClass(_complianceScore, _complianceHasData)">@KpiStatusLabel(_complianceScore, _complianceHasData)</span>
+        </div>
+        <div class="db-kpi-card">
+            <span class="db-kpi-label">QA</span>
+            <span class="db-kpi-value">@QaHealthVal</span>
+            <span class="db-kpi-status @KpiStatusClass(_qaScore, _qaHasData)">@KpiStatusLabel(_qaScore, _qaHasData)</span>
+        </div>
+        <div class="db-kpi-card">
+            <span class="db-kpi-label">Delivery</span>
+            <span class="db-kpi-value">@DeliveryHealthVal</span>
+            <span class="db-kpi-status @KpiStatusClass(_deliveryScore, _deliveryHasData)">@KpiStatusLabel(_deliveryScore, _deliveryHasData)</span>
+        </div>
+        <div class="db-kpi-card">
+            <span class="db-kpi-label">Performance</span>
+            @if (_perfReport?.ReadinessReport is { HasData: true } perfKpi)
+            {
+                <span class="db-kpi-value">@perfKpi.OverallScore</span>
+                <span class="db-kpi-status @PerformanceStatusClass(perfKpi.OverallState)">@ReadinessStateLabel(perfKpi.OverallState)</span>
+                @if (perfKpi.Health.CriticalFindings + perfKpi.Health.HighFindings > 0)
+                {
+                    <span class="db-kpi-findings">@(perfKpi.Health.CriticalFindings + perfKpi.Health.HighFindings) findings</span>
+                }
+            }
+            else
+            {
+                <span class="db-kpi-value db-val-empty">—</span>
+                <span class="db-kpi-status db-status-notrun">Not Run</span>
+            }
+        </div>
+    </div>
+
+    @* ══ 3 · Governance Status ════════════════════════════════════════════════ *@
     <section class="db-section">
         <div class="db-section-header">
-            <h2 class="db-section-title">SDD Governance</h2>
-            <span class="db-section-hint">Loaded / Reviewed / Analyzed</span>
+            <h2 class="db-section-title">Governance Status</h2>
+            <span class="db-section-hint">Loaded · Reviewed · Analyzed</span>
         </div>
         <div class="db-artifact-grid">
 
-            <!-- Constitution -->
             <div class="db-artifact-card db-artifact-constitution @(_constitutionLoaded ? "db-artifact-loaded" : "")">
-                <div class="db-artifact-icon" aria-hidden="true">⚖️</div>
+                <div class="db-artifact-icon" aria-hidden="true">⚖</div>
                 <div class="db-artifact-name">Constitution</div>
-                <div class="db-artifact-file">constitution.md</div>
                 <div class="db-artifact-badges">
-                    @if (_constitutionLoaded)
-                    {
-                        <span class="db-badge db-badge-loaded">Loaded</span>
-                    }
-                    @if (_constitutionAnalyzed)
-                    {
-                        <span class="db-badge db-badge-analyzed">Analyzed</span>
-                    }
-                    @if (!_constitutionLoaded && !_constitutionAnalyzed)
-                    {
-                        <span class="db-badge db-badge-empty">Not loaded</span>
-                    }
+                    @if (_constitutionLoaded)  { <span class="db-badge db-badge-loaded">Loaded</span> }
+                    @if (_constitutionAnalyzed) { <span class="db-badge db-badge-analyzed">Analyzed</span> }
+                    @if (!_constitutionLoaded)  { <span class="db-badge db-badge-empty">Not loaded</span> }
                 </div>
                 @if (Snapshot.ComplianceReport?.HasConstitution == true)
                 {
@@ -74,31 +130,20 @@ else
                         <span class="db-stat-pill">@Snapshot.ComplianceReport.Coverage.TotalItems rules</span>
                     </div>
                 }
+                <div class="db-artifact-progress-track" aria-hidden="true">
+                    <div class="db-artifact-progress-fill" style="width: @((_constitutionLoaded ? 50 : 0) + (_constitutionAnalyzed ? 50 : 0))%"></div>
+                </div>
                 <a href="constitution-explorer" class="db-artifact-action">Open Constitution Explorer →</a>
             </div>
 
-            <!-- Specification -->
             <div class="db-artifact-card db-artifact-specification @(_specLoaded ? "db-artifact-loaded" : "")">
                 <div class="db-artifact-icon" aria-hidden="true">📋</div>
                 <div class="db-artifact-name">Specification</div>
-                <div class="db-artifact-file">spec.md</div>
                 <div class="db-artifact-badges">
-                    @if (_specLoaded)
-                    {
-                        <span class="db-badge db-badge-loaded">Loaded</span>
-                    }
-                    @if (_metrics.ReviewedCount > 0)
-                    {
-                        <span class="db-badge db-badge-reviewed">Reviewed</span>
-                    }
-                    @if (_specAnalyzed)
-                    {
-                        <span class="db-badge db-badge-analyzed">Analyzed</span>
-                    }
-                    @if (!_specLoaded && _metrics.RequirementCount == 0)
-                    {
-                        <span class="db-badge db-badge-empty">Not loaded</span>
-                    }
+                    @if (_specLoaded)               { <span class="db-badge db-badge-loaded">Loaded</span> }
+                    @if (_metrics.ReviewedCount > 0) { <span class="db-badge db-badge-reviewed">Reviewed</span> }
+                    @if (_specAnalyzed)              { <span class="db-badge db-badge-analyzed">Analyzed</span> }
+                    @if (!_specLoaded && _metrics.RequirementCount == 0) { <span class="db-badge db-badge-empty">Not loaded</span> }
                 </div>
                 @if (_metrics.RequirementCount > 0)
                 {
@@ -107,27 +152,19 @@ else
                         <span class="db-stat-pill">@_metrics.ReviewedPercent% reviewed</span>
                     </div>
                 }
+                <div class="db-artifact-progress-track" aria-hidden="true">
+                    <div class="db-artifact-progress-fill" style="width: @((_specLoaded ? 34 : 0) + (_metrics.ReviewedCount > 0 ? 33 : 0) + (_specAnalyzed ? 33 : 0))%"></div>
+                </div>
                 <a href="extract" class="db-artifact-action">Open Specification Review →</a>
             </div>
 
-            <!-- Plan -->
             <div class="db-artifact-card db-artifact-plan @(_planLoaded ? "db-artifact-loaded" : "")">
-                <div class="db-artifact-icon" aria-hidden="true">🗺️</div>
+                <div class="db-artifact-icon" aria-hidden="true">🗺</div>
                 <div class="db-artifact-name">Plan</div>
-                <div class="db-artifact-file">plan.md</div>
                 <div class="db-artifact-badges">
-                    @if (_planLoaded)
-                    {
-                        <span class="db-badge db-badge-loaded">Loaded</span>
-                    }
-                    @if (_planAnalyzed)
-                    {
-                        <span class="db-badge db-badge-analyzed">Analyzed</span>
-                    }
-                    @if (!_planLoaded)
-                    {
-                        <span class="db-badge db-badge-empty">Not loaded</span>
-                    }
+                    @if (_planLoaded)   { <span class="db-badge db-badge-loaded">Loaded</span> }
+                    @if (_planAnalyzed) { <span class="db-badge db-badge-analyzed">Analyzed</span> }
+                    @if (!_planLoaded)  { <span class="db-badge db-badge-empty">Not loaded</span> }
                 </div>
                 @if (Snapshot.TraceabilityReport?.HasPlan == true)
                 {
@@ -135,31 +172,20 @@ else
                         <span class="db-stat-pill">@Snapshot.TraceabilityReport.PlanCoverage.TotalItems items</span>
                     </div>
                 }
+                <div class="db-artifact-progress-track" aria-hidden="true">
+                    <div class="db-artifact-progress-fill" style="width: @((_planLoaded ? 50 : 0) + (_planAnalyzed ? 50 : 0))%"></div>
+                </div>
                 <a href="plan-explorer" class="db-artifact-action">Open Plan Explorer →</a>
             </div>
 
-            <!-- Tasks -->
             <div class="db-artifact-card db-artifact-tasks @(_tasksLoaded ? "db-artifact-loaded" : "")">
                 <div class="db-artifact-icon" aria-hidden="true">✅</div>
                 <div class="db-artifact-name">Tasks</div>
-                <div class="db-artifact-file">tasks.md</div>
                 <div class="db-artifact-badges">
-                    @if (_tasksLoaded)
-                    {
-                        <span class="db-badge db-badge-loaded">Loaded</span>
-                    }
-                    @if (_metrics.TotalCandidates > 0 && _metrics.ReviewedCount > 0)
-                    {
-                        <span class="db-badge db-badge-reviewed">Reviewed</span>
-                    }
-                    @if (_tasksAnalyzed)
-                    {
-                        <span class="db-badge db-badge-analyzed">Analyzed</span>
-                    }
-                    @if (!_tasksLoaded)
-                    {
-                        <span class="db-badge db-badge-empty">Not loaded</span>
-                    }
+                    @if (_tasksLoaded) { <span class="db-badge db-badge-loaded">Loaded</span> }
+                    @if (_metrics.TotalCandidates > 0 && _metrics.ReviewedCount > 0) { <span class="db-badge db-badge-reviewed">Reviewed</span> }
+                    @if (_tasksAnalyzed) { <span class="db-badge db-badge-analyzed">Analyzed</span> }
+                    @if (!_tasksLoaded)  { <span class="db-badge db-badge-empty">Not loaded</span> }
                 </div>
                 @if (_metrics.TotalCandidates > 0)
                 {
@@ -168,134 +194,425 @@ else
                         <span class="db-stat-pill">@_metrics.ReviewedPercent% reviewed</span>
                     </div>
                 }
+                <div class="db-artifact-progress-track" aria-hidden="true">
+                    <div class="db-artifact-progress-fill" style="width: @((_tasksLoaded ? 34 : 0) + (_metrics.ReviewedCount > 0 ? 33 : 0) + (_tasksAnalyzed ? 33 : 0))%"></div>
+                </div>
                 <a href="task-explorer" class="db-artifact-action">Open Task Explorer →</a>
             </div>
 
         </div>
     </section>
 
-    <!-- ══ Phase 2–5 · Analysis Summaries ══════════════════════════════════ -->
+    @* ══ 4 · Project Health ═══════════════════════════════════════════════════ *@
+    <section class="db-section">
+        <div class="db-section-header">
+            <h2 class="db-section-title">Project Health</h2>
+        </div>
+        <div class="db-health-bars">
+            @HealthBar("Governance",   _governanceLoadPercent, true)
+            @HealthBar("Traceability", _traceabilityScore,     _traceabilityHasData)
+            @HealthBar("Compliance",   _complianceScore,       _complianceHasData)
+            @HealthBar("QA",           _qaScore,               _qaHasData)
+            @HealthBar("Delivery",     _deliveryScore,         _deliveryHasData)
+            @if (_perfReport?.ReadinessReport is { HasData: true } perfBar)
+            {
+                @HealthBar("Performance", perfBar.OverallScore, true)
+            }
+        </div>
+    </section>
+
+    @* ══ 5 · Analysis Summary ════════════════════════════════════════════════ *@
     <section class="db-section">
         <div class="db-section-header">
             <h2 class="db-section-title">Analysis Summary</h2>
-            <span class="db-section-hint">Run each analysis feature to populate results</span>
+            <span class="db-section-hint">Run each analysis to populate</span>
         </div>
-        <div class="db-summary-grid">
+        <div class="db-analysis-grid">
 
-            <!-- Phase 2 · Traceability -->
-            <div class="db-summary-panel">
-                <div class="db-summary-panel-header">
-                    <span class="db-summary-panel-title">Artifact Traceability</span>
-                    <a href="artifact-traceability" class="db-summary-open">Open →</a>
+            @* Artifact Traceability *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">Artifact Traceability</span>
+                    <a href="artifact-traceability" class="db-summary-open" aria-label="Open Artifact Traceability">Open →</a>
                 </div>
                 @if (Snapshot.TraceabilityReport is { } tr)
                 {
-                    <div class="db-summary-rows">
-                        @TraceabilityRow("Constitution Coverage", tr.ConstitutionCoverage, tr.HasConstitution)
-                        @TraceabilityRow("Specification Coverage", tr.SpecificationCoverage, tr.HasSpecification)
-                        @TraceabilityRow("Plan Coverage", tr.PlanCoverage, tr.HasPlan)
-                        @TraceabilityRow("Task Coverage", tr.TaskCoverage, tr.HasTasks)
-                    </div>
-                    <div class="db-summary-counts">
+                    <div class="db-analysis-score @ScoreClass(tr.Health.CoveragePercentage)">@tr.Health.CoveragePercentage.ToString("0")%</div>
+                    <span class="db-analysis-status @KpiStatusClass(tr.Health.CoveragePercentage, true)">@KpiStatusLabel(tr.Health.CoveragePercentage, true)</span>
+                    <div class="db-analysis-chips">
                         <span class="db-count-chip db-count-good">@tr.Health.CoveredCount covered</span>
-                        <span class="db-count-chip db-count-warn">@tr.Health.PartialCount partial</span>
-                        <span class="db-count-chip db-count-poor">@tr.Health.MissingCount missing</span>
-                        @if (tr.Health.OrphanCount > 0)
-                        {
-                            <span class="db-count-chip db-count-poor">@tr.Health.OrphanCount orphaned</span>
-                        }
+                        @if (tr.Health.PartialCount > 0) { <span class="db-count-chip db-count-warn">@tr.Health.PartialCount partial</span> }
+                        @if (tr.Health.MissingCount > 0) { <span class="db-count-chip db-count-poor">@tr.Health.MissingCount missing</span> }
                     </div>
                 }
                 else
                 {
-                    <div class="db-summary-rows">
-                        <div class="db-summary-row"><span class="db-summary-row-label">Constitution Coverage</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Specification Coverage</span><span class="db-summary-row-val @CovClass(_metrics.RequirementCount, _metrics.RequirementsCoveredPercent)">@CovVal(_metrics.RequirementCount, _metrics.RequirementsCoveredPercent)</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Plan Coverage</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Task Coverage</span><span class="db-summary-row-val db-val-empty">—</span></div>
+                    <div class="db-analysis-empty">
+                        Not run — populate by running Artifact Traceability.
+                        <a href="artifact-traceability" class="db-analysis-run-link">Run now →</a>
                     </div>
-                    <div class="db-summary-note">Load all four artifacts in Artifact Traceability for full chain coverage.</div>
                 }
             </div>
 
-            <!-- Phase 3 · Compliance -->
-            <div class="db-summary-panel">
-                <div class="db-summary-panel-header">
-                    <span class="db-summary-panel-title">Constitution Compliance</span>
-                    <a href="constitution-compliance" class="db-summary-open">Open →</a>
+            @* Constitution Compliance *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">Constitution Compliance</span>
+                    <a href="constitution-compliance" class="db-summary-open" aria-label="Open Constitution Compliance">Open →</a>
                 </div>
                 @if (Snapshot.ComplianceReport is { } cr)
                 {
-                    <div class="db-summary-rows">
-                        <div class="db-summary-row">
-                            <span class="db-summary-row-label">Compliance Score</span>
-                            <span class="db-summary-row-val @ScoreClass(cr.Coverage.CompliancePercentage)">@cr.Coverage.CompliancePercentage.ToString("0.#")%</span>
-                        </div>
-                        <div class="db-summary-row">
-                            <span class="db-summary-row-label">Compliant</span>
-                            <span class="db-summary-row-val db-val-good">@cr.Coverage.CompliantItems</span>
-                        </div>
-                        <div class="db-summary-row">
-                            <span class="db-summary-row-label">Partial</span>
-                            <span class="db-summary-row-val @(cr.Coverage.PartialItems > 0 ? "db-val-warn" : "db-val-good")">@cr.Coverage.PartialItems</span>
-                        </div>
-                        <div class="db-summary-row">
-                            <span class="db-summary-row-label">Missing</span>
-                            <span class="db-summary-row-val @(cr.Coverage.MissingItems > 0 ? "db-val-poor" : "db-val-good")">@cr.Coverage.MissingItems</span>
-                        </div>
-                        <div class="db-summary-row">
-                            <span class="db-summary-row-label">Violations</span>
-                            <span class="db-summary-row-val @(cr.Violations.Count > 0 ? "db-val-poor" : "db-val-good")">@cr.Violations.Count</span>
-                        </div>
+                    <div class="db-analysis-score @ScoreClass(cr.Coverage.CompliancePercentage)">@cr.Coverage.CompliancePercentage.ToString("0")%</div>
+                    <span class="db-analysis-status @KpiStatusClass(cr.Coverage.CompliancePercentage, true)">@KpiStatusLabel(cr.Coverage.CompliancePercentage, true)</span>
+                    <div class="db-analysis-chips">
+                        <span class="db-count-chip db-count-good">@cr.Coverage.CompliantItems compliant</span>
+                        @if (cr.Coverage.PartialItems > 0)  { <span class="db-count-chip db-count-warn">@cr.Coverage.PartialItems partial</span> }
+                        @if (cr.Coverage.MissingItems > 0)  { <span class="db-count-chip db-count-poor">@cr.Coverage.MissingItems missing</span> }
+                        @if (cr.Violations.Count > 0)        { <span class="db-count-chip db-count-poor">@cr.Violations.Count violations</span> }
                     </div>
                 }
                 else
                 {
-                    <div class="db-summary-rows">
-                        <div class="db-summary-row"><span class="db-summary-row-label">Compliance Score</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Compliant</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Partial</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Missing</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Violations</span><span class="db-summary-row-val db-val-empty">—</span></div>
+                    <div class="db-analysis-empty">
+                        Not run — populate by running Constitution Compliance.
+                        <a href="constitution-compliance" class="db-analysis-run-link">Run now →</a>
                     </div>
-                    <div class="db-summary-note">Load constitution and artifacts in Constitution Compliance to see governance coverage.</div>
                 }
             </div>
 
-            <!-- Phase 4 · QA Audit -->
-            <div class="db-summary-panel">
-                <div class="db-summary-panel-header">
-                    <span class="db-summary-panel-title">QA Audit</span>
-                    <a href="qa-auditor" class="db-summary-open">Open →</a>
+            @* QA Audit *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">QA Audit</span>
+                    <a href="qa-auditor" class="db-summary-open" aria-label="Open QA Auditor">Open →</a>
                 </div>
                 @if (Snapshot.AuditReport is { } ar)
                 {
-                    <div class="db-summary-rows">
-                        <div class="db-summary-row">
-                            <span class="db-summary-row-label">Critical</span>
-                            <span class="db-summary-row-val @(ar.Health.CriticalCount > 0 ? "db-val-poor" : "db-val-good")">@ar.Health.CriticalCount</span>
-                        </div>
-                        <div class="db-summary-row">
-                            <span class="db-summary-row-label">High</span>
-                            <span class="db-summary-row-val @(ar.Health.HighCount > 0 ? "db-val-poor" : "db-val-good")">@ar.Health.HighCount</span>
-                        </div>
-                        <div class="db-summary-row">
-                            <span class="db-summary-row-label">Medium</span>
-                            <span class="db-summary-row-val @(ar.Health.MediumCount > 0 ? "db-val-warn" : "db-val-good")">@ar.Health.MediumCount</span>
-                        </div>
-                        <div class="db-summary-row">
-                            <span class="db-summary-row-label">Low</span>
-                            <span class="db-summary-row-val @(ar.Health.LowCount > 0 ? "db-val-warn" : "db-val-good")">@ar.Health.LowCount</span>
+                    <div class="db-analysis-score @ScoreClass(ar.Health.AuditScore)">@ar.Health.AuditScore.ToString("0")</div>
+                    <span class="db-analysis-status @KpiStatusClass(ar.Health.AuditScore, true)">@KpiStatusLabel(ar.Health.AuditScore, true)</span>
+                    <div class="db-analysis-chips">
+                        @if (ar.Health.CriticalCount > 0) { <span class="db-count-chip db-count-poor">@ar.Health.CriticalCount critical</span> }
+                        @if (ar.Health.HighCount > 0)     { <span class="db-count-chip db-count-poor">@ar.Health.HighCount high</span> }
+                        @if (ar.Health.MediumCount > 0)   { <span class="db-count-chip db-count-warn">@ar.Health.MediumCount medium</span> }
+                        @if (ar.Health.CriticalCount == 0 && ar.Health.HighCount == 0)
+                        { <span class="db-count-chip db-count-good">No critical findings</span> }
+                    </div>
+                }
+                else
+                {
+                    <div class="db-analysis-empty">
+                        Not run — populate by running QA Auditor.
+                        <a href="qa-auditor" class="db-analysis-run-link">Run now →</a>
+                    </div>
+                }
+            </div>
+
+            @* Delivery Readiness *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">Delivery Readiness</span>
+                    <a href="delivery-readiness" class="db-summary-open" aria-label="Open Delivery Readiness">Open →</a>
+                </div>
+                @if (Snapshot.DeliveryReport is { } dr)
+                {
+                    <div class="db-analysis-score @ScoreClass(dr.Health.OverallReadinessScore)">@dr.Health.OverallReadinessScore.ToString("0")%</div>
+                    <span class="db-analysis-status @ReadinessStatusClass(dr.DevelopmentDecision.State)">@ReadinessStateLabel(dr.DevelopmentDecision.State)</span>
+                    <div class="db-analysis-chips">
+                        <span class="db-count-chip @(dr.DevelopmentDecision.State == ReadinessState.Ready ? "db-count-good" : dr.DevelopmentDecision.State == ReadinessState.MostlyReady ? "db-count-warn" : "db-count-poor")">Dev</span>
+                        <span class="db-count-chip @(dr.TestingDecision.State     == ReadinessState.Ready ? "db-count-good" : dr.TestingDecision.State     == ReadinessState.MostlyReady ? "db-count-warn" : "db-count-poor")">Test</span>
+                        <span class="db-count-chip @(dr.ReleaseDecision.State     == ReadinessState.Ready ? "db-count-good" : dr.ReleaseDecision.State     == ReadinessState.MostlyReady ? "db-count-warn" : "db-count-poor")">Release</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="db-analysis-empty">
+                        Not run — populate by running Delivery Readiness.
+                        <a href="delivery-readiness" class="db-analysis-run-link">Run now →</a>
+                    </div>
+                }
+            </div>
+
+            @* WASM Security Review *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">WASM Security Review</span>
+                    <a href="wasm-security-review" class="db-summary-open" aria-label="Open WASM Security Review">Open →</a>
+                </div>
+                <div class="db-analysis-empty">
+                    Not run this session — analyse headers, authentication, configuration, and exposures.
+                    <a href="wasm-security-review" class="db-analysis-run-link">Run now →</a>
+                </div>
+            </div>
+
+            @* WASM Performance *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">WASM Performance</span>
+                    <a href="wasm-performance-review" class="db-summary-open" aria-label="Open WASM Performance Review">Open →</a>
+                </div>
+                @if (_perfReport?.ReadinessReport is { HasData: true } perfCard)
+                {
+                    <div class="db-analysis-score @ScoreClass(perfCard.OverallScore)">@perfCard.OverallScore</div>
+                    <span class="db-analysis-status @PerformanceStatusClass(perfCard.OverallState)">@ReadinessStateLabel(perfCard.OverallState)</span>
+                    <div class="db-analysis-chips">
+                        @if (perfCard.Health.CriticalFindings > 0) { <span class="db-count-chip db-count-poor">@perfCard.Health.CriticalFindings critical</span> }
+                        @if (perfCard.Health.HighFindings > 0)     { <span class="db-count-chip db-count-poor">@perfCard.Health.HighFindings high</span> }
+                        @if (perfCard.Health.CriticalFindings == 0 && perfCard.Health.HighFindings == 0)
+                        { <span class="db-count-chip db-count-good">No critical findings</span> }
+                    </div>
+                }
+                else if (_perfReport is not null)
+                {
+                    <div class="db-analysis-score db-val-empty">@_perfReport.Assets.Count</div>
+                    <span class="db-analysis-status db-status-notrun">Assets discovered</span>
+                    <div class="db-analysis-empty" style="margin-top: 0.25rem">
+                        Run a full Performance Review for readiness scoring.
+                    </div>
+                }
+                else
+                {
+                    <div class="db-analysis-empty">
+                        Not run — analyse startup, caching, compression, and API.
+                        <a href="wasm-performance-review" class="db-analysis-run-link">Run now →</a>
+                    </div>
+                }
+            </div>
+
+        </div>
+    </section>
+
+    @* ══ 6 · Recent Activity ══════════════════════════════════════════════════ *@
+    <section class="db-section">
+        <div class="db-section-header">
+            <h2 class="db-section-title">Recent Activity</h2>
+        </div>
+        <div class="db-timeline">
+            @{
+                bool anyActivity = false;
+
+                if (Snapshot.AuditReport is not null)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">QA Auditor completed</span>
+                            <span class="db-tl-meta">@Snapshot.AuditReport.Health.TotalFindings finding@(Snapshot.AuditReport.Health.TotalFindings != 1 ? "s" : "")</span>
                         </div>
                     </div>
-                    @if (ar.Findings.Any(f => f.Severity is QaSeverity.Critical or QaSeverity.High))
-                    {
-                        <div class="db-top-findings">
-                            @foreach (var f in ar.Findings.Where(f => f.Severity is QaSeverity.Critical or QaSeverity.High).Take(3))
+                }
+
+                if (Snapshot.DeliveryReport is not null)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">Delivery Readiness completed</span>
+                            <span class="db-tl-meta">@Snapshot.DeliveryReport.Health.OverallReadinessScore.ToString("0")% overall readiness</span>
+                        </div>
+                    </div>
+                }
+
+                if (Snapshot.TraceabilityReport is not null)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">Artifact Traceability completed</span>
+                            <span class="db-tl-meta">@Snapshot.TraceabilityReport.Health.CoveragePercentage.ToString("0")% coverage</span>
+                        </div>
+                    </div>
+                }
+
+                if (Snapshot.ComplianceReport is not null)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">Constitution Compliance completed</span>
+                            <span class="db-tl-meta">@Snapshot.ComplianceReport.Coverage.CompliancePercentage.ToString("0")% compliant</span>
+                        </div>
+                    </div>
+                }
+
+                if (Snapshot.ReadinessReport is not null)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">QA Readiness completed</span>
+                            <span class="db-tl-meta">@Snapshot.ReadinessReport.OverallScore.ToString("0")% overall</span>
+                        </div>
+                    </div>
+                }
+
+                if (_perfReport is not null)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-perf" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">WASM Performance Review completed</span>
+                            <span class="db-tl-meta">@_perfReport.Assets.Count assets · @FormatBytes(_perfReport.Health.TotalTransferBytes) transfer</span>
+                        </div>
+                    </div>
+                }
+
+                if (Snapshot.ComplianceReport?.HasConstitution == true || Snapshot.TraceabilityReport?.HasConstitution == true)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-loaded" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">Constitution analyzed</span>
+                            @if (Snapshot.ComplianceReport is not null)
                             {
-                                <div class="db-finding-row db-finding-@f.Severity.ToString().ToLowerInvariant()">
-                                    <span class="db-finding-sev">@f.Severity</span>
-                                    <span class="db-finding-title">@f.Title</span>
+                                <span class="db-tl-meta">@Snapshot.ComplianceReport.Coverage.TotalItems rules</span>
+                            }
+                        </div>
+                    </div>
+                }
+
+                foreach (var c in _recentSpecItems)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-@c.ReviewStatus.ToString().ToLowerInvariant()" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">@c.Title</span>
+                            <span class="db-tl-meta">@c.Classification · @c.ReviewStatus</span>
+                        </div>
+                    </div>
+                }
+
+                if (!anyActivity)
+                {
+                    <div class="db-tl-empty">
+                        No activity yet — load artifacts and run analyses to see activity here.
+                    </div>
+                }
+            }
+        </div>
+    </section>
+
+    @* ══ 7 · Top Risks ════════════════════════════════════════════════════════ *@
+    <section class="db-section">
+        <div class="db-section-header">
+            <h2 class="db-section-title">Top Risks</h2>
+        </div>
+        @{
+            var topRisks = _topRisks.ToList();
+        }
+        @if (topRisks.Count > 0)
+        {
+            <div class="db-risk-cards">
+                @foreach (var (Title, Severity, Category, Detail) in topRisks)
+                {
+                    <div class="db-risk-card db-risk-@Severity.ToLowerInvariant()">
+                        <div class="db-risk-header">
+                            <span class="db-risk-sev db-risk-sev-@Severity.ToLowerInvariant()">@Severity</span>
+                            <span class="db-risk-cat">@Category</span>
+                        </div>
+                        <div class="db-risk-title">@Title</div>
+                        @if (!string.IsNullOrEmpty(Detail))
+                        { <div class="db-risk-detail">@Detail</div> }
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="db-section-empty">
+                No risks detected.
+                Run QA Auditor or Delivery Readiness to surface governance risks.
+                <div class="db-empty-actions">
+                    <a href="qa-auditor" class="db-qa-btn">Run QA Auditor</a>
+                    <a href="delivery-readiness" class="db-qa-btn">Run Delivery Readiness</a>
+                </div>
+            </div>
+        }
+    </section>
+
+    @* ══ 8 · Top Recommendations ══════════════════════════════════════════════ *@
+    <section class="db-section">
+        <div class="db-section-header">
+            <h2 class="db-section-title">Top Recommendations</h2>
+        </div>
+        @{
+            var topRecs = _topRecs.ToList();
+        }
+        @if (topRecs.Count > 0)
+        {
+            <div class="db-rec-cards">
+                @{ int recIdx = 0; }
+                @foreach (var (Text, Category, ActionHref) in topRecs)
+                {
+                    recIdx++;
+                    <div class="db-rec-card">
+                        <div class="db-rec-num" aria-hidden="true">@recIdx</div>
+                        <div class="db-rec-body">
+                            <div class="db-rec-text">@Text</div>
+                            <div class="db-rec-footer">
+                                <span class="db-rec-cat">@Category</span>
+                                <a href="@ActionHref" class="db-rec-action">Open →</a>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="db-section-empty">
+                No recommendations yet.
+                Run QA Auditor or Delivery Readiness to generate actionable recommendations.
+            </div>
+        }
+    </section>
+
+    @* ══ 9 · Readiness Summary ════════════════════════════════════════════════ *@
+    <section class="db-section">
+        <div class="db-section-header">
+            <h2 class="db-section-title">Readiness Summary</h2>
+        </div>
+        <div class="db-readiness-grid">
+            @ReadinessCard("Development", Snapshot.DeliveryReport?.DevelopmentDecision.State, Snapshot.DeliveryReport?.Health.DevelopmentScore, "delivery-readiness")
+            @ReadinessCard("Testing",     Snapshot.DeliveryReport?.TestingDecision.State,     Snapshot.DeliveryReport?.Health.TestingScore,     "delivery-readiness")
+            @ReadinessCard("Release",     Snapshot.DeliveryReport?.ReleaseDecision.State,     Snapshot.DeliveryReport?.Health.ReleaseScore,      "delivery-readiness")
+            @ReadinessCardScore("QA Readiness", Snapshot.ReadinessReport?.OverallScore, "ai-qa-auditor")
+        </div>
+    </section>
+
+    @* ══ 10 · Performance Summary ════════════════════════════════════════════ *@
+    @if (_perfReport is not null)
+    {
+        <section class="db-section">
+            <div class="db-section-header">
+                <h2 class="db-section-title">Performance Summary</h2>
+                <a href="wasm-performance-review" class="db-summary-open">Open Performance Review →</a>
+            </div>
+            <div class="db-perf-summary">
+                @if (_perfReport.ReadinessReport is { HasData: true } perfDetail)
+                {
+                    <div class="db-perf-main">
+                        <div class="db-perf-score @ScoreClass(perfDetail.OverallScore)">@perfDetail.OverallScore</div>
+                        <div class="db-perf-label">@ReadinessStateLabel(perfDetail.OverallState)</div>
+                        <div class="db-perf-sub">out of 100</div>
+                    </div>
+                    @if (perfDetail.Categories.Count > 0)
+                    {
+                        <div class="db-perf-cat-grid">
+                            @foreach (var cat in perfDetail.Categories)
+                            {
+                                <div class="db-perf-cat">
+                                    <span class="db-perf-cat-name">@cat.CategoryName</span>
+                                    <span class="db-perf-cat-score @(cat.WasAssessed ? ScoreClass(cat.Score) : "db-val-empty")">
+                                        @(cat.WasAssessed ? cat.Score.ToString() : "—")
+                                    </span>
                                 </div>
                             }
                         </div>
@@ -303,198 +620,31 @@ else
                 }
                 else
                 {
-                    <div class="db-summary-rows">
-                        <div class="db-summary-row"><span class="db-summary-row-label">Critical</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">High</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Medium</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Low</span><span class="db-summary-row-val db-val-empty">—</span></div>
+                    <div class="db-perf-partial-note">
+                        @_perfReport.Assets.Count assets discovered.
+                        Open Performance Review to run a full readiness analysis.
                     </div>
-                    <div class="db-summary-note">Run QA Auditor to see rule-based findings across all artifacts.</div>
                 }
             </div>
+        </section>
+    }
 
-            <!-- Phase 5 · Readiness -->
-            <div class="db-summary-panel">
-                <div class="db-summary-panel-header">
-                    <span class="db-summary-panel-title">Readiness</span>
-                    <a href="delivery-readiness" class="db-summary-open">Open →</a>
-                </div>
-                @if (Snapshot.DeliveryReport is { } dr)
-                {
-                    <div class="db-summary-rows">
-                        <div class="db-summary-row">
-                            <span class="db-summary-row-label">Development</span>
-                            <span class="db-summary-row-val @ReadinessStateClass(dr.DevelopmentDecision.State)">@ReadinessStateLabel(dr.DevelopmentDecision.State)</span>
-                        </div>
-                        <div class="db-summary-row">
-                            <span class="db-summary-row-label">Testing</span>
-                            <span class="db-summary-row-val @ReadinessStateClass(dr.TestingDecision.State)">@ReadinessStateLabel(dr.TestingDecision.State)</span>
-                        </div>
-                        <div class="db-summary-row">
-                            <span class="db-summary-row-label">Release</span>
-                            <span class="db-summary-row-val @ReadinessStateClass(dr.ReleaseDecision.State)">@ReadinessStateLabel(dr.ReleaseDecision.State)</span>
-                        </div>
-                    </div>
-                    @if (Snapshot.ReadinessReport is { } rr)
-                    {
-                        <div class="db-summary-rows" style="margin-top:0.35rem">
-                            <div class="db-summary-row">
-                                <span class="db-summary-row-label">QA Readiness</span>
-                                <span class="db-summary-row-val @ScoreClass(rr.OverallScore)">@rr.OverallScore.ToString("0")%</span>
-                            </div>
-                        </div>
-                    }
-                }
-                else if (Snapshot.ReadinessReport is { } rr2)
-                {
-                    <div class="db-summary-rows">
-                        <div class="db-summary-row">
-                            <span class="db-summary-row-label">QA Readiness</span>
-                            <span class="db-summary-row-val @ScoreClass(rr2.OverallScore)">@rr2.OverallScore.ToString("0")%</span>
-                        </div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Development</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Testing</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Release</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                    </div>
-                }
-                else
-                {
-                    <div class="db-summary-rows">
-                        <div class="db-summary-row"><span class="db-summary-row-label">Development</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Testing</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">Release</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                        <div class="db-summary-row"><span class="db-summary-row-label">QA Readiness</span><span class="db-summary-row-val db-val-empty">—</span></div>
-                    </div>
-                    <div class="db-summary-note">Run Delivery Readiness or QA Readiness for go/no-go decisions.</div>
-                }
-            </div>
-
-        </div>
-    </section>
-
-    <!-- ══ Phase 6 · Recent Activity ════════════════════════════════════════ -->
+    @* ══ 11 · Security Summary ════════════════════════════════════════════════ *@
     <section class="db-section">
         <div class="db-section-header">
-            <h2 class="db-section-title">Recent Activity</h2>
-            <span class="db-section-hint">Most recently reviewed artifacts</span>
+            <h2 class="db-section-title">Security Summary</h2>
+            <a href="wasm-security-review" class="db-summary-open">Open Security Review →</a>
         </div>
-        <div class="db-activity-grid">
-
-            <div class="db-activity-panel">
-                <div class="db-activity-panel-label">Constitution</div>
-                @if (Snapshot.ComplianceReport?.HasConstitution == true || Snapshot.TraceabilityReport?.HasConstitution == true)
-                {
-                    <div class="db-activity-item">
-                        <span class="db-activity-dot db-activity-dot-analyzed"></span>
-                        <span class="db-activity-text">constitution.md analyzed</span>
-                        @if (Snapshot.ComplianceReport is { } cr2)
-                        {
-                            <span class="db-activity-meta">@cr2.Coverage.TotalItems rules</span>
-                        }
-                    </div>
-                }
-                else
-                {
-                    <div class="db-activity-empty">Not yet loaded</div>
-                }
+        <div class="db-section-empty">
+            No security scan has been run this session.
+            Open WASM Security Review to analyse headers, authentication, configuration, and exposures.
+            <div class="db-empty-actions">
+                <a href="wasm-security-review" class="btn-primary db-empty-cta">Open WASM Security Review</a>
             </div>
-
-            <div class="db-activity-panel">
-                <div class="db-activity-panel-label">Specification</div>
-                @if (_metrics.RequirementCount > 0)
-                {
-                    @foreach (var c in _recentSpecItems)
-                    {
-                        <div class="db-activity-item">
-                            <span class="db-activity-dot db-activity-dot-@c.ReviewStatus.ToString().ToLowerInvariant()"></span>
-                            <span class="db-activity-text">@c.Title</span>
-                            <span class="db-activity-meta">@c.Classification</span>
-                        </div>
-                    }
-                }
-                else
-                {
-                    <div class="db-activity-empty">Not yet reviewed</div>
-                }
-            </div>
-
-            <div class="db-activity-panel">
-                <div class="db-activity-panel-label">Plan</div>
-                @if (Snapshot.TraceabilityReport?.HasPlan == true || Snapshot.AuditReport?.HasPlan == true)
-                {
-                    <div class="db-activity-item">
-                        <span class="db-activity-dot db-activity-dot-analyzed"></span>
-                        <span class="db-activity-text">plan.md analyzed</span>
-                        @if (Snapshot.TraceabilityReport is { } tr2)
-                        {
-                            <span class="db-activity-meta">@tr2.PlanCoverage.TotalItems items</span>
-                        }
-                    </div>
-                }
-                else
-                {
-                    <div class="db-activity-empty">Not yet loaded</div>
-                }
-            </div>
-
-            <div class="db-activity-panel">
-                <div class="db-activity-panel-label">Tasks</div>
-                @if (_metrics.TotalCandidates > 0)
-                {
-                    <div class="db-activity-item">
-                        <span class="db-activity-dot db-activity-dot-analyzed"></span>
-                        <span class="db-activity-text">@_metrics.TotalCandidates candidates reviewed</span>
-                        <span class="db-activity-meta">@_metrics.AcceptedCount accepted</span>
-                    </div>
-                }
-                else if (Snapshot.AuditReport?.HasTasks == true)
-                {
-                    <div class="db-activity-item">
-                        <span class="db-activity-dot db-activity-dot-analyzed"></span>
-                        <span class="db-activity-text">tasks.md analyzed</span>
-                        <span class="db-activity-meta">@Snapshot.TraceabilityReport?.TaskCoverage.TotalItems items</span>
-                    </div>
-                }
-                else
-                {
-                    <div class="db-activity-empty">Not yet loaded</div>
-                }
-            </div>
-
         </div>
     </section>
 
-    <!-- ══ Phase 8 · Health Summary ═════════════════════════════════════════ -->
-    <section class="db-section">
-        <div class="db-section-header">
-            <h2 class="db-section-title">Health Summary</h2>
-        </div>
-        <div class="db-health-strip">
-
-            <div class="db-health-chip @TraceabilityHealthClass">
-                <span class="db-health-value">@TraceabilityHealthVal</span>
-                <span class="db-health-label">Traceability</span>
-            </div>
-
-            <div class="db-health-chip @ComplianceHealthClass">
-                <span class="db-health-value">@ComplianceHealthVal</span>
-                <span class="db-health-label">Compliance</span>
-            </div>
-
-            <div class="db-health-chip @QaHealthClass">
-                <span class="db-health-value">@QaHealthVal</span>
-                <span class="db-health-label">QA Health</span>
-            </div>
-
-            <div class="db-health-chip @DeliveryHealthClass">
-                <span class="db-health-value">@DeliveryHealthVal</span>
-                <span class="db-health-label">Delivery</span>
-            </div>
-
-        </div>
-    </section>
-
-    <!-- ══ Phase 7 · Quick Actions ══════════════════════════════════════════ -->
+    @* ══ 12 · Quick Actions ═══════════════════════════════════════════════════ *@
     <section class="db-section">
         <div class="db-section-header">
             <h2 class="db-section-title">Quick Actions</h2>
@@ -515,8 +665,16 @@ else
                     <a href="artifact-traceability"   class="db-qa-btn">Artifact Traceability</a>
                     <a href="constitution-compliance" class="db-qa-btn">Constitution Compliance</a>
                     <a href="qa-auditor"              class="db-qa-btn">QA Auditor</a>
-                    <a href="ai-qa-auditor"           class="db-qa-btn">QA Readiness</a>
                     <a href="delivery-readiness"      class="db-qa-btn">Delivery Readiness</a>
+                    <a href="wasm-security-review"    class="db-qa-btn">WASM Security Review</a>
+                    <a href="wasm-performance-review" class="db-qa-btn">WASM Performance Review</a>
+                </div>
+            </div>
+            <div class="db-qa-group">
+                <div class="db-qa-group-label">AI</div>
+                <div class="db-qa-buttons">
+                    <a href="ai-change-review" class="db-qa-btn">AI Change Review</a>
+                    <a href="ai-qa-auditor"    class="db-qa-btn">QA Readiness</a>
                 </div>
             </div>
         </div>
@@ -530,6 +688,10 @@ else
     private string? _loadError;
     private DashboardMetrics _metrics = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     private List<DashboardCandidate> _candidates = [];
+
+    // ── Performance cache ─────────────────────────────────────────────────────
+
+    private WasmPerformanceReviewReport? _perfReport => PerformanceService.GetCached();
 
     // ── Snapshot aliases ──────────────────────────────────────────────────────
 
@@ -584,7 +746,102 @@ else
             .Where(c => c.ReviewStatus is CandidateReviewStatus.Accepted or CandidateReviewStatus.Rejected)
             .TakeLast(3);
 
-    // ── Health Summary values ─────────────────────────────────────────────────
+    // ── Pre-computed health scores (numeric) ──────────────────────────────────
+
+    private bool _traceabilityHasData => Snapshot.TraceabilityReport is not null || _metrics.TotalCandidates > 0;
+    private double _traceabilityScore => Snapshot.TraceabilityReport is { } tr
+        ? tr.Health.CoveragePercentage
+        : _metrics.TotalCandidates > 0 ? _metrics.TraceabilityPercent : 0;
+
+    private bool _complianceHasData => Snapshot.ComplianceReport is not null;
+    private double _complianceScore => Snapshot.ComplianceReport?.Health.CompliancePercentage ?? 0;
+
+    private bool _qaHasData => Snapshot.AuditReport is not null || _metrics.TotalCandidates > 0;
+    private double _qaScore => Snapshot.AuditReport is { } ar
+        ? ar.Health.AuditScore
+        : _metrics.TotalCandidates > 0 ? _metrics.QaHealthScore : 0;
+
+    private bool _deliveryHasData => Snapshot.DeliveryReport is not null;
+    private double _deliveryScore => Snapshot.DeliveryReport?.Health.OverallReadinessScore ?? 0;
+
+    // ── Overall health ────────────────────────────────────────────────────────
+
+    private double _overallScore
+    {
+        get
+        {
+            var scores = new List<double>();
+            if (Snapshot.TraceabilityReport is not null) scores.Add(_traceabilityScore);
+            else if (_metrics.TotalCandidates > 0)       scores.Add(_traceabilityScore);
+            if (Snapshot.ComplianceReport is not null)   scores.Add(_complianceScore);
+            if (Snapshot.AuditReport is not null)        scores.Add(_qaScore);
+            if (Snapshot.DeliveryReport is not null)     scores.Add(_deliveryScore);
+            return scores.Count > 0 ? scores.Average() : 0;
+        }
+    }
+
+    private bool _hasAnyScore =>
+        Snapshot.TraceabilityReport is not null || Snapshot.ComplianceReport is not null ||
+        Snapshot.AuditReport is not null        || Snapshot.DeliveryReport is not null  ||
+        _metrics.TotalCandidates > 0;
+
+    private string _overallScoreClass => ScoreHealthClass(_overallScore);
+    private string _overallScoreLabel => _overallScore >= 80 ? "Healthy" : _overallScore >= 50 ? "Needs Attention" : "At Risk";
+
+    // ── Project phase & governance KPI ────────────────────────────────────────
+
+    private string _projectPhase =>
+        _tasksAnalyzed ? "Testing" :
+        _planLoaded    ? "Implementation" :
+        _specLoaded    ? "Specification" : "Setup";
+
+    private int _governanceLoadPercent =>
+        (_constitutionLoaded ? 25 : 0) + (_specLoaded ? 25 : 0) +
+        (_planLoaded         ? 25 : 0) + (_tasksLoaded ? 25 : 0);
+
+    // ── Top risks ─────────────────────────────────────────────────────────────
+
+    private IEnumerable<(string Title, string Severity, string Category, string? Detail)> _topRisks
+    {
+        get
+        {
+            var list = new List<(string, string, string, string?)>();
+            if (Snapshot.AuditReport is { } ar)
+                list.AddRange(ar.Risks
+                    .OrderBy(r => r.Severity)
+                    .Take(3)
+                    .Select(r => (r.Title, r.Severity.ToString(), r.Category.ToString(), r.Mitigation)));
+            if (list.Count < 3 && Snapshot.DeliveryReport is { } dr)
+                list.AddRange(dr.Blockers
+                    .OrderBy(b => b.Severity)
+                    .Take(3 - list.Count)
+                    .Select(b => (b.Title, b.Severity.ToString(), b.Category, (string?)b.Description)));
+            return list.Take(3);
+        }
+    }
+
+    // ── Top recommendations ───────────────────────────────────────────────────
+
+    private IEnumerable<(string Text, string Category, string ActionHref)> _topRecs
+    {
+        get
+        {
+            var list = new List<(string, string, string)>();
+            if (Snapshot.AuditReport is { } ar)
+                list.AddRange(ar.Recommendations
+                    .OrderBy(r => r.Priority)
+                    .Take(3)
+                    .Select(r => (r.Text, r.Category.ToString(), "qa-auditor")));
+            if (list.Count < 3 && Snapshot.DeliveryReport is { } dr)
+                list.AddRange(dr.Recommendations
+                    .OrderBy(r => r.Priority)
+                    .Take(3 - list.Count)
+                    .Select(r => (r.Text, r.Category, "delivery-readiness")));
+            return list.Take(3);
+        }
+    }
+
+    // ── Health Summary values (kept for KPI display) ──────────────────────────
 
     private string TraceabilityHealthVal =>
         Snapshot.TraceabilityReport is { } tr
@@ -634,26 +891,40 @@ else
     private static string ScoreClass(double score) =>
         score >= 80 ? "db-val-good" : score >= 50 ? "db-val-warn" : "db-val-poor";
 
+    private static string ScoreChipClass(double score) =>
+        score >= 80 ? "db-count-good" : score >= 50 ? "db-count-warn" : "db-count-poor";
+
+    private static string KpiStatusClass(double score, bool hasData) =>
+        !hasData ? "db-status-notrun" :
+        score >= 80 ? "db-status-healthy" :
+        score >= 50 ? "db-status-warning" : "db-status-critical";
+
+    private static string KpiStatusLabel(double score, bool hasData) =>
+        !hasData ? "Not Run" :
+        score >= 80 ? "Healthy" :
+        score >= 50 ? "Warning" : "Critical";
+
+    private static string ReadinessStatusClass(ReadinessState state) => state switch
+    {
+        ReadinessState.Ready       => "db-status-healthy",
+        ReadinessState.MostlyReady => "db-status-warning",
+        ReadinessState.Blocked     => "db-status-critical",
+        _                          => "db-status-critical",
+    };
+
+    private static string PerformanceStatusClass(PerformanceReadinessState state) => state switch
+    {
+        PerformanceReadinessState.Ready            => "db-status-healthy",
+        PerformanceReadinessState.MostlyReady      => "db-status-warning",
+        PerformanceReadinessState.HighRisk         => "db-status-critical",
+        _                                          => "db-status-warning",
+    };
+
     private static string CovVal(int total, int pct) =>
         total > 0 ? $"{pct}%" : "—";
 
     private static string CovClass(int total, int pct) =>
         total == 0 ? "db-val-empty" : pct >= 80 ? "db-val-good" : "db-val-warn";
-
-    private RenderFragment TraceabilityRow(string label, TraceabilityCoverageStats stats, bool hasArtifact) => __builder =>
-    {
-        <div class="db-summary-row">
-            <span class="db-summary-row-label">@label</span>
-            @if (!hasArtifact)
-            {
-                <span class="db-summary-row-val db-val-empty">—</span>
-            }
-            else
-            {
-                <span class="db-summary-row-val @ScoreClass(stats.CoveragePercentage)">@stats.CoveragePercentage.ToString("0.#")%</span>
-            }
-        </div>
-    };
 
     private static string ReadinessStateLabel(ReadinessState state) => state switch
     {
@@ -664,13 +935,82 @@ else
         _                          => "—",
     };
 
-    private static string ReadinessStateClass(ReadinessState state) => state switch
+    private static string ReadinessStateLabel(PerformanceReadinessState state) => state switch
     {
-        ReadinessState.Ready       => "db-val-good",
-        ReadinessState.MostlyReady => "db-val-warn",
-        ReadinessState.NotReady    => "db-val-poor",
-        ReadinessState.Blocked     => "db-val-poor",
-        _                          => "db-val-empty",
+        PerformanceReadinessState.Ready            => "Ready",
+        PerformanceReadinessState.MostlyReady      => "Mostly Ready",
+        PerformanceReadinessState.NeedsImprovement => "Needs Improvement",
+        PerformanceReadinessState.HighRisk         => "High Risk",
+        _                                          => "Not Assessed",
+    };
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0)        return "0 B";
+        if (bytes < 1_024)     return $"{bytes} B";
+        if (bytes < 1_048_576) return $"{bytes / 1024} KB";
+        return $"{bytes / 1_048_576.0:F1} MB";
+    }
+
+    // ── RenderFragment helpers ────────────────────────────────────────────────
+
+    private RenderFragment HealthBar(string label, double value, bool hasData) => __builder =>
+    {
+        var fillClass = hasData ? ScoreHealthClass(value) : "db-health-empty";
+        <div class="db-health-bar-row">
+            <span class="db-health-bar-label">@label</span>
+            <div class="db-health-bar-track"
+                 role="progressbar"
+                 aria-label="@label health"
+                 aria-valuenow="@(hasData ? (int)value : 0)"
+                 aria-valuemin="0"
+                 aria-valuemax="100">
+                @if (hasData)
+                {
+                    <div class="db-health-bar-fill @fillClass" style="width: clamp(0%, @value.ToString("0")%, 100%)"></div>
+                }
+            </div>
+            <span class="db-health-bar-pct @fillClass">@(hasData ? $"{value:0}%" : "—")</span>
+            <span class="db-health-chip-sm @(hasData ? fillClass : "db-health-empty")">
+                @(hasData ? (value >= 80 ? "Healthy" : value >= 50 ? "Warning" : "Poor") : "Not Run")
+            </span>
+        </div>
+    };
+
+    private RenderFragment ReadinessCard(string label, ReadinessState? state, double? score, string href) => __builder =>
+    {
+        <div class="db-readiness-card">
+            <div class="db-readiness-label">@label</div>
+            @if (state.HasValue && score.HasValue)
+            {
+                <div class="db-readiness-score @ScoreClass(score.Value)">@score.Value.ToString("0")%</div>
+                <div class="db-readiness-state @ReadinessStatusClass(state.Value)">@ReadinessStateLabel(state.Value)</div>
+            }
+            else
+            {
+                <div class="db-readiness-score db-val-empty">—</div>
+                <div class="db-readiness-state db-status-notrun">Not Run</div>
+            }
+            <a href="@href" class="db-readiness-link">Open →</a>
+        </div>
+    };
+
+    private RenderFragment ReadinessCardScore(string label, double? score, string href) => __builder =>
+    {
+        <div class="db-readiness-card">
+            <div class="db-readiness-label">@label</div>
+            @if (score.HasValue)
+            {
+                <div class="db-readiness-score @ScoreClass(score.Value)">@score.Value.ToString("0")%</div>
+                <div class="db-readiness-state @KpiStatusClass(score.Value, true)">@KpiStatusLabel(score.Value, true)</div>
+            }
+            else
+            {
+                <div class="db-readiness-score db-val-empty">—</div>
+                <div class="db-readiness-state db-status-notrun">Not Run</div>
+            }
+            <a href="@href" class="db-readiness-link">Open →</a>
+        </div>
     };
 
     // ── Data loading ──────────────────────────────────────────────────────────
