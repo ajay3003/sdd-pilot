@@ -1,0 +1,32 @@
+.review-status-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.025em;
+    padding: 0.1rem 0.4rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.review-status-badge-new {
+    background: var(--clr-review-new-bg);
+    color: var(--clr-review-new-text);
+}
+
+.review-status-badge-accepted {
+    background: var(--clr-review-accepted-bg);
+    color: var(--clr-review-accepted-text);
+}
+
+.review-status-badge-rejected {
+    background: var(--clr-review-rejected-bg);
+    color: var(--clr-review-rejected-text);
+    border-color: var(--clr-border);
+}
+
+.review-status-badge-needsreview {
+    background: var(--clr-review-needsreview-bg);
+    color: var(--clr-review-needsreview-text);
+}

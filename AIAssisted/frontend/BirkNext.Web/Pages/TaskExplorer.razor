@@ -1,0 +1,75 @@
+@page "/task-explorer"
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+@inject BirkNext.Web.Services.ProjectDocumentApiService DocumentApi
+
+<PageTitle>Task Explorer — QA Review Studio</PageTitle>
+
+<div class="tx-page">
+
+    <PageHeader Title="Task Explorer"
+                Description="Explore your implementation plan independently of spec alignment. Upload, paste, or drag a tasks.md file to build the hierarchy." />
+
+    <div class="tx-page-body">
+        <TaskExplorerPanel
+            TasksText="@_initialTasksText"
+            InitialView="@_initialView"
+            OnBuilt="OnTreeBuilt" />
+    </div>
+
+</div>
+
+@code {
+    private string _initialTasksText = string.Empty;
+    private string? _initialView;
+
+    private const string StorageKey = "te-standalone-tasks";
+
+    protected override void OnInitialized()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var view))
+            _initialView = view;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        string? content = null;
+        try { content = await DocumentApi.GetAsync("tasks"); } catch { }
+
+        if (!string.IsNullOrWhiteSpace(content))
+        {
+            _initialTasksText = content;
+            StateHasChanged();
+            return;
+        }
+
+        string? legacy = null;
+        try { legacy = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey); } catch { }
+
+        if (!string.IsNullOrWhiteSpace(legacy))
+        {
+            try
+            {
+                await DocumentApi.SaveAsync("tasks", legacy);
+                await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey);
+            }
+            catch { }
+            _initialTasksText = legacy;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnTreeBuilt(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        try { await DocumentApi.SaveAsync("tasks", text); } catch { }
+        try { await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey); } catch { }
+    }
+}

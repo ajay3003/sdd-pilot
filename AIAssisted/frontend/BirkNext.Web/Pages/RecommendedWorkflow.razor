@@ -1,0 +1,259 @@
+@page "/getting-started"
+
+<PageTitle>Recommended Workflow — QA Review Studio</PageTitle>
+
+<div class="rw-page">
+
+    <PageHeader Title="Recommended Workflow"
+                Description="Follow these phases in order to get full value from QA Review Studio. Each phase builds on the previous one — complete them in sequence for your first feature, then use individual features as needed." />
+
+    <!-- ── Phases ─────────────────────────────────────────────────────────── -->
+    <div class="rw-phases">
+
+        <!-- Phase 1 -->
+        <div class="rw-phase" style="--rw-phase-color: #1e40af;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">1</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Phase 1</div>
+                    <div class="rw-phase-name">Constitution Review</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Understand the governance rules, policies, and principles that all SDD artifacts must comply with before any specification or plan work begins.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Activities</div>
+                        <ul class="rw-phase-actions">
+                            <li>Open Constitution Explorer and import your constitution.md</li>
+                            <li>Review the rule catalog — policies, governance rules, and quality standards</li>
+                            <li>Inspect rule types, scope, and compliance intent for each entry</li>
+                            <li>Identify mandatory rules that will gate downstream artifact approval</li>
+                            <li>Note rule IDs (e.g. PP-01, GL-02) — they will be referenced in all subsequent phases</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">A clear picture of the governance framework: what rules exist, what they require, and which will be enforced during compliance checks later in the workflow.</p>
+                    </div>
+                </div>
+                <a href="constitution-explorer" class="rw-cta">Open Constitution Explorer →</a>
+            </div>
+        </div>
+
+        <div class="rw-phase-connector" aria-hidden="true">↓</div>
+
+        <!-- Phase 2 -->
+        <div class="rw-phase" style="--rw-phase-color: #15803d;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">2</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Phase 2</div>
+                    <div class="rw-phase-name">Specification Review</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Analyze the functional specification to extract requirements, acceptance criteria, and user stories, then review coverage and QA readiness.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Activities</div>
+                        <ul class="rw-phase-actions">
+                            <li>Open Specification Review and import your spec.md</li>
+                            <li>Run analysis to extract requirements, tests, and clarification items</li>
+                            <li>Use the Traceability &amp; Coverage tab to review gaps — orphan tests, missing acceptance criteria, unlinked stories</li>
+                            <li>Use Flow View to assess QA readiness across the requirement hierarchy</li>
+                            <li>Use Spec Explorer to navigate the specification structure</li>
+                            <li>Resolve or flag clarification items before moving to planning</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">A traceability-first QA picture with coverage gaps, story readiness, and specification structure reviewed — ready to feed into implementation planning.</p>
+                    </div>
+                </div>
+                <a href="extract" class="rw-cta">Open Specification Review →</a>
+            </div>
+        </div>
+
+        <div class="rw-phase-connector" aria-hidden="true">↓</div>
+
+        <!-- Phase 3 -->
+        <div class="rw-phase" style="--rw-phase-color: #6d28d9;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">3</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Phase 3</div>
+                    <div class="rw-phase-name">Implementation Planning</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Review the implementation plan to verify that architecture decisions, phases, and gates are well-formed and reference the correct governance rules and functional requirements.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Activities</div>
+                        <ul class="rw-phase-actions">
+                            <li>Open Plan Explorer and import your plan.md</li>
+                            <li>Review architecture decisions (ADRs) — status, rationale, and rule references</li>
+                            <li>Inspect implementation phases for completeness and FR coverage</li>
+                            <li>Review quality gates and constitution rule checks embedded in the plan</li>
+                            <li>Check risk entries and dependencies across phases</li>
+                            <li>Confirm the plan references constitution rules established in Phase 1</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">Confidence that the implementation plan is well-structured, covers the functional requirements from the spec, and respects the governance rules from the constitution.</p>
+                    </div>
+                </div>
+                <a href="plan-explorer" class="rw-cta">Open Plan Explorer →</a>
+            </div>
+        </div>
+
+        <div class="rw-phase-connector" aria-hidden="true">↓</div>
+
+        <!-- Phase 4 -->
+        <div class="rw-phase" style="--rw-phase-color: #c2410c;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">4</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Phase 4</div>
+                    <div class="rw-phase-name">Traceability &amp; Governance</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Verify end-to-end traceability across the full artifact chain and confirm that all artifacts collectively comply with the constitution's governance rules.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Activities</div>
+                        <ul class="rw-phase-actions">
+                            <li>Open Artifact Traceability and load all four artifacts: constitution, spec, plan, and tasks</li>
+                            <li>Review the Constitution → Spec → Plan → Tasks coverage matrix</li>
+                            <li>Identify traceability gaps — requirements without plan coverage, orphaned tasks, untraced rules</li>
+                            <li>Open Constitution Compliance and load the same artifact set</li>
+                            <li>Review rule-by-rule compliance status across all artifacts</li>
+                            <li>Resolve violations and coverage gaps before moving to implementation review</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">End-to-end traceability confirmed and constitution compliance verified — every governance rule is covered, every requirement is traced, and any remaining gaps are documented and understood.</p>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                    <a href="artifact-traceability" class="rw-cta">Open Artifact Traceability →</a>
+                    <a href="constitution-compliance" class="rw-cta rw-cta-secondary">Open Constitution Compliance →</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="rw-phase-connector" aria-hidden="true">↓</div>
+
+        <!-- Phase 5 -->
+        <div class="rw-phase" style="--rw-phase-color: #475569;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">5</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Phase 5</div>
+                    <div class="rw-phase-name">Implementation Review</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Validate the implementation task list against the specification to surface alignment gaps, risk areas, and regression candidates before development begins.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Activities</div>
+                        <ul class="rw-phase-actions">
+                            <li>Open Implementation Review and load spec.md and tasks.md</li>
+                            <li>Run analysis to generate the task-to-spec alignment report</li>
+                            <li>Review the Spec Alignment tab — which tasks map to which requirements</li>
+                            <li>Review the Risk &amp; Testing tab for risk classification and regression candidates</li>
+                            <li>Use Task Explorer to browse the full task hierarchy with alignment status</li>
+                            <li>Use Spec Drift and Impact Analysis to assess change impact if artifacts have evolved</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">A per-task alignment report with risk classification, regression candidates, and recommended tests — confirming the implementation is correctly scoped against the specification.</p>
+                    </div>
+                </div>
+                <a href="task-alignment" class="rw-cta">Open Implementation Review →</a>
+            </div>
+        </div>
+
+        <div class="rw-phase-connector" aria-hidden="true">↓</div>
+
+        <!-- Phase 6 -->
+        <div class="rw-phase" style="--rw-phase-color: #be185d;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">6</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Phase 6</div>
+                    <div class="rw-phase-name">Quality &amp; Readiness</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Run a final cross-artifact quality audit and readiness assessment to confirm the SDD artifact set meets the bar for development, testing, and release.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Activities</div>
+                        <ul class="rw-phase-actions">
+                            <li>Open QA Readiness and load all four artifacts</li>
+                            <li>Review per-category readiness scores: Specification, Plan, Tasks, Traceability, Compliance</li>
+                            <li>Check the three readiness gates: Ready for Implementation? Ready for Testing? Ready for Release?</li>
+                            <li>Open QA Auditor with the same artifact set for deterministic rule-based findings</li>
+                            <li>Review findings, risks, and coverage gaps by severity and category</li>
+                            <li>Work through recommendations and re-run until all gates pass</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">A scored, gate-based readiness verdict across the full SDD artifact chain — all critical findings resolved, governance confirmed, and the team cleared to proceed with confidence.</p>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                    <a href="ai-qa-auditor" class="rw-cta">Open QA Readiness →</a>
+                    <a href="qa-auditor" class="rw-cta rw-cta-secondary">Open QA Auditor →</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="rw-phase-connector" aria-hidden="true">↓</div>
+
+        <!-- Phase 7 -->
+        <div class="rw-phase" style="--rw-phase-color: #0e7490;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">7</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Phase 7 — Optional</div>
+                    <div class="rw-phase-name">Artifact Publishing</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Optionally publish curated QA assets from the specification review to the library for reuse across features and projects. Skip if you only need analysis outputs.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Activities</div>
+                        <ul class="rw-phase-actions">
+                            <li>Review extraction candidates from Specification Review</li>
+                            <li>Accept or reject candidates for inclusion in the QA Artifact Library</li>
+                            <li>Add manual test scenarios to fill gaps not covered by extraction</li>
+                            <li>Organize published artifacts by feature area for team reuse</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">A reusable QA knowledge base of reviewed and approved artifacts. Teams that skip this phase retain full access to all analysis outputs — publishing is needed only for long-term artifact reuse.</p>
+                    </div>
+                </div>
+                <a href="scenarios" class="rw-cta">Open QA Artifact Library →</a>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ── Footer note ─────────────────────────────────────────────────────── -->
+    <div class="rw-footer-note">
+        For detailed reference documentation on any feature, see the <a href="user-guide" class="rw-inline-link">User Guide</a>.
+    </div>
+
+</div>

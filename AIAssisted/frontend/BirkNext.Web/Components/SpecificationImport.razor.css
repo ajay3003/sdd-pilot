@@ -1,0 +1,177 @@
+.spec-import {
+    position: relative;
+    border: 1px dashed var(--clr-border-hover, #cbd5e1);
+    border-radius: var(--radius-lg, 8px);
+    background: var(--clr-surface, #f8fafc);
+    margin-bottom: 0.875rem;
+    min-height: 6rem;
+    transition: border-color var(--transition, 0.15s ease),
+                background var(--transition, 0.15s ease),
+                box-shadow var(--transition, 0.15s ease);
+}
+
+.spec-import.drag-over {
+    border-color: var(--clr-primary-focus, #3b82f6);
+    background: var(--clr-surface-selected, #eff6ff);
+    box-shadow: 0 0 0 3px var(--clr-primary-ring, rgba(59, 130, 246, 0.1));
+}
+
+.spec-import.drag-over .import-icon {
+    transform: scale(1.2);
+}
+
+.spec-import.drag-over .import-primary-text {
+    color: var(--clr-primary, #2563eb);
+    font-weight: 600;
+}
+
+.spec-import.has-file {
+    border-style: solid;
+    border-color: var(--clr-border, #e2e8f0);
+    background: var(--clr-surface-white, #ffffff);
+}
+
+.spec-import.has-error {
+    border-style: solid;
+    border-color: var(--clr-danger, #dc2626);
+}
+
+.spec-import.is-disabled {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+/* Hidden file input */
+.import-file-input-hidden {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    overflow: hidden;
+}
+
+/* Idle / drag-over state */
+.import-dropzone-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.75rem 1rem;
+    cursor: pointer;
+    gap: 0.375rem;
+    min-height: 6rem;
+}
+
+.import-icon {
+    font-size: 1.5rem;
+    line-height: 1;
+    margin-bottom: 0.125rem;
+    transition: transform var(--transition, 0.15s ease);
+}
+
+.import-primary-text {
+    font-size: 0.875rem;
+    color: var(--clr-text-body, #1e293b);
+    text-align: center;
+}
+
+.import-secondary-text {
+    font-size: 0.8rem;
+    color: var(--clr-text-subtle, #64748b);
+}
+
+.import-browse-link {
+    color: var(--clr-primary, #2563eb);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* File loaded state */
+.import-file-loaded {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    flex-wrap: wrap;
+}
+
+.import-file-icon {
+    font-size: 1.25rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.import-file-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--clr-text-body, #1e293b);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.import-file-size {
+    font-size: 0.8rem;
+    color: var(--clr-text-subtle, #64748b);
+    flex-shrink: 0;
+}
+
+.import-remove {
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.import-file-subtitle {
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle, #64748b);
+    flex-basis: 100%;
+    margin-top: 0.125rem;
+}
+
+/* Error state */
+.import-error {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0;
+}
+
+.import-try-again {
+    flex-shrink: 0;
+    margin-left: auto;
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.8125rem;
+    font-family: inherit;
+    color: var(--clr-danger, #dc2626);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+.import-try-again:hover {
+    color: var(--clr-text-body, #1e293b);
+}
+
+/* Multiple-files warning */
+.import-multi-warn {
+    font-size: 0.72rem;
+    color: #92400e;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 4px;
+    padding: 0.15rem 0.5rem;
+    flex-basis: 100%;
+    margin-top: 0.125rem;
+}
+
+/* Reading state */
+.import-reading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 6rem;
+}

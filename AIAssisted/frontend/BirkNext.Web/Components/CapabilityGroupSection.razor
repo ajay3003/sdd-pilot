@@ -1,0 +1,94 @@
+@using BirkNext.Web.Models
+
+<section class="capability-section @(IsUnmapped ? "capability-section-unmapped" : "")"
+         data-testid="capability-group">
+    <button type="button"
+            class="capability-toggle @(IsExpanded ? "is-open" : "")"
+            aria-expanded="@IsExpanded"
+            @onclick="Toggle">
+        <span class="capability-chevron @(IsExpanded ? "is-open" : "")" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </span>
+
+        <div class="capability-toggle-content">
+            <div class="capability-toggle-main">
+                <div class="capability-title-stack">
+                    <h3 class="capability-heading">@Label</h3>
+                    @if (!string.IsNullOrEmpty(Subtitle))
+                    {
+                        <span class="capability-subtitle">@Subtitle</span>
+                    }
+                </div>
+                <div class="capability-badges">
+                    @if (ReqCount > 0)
+                    {
+                        <span class="capability-count-badge capability-count-req">@ReqCount req</span>
+                    }
+                    @if (TestCount > 0)
+                    {
+                        <span class="capability-count-badge capability-count-test">@TestCount test</span>
+                    }
+                    @if (ClarificationCount > 0)
+                    {
+                        <span class="capability-count-badge capability-count-clr">@ClarificationCount clr</span>
+                    }
+                    @if (TotalCount != VisibleCount)
+                    {
+                        <span class="capability-count-filtered">@VisibleCount of @TotalCount</span>
+                    }
+                    @if (StatusCounts.HasValue)
+                    {
+                        var sc = StatusCounts.Value;
+                        if (sc.Accepted > 0 || sc.Rejected > 0 || sc.NeedsReview > 0)
+                        {
+                            <span class="capability-status-line" aria-label="Review status breakdown">
+                                @if (sc.Accepted > 0)
+                                {
+                                    <span class="cap-status-micro cap-status-accepted">@sc.Accepted acc</span>
+                                }
+                                @if (sc.Rejected > 0)
+                                {
+                                    <span class="cap-status-micro cap-status-rejected">@sc.Rejected rej</span>
+                                }
+                                @if (sc.NeedsReview > 0)
+                                {
+                                    <span class="cap-status-micro cap-status-needsreview">@sc.NeedsReview ?</span>
+                                }
+                            </span>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </button>
+
+    <div class="capability-body @(IsExpanded ? "is-expanded" : "is-collapsed")"
+         aria-hidden="@(!IsExpanded ? "true" : null)">
+        <div class="capability-body-inner">
+            @ChildContent
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string Subtitle { get; set; } = "";
+    [Parameter] public int TotalCount { get; set; }
+    [Parameter] public int VisibleCount { get; set; }
+    [Parameter] public int ReqCount { get; set; }
+    [Parameter] public int TestCount { get; set; }
+    [Parameter] public int ClarificationCount { get; set; }
+    [Parameter] public bool IsUnmapped { get; set; }
+    [Parameter] public ReviewStatusCounts? StatusCounts { get; set; }
+    [Parameter] public bool IsExpanded { get; set; } = true;
+    [Parameter] public EventCallback<bool> IsExpandedChanged { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private async Task Toggle()
+    {
+        IsExpanded = !IsExpanded;
+        await IsExpandedChanged.InvokeAsync(IsExpanded);
+    }
+}

@@ -1,0 +1,42 @@
+mutation AnalyzeChange($projectId: String!, $changeDescription: String!) {
+    analyzeChange(input: {
+        projectId: $projectId,
+        changeDescription: $changeDescription
+    }) {
+        report {
+            changeDescription
+            overallRiskLevel
+            aiReasoning
+            regressionScope
+            coverageGaps
+            affectedRequirements {
+                requirement {
+                    id
+                    title
+                    description
+                }
+                riskLevel
+                linkedTestCount
+                aiRelevanceReason
+            }
+            affectedTests {
+                test {
+                    id
+                    title
+                }
+                aiRelevanceReason
+            }
+            recommendedRegressionTests {
+                test {
+                    id
+                    title
+                }
+                reason
+            }
+        }
+        errors {
+            code
+            message
+        }
+    }
+}

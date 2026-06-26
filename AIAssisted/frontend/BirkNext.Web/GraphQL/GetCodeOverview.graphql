@@ -1,0 +1,15 @@
+query GetCodeOverview($projectId: String!) {
+    codeFiles(projectId: $projectId) {
+        id
+        filePath
+        fileName
+        description
+        createdAt
+    }
+    codeSummary(projectId: $projectId) {
+        totalFiles
+        linkedRequirements
+        linkedTests
+        unlinkedFiles
+    }
+}

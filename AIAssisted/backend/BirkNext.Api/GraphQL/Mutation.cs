@@ -1,0 +1,624 @@
+using System.Diagnostics;
+using BirkNext.Api.Services;
+using HotChocolate;
+using HotChocolate.Types;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+
+namespace BirkNext.Api.GraphQL;
+
+/// <summary>Root mutation type.</summary>
+public class Mutation
+{
+    /// <summary>Creates a new scenario in the given project.</summary>
+    public async Task<CreateScenarioPayload> CreateScenarioAsync(
+        CreateScenarioInput input,
+        [Service] ScenarioService scenarioService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var result = await scenarioService.CreateAsync(
+            title: input.Title,
+            description: input.Description,
+            kind: input.Kind,
+            projectId: input.ProjectId,
+            correlationId: correlationId,
+            ct: cancellationToken);
+
+        return new CreateScenarioPayload
+        {
+            Scenario = result.Scenario,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Creates multiple scenarios from a completed extraction review session.</summary>
+    public async Task<CreateScenariosPayload> CreateScenariosAsync(
+        CreateScenariosInput input,
+        [Service] ScenarioService scenarioService,
+        [Service] TraceabilitySuggestionService suggestionService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        [Service] ILogger<Mutation> logger,
+        CancellationToken cancellationToken)
+    {
+        if (input.Items.Count == 0)
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("ITEMS_EMPTY")
+                .SetMessage("At least one item is required.")
+                .Build());
+
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var sw = Stopwatch.StartNew();
+
+        var items = input.Items.Select(i =>
+            new CreateScenarioItemInput(i.Title, i.Description, i.Kind, i.ProjectId));
+
+        var batchResults = await scenarioService.CreateBatchAsync(items, correlationId, cancellationToken);
+
+        sw.Stop();
+
+        var results = new List<ICreateScenarioResult>(batchResults.Count);
+        int successCount = 0, failureCount = 0;
+
+        foreach (var r in batchResults)
+        {
+            if (r.IsSuccess)
+            {
+                results.Add(new CreateScenarioSuccess { Scenario = r.Scenario! });
+                successCount++;
+            }
+            else
+            {
+                results.Add(new CreateScenarioError
+                {
+                    Code = r.Error!.Code,
+                    Message = r.Error.Message,
+                    Field = r.Error.Field,
+                });
+                failureCount++;
+            }
+        }
+
+        // no raw text: only numeric metrics, projectId, and correlationId — never candidate titles
+        // sessionId is intentionally omitted: it is a client-side correlation token, not needed server-side
+        logger.LogInformation(
+            "CandidateReviewSaved: correlationId={CorrelationId}, projectId={ProjectId}, selectedCount={SelectedCount}, totalExtracted={TotalExtracted}, scenariosCreated={ScenariosCreated}, failedCount={FailedCount}, durationMs={DurationMs}",
+            correlationId,
+            input.Items[0].ProjectId,
+            input.ExtractionMetadata?.SelectedCount ?? -1,
+            input.ExtractionMetadata?.TotalExtracted ?? -1,
+            successCount,
+            failureCount,
+            sw.ElapsedMilliseconds);
+
+        SuggestionGenerationResult? suggestionResult = null;
+        if (successCount > 0)
+        {
+            try
+            {
+                var projectId = input.Items[0].ProjectId;
+                var summary = await suggestionService.GenerateSuggestionsAsync(projectId, cancellationToken);
+
+                suggestionResult = new SuggestionGenerationResult
+                {
+                    TotalGenerated = summary.TotalGenerated,
+                    HighConfidenceCount = summary.HighConfidenceCount,
+                    NeedsReviewCount = summary.NeedsReviewCount,
+                    SuggestionsAvailable = summary.TotalGenerated > 0,
+                    Message = summary.TotalGenerated == 0
+                        ? null
+                        : $"{summary.TotalGenerated} traceability suggestion{(summary.TotalGenerated == 1 ? "" : "s")} generated.",
+                };
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex,
+                    "SuggestionGenerationFailed correlationId={CorrelationId}", correlationId);
+            }
+        }
+
+        return new CreateScenariosPayload
+        {
+            Results = results,
+            SuccessCount = successCount,
+            FailureCount = failureCount,
+            CorrelationId = correlationId,
+            SuggestionResult = suggestionResult,
+        };
+    }
+
+    /// <summary>Persists the QA review decisions for all candidates in an extraction session.</summary>
+    public async Task<SaveReviewedCandidatesPayload> SaveReviewedCandidatesAsync(
+        SaveReviewedCandidatesInput input,
+        [Service] ReviewedCandidateService reviewedCandidateService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        [Service] ILogger<Mutation> logger,
+        CancellationToken cancellationToken)
+    {
+        if (input.Items.Count == 0)
+            throw new GraphQLException(ErrorBuilder.New()
+                .SetCode("ITEMS_EMPTY")
+                .SetMessage("At least one item is required.")
+                .Build());
+
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var projectId = input.Items[0].ProjectId;
+        var sessionId = input.SessionId ?? Guid.NewGuid().ToString();
+
+        var items = input.Items.Select(i => new ReviewedCandidateItem(
+            i.Title,
+            i.Classification,
+            i.ReviewStatus,
+            i.SourceDocument,
+            i.SourceSection,
+            i.ReviewedBy,
+            i.ReviewedAt));
+
+        var savedCount = await reviewedCandidateService.SaveBatchAsync(
+            projectId, sessionId, items, correlationId, cancellationToken);
+
+        logger.LogInformation(
+            "ReviewDecisionsSaved: correlationId={CorrelationId}, projectId={ProjectId}, sessionId={SessionId}, savedCount={SavedCount}",
+            correlationId, projectId, sessionId, savedCount);
+
+        return new SaveReviewedCandidatesPayload
+        {
+            SavedCount = savedCount,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Deletes a scenario by ID.</summary>
+    public async Task<DeleteScenarioPayload> DeleteScenarioAsync(
+        [ID] string id,
+        [Service] ScenarioService scenarioService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var result = await scenarioService.DeleteAsync(id, correlationId, cancellationToken);
+
+        return new DeleteScenarioPayload
+        {
+            DeletedId = result.DeletedId,
+            Success = result.IsSuccess,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Persists the traceability links between candidates for an extraction session.</summary>
+    public async Task<SaveCandidateLinksPayload> SaveCandidateLinksAsync(
+        SaveCandidateLinksInput input,
+        [Service] CandidateLinkService candidateLinkService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        [Service] ILogger<Mutation> logger,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var links = input.Links.Select(l => new CandidateLinkItem(
+            l.SourceCandidateRef,
+            l.TargetCandidateRef,
+            l.LinkType));
+
+        var savedCount = await candidateLinkService.SaveBatchAsync(
+            input.ProjectId, input.SessionId, links, correlationId, cancellationToken);
+
+        logger.LogInformation(
+            "CandidateLinksSaved: correlationId={CorrelationId}, projectId={ProjectId}, sessionId={SessionId}, savedCount={SavedCount}",
+            correlationId, input.ProjectId, input.SessionId, savedCount);
+
+        return new SaveCandidateLinksPayload
+        {
+            SavedCount = savedCount,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Saves a QA delta review from a specification comparison.</summary>
+    public async Task<SaveQaDeltaReviewPayload> SaveQaDeltaReviewAsync(
+        SaveQaDeltaReviewInput input,
+        [Service] QaDeltaReviewService qaDeltaReviewService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        [Service] ILogger<Mutation> logger,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var result = await qaDeltaReviewService.CreateAsync(
+            title: input.Title,
+            projectId: input.ProjectId,
+            oldSpecFileName: input.OldSpecFileName,
+            newSpecFileName: input.NewSpecFileName,
+            oldSpecHash: input.OldSpecHash,
+            newSpecHash: input.NewSpecHash,
+            oldSpecSize: input.OldSpecSize,
+            newSpecSize: input.NewSpecSize,
+            analysisProfile: input.AnalysisProfile,
+            summaryJson: input.SummaryJson,
+            deltaItemsJson: input.DeltaItemsJson,
+            correlationId: correlationId,
+            ct: cancellationToken);
+
+        return new SaveQaDeltaReviewPayload
+        {
+            Review = result.Review,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Reorders TEST scenarios within a project by assigning display_order from the given ordered IDs.</summary>
+    public async Task<ReorderTestScenariosPayload> ReorderTestScenariosAsync(
+        ReorderTestScenariosInput input,
+        [Service] ScenarioService scenarioService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var result = await scenarioService.ReorderTestScenariosAsync(
+            input.ProjectId,
+            input.OrderedIds,
+            correlationId,
+            cancellationToken);
+
+        return new ReorderTestScenariosPayload
+        {
+            Success = result.Success,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Deletes a QA delta review by ID.</summary>
+    public async Task<DeleteQaDeltaReviewPayload> DeleteQaDeltaReviewAsync(
+        [ID] string id,
+        [Service] QaDeltaReviewService qaDeltaReviewService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var result = await qaDeltaReviewService.DeleteAsync(id, correlationId, cancellationToken);
+
+        return new DeleteQaDeltaReviewPayload
+        {
+            DeletedId = result.DeletedId,
+            Success = result.IsSuccess,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Creates a trace link between two artifacts in the given project.</summary>
+    public async Task<CreateTraceLinkPayload> CreateTraceLinkAsync(
+        CreateTraceLinkInput input,
+        [Service] TraceLinkService traceLinkService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        if (!Guid.TryParse(input.SourceId, out var sourceGuid))
+            return new CreateTraceLinkPayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Source ID is not a valid identifier.", "sourceId")],
+                CorrelationId = correlationId,
+            };
+
+        if (!Guid.TryParse(input.TargetId, out var targetGuid))
+            return new CreateTraceLinkPayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Target ID is not a valid identifier.", "targetId")],
+                CorrelationId = correlationId,
+            };
+
+        var result = await traceLinkService.CreateAsync(
+            projectId: input.ProjectId,
+            sourceId: sourceGuid,
+            sourceKind: input.SourceKind,
+            targetId: targetGuid,
+            targetKind: input.TargetKind,
+            linkType: input.LinkType,
+            createdBy: input.CreatedBy,
+            notes: input.Notes,
+            correlationId: correlationId,
+            ct: cancellationToken);
+
+        return new CreateTraceLinkPayload
+        {
+            TraceLink = result.TraceLink,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>
+    /// Runs the AI Change Auditor: identifies affected requirements and tests,
+    /// computes formal risk levels via ImpactAnalysisService, and returns a
+    /// human-readable audit report. Requires ANTHROPIC_API_KEY to be configured.
+    /// </summary>
+    public async Task<AnalyzeChangePayload> AnalyzeChangeAsync(
+        AnalyzeChangeInput input,
+        [Service] AIChangeAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(input.ChangeDescription))
+            return new AnalyzeChangePayload
+            {
+                Errors = [new Services.UserError("EMPTY_DESCRIPTION", "Change description must not be empty.")],
+            };
+
+        var report = await auditService.AnalyzeChangeAsync(
+            new Models.ChangeAuditRequest
+            {
+                ProjectId = input.ProjectId,
+                ChangeDescription = input.ChangeDescription.Trim(),
+            },
+            cancellationToken);
+
+        if (report is null)
+            return new AnalyzeChangePayload
+            {
+                Errors = [new Services.UserError("AUDIT_FAILED",
+                    "The AI analysis could not be completed. Verify that Anthropic:ApiKey is configured and try again.")],
+            };
+
+        return new AnalyzeChangePayload { Report = report };
+    }
+
+    /// <summary>Deletes a trace link by ID. ProjectId is required for safety scoping.</summary>
+    public async Task<DeleteTraceLinkPayload> DeleteTraceLinkAsync(
+        DeleteTraceLinkInput input,
+        [Service] TraceLinkService traceLinkService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"]
+            .FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        if (!Guid.TryParse(input.Id, out var guid))
+            return new DeleteTraceLinkPayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Trace link ID is not a valid identifier.")],
+                CorrelationId = correlationId,
+            };
+
+        var result = await traceLinkService.DeleteAsync(
+            id: guid,
+            projectId: input.ProjectId,
+            correlationId: correlationId,
+            ct: cancellationToken);
+
+        return new DeleteTraceLinkPayload
+        {
+            DeletedId = result.DeletedId,
+            Success = result.IsSuccess,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Registers a new code file in the project's code traceability registry.</summary>
+    public async Task<RegisterCodeFilePayload> RegisterCodeFileAsync(
+        RegisterCodeFileInput input,
+        [Service] CodeTraceabilityService codeService,
+        CancellationToken cancellationToken)
+    {
+        var result = await codeService.RegisterCodeFileAsync(
+            input.ProjectId, input.FilePath, input.Description, cancellationToken);
+
+        return new RegisterCodeFilePayload { File = result.File, Errors = result.Errors };
+    }
+
+    /// <summary>Removes a code file and all its code links from the registry.</summary>
+    public async Task<DeleteCodeFilePayload> DeleteCodeFileAsync(
+        DeleteCodeFileInput input,
+        [Service] CodeTraceabilityService codeService,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(input.Id, out var guid))
+            return new DeleteCodeFilePayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Code file ID is not valid.")],
+            };
+
+        var result = await codeService.DeleteCodeFileAsync(guid, input.ProjectId, cancellationToken);
+        return new DeleteCodeFilePayload
+        {
+            DeletedId = result.DeletedId,
+            Success = result.IsSuccess,
+            Errors = result.Errors,
+        };
+    }
+
+    /// <summary>Creates a link between a code file and a requirement or test.</summary>
+    public async Task<CreateCodeLinkPayload> CreateCodeLinkAsync(
+        CreateCodeLinkInput input,
+        [Service] CodeTraceabilityService codeService,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(input.CodeFileId, out var fileGuid))
+            return new CreateCodeLinkPayload
+            {
+                Errors = [new Services.UserError("INVALID_FILE_ID", "Code file ID is not valid.")],
+            };
+
+        if (!Guid.TryParse(input.ScenarioId, out var scenarioGuid))
+            return new CreateCodeLinkPayload
+            {
+                Errors = [new Services.UserError("INVALID_SCENARIO_ID", "Scenario ID is not valid.")],
+            };
+
+        var result = await codeService.CreateCodeLinkAsync(
+            input.ProjectId, fileGuid, scenarioGuid, cancellationToken);
+
+        return new CreateCodeLinkPayload { Link = result.Link, Errors = result.Errors };
+    }
+
+    /// <summary>Generates traceability suggestions for all requirement–test pairs in the project.</summary>
+    public async Task<GenerateTraceabilitySuggestionsPayload> GenerateTraceabilitySuggestionsAsync(
+        GenerateTraceabilitySuggestionsInput input,
+        [Service] TraceabilitySuggestionService suggestionService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"].FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var summary = await suggestionService.GenerateSuggestionsAsync(input.ProjectId, cancellationToken);
+
+        var result = new SuggestionGenerationResult
+        {
+            TotalGenerated = summary.TotalGenerated,
+            HighConfidenceCount = summary.HighConfidenceCount,
+            NeedsReviewCount = summary.NeedsReviewCount,
+            SuggestionsAvailable = summary.TotalGenerated > 0,
+            Message = summary.TotalGenerated == 0
+                ? "No new suggestions — either no requirements/tests exist or all pairs already have suggestions."
+                : $"{summary.TotalGenerated} suggestion{(summary.TotalGenerated == 1 ? "" : "s")} generated.",
+        };
+
+        return new GenerateTraceabilitySuggestionsPayload
+        {
+            Result = result,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Confirms a traceability suggestion, creating a permanent trace link.</summary>
+    public async Task<ConfirmSuggestionPayload> ConfirmSuggestionAsync(
+        ConfirmSuggestionInput input,
+        [Service] TraceabilitySuggestionService suggestionService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"].FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        if (!Guid.TryParse(input.Id, out var guid))
+            return new ConfirmSuggestionPayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Suggestion ID is not valid.")],
+                CorrelationId = correlationId,
+            };
+
+        var result = await suggestionService.ConfirmAsync(guid, input.ProjectId, correlationId, cancellationToken);
+
+        return new ConfirmSuggestionPayload
+        {
+            TraceLink = result.TraceLink,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Rejects a traceability suggestion. Rejected suggestions are not regenerated.</summary>
+    public async Task<RejectSuggestionPayload> RejectSuggestionAsync(
+        RejectSuggestionInput input,
+        [Service] TraceabilitySuggestionService suggestionService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"].FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        if (!Guid.TryParse(input.Id, out var guid))
+            return new RejectSuggestionPayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Suggestion ID is not valid.")],
+                CorrelationId = correlationId,
+            };
+
+        var result = await suggestionService.RejectAsync(guid, input.ProjectId, correlationId, cancellationToken);
+
+        return new RejectSuggestionPayload
+        {
+            Success = result.IsSuccess,
+            Errors = result.Errors,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Bulk-confirms all high-confidence pending suggestions for the project.</summary>
+    public async Task<ConfirmHighConfidenceSuggestionsPayload> ConfirmHighConfidenceSuggestionsAsync(
+        ConfirmHighConfidenceSuggestionsInput input,
+        [Service] TraceabilitySuggestionService suggestionService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = httpContextAccessor.HttpContext?
+            .Response.Headers["X-Correlation-Id"].FirstOrDefault()
+            ?? Guid.NewGuid().ToString();
+
+        var confirmed = await suggestionService.ConfirmHighConfidenceAsync(
+            input.ProjectId, correlationId, cancellationToken);
+
+        return new ConfirmHighConfidenceSuggestionsPayload
+        {
+            ConfirmedCount = confirmed,
+            CorrelationId = correlationId,
+        };
+    }
+
+    /// <summary>Removes a code link by ID.</summary>
+    public async Task<DeleteCodeLinkPayload> DeleteCodeLinkAsync(
+        DeleteCodeLinkInput input,
+        [Service] CodeTraceabilityService codeService,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(input.Id, out var guid))
+            return new DeleteCodeLinkPayload
+            {
+                Errors = [new Services.UserError("INVALID_ID", "Code link ID is not valid.")],
+            };
+
+        var result = await codeService.DeleteCodeLinkAsync(guid, input.ProjectId, cancellationToken);
+        return new DeleteCodeLinkPayload
+        {
+            DeletedId = result.DeletedId,
+            Success = result.IsSuccess,
+            Errors = result.Errors,
+        };
+    }
+}

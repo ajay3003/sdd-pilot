@@ -1,0 +1,18 @@
+query GetCodeImpact($projectId: String!, $codeFileId: ID!) {
+    codeImpact(projectId: $projectId, codeFileId: $codeFileId) {
+        file {
+            id
+            filePath
+            fileName
+            description
+        }
+        linkedRequirements {
+            link { id }
+            scenario { id title kind }
+        }
+        linkedTests {
+            link { id }
+            scenario { id title kind }
+        }
+    }
+}

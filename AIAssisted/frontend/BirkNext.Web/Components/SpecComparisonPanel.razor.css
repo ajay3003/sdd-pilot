@@ -1,0 +1,449 @@
+.spec-comparison-panel {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.compare-section {
+    padding: 1rem 1.08rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-lg, 8px);
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.055);
+}
+
+.section-kicker {
+    margin: 0 0 0.35rem;
+    color: var(--clr-primary, #2563eb);
+    font-size: 0.66rem;
+    font-weight: 850;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.comparison-header {
+    margin-bottom: 0.9rem;
+    padding-bottom: 0.65rem;
+    border-bottom: 1px solid var(--clr-border, #e2e8f0);
+}
+
+.comparison-header h2,
+.comparison-profile-heading h3,
+.input-card-heading h3,
+.comparison-workflow-card h3,
+.save-review-header h2,
+.delta-results-heading h2 {
+    margin: 0;
+    color: var(--clr-text-heading, #0f172a);
+    font-weight: 900;
+}
+
+.comparison-header h2,
+.save-review-header h2,
+.delta-results-heading h2 {
+    font-size: 1.06rem;
+}
+
+.comparison-profile-heading h3,
+.input-card-heading h3,
+.comparison-workflow-card h3 {
+    font-size: 0.98rem;
+}
+
+.comparison-header span,
+.input-card-heading span,
+.save-review-header span,
+.delta-results-heading span,
+.input-helper,
+.comparison-safety-note span,
+.delta-empty-message p {
+    color: var(--clr-text-muted, #475569);
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
+.comparison-profile-panel {
+    display: grid;
+    grid-template-columns: minmax(14rem, 0.28fr) minmax(0, 1fr);
+    gap: 0.82rem;
+    align-items: stretch;
+    margin-bottom: 0.9rem;
+    padding: 0.86rem;
+    border: 1px solid var(--clr-border-subtle, #f1f5f9);
+    border-radius: var(--radius-lg, 8px);
+    background: var(--clr-surface, #f8fafc);
+}
+
+.comparison-profile {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.62rem;
+}
+
+.profile-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1.2rem minmax(0, 1fr);
+    column-gap: 0.55rem;
+    row-gap: 0.18rem;
+    align-items: start;
+    padding: 0.75rem;
+    border: 1px solid var(--clr-border-input, #d1d5db);
+    border-radius: var(--radius-md, 6px);
+    background: #ffffff;
+    cursor: pointer;
+}
+
+.profile-card.is-selected {
+    border-color: var(--clr-primary, #2563eb);
+    background: #eff6ff;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.profile-card input {
+    margin-top: 0.12rem;
+}
+
+.profile-card span,
+.profile-card small {
+    grid-column: 2;
+}
+
+.profile-card span {
+    color: var(--clr-text-heading, #0f172a);
+    font-size: 0.84rem;
+    font-weight: 900;
+}
+
+.profile-card small {
+    color: var(--clr-text-muted, #475569);
+    font-size: 0.76rem;
+    line-height: 1.4;
+}
+
+.comparison-input-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+}
+
+.comparison-input-card {
+    min-width: 0;
+    padding: 0.92rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-lg, 8px);
+    background: #ffffff;
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.045);
+}
+
+.baseline-card {
+    border-top: 4px solid #64748b;
+}
+
+.updated-card {
+    border-top: 4px solid var(--clr-primary, #2563eb);
+}
+
+.input-card-heading {
+    margin-bottom: 0.72rem;
+    padding-bottom: 0.62rem;
+    border-bottom: 1px solid var(--clr-border, #e2e8f0);
+}
+
+.comparison-input-card label {
+    display: block;
+    margin-bottom: 0.34rem;
+    color: var(--clr-text-heading, #0f172a);
+    font-size: 0.8rem;
+    font-weight: 850;
+}
+
+.comparison-input-card textarea {
+    width: 100%;
+    min-height: 13rem;
+    padding: 0.72rem 0.78rem;
+    border: 1px solid var(--clr-border-input, #cbd5e1);
+    border-radius: var(--radius-md, 6px);
+    background: var(--clr-surface, #f8fafc);
+    color: var(--clr-text-body, #1e293b);
+    font: inherit;
+    font-size: 0.84rem;
+    line-height: 1.45;
+    resize: vertical;
+}
+
+.comparison-input-card textarea:focus {
+    outline: none;
+    border-color: var(--clr-primary-focus, #3b82f6);
+    box-shadow: 0 0 0 3px var(--clr-primary-ring, rgba(59, 130, 246, 0.14));
+}
+
+.input-helper {
+    margin: 0.48rem 0 0;
+}
+
+.comparison-workflow-card {
+    display: grid;
+    grid-template-columns: minmax(15rem, 0.26fr) minmax(0, 1fr);
+    gap: 0.82rem;
+    margin-top: 0.9rem;
+    padding: 0.86rem;
+    border: 1px solid #bfdbfe;
+    border-radius: var(--radius-lg, 8px);
+    background: #eff6ff;
+}
+
+.comparison-workflow-card ol {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: compare-workflow;
+}
+
+.comparison-workflow-card li {
+    position: relative;
+    min-height: 3rem;
+    padding: 0.58rem 0.62rem 0.58rem 2rem;
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    border-radius: var(--radius-md, 6px);
+    background: rgba(255, 255, 255, 0.76);
+    color: var(--clr-text-body, #1e293b);
+    font-size: 0.78rem;
+    font-weight: 800;
+    line-height: 1.35;
+    counter-increment: compare-workflow;
+}
+
+.comparison-workflow-card li::before {
+    position: absolute;
+    left: 0.58rem;
+    top: 0.58rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.2rem;
+    height: 1.2rem;
+    border-radius: var(--radius-pill, 999px);
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: 0.68rem;
+    font-weight: 950;
+    content: counter(compare-workflow);
+}
+
+.comparison-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    margin-top: 0.9rem;
+    padding: 0.9rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-lg, 8px);
+    background: #ffffff;
+}
+
+.comparison-safety-note {
+    display: grid;
+    gap: 0.16rem;
+}
+
+.comparison-safety-note strong {
+    color: var(--clr-text-heading, #0f172a);
+    font-size: 0.84rem;
+    font-weight: 900;
+}
+
+.comparison-action-buttons,
+.save-review-actions {
+    display: flex;
+    gap: 0.55rem;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.comparison-action-buttons .btn-primary,
+.comparison-action-buttons .btn-secondary,
+.save-review-actions .btn-primary {
+    min-height: 2.35rem;
+    text-decoration: none;
+}
+
+.save-review-header,
+.delta-results-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: 0.82rem;
+    padding-bottom: 0.65rem;
+    border-bottom: 1px solid var(--clr-border, #e2e8f0);
+}
+
+.delta-placeholder-dashboard {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.58rem;
+    margin-bottom: 0.86rem;
+}
+
+.delta-placeholder-dashboard div {
+    min-height: 5rem;
+    padding: 0.72rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-top: 4px solid #cbd5e1;
+    border-radius: var(--radius-md, 6px);
+    background: #ffffff;
+}
+
+.delta-placeholder-dashboard strong {
+    display: block;
+    color: var(--clr-text-heading, #0f172a);
+    font-size: 1.65rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.delta-placeholder-dashboard span {
+    display: block;
+    margin-top: 0.28rem;
+    color: var(--clr-text-muted, #475569);
+    font-size: 0.68rem;
+    font-weight: 850;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.delta-empty-message {
+    padding: 1rem;
+    border: 1px dashed var(--clr-border-hover, #cbd5e1);
+    border-radius: var(--radius-lg, 8px);
+    background: var(--clr-surface, #f8fafc);
+    text-align: center;
+}
+
+.delta-empty-message h3 {
+    margin: 0 0 0.35rem;
+    color: var(--clr-text-heading, #0f172a);
+    font-size: 1.02rem;
+    font-weight: 950;
+}
+
+.delta-empty-message p {
+    margin: 0 0 0.72rem;
+}
+
+.delta-empty-message ul {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.delta-empty-message li {
+    position: relative;
+    padding: 0.52rem 0.58rem 0.52rem 1.8rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-md, 6px);
+    background: #ffffff;
+    color: var(--clr-text-body, #1e293b);
+    font-size: 0.76rem;
+    font-weight: 800;
+    text-align: left;
+}
+
+.delta-empty-message li::before {
+    position: absolute;
+    left: 0.62rem;
+    color: var(--clr-success, #15803d);
+    font-weight: 950;
+    content: "\2713";
+}
+
+.save-review-form {
+    display: grid;
+    gap: 0.625rem;
+}
+
+.save-review-title-input {
+    width: 100%;
+    max-width: 36rem;
+    padding: 0.58rem 0.75rem;
+    border: 1px solid var(--clr-border-input, #cbd5e1);
+    border-radius: var(--radius-md, 6px);
+    background: var(--clr-surface, #f8fafc);
+    color: var(--clr-text-body, #1e293b);
+    font: inherit;
+    font-size: 0.875rem;
+}
+
+.save-review-title-input:focus {
+    outline: none;
+    border-color: var(--clr-primary-focus, #3b82f6);
+    box-shadow: 0 0 0 3px var(--clr-primary-ring, rgba(59, 130, 246, 0.14));
+}
+
+.save-review-success {
+    margin: 0;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--clr-success-border, #bbf7d0);
+    border-radius: var(--radius-md, 6px);
+    background: #f0fdf4;
+    color: var(--clr-success, #15803d);
+    font-size: 0.875rem;
+    font-weight: 850;
+}
+
+.save-review-success a {
+    color: inherit;
+    font-weight: 900;
+}
+
+@media (max-width: 1100px) {
+    .comparison-profile-panel,
+    .comparison-workflow-card {
+        grid-template-columns: 1fr;
+    }
+
+    .delta-placeholder-dashboard,
+    .comparison-workflow-card ol {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 760px) {
+    .comparison-input-grid,
+    .comparison-profile,
+    .delta-empty-message ul {
+        grid-template-columns: 1fr;
+    }
+
+    .comparison-actions,
+    .save-review-header,
+    .delta-results-heading {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .comparison-action-buttons {
+        flex-direction: column-reverse;
+        align-items: stretch;
+    }
+
+    .comparison-action-buttons .btn-primary,
+    .comparison-action-buttons .btn-secondary {
+        width: 100%;
+        text-align: center;
+    }
+}
+
+@media (max-width: 520px) {
+    .delta-placeholder-dashboard,
+    .comparison-workflow-card ol {
+        grid-template-columns: 1fr;
+    }
+}

@@ -1,0 +1,17 @@
+query GetQaDeltaReview($id: ID!) {
+  qaDeltaReview(id: $id) {
+    id
+    title
+    projectId
+    createdAt
+    oldSpecFileName
+    newSpecFileName
+    oldSpecHash
+    newSpecHash
+    oldSpecSize
+    newSpecSize
+    analysisProfile
+    summaryJson
+    deltaItemsJson
+  }
+}

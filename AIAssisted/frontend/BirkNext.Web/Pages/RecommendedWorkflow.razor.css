@@ -1,0 +1,211 @@
+/* ── Page wrapper ────────────────────────────────────────────────────────── */
+
+.rw-page {
+    padding: 1.5rem 2rem 3rem;
+    max-width: 860px;
+    margin: 0 auto;
+}
+
+/* ── Phase list ──────────────────────────────────────────────────────────── */
+
+.rw-phases {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+/* ── Phase connector ─────────────────────────────────────────────────────── */
+
+.rw-phase-connector {
+    text-align: center;
+    font-size: 1.25rem;
+    color: var(--clr-text-placeholder);
+    line-height: 1;
+    padding: 0.35rem 0;
+    user-select: none;
+}
+
+/* ── Phase card ──────────────────────────────────────────────────────────── */
+
+.rw-phase {
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-left: 4px solid var(--rw-phase-color, #2563eb);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem 1.5rem;
+    transition: box-shadow var(--transition);
+}
+
+.rw-phase:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+}
+
+/* ── Phase header (number + titles) ─────────────────────────────────────── */
+
+.rw-phase-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.rw-phase-num {
+    flex: 0 0 2.5rem;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    background: var(--rw-phase-color, #2563eb);
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    letter-spacing: -0.01em;
+}
+
+.rw-phase-titles {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.rw-phase-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--rw-phase-color, #2563eb);
+    opacity: 0.85;
+}
+
+.rw-phase-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--clr-text-heading);
+    letter-spacing: -0.01em;
+}
+
+/* ── Phase body ──────────────────────────────────────────────────────────── */
+
+.rw-phase-body {
+    padding-left: 3.5rem;
+}
+
+.rw-goal {
+    font-size: 0.875rem;
+    color: var(--clr-text-body);
+    margin: 0 0 1rem;
+    line-height: 1.55;
+}
+
+/* ── Two-column layout for actions / outcome ─────────────────────────────── */
+
+.rw-phase-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+    margin-bottom: 1.25rem;
+}
+
+.rw-col-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--clr-text-subtle);
+    margin-bottom: 0.4rem;
+}
+
+.rw-phase-actions {
+    margin: 0;
+    padding-left: 1.1rem;
+    font-size: 0.855rem;
+    color: var(--clr-text-body);
+    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.rw-outcome-text {
+    font-size: 0.855rem;
+    color: var(--clr-text-muted);
+    margin: 0;
+    line-height: 1.6;
+}
+
+/* ── CTA buttons ─────────────────────────────────────────────────────────── */
+
+.rw-cta {
+    display: inline-block;
+    padding: 0.5rem 1.1rem;
+    font-size: 0.855rem;
+    font-weight: 600;
+    color: #fff;
+    background: var(--rw-phase-color, #2563eb);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    transition: opacity var(--transition), box-shadow var(--transition);
+    letter-spacing: 0.01em;
+}
+
+.rw-cta:hover {
+    opacity: 0.88;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    color: #fff;
+}
+
+.rw-cta-secondary {
+    background: color-mix(in srgb, var(--rw-phase-color) 12%, transparent);
+    color: var(--rw-phase-color);
+    border: 1.5px solid var(--rw-phase-color);
+}
+
+.rw-cta-secondary:hover {
+    color: var(--rw-phase-color);
+}
+
+/* ── Inline links within phase content ──────────────────────────────────── */
+
+.rw-inline-link {
+    color: var(--clr-primary);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.rw-inline-link:hover {
+    text-decoration: underline;
+}
+
+/* ── Footer note ─────────────────────────────────────────────────────────── */
+
+.rw-footer-note {
+    margin-top: 2.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--clr-border);
+    font-size: 0.825rem;
+    color: var(--clr-text-subtle);
+    text-align: center;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 680px) {
+    .rw-page {
+        padding: 1rem 1rem 2.5rem;
+    }
+
+    .rw-phase-columns {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+
+    .rw-phase-body {
+        padding-left: 0;
+    }
+
+    .rw-phase-header {
+        gap: 0.75rem;
+    }
+}

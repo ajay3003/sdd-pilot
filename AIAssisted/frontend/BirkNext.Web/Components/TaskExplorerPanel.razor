@@ -1,0 +1,1470 @@
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+<div class="te-panel">
+
+    @if (_tree is null)
+    {
+        <!-- ── Empty / input state ───────────────────────────────────────── -->
+        <div class="te-empty-state">
+            <div class="te-empty-icon" aria-hidden="true">🗂</div>
+            <h3 class="te-empty-title">Task Explorer</h3>
+            <p class="te-empty-desc">Transform tasks.md into a navigable hierarchy of phases, user stories, task groups, and tables. Paste, import, or drag a tasks.md file.</p>
+
+            <div class="te-input-area">
+                <div class="te-input-header">
+                    <span class="te-input-label">tasks.md</span>
+                </div>
+                <SpecificationImport
+                    @ref="_importRef"
+                    InputId="te-file-input"
+                    OnFileImported="OnFileImported"
+                    OnFileRemoved="OnFileRemoved"
+                    IsDisabled="false" />
+                <textarea
+                    class="te-textarea"
+                    placeholder="Or paste tasks.md content here..."
+                    rows="12"
+                    @bind="_localTasksText"></textarea>
+                @if (!string.IsNullOrWhiteSpace(_localTasksText))
+                {
+                    var lineCount = CountLines(_localTasksText);
+                    <div class="te-input-footer">
+                        <span class="te-input-stat">@lineCount lines · @_localTasksText.Length chars</span>
+                        <button class="te-clear-btn" @onclick="ClearInput">Clear</button>
+                    </div>
+                }
+            </div>
+
+            <button
+                class="te-build-btn"
+                disabled="@(!CanBuild)"
+                @onclick="BuildTree">
+                Build Task Explorer
+            </button>
+        </div>
+    }
+    else
+    {
+        <!-- ── Explorer state ────────────────────────────────────────────── -->
+
+        <!-- Header bar -->
+        <div class="te-header">
+            <div class="te-header-left">
+                <span class="te-header-title">Task Explorer</span>
+                <span class="te-header-stat">@_health.TotalTasks tasks · @_health.TotalPhases phases</span>
+            </div>
+            <div class="te-header-right">
+                <div class="te-view-toggle" role="group" aria-label="View mode">
+                    <button class='te-view-btn @(!_isMapView && !_isImpactView && !_isChangesView ? "is-active" : "")' @onclick='ShowTreeView'>
+                        Tree View
+                    </button>
+                    <button class='te-view-btn @(_isMapView ? "is-active" : "")' @onclick='ShowMapView'>
+                        Map View
+                    </button>
+                    <button class='te-view-btn @(_isImpactView ? "is-active" : "")' @onclick='ShowImpactView'>
+                        Impact
+                    </button>
+                    <button class='te-view-btn @(_isChangesView ? "is-active" : "")' @onclick='ShowChangesView' data-testid="te-changes-tab-btn">
+                        Changes
+                    </button>
+                </div>
+                <button class="te-reset-btn" @onclick="Reset">← New Tasks</button>
+            </div>
+        </div>
+
+        <!-- Health summary cards -->
+        @if (HasHealthData)
+        {
+            <div class="te-health-row">
+                @if (_health.TotalTasks > 0)
+                {
+                    <div class="te-health-card">
+                        <div class="te-health-value">@_health.TotalTasks</div>
+                        <div class="te-health-label">Tasks</div>
+                    </div>
+                }
+                @if (_health.CompletedTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-done">
+                        <div class="te-health-value">@_health.CompletedTasks</div>
+                        <div class="te-health-label">Done</div>
+                    </div>
+                }
+                @if (_health.OpenTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-open">
+                        <div class="te-health-value">@_health.OpenTasks</div>
+                        <div class="te-health-label">Open</div>
+                    </div>
+                }
+                @if (_health.SpecLinked > 0)
+                {
+                    <div class="te-health-card te-hcard-linked">
+                        <div class="te-health-value">@_health.SpecLinked</div>
+                        <div class="te-health-label">Spec Linked</div>
+                    </div>
+                }
+                @if (_health.TechnicalOnly > 0)
+                {
+                    <div class="te-health-card te-hcard-tech">
+                        <div class="te-health-value">@_health.TechnicalOnly</div>
+                        <div class="te-health-label">Technical</div>
+                    </div>
+                }
+                @if (_health.NeedsReview > 0)
+                {
+                    <div class="te-health-card te-hcard-review">
+                        <div class="te-health-value">@_health.NeedsReview</div>
+                        <div class="te-health-label">Needs Review</div>
+                    </div>
+                }
+                @if (_health.PossibleDeviations > 0)
+                {
+                    <div class="te-health-card te-hcard-dev">
+                        <div class="te-health-value">@_health.PossibleDeviations</div>
+                        <div class="te-health-label">Deviations</div>
+                    </div>
+                }
+                @if (_health.HighRisk > 0)
+                {
+                    <div class="te-health-card te-hcard-risk">
+                        <div class="te-health-value">@_health.HighRisk</div>
+                        <div class="te-health-label">High Risk</div>
+                    </div>
+                }
+                @if (_health.RegressionCandidates > 0)
+                {
+                    <div class="te-health-card te-hcard-reg">
+                        <div class="te-health-value">@_health.RegressionCandidates</div>
+                        <div class="te-health-label">Regression</div>
+                    </div>
+                }
+                @if (_health.TablesDetected > 0)
+                {
+                    <div class="te-health-card te-hcard-table">
+                        <div class="te-health-value">@_health.TablesDetected</div>
+                        <div class="te-health-label">Tables</div>
+                    </div>
+                }
+                @if (_health.TraceabilityRows > 0)
+                {
+                    <div class="te-health-card te-hcard-trace">
+                        <div class="te-health-value">@_health.TraceabilityRows</div>
+                        <div class="te-health-label">Trace Rows</div>
+                    </div>
+                }
+                @if (_health.TasksLinkedFromTables > 0)
+                {
+                    <div class="te-health-card te-hcard-linked-tasks">
+                        <div class="te-health-value">@_health.TasksLinkedFromTables</div>
+                        <div class="te-health-label">Tbl Linked</div>
+                    </div>
+                }
+                @if (_health.UnresolvedTableRefs > 0)
+                {
+                    <div class="te-health-card te-hcard-unresolved">
+                        <div class="te-health-value">@_health.UnresolvedTableRefs</div>
+                        <div class="te-health-label">Unresolved</div>
+                    </div>
+                }
+                @if (_health.UserStoryCount > 0)
+                {
+                    <div class="te-health-card te-hcard-us">
+                        <div class="te-health-value">@_health.UserStoryCount</div>
+                        <div class="te-health-label">User Stories</div>
+                    </div>
+                }
+                @if (_health.FrLinkedTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-fr">
+                        <div class="te-health-value">@_health.FrLinkedTasks</div>
+                        <div class="te-health-label">FR Linked</div>
+                    </div>
+                }
+                @if (_health.ScLinkedTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-sc">
+                        <div class="te-health-value">@_health.ScLinkedTasks</div>
+                        <div class="te-health-label">SC Linked</div>
+                    </div>
+                }
+                @if (_health.UnlinkedTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-unlinked">
+                        <div class="te-health-value">@_health.UnlinkedTasks</div>
+                        <div class="te-health-label">Unlinked</div>
+                    </div>
+                }
+                @if (_health.TestingTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-testing">
+                        <div class="te-health-value">@_health.TestingTasks</div>
+                        <div class="te-health-label">Testing</div>
+                    </div>
+                }
+                @if (_health.SecurityTasks > 0)
+                {
+                    <div class="te-health-card te-hcard-security">
+                        <div class="te-health-value">@_health.SecurityTasks</div>
+                        <div class="te-health-label">Security</div>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_coverage is not null)
+        {
+            <div class="te-implementation-grid" data-testid="te-implementation-coverage" aria-label="Implementation Coverage">
+                <div class="te-implementation-card te-implementation-card-primary">
+                    <div class="te-section-kicker">Implementation Coverage</div>
+                    <div class="te-implementation-percent">@_coverage.ImplementationPercent%</div>
+                    <div class="te-implementation-card-label">Are requirements implemented?</div>
+                    <span class="te-coverage-pill @CoverageStatusClass(_coverage.OverallStatus)">@_coverage.OverallStatus</span>
+                </div>
+                @foreach (var metric in _coverage.Metrics)
+                {
+                    <div class="te-implementation-card">
+                        <div class="te-implementation-value">@metric.Linked / @metric.Total</div>
+                        <div class="te-implementation-card-label">@metric.Label linked</div>
+                        <span class="te-coverage-pill @CoverageStatusClass(metric.Status)">@metric.Status</span>
+                    </div>
+                }
+            </div>
+
+            <div class="te-risk-summary" data-testid="te-delivery-risk" aria-label="Delivery Risk">
+                <div class="te-risk-summary-header">
+                    <div>
+                        <div class="te-section-kicker">Delivery Risk</div>
+                        <h3>Missing implementation work</h3>
+                    </div>
+                    <span class="te-risk-note">Implementation coverage complements Traceability &amp; Coverage validation coverage.</span>
+                </div>
+                <div class="te-risk-items">
+                    @foreach (var risk in _coverage.Risks)
+                    {
+                        <div class="te-risk-item">
+                            <div>
+                                <div class="te-risk-count">@risk.Count</div>
+                                <div class="te-risk-label">@risk.Label</div>
+                            </div>
+                            <span class="te-risk-severity te-risk-severity-@risk.Severity.ToLowerInvariant()">@risk.Severity</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Controls bar -->
+        <div class="te-controls">
+            <div class="te-search-wrap">
+                <input type="search"
+                       class="te-search"
+                       placeholder="Search tasks, IDs, phases, SC/FR refs..."
+                       value="@_searchQuery"
+                       @oninput="HandleSearchInput"
+                       aria-label="Search Task Explorer" />
+                @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                {
+                    var matchCount = _flatCache.Count(r => r.IsMatch);
+                    <span class="te-search-count">@matchCount match@(matchCount != 1 ? "es" : "")</span>
+                }
+            </div>
+            <button class="te-ctrl-btn" @onclick="ExpandAll">Expand All</button>
+            <button class="te-ctrl-btn" @onclick="CollapseAll">Collapse All</button>
+        </div>
+
+        <!-- Filter strip -->
+        <div class="te-filter-strip" role="group" aria-label="Filter tasks">
+            <button class='te-filter-chip @(_activeFilter is null ? "is-active" : "")' @onclick='() => SetFilter(null)'>All</button>
+            <button class='te-filter-chip @(_activeFilter == "Completed" ? "is-active" : "")' @onclick='() => SetFilter("Completed")'>✓ Completed</button>
+            <button class='te-filter-chip @(_activeFilter == "Open" ? "is-active" : "")' @onclick='() => SetFilter("Open")'>○ Open</button>
+            @if (HasEnrichmentData)
+            {
+                <button class='te-filter-chip te-fc-linked @(_activeFilter == "SpecLinked" ? "is-active" : "")' @onclick='() => SetFilter("SpecLinked")'>Spec Linked</button>
+                <button class='te-filter-chip te-fc-tech @(_activeFilter == "TechnicalOnly" ? "is-active" : "")' @onclick='() => SetFilter("TechnicalOnly")'>Technical Only</button>
+                <button class='te-filter-chip te-fc-review @(_activeFilter == "NeedsReview" ? "is-active" : "")' @onclick='() => SetFilter("NeedsReview")'>Needs Review</button>
+                <button class='te-filter-chip te-fc-dev @(_activeFilter == "PossibleDeviation" ? "is-active" : "")' @onclick='() => SetFilter("PossibleDeviation")'>Possible Deviation</button>
+                <button class='te-filter-chip te-fc-risk @(_activeFilter == "HighRisk" ? "is-active" : "")' @onclick='() => SetFilter("HighRisk")'>High Risk</button>
+                <button class='te-filter-chip te-fc-reg @(_activeFilter == "RegressionCandidate" ? "is-active" : "")' @onclick='() => SetFilter("RegressionCandidate")'>Regression</button>
+            }
+            <button class='te-filter-chip @(_activeFilter == "HasTableLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasTableLinks")'>Has Table Links</button>
+            <button class='te-filter-chip @(_activeFilter == "HasScLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasScLinks")'>Has SC Links</button>
+            <button class='te-filter-chip @(_activeFilter == "HasFrLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasFrLinks")'>Has FR Links</button>
+            <button class='te-filter-chip @(_activeFilter == "MissingImplementation" ? "is-active" : "")' @onclick='() => SetFilter("MissingImplementation")'>Only Missing Implementation</button>
+            <button class='te-filter-chip @(_activeFilter == "PartialCoverage" ? "is-active" : "")' @onclick='() => SetFilter("PartialCoverage")'>Only Partial Coverage</button>
+            <button class='te-filter-chip @(_activeFilter == "OnlyUserStories" ? "is-active" : "")' @onclick='() => SetFilter("OnlyUserStories")'>Only User Stories</button>
+            <button class='te-filter-chip @(_activeFilter == "OnlyRequirements" ? "is-active" : "")' @onclick='() => SetFilter("OnlyRequirements")'>Only Requirements</button>
+            <button class='te-filter-chip @(_activeFilter == "OnlySuccessCriteria" ? "is-active" : "")' @onclick='() => SetFilter("OnlySuccessCriteria")'>Only Success Criteria</button>
+            @if (_health.TestingTasks > 0)
+            {
+                <button class='te-filter-chip te-fc-testing @(_activeFilter == "TestingTasks" ? "is-active" : "")' @onclick='() => SetFilter("TestingTasks")'>Only Testing</button>
+            }
+            @if (_health.SecurityTasks > 0)
+            {
+                <button class='te-filter-chip te-fc-security @(_activeFilter == "SecurityTasks" ? "is-active" : "")' @onclick='() => SetFilter("SecurityTasks")'>Only Security</button>
+            }
+            @if (_health.UnlinkedTasks > 0)
+            {
+                <button class='te-filter-chip @(_activeFilter == "NoLinks" ? "is-active" : "")' @onclick='() => SetFilter("NoLinks")'>Only Unlinked Tasks</button>
+            }
+            @if (_health.UnresolvedTableRefs > 0)
+            {
+                <button class='te-filter-chip te-fc-unresolved @(_activeFilter == "Unresolved" ? "is-active" : "")' @onclick='() => SetFilter("Unresolved")'>⚠ Unresolved Refs <span class="te-unresolved-count">@_health.UnresolvedTableRefs</span></button>
+            }
+        </div>
+
+        <!-- Main layout: tree/map + details panel -->
+        <div class="te-main @(_selectedNodeId is not null ? "has-details" : "")">
+
+            @if (_isChangesView)
+            {
+                <TaskChangesPanel CurrentTasksText="@(_lastBuiltText)" data-testid="tc-changes-view" />
+            }
+            else if (_isImpactView && _coverage is not null)
+            {
+                <div class="te-impact-view" data-testid="te-impact-view" aria-label="Implementation Impact">
+                    <div class="te-impact-header">
+                        <div>
+                            <div class="te-section-kicker">Impact</div>
+                            <h3>What is missing from implementation</h3>
+                        </div>
+                        <span>Use Traceability for validation coverage and Task Explorer for implementation coverage.</span>
+                    </div>
+
+                    <div class="te-impact-grid">
+                        @RenderImpactGroup("Requirements Missing Tasks", _coverage.MissingRequirements, "No requirements are missing implementation tasks.")
+                        @RenderImpactGroup("Success Criteria Missing Tasks", _coverage.MissingSuccessCriteria, "No success criteria are missing implementation tasks.")
+                        @RenderImpactGroup("User Stories Missing Tasks", _coverage.MissingUserStories, "No user stories are missing implementation tasks.")
+                        @RenderImpactGroup("Security Gaps", _coverage.SecurityGapLabels, "No security implementation gaps detected.")
+                        @RenderImpactGroup("Testing Gaps", _coverage.TestingGapLabels, "No testing implementation gaps detected.")
+                    </div>
+
+                    <div class="te-link-visualization">
+                        <div class="te-section-kicker">Link Visualization</div>
+                        <div class="te-link-chain">User Story -> Requirements -> Success Criteria -> Tasks</div>
+                        <div class="te-link-chain">Requirement -> Tasks</div>
+                        <div class="te-link-chain">Success Criterion -> Tasks</div>
+                        <div class="te-link-chain">Task -> Linked Spec Artifacts</div>
+                    </div>
+                </div>
+            }
+            else
+            {
+            <div class="@(_isMapView ? "te-map" : "te-tree")" role="tree">
+                @if (_flatCache.Count == 0)
+                {
+                    <div class="te-no-results">
+                        @if (!string.IsNullOrWhiteSpace(_searchQuery) || _activeFilter is not null)
+                        {
+                            <span>No tasks match the current search or filter.</span>
+                        }
+                        else if (_tree.Roots.Count == 0)
+                        {
+                            <span>No tasks detected. Task Explorer expects headings and task IDs such as T001, T002 in tasks.md.</span>
+                        }
+                        else
+                        {
+                            <span>No results.</span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    @foreach (var (node, depth, isMatch) in _flatCache)
+                    {
+                        var hasChildren = node.Children.Count > 0;
+                        var isExpanded = _expandedIds.Contains(node.Id);
+                        var isSelected = _selectedNodeId == node.Id;
+                        var isHeading = node.HeadingLevel > 0;
+
+                        <div class="te-row @(isSelected ? "is-selected" : "") @(isMatch ? "is-match" : "") @(isHeading || node.NodeType == TaskNodeType.TableSection ? "is-heading" : "is-item") @(_isMapView ? "te-row-map" : "")"
+                             style="padding-left: @(depth * (_isMapView ? 24 : 16) + 6)px"
+                             role="treeitem"
+                             aria-selected="@isSelected.ToString().ToLower()"
+                             @onclick="() => HandleNodeClick(node)">
+
+                            <span class="te-expand-cell">
+                                @if (hasChildren)
+                                {
+                                    <button class="te-expand-btn"
+                                            aria-label="@(isExpanded ? "Collapse" : "Expand")"
+                                            @onclick:stopPropagation="true"
+                                            @onclick="() => ToggleExpand(node.Id)">
+                                        @(isExpanded ? "▼" : "▶")
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="te-expand-leaf">•</span>
+                                }
+                            </span>
+
+                            <span class="te-node-icon" aria-hidden="true">@GetIcon(node.NodeType)</span>
+
+                            @if (node.NodeType == TaskNodeType.Task)
+                            {
+                                <span class="te-task-check @(node.IsCompleted ? "is-done" : "")">@(node.IsCompleted ? "✓" : "○")</span>
+                            }
+
+                            <span class="te-node-title @(node.NodeType == TaskNodeType.Task && node.IsCompleted ? "is-done" : "")">
+                                @(node.ShortTitle ?? node.Title)
+                                @if (node.TaskId is not null && node.NodeType == TaskNodeType.Task)
+                                {
+                                    <span class="te-task-id">@node.TaskId</span>
+                                }
+                            </span>
+
+                            @if (!isExpanded && hasChildren && node.TotalDescendants > 0)
+                            {
+                                <span class="te-child-count">(@node.TotalDescendants)</span>
+                            }
+
+                            <!-- Task chips -->
+                            @if (node.NodeType == TaskNodeType.Task)
+                            {
+                                <span class="te-chips">
+                                    @if (node.UserStoryTag is not null)
+                                    {
+                                        <span class="te-chip te-chip-us">@node.UserStoryTag</span>
+                                    }
+                                    @if (node.IsParallel)
+                                    {
+                                        <span class="te-chip te-chip-parallel">P</span>
+                                    }
+                                    @if (node.Status.HasValue)
+                                    {
+                                        <span class="te-chip te-chip-status te-chip-status-@StatusKey(node.Status.Value)">@StatusLabel(node.Status.Value)</span>
+                                    }
+                                    @if (node.Risk == AlignmentRisk.High)
+                                    {
+                                        <span class="te-chip te-chip-risk">High Risk</span>
+                                    }
+                                    @if (node.IsRegressionCandidate)
+                                    {
+                                        <span class="te-chip te-chip-reg">Regression</span>
+                                    }
+                                </span>
+                            }
+
+                            <!-- Heading task counts + progress bar -->
+                            @if (isHeading && node.TaskCount > 0)
+                            {
+                                var phasePct = (int)Math.Round((double)node.CompletedCount / node.TaskCount * 100);
+                                <span class="te-meta-chips">
+                                    <span class="te-meta-chip">@node.TaskCount tasks · @node.CompletedCount done</span>
+                                    <span class="te-phase-progress" title="@(phasePct)% complete">
+                                        <span class="te-phase-bar" style="width:@(phasePct)%"></span>
+                                    </span>
+                                </span>
+                            }
+
+                            <!-- FR/SC ref chips on task rows — clickable to search -->
+                            @if (node.NodeType == TaskNodeType.Task && (node.ReferencedFrIds.Count > 0 || node.ReferencedScIds.Count > 0))
+                            {
+                                <span class="te-ref-chips">
+                                    @foreach (var fr in node.ReferencedFrIds.Take(2))
+                                    {
+                                        var frCapture = fr;
+                                        <button class="te-ref-chip te-ref-fr" @onclick:stopPropagation="true" @onclick='() => SetSearch(frCapture)' title="Search @frCapture">@frCapture</button>
+                                    }
+                                    @foreach (var sc in node.ReferencedScIds.Take(2))
+                                    {
+                                        var scCapture = sc;
+                                        <button class="te-ref-chip te-ref-sc" @onclick:stopPropagation="true" @onclick='() => SetSearch(scCapture)' title="Search @scCapture">@scCapture</button>
+                                    }
+                                    @{ var refOverflow = node.ReferencedFrIds.Count + node.ReferencedScIds.Count - 4; }
+                                    @if (refOverflow > 0)
+                                    {
+                                        <span class="te-ref-chip te-ref-more">+@refOverflow</span>
+                                    }
+                                </span>
+                            }
+
+                            @if (node.NodeType == TaskNodeType.TableSection && node.TableKind != TaskTableType.Generic)
+                            {
+                                <span class="te-table-kind-badge te-tkind-@TableKindName(node.TableKind)">@TableKindLabel(node.TableKind)</span>
+                            }
+
+                            @if (node.NodeType == TaskNodeType.TableTaskRef && node.IsUnresolved)
+                            {
+                                <span class="te-unresolved-badge">unresolved</span>
+                            }
+
+                            <!-- TableRow linked task preview -->
+                            @if (node.NodeType == TaskNodeType.TableRow && node.LinkedTaskIds.Count > 0)
+                            {
+                                <span class="te-table-link-count">@node.LinkedTaskIds.Count task ref@(node.LinkedTaskIds.Count != 1 ? "s" : "")</span>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+            }
+
+            <!-- ── Details Panel ──────────────────────────────────────────── -->
+            @if (_selectedNodeId is not null)
+            {
+                var selected = TaskExplorerService.FindNode(_tree.Roots, _selectedNodeId);
+                @if (selected is not null)
+                {
+                    <div class="te-details">
+                        <div class="te-details-header">
+                            <span class="te-details-type">@NodeTypeLabel(selected.NodeType)</span>
+                            <button class="te-details-close" @onclick='() => _selectedNodeId = null' aria-label="Close details">×</button>
+                        </div>
+
+                        @if (selected.TaskId is not null)
+                        {
+                            <div class="te-details-task-id">@selected.TaskId</div>
+                        }
+
+                        <h3 class="te-details-title">@(selected.ShortTitle ?? selected.Title)</h3>
+
+                        @if (selected.NodeType == TaskNodeType.Task && selected.ShortTitle is not null)
+                        {
+                            <div class="te-details-section">
+                                <div class="te-details-label">Full Description</div>
+                                <div class="te-details-desc">@selected.Title</div>
+                            </div>
+                        }
+
+                        @if (selected.NodeType == TaskNodeType.Task)
+                        {
+                            @if (!string.IsNullOrEmpty(selected.PhaseTitle) || !string.IsNullOrEmpty(selected.UserStoryTitle))
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Context</div>
+                                    @if (!string.IsNullOrEmpty(selected.PhaseTitle))
+                                    {
+                                        <div><span class="te-det-chip">🗂 @selected.PhaseTitle</span></div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(selected.UserStoryTitle))
+                                    {
+                                        <div><span class="te-det-chip te-chip-us">👤 @selected.UserStoryTitle</span></div>
+                                    }
+                                </div>
+                            }
+
+                            <div class="te-details-section">
+                                <div class="te-details-label">Status</div>
+                                <div class="te-details-status-row">
+                                    <span class="te-completion-badge @(selected.IsCompleted ? "is-done" : "is-open")">
+                                        @(selected.IsCompleted ? "✓ Completed" : "○ Open")
+                                    </span>
+                                    @if (selected.IsParallel)
+                                    {
+                                        <span class="te-chip te-chip-parallel">[P] Parallel</span>
+                                    }
+                                    @if (selected.UserStoryTag is not null)
+                                    {
+                                        <span class="te-chip te-chip-us">@selected.UserStoryTag</span>
+                                    }
+                                    @if (selected.IsTestingTask)
+                                    {
+                                        <span class="te-chip te-chip-testing">🧪 Testing</span>
+                                    }
+                                    @if (selected.IsSecurityTask)
+                                    {
+                                        <span class="te-chip te-chip-security">🔒 Security</span>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="te-details-section te-task-details-card" data-testid="te-task-details">
+                                <div class="te-details-label">Task Details</div>
+                                <dl class="te-detail-grid">
+                                    <div>
+                                        <dt>Linked User Story</dt>
+                                        <dd>@DisplayOrEmpty(ResolveUserStory(selected))</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Linked Requirement(s)</dt>
+                                        <dd>@DisplayListOrEmpty(selected.ReferencedFrIds)</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Linked Success Criteria</dt>
+                                        <dd>@DisplayListOrEmpty(selected.ReferencedScIds)</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Linked Test Assets</dt>
+                                        <dd>@(selected.IsTestingTask ? selected.TaskId ?? "Testing task" : "No linked test task")</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Linked Architecture Notes</dt>
+                                        <dd>@(IsArchitectureTask(selected) ? selected.TaskId ?? "Architecture task" : "No linked architecture note")</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Implementation Status</dt>
+                                        <dd>@(selected.IsCompleted ? "Complete" : "Open")</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Coverage Impact</dt>
+                                        <dd>@CoverageImpactLabel(selected)</dd>
+                                    </div>
+                                </dl>
+                                <button class="te-traceability-link" @onclick='() => OpenInTraceability(selected)'>Open in Traceability</button>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(selected.RawText))
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Original Text</div>
+                                    <div class="te-details-raw">@selected.RawText</div>
+                                </div>
+                            }
+
+                            @if (selected.Status.HasValue)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Spec Alignment</div>
+                                    <span class="te-status-badge te-status-@StatusKey(selected.Status.Value)">@StatusLabel(selected.Status.Value)</span>
+                                </div>
+                            }
+
+                            @if (selected.Risk.HasValue)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Risk Level</div>
+                                    <span class="te-risk-badge te-risk-@selected.Risk.Value.ToString().ToLower()">@selected.Risk.Value</span>
+                                    @if (selected.IsRegressionCandidate)
+                                    {
+                                        <span class="te-chip te-chip-reg" style="margin-left:0.4rem">Regression Candidate</span>
+                                    }
+                                </div>
+                            }
+
+                            @if (selected.SpecMatches.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Matched Spec Items (@selected.SpecMatches.Count)</div>
+                                    <ul class="te-details-list">
+                                        @foreach (var m in selected.SpecMatches.Take(6))
+                                        {
+                                            <li>
+                                                <span class="te-match-type te-match-@m.MatchType.ToString().ToLower()">@m.MatchType</span>
+                                                @m.ItemId @m.Title
+                                            </li>
+                                        }
+                                        @if (selected.SpecMatches.Count > 6)
+                                        {
+                                            <li class="te-list-more">+@(selected.SpecMatches.Count - 6) more</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+
+                            @if (selected.AffectedAreas.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Affected Areas</div>
+                                    <div class="te-area-chips">
+                                        @foreach (var area in selected.AffectedAreas)
+                                        {
+                                            <span class="te-area-chip">@area</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            @if (selected.ReferencedFrIds.Count > 0 || selected.ReferencedScIds.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Inline References</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var fr in selected.ReferencedFrIds)
+                                        {
+                                            var frCap = fr;
+                                            <button class="te-ref-chip te-ref-fr" @onclick='() => SetSearch(frCap)' title="Filter by @frCap">@frCap</button>
+                                        }
+                                        @foreach (var sc in selected.ReferencedScIds)
+                                        {
+                                            var scCap = sc;
+                                            <button class="te-ref-chip te-ref-sc" @onclick='() => SetSearch(scCap)' title="Filter by @scCap">@scCap</button>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            @if (selected.RelatedFiles.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Related Files</div>
+                                    <ul class="te-details-list te-file-list">
+                                        @foreach (var f in selected.RelatedFiles)
+                                        {
+                                            <li class="te-file-path"><code>@f</code></li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+
+                            var tableRels = GetTableRelationships(selected.TaskId);
+                            @if (tableRels.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Table Relationships</div>
+                                    <ul class="te-details-list">
+                                        @foreach (var rel in tableRels)
+                                        {
+                                            <li>
+                                                <span class="te-table-rel-source">@rel.TableTitle</span>
+                                                <span class="te-table-rel-row">→ @rel.RowTitle</span>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        }
+
+                        @if (selected.NodeType == TaskNodeType.TableSection)
+                        {
+                            <div class="te-details-section">
+                                <div class="te-details-label">Table Type</div>
+                                <span class="te-table-kind-badge te-tkind-@TableKindName(selected.TableKind)">@TableKindLabel(selected.TableKind)</span>
+                            </div>
+                            @if (selected.TableHeaders.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Columns (@selected.TableHeaders.Count)</div>
+                                    <div class="te-details-col-list">
+                                        @foreach (var h in selected.TableHeaders)
+                                        {
+                                            <span class="te-col-chip">@h</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            var tsRows = selected.Children.Where(c => c.NodeType == TaskNodeType.TableRow).ToList();
+                            var tsLinkedIds = tsRows.SelectMany(r => r.LinkedTaskIds).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                            var tsScRefs = tsRows.SelectMany(r => r.ReferencedScIds).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                            var tsFrRefs = tsRows.SelectMany(r => r.ReferencedFrIds).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                            @if (tsRows.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Rows (@tsRows.Count)</div>
+                                    <ul class="te-details-list">
+                                        @foreach (var row in tsRows.Take(8))
+                                        {
+                                            <li>@row.Title</li>
+                                        }
+                                        @if (tsRows.Count > 8)
+                                        {
+                                            <li class="te-list-more">+@(tsRows.Count - 8) more</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                            @if (tsLinkedIds.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Linked Tasks (@tsLinkedIds.Count)</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var tid in tsLinkedIds.Take(10))
+                                        {
+                                            var tidCap = tid;
+                                            <button class="te-ref-chip te-ref-task" @onclick='() => NavigateToTask(tidCap)' title="Go to @tid">@tid</button>
+                                        }
+                                        @if (tsLinkedIds.Count > 10)
+                                        {
+                                            <span class="te-ref-chip te-ref-more">+@(tsLinkedIds.Count - 10)</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (tsScRefs.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">SC References</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var sc in tsScRefs)
+                                        {
+                                            <span class="te-ref-chip te-ref-sc">@sc</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (tsFrRefs.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">FR References</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var fr in tsFrRefs)
+                                        {
+                                            <span class="te-ref-chip te-ref-fr">@fr</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+
+                        @if (selected.NodeType == TaskNodeType.TableRow)
+                        {
+                            @if (selected.LinkedTaskIds.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">Linked Tasks</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var tid in selected.LinkedTaskIds)
+                                        {
+                                            var isUnres = IsTaskRefUnresolved(selected, tid);
+                                            var tidCap = tid;
+                                            <button class="te-ref-chip @(isUnres ? "te-ref-unresolved" : "te-ref-task")" @onclick='() => NavigateToTask(tidCap)' title="Go to @tid">@tid@(isUnres ? " ?" : "")</button>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (selected.ReferencedFrIds.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">FR References</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var fr in selected.ReferencedFrIds)
+                                        {
+                                            <span class="te-ref-chip te-ref-fr">@fr</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (selected.ReferencedScIds.Count > 0)
+                            {
+                                <div class="te-details-section">
+                                    <div class="te-details-label">SC References</div>
+                                    <div class="te-ref-chips">
+                                        @foreach (var sc in selected.ReferencedScIds)
+                                        {
+                                            <span class="te-ref-chip te-ref-sc">@sc</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (selected.CellValues.Count > 0)
+                            {
+                                var parentSection = FindParentTableSection(_tree.Roots, selected.Id);
+                                <div class="te-details-section">
+                                    <div class="te-details-label">All Columns</div>
+                                    <ul class="te-details-list">
+                                        @for (int ci = 0; ci < selected.CellValues.Count; ci++)
+                                        {
+                                            var colName = parentSection is not null && ci < parentSection.TableHeaders.Count
+                                                ? parentSection.TableHeaders[ci] + ": "
+                                                : "";
+                                            <li><span class="te-col-name">@colName</span>@selected.CellValues[ci]</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        }
+
+                        @if (selected.HeadingLevel > 0 && selected.TotalDescendants > 0)
+                        {
+                            <div class="te-details-section">
+                                <div class="te-details-label">Contents</div>
+                                <div class="te-details-counts">
+                                    @if (selected.TaskCount > 0)
+                                    {
+                                        <span class="te-det-chip">@selected.TaskCount tasks</span>
+                                    }
+                                    @if (selected.CompletedCount > 0)
+                                    {
+                                        <span class="te-det-chip te-mc-done">@selected.CompletedCount completed</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string TasksText { get; set; } = string.Empty;
+    [Parameter] public AlignmentReport? Report { get; set; }
+    [Parameter] public EventCallback<string> OnBuilt { get; set; }
+    [Parameter] public string? InitialView { get; set; }
+
+    private SpecificationImport? _importRef;
+    private string _localTasksText = string.Empty;
+    private TaskTree? _tree;
+    private TaskHealth _health = new();
+    private HashSet<string> _expandedIds = [];
+    private string? _selectedNodeId;
+    private string _searchQuery = string.Empty;
+    private string? _activeFilter;
+    private bool _isMapView;
+    private bool _isImpactView;
+    private bool _isChangesView;
+    private List<(TaskNode Node, int Depth, bool IsMatch)> _flatCache = [];
+    private string _lastBuiltText = string.Empty;
+    private HashSet<string> _tableLinkedTaskIds = [];
+    private ImplementationCoverageSummary? _coverage;
+
+    private string EffectiveText => !string.IsNullOrWhiteSpace(_localTasksText) ? _localTasksText : TasksText;
+    private bool CanBuild => !string.IsNullOrWhiteSpace(EffectiveText);
+    private bool HasHealthData => _health.TotalTasks > 0 || _health.TotalPhases > 0 || _health.TablesDetected > 0 || _health.UnresolvedTableRefs > 0;
+    private bool HasEnrichmentData => Report is not null || _health.SpecLinked + _health.HighRisk > 0;
+
+    protected override void OnParametersSet()
+    {
+        var text = EffectiveText;
+        if (!string.IsNullOrWhiteSpace(text) && text != _lastBuiltText && string.IsNullOrEmpty(_localTasksText))
+            RebuildTree(text);
+        else if (_tree is not null && Report is not null)
+            RefreshEnrichment();
+
+        if (_tree is not null && InitialView == "changes" && !_isChangesView)
+            ShowChangesView();
+    }
+
+    private void OnFileImported(string content)
+    {
+        _localTasksText = content;
+        RebuildTree(content);
+    }
+
+    private void OnFileRemoved()
+    {
+        _localTasksText = string.Empty;
+        if (!string.IsNullOrWhiteSpace(TasksText))
+            RebuildTree(TasksText);
+        else
+            Reset();
+    }
+
+    private void ClearInput()
+    {
+        _localTasksText = string.Empty;
+        _importRef?.Reset();
+    }
+
+    private void BuildTree()
+    {
+        if (!CanBuild) return;
+        RebuildTree(EffectiveText);
+    }
+
+    private void RebuildTree(string text)
+    {
+        _tree = TaskExplorerService.Parse(text);
+        _lastBuiltText = text;
+        if (Report is not null)
+            TaskExplorerService.EnrichWithReport(_tree, Report);
+        _health = TaskExplorerService.ComputeEnrichedHealth(_tree);
+        _tableLinkedTaskIds = TaskExplorerService.BuildTableLinkedTaskIds(_tree.Roots);
+        _expandedIds = TaskExplorerService.GetDefaultExpanded(_tree.Roots);
+        _selectedNodeId = null;
+        _searchQuery = string.Empty;
+        _activeFilter = null;
+        _isMapView = false;
+        _isImpactView = false;
+        _isChangesView = false;
+        _coverage = BuildImplementationCoverage(_tree);
+        RefreshFlatCache();
+        if (OnBuilt.HasDelegate)
+            _ = OnBuilt.InvokeAsync(text);
+    }
+
+    private void RefreshEnrichment()
+    {
+        if (_tree is null || Report is null) return;
+        TaskExplorerService.EnrichWithReport(_tree, Report);
+        _health = TaskExplorerService.ComputeEnrichedHealth(_tree);
+        _coverage = BuildImplementationCoverage(_tree);
+        RefreshFlatCache();
+    }
+
+    private void Reset()
+    {
+        _tree = null;
+        _health = new();
+        _localTasksText = string.Empty;
+        _expandedIds = [];
+        _selectedNodeId = null;
+        _searchQuery = string.Empty;
+        _activeFilter = null;
+        _isMapView = false;
+        _isImpactView = false;
+        _isChangesView = false;
+        _flatCache = [];
+        _lastBuiltText = string.Empty;
+        _tableLinkedTaskIds = [];
+        _coverage = null;
+        _importRef?.Reset();
+    }
+
+    private void RefreshFlatCache()
+    {
+        if (_tree is null) { _flatCache = []; return; }
+        _flatCache = TaskExplorerService.GetFlatVisible(
+            _tree.Roots, _expandedIds, _searchQuery, _activeFilter, _tableLinkedTaskIds);
+    }
+
+    private void HandleSearchInput(ChangeEventArgs e)
+    {
+        _searchQuery = e.Value?.ToString() ?? string.Empty;
+        RefreshFlatCache();
+    }
+
+    private void SetFilter(string? filter)
+    {
+        _activeFilter = filter;
+        RefreshFlatCache();
+    }
+
+    private void HandleNodeClick(TaskNode node)
+    {
+        _selectedNodeId = _selectedNodeId == node.Id ? null : node.Id;
+    }
+
+    private void ToggleExpand(string id)
+    {
+        if (!_expandedIds.Add(id)) _expandedIds.Remove(id);
+        RefreshFlatCache();
+    }
+
+    private void ExpandAll()
+    {
+        if (_tree is null) return;
+        ExpandAllNodes(_tree.Roots);
+        RefreshFlatCache();
+    }
+
+    private void ExpandAllNodes(IEnumerable<TaskNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Children.Count > 0) _expandedIds.Add(node.Id);
+            ExpandAllNodes(node.Children);
+        }
+    }
+
+    private void CollapseAll()
+    {
+        _expandedIds.Clear();
+        RefreshFlatCache();
+    }
+
+    private static int CountLines(string text) => text.Split('\n').Length;
+
+    private void ShowTreeView()
+    {
+        _isMapView = false;
+        _isImpactView = false;
+        _isChangesView = false;
+    }
+
+    private void ShowMapView()
+    {
+        _isMapView = true;
+        _isImpactView = false;
+        _isChangesView = false;
+    }
+
+    private void ShowImpactView()
+    {
+        _isMapView = false;
+        _isImpactView = true;
+        _isChangesView = false;
+    }
+
+    private void ShowChangesView()
+    {
+        _isMapView = false;
+        _isImpactView = false;
+        _isChangesView = true;
+    }
+
+    private sealed record CoverageMetric(string Label, int Linked, int Total, string Status);
+    private sealed record DeliveryRiskItem(string Label, int Count, string Severity);
+
+    private sealed record ImplementationCoverageSummary(
+        IReadOnlyList<CoverageMetric> Metrics,
+        IReadOnlyList<DeliveryRiskItem> Risks,
+        IReadOnlyList<string> MissingRequirements,
+        IReadOnlyList<string> MissingSuccessCriteria,
+        IReadOnlyList<string> MissingUserStories,
+        IReadOnlyList<string> SecurityGapLabels,
+        IReadOnlyList<string> TestingGapLabels,
+        int ImplementationPercent,
+        string OverallStatus);
+
+    private ImplementationCoverageSummary BuildImplementationCoverage(TaskTree tree)
+    {
+        var allNodes = AllNodes(tree.Roots);
+        var tasks = allNodes.Where(n => n.NodeType == TaskNodeType.Task).ToList();
+        var userStories = allNodes.Select(ExtractUserStory).OfType<string>().Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
+        var requirements = tasks.SelectMany(t => t.ReferencedFrIds).Select(NormalizeArtifactId).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
+        var successCriteria = tasks.SelectMany(t => t.ReferencedScIds).Select(NormalizeArtifactId).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
+        var testingTasks = tasks.Where(t => t.IsTestingTask).ToList();
+        var architectureTasks = tasks.Where(IsArchitectureTask).ToList();
+        var missingUserStories = MissingSequence(userStories, "US");
+        var missingRequirements = MissingSequence(requirements, "FR");
+        var missingSuccessCriteria = MissingSequence(successCriteria, "SC");
+        var securityGaps = BuildSecurityGaps(tasks, missingRequirements);
+        var testingGaps = testingTasks.Count == 0 && requirements.Count > 0
+            ? requirements.Select(r => $"{r}: testing requirements have no test tasks").ToList()
+            : [];
+
+        var metrics = new List<CoverageMetric>
+        {
+            BuildMetric("User Stories", userStories.Count, userStories.Count + missingUserStories.Count),
+            BuildMetric("Functional Requirements", requirements.Count, requirements.Count + missingRequirements.Count),
+            BuildMetric("Success Criteria", successCriteria.Count, successCriteria.Count + missingSuccessCriteria.Count),
+            BuildMetric("Tests", testingTasks.Count, Math.Max(testingTasks.Count, requirements.Count)),
+            BuildMetric("Architecture Notes", architectureTasks.Count, Math.Max(architectureTasks.Count, tasks.Count(t => t.Status == AlignmentStatus.TechnicalOnly))),
+        };
+
+        var linked = metrics.Sum(m => m.Linked);
+        var total = metrics.Sum(m => m.Total);
+        var percent = total == 0 ? 0 : (int)Math.Round((double)linked / total * 100);
+        var overallStatus = CoverageStatus(linked, total);
+
+        var risks = new List<DeliveryRiskItem>
+        {
+            BuildRisk("Requirements without implementation", missingRequirements.Count),
+            BuildRisk("Success Criteria without tasks", missingSuccessCriteria.Count),
+            BuildRisk("User Stories with no implementation", missingUserStories.Count),
+            BuildRisk("Security requirements without security tasks", securityGaps.Count),
+            BuildRisk("Testing requirements without test tasks", testingGaps.Count),
+        };
+
+        return new ImplementationCoverageSummary(
+            metrics,
+            risks,
+            missingRequirements,
+            missingSuccessCriteria,
+            missingUserStories,
+            securityGaps,
+            testingGaps,
+            percent,
+            overallStatus);
+    }
+
+    private static CoverageMetric BuildMetric(string label, int linked, int total) =>
+        new(label, linked, total, CoverageStatus(linked, total));
+
+    private static string CoverageStatus(int linked, int total)
+    {
+        if (total == 0 || linked == 0) return "Missing";
+        if (linked >= total) return "Covered";
+        return "Partial";
+    }
+
+    private static DeliveryRiskItem BuildRisk(string label, int count)
+    {
+        var severity = count >= 5 ? "High" : count > 0 ? "Medium" : "Low";
+        return new DeliveryRiskItem(label, count, severity);
+    }
+
+    private static string CoverageStatusClass(string status) => status.ToLowerInvariant();
+
+    private static IReadOnlyList<TaskNode> AllNodes(IEnumerable<TaskNode> roots)
+    {
+        var result = new List<TaskNode>();
+        Collect(roots, result);
+        return result;
+
+        static void Collect(IEnumerable<TaskNode> nodes, List<TaskNode> result)
+        {
+            foreach (var node in nodes)
+            {
+                result.Add(node);
+                Collect(node.Children, result);
+            }
+        }
+    }
+
+    private static string? ExtractUserStory(TaskNode node)
+    {
+        if (!string.IsNullOrWhiteSpace(node.UserStoryTag))
+            return NormalizeArtifactId(node.UserStoryTag);
+        var source = $"{node.UserStoryTitle} {node.Title} {node.RawText}";
+        var match = System.Text.RegularExpressions.Regex.Match(source, @"\bUS[-\s]?0*(\d+)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return match.Success ? $"US-{int.Parse(match.Groups[1].Value):000}" : null;
+    }
+
+    private string? ResolveUserStory(TaskNode node)
+    {
+        var direct = ExtractUserStory(node);
+        if (direct is not null || _tree is null)
+            return direct;
+        var ancestors = new List<TaskNode>();
+        return FindAncestors(_tree.Roots, node.Id, ancestors)
+            ? ancestors.Select(ExtractUserStory).OfType<string>().LastOrDefault()
+            : null;
+    }
+
+    private static bool FindAncestors(IEnumerable<TaskNode> nodes, string targetId, List<TaskNode> ancestors)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Id == targetId)
+                return true;
+            ancestors.Add(node);
+            if (FindAncestors(node.Children, targetId, ancestors))
+                return true;
+            ancestors.RemoveAt(ancestors.Count - 1);
+        }
+        return false;
+    }
+
+    private static string NormalizeArtifactId(string id)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(id, @"\b(US|FR|SC)[-\s]?0*(\d+)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return match.Success
+            ? $"{match.Groups[1].Value.ToUpperInvariant()}-{int.Parse(match.Groups[2].Value):000}"
+            : id.ToUpperInvariant();
+    }
+
+    private static List<string> MissingSequence(IReadOnlyList<string> ids, string prefix)
+    {
+        var numbers = ids
+            .Select(id => System.Text.RegularExpressions.Regex.Match(id, $@"\b{prefix}-?(\d+)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            .Where(m => m.Success)
+            .Select(m => int.Parse(m.Groups[1].Value))
+            .Distinct()
+            .OrderBy(n => n)
+            .ToList();
+        if (numbers.Count < 2) return [];
+        var present = numbers.ToHashSet();
+        return Enumerable.Range(numbers.First(), numbers.Last() - numbers.First() + 1)
+            .Where(n => !present.Contains(n))
+            .Select(n => $"{prefix}-{n:000}")
+            .ToList();
+    }
+
+    private static bool IsArchitectureTask(TaskNode node)
+    {
+        var text = $"{node.Title} {node.RawText} {node.PhaseTitle} {node.UserStoryTitle}";
+        return text.Contains("architecture", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("technical", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("integration", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("api", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<string> BuildSecurityGaps(IReadOnlyList<TaskNode> tasks, IReadOnlyList<string> missingRequirements)
+    {
+        var hasSecurityTask = tasks.Any(t => t.IsSecurityTask);
+        if (hasSecurityTask) return [];
+        var securityRefs = tasks
+            .Where(t => $"{t.Title} {t.RawText} {t.PhaseTitle}".Contains("security", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(t => t.ReferencedFrIds)
+            .Select(NormalizeArtifactId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (securityRefs.Count > 0)
+            return securityRefs.Select(r => $"{r}: security requirements have no security tasks").ToList();
+        return missingRequirements.Take(5).Select(r => $"{r}: security review not linked").ToList();
+    }
+
+    private static string DisplayOrEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? "No link" : value;
+    private static string DisplayListOrEmpty(IEnumerable<string> values)
+    {
+        var list = values.Select(NormalizeArtifactId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return list.Count == 0 ? "No link" : string.Join(", ", list);
+    }
+
+    private static string CoverageImpactLabel(TaskNode node)
+    {
+        if (node.ReferencedFrIds.Count == 0 && node.ReferencedScIds.Count == 0)
+            return "Unlinked task; no implementation coverage impact";
+        var refs = node.ReferencedFrIds.Count + node.ReferencedScIds.Count;
+        return $"{refs} linked spec artifact{(refs == 1 ? "" : "s")} affect implementation coverage";
+    }
+
+    private void OpenInTraceability(TaskNode node)
+    {
+        var target = node.ReferencedFrIds.FirstOrDefault()
+            ?? node.ReferencedScIds.FirstOrDefault()
+            ?? ExtractUserStory(node)
+            ?? node.TaskId
+            ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(target))
+            SetSearch(NormalizeArtifactId(target));
+    }
+
+    private static RenderFragment RenderImpactGroup(string title, IReadOnlyList<string> items, string emptyText) => builder =>
+    {
+        builder.OpenElement(0, "section");
+        builder.AddAttribute(1, "class", "te-impact-group");
+        builder.OpenElement(2, "h4");
+        builder.AddContent(3, title);
+        builder.CloseElement();
+        if (items.Count == 0)
+        {
+            builder.OpenElement(4, "p");
+            builder.AddAttribute(5, "class", "te-impact-empty");
+            builder.AddContent(6, emptyText);
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.OpenElement(7, "ul");
+            builder.AddAttribute(8, "class", "te-impact-list");
+            var seq = 9;
+            foreach (var item in items.Take(8))
+            {
+                builder.OpenElement(seq++, "li");
+                builder.AddContent(seq++, item);
+                builder.CloseElement();
+            }
+            if (items.Count > 8)
+            {
+                builder.OpenElement(seq++, "li");
+                builder.AddAttribute(seq++, "class", "te-impact-more");
+                builder.AddContent(seq++, $"+{items.Count - 8} more");
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+    };
+
+    // Table relationship lookup
+    private record TableRelationship(string TableTitle, string RowTitle);
+
+    private List<TableRelationship> GetTableRelationships(string? taskId)
+    {
+        if (taskId is null || _tree is null) return [];
+        var result = new List<TableRelationship>();
+        CollectTableRels(_tree.Roots, taskId, null, result);
+        return result;
+    }
+
+    private static void CollectTableRels(
+        IEnumerable<TaskNode> nodes, string taskId,
+        string? parentTableTitle, List<TableRelationship> result)
+    {
+        foreach (var node in nodes)
+        {
+            var tableTitle = node.NodeType == TaskNodeType.TableSection ? node.Title : parentTableTitle;
+            if (node.NodeType == TaskNodeType.TableRow &&
+                node.LinkedTaskIds.Any(t => string.Equals(t, taskId, StringComparison.OrdinalIgnoreCase)))
+            {
+                result.Add(new TableRelationship(tableTitle ?? "Table", node.Title));
+            }
+            CollectTableRels(node.Children, taskId, tableTitle, result);
+        }
+    }
+
+    // ── Table helpers ─────────────────────────────────────────────────────
+
+    private static string TableKindLabel(TaskTableType t) => t switch
+    {
+        TaskTableType.Traceability      => "Traceability",
+        TaskTableType.RequirementMapping => "Requirements",
+        TaskTableType.DependencyTable   => "Dependencies",
+        TaskTableType.ParallelExecution => "Parallel",
+        _                               => "Table",
+    };
+
+    private static string TableKindName(TaskTableType t) => t switch
+    {
+        TaskTableType.Traceability      => "traceability",
+        TaskTableType.RequirementMapping => "requirements",
+        TaskTableType.DependencyTable   => "dependency",
+        TaskTableType.ParallelExecution => "parallel",
+        _                               => "generic",
+    };
+
+    private static bool IsTaskRefUnresolved(TaskNode rowNode, string taskId) =>
+        rowNode.Children.Any(c =>
+            c.NodeType == TaskNodeType.TableTaskRef &&
+            string.Equals(c.TaskId, taskId, StringComparison.OrdinalIgnoreCase) &&
+            c.IsUnresolved);
+
+    private static TaskNode? FindParentTableSection(IEnumerable<TaskNode> nodes, string childId)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.NodeType == TaskNodeType.TableSection &&
+                node.Children.Any(c => c.Id == childId))
+                return node;
+            var found = FindParentTableSection(node.Children, childId);
+            if (found is not null) return found;
+        }
+        return null;
+    }
+
+    // ── Labels and icons ──────────────────────────────────────────────────
+
+    private static string GetIcon(TaskNodeType type) => type switch
+    {
+        TaskNodeType.Phase         => "🗂",
+        TaskNodeType.UserStoryGroup => "👤",
+        TaskNodeType.TaskGroup     => "📋",
+        TaskNodeType.DeepGroup     => "📄",
+        TaskNodeType.Task          => "  ",
+        TaskNodeType.TableSection  => "📊",
+        TaskNodeType.TableRow      => "↔",
+        TaskNodeType.TableTaskRef  => "↩",
+        _ => "•",
+    };
+
+    private static string NodeTypeLabel(TaskNodeType type) => type switch
+    {
+        TaskNodeType.Phase         => "Phase",
+        TaskNodeType.UserStoryGroup => "User Story Group",
+        TaskNodeType.TaskGroup     => "Task Group",
+        TaskNodeType.DeepGroup     => "Section",
+        TaskNodeType.Task          => "Task",
+        TaskNodeType.TableSection  => "Table",
+        TaskNodeType.TableRow      => "Table Row",
+        TaskNodeType.TableTaskRef  => "Task Reference",
+        _ => type.ToString(),
+    };
+
+    private static string StatusKey(AlignmentStatus s) => s switch
+    {
+        AlignmentStatus.Linked            => "linked",
+        AlignmentStatus.TechnicalOnly     => "technicalonly",
+        AlignmentStatus.NeedsReview       => "needsreview",
+        AlignmentStatus.PossibleDeviation => "possibledeviation",
+        _ => "unknown",
+    };
+
+    private static string StatusLabel(AlignmentStatus s) => s switch
+    {
+        AlignmentStatus.Linked            => "Spec Linked",
+        AlignmentStatus.TechnicalOnly     => "Technical Only",
+        AlignmentStatus.NeedsReview       => "Needs Review",
+        AlignmentStatus.PossibleDeviation => "Possible Deviation",
+        _ => s.ToString(),
+    };
+
+    private void SetSearch(string query)
+    {
+        _searchQuery = query;
+        _activeFilter = null;
+        RefreshFlatCache();
+    }
+
+    private void NavigateToTask(string taskId)
+    {
+        if (_tree is null) return;
+        var ancestors = new List<string>();
+        var found = FindTaskInTree(_tree.Roots, taskId, ancestors);
+        if (found is null) return;
+        foreach (var id in ancestors) _expandedIds.Add(id);
+        _selectedNodeId = found.Id;
+        RefreshFlatCache();
+    }
+
+    private static TaskNode? FindTaskInTree(IEnumerable<TaskNode> nodes, string taskId, List<string> ancestors)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.NodeType == TaskNodeType.Task &&
+                string.Equals(node.TaskId, taskId, StringComparison.OrdinalIgnoreCase))
+                return node;
+            ancestors.Add(node.Id);
+            var found = FindTaskInTree(node.Children, taskId, ancestors);
+            if (found is not null) return found;
+            ancestors.RemoveAt(ancestors.Count - 1);
+        }
+        return null;
+    }
+}

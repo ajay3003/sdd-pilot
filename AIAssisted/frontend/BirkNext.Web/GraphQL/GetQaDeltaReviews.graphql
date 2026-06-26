@@ -1,0 +1,12 @@
+query GetQaDeltaReviews($projectId: String!) {
+  qaDeltaReviews(projectId: $projectId) {
+    id
+    title
+    projectId
+    createdAt
+    oldSpecFileName
+    newSpecFileName
+    analysisProfile
+    summaryJson
+  }
+}

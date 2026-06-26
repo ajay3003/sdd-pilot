@@ -1,0 +1,75 @@
+@page "/constitution-explorer"
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+@inject BirkNext.Web.Services.ProjectDocumentApiService DocumentApi
+
+<PageTitle>Constitution Explorer — QA Review Studio</PageTitle>
+
+<div class="ce-page">
+
+    <PageHeader Title="Constitution Explorer"
+                Description="Navigate and analyze constitution.md files — review principles, standards, constraints, and governance in one place." />
+
+    <div class="ce-page-body">
+        <ConstitutionExplorerPanel
+            ConstitutionText="@_initialText"
+            InitialView="@_initialView"
+            OnBuilt="OnDocumentBuilt" />
+    </div>
+
+</div>
+
+@code {
+    private string _initialText = string.Empty;
+    private string? _initialView;
+
+    private const string StorageKey = "ce-standalone-constitution";
+
+    protected override void OnInitialized()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var view))
+            _initialView = view;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        string? content = null;
+        try { content = await DocumentApi.GetAsync("constitution"); } catch { }
+
+        if (!string.IsNullOrWhiteSpace(content))
+        {
+            _initialText = content;
+            StateHasChanged();
+            return;
+        }
+
+        string? legacy = null;
+        try { legacy = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey); } catch { }
+
+        if (!string.IsNullOrWhiteSpace(legacy))
+        {
+            try
+            {
+                await DocumentApi.SaveAsync("constitution", legacy);
+                await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey);
+            }
+            catch { }
+            _initialText = legacy;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnDocumentBuilt(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        try { await DocumentApi.SaveAsync("constitution", text); } catch { }
+        try { await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey); } catch { }
+    }
+}

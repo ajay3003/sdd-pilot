@@ -1,0 +1,15 @@
+@* Executive summary panel hosting a horizontal row of stat numbers.
+   Usage: <SummaryCard Title="Overview"><div class="summary-stat">…</div></SummaryCard> *@
+
+<div class="summary-panel">
+    @if (!string.IsNullOrWhiteSpace(Title))
+    {
+        <div class="summary-panel-title">@Title</div>
+    }
+    <div class="summary-stats">@ChildContent</div>
+</div>
+
+@code {
+    [Parameter] public string?         Title        { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

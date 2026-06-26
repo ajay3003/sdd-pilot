@@ -1,0 +1,1145 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IConstitutionAnalysisService AnalysisService
+
+<div class="ce-panel">
+
+    @if (_document is null)
+    {
+        <!-- ── Empty / input state ───────────────────────────────────────── -->
+        <div class="ce-empty-state">
+            <div class="ce-empty-icon" aria-hidden="true">⚖️</div>
+            <h3 class="ce-empty-title">Constitution Explorer</h3>
+            <p class="ce-empty-desc">Transform a constitution.md into a navigable view of principles, standards, constraints, governance, and rule traceability. Paste or import a constitution file below.</p>
+
+            <div class="ce-input-area">
+                <div class="ce-input-header">
+                    <span class="ce-input-label">constitution.md</span>
+                    <span class="ce-input-hint">Supports platform, module, frontend, and service constitutions</span>
+                </div>
+                <SpecificationImport
+                    @ref="_importRef"
+                    InputId="ce-file-input"
+                    OnFileImported="OnFileImported"
+                    OnFileRemoved="OnFileRemoved"
+                    IsDisabled="false" />
+                <textarea
+                    class="ce-textarea"
+                    placeholder="Or paste constitution.md content here..."
+                    rows="12"
+                    @bind="_localText"></textarea>
+                @if (!string.IsNullOrWhiteSpace(_localText))
+                {
+                    var lineCount = _localText.Split('\n').Length;
+                    <div class="ce-input-footer">
+                        <span class="ce-input-stat">@lineCount lines · @_localText.Length chars</span>
+                        <button class="ce-clear-btn" @onclick="ClearInput">Clear</button>
+                    </div>
+                }
+            </div>
+
+            <button
+                class="ce-build-btn"
+                disabled="@(!CanBuild)"
+                @onclick="BuildDocument">
+                Build Constitution Explorer
+            </button>
+        </div>
+    }
+    else
+    {
+        <!-- ── Explorer state ────────────────────────────────────────────── -->
+
+        <!-- Header bar -->
+        <div class="ce-header">
+            <div class="ce-header-left">
+                <span class="ce-header-title">@_document.Title</span>
+                @if (!string.IsNullOrEmpty(_document.Version))
+                {
+                    <span class="ce-header-version">v@(_document.Version)</span>
+                }
+                <span class="ce-header-type ce-type-@_document.Type.ToString().ToLowerInvariant()">@_document.Type</span>
+            </div>
+            <div class="ce-header-right">
+                <div class="ce-view-toggle" role="group" aria-label="View mode">
+                    <button class='ce-view-btn @(_activeTab == "overview"     ? "is-active" : "")' @onclick='() => SetTab("overview")'>Overview</button>
+                    <button class='ce-view-btn @(_activeTab == "principles"   ? "is-active" : "")' @onclick='() => SetTab("principles")'>Principles @PrincipleBadge</button>
+                    <button class='ce-view-btn @(_activeTab == "standards"    ? "is-active" : "")' @onclick='() => SetTab("standards")'>Standards @StandardBadge</button>
+                    <button class='ce-view-btn @(_activeTab == "constraints"  ? "is-active" : "")' @onclick='() => SetTab("constraints")'>Constraints @ConstraintBadge</button>
+                    <button class='ce-view-btn @(_activeTab == "governance"   ? "is-active" : "")' @onclick='() => SetTab("governance")'>Governance @GovernanceBadge</button>
+                    <button class='ce-view-btn @(_activeTab == "changelog"    ? "is-active" : "")' @onclick='() => SetTab("changelog")'>Changelog @ChangelogBadge</button>
+                    <button class='ce-view-btn @(_activeTab == "traceability" ? "is-active" : "")' @onclick='() => SetTab("traceability")'>Traceability @CatalogBadge</button>
+                    <button class='ce-view-btn @(_activeTab == "catalog"      ? "is-active" : "")' @onclick='() => SetTab("catalog")'>Rule Catalog @CatalogBadge</button>
+                    <button class='ce-view-btn @(_activeTab == "map"          ? "is-active" : "")' @onclick='() => SetTab("map")'>Map</button>
+                </div>
+                <button class="ce-reset-btn" @onclick="Reset">← New Constitution</button>
+            </div>
+        </div>
+
+        <!-- Search bar -->
+        @if (_activeTab is "principles" or "standards" or "constraints" or "traceability" or "catalog")
+        {
+            <div class="ce-search-bar">
+                <input
+                    type="search"
+                    class="ce-search"
+                    placeholder="@SearchPlaceholder"
+                    value="@_searchQuery"
+                    @oninput="HandleSearchInput"
+                    aria-label="Search constitution" />
+                @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                {
+                    <span class="ce-search-clear" @onclick="ClearSearch" title="Clear search">×</span>
+                    <span class="ce-search-count">@SearchResultCount result@(SearchResultCount != 1 ? "s" : "")</span>
+                }
+            </div>
+        }
+
+        <!-- Traceability type filter strip -->
+        @if (_activeTab == "traceability")
+        {
+            <div class="ce-type-filter-strip" role="group" aria-label="Filter by rule type">
+                <button class='ce-type-chip @(_traceTypeFilter is null ? "is-active" : "")' @onclick='() => SetTraceType(null)'>All</button>
+                <button class='ce-type-chip ce-tc-principle @(_traceTypeFilter == ConstitutionRuleType.Principle ? "is-active" : "")' @onclick='() => SetTraceType(ConstitutionRuleType.Principle)'>Principles</button>
+                <button class='ce-type-chip ce-tc-standard @(_traceTypeFilter == ConstitutionRuleType.Standard ? "is-active" : "")' @onclick='() => SetTraceType(ConstitutionRuleType.Standard)'>Standards</button>
+                <button class='ce-type-chip ce-tc-guideline @(_traceTypeFilter == ConstitutionRuleType.Guideline ? "is-active" : "")' @onclick='() => SetTraceType(ConstitutionRuleType.Guideline)'>Guidelines</button>
+                <button class='ce-type-chip ce-tc-constraint @(_traceTypeFilter == ConstitutionRuleType.Constraint ? "is-active" : "")' @onclick='() => SetTraceType(ConstitutionRuleType.Constraint)'>Constraints</button>
+                <button class='ce-type-chip ce-tc-governance @(_traceTypeFilter == ConstitutionRuleType.Governance ? "is-active" : "")' @onclick='() => SetTraceType(ConstitutionRuleType.Governance)'>Governance</button>
+            </div>
+        }
+
+        <!-- Tab content -->
+        <div class="ce-tab-body">
+
+            @if (_activeTab == "overview")
+            {
+                <!-- ── Overview Tab ──────────────────────────────────────── -->
+                <div class="ce-overview">
+
+                    <div class="ce-meta-card">
+                        <div class="ce-meta-grid">
+                            <div class="ce-meta-item">
+                                <div class="ce-meta-label">Constitution</div>
+                                <div class="ce-meta-value">@_document.Title</div>
+                            </div>
+                            @if (!string.IsNullOrEmpty(_document.Version))
+                            {
+                                <div class="ce-meta-item">
+                                    <div class="ce-meta-label">Version</div>
+                                    <div class="ce-meta-value">@_document.Version</div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_document.RatifiedDate))
+                            {
+                                <div class="ce-meta-item">
+                                    <div class="ce-meta-label">Ratified</div>
+                                    <div class="ce-meta-value">@_document.RatifiedDate</div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(_document.LastAmendedDate))
+                            {
+                                <div class="ce-meta-item">
+                                    <div class="ce-meta-label">Last Amended</div>
+                                    <div class="ce-meta-value">@_document.LastAmendedDate</div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Health cards -->
+                    <div class="ce-health-row">
+                        <div class="ce-health-card ce-hcard-principles">
+                            <div class="ce-health-value">@_document.Health.TotalPrinciples</div>
+                            <div class="ce-health-label">Principles</div>
+                        </div>
+                        <div class="ce-health-card ce-hcard-standards">
+                            <div class="ce-health-value">@_document.Health.TotalStandards</div>
+                            <div class="ce-health-label">Standards</div>
+                        </div>
+                        <div class="ce-health-card ce-hcard-constraints">
+                            <div class="ce-health-value">@_document.Health.TotalConstraints</div>
+                            <div class="ce-health-label">Constraints</div>
+                        </div>
+                        @if (_document.Health.TotalGovernanceItems > 0)
+                        {
+                            <div class="ce-health-card ce-hcard-governance">
+                                <div class="ce-health-value">@_document.Health.TotalGovernanceItems</div>
+                                <div class="ce-health-label">Governance</div>
+                            </div>
+                        }
+                        @if (_document.Health.TotalVersions > 0)
+                        {
+                            <div class="ce-health-card ce-hcard-versions">
+                                <div class="ce-health-value">@_document.Health.TotalVersions</div>
+                                <div class="ce-health-label">Versions</div>
+                            </div>
+                        }
+                        @if (_document.Health.TotalRules > 0)
+                        {
+                            <div class="ce-health-card ce-hcard-rules">
+                                <div class="ce-health-value">@_document.Health.TotalRules</div>
+                                <div class="ce-health-label">Total Rules</div>
+                            </div>
+                        }
+                        @if (_document.Health.TotalReferences > 0)
+                        {
+                            <div class="ce-health-card ce-hcard-refs">
+                                <div class="ce-health-value">@_document.Health.TotalReferences</div>
+                                <div class="ce-health-label">References</div>
+                            </div>
+                        }
+                        @if (_document.Health.PlatformWideConstraints > 0)
+                        {
+                            <div class="ce-health-card ce-hcard-platform">
+                                <div class="ce-health-value">@_document.Health.PlatformWideConstraints</div>
+                                <div class="ce-health-label">Platform-Wide</div>
+                            </div>
+                        }
+                        @if (_document.Health.ModuleConstraints > 0)
+                        {
+                            <div class="ce-health-card ce-hcard-module">
+                                <div class="ce-health-value">@_document.Health.ModuleConstraints</div>
+                                <div class="ce-health-label">Module Rules</div>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Health indicators -->
+                    @if (_document.Health.Indicators.Count > 0)
+                    {
+                        <div class="ce-health-indicators">
+                            @foreach (var indicator in _document.Health.Indicators)
+                            {
+                                <div class="ce-indicator ce-indicator-@indicator.Level.ToString().ToLowerInvariant()">
+                                    <span class="ce-indicator-icon" aria-hidden="true">@indicator.Icon</span>
+                                    <span class="ce-indicator-message">@indicator.Message</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- Quick navigation cards -->
+                    <div class="ce-nav-cards">
+                        @if (_document.Principles.Count > 0)
+                        {
+                            <button class="ce-nav-card" @onclick='() => SetTab("principles")'>
+                                <div class="ce-nav-card-count">@_document.Principles.Count</div>
+                                <div class="ce-nav-card-label">Core Principles</div>
+                                <div class="ce-nav-card-arrow">→</div>
+                            </button>
+                        }
+                        @if (_document.Standards.Count > 0)
+                        {
+                            <button class="ce-nav-card" @onclick='() => SetTab("standards")'>
+                                <div class="ce-nav-card-count">@_document.Standards.Count</div>
+                                <div class="ce-nav-card-label">Standards</div>
+                                <div class="ce-nav-card-arrow">→</div>
+                            </button>
+                        }
+                        @if (_document.Constraints.Count > 0)
+                        {
+                            <button class="ce-nav-card" @onclick='() => SetTab("constraints")'>
+                                <div class="ce-nav-card-count">@_document.Constraints.Count</div>
+                                <div class="ce-nav-card-label">Constraints</div>
+                                <div class="ce-nav-card-arrow">→</div>
+                            </button>
+                        }
+                        @if (_document.RuleCatalog.Count > 0)
+                        {
+                            <button class="ce-nav-card" @onclick='() => SetTab("traceability")'>
+                                <div class="ce-nav-card-count">@_document.RuleCatalog.Count</div>
+                                <div class="ce-nav-card-label">Rule Catalog</div>
+                                <div class="ce-nav-card-arrow">→</div>
+                            </button>
+                        }
+                    </div>
+
+                </div>
+            }
+
+            @if (_activeTab == "principles")
+            {
+                <!-- ── Principles Tab ────────────────────────────────────── -->
+                <div class="ce-principles">
+                    @{
+                        var visiblePrinciples = FilteredPrinciples.ToList();
+                    }
+                    @if (visiblePrinciples.Count == 0)
+                    {
+                        <div class="ce-empty-tab">
+                            @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                            {
+                                <span>No principles match "<strong>@_searchQuery</strong>"</span>
+                            }
+                            else
+                            {
+                                <span>No principles found. Ensure headings start with <code>PP-NN</code>.</span>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var principle in visiblePrinciples)
+                        {
+                            var isExpanded = _expandedIds.Contains(principle.NodeId);
+                            <div class="ce-principle-card @(isExpanded ? "is-expanded" : "")">
+                                <button class="ce-principle-header" @onclick="() => ToggleExpanded(principle.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
+                                    <div class="ce-principle-header-left">
+                                        @if (!string.IsNullOrEmpty(principle.Id))
+                                        {
+                                            <span class="ce-rule-id ce-rule-id-principle">@principle.Id</span>
+                                        }
+                                        <span class="ce-principle-title">@principle.Title</span>
+                                    </div>
+                                    <span class="ce-expand-icon" aria-hidden="true">@(isExpanded ? "▾" : "▸")</span>
+                                </button>
+                                @if (isExpanded)
+                                {
+                                    <div class="ce-principle-body">
+                                        @if (!string.IsNullOrEmpty(principle.Description))
+                                        {
+                                            <div class="ce-principle-section">
+                                                <div class="ce-principle-section-label">Description</div>
+                                                <p class="ce-principle-desc">@principle.Description</p>
+                                            </div>
+                                        }
+                                        @if (principle.Guidelines.Count > 0)
+                                        {
+                                            <div class="ce-principle-section">
+                                                <div class="ce-principle-section-label">Related Guidelines</div>
+                                                <ul class="ce-rule-list">
+                                                    @foreach (var g in principle.Guidelines) { <li>@g</li> }
+                                                </ul>
+                                            </div>
+                                        }
+                                        @if (principle.ReferencedStandards.Count > 0)
+                                        {
+                                            <div class="ce-principle-section">
+                                                <div class="ce-principle-section-label">Referenced Standards</div>
+                                                <div class="ce-ref-chips">
+                                                    @foreach (var r in principle.ReferencedStandards) { <span class="ce-ref-chip">@r</span> }
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            @if (_activeTab == "standards")
+            {
+                <!-- ── Standards Tab ─────────────────────────────────────── -->
+                <div class="ce-standards">
+                    @{
+                        var visibleStandards = FilteredStandards.ToList();
+                        var grouped = visibleStandards
+                            .GroupBy(s => string.IsNullOrEmpty(s.Category) ? "General" : s.Category)
+                            .OrderBy(g => g.Key).ToList();
+                    }
+                    @if (visibleStandards.Count == 0)
+                    {
+                        <div class="ce-empty-tab">
+                            @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                            { <span>No standards match "<strong>@_searchQuery</strong>"</span> }
+                            else
+                            { <span>No standards found. Ensure headings start with <code>PS-NN</code>.</span> }
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var group in grouped)
+                        {
+                            <div class="ce-standards-group">
+                                <div class="ce-standards-group-header">@group.Key</div>
+                                @foreach (var standard in group)
+                                {
+                                    var isExpanded = _expandedIds.Contains(standard.NodeId);
+                                    <div class="ce-standard-card @(isExpanded ? "is-expanded" : "")">
+                                        <button class="ce-standard-header" @onclick="() => ToggleExpanded(standard.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
+                                            <div class="ce-standard-header-left">
+                                                @if (!string.IsNullOrEmpty(standard.Id))
+                                                { <span class="ce-rule-id ce-rule-id-standard">@standard.Id</span> }
+                                                <span class="ce-standard-title">@standard.Title</span>
+                                            </div>
+                                            <span class="ce-expand-icon" aria-hidden="true">@(isExpanded ? "▾" : "▸")</span>
+                                        </button>
+                                        @if (isExpanded)
+                                        {
+                                            <div class="ce-standard-body">
+                                                @if (!string.IsNullOrEmpty(standard.Description))
+                                                { <p class="ce-standard-desc">@standard.Description</p> }
+                                                @if (standard.Rules.Count > 0)
+                                                {
+                                                    <ul class="ce-rule-list">
+                                                        @foreach (var rule in standard.Rules) { <li>@rule</li> }
+                                                    </ul>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            @if (_activeTab == "constraints")
+            {
+                <!-- ── Constraints Tab ───────────────────────────────────── -->
+                <div class="ce-constraints">
+                    @{
+                        var visibleConstraints = FilteredConstraints.ToList();
+                        var platformWide = visibleConstraints.Where(c => c.IsPlatformWide).ToList();
+                        var moduleLevel = visibleConstraints.Where(c => !c.IsPlatformWide).ToList();
+                        var moduleGroups = moduleLevel
+                            .GroupBy(c => string.IsNullOrEmpty(c.Scope) ? "General" : c.Scope)
+                            .OrderBy(g => g.Key).ToList();
+                    }
+                    @if (visibleConstraints.Count == 0)
+                    {
+                        <div class="ce-empty-tab">
+                            @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                            { <span>No constraints match "<strong>@_searchQuery</strong>"</span> }
+                            else
+                            { <span>No constraints found.</span> }
+                        </div>
+                    }
+                    else
+                    {
+                        @if (platformWide.Count > 0)
+                        {
+                            <div class="ce-constraints-group">
+                                <div class="ce-constraints-group-header ce-group-platform">Platform-Wide Rules</div>
+                                @foreach (var c in platformWide) { @RenderConstraintCard(c) }
+                            </div>
+                        }
+                        @foreach (var group in moduleGroups)
+                        {
+                            <div class="ce-constraints-group">
+                                <div class="ce-constraints-group-header">@group.Key Constraints</div>
+                                @foreach (var c in group) { @RenderConstraintCard(c) }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            @if (_activeTab == "governance")
+            {
+                <!-- ── Governance Tab ────────────────────────────────────── -->
+                <div class="ce-governance">
+                    @if (_document.GovernanceItems.Count > 0)
+                    {
+                        @foreach (var item in _document.GovernanceItems)
+                        {
+                            <div class="ce-governance-card ce-gov-type-@item.Type.ToString().ToLowerInvariant()">
+                                <div class="ce-governance-header">
+                                    <span class="ce-governance-type-badge">@GovernanceTypeLabel(item.Type)</span>
+                                    <h3 class="ce-governance-title">@item.Title</h3>
+                                </div>
+                                @if (!string.IsNullOrEmpty(item.Description))
+                                { <p class="ce-governance-desc">@item.Description</p> }
+                                @if (item.Points.Count > 0)
+                                {
+                                    <ul class="ce-governance-points">
+                                        @foreach (var point in item.Points) { <li>@point</li> }
+                                    </ul>
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <!-- Generated governance summary when no explicit Governance section -->
+                        <div class="ce-governance-card ce-gov-type-other">
+                            <div class="ce-governance-header">
+                                <span class="ce-governance-type-badge">Auto-Summary</span>
+                                <h3 class="ce-governance-title">Constitution Structure</h3>
+                            </div>
+                            <p class="ce-governance-desc">No explicit Governance section was found. The following is an auto-generated summary of this constitution's rule structure.</p>
+                            <ul class="ce-governance-points">
+                                <li>@_document.Health.TotalPrinciples principle@(_document.Health.TotalPrinciples != 1 ? "s" : "") defined</li>
+                                <li>@_document.Health.TotalStandards standard@(_document.Health.TotalStandards != 1 ? "s" : "") defined</li>
+                                <li>@_document.Health.TotalConstraints constraint@(_document.Health.TotalConstraints != 1 ? "s" : "") defined (@_document.Health.PlatformWideConstraints platform-wide, @_document.Health.ModuleConstraints module-level)</li>
+                                <li>@_document.Health.TotalReferences cross-reference@(_document.Health.TotalReferences != 1 ? "s" : "") between rules</li>
+                                @if (_document.Health.OrphanRules > 0)
+                                {
+                                    <li>⚠ @_document.Health.OrphanRules orphan rule@(_document.Health.OrphanRules != 1 ? "s" : "") — not referenced by any other rule</li>
+                                }
+                                @if (_document.Health.BrokenReferences > 0)
+                                {
+                                    <li>⚠ @_document.Health.BrokenReferences broken reference@(_document.Health.BrokenReferences != 1 ? "s" : "") — target rule IDs not found in catalog</li>
+                                }
+                            </ul>
+                        </div>
+                        <div class="ce-governance-card ce-gov-type-other">
+                            <div class="ce-governance-header">
+                                <span class="ce-governance-type-badge">Recommendation</span>
+                                <h3 class="ce-governance-title">Adding Governance</h3>
+                            </div>
+                            <p class="ce-governance-desc">To add a formal governance section, include a <code>## Governance</code> heading with sub-sections for Amendment Process, Compliance Rules, and Versioning Policy.</p>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (_activeTab == "changelog")
+            {
+                <!-- ── Changelog Tab ─────────────────────────────────────── -->
+                <div class="ce-changelog">
+                    @if (_document.Changelog.Count == 0)
+                    {
+                        <div class="ce-governance-card ce-gov-type-other" style="max-width:600px;">
+                            <div class="ce-governance-header">
+                                <span class="ce-governance-type-badge">No Data</span>
+                                <h3 class="ce-governance-title">No Changelog Found</h3>
+                            </div>
+                            <p class="ce-governance-desc">No changelog section was found in this constitution. To add version history, include a <code>## Changelog</code> section with entries like:</p>
+                            <ul class="ce-governance-points">
+                                <li><code>### 1.0.0 - 2024-01-01</code></li>
+                                <li><code>- Initial ratification</code></li>
+                            </ul>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="ce-timeline">
+                            @foreach (var (entry, idx) in _document.Changelog.Select((e, i) => (e, i)))
+                            {
+                                <div class="ce-timeline-entry @(idx == 0 ? "is-latest" : "")">
+                                    <div class="ce-timeline-marker"></div>
+                                    <div class="ce-timeline-content">
+                                        <div class="ce-timeline-header">
+                                            <span class="ce-timeline-version">v@(entry.Version)</span>
+                                            @if (!string.IsNullOrEmpty(entry.Date))
+                                            { <span class="ce-timeline-date">@entry.Date</span> }
+                                            @if (!string.IsNullOrEmpty(entry.Author))
+                                            { <span class="ce-timeline-author">by @entry.Author</span> }
+                                            @if (idx == 0)
+                                            { <span class="ce-timeline-latest-badge">Latest</span> }
+                                        </div>
+                                        @if (entry.Changes.Count > 0)
+                                        {
+                                            <ul class="ce-timeline-changes">
+                                                @foreach (var change in entry.Changes) { <li>@change</li> }
+                                            </ul>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (_activeTab == "traceability")
+            {
+                <!-- ── Traceability Tab ───────────────────────────────────── -->
+                <div class="ce-traceability">
+                    @{
+                        var visibleRules = FilteredTraceRules.ToList();
+                    }
+                    @if (visibleRules.Count == 0)
+                    {
+                        <div class="ce-empty-tab">
+                            @if (!string.IsNullOrWhiteSpace(_searchQuery) || _traceTypeFilter is not null)
+                            { <span>No rules match the current search or filter.</span> }
+                            else
+                            { <span>No rules in catalog. Ensure headings follow PP-NN / PS-NN conventions.</span> }
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var rule in visibleRules)
+                        {
+                            var isExpanded = _expandedIds.Contains(rule.NodeId);
+                            <div class="ce-trace-card @(isExpanded ? "is-expanded" : "") ce-trace-type-@rule.RuleType.ToString().ToLowerInvariant()">
+                                <button class="ce-trace-header" @onclick="() => ToggleExpanded(rule.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
+                                    <div class="ce-trace-header-left">
+                                        @if (!string.IsNullOrEmpty(rule.RuleId))
+                                        {
+                                            <span class="ce-rule-id @RuleTypeBadgeClass(rule.RuleType)">@rule.RuleId</span>
+                                        }
+                                        <span class="ce-trace-title">@rule.Title</span>
+                                        <span class="ce-trace-type-label">@rule.RuleType</span>
+                                    </div>
+                                    <div class="ce-trace-header-right">
+                                        @if (rule.References.Count > 0)
+                                        {
+                                            <span class="ce-trace-ref-count" title="References">↗ @rule.References.Count</span>
+                                        }
+                                        @if (rule.ReferencedBy.Count > 0)
+                                        {
+                                            <span class="ce-trace-refby-count" title="Referenced By">↙ @rule.ReferencedBy.Count</span>
+                                        }
+                                        <span class="ce-expand-icon" aria-hidden="true">@(isExpanded ? "▾" : "▸")</span>
+                                    </div>
+                                </button>
+
+                                @if (isExpanded)
+                                {
+                                    <div class="ce-trace-body">
+                                        @if (!string.IsNullOrEmpty(rule.Description))
+                                        {
+                                            <p class="ce-trace-desc">@rule.Description</p>
+                                        }
+                                        <div class="ce-trace-relations">
+                                            <div class="ce-trace-relation-col">
+                                                <div class="ce-trace-relation-label">
+                                                    <span class="ce-trace-arrow">↗</span> References (@rule.References.Count)
+                                                </div>
+                                                @if (rule.References.Count > 0)
+                                                {
+                                                    <div class="ce-ref-chips">
+                                                        @foreach (var r in rule.References)
+                                                        {
+                                                            <span class="ce-ref-chip ce-ref-chip-out">@r</span>
+                                                        }
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <span class="ce-trace-none">None</span>
+                                                }
+                                            </div>
+                                            <div class="ce-trace-relation-col">
+                                                <div class="ce-trace-relation-label">
+                                                    <span class="ce-trace-arrow">↙</span> Referenced By (@rule.ReferencedBy.Count)
+                                                </div>
+                                                @if (rule.ReferencedBy.Count > 0)
+                                                {
+                                                    <div class="ce-ref-chips">
+                                                        @foreach (var rb in rule.ReferencedBy)
+                                                        {
+                                                            <span class="ce-ref-chip ce-ref-chip-in">@rb</span>
+                                                        }
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <span class="ce-trace-none">None</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            @if (_activeTab == "catalog")
+            {
+                <!-- ── Rule Catalog Tab ───────────────────────────────────── -->
+                <div class="ce-catalog">
+                    @{
+                        var catalogRows = SortedCatalog.ToList();
+                    }
+                    @if (catalogRows.Count == 0)
+                    {
+                        <div class="ce-empty-tab"><span>No rules in catalog.</span></div>
+                    }
+                    else
+                    {
+                        <div class="ce-catalog-table-wrap">
+                            <table class="ce-catalog-table">
+                                <thead>
+                                    <tr>
+                                        <th class="ce-catalog-th ce-catalog-th-sortable @(_catalogSort == "RuleId" ? "is-sorted" : "")" @onclick='() => SetCatalogSort("RuleId")'>
+                                            Rule ID @SortIcon("RuleId")
+                                        </th>
+                                        <th class="ce-catalog-th ce-catalog-th-sortable @(_catalogSort == "RuleType" ? "is-sorted" : "")" @onclick='() => SetCatalogSort("RuleType")'>
+                                            Type @SortIcon("RuleType")
+                                        </th>
+                                        <th class="ce-catalog-th ce-catalog-th-sortable @(_catalogSort == "Title" ? "is-sorted" : "")" @onclick='() => SetCatalogSort("Title")'>
+                                            Title @SortIcon("Title")
+                                        </th>
+                                        <th class="ce-catalog-th ce-catalog-th-sortable ce-catalog-th-num @(_catalogSort == "References" ? "is-sorted" : "")" @onclick='() => SetCatalogSort("References")'>
+                                            Refs @SortIcon("References")
+                                        </th>
+                                        <th class="ce-catalog-th ce-catalog-th-sortable ce-catalog-th-num @(_catalogSort == "ReferencedBy" ? "is-sorted" : "")" @onclick='() => SetCatalogSort("ReferencedBy")'>
+                                            Ref'd By @SortIcon("ReferencedBy")
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var rule in catalogRows)
+                                    {
+                                        <tr class="ce-catalog-row" @onclick="() => NavigateToTraceability(rule)">
+                                            <td class="ce-catalog-td">
+                                                @if (!string.IsNullOrEmpty(rule.RuleId))
+                                                {
+                                                    <span class="ce-rule-id @RuleTypeBadgeClass(rule.RuleType)">@rule.RuleId</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="ce-catalog-no-id">—</span>
+                                                }
+                                            </td>
+                                            <td class="ce-catalog-td">
+                                                <span class="ce-catalog-type ce-catalog-type-@rule.RuleType.ToString().ToLowerInvariant()">@rule.RuleType</span>
+                                            </td>
+                                            <td class="ce-catalog-td ce-catalog-title">@rule.Title</td>
+                                            <td class="ce-catalog-td ce-catalog-num">
+                                                @if (rule.References.Count > 0)
+                                                {
+                                                    <span class="ce-catalog-ref-count">@rule.References.Count</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="ce-catalog-zero">0</span>
+                                                }
+                                            </td>
+                                            <td class="ce-catalog-td ce-catalog-num">
+                                                @if (rule.ReferencedBy.Count > 0)
+                                                {
+                                                    <span class="ce-catalog-ref-count">@rule.ReferencedBy.Count</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="ce-catalog-zero">0</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="ce-catalog-footer">
+                            <span class="ce-catalog-count">@catalogRows.Count rule@(catalogRows.Count != 1 ? "s" : "") · click a row to view in Traceability</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (_activeTab == "map")
+            {
+                <!-- ── Constitution Map Tab ───────────────────────────────── -->
+                <div class="ce-map">
+                    @if (_document.RuleCatalog.Count == 0)
+                    {
+                        <div class="ce-empty-tab"><span>No rules found to map.</span></div>
+                    }
+                    else
+                    {
+                        <div class="ce-map-controls">
+                            @if (!IsMapFlat)
+                            {
+                                <button class="ce-ctrl-btn" @onclick="MapExpandAll">Expand All</button>
+                                <button class="ce-ctrl-btn" @onclick="MapCollapseAll">Collapse All</button>
+                            }
+                            <span class="ce-map-hint">
+                                @if (IsMapFlat)
+                                { <text>Rules grouped by type — add cross-references in the source to build a hierarchy</text> }
+                                else
+                                { <text>Hierarchy built from rule references — Principles → Standards → Guidelines → Constraints</text> }
+                            </span>
+                        </div>
+                        <div class="ce-map-tree">
+                            @if (IsMapFlat)
+                            {
+                                @foreach (var typeGroup in MapRoots
+                                    .GroupBy(n => n.Rule.RuleType)
+                                    .OrderBy(g => (int)g.Key))
+                                {
+                                    <div class="ce-map-type-group">
+                                        <div class="ce-map-type-group-header ce-map-type-@typeGroup.Key.ToString().ToLowerInvariant()">
+                                            @typeGroup.Key.ToString()s (@typeGroup.Count())
+                                        </div>
+                                        @foreach (var node in typeGroup)
+                                        {
+                                            @RenderMapNode(node)
+                                        }
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                @foreach (var root in MapRoots)
+                                {
+                                    @RenderMapNode(root)
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+        </div>
+    }
+
+</div>
+
+@code {
+    [Parameter] public string ConstitutionText { get; set; } = string.Empty;
+    [Parameter] public string? InitialView { get; set; }
+    [Parameter] public EventCallback<string> OnBuilt { get; set; }
+
+    private ConstitutionDocument? _document;
+    private string _localText = string.Empty;
+    private string _activeTab = "overview";
+    private string _searchQuery = string.Empty;
+    private HashSet<string> _expandedIds = [];
+    private SpecificationImport? _importRef;
+
+    // Catalog sorting
+    private string _catalogSort = "RuleId";
+    private bool _catalogSortAsc = true;
+
+    // Traceability type filter
+    private ConstitutionRuleType? _traceTypeFilter;
+
+    // Map tree (built lazily on first access)
+    private List<ConstitutionMapNode>? _mapRoots;
+    private HashSet<string> _mapExpandedIds = [];
+
+    private bool CanBuild => !string.IsNullOrWhiteSpace(_localText);
+
+    private string SearchPlaceholder => _activeTab switch
+    {
+        "principles"   => "Search by ID (PP-01), keyword, or title...",
+        "standards"    => "Search by ID (PS-01), category, keyword, or alias...",
+        "constraints"  => "Search by scope, keyword, or rule...",
+        "traceability" => "Search by rule ID (PP-02), alias (PP-04), title, or referenced ID...",
+        "catalog"      => "Search by rule ID, alias, or title...",
+        _              => "Search...",
+    };
+
+    private IEnumerable<ConstitutionPrinciple> FilteredPrinciples =>
+        _document is null ? [] : AnalysisService.SearchPrinciples(_document.Principles, _searchQuery);
+
+    private IEnumerable<ConstitutionStandard> FilteredStandards =>
+        _document is null ? [] : AnalysisService.SearchStandards(_document.Standards, _searchQuery);
+
+    private IEnumerable<ConstitutionConstraint> FilteredConstraints =>
+        _document is null ? [] : AnalysisService.SearchConstraints(_document.Constraints, _searchQuery);
+
+    private IEnumerable<ConstitutionRule> FilteredTraceRules
+    {
+        get
+        {
+            if (_document is null) return [];
+            var rules = AnalysisService.FilterRulesByType(_document.RuleCatalog, _traceTypeFilter);
+            return AnalysisService.SearchRules(rules, _searchQuery);
+        }
+    }
+
+    private IEnumerable<ConstitutionRule> SortedCatalog
+    {
+        get
+        {
+            if (_document is null) return [];
+            var rules = AnalysisService.SearchRules(_document.RuleCatalog, _searchQuery);
+            return _catalogSort switch
+            {
+                "RuleId"      => _catalogSortAsc ? rules.OrderBy(r => r.RuleId)          : rules.OrderByDescending(r => r.RuleId),
+                "RuleType"    => _catalogSortAsc ? rules.OrderBy(r => r.RuleType)         : rules.OrderByDescending(r => r.RuleType),
+                "Title"       => _catalogSortAsc ? rules.OrderBy(r => r.Title)            : rules.OrderByDescending(r => r.Title),
+                "References"  => _catalogSortAsc ? rules.OrderBy(r => r.References.Count) : rules.OrderByDescending(r => r.References.Count),
+                "ReferencedBy"=> _catalogSortAsc ? rules.OrderBy(r => r.ReferencedBy.Count): rules.OrderByDescending(r => r.ReferencedBy.Count),
+                _             => rules,
+            };
+        }
+    }
+
+    private List<ConstitutionMapNode> MapRoots
+    {
+        get
+        {
+            if (_mapRoots is null && _document is not null)
+            {
+                _mapRoots = AnalysisService.BuildMapTree(_document.RuleCatalog);
+                // Default: expand all root nodes
+                _mapExpandedIds = new HashSet<string>(_mapRoots.Select(n => n.NodeId));
+            }
+            return _mapRoots ?? [];
+        }
+    }
+
+    // True when map has no reference hierarchy — all nodes are leaves
+    private bool IsMapFlat => MapRoots.Count > 0 && MapRoots.All(n => n.Children.Count == 0);
+
+    private int SearchResultCount => _activeTab switch
+    {
+        "principles"   => FilteredPrinciples.Count(),
+        "standards"    => FilteredStandards.Count(),
+        "constraints"  => FilteredConstraints.Count(),
+        "traceability" => FilteredTraceRules.Count(),
+        "catalog"      => SortedCatalog.Count(),
+        _              => 0,
+    };
+
+    private string PrincipleBadge   => _document is null ? string.Empty : $"({_document.Principles.Count})";
+    private string StandardBadge    => _document is null ? string.Empty : $"({_document.Standards.Count})";
+    private string ConstraintBadge  => _document is null ? string.Empty : $"({_document.Constraints.Count})";
+    private string GovernanceBadge  => _document is null ? string.Empty : $"({_document.GovernanceItems.Count})";
+    private string ChangelogBadge   => _document is null ? string.Empty : $"({_document.Changelog.Count})";
+    private string CatalogBadge     => _document?.RuleCatalog.Count  > 0 ? $"({_document.RuleCatalog.Count})"  : string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrWhiteSpace(ConstitutionText) && _document is null)
+        {
+            _localText = ConstitutionText;
+            BuildDocument();
+        }
+
+        if (InitialView is not null && _document is not null)
+            _activeTab = InitialView;
+    }
+
+    private void BuildDocument()
+    {
+        if (string.IsNullOrWhiteSpace(_localText)) return;
+
+        _document = AnalysisService.Parse(_localText);
+        _expandedIds = [];
+        _mapRoots = null;
+        _mapExpandedIds = [];
+        _searchQuery = string.Empty;
+        _traceTypeFilter = null;
+        _activeTab = InitialView ?? "overview";
+
+        _ = OnBuilt.InvokeAsync(_localText);
+    }
+
+    private void Reset()
+    {
+        _document = null;
+        _localText = string.Empty;
+        _activeTab = "overview";
+        _searchQuery = string.Empty;
+        _expandedIds = [];
+        _mapRoots = null;
+        _mapExpandedIds = [];
+        _traceTypeFilter = null;
+        _importRef?.Reset();
+    }
+
+    private void ClearInput()
+    {
+        _localText = string.Empty;
+        _importRef?.Reset();
+    }
+
+    private void SetTab(string tab)
+    {
+        _activeTab = tab;
+        _searchQuery = string.Empty;
+    }
+
+    private void HandleSearchInput(ChangeEventArgs e)
+    {
+        _searchQuery = e.Value?.ToString() ?? string.Empty;
+    }
+
+    private void ClearSearch() => _searchQuery = string.Empty;
+
+    private void ToggleExpanded(string nodeId)
+    {
+        if (!_expandedIds.Add(nodeId)) _expandedIds.Remove(nodeId);
+    }
+
+    private void SetTraceType(ConstitutionRuleType? type)
+    {
+        _traceTypeFilter = type;
+        _searchQuery = string.Empty;
+    }
+
+    private void SetCatalogSort(string column)
+    {
+        if (_catalogSort == column)
+            _catalogSortAsc = !_catalogSortAsc;
+        else
+        {
+            _catalogSort = column;
+            _catalogSortAsc = true;
+        }
+    }
+
+    private string SortIcon(string column)
+    {
+        if (_catalogSort != column) return "↕";
+        return _catalogSortAsc ? "↑" : "↓";
+    }
+
+    private void NavigateToTraceability(ConstitutionRule rule)
+    {
+        _activeTab = "traceability";
+        _traceTypeFilter = null;
+        _searchQuery = rule.RuleId;
+        _expandedIds.Add(rule.NodeId);
+    }
+
+    private void MapExpandAll()
+    {
+        void Expand(IEnumerable<ConstitutionMapNode> nodes)
+        {
+            foreach (var n in nodes) { _mapExpandedIds.Add(n.NodeId); Expand(n.Children); }
+        }
+        Expand(MapRoots);
+    }
+
+    private void MapCollapseAll() => _mapExpandedIds.Clear();
+
+    private void ToggleMapNode(string nodeId)
+    {
+        if (!_mapExpandedIds.Add(nodeId)) _mapExpandedIds.Remove(nodeId);
+    }
+
+    private void OnFileImported(string text) => _localText = text;
+    private void OnFileRemoved() => _localText = string.Empty;
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    private static string GovernanceTypeLabel(GovernanceItemType type) => type switch
+    {
+        GovernanceItemType.AmendmentProcess => "Amendment Process",
+        GovernanceItemType.ComplianceRules  => "Compliance Rules",
+        GovernanceItemType.VersioningPolicy => "Versioning Policy",
+        _                                   => "Governance",
+    };
+
+    private static string RuleTypeBadgeClass(ConstitutionRuleType type) => type switch
+    {
+        ConstitutionRuleType.Principle  => "ce-rule-id-principle",
+        ConstitutionRuleType.Standard   => "ce-rule-id-standard",
+        ConstitutionRuleType.Guideline  => "ce-rule-id-guideline",
+        ConstitutionRuleType.Constraint => "ce-rule-id-constraint",
+        ConstitutionRuleType.Governance => "ce-rule-id-governance",
+        _                               => "",
+    };
+
+    // ── Render fragments ───────────────────────────────────────────────────
+
+    private RenderFragment RenderConstraintCard(ConstitutionConstraint constraint) => __builder =>
+    {
+        var isExpanded = _expandedIds.Contains(constraint.NodeId);
+        __builder.OpenElement(0, "div");
+        __builder.AddAttribute(1, "class", $"ce-constraint-card {(isExpanded ? "is-expanded" : "")}");
+
+        __builder.OpenElement(2, "button");
+        __builder.AddAttribute(3, "class", "ce-constraint-header");
+        __builder.AddAttribute(4, "onclick", EventCallback.Factory.Create(this, () => ToggleExpanded(constraint.NodeId)));
+        __builder.AddAttribute(5, "aria-expanded", isExpanded.ToString().ToLower());
+
+        __builder.OpenElement(6, "div");
+        __builder.AddAttribute(7, "class", "ce-constraint-header-left");
+        if (!string.IsNullOrEmpty(constraint.Id))
+        {
+            __builder.OpenElement(8, "span");
+            __builder.AddAttribute(9, "class", "ce-rule-id ce-rule-id-constraint");
+            __builder.AddContent(10, constraint.Id);
+            __builder.CloseElement();
+        }
+        __builder.OpenElement(11, "span");
+        __builder.AddAttribute(12, "class", "ce-constraint-title");
+        __builder.AddContent(13, constraint.Title);
+        __builder.CloseElement();
+        __builder.CloseElement();
+
+        __builder.OpenElement(14, "span");
+        __builder.AddAttribute(15, "class", "ce-expand-icon");
+        __builder.AddAttribute(16, "aria-hidden", "true");
+        __builder.AddContent(17, isExpanded ? "▾" : "▸");
+        __builder.CloseElement();
+        __builder.CloseElement(); // button
+
+        if (isExpanded)
+        {
+            __builder.OpenElement(18, "div");
+            __builder.AddAttribute(19, "class", "ce-constraint-body");
+            if (!string.IsNullOrEmpty(constraint.Description))
+            {
+                __builder.OpenElement(20, "p");
+                __builder.AddAttribute(21, "class", "ce-constraint-desc");
+                __builder.AddContent(22, constraint.Description);
+                __builder.CloseElement();
+            }
+            if (constraint.Rules.Count > 0)
+            {
+                __builder.OpenElement(23, "ul");
+                __builder.AddAttribute(24, "class", "ce-rule-list");
+                foreach (var rule in constraint.Rules)
+                {
+                    __builder.OpenElement(25, "li");
+                    __builder.AddContent(26, rule);
+                    __builder.CloseElement();
+                }
+                __builder.CloseElement();
+            }
+            __builder.CloseElement();
+        }
+        __builder.CloseElement(); // card
+    };
+
+    private RenderFragment RenderMapNode(ConstitutionMapNode node) => __builder =>
+    {
+        var isExpanded = _mapExpandedIds.Contains(node.NodeId);
+        var hasChildren = node.Children.Count > 0;
+
+        __builder.OpenElement(0, "div");
+        __builder.AddAttribute(1, "class", $"ce-map-node ce-map-depth-{node.Depth} ce-map-type-{node.Rule.RuleType.ToString().ToLowerInvariant()}");
+
+        __builder.OpenElement(2, "div");
+        __builder.AddAttribute(3, "class", "ce-map-node-row");
+
+        if (hasChildren)
+        {
+            __builder.OpenElement(4, "button");
+            __builder.AddAttribute(5, "class", "ce-map-toggle");
+            __builder.AddAttribute(6, "onclick", EventCallback.Factory.Create(this, () => ToggleMapNode(node.NodeId)));
+            __builder.AddAttribute(7, "aria-expanded", isExpanded.ToString().ToLower());
+            __builder.AddContent(8, isExpanded ? "▾" : "▸");
+            __builder.CloseElement();
+        }
+        else
+        {
+            __builder.OpenElement(9, "span");
+            __builder.AddAttribute(10, "class", "ce-map-leaf");
+            __builder.AddContent(11, "·");
+            __builder.CloseElement();
+        }
+
+        if (!string.IsNullOrEmpty(node.Rule.RuleId))
+        {
+            __builder.OpenElement(12, "span");
+            __builder.AddAttribute(13, "class", $"ce-rule-id {RuleTypeBadgeClass(node.Rule.RuleType)}");
+            __builder.AddContent(14, node.Rule.RuleId);
+            __builder.CloseElement();
+        }
+
+        __builder.OpenElement(15, "span");
+        __builder.AddAttribute(16, "class", "ce-map-node-title");
+        __builder.AddContent(17, node.Rule.Title);
+        __builder.CloseElement();
+
+        if (hasChildren)
+        {
+            __builder.OpenElement(18, "span");
+            __builder.AddAttribute(19, "class", "ce-map-child-count");
+            __builder.AddContent(20, $"{node.Children.Count} ref{(node.Children.Count != 1 ? "s" : "")}");
+            __builder.CloseElement();
+        }
+
+        __builder.CloseElement(); // node-row
+
+        if (hasChildren && isExpanded)
+        {
+            __builder.OpenElement(21, "div");
+            __builder.AddAttribute(22, "class", "ce-map-children");
+            foreach (var child in node.Children)
+            {
+                __builder.AddContent(23, RenderMapNode(child));
+            }
+            __builder.CloseElement(); // children
+        }
+
+        __builder.CloseElement(); // node
+    };
+}

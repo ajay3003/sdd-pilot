@@ -1,0 +1,1108 @@
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using System.Text.RegularExpressions
+
+<div class="se-panel">
+
+    @if (_tree is null)
+    {
+        @if (IsEmbeddedInReview)
+        {
+            <!-- ── Embedded: no spec or candidates available ───────────────── -->
+            <div class="se-no-spec-notice">
+                <div class="se-empty-icon" aria-hidden="true">🌳</div>
+                <h3 class="se-empty-title">Spec Explorer</h3>
+                <p class="se-empty-desc">No active review session found.</p>
+            </div>
+        }
+        else
+        {
+            <!-- ── Standalone: input state ──────────────────────────────────── -->
+            <div class="se-empty-state">
+                <div class="se-empty-icon" aria-hidden="true">🌳</div>
+                <h3 class="se-empty-title">Spec Explorer</h3>
+                <p class="se-empty-desc">Transform a specification into a navigable hierarchy. Paste, import, or drag a spec.md file to build the explorer.</p>
+
+                <div class="se-input-area">
+                    <div class="se-input-header">
+                        <span class="se-input-label">specification</span>
+                    </div>
+                    <SpecificationImport
+                        @ref="_importRef"
+                        InputId="se-file-input"
+                        OnFileImported="OnFileImported"
+                        OnFileRemoved="OnFileRemoved"
+                        IsDisabled="false" />
+                    <textarea
+                        class="se-textarea"
+                        placeholder="Or paste spec.md content here..."
+                        rows="12"
+                        @bind="_specText"></textarea>
+                    @if (!string.IsNullOrWhiteSpace(_specText))
+                    {
+                        <div class="se-input-footer">
+                            <span class="se-input-stat">@CountLines(_specText) lines · @_specText.Length chars</span>
+                            <button class="se-clear-btn" @onclick="ClearInput">Clear</button>
+                        </div>
+                    }
+                </div>
+
+                <button
+                    class="se-build-btn"
+                    disabled="@(!CanBuild)"
+                    @onclick="BuildTree">
+                    Build Spec Explorer
+                </button>
+            </div>
+        }
+    }
+    else
+    {
+        <!-- ── Explorer state ───────────────────────────────────────────── -->
+
+        <!-- Header bar -->
+        <div class="se-header">
+            <div class="se-header-left">
+                <span class="se-header-title">Specification Structure</span>
+            </div>
+            <div class="se-header-right">
+                <div class="se-view-toggle" role="group" aria-label="View mode">
+                    <button class='se-view-btn @(!_isMapView ? "is-active" : "")' @onclick='() => _isMapView = false'>
+                        Tree View
+                    </button>
+                    <button class='se-view-btn @(_isMapView ? "is-active" : "")' @onclick='() => _isMapView = true'>
+                        Map View
+                    </button>
+                </div>
+                @if (!IsEmbeddedInReview)
+                {
+                    <button class="se-reset-btn" @onclick="Reset">← New Spec</button>
+                }
+            </div>
+        </div>
+
+        <section class="se-purpose" data-testid="se-purpose">
+            <strong>Specification Structure Explorer</strong>
+            <span>Browse the specification hierarchy, section requirements, tests, and clarifications. Use Traceability &amp; Coverage for analytics and Flow View for release readiness.</span>
+        </section>
+
+        @if (_tree.Health.Requirements == 0)
+        {
+            <div class="se-info-state" data-testid="se-no-requirements">No requirements extracted.</div>
+        }
+        else if (Candidates is null or { Count: 0 })
+        {
+            <div class="se-info-state" data-testid="se-no-traceability">No traceability information available.</div>
+        }
+
+        <!-- Controls bar -->
+        <div class="se-controls">
+            <div class="se-search-wrap">
+                <input type="search"
+                       class="se-search"
+                       placeholder="Search IDs, headings, Given/When/Then..."
+                       value="@_searchQuery"
+                       @oninput="HandleSearchInput"
+                       aria-label="Search spec explorer" />
+                @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                {
+                    var matchCount = _flatCache.Count(r => r.IsMatch);
+                    <span class="se-search-count">@matchCount match@(matchCount != 1 ? "es" : "")</span>
+                }
+            </div>
+            <button class="se-ctrl-btn" @onclick="ExpandAll">Expand All</button>
+            <button class="se-ctrl-btn" @onclick="CollapseAll">Collapse All</button>
+            @if (_hiddenCount > 0)
+            {
+                <button class="se-ctrl-btn se-ctrl-show-hidden" @onclick="ShowAllHidden" title="Restore all hidden nodes">
+                    Show Hidden (@_hiddenCount)
+                </button>
+            }
+        </div>
+
+        @if (MissingCoverageSectionCount > 0)
+        {
+            <div class="se-coverage-callout" role="status" data-testid="se-coverage-callout">
+                <div class="se-coverage-callout-copy">
+                    <span class="se-coverage-callout-icon" aria-hidden="true">&#9888;</span>
+                    <strong>@MissingCoverageSectionCount section@(MissingCoverageSectionCount == 1 ? "" : "s") @(MissingCoverageSectionCount == 1 ? "needs" : "need") coverage attention</strong>
+                </div>
+                <button class="se-coverage-callout-action" @onclick="() => SetSectionFilter(SectionFilter.MissingCoverage)">
+                    Review Coverage Gaps -&gt;
+                </button>
+            </div>
+        }
+
+        <div class="se-quick-filters" role="group" aria-label="Spec Explorer quick filters" data-testid="se-quick-filters">
+            <button class="se-filter-chip @(_sectionFilter == SectionFilter.All ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.All)">All</button>
+            <button class="se-filter-chip @(_sectionFilter == SectionFilter.MissingCoverage ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.MissingCoverage)">Missing Coverage</button>
+            <button class="se-filter-chip @(_sectionFilter == SectionFilter.Covered ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.Covered)">Covered</button>
+        </div>
+
+        <!-- Main layout: tree/map + details panel -->
+        <div class="se-main @(_selectedNodeId is not null ? "has-details" : "")">
+
+            <div class="@(_isMapView ? "se-map" : "se-tree")" role="tree">
+                @if (_flatCache.Count == 0)
+                {
+                    <div class="se-no-results">
+                        @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                        {
+                            <span>No matches for "<strong>@_searchQuery</strong>".</span>
+                        }
+                        else if (_tree.Roots.Count == 0)
+                        {
+                            <span>No markdown headings found. Spec Explorer requires # headings to build the hierarchy.</span>
+                        }
+                        else
+                        {
+                            <span>No results.</span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    @foreach (var (node, depth, isMatch) in _flatCache)
+                    {
+                        var hasChildren = node.Children.Count > 0;
+                        var isExpanded = _expandedIds.Contains(node.Id);
+                        var isSelected = _selectedNodeId == node.Id;
+                        var isHeading = node.HeadingLevel > 0;
+                        var sectionHealth = isHeading ? GetSectionHealth(node) : null;
+                        var reqDetail = !isHeading ? GetRequirementDetail(node) : null;
+
+                        <div class="se-row @(isSelected ? "is-selected" : "") @(isMatch ? "is-match" : "") @(isHeading ? "is-heading" : "is-item") @(_isMapView ? "se-row-map" : "")"
+                             style="padding-left: @(depth * (_isMapView ? 24 : 16) + 6)px"
+                             role="treeitem"
+                             aria-selected="@isSelected.ToString().ToLower()"
+                             @onclick="() => HandleNodeClick(node)">
+
+                            <span class="se-expand-cell">
+                                @if (hasChildren)
+                                {
+                                    <button class="se-expand-btn"
+                                            aria-label="@(isExpanded ? "Collapse" : "Expand")"
+                                            @onclick:stopPropagation="true"
+                                            @onclick="() => ToggleExpand(node.Id)">
+                                        @(isExpanded ? "▼" : "▶")
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="se-expand-leaf">•</span>
+                                }
+                            </span>
+
+                            <span class="se-node-icon" aria-hidden="true">@GetIcon(node.NodeType, node.HeadingLevel)</span>
+
+                            <span class="se-node-title">
+                                @node.Title
+                                @if (node.SpecItemId is not null)
+                                {
+                                    <span class="se-spec-id">@node.SpecItemId</span>
+                                }
+                            </span>
+
+                            @* Semantic section badge for headings *@
+                            @if (isHeading && node.Semantics != SectionSemantics.Generic && node.Semantics != SectionSemantics.UserStory)
+                            {
+                                <span class="se-semantic-badge se-sem-@node.Semantics.ToString().ToLower()">
+                                    @SemanticShortLabel(node.Semantics)
+                                </span>
+                            }
+
+                            @* Type badge for leaf items that have no spec-id *@
+                            @if (!isHeading && node.SpecItemId is null)
+                            {
+                                var badge = GetTypeBadge(node.NodeType);
+                                @if (badge is not null)
+                                {
+                                    <span class="se-type-badge se-tbadge-@node.NodeType.ToString().ToLower()">@badge</span>
+                                }
+                            }
+
+                            @if (node.NodeType == SpecNodeType.TableSection)
+                            {
+                                <span class="se-table-kind-badge se-tkind-@node.TableKind.ToString().ToLower()">
+                                    @TableKindLabel(node.TableKind)
+                                </span>
+                            }
+
+                            @if (node.NodeType == SpecNodeType.TableRow && node.LinkedSpecItemIds.Count > 0)
+                            {
+                                <span class="se-ref-chips">
+                                    @foreach (var rid in node.LinkedSpecItemIds.Take(3))
+                                    {
+                                        <span class="se-ref-chip">@rid</span>
+                                    }
+                                </span>
+                            }
+
+                            @if (!isExpanded && hasChildren && node.TotalDescendants > 0)
+                            {
+                                <span class="se-child-count">(@node.TotalDescendants)</span>
+                            }
+
+                            @if (isHeading && (node.ReqCount > 0 || node.UserStoryCount > 0 || node.TestCount > 0 || node.ClarCount > 0 || node.ScCount > 0 || node.DecisionCount > 0))
+                            {
+                                <span class="se-meta-chips">
+                                    @if (node.UserStoryCount > 0) { <span class="se-meta-chip se-mc-us">User Stories (@node.UserStoryCount)</span> }
+                                    @if (node.ReqCount > 0) { <span class="se-meta-chip se-mc-req">Requirements (@node.ReqCount)</span> }
+                                    @if (node.TestCount > 0) { <span class="se-meta-chip se-mc-test">Tests (@node.TestCount)</span> }
+                                    @if (node.ScCount > 0) { <span class="se-meta-chip se-mc-sc">Success Criteria (@node.ScCount)</span> }
+                                    @if (node.ClarCount > 0) { <span class="se-meta-chip se-mc-clr">Clarifications (@node.ClarCount)</span> }
+                                    @if (node.DecisionCount > 0) { <span class="se-meta-chip se-mc-decision">Decisions (@node.DecisionCount)</span> }
+                                </span>
+                            }
+
+                            @if (sectionHealth is not null && sectionHealth.Status != CoverageState.Unknown)
+                            {
+                                <span class="se-section-status se-status-@SectionStatusClass(sectionHealth.Status)" data-testid="se-section-health">
+                                    @SectionStatusLabel(sectionHealth.Status)
+                                </span>
+                                @if (_isMapView)
+                                {
+                                    <span class="se-map-structure" data-testid="se-map-structure">Heading -&gt; Requirements -&gt; Tests -&gt; Success Criteria</span>
+                                }
+                            }
+
+                            <button class="se-hide-btn"
+                                    title="Hide this node from view"
+                                    @onclick:stopPropagation="true"
+                                    @onclick="() => HideNode(node)">
+                                Hide
+                            </button>
+                        </div>
+                    }
+                }
+            </div>
+
+            <!-- ── Details Panel ─────────────────────────────────────────── -->
+            @if (_selectedNodeId is not null)
+            {
+                var selected = SpecExplorerService.FindNode(_tree.Roots, _selectedNodeId);
+                @if (selected is not null)
+                {
+                    var selectedHealth = selected.HeadingLevel > 0 ? GetSectionHealth(selected) : null;
+                    var selectedRequirement = selected.HeadingLevel == 0 ? GetRequirementDetail(selected) : null;
+
+                    <div class="se-details">
+                        <div class="se-details-header">
+                            <span class="se-details-type">@NodeTypeLabel(selected.NodeType)</span>
+                            <button class="se-details-close" @onclick='() => _selectedNodeId = null' aria-label="Close details panel">Close</button>
+                        </div>
+
+                        <h3 class="se-details-title">@selected.Title</h3>
+
+                        @if (selected.SpecItemId is not null)
+                        {
+                            <div class="se-details-id">@selected.SpecItemId</div>
+                        }
+
+                        @if (selectedHealth is not null)
+                        {
+                            <div class="se-details-section se-section-summary" data-testid="se-section-summary">
+                                <div class="se-details-label">Heading Summary</div>
+                                <div class="se-summary-grid">
+                                    <span>Requirements: <strong>@selectedHealth.Requirements</strong></span>
+                                    <span>Clarifications: <strong>@selectedHealth.Clarifications</strong></span>
+                                </div>
+                                @if (selectedHealth.UserStories.Count > 0)
+                                {
+                                    <div class="se-us-owners se-summary-line" data-testid="se-user-story-ownership">
+                                        @foreach (var us in selectedHealth.UserStories)
+                                        {
+                                            <span class="se-us-chip">@us</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (selectedRequirement is not null)
+                        {
+                            <div class="se-details-section se-requirement-detail" data-testid="se-requirement-detail">
+                                <div class="se-details-label">Requirement Detail</div>
+                                <div class="se-details-content">@selectedRequirement.RequirementText</div>
+                                <div class="se-summary-line">Source heading: @selectedRequirement.SourceHeading</div>
+                                <div class="se-summary-line">User Story: @(selectedRequirement.UserStory ?? "No user story mapped")</div>
+                                <div class="se-summary-line">Coverage status: @CoverageTitle(selectedRequirement.Status)</div>
+                                <div class="se-linked-block">
+                                    <strong>Linked tests</strong>
+                                    @if (selectedRequirement.LinkedTests.Count == 0)
+                                    {
+                                        <span>No linked tests.</span>
+                                    }
+                                    else
+                                    {
+                                        <ul>
+                                            @foreach (var test in selectedRequirement.LinkedTests.Take(5))
+                                            {
+                                                <li>@test.Title</li>
+                                            }
+                                        </ul>
+                                    }
+                                </div>
+                                <div class="se-linked-block">
+                                    <strong>Linked success criteria</strong>
+                                    @if (selectedRequirement.LinkedSuccessCriteria.Count == 0)
+                                    {
+                                        <span>No linked success criteria.</span>
+                                    }
+                                    else
+                                    {
+                                        <ul>
+                                            @foreach (var sc in selectedRequirement.LinkedSuccessCriteria.Take(5))
+                                            {
+                                                <li>@sc.Title</li>
+                                            }
+                                        </ul>
+                                    }
+                                </div>
+                                <a href="/traceability" class="se-action-link" data-testid="se-open-traceability">Open in Traceability</a>
+                            </div>
+                        }
+
+                        @* ── Q/A Clarification / Decision ─────────────────────── *@
+                        @if (selected.NodeType == SpecNodeType.QaPair || selected.NodeType == SpecNodeType.DecisionNode)
+                        {
+                            @if (!string.IsNullOrEmpty(selected.QuestionText))
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Question</div>
+                                    <div class="se-qa-block se-qa-question">@selected.QuestionText</div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(selected.AnswerText))
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Answer</div>
+                                    <div class="se-qa-block se-qa-answer">@selected.AnswerText</div>
+                                </div>
+                            }
+                        }
+
+                        @* ── BDD Scenario ──────────────────────────────────────── *@
+                        @if (selected.NodeType == SpecNodeType.BddScenario)
+                        {
+                            @if (!string.IsNullOrEmpty(selected.BddGiven))
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label se-bdd-label-given">Given</div>
+                                    <div class="se-bdd-block">
+                                        @foreach (var step in selected.BddGiven.Split('\n'))
+                                        {
+                                            <div class="se-bdd-step">@step</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(selected.BddWhen))
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label se-bdd-label-when">When</div>
+                                    <div class="se-bdd-block">
+                                        @foreach (var step in selected.BddWhen.Split('\n'))
+                                        {
+                                            <div class="se-bdd-step">@step</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(selected.BddThen))
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label se-bdd-label-then">Then</div>
+                                    <div class="se-bdd-block">
+                                        @foreach (var step in selected.BddThen.Split('\n'))
+                                        {
+                                            <div class="se-bdd-step">@step</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+
+                        @* ── Section contents summary ──────────────────────────── *@
+                        @if (selected.HeadingLevel > 0 && selected.TotalDescendants == 0)
+                        {
+                            <div class="se-details-section">
+                                <span class="se-no-artifacts">No extracted artifacts in this section.</span>
+                            </div>
+                        }
+                        @if (selected.HeadingLevel > 0 && selected.TotalDescendants > 0)
+                        {
+                            <div class="se-details-section">
+                                <div class="se-details-label">Contents</div>
+                                <div class="se-details-counts">
+                                    @if (selected.UserStoryCount > 0) { <span class="se-det-chip se-mc-us">@selected.UserStoryCount User @(selected.UserStoryCount == 1 ? "Story" : "Stories")</span> }
+                                    @if (selected.ReqCount > 0) { <span class="se-det-chip se-mc-req">@selected.ReqCount @(selected.ReqCount == 1 ? "Requirement" : "Requirements")</span> }
+                                    @if (selected.TestCount > 0) { <span class="se-det-chip se-mc-test">@selected.TestCount @(selected.TestCount == 1 ? "Test" : "Tests")</span> }
+                                    @if (selected.ClarCount > 0) { <span class="se-det-chip se-mc-clr">@selected.ClarCount @(selected.ClarCount == 1 ? "Clarification" : "Clarifications")</span> }
+                                    @if (selected.ScCount > 0) { <span class="se-det-chip se-mc-sc">@selected.ScCount @(selected.ScCount == 1 ? "Success Criterion" : "Success Criteria")</span> }
+                                    @if (selected.DecisionCount > 0) { <span class="se-det-chip se-mc-decision">@selected.DecisionCount @(selected.DecisionCount == 1 ? "Decision" : "Decisions")</span> }
+                                </div>
+                            </div>
+                        }
+
+                        @* ── Full content (for headings, non-Q/A, non-BDD) ─────── *@
+                        @if (!string.IsNullOrEmpty(selected.FullContent)
+                             && selected.NodeType != SpecNodeType.QaPair
+                             && selected.NodeType != SpecNodeType.BddScenario)
+                        {
+                            <div class="se-details-section">
+                                <div class="se-details-label">Content</div>
+                                <div class="se-details-content">@selected.FullContent</div>
+                            </div>
+                        }
+                        else if (!string.IsNullOrEmpty(selected.Excerpt)
+                                 && selected.NodeType != SpecNodeType.QaPair
+                                 && selected.NodeType != SpecNodeType.BddScenario)
+                        {
+                            <div class="se-details-section">
+                                <div class="se-details-label">Excerpt</div>
+                                <div class="se-details-excerpt">@selected.Excerpt</div>
+                            </div>
+                        }
+
+                        @* ── Table details ─────────────────────────────────────── *@
+                        @if (selected.NodeType == SpecNodeType.TableSection)
+                        {
+                            <div class="se-details-section">
+                                <div class="se-details-label">Table Type</div>
+                                <span class="se-table-kind-badge se-tkind-@selected.TableKind.ToString().ToLower()">
+                                    @TableKindLabel(selected.TableKind)
+                                </span>
+                            </div>
+                            @if (selected.ColumnHeaders.Count > 0)
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Columns (@selected.ColumnHeaders.Count)</div>
+                                    <div class="se-details-excerpt">@string.Join(" · ", selected.ColumnHeaders)</div>
+                                </div>
+                            }
+                            <div class="se-details-section">
+                                <div class="se-details-label">Rows</div>
+                                <div class="se-details-excerpt">@selected.Children.Count data rows</div>
+                            </div>
+                            var allRefs = selected.Children
+                                .SelectMany(r => r.LinkedSpecItemIds)
+                                .Distinct(StringComparer.OrdinalIgnoreCase)
+                                .ToList();
+                            @if (allRefs.Count > 0)
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Spec References</div>
+                                    <div class="se-ref-chips" style="flex-wrap: wrap; gap: 0.3rem;">
+                                        @foreach (var refId in allRefs.Take(12))
+                                        {
+                                            <span class="se-ref-chip">@refId</span>
+                                        }
+                                        @if (allRefs.Count > 12)
+                                        {
+                                            <span class="se-ref-chip" style="opacity:0.5">+@(allRefs.Count - 12) more</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+
+                        @if (selected.NodeType == SpecNodeType.TableRow)
+                        {
+                            @if (selected.CellValues.Count > 0)
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Cells</div>
+                                    <div class="se-table-refs">
+                                        @foreach (var cell in selected.CellValues)
+                                        {
+                                            <div class="se-table-ref-item">@cell</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (selected.LinkedSpecItemIds.Count > 0)
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Spec References</div>
+                                    <div class="se-ref-chips" style="flex-wrap: wrap; gap: 0.3rem;">
+                                        @foreach (var refId in selected.LinkedSpecItemIds)
+                                        {
+                                            <span class="se-ref-chip">@refId</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+
+                        @* ── Cross-reference lookup ────────────────────────────── *@
+                        @if (selected.SpecItemId is not null)
+                        {
+                            var tableRefs = GetTableRefs(selected.SpecItemId);
+                            @if (tableRefs.Count > 0)
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Referenced in Tables (@tableRefs.Count)</div>
+                                    <div class="se-table-refs">
+                                        @foreach (var tr in tableRefs)
+                                        {
+                                            <div class="se-table-ref-item">
+                                                <span class="se-table-ref-source">@TableKindLabel(tr.TableKind)</span>
+                                                <span>@tr.TableTitle</span>
+                                                @if (!string.IsNullOrWhiteSpace(tr.RowTitle))
+                                                {
+                                                    <span class="se-table-ref-row"> — @tr.RowTitle</span>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+
+                        @* ── Linked extraction results ─────────────────────────── *@
+                        @if (Candidates?.Count > 0)
+                        {
+                            var linked = GetLinkedCandidates(selected);
+                            @if (linked.Count > 0)
+                            {
+                                <div class="se-details-section">
+                                    <div class="se-details-label">Linked Extraction Results (@linked.Count)</div>
+                                    <ul class="se-details-linked">
+                                        @foreach (var c in linked.Take(6))
+                                        {
+                                            <li><span class="se-linked-tag se-linked-@c.Classification.ToString().ToLower()">@c.Classification</span> @c.Title</li>
+                                        }
+                                        @if (linked.Count > 6)
+                                        {
+                                            <li class="se-linked-more">+@(linked.Count - 6) more</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        }
+
+                        <div class="se-details-actions">
+                            <a href="/traceability" class="se-action-link" data-testid="se-open-traceability">Open in Traceability</a>
+                            <a href="/traceability" class="se-action-link">Show Linked Tests</a>
+                            <a href="/traceability" class="se-action-link">Show Linked Success Criteria</a>
+                            <a href="/traceability" class="se-action-link">Show Related User Stories</a>
+                            <a href="/impact-analysis" class="se-action-link">Impact Analysis</a>
+                            <a href="/spec-drift" class="se-action-link">Spec Drift</a>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        @if (_tree.Roots.Count == 0 && string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            <div class="se-no-headings">
+                <strong>No markdown headings found.</strong> Spec Explorer requires #, ##, ### headings to build a hierarchy.
+            </div>
+        }
+
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ExtractionCandidate>? Candidates { get; set; }
+    [Parameter] public string InitialSpecMarkdown { get; set; } = string.Empty;
+    [Parameter] public bool IsEmbeddedInReview { get; set; }
+
+    private SpecificationImport? _importRef;
+    private string _specText = string.Empty;
+    private string _lastBuiltMarkdown = string.Empty;
+    private SpecTree? _tree;
+    private HashSet<string> _expandedIds = [];
+    private string? _selectedNodeId;
+    private string _searchQuery = string.Empty;
+    private bool _isMapView;
+    private SectionFilter _sectionFilter = SectionFilter.All;
+    private List<(SpecNode Node, int Depth, bool IsMatch)> _flatCache = [];
+    private HashSet<string> _hiddenIds = [];
+    private int _hiddenCount;
+
+    private enum SectionFilter
+    {
+        All,
+        MissingCoverage,
+        Covered,
+    }
+
+    private sealed record SectionHealth(
+        int Requirements,
+        int Tests,
+        int Clarifications,
+        int SuccessCriteria,
+        int CoveragePercent,
+        CoverageState Status,
+        int MissingTests,
+        int MissingSuccessCriteria,
+        IReadOnlyList<string> UserStories);
+
+    private sealed record RequirementTraceDetail(
+        string RequirementText,
+        string SourceHeading,
+        string? UserStory,
+        CoverageState Status,
+        IReadOnlyList<ExtractionCandidate> LinkedTests,
+        IReadOnlyList<SpecNode> LinkedSuccessCriteria);
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrWhiteSpace(InitialSpecMarkdown) && InitialSpecMarkdown != _lastBuiltMarkdown)
+        {
+            _lastBuiltMarkdown = InitialSpecMarkdown;
+            _specText = InitialSpecMarkdown;
+            BuildTree();
+        }
+
+        if ((_tree is null || _tree.Roots.Count == 0) && Candidates is { Count: > 0 })
+        {
+            _tree = SpecExplorerService.BuildFromCandidates(Candidates);
+            _expandedIds = SpecExplorerService.GetDefaultExpanded(_tree.Roots);
+            _selectedNodeId = null;
+            _searchQuery = string.Empty;
+            _isMapView = false;
+            ApplyCoverageOverlay();
+            RefreshFlatCache();
+        }
+    }
+
+    private bool CanBuild => !string.IsNullOrWhiteSpace(_specText);
+
+    private int MissingCoverageSectionCount =>
+        _tree is null
+            ? 0
+            : GetAllNodes(_tree.Roots)
+                .Count(n => n.HeadingLevel > 0 && GetSectionHealth(n).Status == CoverageState.Missing);
+
+
+    private void OnFileImported(string content)
+    {
+        _specText = content;
+    }
+
+    private void OnFileRemoved()
+    {
+        _specText = string.Empty;
+    }
+
+    private void ClearInput()
+    {
+        _specText = string.Empty;
+        _importRef?.Reset();
+    }
+
+    private void BuildTree()
+    {
+        if (!CanBuild) return;
+        _tree = SpecExplorerService.Parse(_specText);
+        _expandedIds = SpecExplorerService.GetDefaultExpanded(_tree.Roots);
+        _selectedNodeId = null;
+        _searchQuery = string.Empty;
+        _isMapView = false;
+        _sectionFilter = SectionFilter.All;
+        ApplyCoverageOverlay();
+        RefreshFlatCache();
+    }
+
+    private void Reset()
+    {
+        _tree = null;
+        _specText = string.Empty;
+        _lastBuiltMarkdown = string.Empty;
+        _expandedIds = [];
+        _selectedNodeId = null;
+        _searchQuery = string.Empty;
+        _isMapView = false;
+        _sectionFilter = SectionFilter.All;
+        _flatCache = [];
+        _hiddenIds = [];
+        _hiddenCount = 0;
+        _importRef?.Reset();
+    }
+
+    private void RefreshFlatCache()
+    {
+        if (_tree is null) { _flatCache = []; return; }
+        var all = SpecExplorerService.GetFlatVisible(_tree.Roots, _expandedIds, _searchQuery);
+        _flatCache = all
+            .Where(r => _hiddenIds.Count == 0 || !_hiddenIds.Contains(r.Node.Id))
+            .Where(r => MatchesSectionFilter(r.Node))
+            .ToList();
+    }
+
+    private void HideNode(SpecNode node)
+    {
+        if (_hiddenIds.Add(node.Id)) _hiddenCount++;
+        foreach (var descendant in GetAllNodes(node.Children))
+            _hiddenIds.Add(descendant.Id);
+        _expandedIds.Remove(node.Id);
+        if (_selectedNodeId == node.Id) _selectedNodeId = null;
+        RefreshFlatCache();
+    }
+
+    private void ShowAllHidden()
+    {
+        _hiddenIds.Clear();
+        _hiddenCount = 0;
+        RefreshFlatCache();
+    }
+
+    private void ApplyCoverageOverlay()
+    {
+        if (_tree is null || Candidates is null || Candidates.Count == 0) return;
+        var allNodes = GetAllNodes(_tree.Roots);
+        foreach (var node in allNodes)
+        {
+            if (node.HeadingLevel > 0)
+            {
+                // Only apply coverage to headings that contain requirements
+                if (node.ReqCount == 0) { node.Coverage = CoverageState.Unknown; continue; }
+                var linked = GetLinkedCandidates(node)
+                    .Where(c => c.Classification == ScenarioKind.Requirement)
+                    .ToList();
+                if (linked.Count == 0) { node.Coverage = CoverageState.Unknown; continue; }
+                var accepted = linked.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted);
+                node.Coverage = accepted == linked.Count ? CoverageState.Covered
+                              : accepted > 0 ? CoverageState.Partial
+                              : CoverageState.Missing;
+            }
+            else if (node.SpecItemId is not null)
+            {
+                var match = Candidates.FirstOrDefault(c =>
+                    c.Title.Contains(node.SpecItemId, StringComparison.OrdinalIgnoreCase));
+                if (match is null) { node.Coverage = CoverageState.Unknown; continue; }
+                node.Coverage = match.ReviewStatus == CandidateReviewStatus.Accepted ? CoverageState.Covered
+                              : match.ReviewStatus == CandidateReviewStatus.Rejected ? CoverageState.Missing
+                              : CoverageState.Partial;
+            }
+        }
+    }
+
+    private List<ExtractionCandidate> GetLinkedCandidates(SpecNode node)
+    {
+        if (Candidates is null || Candidates.Count == 0) return [];
+        return Candidates.Where(c =>
+            string.Equals(c.ContextHeading, node.Title, StringComparison.OrdinalIgnoreCase)
+            || (node.SpecItemId is not null && c.Title.Contains(node.SpecItemId, StringComparison.OrdinalIgnoreCase))).ToList();
+    }
+
+    private static List<SpecNode> GetAllNodes(IEnumerable<SpecNode> nodes)
+    {
+        var result = new List<SpecNode>();
+        foreach (var node in nodes) { result.Add(node); result.AddRange(GetAllNodes(node.Children)); }
+        return result;
+    }
+
+    private void HandleSearchInput(ChangeEventArgs e)
+    {
+        _searchQuery = e.Value?.ToString() ?? string.Empty;
+        RefreshFlatCache();
+    }
+
+    private void SetSectionFilter(SectionFilter filter)
+    {
+        _sectionFilter = filter;
+        RefreshFlatCache();
+    }
+
+    private void HandleNodeClick(SpecNode node)
+    {
+        _selectedNodeId = _selectedNodeId == node.Id ? null : node.Id;
+    }
+
+    private void ToggleExpand(string id)
+    {
+        if (!_expandedIds.Add(id)) _expandedIds.Remove(id);
+        RefreshFlatCache();
+    }
+
+    private void ExpandAll()
+    {
+        if (_tree is null) return;
+        foreach (var node in GetAllNodes(_tree.Roots))
+            if (node.Children.Count > 0) _expandedIds.Add(node.Id);
+        RefreshFlatCache();
+    }
+
+    private void CollapseAll()
+    {
+        _expandedIds.Clear();
+        RefreshFlatCache();
+    }
+
+    private static int CountLines(string text) => text.Split('\n').Length;
+
+    // ── Table cross-reference lookup ──────────────────────────────────────────
+
+    private record TableRef(string TableTitle, TableType TableKind, string RowTitle);
+
+    private List<TableRef> GetTableRefs(string? specItemId)
+    {
+        if (specItemId is null || _tree is null) return [];
+        var result = new List<TableRef>();
+        CollectTableRefs(_tree.Roots, specItemId, null, null, result);
+        return result;
+    }
+
+    private static void CollectTableRefs(
+        IEnumerable<SpecNode> nodes, string specItemId,
+        string? tableTitle, TableType? tableKind, List<TableRef> result)
+    {
+        foreach (var node in nodes)
+        {
+            var title = node.NodeType == SpecNodeType.TableSection ? node.Title : tableTitle;
+            var kind  = node.NodeType == SpecNodeType.TableSection ? node.TableKind : tableKind;
+            if (node.NodeType == SpecNodeType.TableRow &&
+                node.LinkedSpecItemIds.Any(id => id.Equals(specItemId, StringComparison.OrdinalIgnoreCase)))
+                result.Add(new TableRef(title ?? "Table", kind ?? TableType.Generic, node.Title));
+            CollectTableRefs(node.Children, specItemId, title, kind, result);
+        }
+    }
+
+    // ── Labels and icons ──────────────────────────────────────────────────────
+
+    private SectionHealth GetSectionHealth(SpecNode node)
+    {
+        var nodes = GetAllNodes([node]);
+        var headings = nodes
+            .Where(n => n.HeadingLevel > 0)
+            .Select(n => n.Title)
+            .Append(node.Title)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var sectionCandidates = Candidates?
+            .Where(c => c.ContextHeading is not null && headings.Contains(c.ContextHeading))
+            .ToList() ?? [];
+
+        var requirements = sectionCandidates.Count(c => c.Classification == ScenarioKind.Requirement);
+        var tests = sectionCandidates.Count(c => c.Classification == ScenarioKind.Test);
+        var clarifications = sectionCandidates.Count(c => c.Classification == ScenarioKind.NeedsClarification);
+
+        if (requirements == 0) requirements = node.ReqCount;
+        if (tests == 0) tests = node.TestCount;
+        if (clarifications == 0) clarifications = node.ClarCount;
+
+        var successCriteria = node.ScCount;
+        var status = CoverageState.Unknown;
+        var coveragePercent = 0;
+        if (requirements > 0)
+        {
+            coveragePercent = Math.Min(100, (int)Math.Round(tests * 100.0 / requirements));
+            status = tests >= requirements ? CoverageState.Covered
+                   : tests > 0 ? CoverageState.Partial
+                   : CoverageState.Missing;
+        }
+
+        var userStories = nodes
+            .SelectMany(n => ExtractUserStoryLabels(n.Title).Concat(n.SpecItemId is null ? [] : ExtractUserStoryLabels(n.SpecItemId)))
+            .Concat(sectionCandidates.SelectMany(c => c.ContextHeading is null ? [] : ExtractUserStoryLabels(c.ContextHeading)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new SectionHealth(
+            requirements,
+            tests,
+            clarifications,
+            successCriteria,
+            coveragePercent,
+            status,
+            Math.Max(0, requirements - tests),
+            Math.Max(0, requirements - successCriteria),
+            userStories);
+    }
+
+    private RequirementTraceDetail? GetRequirementDetail(SpecNode node)
+    {
+        if (node.NodeType != SpecNodeType.Requirement && node.SpecItemId is null) return null;
+
+        var match = Candidates?.FirstOrDefault(c =>
+            c.Classification == ScenarioKind.Requirement &&
+            ((node.SpecItemId is not null && c.Title.Contains(node.SpecItemId, StringComparison.OrdinalIgnoreCase))
+             || c.Title.Contains(node.Title, StringComparison.OrdinalIgnoreCase)));
+
+        var sourceHeading = match?.ContextHeading
+            ?? FindNearestHeadingTitle(_tree?.Roots ?? [], node.Id)
+            ?? "Unknown";
+
+        var linkedTests = Candidates?
+            .Where(c => c.Classification == ScenarioKind.Test
+                     && !string.IsNullOrWhiteSpace(c.ContextHeading)
+                     && string.Equals(c.ContextHeading, sourceHeading, StringComparison.OrdinalIgnoreCase))
+            .ToList() ?? [];
+
+        var linkedSuccessCriteria = GetAllNodes(_tree?.Roots ?? [])
+            .Where(n => n.NodeType == SpecNodeType.SuccessCriterion
+                     && (string.Equals(FindNearestHeadingTitle(_tree?.Roots ?? [], n.Id), sourceHeading, StringComparison.OrdinalIgnoreCase)
+                         || (node.SpecItemId is not null && n.Title.Contains(node.SpecItemId, StringComparison.OrdinalIgnoreCase))))
+            .ToList();
+
+        var status = linkedTests.Count > 0 ? CoverageState.Covered : CoverageState.Missing;
+        var userStory = ExtractUserStoryLabels(sourceHeading).FirstOrDefault();
+
+        return new RequirementTraceDetail(
+            match?.Title ?? node.FullContent ?? node.Excerpt ?? node.Title,
+            sourceHeading,
+            userStory,
+            status,
+            linkedTests,
+            linkedSuccessCriteria);
+    }
+
+    private bool MatchesSectionFilter(SpecNode node)
+    {
+        if (_sectionFilter == SectionFilter.All) return true;
+        if (node.HeadingLevel == 0) return false;
+
+        var health = GetSectionHealth(node);
+        return _sectionFilter switch
+        {
+            SectionFilter.MissingCoverage => health.Status == CoverageState.Missing,
+            SectionFilter.Covered => health.Status == CoverageState.Covered,
+            _ => true,
+        };
+    }
+
+    private static string SectionStatusLabel(CoverageState status) => status switch
+    {
+        CoverageState.Covered => "Healthy",
+        CoverageState.Partial => "Partial",
+        CoverageState.Missing => "Needs Attention",
+        _ => "",
+    };
+
+    private static string SectionStatusClass(CoverageState status) => status switch
+    {
+        CoverageState.Covered => "healthy",
+        CoverageState.Partial => "partial",
+        CoverageState.Missing => "attention",
+        _ => "",
+    };
+
+    private static IReadOnlyList<string> ExtractUserStoryLabels(string text)
+    {
+        var matches = Regex.Matches(text, @"\b(?:US|User\s+Story)\s*[-:]?\s*(\d+)\b", RegexOptions.IgnoreCase);
+        return matches.Select(m => $"US{m.Groups[1].Value}").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static string? FindNearestHeadingTitle(IEnumerable<SpecNode> nodes, string targetId, string? currentHeading = null)
+    {
+        foreach (var node in nodes)
+        {
+            var heading = node.HeadingLevel > 0 ? node.Title : currentHeading;
+            if (node.Id == targetId) return heading;
+            var child = FindNearestHeadingTitle(node.Children, targetId, heading);
+            if (child is not null) return child;
+        }
+        return null;
+    }
+
+    private static string GetIcon(SpecNodeType type, int level) => type switch
+    {
+        SpecNodeType.Module          => "📦",
+        SpecNodeType.Section         => "📂",
+        SpecNodeType.SubSection      => "📁",
+        SpecNodeType.DeepSection     => "📄",
+        SpecNodeType.Requirement     => "📋",
+        SpecNodeType.UserStory       => "📖",
+        SpecNodeType.SuccessCriterion => "🎯",
+        SpecNodeType.AcceptanceTest  => "🧪",
+        SpecNodeType.BddScenario     => "🧪",
+        SpecNodeType.Clarification   => "💬",
+        SpecNodeType.QaPair          => "💬",
+        SpecNodeType.DecisionNode    => "🗣",
+        SpecNodeType.Entity          => "🔷",
+        SpecNodeType.DomainItem      => "🔗",
+        SpecNodeType.TableSection    => "📊",
+        SpecNodeType.TableRow        => "↔",
+        SpecNodeType.Assumption      => "💡",
+        SpecNodeType.EdgeCase        => "⚠",
+        SpecNodeType.Metadata        => "ℹ",
+        SpecNodeType.ApiSurfaceItem  => "🔌",
+        SpecNodeType.StoryContext    => "📝",
+        _ => level == 1 ? "📦" : level == 2 ? "📂" : "📄",
+    };
+
+    private static string? GetTypeBadge(SpecNodeType type) => type switch
+    {
+        SpecNodeType.BddScenario      => "TEST",
+        SpecNodeType.QaPair           => "Q/A",
+        SpecNodeType.Clarification    => "CLR",
+        SpecNodeType.DecisionNode     => "DECISION",
+        SpecNodeType.SuccessCriterion => "SC",
+        SpecNodeType.UserStory        => "US",
+        SpecNodeType.Entity           => "ENTITY",
+        SpecNodeType.Assumption       => "ASSUME",
+        SpecNodeType.EdgeCase         => "EDGE",
+        SpecNodeType.ApiSurfaceItem   => "API",
+        SpecNodeType.Metadata         => null,
+        _ => null,
+    };
+
+    private static string NodeTypeLabel(SpecNodeType type) => type switch
+    {
+        SpecNodeType.Module           => "Module",
+        SpecNodeType.Section          => "Section",
+        SpecNodeType.SubSection       => "Sub-section",
+        SpecNodeType.DeepSection      => "Section",
+        SpecNodeType.Requirement      => "Requirement",
+        SpecNodeType.UserStory        => "User Story",
+        SpecNodeType.SuccessCriterion => "Success Criterion",
+        SpecNodeType.AcceptanceTest   => "Acceptance Test",
+        SpecNodeType.BddScenario      => "Acceptance Scenario",
+        SpecNodeType.Clarification    => "Clarification",
+        SpecNodeType.QaPair           => "Q&A Clarification",
+        SpecNodeType.DecisionNode     => "Decision",
+        SpecNodeType.Entity           => "Entity",
+        SpecNodeType.DomainItem       => "Domain Item",
+        SpecNodeType.TableSection     => "Table",
+        SpecNodeType.TableRow         => "Table Row",
+        SpecNodeType.Assumption       => "Assumption",
+        SpecNodeType.EdgeCase         => "Edge Case",
+        SpecNodeType.Metadata         => "Metadata",
+        SpecNodeType.ApiSurfaceItem   => "API Surface",
+        SpecNodeType.StoryContext     => "Story Context",
+        _ => type.ToString(),
+    };
+
+    private static string SemanticShortLabel(SectionSemantics sem) => sem switch
+    {
+        SectionSemantics.Clarifications         => "Q/A",
+        SectionSemantics.EdgeCases              => "EDGE",
+        SectionSemantics.Assumptions            => "ASSUME",
+        SectionSemantics.ApiSurface             => "API",
+        SectionSemantics.Observability          => "OBS",
+        SectionSemantics.Security               => "SEC",
+        SectionSemantics.Performance            => "PERF",
+        SectionSemantics.AcceptanceScenarios    => "BDD",
+        SectionSemantics.RequirementsSection    => "REQS",
+        SectionSemantics.SuccessCriteriaSection => "SC",
+        SectionSemantics.KeyEntities            => "ENTITY",
+        _ => "",
+    };
+
+    private static string TableKindLabel(TableType t) => t switch
+    {
+        TableType.RequirementMap => "Requirements",
+        TableType.UserStoryMap   => "User Stories",
+        TableType.TestMapping    => "Test Mapping",
+        TableType.Traceability   => "Traceability",
+        TableType.EntityModel    => "Entity Model",
+        TableType.ApiSpec        => "API Spec",
+        TableType.DependencyMap  => "Dependencies",
+        _                        => "Table",
+    };
+
+    private static string CoverageTitle(CoverageState s) => s switch
+    {
+        CoverageState.Covered => "Covered",
+        CoverageState.Partial => "Partial",
+        CoverageState.Missing => "Missing",
+        _ => "Unknown",
+    };
+}

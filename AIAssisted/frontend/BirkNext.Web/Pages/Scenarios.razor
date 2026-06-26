@@ -1,0 +1,460 @@
+@page "/scenarios"
+@using BirkNext.Web.Components
+@using BirkNext.Web.GraphQL
+@inject IBirkNextClient Client
+
+<PageTitle>QA Artifact Library</PageTitle>
+
+<div class="artifact-library-shell">
+
+    <PageHeader Title="QA Artifact Library"
+                Description="Store, discover, reuse, and curate QA assets across specifications and projects." />
+
+    <div class="artifact-kpi-strip" aria-label="Asset summary">
+        <MetricCard Value="@_scenarios.Count.ToString()" Label="Published Assets" />
+        <MetricCard Value="@TestCount.ToString()" Label="Tests" />
+        <MetricCard Value="@RequirementCount.ToString()" Label="Requirements" />
+        <MetricCard Value="@ClarificationCount.ToString()" Label="Clarifications" />
+    </div>
+
+    <!-- ── Traceability redirect note ─────────────────────────────────── -->
+    <div class="ql-traceability-redirect" role="note" data-testid="ql-traceability-redirect">
+        <span class="ql-redirect-icon" aria-hidden="true">ℹ</span>
+        <div>
+            <strong>Coverage analysis belongs in Traceability &amp; Coverage.</strong>
+            For coverage gaps, missing tests, orphan tests, and requirement coverage metrics, use
+            <a href="extract">Traceability &amp; Coverage</a> (available after specification analysis)
+            or the <a href="traceability">standalone Traceability page</a>.
+            This library is a repository of reusable QA assets.
+        </div>
+    </div>
+
+    <!-- ── Artifact list ──────────────────────────────────────────────── -->
+    <section class="scenarios-section">
+        <div class="toolbar knowledge-toolbar">
+            <span class="toolbar-meta">
+                @if (_isLoading)
+                {
+                    <span>Loading...</span>
+                }
+                else if (_loadError is not null)
+                {
+                    <span>Artifacts unavailable</span>
+                }
+                else
+                {
+                    <span>@FilteredScenarios.Count shown of @_scenarios.Count</span>
+                }
+            </span>
+            <div class="filter-bar">
+                <input
+                    type="search"
+                    class="filter-search"
+                    placeholder="Search artifacts..."
+                    value="@_searchQuery"
+                    @oninput="e => _searchQuery = e.Value?.ToString() ?? string.Empty"
+                    aria-label="Search scenarios" />
+                <select
+                    class="filter-kind"
+                    value="@_filterKind"
+                    @onchange="e => _filterKind = e.Value?.ToString() ?? string.Empty"
+                    aria-label="Filter by type">
+                    <option value="">All types</option>
+                    <option value="Requirement">Requirement</option>
+                    <option value="Test">Test</option>
+                    <option value="NeedsClarification">Needs Clarification</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="filter-chip-grid" aria-label="Artifact filters">
+            <button type="button" class="library-filter-chip @(IsTypeFilter("") && IsRelationshipFilter("") ? "is-active" : "")" @onclick="ClearAllFilters">
+                All <span>@_scenarios.Count</span>
+            </button>
+            <button type="button" class="library-filter-chip chip-requirement @(IsTypeFilter("Requirement") ? "is-active" : "")" @onclick='() => SetTypeFilter("Requirement")'>
+                Requirements <span>@RequirementCount</span>
+            </button>
+            <button type="button" class="library-filter-chip chip-test @(IsTypeFilter("Test") ? "is-active" : "")" @onclick='() => SetTypeFilter("Test")'>
+                Tests <span>@TestCount</span>
+            </button>
+            <button type="button" class="library-filter-chip chip-clarification @(IsTypeFilter("NeedsClarification") ? "is-active" : "")" @onclick='() => SetTypeFilter("NeedsClarification")'>
+                Clarifications <span>@ClarificationCount</span>
+            </button>
+            <button type="button" class="library-filter-chip @(IsRelationshipFilter("linked") ? "is-active" : "")" @onclick='() => SetRelationshipFilter("linked")'
+                    data-testid="ql-filter-linked">
+                Linked <span>@LinkedArtifactCount</span>
+            </button>
+        </div>
+
+        @if (_linksUnavailable)
+        {
+            <p class="relationship-load-note" role="status">Traceability links are unavailable right now; artifact counts are still current.</p>
+        }
+
+        @if (_isLoading)
+        {
+            <p class="loading-state">Loading scenarios...</p>
+        }
+        else if (_loadError is not null)
+        {
+            <div class="scenario-load-error" role="alert" data-testid="scenario-load-error">
+                @_loadError
+            </div>
+        }
+        else
+        {
+            var isDragEnabled = _filterKind == "Test" && string.IsNullOrEmpty(_searchQuery) && string.IsNullOrEmpty(_relationshipFilter);
+            var testItems = FilteredScenarios.Where(s => s.Kind == "Test").ToList();
+            var reqItems  = FilteredScenarios.Where(s => s.Kind == "Requirement").ToList();
+            var clrItems  = FilteredScenarios.Where(s => s.Kind == "NeedsClarification").ToList();
+            var anyVisible = testItems.Count > 0 || reqItems.Count > 0 || clrItems.Count > 0;
+
+            @if (!anyVisible)
+            {
+                <div class="empty-state empty-state-dashed" data-testid="empty-state">
+                    @if (_scenarios.Count == 0)
+                    {
+                        <h3>No published assets yet</h3>
+                        <p>Publish QA assets from Specification Review to build your team's knowledge base.</p>
+                        <p>Published assets are available for reuse across specifications and projects.</p>
+                        <div class="empty-state-actions">
+                            <a href="/extract">Analyze Specification</a>
+                            <a href="scenarios/new">Create Test Scenario</a>
+                        </div>
+                    }
+                    else
+                    {
+                        <p>No QA artifacts match the current filters.</p>
+                    }
+                </div>
+            }
+            else
+            {
+                @if (reqItems.Count > 0)
+                {
+                    <section class="artifact-group" data-testid="group-requirements">
+                        <div class="artifact-group-heading">
+                            <h2 class="artifact-group-header">Requirements</h2>
+                            <span>@RequirementCount saved</span>
+                        </div>
+                        <ScenarioList
+                            Scenarios="reqItems"
+                            OnDeleteRequested="HandleDeleteAsync"
+                            DeletingId="_deletingId"
+                            DeleteErrors="_deleteErrors"
+                            RelationshipSummaries="RelationshipSummaries" />
+                    </section>
+                }
+                @if (testItems.Count > 0)
+                {
+                    <section class="artifact-group" data-testid="group-tests">
+                        <div class="artifact-group-heading">
+                            <h2 class="artifact-group-header">Tests</h2>
+                            <span>@TestCount saved</span>
+                        </div>
+                        @if (isDragEnabled)
+                        {
+                            <p class="drag-hint" data-testid="drag-hint">Drag tests to define execution order.</p>
+                        }
+                        <ScenarioList
+                            Scenarios="testItems"
+                            OnDeleteRequested="HandleDeleteAsync"
+                            DeletingId="_deletingId"
+                            DeleteErrors="_deleteErrors"
+                            IsDraggable="@isDragEnabled"
+                            OnReordered="HandleReorderAsync"
+                            RelationshipSummaries="RelationshipSummaries" />
+                    </section>
+                }
+                @if (_reorderError is not null)
+                {
+                    <div class="reorder-error" role="alert" data-testid="reorder-error">@_reorderError</div>
+                }
+                @if (clrItems.Count > 0)
+                {
+                    <section class="artifact-group" data-testid="group-clarifications">
+                        <div class="artifact-group-heading">
+                            <h2 class="artifact-group-header">Needs Clarification</h2>
+                            <span>@clrItems.Count open question@Plural(clrItems.Count)</span>
+                        </div>
+                        <ScenarioList
+                            Scenarios="clrItems"
+                            OnDeleteRequested="HandleDeleteAsync"
+                            DeletingId="_deletingId"
+                            DeleteErrors="_deleteErrors"
+                            RelationshipSummaries="RelationshipSummaries" />
+                    </section>
+                }
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+    private IReadOnlyList<ScenarioListItem> _scenarios = [];
+    private IReadOnlyList<ArtifactLink> _links = [];
+    private bool _isLoading;
+    private string _searchQuery     = string.Empty;
+    private string _filterKind      = string.Empty;
+    private string _relationshipFilter = string.Empty;
+    private string? _loadError;
+    private bool _linksUnavailable;
+    private string? _deletingId;
+    private Dictionary<string, string> _deleteErrors = [];
+    private string? _reorderError;
+
+    private IReadOnlyList<ScenarioListItem> FilteredScenarios =>
+        _scenarios
+            .Where(s =>
+                (string.IsNullOrEmpty(_filterKind) || s.Kind == _filterKind) &&
+                MatchesRelationshipFilter(s) &&
+                (string.IsNullOrEmpty(_searchQuery) ||
+                 s.Title.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                 (s.Description?.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ?? false)))
+            .ToList();
+
+    private int RequirementCount    => CountKind("Requirement");
+    private int TestCount           => CountKind("Test");
+    private int ClarificationCount  => CountKind("NeedsClarification");
+    private int LinkedArtifactCount => _scenarios.Count(s => GetRelationshipSummary(s.Id).HasTraceability);
+
+    private IReadOnlyDictionary<string, ArtifactRelationshipSummary> RelationshipSummaries =>
+        _scenarios.ToDictionary(s => s.Id, s => GetRelationshipSummary(s.Id), StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadScenariosAsync();
+    }
+
+    private async Task LoadScenariosAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.GetScenarios.ExecuteAsync(ProjectId);
+            if (result.Errors is { Count: > 0 })
+            {
+                _loadError = "We couldn't load scenarios right now. Please try again later.";
+                return;
+            }
+
+            if (result.Data is { } data)
+            {
+                _scenarios = data.Scenarios
+                    .Select(s => new ScenarioListItem(s.Id, s.Title, s.Description, s.Kind.ToString(), s.DisplayOrder))
+                    .ToList();
+            }
+            else
+            {
+                _loadError = "We couldn't load scenarios right now. Please try again later.";
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = "We couldn't load scenarios right now. Please try again later.";
+        }
+        finally
+        {
+            if (_loadError is null)
+            {
+                await LoadLinksAsync();
+            }
+
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadLinksAsync()
+    {
+        _linksUnavailable = false;
+
+        if (Client.GetCandidateLinks is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var linksResult = await Client.GetCandidateLinks.ExecuteAsync(ProjectId, null);
+            if (linksResult.Errors is { Count: > 0 })
+            {
+                _linksUnavailable = true;
+                _links = [];
+                return;
+            }
+
+            _links = linksResult.Data?.CandidateLinks
+                .Select(l => new ArtifactLink(l.SourceCandidateRef, l.TargetCandidateRef, l.LinkType))
+                .ToList() ?? [];
+        }
+        catch
+        {
+            _linksUnavailable = true;
+            _links = [];
+        }
+    }
+
+    private async Task HandleDeleteAsync(string id)
+    {
+        _deletingId = id;
+        _deleteErrors.Remove(id);
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.DeleteScenario.ExecuteAsync(id);
+
+            if (result.Data?.DeleteScenario is { Success: true })
+            {
+                _scenarios = _scenarios.Where(s => s.Id != id).ToList();
+                _links = _links.Where(l => l.SourceId != id && l.TargetId != id).ToList();
+            }
+            else
+            {
+                var errorMsg = result.Data?.DeleteScenario?.Errors?.FirstOrDefault()?.Message
+                    ?? "Something went wrong. Please try again.";
+                _deleteErrors[id] = errorMsg;
+            }
+        }
+        catch (Exception)
+        {
+            _deleteErrors[id] = "Something went wrong. Please try again.";
+        }
+        finally
+        {
+            _deletingId = null;
+        }
+    }
+
+    private async Task HandleReorderAsync(List<ScenarioListItem> reorderedTests)
+    {
+        _reorderError = null;
+
+        var nonTest = _scenarios.Where(s => s.Kind != "Test").ToList();
+        _scenarios = reorderedTests
+            .Select((s, i) => s with { DisplayOrder = i })
+            .Concat(nonTest)
+            .ToList();
+
+        StateHasChanged();
+
+        try
+        {
+            var input = new ReorderTestScenariosInput
+            {
+                ProjectId  = ProjectId,
+                OrderedIds = reorderedTests.Select(s => s.Id).ToList(),
+            };
+            var result = await Client.ReorderTestScenarios.ExecuteAsync(input);
+
+            if (result.Data?.ReorderTestScenarios?.Success != true)
+            {
+                _reorderError = "Couldn't save the new order. Please try again.";
+            }
+        }
+        catch (Exception)
+        {
+            _reorderError = "Couldn't save the new order. Please try again.";
+        }
+    }
+
+    private int CountKind(string kind) => _scenarios.Count(s => s.Kind == kind);
+
+    private bool IsTypeFilter(string kind)         => _filterKind == kind;
+    private bool IsRelationshipFilter(string filter) => _relationshipFilter == filter;
+    private void SetTypeFilter(string kind)          => _filterKind = kind;
+    private void SetRelationshipFilter(string filter) => _relationshipFilter = filter;
+    private void ClearAllFilters()
+    {
+        _filterKind        = string.Empty;
+        _relationshipFilter = string.Empty;
+    }
+
+    private bool MatchesRelationshipFilter(ScenarioListItem scenario)
+    {
+        if (string.IsNullOrEmpty(_relationshipFilter))
+            return true;
+
+        var summary = GetRelationshipSummary(scenario.Id);
+        return _relationshipFilter switch
+        {
+            "linked" => summary.HasTraceability,
+            _        => true,
+        };
+    }
+
+    private ArtifactRelationshipSummary GetRelationshipSummary(string scenarioId)
+    {
+        var linkedIds = _links
+            .Where(l => l.SourceId == scenarioId || l.TargetId == scenarioId)
+            .Select(l => l.SourceId == scenarioId ? l.TargetId : l.SourceId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var linkedRequirements   = linkedIds.Count(id => KindOf(id) == "Requirement");
+        var linkedTests          = linkedIds.Count(id => KindOf(id) == "Test");
+        var linkedClarifications = linkedIds.Count(id => KindOf(id) == "NeedsClarification");
+        var scenarioKind         = KindOf(scenarioId);
+        var hasTraceability      = linkedIds.Count > 0;
+
+        var stateLabel = scenarioKind switch
+        {
+            "Requirement"       => linkedTests > 0           ? "Covered"  : "Not Covered",
+            "Test"              => linkedRequirements > 0    ? "Linked"   : "Unmapped",
+            "NeedsClarification"=> hasTraceability           ? "Linked"   : "Unmapped",
+            _                   => hasTraceability           ? "Linked"   : "Unmapped",
+        };
+
+        var stateTone = scenarioKind switch
+        {
+            "Requirement"       => linkedTests > 0           ? "covered"  : "uncovered",
+            "Test"              => linkedRequirements > 0    ? "linked"   : "unmapped",
+            "NeedsClarification"=> hasTraceability           ? "linked"   : "unmapped",
+            _                   => hasTraceability           ? "linked"   : "unmapped",
+        };
+
+        var requiresAttention = stateTone is "uncovered" or "unmapped";
+        var recommendedAction = scenarioKind switch
+        {
+            "Requirement" when linkedTests == 0           => "Create or link a test.",
+            "Test" when linkedRequirements == 0           => "Link this test to a requirement.",
+            "NeedsClarification" when !hasTraceability    => "Link clarification to a requirement or test.",
+            _                                             => null,
+        };
+
+        return new ArtifactRelationshipSummary(
+            linkedRequirements,
+            linkedTests,
+            linkedClarifications,
+            hasTraceability,
+            stateLabel,
+            stateLabel,
+            stateTone,
+            requiresAttention,
+            recommendedAction);
+    }
+
+    private IReadOnlyList<ScenarioListItem> GetLinkedArtifacts(string scenarioId, string kind)
+    {
+        var linkedIds = _links
+            .Where(l => l.SourceId == scenarioId || l.TargetId == scenarioId)
+            .Select(l => l.SourceId == scenarioId ? l.TargetId : l.SourceId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return _scenarios
+            .Where(s => s.Kind == kind && linkedIds.Contains(s.Id))
+            .ToList();
+    }
+
+    private string? KindOf(string scenarioId) =>
+        _scenarios.FirstOrDefault(s => string.Equals(s.Id, scenarioId, StringComparison.OrdinalIgnoreCase))?.Kind;
+
+    private static string Plural(int count) => count == 1 ? string.Empty : "s";
+
+    private sealed record ArtifactLink(string SourceId, string TargetId, CandidateLinkType LinkType);
+}

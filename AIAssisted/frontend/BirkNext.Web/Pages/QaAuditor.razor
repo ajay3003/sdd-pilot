@@ -1,0 +1,507 @@
+@page "/qa-auditor"
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IConstitutionAnalysisService ConstitutionService
+@inject IPlanAnalysisService PlanService
+@inject IQaAuditorService AuditorService
+@inject IDashboardSnapshotService DashboardSnapshot
+
+<PageTitle>QA Auditor</PageTitle>
+
+<div class="qa-auditor-page">
+
+    <PageHeader Title="QA Auditor"
+                Description="Deterministic quality analysis across the SDD artifact chain. Identifies coverage gaps, governance concerns, missing acceptance criteria, and traceability issues — without AI." />
+
+    <!-- ── Artifact Input Panel ──────────────────────────────────────────── -->
+    <div class="aud-input-panel">
+        <div class="aud-input-panel-header">
+            <span class="aud-input-panel-title">Load Artifacts</span>
+            @if (_report is not null)
+            {
+                <button class="aud-input-panel-toggle" @onclick="() => _inputExpanded = !_inputExpanded">
+                    @(_inputExpanded ? "▾ Collapse" : "▸ Expand")
+                </button>
+            }
+        </div>
+
+        @if (_inputExpanded)
+        {
+            <div class="aud-artifact-grid">
+
+                <!-- Constitution -->
+                <div class="aud-artifact-card @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
+                    <div class="aud-artifact-card-header">
+                        <span class="aud-artifact-icon" aria-hidden="true">📜</span>
+                        <span class="aud-artifact-name">Constitution</span>
+                        <span class="aud-artifact-status @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
+                            @(!string.IsNullOrEmpty(_constitutionText) ? "Loaded" : "Empty")
+                        </span>
+                    </div>
+                    <textarea class="aud-artifact-textarea" placeholder="Paste constitution.md…" rows="3"
+                              @bind="_constitutionText"></textarea>
+                    @if (!string.IsNullOrEmpty(_constitutionText))
+                    {
+                        <div class="aud-artifact-footer">
+                            <span>@_constitutionText.Split('\n').Length lines</span>
+                            <button class="aud-artifact-clear" @onclick='() => _constitutionText = string.Empty'>Clear</button>
+                        </div>
+                    }
+                </div>
+
+                <!-- Specification -->
+                <div class="aud-artifact-card @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
+                    <div class="aud-artifact-card-header">
+                        <span class="aud-artifact-icon" aria-hidden="true">📋</span>
+                        <span class="aud-artifact-name">Specification</span>
+                        <span class="aud-artifact-status @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
+                            @(!string.IsNullOrEmpty(_specText) ? "Loaded" : "Empty")
+                        </span>
+                    </div>
+                    <textarea class="aud-artifact-textarea" placeholder="Paste spec.md…" rows="3"
+                              @bind="_specText"></textarea>
+                    @if (!string.IsNullOrEmpty(_specText))
+                    {
+                        <div class="aud-artifact-footer">
+                            <span>@_specText.Split('\n').Length lines</span>
+                            <button class="aud-artifact-clear" @onclick='() => _specText = string.Empty'>Clear</button>
+                        </div>
+                    }
+                </div>
+
+                <!-- Plan -->
+                <div class="aud-artifact-card @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
+                    <div class="aud-artifact-card-header">
+                        <span class="aud-artifact-icon" aria-hidden="true">📐</span>
+                        <span class="aud-artifact-name">Plan</span>
+                        <span class="aud-artifact-status @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
+                            @(!string.IsNullOrEmpty(_planText) ? "Loaded" : "Empty")
+                        </span>
+                    </div>
+                    <textarea class="aud-artifact-textarea" placeholder="Paste plan.md…" rows="3"
+                              @bind="_planText"></textarea>
+                    @if (!string.IsNullOrEmpty(_planText))
+                    {
+                        <div class="aud-artifact-footer">
+                            <span>@_planText.Split('\n').Length lines</span>
+                            <button class="aud-artifact-clear" @onclick='() => _planText = string.Empty'>Clear</button>
+                        </div>
+                    }
+                </div>
+
+                <!-- Tasks -->
+                <div class="aud-artifact-card @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
+                    <div class="aud-artifact-card-header">
+                        <span class="aud-artifact-icon" aria-hidden="true">✅</span>
+                        <span class="aud-artifact-name">Tasks</span>
+                        <span class="aud-artifact-status @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
+                            @(!string.IsNullOrEmpty(_taskText) ? "Loaded" : "Empty")
+                        </span>
+                    </div>
+                    <textarea class="aud-artifact-textarea" placeholder="Paste tasks.md…" rows="3"
+                              @bind="_taskText"></textarea>
+                    @if (!string.IsNullOrEmpty(_taskText))
+                    {
+                        <div class="aud-artifact-footer">
+                            <span>@_taskText.Split('\n').Length lines</span>
+                            <button class="aud-artifact-clear" @onclick='() => _taskText = string.Empty'>Clear</button>
+                        </div>
+                    }
+                </div>
+
+            </div>
+
+            <div class="aud-run-bar">
+                <span class="aud-run-summary">
+                    @if (!AnyArtifactLoaded)
+                    { <span>Load at least one artifact to run the audit</span> }
+                    else
+                    { <span>@LoadedCount artifact@(LoadedCount != 1 ? "s" : "") loaded · audit covers @CoveredAreas</span> }
+                </span>
+                <PrimaryButton Disabled="@(!AnyArtifactLoaded)" OnClick="RunAudit">Run Audit</PrimaryButton>
+            </div>
+        }
+    </div>
+
+    <!-- ── Report ─────────────────────────────────────────────────────────── -->
+    @if (_report is not null)
+    {
+        <!-- Score row -->
+        <div class="aud-score-row">
+            @RenderScoreRing(_report.Health.AuditScore)
+            <div>
+                <div class="aud-score-meta-title">@ScoreLabel(_report.Health.AuditScore) Quality</div>
+                <div class="aud-score-meta-sub">
+                    Audit score @_report.Health.AuditScore.ToString("0.#")/100 ·
+                    @_report.Health.TotalFindings finding@(_report.Health.TotalFindings != 1 ? "s" : "") ·
+                    @_report.Health.CoverageGapCount gap@(_report.Health.CoverageGapCount != 1 ? "s" : "")
+                </div>
+            </div>
+        </div>
+
+        <!-- Finding count cards -->
+        <div class="aud-count-grid">
+            <button class='aud-count-card sev-critical @(_sevFilter == QaSeverity.Critical ? "is-active" : "")'
+                    @onclick='() => SetSevFilter(QaSeverity.Critical)'>
+                <div class="aud-count-num">@_report.Health.CriticalCount</div>
+                <div class="aud-count-label">Critical</div>
+            </button>
+            <button class='aud-count-card sev-high @(_sevFilter == QaSeverity.High ? "is-active" : "")'
+                    @onclick='() => SetSevFilter(QaSeverity.High)'>
+                <div class="aud-count-num">@_report.Health.HighCount</div>
+                <div class="aud-count-label">High</div>
+            </button>
+            <button class='aud-count-card sev-medium @(_sevFilter == QaSeverity.Medium ? "is-active" : "")'
+                    @onclick='() => SetSevFilter(QaSeverity.Medium)'>
+                <div class="aud-count-num">@_report.Health.MediumCount</div>
+                <div class="aud-count-label">Medium</div>
+            </button>
+            <button class='aud-count-card sev-low @(_sevFilter == QaSeverity.Low ? "is-active" : "")'
+                    @onclick='() => SetSevFilter(QaSeverity.Low)'>
+                <div class="aud-count-num">@_report.Health.LowCount</div>
+                <div class="aud-count-label">Low</div>
+            </button>
+        </div>
+
+        <!-- Tab bar -->
+        <div class="aud-tab-bar" role="tablist">
+            <button class='aud-tab-btn @(_tab == "overview"   ? "is-active" : "")' @onclick='() => SetTab("overview")'>Overview</button>
+            <button class='aud-tab-btn @(_tab == "findings"   ? "is-active" : "")' @onclick='() => SetTab("findings")'>
+                Findings @FindingsBadge
+            </button>
+            <button class='aud-tab-btn @(_tab == "risks"      ? "is-active" : "")' @onclick='() => SetTab("risks")'>
+                Risks @RisksBadge
+            </button>
+            <button class='aud-tab-btn @(_tab == "gaps"       ? "is-active" : "")' @onclick='() => SetTab("gaps")'>
+                Coverage Gaps @GapsBadge
+            </button>
+            <button class='aud-tab-btn @(_tab == "recs"       ? "is-active" : "")' @onclick='() => SetTab("recs")'>
+                Recommendations @RecsBadge
+            </button>
+        </div>
+
+        <!-- Search bar (findings, gaps, recs tabs) -->
+        @if (_tab is "findings" or "gaps" or "recs")
+        {
+            <div class="aud-search-bar">
+                <input type="search" class="aud-search" placeholder="@SearchPlaceholder"
+                       value="@_search"
+                       @oninput="e => _search = e.Value?.ToString() ?? string.Empty"
+                       aria-label="Search" />
+                @if (!string.IsNullOrWhiteSpace(_search))
+                {
+                    <span class="aud-search-clear" @onclick='() => _search = string.Empty' title="Clear">×</span>
+                }
+            </div>
+        }
+
+        <!-- Severity filter strip (findings tab) -->
+        @if (_tab == "findings")
+        {
+            <div class="aud-filter-strip" role="group" aria-label="Filter by severity">
+                <button class='aud-filter-chip @(_sevFilter is null ? "is-active" : "")' @onclick='() => SetSevFilter(null)'>All</button>
+                <button class='aud-filter-chip @(_sevFilter == QaSeverity.Critical ? "is-active" : "")' @onclick='() => SetSevFilter(QaSeverity.Critical)'>Critical</button>
+                <button class='aud-filter-chip @(_sevFilter == QaSeverity.High     ? "is-active" : "")' @onclick='() => SetSevFilter(QaSeverity.High)'>High</button>
+                <button class='aud-filter-chip @(_sevFilter == QaSeverity.Medium   ? "is-active" : "")' @onclick='() => SetSevFilter(QaSeverity.Medium)'>Medium</button>
+                <button class='aud-filter-chip @(_sevFilter == QaSeverity.Low      ? "is-active" : "")' @onclick='() => SetSevFilter(QaSeverity.Low)'>Low</button>
+            </div>
+            <div class="aud-filter-strip" role="group" aria-label="Filter by category">
+                <button class='aud-filter-chip @(_catFilter is null ? "is-active" : "")' @onclick='() => _catFilter = null'>All Categories</button>
+                @foreach (var cat in Enum.GetValues<QaCategory>())
+                {
+                    <button class='aud-filter-chip @(_catFilter == cat ? "is-active" : "")' @onclick='() => _catFilter = cat'>@cat</button>
+                }
+            </div>
+        }
+
+        <!-- ── Tab content ──────────────────────────────────────────────────── -->
+        <div class="aud-tab-body">
+
+            @if (_tab == "overview")
+            {
+                @if (_report.Findings.Count == 0)
+                {
+                    <EmptyState Icon="✓" Title="No findings — all loaded artifacts pass the audit rules." />
+                }
+                else
+                {
+                    <p style="font-size:0.8rem;color:var(--clr-text-muted);margin-bottom:0.75rem;">
+                        Top @Math.Min(6, _report.Findings.Count) findings across
+                        @_report.Health.TotalFindings total.
+                        @if (_report.Health.ViolationCount > 0)
+                        {
+                            <span> · <strong>@_report.Health.ViolationCount constitution violation(s).</strong></span>
+                        }
+                    </p>
+                    @foreach (var f in _report.Findings.Take(6))
+                    {
+                        <IssueCard Severity="@SevString(f.Severity)"
+                                   Component="@($"{f.Category} · {f.RuleCode}")"
+                                   Description="@($"{f.Title} — {f.Description}")" />
+                    }
+                    @if (_report.Findings.Count > 6)
+                    {
+                        <button class="aud-filter-chip" style="margin-top:.4rem;" @onclick='() => SetTab("findings")'>
+                            See all @_report.Findings.Count findings →
+                        </button>
+                    }
+                }
+
+                @if (_report.Gaps.Count > 0)
+                {
+                    <div style="margin-top:1.25rem;">
+                        <div style="font-size:0.82rem;font-weight:600;color:var(--clr-text-muted);margin-bottom:0.5rem;">Coverage Summary</div>
+                        @foreach (var area in _report.Gaps.GroupBy(g => g.GapArea).OrderBy(g => g.Key))
+                        {
+                            <div style="display:flex;justify-content:space-between;font-size:0.81rem;padding:0.3rem 0;border-bottom:1px solid var(--clr-border);">
+                                <span>@area.Key</span>
+                                <span style="color:var(--clr-danger,#dc2626);font-weight:600;">@area.Count() gap@(area.Count()!=1?"s":"")</span>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+
+            @if (_tab == "findings")
+            {
+                @if (!VisibleFindings.Any())
+                {
+                    <EmptyState Icon="📭"
+                                Title="@(string.IsNullOrWhiteSpace(_search) && _sevFilter is null && _catFilter is null
+                                    ? "No findings detected."
+                                    : "No findings match the current filter.")" />
+                }
+                else
+                {
+                    @foreach (var f in VisibleFindings)
+                    {
+                        <IssueCard Severity="@SevString(f.Severity)"
+                                   Component="@($"{f.Category} · {f.RuleCode}{(f.AffectedArtifact is not null ? " · " + f.AffectedArtifact : "")}")"
+                                   Description="@($"{f.Title} — {f.Description}")" />
+                    }
+                }
+            }
+
+            @if (_tab == "risks")
+            {
+                @if (_report.Risks.Count == 0)
+                {
+                    <EmptyState Icon="✓" Title="No high-risk findings detected." />
+                }
+                else
+                {
+                    @foreach (var risk in _report.Risks)
+                    {
+                        <IssueCard Severity="@SevString(risk.Severity)"
+                                   Component="@($"{risk.Category}{(!string.IsNullOrEmpty(risk.RuleCode) ? " · " + risk.RuleCode : "")}")"
+                                   Description="@($"{risk.Title}{(string.IsNullOrEmpty(risk.Description) ? "" : " — " + risk.Description)}")"
+                                   SuggestedFix="@risk.Mitigation" />
+                    }
+                }
+            }
+
+            @if (_tab == "gaps")
+            {
+                @if (!VisibleGaps.Any())
+                {
+                    <EmptyState Icon="✓"
+                                Title="@(string.IsNullOrWhiteSpace(_search) ? "No coverage gaps detected." : "No gaps match the search.")" />
+                }
+                else
+                {
+                    @foreach (var group in VisibleGaps.GroupBy(g => g.GapArea).OrderBy(g => g.Key))
+                    {
+                        <div class="aud-gap-group">
+                            <div class="aud-gap-group-title">
+                                @group.Key
+                                <span class="aud-filter-chip" style="cursor:default;">@group.Count()</span>
+                            </div>
+                            @foreach (var gap in group)
+                            {
+                                <IssueCard Severity="@SevString(gap.Severity)"
+                                           Component="@(!string.IsNullOrEmpty(gap.ItemId) ? gap.ItemId : null)"
+                                           Description="@gap.Description" />
+                            }
+                        </div>
+                    }
+                }
+            }
+
+            @if (_tab == "recs")
+            {
+                @if (!VisibleRecs.Any())
+                {
+                    <EmptyState Icon="✓"
+                                Title="@(string.IsNullOrWhiteSpace(_search) ? "No recommendations — all loaded artifacts pass audit rules." : "No recommendations match the search.")" />
+                }
+                else
+                {
+                    @foreach (var rec in VisibleRecs)
+                    {
+                        <RecommendationCard Title="@rec.Text"
+                                            Description="@($"{rec.Category}{(!string.IsNullOrEmpty(rec.RuleCode) ? " · " + rec.RuleCode : "")}")"
+                                            Priority="@rec.Priority.ToString().ToLowerInvariant()" />
+                    }
+                }
+            }
+
+        </div>
+    }
+
+</div>
+
+@code {
+    private string _constitutionText = string.Empty;
+    private string _specText         = string.Empty;
+    private string _planText         = string.Empty;
+    private string _taskText         = string.Empty;
+
+    private QaAuditReport? _report;
+    private string _tab    = "overview";
+    private string _search = string.Empty;
+    private bool _inputExpanded = true;
+
+    private QaSeverity?  _sevFilter;
+    private QaCategory?  _catFilter;
+
+    // ── Computed helpers ──────────────────────────────────────────────────────
+
+    private bool AnyArtifactLoaded =>
+        !string.IsNullOrWhiteSpace(_constitutionText) ||
+        !string.IsNullOrWhiteSpace(_specText) ||
+        !string.IsNullOrWhiteSpace(_planText) ||
+        !string.IsNullOrWhiteSpace(_taskText);
+
+    private int LoadedCount =>
+        (string.IsNullOrWhiteSpace(_constitutionText) ? 0 : 1) +
+        (string.IsNullOrWhiteSpace(_specText)         ? 0 : 1) +
+        (string.IsNullOrWhiteSpace(_planText)         ? 0 : 1) +
+        (string.IsNullOrWhiteSpace(_taskText)         ? 0 : 1);
+
+    private string CoveredAreas
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(_constitutionText)) parts.Add("Constitution");
+            if (!string.IsNullOrWhiteSpace(_specText))         parts.Add("Specification");
+            if (!string.IsNullOrWhiteSpace(_planText))         parts.Add("Plan");
+            if (!string.IsNullOrWhiteSpace(_taskText))         parts.Add("Tasks");
+            return string.Join(", ", parts);
+        }
+    }
+
+    private IEnumerable<QaFinding> VisibleFindings
+    {
+        get
+        {
+            if (_report is null) return [];
+            var q = AuditorService.SearchFindings(_report.Findings, _search);
+            q = AuditorService.FilterFindingsBySeverity(q, _sevFilter);
+            return AuditorService.FilterFindingsByCategory(q, _catFilter);
+        }
+    }
+
+    private IEnumerable<QaGap> VisibleGaps =>
+        _report is null ? [] : AuditorService.SearchGaps(_report.Gaps, _search);
+
+    private IEnumerable<QaRecommendation> VisibleRecs =>
+        _report is null ? [] : AuditorService.SearchRecommendations(_report.Recommendations, _search);
+
+    // ── Tab badges ────────────────────────────────────────────────────────────
+
+    private string FindingsBadge => _report?.Findings.Count > 0 ? $"({_report.Findings.Count})" : string.Empty;
+    private string RisksBadge    => _report?.Risks.Count    > 0 ? $"({_report.Risks.Count})"    : string.Empty;
+    private string GapsBadge     => _report?.Gaps.Count     > 0 ? $"({_report.Gaps.Count})"     : string.Empty;
+    private string RecsBadge     => _report?.Recommendations.Count > 0 ? $"({_report.Recommendations.Count})" : string.Empty;
+
+    private string SearchPlaceholder => _tab switch
+    {
+        "findings" => "Search by rule, category, title, or artifact…",
+        "gaps"     => "Search by gap area, description, or item ID…",
+        "recs"     => "Search recommendations…",
+        _          => "Search…",
+    };
+
+    // ── Actions ───────────────────────────────────────────────────────────────
+
+    private void RunAudit()
+    {
+        ConstitutionDocument? constitution = null;
+        SpecTree?             spec         = null;
+        PlanDocument?         plan         = null;
+        TaskTree?             tasks        = null;
+
+        if (!string.IsNullOrWhiteSpace(_constitutionText))
+            constitution = ConstitutionService.Parse(_constitutionText);
+        if (!string.IsNullOrWhiteSpace(_specText))
+            spec = SpecExplorerService.Parse(_specText);
+        if (!string.IsNullOrWhiteSpace(_planText))
+            plan = PlanService.Parse(_planText);
+        if (!string.IsNullOrWhiteSpace(_taskText))
+            tasks = TaskExplorerService.Parse(_taskText);
+
+        _report       = AuditorService.Audit(constitution, spec, plan, tasks);
+        DashboardSnapshot.Publish(_report);
+        _tab          = "overview";
+        _search       = string.Empty;
+        _sevFilter    = null;
+        _catFilter    = null;
+        _inputExpanded = false;
+    }
+
+    private void SetTab(string tab)
+    {
+        _tab    = tab;
+        _search = string.Empty;
+    }
+
+    private void SetSevFilter(QaSeverity? sev)
+    {
+        _sevFilter = _sevFilter == sev ? null : sev;
+        if (_tab != "findings") SetTab("findings");
+    }
+
+    // ── Renderers ─────────────────────────────────────────────────────────────
+
+    private RenderFragment RenderScoreRing(double score) => __builder =>
+    {
+        const int r  = 40;
+        const int cx = 48;
+        const int cy = 48;
+        var circumference = 2 * Math.PI * r;
+        var offset  = circumference - score / 100.0 * circumference;
+        var variant = score >= 85 ? "is-excellent" :
+                      score >= 65 ? "is-good"      :
+                      score >= 40 ? "is-fair"       : "is-poor";
+
+        var svgHtml = $"<svg viewBox=\"0 0 96 96\">" +
+                      $"<circle class=\"aud-score-ring-bg\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\" />" +
+                      $"<circle class=\"aud-score-ring-fill {variant}\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\"" +
+                      $" stroke-dasharray=\"{circumference:0.00}\" stroke-dashoffset=\"{offset:0.00}\" />" +
+                      $"</svg>";
+
+        __builder.OpenElement(0, "div");
+        __builder.AddAttribute(1, "class", "aud-score-ring");
+        __builder.AddMarkupContent(2, svgHtml);
+        __builder.OpenElement(3, "div");
+        __builder.AddAttribute(4, "class", "aud-score-label");
+        __builder.AddMarkupContent(5, $"{score:0.#}<small>/ 100</small>");
+        __builder.CloseElement();
+        __builder.CloseElement();
+    };
+
+    private static string SevString(QaSeverity sev) => sev switch
+    {
+        QaSeverity.Critical => "critical",
+        QaSeverity.High     => "error",
+        QaSeverity.Medium   => "warning",
+        QaSeverity.Low      => "info",
+        _                   => "info",
+    };
+
+    private static string ScoreLabel(double score) =>
+        score >= 85 ? "Excellent" :
+        score >= 65 ? "Good"      :
+        score >= 40 ? "Fair"      : "Poor";
+}

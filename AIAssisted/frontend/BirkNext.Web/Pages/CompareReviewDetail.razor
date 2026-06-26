@@ -1,0 +1,88 @@
+@page "/compare/reviews/{Id}"
+@using BirkNext.Web.Components
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IBirkNextClient Client
+
+<PageTitle>@(_review?.Title ?? "Delta Review")</PageTitle>
+
+<a href="spec-drift?tab=changes" class="back-link">← Spec Drift</a>
+
+@if (_isLoading)
+{
+    <p class="loading-state">Loading review…</p>
+}
+else if (_loadError is not null)
+{
+    <div class="notification notification-error" role="alert" data-testid="review-detail-load-error">
+        @_loadError
+    </div>
+}
+else if (_review is not null && _comparisonResult is not null)
+{
+    <div data-testid="review-detail-header">
+        <PageHeader Title="@_review.Title" />
+        <Card>
+            <KeyValueList>
+                <InfoRow Label="Date" Value="@(_review.CreatedAt.LocalDateTime.ToString("MMMM d, yyyy"))" />
+                <InfoRow Label="Profile">
+                    <StatusChip Status="info" Label="@_review.AnalysisProfile" />
+                </InfoRow>
+                @if (_review.OldSpecFileName is not null)
+                {
+                    <InfoRow Label="Old Spec" Value="@_review.OldSpecFileName" />
+                }
+                @if (_review.NewSpecFileName is not null)
+                {
+                    <InfoRow Label="New Spec" Value="@_review.NewSpecFileName" />
+                }
+            </KeyValueList>
+        </Card>
+    </div>
+
+    <SpecDeltaResultsPanel Result="_comparisonResult" />
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = string.Empty;
+
+    private IGetQaDeltaReview_QaDeltaReview? _review;
+    private SpecComparisonResult? _comparisonResult;
+    private bool _isLoading;
+    private string? _loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+
+        try
+        {
+            var result = await Client.GetQaDeltaReview.ExecuteAsync(Id);
+            if (result.Errors is { Count: > 0 })
+            {
+                _loadError = "We couldn't load this delta review right now. Please try again later.";
+                return;
+            }
+
+            if (result.Data?.QaDeltaReview is { } review)
+            {
+                _review = review;
+                _comparisonResult = QaDeltaReviewSerializer.Deserialize(review.SummaryJson, review.DeltaItemsJson);
+            }
+            else
+            {
+                _loadError = "Delta review not found.";
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = "We couldn't load this delta review right now. Please try again later.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+}

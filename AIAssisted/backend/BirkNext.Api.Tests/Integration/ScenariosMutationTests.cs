@@ -1,0 +1,324 @@
+using BirkNext.Api.Data;
+using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System.Text;
+using System.Text.Json;
+using Testcontainers.PostgreSql;
+
+namespace BirkNext.Api.Tests.Integration;
+
+public class ScenariosMutationTests : IAsyncLifetime
+{
+    private readonly PostgreSqlContainer _postgres;
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+
+    public ScenariosMutationTests()
+    {
+        _postgres = new PostgreSqlBuilder("postgres:16")
+            .WithDatabase("birknext_test")
+            .WithUsername("test")
+            .WithPassword("test")
+            .Build();
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _postgres.StartAsync();
+
+        _factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+                builder.ConfigureServices(services =>
+                {
+                    var descriptor = services.SingleOrDefault(
+                        d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
+                    if (descriptor is not null)
+                        services.Remove(descriptor);
+
+                    services.AddDbContext<AppDbContext>(options =>
+                        options.UseNpgsql(_postgres.GetConnectionString()));
+                }));
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await db.Database.MigrateAsync();
+
+        _client = _factory.CreateClient();
+    }
+
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        await _factory.DisposeAsync();
+        await _postgres.DisposeAsync();
+    }
+
+    private static StringContent GqlRequest(string query, object? variables = null)
+    {
+        var body = JsonSerializer.Serialize(new { query, variables });
+        return new StringContent(body, Encoding.UTF8, "application/json");
+    }
+
+    private sealed class CapturingLoggerFactory : ILoggerFactory
+    {
+        private readonly List<string> _messages = [];
+        public IReadOnlyList<string> Messages => _messages;
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(_messages);
+        public void AddProvider(ILoggerProvider provider) { }
+        public void Dispose() { }
+
+        private sealed class CapturingLogger(List<string> messages) : ILogger
+        {
+            public bool IsEnabled(LogLevel logLevel) => true;
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+                Exception? exception, Func<TState, Exception?, string> formatter)
+                => messages.Add(formatter(state, exception));
+        }
+    }
+
+    [Fact]
+    public async Task CreateScenario_ValidInput_ReturnsScenarioId()
+    {
+        const string mutation = """
+            mutation CreateScenario($input: CreateScenarioInput!) {
+              createScenario(input: $input) {
+                scenario { id }
+                errors { code message field }
+              }
+            }
+            """;
+
+        var response = await _client.PostAsync("/graphql", GqlRequest(mutation, new
+        {
+            input = new { title = "Integration test scenario", kind = "REQUIREMENT", projectId = "proj-001" }
+        }));
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        var id = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("createScenario")
+            .GetProperty("scenario")
+            .GetProperty("id")
+            .GetString();
+
+        id.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task CreateScenario_MissingTitle_ReturnsTitleRequiredError()
+    {
+        const string mutation = """
+            mutation CreateScenario($input: CreateScenarioInput!) {
+              createScenario(input: $input) {
+                scenario { id }
+                errors { code message field }
+              }
+            }
+            """;
+
+        var response = await _client.PostAsync("/graphql", GqlRequest(mutation, new
+        {
+            input = new { title = "", kind = "REQUIREMENT", projectId = "proj-001" }
+        }));
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        var firstError = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("createScenario")
+            .GetProperty("errors")[0];
+
+        firstError.GetProperty("code").GetString().Should().Be("TITLE_REQUIRED");
+    }
+
+    [Fact]
+    public async Task CreateScenario_ValidInput_ReturnsNonEmptyCorrelationId()
+    {
+        const string mutation = """
+            mutation CreateScenario($input: CreateScenarioInput!) {
+              createScenario(input: $input) {
+                scenario { id }
+                errors { code message field }
+                correlationId
+              }
+            }
+            """;
+
+        var response = await _client.PostAsync("/graphql", GqlRequest(mutation, new
+        {
+            input = new { title = "CorrelationId test scenario", kind = "REQUIREMENT", projectId = "proj-001" }
+        }));
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        var correlationId = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("createScenario")
+            .GetProperty("correlationId")
+            .GetString();
+
+        correlationId.Should().NotBeNullOrEmpty();
+    }
+
+    // ── T039 ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateScenario_EmptyTitle_ReturnsFullTitleRequiredError()
+    {
+        const string mutation = """
+            mutation CreateScenario($input: CreateScenarioInput!) {
+              createScenario(input: $input) {
+                scenario { id }
+                errors { code message field }
+              }
+            }
+            """;
+
+        var response = await _client.PostAsync("/graphql", GqlRequest(mutation, new
+        {
+            input = new { title = "", kind = "REQUIREMENT", projectId = "proj-001" }
+        }));
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        var firstError = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("createScenario")
+            .GetProperty("errors")[0];
+
+        firstError.GetProperty("code").GetString().Should().Be("TITLE_REQUIRED");
+        firstError.GetProperty("field").GetString().Should().Be("title");
+        firstError.GetProperty("message").GetString().Should().Be("Title is required");
+    }
+
+    // ── T040 ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateScenario_TitleTooLong_ReturnsTitleTooLongErrorAndNoRow()
+    {
+        const string mutation = """
+            mutation CreateScenario($input: CreateScenarioInput!) {
+              createScenario(input: $input) {
+                scenario { id }
+                errors { code message field }
+              }
+            }
+            """;
+
+        var longTitle = new string('x', 501);
+
+        var response = await _client.PostAsync("/graphql", GqlRequest(mutation, new
+        {
+            input = new { title = longTitle, kind = "REQUIREMENT", projectId = "proj-t040" }
+        }));
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        var payload = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("createScenario");
+
+        payload.GetProperty("errors")[0]
+            .GetProperty("code").GetString().Should().Be("TITLE_TOO_LONG");
+
+        payload.GetProperty("scenario").ValueKind.Should().Be(JsonValueKind.Null);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.Scenarios.Any(s => s.ProjectId == "proj-t040").Should().BeFalse();
+    }
+
+    // ── T046 ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateScenario_CorrelationId_AppearsBothInPayloadAndLogs()
+    {
+        var logFactory = new CapturingLoggerFactory();
+
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    var descriptor = services.SingleOrDefault(
+                        d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
+                    if (descriptor is not null)
+                        services.Remove(descriptor);
+                    services.AddDbContext<AppDbContext>(options =>
+                        options.UseNpgsql(_postgres.GetConnectionString()));
+                });
+                builder.ConfigureTestServices(services =>
+                    services.AddSingleton<ILoggerFactory>(logFactory));
+            });
+
+        var client = factory.CreateClient();
+
+        const string mutation = """
+            mutation CreateScenario($input: CreateScenarioInput!) {
+              createScenario(input: $input) {
+                scenario { id }
+                errors { code }
+                correlationId
+              }
+            }
+            """;
+
+        var response = await client.PostAsync("/graphql", GqlRequest(mutation, new
+        {
+            input = new { title = "Correlation log test", kind = "REQUIREMENT", projectId = "proj-t046" }
+        }));
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        var correlationId = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("createScenario")
+            .GetProperty("correlationId")
+            .GetString();
+
+        correlationId.Should().NotBeNullOrEmpty();
+        logFactory.Messages.Should().Contain(m => m.Contains(correlationId!));
+    }
+
+    [Fact]
+    public async Task CreateScenario_ValidationError_ReturnsNonEmptyCorrelationId()
+    {
+        const string mutation = """
+            mutation CreateScenario($input: CreateScenarioInput!) {
+              createScenario(input: $input) {
+                scenario { id }
+                errors { code message field }
+                correlationId
+              }
+            }
+            """;
+
+        var response = await _client.PostAsync("/graphql", GqlRequest(mutation, new
+        {
+            input = new { title = "", kind = "REQUIREMENT", projectId = "proj-001" }
+        }));
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        var payload = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("createScenario");
+
+        payload.GetProperty("errors")[0].GetProperty("code").GetString().Should().Be("TITLE_REQUIRED");
+        payload.GetProperty("correlationId").GetString().Should().NotBeNullOrEmpty();
+    }
+}

@@ -1,0 +1,7 @@
+mutation DeleteCodeLink($id: String!, $projectId: String!) {
+    deleteCodeLink(input: { id: $id, projectId: $projectId }) {
+        deletedId
+        success
+        errors { code message }
+    }
+}

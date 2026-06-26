@@ -1,0 +1,160 @@
+@using BirkNext.Web.Services
+
+<section class="qa-command-center" aria-label="QA dashboard" data-testid="coverage-dashboard">
+
+    <!-- ── KPI row: traceability-first ─────────────────────────────────── -->
+    <div class="kpi-row" aria-label="Key metrics">
+        <div class="kpi-card kpi-card-cov-req @KpiEmptyMod" data-testid="dashboard-health-card">
+            <span class="kpi-marker" aria-hidden="true"></span>
+            <span class="@KpiValClass">@KpiCovReqVal</span>
+            <span class="kpi-label">Coverage Requirements</span>
+            <span class="kpi-hint">@KpiCovReqHint</span>
+        </div>
+        <div class="kpi-card kpi-card-covered @KpiCoveredMod" data-testid="dashboard-health-card">
+            <span class="kpi-marker" aria-hidden="true"></span>
+            <span class="@KpiValClass">@KpiCoveredVal</span>
+            <span class="kpi-label">Covered Requirements</span>
+            <span class="kpi-hint">@KpiCoveredHint</span>
+        </div>
+        <div class="kpi-card kpi-card-missing @KpiMissingCardMod" data-testid="dashboard-health-card">
+            <span class="kpi-marker" aria-hidden="true"></span>
+            <span class="@KpiValClass">@KpiMissingVal</span>
+            <span class="kpi-label">Missing Tests</span>
+            <span class="kpi-hint">@KpiMissingHint</span>
+        </div>
+        <div class="kpi-card kpi-card-orphan @KpiOrphanCardMod" data-testid="dashboard-health-card">
+            <span class="kpi-marker" aria-hidden="true"></span>
+            <span class="@KpiValClass">@KpiOrphanVal</span>
+            <span class="kpi-label">Orphan Tests</span>
+            <span class="kpi-hint">@KpiOrphanHint</span>
+        </div>
+    </div>
+
+    <div class="command-grid">
+
+        <!-- ── Top QA Risks ──────────────────────────────────────────── -->
+        <section class="command-panel risk-panel-compact" aria-label="Top QA risks" data-testid="top-qa-risks">
+            <h3 class="panel-title">Top QA Risks</h3>
+            @if (IsEmpty)
+            {
+                <div class="risk-no-data">
+                    <span class="risk-dot risk-dot-clear" aria-hidden="true"></span>
+                    No data yet — run a specification review to identify QA risks.
+                </div>
+            }
+            else if (RiskItems.Count == 0)
+            {
+                <div class="risk-clear">
+                    <span class="risk-dot risk-dot-clear" aria-hidden="true"></span>
+                    No active QA risks — coverage, traceability, and orphan tests are clear.
+                </div>
+            }
+            else
+            {
+                <ul class="risk-list-compact">
+                    @foreach (var risk in RiskItems)
+                    {
+                        <li class="risk-row risk-row-@risk.State">
+                            <span class="risk-dot risk-dot-@risk.State" aria-hidden="true"></span>
+                            <span>@risk.Label</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <!-- ── Next Actions ──────────────────────────────────────────────── -->
+        <section class="command-panel next-actions-panel" aria-label="Next actions">
+            <h3 class="panel-title">Next Actions</h3>
+            <nav class="nav-action-list" data-testid="dashboard-nav-links">
+                <a href="extract" class="nav-action-item">
+                    <span class="nav-action-label">Traceability &amp; Coverage</span>
+                    <span class="nav-action-arrow" aria-hidden="true">→</span>
+                </a>
+                <a href="task-explorer" class="nav-action-item">
+                    <span class="nav-action-label">Task Explorer</span>
+                    <span class="nav-action-arrow" aria-hidden="true">→</span>
+                </a>
+                <a href="spec-drift" class="nav-action-item">
+                    <span class="nav-action-label">Spec Drift</span>
+                    <span class="nav-action-arrow" aria-hidden="true">→</span>
+                </a>
+                <a href="implementation-review" class="nav-action-item">
+                    <span class="nav-action-label">Implementation Review</span>
+                    <span class="nav-action-arrow" aria-hidden="true">→</span>
+                </a>
+            </nav>
+        </section>
+    </div>
+
+</section>
+
+@code {
+    [Parameter, EditorRequired] public DashboardMetrics Metrics { get; set; } = default!;
+
+    private bool IsEmpty => Metrics.TotalCandidates == 0;
+
+    private string KpiEmptyMod    => IsEmpty ? "kpi-card-empty" : "";
+    private string KpiValClass    => IsEmpty ? "kpi-value kpi-value-empty" : "kpi-value";
+
+    // Coverage Requirements KPI
+    private string KpiCovReqVal  => IsEmpty ? "--" : Metrics.RequirementCount.ToString();
+    private string KpiCovReqHint => "requirements in scope";
+
+    // Covered Requirements KPI
+    private string KpiCoveredMod  => IsEmpty ? "kpi-card-empty" : "kpi-success";
+    private string KpiCoveredVal  => IsEmpty ? "--" : Metrics.RequirementsWithTests.ToString();
+    private string KpiCoveredHint => "requirements with tests";
+
+    // Missing Tests KPI
+    private string KpiMissingVal  => IsEmpty ? "--" : Metrics.RequirementsWithoutTests.ToString();
+    private string KpiMissingHint => IsEmpty || Metrics.RequirementsWithoutTests > 0
+        ? "requirements without tests"
+        : "no uncovered requirements";
+    private string KpiMissingCardMod => IsEmpty
+        ? "kpi-card-empty"
+        : Metrics.RequirementsWithoutTests == 0 ? "kpi-risk-none" : "kpi-risk-active";
+
+    // Orphan Tests KPI
+    private string KpiOrphanVal  => IsEmpty ? "--" : Metrics.TestsWithoutRequirements.ToString();
+    private string KpiOrphanHint => IsEmpty || Metrics.TestsWithoutRequirements > 0
+        ? "tests without requirements"
+        : "all tests linked";
+    private string KpiOrphanCardMod => IsEmpty
+        ? "kpi-card-empty"
+        : Metrics.TestsWithoutRequirements == 0 ? "kpi-risk-none" : "kpi-risk-active";
+
+    private IReadOnlyList<RiskItem> RiskItems
+    {
+        get
+        {
+            var risks = new List<RiskItem>();
+
+            if (Metrics.RequirementsWithoutTests > 0)
+                risks.Add(new(
+                    $"Coverage missing for {Metrics.RequirementsWithoutTests} requirement{S(Metrics.RequirementsWithoutTests)}",
+                    "high"));
+
+            if (Metrics.RequirementCount > 0 && Metrics.RequirementsCoveredPercent < 70 && Metrics.RequirementsWithTests > 0)
+                risks.Add(new(
+                    $"Test coverage below 70% — link tests to {Metrics.RequirementsWithoutTests} remaining requirement{S(Metrics.RequirementsWithoutTests)}",
+                    "medium"));
+
+            if (Metrics.TestsWithoutRequirements > 0)
+                risks.Add(new(
+                    $"{Metrics.TestsWithoutRequirements} orphan test{S(Metrics.TestsWithoutRequirements)} require linking",
+                    "medium"));
+
+            if (Metrics.UnresolvedClarifications > 0)
+                risks.Add(new(
+                    $"{Metrics.UnresolvedClarifications} unresolved clarification{S(Metrics.UnresolvedClarifications)}",
+                    "medium"));
+
+            return risks;
+        }
+    }
+
+    private static string S(int n) => n == 1 ? "" : "s";
+
+    private sealed record RiskItem(string Label, string State);
+}

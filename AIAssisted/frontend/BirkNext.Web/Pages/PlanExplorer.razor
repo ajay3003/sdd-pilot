@@ -1,0 +1,75 @@
+@page "/plan-explorer"
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+@inject BirkNext.Web.Services.ProjectDocumentApiService DocumentApi
+
+<PageTitle>Plan Explorer — QA Review Studio</PageTitle>
+
+<div class="pe-page">
+
+    <PageHeader Title="Plan Explorer"
+                Description="Navigate and analyze plan.md artifacts — review architecture decisions, risks, complexity, and constitution compliance in one place." />
+
+    <div class="pe-page-body">
+        <PlanExplorerPanel
+            PlanText="@_initialText"
+            InitialView="@_initialView"
+            OnBuilt="OnPlanBuilt" />
+    </div>
+
+</div>
+
+@code {
+    private string _initialText = string.Empty;
+    private string? _initialView;
+
+    private const string StorageKey = "pe-standalone-plan";
+
+    protected override void OnInitialized()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var view))
+            _initialView = view;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        string? content = null;
+        try { content = await DocumentApi.GetAsync("plan"); } catch { }
+
+        if (!string.IsNullOrWhiteSpace(content))
+        {
+            _initialText = content;
+            StateHasChanged();
+            return;
+        }
+
+        string? legacy = null;
+        try { legacy = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey); } catch { }
+
+        if (!string.IsNullOrWhiteSpace(legacy))
+        {
+            try
+            {
+                await DocumentApi.SaveAsync("plan", legacy);
+                await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey);
+            }
+            catch { }
+            _initialText = legacy;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnPlanBuilt(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        try { await DocumentApi.SaveAsync("plan", text); } catch { }
+        try { await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey); } catch { }
+    }
+}

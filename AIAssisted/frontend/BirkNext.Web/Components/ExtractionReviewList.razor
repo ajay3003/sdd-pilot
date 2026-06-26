@@ -1,0 +1,1858 @@
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using Microsoft.Extensions.Logging
+@implements IDisposable
+@inject ICreateScenariosMutation CreateScenariosMutation
+@inject ISaveReviewedCandidatesMutation SaveReviewedCandidatesMutation
+@inject ISaveCandidateLinksMutation SaveCandidateLinksMutation
+@inject IGetReviewedCandidatesQuery GetReviewedCandidatesQuery
+@inject ILogger<ExtractionReviewList> Logger
+@inject IExtractionSessionService SessionService
+@inject FeatureVisibilityService FeatureViz
+
+@if (PipelineResult is null)
+{
+    return;
+}
+
+@if (PipelineResult.Status == PipelineStatus.NoResults)
+{
+    <div class="empty-state-container">
+        <div class="review-empty-icon" aria-hidden="true"></div>
+        <h3>No artifacts require review</h3>
+        <p data-testid="empty-state">No traceability data available yet. Analyze a specification to generate coverage data for Traceability &amp; Coverage.</p>
+        <ul>
+            <li>Requirements</li>
+            <li>Test Cases</li>
+            <li>Coverage Analysis</li>
+            <li>Suggested Traceability Links</li>
+        </ul>
+        <p class="empty-state-flow">Analyze &rarr; Traceability &amp; Coverage &rarr; Flow View &rarr; Spec Explorer</p>
+    </div>
+}
+else
+{
+    <div class="extraction-review-list">
+        @if (_activeViewMode != ExtractionViewMode.Architecture
+             && _activeViewMode != ExtractionViewMode.Traceability
+             && _activeViewMode != ExtractionViewMode.Capability)
+        {
+        <p class="candidate-summary" data-testid="candidate-summary">
+            @PipelineResult.Candidates.Count artifacts extracted —
+            @PipelineResult.RequirementCount requirement@(PipelineResult.RequirementCount == 1 ? "" : "s"),
+            @PipelineResult.TestCount test@(PipelineResult.TestCount == 1 ? "" : "s"),
+            @PipelineResult.NeedsClarificationCount clarification@(PipelineResult.NeedsClarificationCount == 1 ? "" : "s")
+            @if (PipelineResult.Profile != ExtractionProfile.Default)
+            {
+                <span class="profile-badge" data-testid="profile-badge">@PipelineResult.Profile</span>
+            }
+        </p>
+        }
+
+        @{
+            var rNewCount       = PipelineResult.Candidates.Count(c => c.ReviewStatus is CandidateReviewStatus.New or CandidateReviewStatus.AutoAccepted);
+            var rAcceptedCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted);
+            var rRejectedCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Rejected);
+            var rNeedsRevCount  = PipelineResult.Candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.NeedsReview);
+            var linkSuggestionsCount = _links.Count;
+            var coverageExcludedCount = rRejectedCount;
+            var hasNonNewStatus = rAcceptedCount > 0 || rRejectedCount > 0 || rNeedsRevCount > 0;
+            var totalCandidates = PipelineResult.Candidates.Count;
+            var reviewedCount = rAcceptedCount + rRejectedCount + rNeedsRevCount;
+            var reviewedPct = Percent(reviewedCount, totalCandidates);
+            var acceptedRatio = Percent(rAcceptedCount, totalCandidates);
+            var rejectedRatio = Percent(rRejectedCount, totalCandidates);
+            var requirementsWithTests = CountRequirementsWithTests();
+            var requirementsWithoutTests = CountRequirementsWithoutTests();
+            var requirementsWithClarifications = CountRequirementsWithClarifications();
+            var requirementsWithUnresolvedClarifications = CountRequirementsWithUnresolvedClarifications();
+            var testsWithoutRequirements = CountTestsWithoutRequirements();
+            var clarificationsWithoutRequirements = CountClarificationsWithoutRequirements();
+            var unresolvedClarifications = CountUnresolvedClarifications();
+            var requirementsCoveredPct = Percent(requirementsWithTests, PipelineResult.RequirementCount);
+            var requirementsWithoutTestsPct = Percent(requirementsWithoutTests, PipelineResult.RequirementCount);
+            var testsWithRequirements = PipelineResult.TestCount - testsWithoutRequirements;
+            var testsLinkedToRequirementsPct = Percent(testsWithRequirements, PipelineResult.TestCount);
+            var pendingRequirements = CountPending(ScenarioKind.Requirement);
+            var pendingTests = CountPending(ScenarioKind.Test);
+            var pendingClarifications = CountPending(ScenarioKind.NeedsClarification);
+        }
+
+        @if (_showRestoreNotice)
+        {
+            <div class="session-restore-notice" role="status" data-testid="session-restore-notice"
+                 aria-label="Review session restored">
+                <span>Review session restored (@FormatSessionAge(InitialSession!.Timestamp))</span>
+                <button type="button" @onclick='() => _showRestoreNotice = false'
+                        aria-label="Dismiss session notice"
+                        data-testid="session-restore-dismiss">×</button>
+            </div>
+        }
+
+        <div class="view-mode-tabs" role="tablist" aria-label="Grouping view">
+            <button type="button" role="tab"
+                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Traceability ? "is-active" : "")"
+                    aria-selected="@(_activeViewMode == ExtractionViewMode.Traceability)"
+                    title="Default QA risk view: coverage, gaps, orphan tests, user story links, success criteria and tasks."
+                    @onclick="() => SetViewMode(ExtractionViewMode.Traceability)">
+                <span class="tab-icon" aria-hidden="true">🔗</span>Traceability &amp; Coverage
+            </button>
+            <button type="button" role="tab"
+                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Capability ? "is-active" : "")"
+                    aria-selected="@(_activeViewMode == ExtractionViewMode.Capability)"
+                    title="Shows business flows and user journeys."
+                    @onclick="() => SetViewMode(ExtractionViewMode.Capability)">
+                <span class="tab-icon" aria-hidden="true">🔀</span>Flow View
+            </button>
+            <button type="button" role="tab"
+                    class="view-mode-tab @(_activeViewMode == ExtractionViewMode.SpecExplorer ? "is-active" : "")"
+                    aria-selected="@(_activeViewMode == ExtractionViewMode.SpecExplorer)"
+                    title="Navigable hierarchical tree of the full specification."
+                    @onclick="() => SetViewMode(ExtractionViewMode.SpecExplorer)">
+                <span class="tab-icon" aria-hidden="true">🌳</span>Spec Explorer
+            </button>
+            @if (ShowExtractionReview)
+            {
+                <button type="button" role="tab"
+                        class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Extraction ? "is-active" : "")"
+                        aria-selected="@(_activeViewMode == ExtractionViewMode.Extraction)"
+                        title="Advanced optional quality-control workspace for reviewing AI extraction quality."
+                        @onclick="() => SetViewMode(ExtractionViewMode.Extraction)">
+                    <span class="tab-icon" aria-hidden="true">📄</span>Extraction Review
+                </button>
+            }
+            @if (ShowArchitectureView)
+            {
+                <button type="button" role="tab"
+                        class="view-mode-tab @(_activeViewMode == ExtractionViewMode.Architecture ? "is-active" : "")"
+                        aria-selected="@(_activeViewMode == ExtractionViewMode.Architecture)"
+                        title="Shows technical concerns, integrations and system boundaries."
+                        @onclick="() => SetViewMode(ExtractionViewMode.Architecture)">
+                    <span class="tab-icon" aria-hidden="true">🏗</span>Architecture View
+                </button>
+            }
+        </div>
+
+        <div class="analysis-workflow-hint" data-testid="analysis-workflow-hint">
+            Analyze, then start in Traceability &amp; Coverage to review coverage and gaps. Use Flow View for QA readiness and Spec Explorer for structure.
+        </div>
+
+        @if (_activeViewMode == ExtractionViewMode.Extraction && ShowExtractionReview)
+        {
+            <section class="extraction-review-banner" data-testid="extraction-review-banner" aria-labelledby="extraction-review-banner-title">
+                <div>
+                    <div class="advanced-feature-label">Advanced optional quality control</div>
+                    <h2 id="extraction-review-banner-title">Extraction Review</h2>
+                    <p>Artifacts have already been extracted and are available in Traceability &amp; Coverage. Use this page when you want to review AI extraction quality before or after normal QA analysis.</p>
+                    <ul>
+                        <li>Review extraction quality</li>
+                        <li>Accept or reject extracted artifacts</li>
+                        <li>Link related artifacts</li>
+                        <li>Correct traceability relationships</li>
+                        <li>Diagnose extraction issues</li>
+                    </ul>
+                    <p class="extraction-review-optional-note">This step is optional for normal testing workflows.</p>
+                </div>
+            </section>
+
+            <section class="extraction-health-summary" data-testid="extraction-health-summary" aria-label="Extraction health summary">
+                <div class="extraction-health-card">
+                    <span class="health-value">@rNewCount</span>
+                    <span class="health-label">AutoAccepted</span>
+                </div>
+                <div class="extraction-health-card">
+                    <span class="health-value">@rAcceptedCount</span>
+                    <span class="health-label">Manually Accepted</span>
+                </div>
+                <div class="extraction-health-card">
+                    <span class="health-value">@rNeedsRevCount</span>
+                    <span class="health-label">Needs Review</span>
+                </div>
+                <div class="extraction-health-card">
+                    <span class="health-value">@rRejectedCount</span>
+                    <span class="health-label">Rejected</span>
+                </div>
+                <div class="extraction-health-card">
+                    <span class="health-value">@linkSuggestionsCount</span>
+                    <span class="health-label">Link Suggestions</span>
+                </div>
+                <div class="extraction-health-card extraction-health-impact">
+                    <span class="health-value">@coverageExcludedCount</span>
+                    <span class="health-label">Coverage Impact</span>
+                    <span class="health-detail">artifacts currently excluded</span>
+                </div>
+            </section>
+
+            <section class="review-status-help" data-testid="review-status-help" aria-label="Review status meanings">
+                <h3>Review Status</h3>
+                <dl>
+                    <div>
+                        <dt>AutoAccepted</dt>
+                        <dd>Automatically extracted and included.</dd>
+                    </div>
+                    <div>
+                        <dt>Manually Accepted</dt>
+                        <dd>Reviewed and confirmed.</dd>
+                    </div>
+                    <div>
+                        <dt>Needs Review</dt>
+                        <dd>Potential issue requiring attention.</dd>
+                    </div>
+                    <div>
+                        <dt>Rejected</dt>
+                        <dd>Excluded from Traceability calculations.</dd>
+                    </div>
+                </dl>
+            </section>
+        }
+
+        @if (_activeViewMode != ExtractionViewMode.SpecExplorer
+             && _activeViewMode != ExtractionViewMode.Architecture
+             && _activeViewMode != ExtractionViewMode.Traceability
+             && _activeViewMode != ExtractionViewMode.Capability)
+        {
+        <div class="filter-toolbar">
+            <div class="filter-chips" role="group" aria-label="Filter by type" hidden="@(_activeViewMode == ExtractionViewMode.Traceability ? "hidden" : null)">
+                <button type="button"
+                        class="filter-chip @(_activeFilter is null ? "is-active" : "")"
+                        @onclick="HandleClearTypeFilter"
+                        aria-pressed="@(_activeFilter is null)">
+                    All <span class="chip-count">@PipelineResult.Candidates.Count</span>
+                </button>
+                @if (PipelineResult.RequirementCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-requirement @(_activeFilter == ScenarioKind.Requirement ? "is-active" : "")"
+                            @onclick="() => HandleSetTypeFilter(ScenarioKind.Requirement)"
+                            aria-pressed="@(_activeFilter == ScenarioKind.Requirement)">
+                        REQUIREMENT <span class="chip-count">@PipelineResult.RequirementCount</span>
+                    </button>
+                }
+                @if (PipelineResult.TestCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-test @(_activeFilter == ScenarioKind.Test ? "is-active" : "")"
+                            @onclick="() => HandleSetTypeFilter(ScenarioKind.Test)"
+                            aria-pressed="@(_activeFilter == ScenarioKind.Test)">
+                        TEST <span class="chip-count">@PipelineResult.TestCount</span>
+                    </button>
+                }
+                @if (PipelineResult.NeedsClarificationCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-needsclarification @(_activeFilter == ScenarioKind.NeedsClarification ? "is-active" : "")"
+                            @onclick="() => HandleSetTypeFilter(ScenarioKind.NeedsClarification)"
+                            aria-pressed="@(_activeFilter == ScenarioKind.NeedsClarification)">
+                        NEEDS_CLARIFICATION <span class="chip-count">@PipelineResult.NeedsClarificationCount</span>
+                    </button>
+                }
+            </div>
+            <input type="search"
+                   class="search-input"
+                   placeholder="Search candidates…"
+                   value="@_searchTerm"
+                   @oninput="HandleSearchChanged"
+                   aria-label="Search candidates" />
+        </div>
+
+        @if (hasNonNewStatus || _activeReviewFilter is not null)
+        {
+            <div class="review-status-filter" role="group" aria-label="Filter by review status">
+                <button type="button"
+                        class="filter-chip @(_activeReviewFilter is null ? "is-active" : "")"
+                        @onclick="HandleClearReviewFilter"
+                        aria-pressed="@(_activeReviewFilter is null)">
+                    All statuses
+                </button>
+                @if (rAcceptedCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-status-accepted @(_activeReviewFilter == CandidateReviewStatus.Accepted ? "is-active" : "")"
+                            @onclick="() => HandleSetReviewFilter(CandidateReviewStatus.Accepted)"
+                            aria-pressed="@(_activeReviewFilter == CandidateReviewStatus.Accepted)">
+                        Accepted <span class="chip-count">@rAcceptedCount</span>
+                    </button>
+                }
+                @if (rRejectedCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-status-rejected @(_activeReviewFilter == CandidateReviewStatus.Rejected ? "is-active" : "")"
+                            @onclick="() => HandleSetReviewFilter(CandidateReviewStatus.Rejected)"
+                            aria-pressed="@(_activeReviewFilter == CandidateReviewStatus.Rejected)">
+                        Rejected <span class="chip-count">@rRejectedCount</span>
+                    </button>
+                }
+                @if (rNeedsRevCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-status-needsreview @(_activeReviewFilter == CandidateReviewStatus.NeedsReview ? "is-active" : "")"
+                            @onclick="() => HandleSetReviewFilter(CandidateReviewStatus.NeedsReview)"
+                            aria-pressed="@(_activeReviewFilter == CandidateReviewStatus.NeedsReview)">
+                        Needs Review <span class="chip-count">@rNeedsRevCount</span>
+                    </button>
+                }
+                @if (rNewCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-status-new @(_activeReviewFilter == CandidateReviewStatus.New ? "is-active" : "")"
+                            @onclick="() => HandleSetReviewFilter(CandidateReviewStatus.New)"
+                            aria-pressed="@(_activeReviewFilter == CandidateReviewStatus.New)">
+                        Pending <span class="chip-count">@rNewCount</span>
+                    </button>
+                }
+            </div>
+        }
+
+        @if (_activeViewMode != ExtractionViewMode.Traceability &&
+             (PipelineResult.RequirementCount > 0 || PipelineResult.TestCount > 0 || PipelineResult.NeedsClarificationCount > 0))
+        {
+            <div class="traceability-filter" role="group" aria-label="Filter by traceability">
+                <button type="button"
+                        class="filter-chip @(_activeLinkFilter is null ? "is-active" : "")"
+                        @onclick="HandleClearLinkFilter"
+                        aria-pressed="@(_activeLinkFilter is null)">
+                    All
+                </button>
+                @if (PipelineResult.RequirementCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithoutTests ? "is-active" : "")"
+                            @onclick="() => HandleSetLinkFilter(LinkFilter.RequirementsWithoutTests)"
+                            aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithoutTests)">
+                        Requirements without tests <span class="chip-count">@CountRequirementsWithoutTests()</span>
+                    </button>
+                    <button type="button"
+                            class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithTests ? "is-active" : "")"
+                            @onclick="() => HandleSetLinkFilter(LinkFilter.RequirementsWithTests)"
+                            aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithTests)">
+                        Requirements with tests <span class="chip-count">@CountRequirementsWithTests()</span>
+                    </button>
+                    <button type="button"
+                            class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithClarifications ? "is-active" : "")"
+                            @onclick="() => HandleSetLinkFilter(LinkFilter.RequirementsWithClarifications)"
+                            aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithClarifications)">
+                        Requirements with clarifications <span class="chip-count">@CountRequirementsWithClarifications()</span>
+                    </button>
+                }
+                @if (PipelineResult.TestCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip @(_activeLinkFilter == LinkFilter.TestsWithoutRequirements ? "is-active" : "")"
+                            @onclick="() => HandleSetLinkFilter(LinkFilter.TestsWithoutRequirements)"
+                            aria-pressed="@(_activeLinkFilter == LinkFilter.TestsWithoutRequirements)">
+                        Tests without requirements <span class="chip-count">@CountTestsWithoutRequirements()</span>
+                    </button>
+                }
+                @if (PipelineResult.NeedsClarificationCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip @(_activeLinkFilter == LinkFilter.ClarificationsWithoutRequirements ? "is-active" : "")"
+                            @onclick="() => HandleSetLinkFilter(LinkFilter.ClarificationsWithoutRequirements)"
+                            aria-pressed="@(_activeLinkFilter == LinkFilter.ClarificationsWithoutRequirements)">
+                        Clarifications without requirements <span class="chip-count">@CountClarificationsWithoutRequirements()</span>
+                    </button>
+                }
+            </div>
+        }
+        } @* end @if (_activeViewMode != ExtractionViewMode.SpecExplorer) *@
+
+        @{
+            // In Traceability View the type chip filter is bypassed so threads always have all three kinds.
+            var isTracView = _activeViewMode == ExtractionViewMode.Traceability;
+            var visibleRequirements = (isTracView || _activeFilter is null || _activeFilter == ScenarioKind.Requirement)
+                                          ? GetVisible(ScenarioKind.Requirement) : [];
+            var visibleTests        = (isTracView || _activeFilter is null || _activeFilter == ScenarioKind.Test)
+                                          ? GetVisible(ScenarioKind.Test) : [];
+            var visibleNeeds        = (isTracView || _activeFilter is null || _activeFilter == ScenarioKind.NeedsClarification)
+                                          ? GetVisible(ScenarioKind.NeedsClarification) : [];
+            var reqGroups           = GetRequirementGroups(visibleRequirements);
+            var testGroups          = GetTestGroups(visibleTests);
+            var clrGroups           = GetClarificationGroups(visibleNeeds);
+            var anyVisible          = visibleRequirements.Count > 0 || visibleTests.Count > 0 || visibleNeeds.Count > 0;
+            var visibleDocumentCandidates = visibleRequirements
+                .Concat(visibleTests)
+                .Concat(visibleNeeds)
+                .ToList();
+        }
+
+        @if (_activeViewMode != ExtractionViewMode.SpecExplorer)
+        {
+        @if (_reviewPersistState == ReviewPersistState.Saved)
+        {
+            <p class="notification notification-success" data-testid="review-saved" role="status">Review saved successfully.</p>
+        }
+        else if (_reviewPersistState == ReviewPersistState.Failed)
+        {
+            <p class="notification notification-error" data-testid="review-save-failed" role="alert">Review save failed. Please try again.</p>
+        }
+
+        @if (_savePhase == ReviewSavePhase.PartialSuccess)
+        {
+            <p class="notification notification-warning" data-testid="save-partial" role="status">Some candidates were saved successfully; others encountered errors. Review the items below.</p>
+        }
+        else if (_savePhase == ReviewSavePhase.Complete)
+        {
+            @if (_suggestionResult is { SuggestionsAvailable: true })
+            {
+                <div class="save-complete-panel" data-testid="save-complete" role="status">
+                    <p class="notification notification-success">@SaveCompleteMessage</p>
+                    <div class="suggestion-next-step">
+                        <span class="suggestion-next-label">@_suggestionResult.TotalGenerated traceability suggestion@(_suggestionResult.TotalGenerated == 1 ? "" : "s") generated</span>
+                        @if (_suggestionResult.HighConfidenceCount > 0)
+                        {
+                            <span class="suggestion-confidence-tag">@_suggestionResult.HighConfidenceCount high confidence</span>
+                        }
+                        @if (_suggestionResult.NeedsReviewCount > 0)
+                        {
+                            <span class="suggestion-review-tag">@_suggestionResult.NeedsReviewCount need review</span>
+                        }
+                        <a href="traceability/suggestions" class="suggestion-cta-link">Review Suggestions →</a>
+                    </div>
+                </div>
+            }
+            else if (_savedSummary is { TestCount: > 0, RequirementCount: 0, ClarificationCount: 0 })
+            {
+                <div class="save-complete-panel" data-testid="save-complete" role="status">
+                    <p class="notification notification-success">@SaveCompleteMessage</p>
+                    <p class="suggestion-info-note">To generate traceability suggestions, also save requirements. Suggestions link each test to the requirement it validates.</p>
+                </div>
+            }
+            else
+            {
+                <p class="notification notification-success" data-testid="save-complete" role="status">@SaveCompleteMessage</p>
+            }
+        }
+        else if (_savePhase == ReviewSavePhase.Failed)
+        {
+            <p class="notification notification-error" data-testid="save-failed" role="alert">Save failed. Please try again.</p>
+        }
+
+        @if (anyVisible && _activeViewMode != ExtractionViewMode.Capability && _activeViewMode != ExtractionViewMode.Extraction)
+        {
+            <div class="section-summary-bar" role="toolbar" aria-label="Section controls">
+                <div class="section-summary-pills">
+                    @if (visibleRequirements.Count > 0)
+                    {
+                        <span class="summary-pill summary-pill-requirement">
+                            @visibleRequirements.Count REQUIREMENT
+                        </span>
+                    }
+                    @if (visibleTests.Count > 0)
+                    {
+                        <span class="summary-pill summary-pill-test">
+                            @visibleTests.Count TEST
+                        </span>
+                    }
+                    @if (visibleNeeds.Count > 0)
+                    {
+                        <span class="summary-pill summary-pill-needsclarification">
+                            @visibleNeeds.Count NEEDS_CLARIFICATION
+                        </span>
+                    }
+                </div>
+                @if (_activeViewMode != ExtractionViewMode.Traceability)
+                {
+                    <div class="section-expand-controls">
+                        <button type="button"
+                                class="section-expand-btn"
+                                @onclick="ExpandAll"
+                                disabled="@AllSectionsExpanded"
+                                aria-label="Expand all sections">
+                            Expand All
+                        </button>
+                        <button type="button"
+                                class="section-expand-btn"
+                                @onclick="CollapseAll"
+                                disabled="@AllSectionsCollapsed"
+                                aria-label="Collapse all sections">
+                            Collapse All
+                        </button>
+                    </div>
+                }
+            </div>
+        }
+        } @* end @if (_activeViewMode != ExtractionViewMode.SpecExplorer) *@
+
+        @if (_activeViewMode == ExtractionViewMode.Extraction && ShowExtractionReview)
+        {
+            <DocumentView SpecMarkdown="@SpecMarkdown"
+                          Candidates="@visibleDocumentCandidates"
+                          Links="@_links"
+                          OnSelectionToggled="HandleSelectionToggled"
+                          OnReviewStatusChanged="HandleReviewStatusChanged"
+                          OnOpenLinkPanel="HandleOpenLinkDrawer"
+                          LinkModalCandidateId="@_linkModalCandidate?.CandidateId" />
+        }
+
+        @if (_activeViewMode == ExtractionViewMode.Capability)
+        {
+            <FlowView SpecMarkdown="@SpecMarkdown"
+                      Candidates="@(PipelineResult?.Candidates ?? [])"
+                      Links="@_links" />
+        }
+
+        @if (_activeViewMode == ExtractionViewMode.Traceability)
+        {
+            <TraceabilityView SpecMarkdown="@SpecMarkdown"
+                              Candidates="@(PipelineResult?.Candidates ?? [])"
+                              Links="@_links"
+                              OnOpenInTaskExplorer="@HandleOpenInTaskExplorer" />
+        }
+
+        @if (_activeViewMode == ExtractionViewMode.Architecture && ShowArchitectureView)
+        {
+            <ArchitectureView SpecMarkdown="@SpecMarkdown"
+                              Candidates="@(PipelineResult?.Candidates ?? [])" />
+        }
+
+        @if (_activeViewMode == ExtractionViewMode.SpecExplorer)
+        {
+            <SpecExplorerPanel Candidates="@(PipelineResult?.Candidates ?? [])" InitialSpecMarkdown="@SpecMarkdown" IsEmbeddedInReview="true" />
+        }
+
+        @if (!anyVisible && _activeViewMode != ExtractionViewMode.Traceability && _activeViewMode != ExtractionViewMode.SpecExplorer && _activeViewMode != ExtractionViewMode.Capability && _activeViewMode != ExtractionViewMode.Extraction)
+        {
+            <div class="filter-empty-state" data-testid="filter-empty-state">
+                <p>No candidates match@(_searchTerm.Length > 0 ? " your search" : " the selected filter").</p>
+            </div>
+        }
+
+        @if (_activeViewMode != ExtractionViewMode.SpecExplorer
+             && _activeViewMode != ExtractionViewMode.Architecture
+             && _activeViewMode != ExtractionViewMode.Traceability
+             && _activeViewMode != ExtractionViewMode.Capability)
+        {
+        <div class="review-action-bar">
+            <button type="button"
+                    class="btn-save-review"
+                    @onclick="HandleSaveReviewAsync"
+                    disabled="@(_reviewPersistState == ReviewPersistState.Saving)"
+                    data-testid="save-review-button">
+                @(_reviewPersistState == ReviewPersistState.Saving ? "Saving…" : "Save Review Progress")
+            </button>
+
+            @if (_selectedIds.Count > 0 && _savePhase != ReviewSavePhase.Saving)
+            {
+                <span class="action-bar-selection-count">@_selectedIds.Count selected</span>
+
+                @if (HasPendingSelected)
+                {
+                    <div class="bulk-review-actions">
+                        <button type="button" class="bulk-review-btn bulk-review-accept"
+                                @onclick="@(() => BulkSetStatus(CandidateReviewStatus.Accepted))">
+                            Accept Selected
+                        </button>
+                        <button type="button" class="bulk-review-btn bulk-review-reject"
+                                @onclick="@(() => BulkSetStatus(CandidateReviewStatus.Rejected))">
+                            Reject Selected
+                        </button>
+                        <button type="button" class="bulk-review-btn bulk-review-needsreview"
+                                @onclick="@(() => BulkSetStatus(CandidateReviewStatus.NeedsReview))">
+                            Mark Needs Review
+                        </button>
+                    </div>
+                }
+            }
+
+            <div class="action-bar-right">
+                @if (_selectedIds.Count > 0 && _savePhase != ReviewSavePhase.Saving)
+                {
+                    <button type="button" class="btn-secondary" @onclick="ClearSelection">
+                        Clear Selection
+                    </button>
+
+                    @if (HasOnlyAlreadySavedSelected)
+                    {
+                        <button type="button" class="btn-primary" disabled
+                                title="All selected items are already saved to the QA Artifact Library."
+                                data-testid="confirm-save-button">
+                            Save Selected Artifacts
+                        </button>
+                    }
+                    else if (HasAcceptedUnsavedSelected)
+                    {
+                        <button type="button" class="btn-primary"
+                                @onclick="HandleSaveConfirm"
+                                data-testid="confirm-save-button">
+                            @if (_savePhase == ReviewSavePhase.Saving)
+                            {
+                                <span>Saving…</span>
+                            }
+                            else
+                            {
+                                <span>Save @SaveableSelectedCount Accepted Artifact@(SaveableSelectedCount == 1 ? "" : "s")</span>
+                            }
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn-primary" disabled
+                                title="Accept selected artifacts before saving them to the QA Artifact Library."
+                                data-testid="confirm-save-button">
+                            Save Accepted Artifacts
+                        </button>
+                    }
+                }
+                else if (_selectedIds.Count == 0)
+                {
+                    <button type="button" class="btn-primary" disabled
+                            data-testid="confirm-save-button">
+                        Save Accepted Artifacts
+                    </button>
+                }
+            </div>
+        </div>
+
+        @if (_linkModalCandidate is not null)
+        {
+            <div class="link-drawer-overlay" @onclick="CloseDrawer" aria-hidden="true"></div>
+            <div class="link-drawer"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-label="Link related candidates"
+                 tabindex="-1"
+                 @ref="_drawerRef"
+                 @onkeydown="HandleDrawerKeyDown"
+                 data-testid="link-drawer">
+                <CandidateLinkPanel
+                    Candidate="_linkModalCandidate"
+                    Links="GetLinksForCandidate(_linkModalCandidate.CandidateId)"
+                    LinkableCandidates="GetLinkableCandidates(_linkModalCandidate)"
+                    OnLinkAdded="HandleLinkAdded"
+                    OnLinkRemoved="HandleLinkRemoved"
+                    OnClose="CloseDrawer" />
+            </div>
+        }
+        } @* end @if (_activeViewMode != ExtractionViewMode.SpecExplorer) for action bar *@
+    </div>
+}
+
+@code {
+    [Parameter] public ExtractionPipelineResult? PipelineResult { get; set; }
+    [Parameter] public ExtractionSessionSnapshot? InitialSession { get; set; }
+    [Parameter] public string SpecMarkdown { get; set; } = string.Empty;
+
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+
+    private enum ReviewPersistState { Idle, Saving, Saved, Failed }
+
+    private readonly HashSet<Guid> _selectedIds = new();
+    private ReviewSavePhase _savePhase = ReviewSavePhase.Idle;
+    private ReviewPersistState _reviewPersistState = ReviewPersistState.Idle;
+    private SuggestionResultData? _suggestionResult;
+    private SavedTypeSummary? _savedSummary;
+    private int _alreadySavedCount;
+
+    // ── Selection context helpers ─────────────────────────────────────────────
+    private IReadOnlyList<ExtractionCandidate> SelectedCandidates =>
+        PipelineResult?.Candidates.Where(c => _selectedIds.Contains(c.CandidateId)).ToList()
+        ?? (IReadOnlyList<ExtractionCandidate>)Array.Empty<ExtractionCandidate>();
+
+    private bool HasPendingSelected =>
+        SelectedCandidates.Any(c => c.ReviewStatus is CandidateReviewStatus.New or CandidateReviewStatus.AutoAccepted or CandidateReviewStatus.NeedsReview);
+
+    private bool HasAcceptedUnsavedSelected =>
+        SelectedCandidates.Any(c => c.ReviewStatus == CandidateReviewStatus.Accepted
+                                 && c.SaveState != CandidateSaveState.Saved);
+
+    private bool HasOnlyAlreadySavedSelected =>
+        _selectedIds.Count > 0
+        && SelectedCandidates.All(c => c.SaveState == CandidateSaveState.Saved);
+
+    private int SaveableSelectedCount =>
+        SelectedCandidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted
+                                   && c.SaveState != CandidateSaveState.Saved);
+    private string _sessionId = Guid.NewGuid().ToString();
+    private ExtractionPipelineResult? _previousPipelineResult;
+    private ScenarioKind? _activeFilter = null;
+    private CandidateReviewStatus? _activeReviewFilter = null;
+    private LinkFilter? _activeLinkFilter = null;
+    private string _searchTerm = string.Empty;
+    private readonly Dictionary<ScenarioKind, bool> _sectionExpanded = new();
+    private readonly Dictionary<string, bool> _reqSubsectionExpanded = new();
+    private readonly Dictionary<string, bool> _testSubsectionExpanded = new();
+    private readonly Dictionary<string, bool> _clrSubsectionExpanded = new();
+    private readonly Dictionary<string, bool> _capabilityGroupExpanded = new();
+    private readonly Dictionary<string, bool> _architectureGroupExpanded = new();
+    private ExtractionViewMode _activeViewMode = ExtractionViewMode.Traceability;
+    private readonly List<CandidateLinkEntry> _links = new();
+    private ExtractionCandidate? _linkModalCandidate;
+    private ExtractionCandidate? _prevLinkModalCandidate;
+    private ElementReference _drawerRef;
+    private bool _initialSessionConsumed;
+    private bool _showRestoreNotice;
+
+    private bool ShowExtractionReview => FeatureViz.EnableExtractionReview;
+    private bool ShowArchitectureView => FeatureViz.EnableArchitectureView;
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(PipelineResult, _previousPipelineResult))
+        {
+            _previousPipelineResult = PipelineResult;
+            _savePhase = ReviewSavePhase.Idle;
+            _reviewPersistState = ReviewPersistState.Idle;
+            _suggestionResult = null;
+            _savedSummary = null;
+            _alreadySavedCount = 0;
+
+            if (InitialSession is not null && !_initialSessionConsumed)
+            {
+                _initialSessionConsumed = true;
+                _sessionId = InitialSession.SessionId;
+                RestoreFromSession(InitialSession);
+                EnsureActiveViewModeAvailable();
+                _showRestoreNotice = true;
+                // Auto-persist the restored session artifacts to server
+                _ = AutoPersistSessionArtifactsAsync();
+            }
+            else
+            {
+                _selectedIds.Clear();
+                _sessionId = Guid.NewGuid().ToString();
+                _activeFilter = null;
+                _activeReviewFilter = null;
+                _activeLinkFilter = null;
+                _searchTerm = string.Empty;
+                _activeViewMode = ExtractionViewMode.Traceability;
+                _sectionExpanded.Clear();
+                _reqSubsectionExpanded.Clear();
+                _testSubsectionExpanded.Clear();
+                _clrSubsectionExpanded.Clear();
+                _capabilityGroupExpanded.Clear();
+                _architectureGroupExpanded.Clear();
+                _links.Clear();
+                _showRestoreNotice = false;
+                if (PipelineResult is not null)
+                {
+                    foreach (var kind in PipelineResult.Candidates.Select(c => c.Classification).Distinct())
+                        _sectionExpanded[kind] = true;
+                }
+                EnsureActiveViewModeAvailable();
+                _ = SaveSessionAsync();
+                // Async: restore prior manual review statuses from server, then auto-persist
+                _ = RestoreAndPersistAsync();
+            }
+        }
+    }
+
+    private async Task RestoreAndPersistAsync()
+    {
+        await RestorePriorReviewStatusesFromServerAsync();
+        await AutoPersistSessionArtifactsAsync();
+        StateHasChanged();
+    }
+
+    private async Task RestorePriorReviewStatusesFromServerAsync()
+    {
+        if (PipelineResult is null) return;
+        try
+        {
+            var result = await GetReviewedCandidatesQuery.ExecuteAsync(ProjectId, null);
+            if (result?.Data?.ReviewedCandidates is not { } serverRecords) return;
+
+            var serverById = serverRecords
+                .Where(r => r.CandidateId is not null)
+                .ToDictionary(
+                    r => Guid.Parse(r.CandidateId!),
+                    r => r.ReviewStatus);
+
+            foreach (var candidate in PipelineResult.Candidates)
+            {
+                if (!serverById.TryGetValue(candidate.CandidateId, out var priorStatus)) continue;
+                // Only restore manually-set statuses; don't overwrite with AutoAccepted/New
+                if (priorStatus is CandidateReviewStatus.Accepted
+                    or CandidateReviewStatus.Rejected
+                    or CandidateReviewStatus.NeedsReview)
+                {
+                    candidate.ReviewStatus = priorStatus;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Non-fatal: could not restore prior review statuses from server");
+        }
+    }
+
+    private async Task AutoPersistSessionArtifactsAsync()
+    {
+        if (PipelineResult is null || PipelineResult.Candidates.Count == 0) return;
+        try
+        {
+            var items = PipelineResult.Candidates
+                .Select(c => new SaveReviewedCandidateItemInput
+                {
+                    CandidateId    = c.CandidateId.ToString(),
+                    Title          = c.Title,
+                    Classification = c.Classification,
+                    ReviewStatus   = c.ReviewStatus,
+                    SourceDocument = null,
+                    SourceSection  = c.ContextHeading,
+                    ProjectId      = ProjectId,
+                    ReviewedBy     = null,
+                    ReviewedAt     = c.ReviewStatus is CandidateReviewStatus.Accepted
+                                     or CandidateReviewStatus.Rejected
+                                     or CandidateReviewStatus.NeedsReview
+                                         ? DateTimeOffset.UtcNow
+                                         : null,
+                })
+                .ToList();
+
+            var input = new SaveReviewedCandidatesInput
+            {
+                Items     = items,
+                SessionId = _sessionId,
+            };
+
+            await SaveReviewedCandidatesMutation.ExecuteAsync(input);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Non-fatal: auto-persist of session artifacts failed");
+        }
+    }
+
+    private IEnumerable<string> GetAllSubgroupKeys(ScenarioKind kind) =>
+        PipelineResult?.Candidates
+            .Where(c => c.Classification == kind)
+            .Select(c => c.ContextHeading ?? string.Empty)
+            .Distinct(StringComparer.Ordinal) ?? [];
+
+    private bool AllSubgroupsInState(ScenarioKind kind, Dictionary<string, bool> dict, bool expectedExpanded)
+    {
+        foreach (var k in GetAllSubgroupKeys(kind))
+        {
+            var isExpanded = dict.TryGetValue(k, out var v) && v;
+            if (isExpanded != expectedExpanded) return false;
+        }
+        return true;
+    }
+
+    private void ExpandAll()
+    {
+        foreach (var key in _sectionExpanded.Keys.ToList())
+            _sectionExpanded[key] = true;
+        foreach (var key in GetAllSubgroupKeys(ScenarioKind.Requirement))
+            _reqSubsectionExpanded[key] = true;
+        foreach (var key in GetAllSubgroupKeys(ScenarioKind.Test))
+            _testSubsectionExpanded[key] = true;
+        foreach (var key in GetAllSubgroupKeys(ScenarioKind.NeedsClarification))
+            _clrSubsectionExpanded[key] = true;
+        foreach (var key in GetAllCapabilityGroupKeys())
+            _capabilityGroupExpanded[key] = true;
+        foreach (var key in GetAllArchitectureGroupKeys())
+            _architectureGroupExpanded[key] = true;
+        _ = SaveSessionAsync();
+    }
+
+    private void CollapseAll()
+    {
+        foreach (var key in _sectionExpanded.Keys.ToList())
+            _sectionExpanded[key] = false;
+        foreach (var key in GetAllSubgroupKeys(ScenarioKind.Requirement))
+            _reqSubsectionExpanded[key] = false;
+        foreach (var key in GetAllSubgroupKeys(ScenarioKind.Test))
+            _testSubsectionExpanded[key] = false;
+        foreach (var key in GetAllSubgroupKeys(ScenarioKind.NeedsClarification))
+            _clrSubsectionExpanded[key] = false;
+        foreach (var key in GetAllCapabilityGroupKeys())
+            _capabilityGroupExpanded[key] = false;
+        foreach (var key in GetAllArchitectureGroupKeys())
+            _architectureGroupExpanded[key] = false;
+        _ = SaveSessionAsync();
+    }
+
+    private bool AllSectionsExpanded => _activeViewMode switch
+    {
+        ExtractionViewMode.Capability    => AllGroupsInState(GetAllCapabilityGroupKeys(), GetCapabilityGroupExpanded, true),
+        ExtractionViewMode.Architecture  => AllGroupsInState(GetAllArchitectureGroupKeys(), GetArchitectureGroupExpanded, true),
+        _ => _sectionExpanded.Count > 0 &&
+             _sectionExpanded.Values.All(v => v) &&
+             AllSubgroupsInState(ScenarioKind.Requirement, _reqSubsectionExpanded, true) &&
+             AllSubgroupsInState(ScenarioKind.Test, _testSubsectionExpanded, true) &&
+             AllSubgroupsInState(ScenarioKind.NeedsClarification, _clrSubsectionExpanded, true),
+    };
+
+    private bool AllSectionsCollapsed => _activeViewMode switch
+    {
+        ExtractionViewMode.Capability    => AllGroupsInState(GetAllCapabilityGroupKeys(), GetCapabilityGroupExpanded, false),
+        ExtractionViewMode.Architecture  => AllGroupsInState(GetAllArchitectureGroupKeys(), GetArchitectureGroupExpanded, false),
+        _ => _sectionExpanded.Count > 0 &&
+             _sectionExpanded.Values.All(v => !v) &&
+             AllSubgroupsInState(ScenarioKind.Requirement, _reqSubsectionExpanded, false) &&
+             AllSubgroupsInState(ScenarioKind.Test, _testSubsectionExpanded, false) &&
+             AllSubgroupsInState(ScenarioKind.NeedsClarification, _clrSubsectionExpanded, false),
+    };
+
+    // Kept for backward-compat call site that was previously using AllCapabilityGroupsInState directly
+    private bool AllCapabilityGroupsInState(bool expectedExpanded) =>
+        AllGroupsInState(GetAllCapabilityGroupKeys(), GetCapabilityGroupExpanded, expectedExpanded);
+
+    private static bool AllGroupsInState(IEnumerable<string> keys, Func<string, bool> expandedFn, bool expected)
+    {
+        var list = keys.ToList();
+        return list.Count > 0 && list.All(k => expandedFn(k) == expected);
+    }
+
+    private List<ExtractionCandidate> GetVisible(ScenarioKind kind)
+    {
+        var source = PipelineResult!.Candidates.Where(c => c.Classification == kind);
+        if (_searchTerm.Length > 0)
+            source = source.Where(c => c.Title.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase));
+        if (_activeReviewFilter is not null)
+        {
+            // Treat AutoAccepted as equivalent to New for filter purposes (both are "unreviewed")
+            if (_activeReviewFilter == CandidateReviewStatus.New)
+                source = source.Where(c => c.ReviewStatus is CandidateReviewStatus.New or CandidateReviewStatus.AutoAccepted);
+            else
+                source = source.Where(c => c.ReviewStatus == _activeReviewFilter);
+        }
+        if (_activeLinkFilter is not null)
+        {
+            source = _activeLinkFilter switch
+            {
+                LinkFilter.RequirementsWithoutTests when kind == ScenarioKind.Requirement =>
+                    source.Where(c => GetLinkTestCount(c) == 0),
+                LinkFilter.RequirementsWithTests when kind == ScenarioKind.Requirement =>
+                    source.Where(c => GetLinkTestCount(c) > 0),
+                LinkFilter.RequirementsWithClarifications when kind == ScenarioKind.Requirement =>
+                    source.Where(c => GetLinkClrCount(c) > 0),
+                LinkFilter.TestsWithoutRequirements when kind == ScenarioKind.Test =>
+                    source.Where(c => GetLinkRequirementCount(c) == 0),
+                LinkFilter.ClarificationsWithoutRequirements when kind == ScenarioKind.NeedsClarification =>
+                    source.Where(c => GetLinkRequirementCount(c) == 0),
+                _ => [],
+            };
+        }
+        return source.ToList();
+    }
+
+    private IReadOnlyList<CandidateLinkEntry> GetLinksForCandidate(Guid id) =>
+        _links.Where(l => l.SourceId == id || l.TargetId == id).ToList();
+
+    private IReadOnlyList<ExtractionCandidate> GetLinkableCandidates(ExtractionCandidate c)
+    {
+        if (PipelineResult is null) return [];
+        return c.Classification switch
+        {
+            ScenarioKind.Requirement => PipelineResult.Candidates
+                .Where(x => x.Classification == ScenarioKind.Test ||
+                             x.Classification == ScenarioKind.NeedsClarification)
+                .ToList(),
+            ScenarioKind.Test => PipelineResult.Candidates
+                .Where(x => x.Classification == ScenarioKind.Requirement ||
+                             x.Classification == ScenarioKind.NeedsClarification)
+                .ToList(),
+            ScenarioKind.NeedsClarification => PipelineResult.Candidates
+                .Where(x => x.Classification == ScenarioKind.Requirement ||
+                             x.Classification == ScenarioKind.Test)
+                .ToList(),
+            _ => [],
+        };
+    }
+
+    private int GetLinkTestCount(ExtractionCandidate c) =>
+        _links.Count(l => (l.LinkType == CandidateLinkType.RequirementTest ||
+                           l.LinkType == CandidateLinkType.TestClarification) &&
+                          (l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
+
+    private int GetLinkClrCount(ExtractionCandidate c) =>
+        _links.Count(l => (l.LinkType == CandidateLinkType.RequirementClarification ||
+                           l.LinkType == CandidateLinkType.TestClarification) &&
+                          (l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
+
+    private int GetLinkRequirementCount(ExtractionCandidate c) =>
+        _links.Count(l => (l.LinkType == CandidateLinkType.RequirementTest ||
+                           l.LinkType == CandidateLinkType.RequirementClarification) &&
+                          (l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
+
+    private int CountRequirementsWithoutTests() =>
+        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.Requirement && GetLinkTestCount(c) == 0);
+
+    private int CountRequirementsWithTests() =>
+        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.Requirement && GetLinkTestCount(c) > 0);
+
+    private int CountRequirementsWithClarifications() =>
+        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.Requirement && GetLinkClrCount(c) > 0);
+
+    private int CountTestsWithoutRequirements() =>
+        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.Test && GetLinkRequirementCount(c) == 0);
+
+    private int CountClarificationsWithoutRequirements() =>
+        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification && GetLinkRequirementCount(c) == 0);
+
+    private int CountUnresolvedClarifications() =>
+        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification && IsUnresolved(c));
+
+    private int CountRequirementsWithUnresolvedClarifications()
+    {
+        var unresolvedClarificationIds = PipelineResult!.Candidates
+            .Where(c => c.Classification == ScenarioKind.NeedsClarification && IsUnresolved(c))
+            .Select(c => c.CandidateId)
+            .ToHashSet();
+
+        return PipelineResult.Candidates.Count(c =>
+            c.Classification == ScenarioKind.Requirement &&
+            _links.Any(l => l.LinkType == CandidateLinkType.RequirementClarification &&
+                            (l.SourceId == c.CandidateId && unresolvedClarificationIds.Contains(l.TargetId) ||
+                             l.TargetId == c.CandidateId && unresolvedClarificationIds.Contains(l.SourceId))));
+    }
+
+    private int CountPending(ScenarioKind kind) =>
+        PipelineResult!.Candidates.Count(c => c.Classification == kind && IsUnresolved(c));
+
+    private static bool IsUnresolved(ExtractionCandidate c) =>
+        c.ReviewStatus is CandidateReviewStatus.New or CandidateReviewStatus.NeedsReview;
+
+    private static int Percent(int value, int total) =>
+        total == 0 ? 0 : (int)Math.Round(value * 100.0 / total, MidpointRounding.AwayFromZero);
+
+    private void HandleClearTypeFilter() { _activeFilter = null; _ = SaveSessionAsync(); }
+    private void HandleSetTypeFilter(ScenarioKind kind) { _activeFilter = kind; _ = SaveSessionAsync(); }
+    private void HandleClearReviewFilter() { _activeReviewFilter = null; _ = SaveSessionAsync(); }
+    private void HandleSetReviewFilter(CandidateReviewStatus status) { _activeReviewFilter = status; _ = SaveSessionAsync(); }
+    private void HandleClearLinkFilter() { _activeLinkFilter = null; _ = SaveSessionAsync(); }
+    private void HandleSetLinkFilter(LinkFilter filter) { _activeLinkFilter = filter; _ = SaveSessionAsync(); }
+
+    private void SetViewMode(ExtractionViewMode mode)
+    {
+        if (!IsViewModeAvailable(mode))
+            mode = ExtractionViewMode.Traceability;
+
+        _activeViewMode = mode;
+        _ = SaveSessionAsync();
+    }
+
+    private void EnsureActiveViewModeAvailable()
+    {
+        if (!IsViewModeAvailable(_activeViewMode))
+            _activeViewMode = ExtractionViewMode.Traceability;
+    }
+
+    private bool IsViewModeAvailable(ExtractionViewMode mode) => mode switch
+    {
+        ExtractionViewMode.Extraction => ShowExtractionReview,
+        ExtractionViewMode.Architecture => ShowArchitectureView,
+        _ => true,
+    };
+
+    private IEnumerable<string> GetAllCapabilityGroupKeys() =>
+        PipelineResult is null ? [] : CapabilityMapper.Map(PipelineResult.Candidates).Select(g => g.Key);
+
+    private bool GetCapabilityGroupExpanded(string key) =>
+        !_capabilityGroupExpanded.TryGetValue(key, out var v) || v;
+
+    private void SetCapabilityGroupExpanded(string key, bool value)
+    {
+        _capabilityGroupExpanded[key] = value;
+        _ = SaveSessionAsync();
+    }
+
+    private IReadOnlyList<CapabilityViewGroup> GetCapabilityViewGroups(
+        IReadOnlyList<ExtractionCandidate> visibleRequirements,
+        IReadOnlyList<ExtractionCandidate> visibleTests,
+        IReadOnlyList<ExtractionCandidate> visibleNeeds)
+    {
+        var capGroups = CapabilityMapper.Map(PipelineResult!.Candidates);
+
+        var visibleReqIds  = visibleRequirements.Select(c => c.CandidateId).ToHashSet();
+        var visibleTestIds = visibleTests.Select(c => c.CandidateId).ToHashSet();
+        var visibleNeedIds = visibleNeeds.Select(c => c.CandidateId).ToHashSet();
+
+        var result = new List<CapabilityViewGroup>(capGroups.Count);
+
+        foreach (var cap in capGroups)
+        {
+            var visReqs  = cap.AllCandidates.Where(c => visibleReqIds.Contains(c.CandidateId)).ToList();
+            var visTests = cap.AllCandidates.Where(c => visibleTestIds.Contains(c.CandidateId)).ToList();
+            var visNeeds = cap.AllCandidates.Where(c => visibleNeedIds.Contains(c.CandidateId)).ToList();
+
+            if (visReqs.Count + visTests.Count + visNeeds.Count == 0) continue;
+
+            result.Add(new CapabilityViewGroup(
+                cap.Key, cap.Label, cap.Subtitle, cap.AllCandidates.Count,
+                visReqs, visTests, visNeeds));
+        }
+
+        return result;
+    }
+
+    private sealed record CapabilityViewGroup(
+        string Key,
+        string Label,
+        string Subtitle,
+        int TotalCount,
+        List<ExtractionCandidate> VisibleRequirements,
+        List<ExtractionCandidate> VisibleTests,
+        List<ExtractionCandidate> VisibleClarifications)
+    {
+        public int VisibleCount =>
+            VisibleRequirements.Count + VisibleTests.Count + VisibleClarifications.Count;
+
+        public ReviewStatusCounts StatusCounts => new(
+            New:         CountStatus(CandidateReviewStatus.New),
+            Accepted:    CountStatus(CandidateReviewStatus.Accepted),
+            Rejected:    CountStatus(CandidateReviewStatus.Rejected),
+            NeedsReview: CountStatus(CandidateReviewStatus.NeedsReview));
+
+        private int CountStatus(CandidateReviewStatus s) =>
+            VisibleRequirements.Count(c => c.ReviewStatus == s) +
+            VisibleTests.Count(c => c.ReviewStatus == s) +
+            VisibleClarifications.Count(c => c.ReviewStatus == s);
+    }
+
+    // ── Architecture view ────────────────────────────────────────────────────
+
+    private IEnumerable<string> GetAllArchitectureGroupKeys() =>
+        PipelineResult is null ? [] : ArchitectureMapper.Map(PipelineResult.Candidates).Select(g => g.Key);
+
+    private bool GetArchitectureGroupExpanded(string key) =>
+        !_architectureGroupExpanded.TryGetValue(key, out var v) || v;
+
+    private void SetArchitectureGroupExpanded(string key, bool value)
+    {
+        _architectureGroupExpanded[key] = value;
+        _ = SaveSessionAsync();
+    }
+
+    private IReadOnlyList<CapabilityViewGroup> GetArchitectureViewGroups(
+        IReadOnlyList<ExtractionCandidate> visibleRequirements,
+        IReadOnlyList<ExtractionCandidate> visibleTests,
+        IReadOnlyList<ExtractionCandidate> visibleNeeds)
+    {
+        var archGroups   = ArchitectureMapper.Map(PipelineResult!.Candidates);
+        var visReqIds    = visibleRequirements.Select(c => c.CandidateId).ToHashSet();
+        var visTestIds   = visibleTests.Select(c => c.CandidateId).ToHashSet();
+        var visNeedIds   = visibleNeeds.Select(c => c.CandidateId).ToHashSet();
+        var result       = new List<CapabilityViewGroup>(archGroups.Count);
+
+        foreach (var ag in archGroups)
+        {
+            var visReqs  = ag.AllCandidates.Where(c => visReqIds.Contains(c.CandidateId)).ToList();
+            var visTests = ag.AllCandidates.Where(c => visTestIds.Contains(c.CandidateId)).ToList();
+            var visNeeds = ag.AllCandidates.Where(c => visNeedIds.Contains(c.CandidateId)).ToList();
+            if (visReqs.Count + visTests.Count + visNeeds.Count == 0) continue;
+            result.Add(new CapabilityViewGroup(ag.Key, ag.Label, ag.Subtitle, ag.AllCandidates.Count, visReqs, visTests, visNeeds));
+        }
+        return result;
+    }
+
+    // ── Traceability view ────────────────────────────────────────────────────
+
+    private sealed record TraceabilityThread(
+        ExtractionCandidate Requirement,
+        List<ExtractionCandidate> LinkedTests,
+        List<ExtractionCandidate> LinkedClarifications)
+    {
+        public bool HasChildren => LinkedTests.Count > 0 || LinkedClarifications.Count > 0;
+    }
+
+    private sealed record TraceabilityData(
+        IReadOnlyList<TraceabilityThread> Threads,
+        List<ExtractionCandidate> OrphanedTests,
+        List<ExtractionCandidate> OrphanedClarifications);
+
+    private TraceabilityData GetTraceabilityData(
+        IReadOnlyList<ExtractionCandidate> visibleRequirements,
+        IReadOnlyList<ExtractionCandidate> visibleTests,
+        IReadOnlyList<ExtractionCandidate> visibleNeeds)
+    {
+        var usedTestIds  = new HashSet<Guid>();
+        var usedNeedIds  = new HashSet<Guid>();
+        var threads      = new List<TraceabilityThread>(visibleRequirements.Count);
+
+        foreach (var req in visibleRequirements)
+        {
+            var explicitTestIds = new HashSet<Guid>();
+            var explicitClrIds  = new HashSet<Guid>();
+
+            foreach (var link in _links)
+            {
+                if (link.LinkType == CandidateLinkType.RequirementTest)
+                {
+                    if (link.SourceId == req.CandidateId) explicitTestIds.Add(link.TargetId);
+                    else if (link.TargetId == req.CandidateId) explicitTestIds.Add(link.SourceId);
+                }
+                else if (link.LinkType == CandidateLinkType.RequirementClarification)
+                {
+                    if (link.SourceId == req.CandidateId) explicitClrIds.Add(link.TargetId);
+                    else if (link.TargetId == req.CandidateId) explicitClrIds.Add(link.SourceId);
+                }
+            }
+
+            bool hasExplicitLinks = explicitTestIds.Count > 0 || explicitClrIds.Count > 0;
+
+            // Prefer explicit links; fall back to same-heading proximity when none exist.
+            var linkedTests = visibleTests
+                .Where(t => explicitTestIds.Contains(t.CandidateId) ||
+                            (!hasExplicitLinks &&
+                             req.ContextHeading is not null &&
+                             string.Equals(t.ContextHeading, req.ContextHeading, StringComparison.Ordinal)))
+                .ToList();
+
+            var linkedClrs = visibleNeeds
+                .Where(c => explicitClrIds.Contains(c.CandidateId) ||
+                            (!hasExplicitLinks &&
+                             req.ContextHeading is not null &&
+                             string.Equals(c.ContextHeading, req.ContextHeading, StringComparison.Ordinal)))
+                .ToList();
+
+            foreach (var t in linkedTests) usedTestIds.Add(t.CandidateId);
+            foreach (var c in linkedClrs)  usedNeedIds.Add(c.CandidateId);
+
+            threads.Add(new TraceabilityThread(req, linkedTests, linkedClrs));
+        }
+
+        var orphanedTests = visibleTests.Where(t => !usedTestIds.Contains(t.CandidateId)).ToList();
+        var orphanedClrs  = visibleNeeds.Where(c => !usedNeedIds.Contains(c.CandidateId)).ToList();
+
+        return new TraceabilityData(threads, orphanedTests, orphanedClrs);
+    }
+
+    private void HandleSearchChanged(ChangeEventArgs e) { _searchTerm = e.Value?.ToString() ?? string.Empty; _ = SaveSessionAsync(); }
+
+    private void ApplyTypeFilter(ScenarioKind kind)
+    {
+        _activeFilter = kind;
+        _activeLinkFilter = null;
+        _ = SaveSessionAsync();
+    }
+
+    private void ApplyReviewFilter(CandidateReviewStatus status)
+    {
+        _activeReviewFilter = status;
+        _ = SaveSessionAsync();
+    }
+
+    private void ApplyTraceabilityFilter(LinkFilter filter)
+    {
+        _activeLinkFilter = filter;
+        _activeFilter = filter switch
+        {
+            LinkFilter.RequirementsWithoutTests => ScenarioKind.Requirement,
+            LinkFilter.RequirementsWithTests => ScenarioKind.Requirement,
+            LinkFilter.RequirementsWithClarifications => ScenarioKind.Requirement,
+            LinkFilter.TestsWithoutRequirements => ScenarioKind.Test,
+            LinkFilter.ClarificationsWithoutRequirements => ScenarioKind.NeedsClarification,
+            _ => _activeFilter,
+        };
+        _ = SaveSessionAsync();
+    }
+
+    private void ClearDashboardFilters()
+    {
+        _activeFilter = null;
+        _activeReviewFilter = null;
+        _activeLinkFilter = null;
+        _ = SaveSessionAsync();
+    }
+
+    private void HandleOpenLinkDrawer(ExtractionCandidate candidate) => _linkModalCandidate = candidate;
+    private void HandleOpenInTaskExplorer(string frId) { /* Future: switch to task explorer tab and search for frId */ }
+    private void CloseDrawer() => _linkModalCandidate = null;
+    private void HandleDrawerKeyDown(KeyboardEventArgs e) { if (e.Key == "Escape") CloseDrawer(); }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_linkModalCandidate is not null &&
+            !ReferenceEquals(_linkModalCandidate, _prevLinkModalCandidate))
+        {
+            _prevLinkModalCandidate = _linkModalCandidate;
+            await _drawerRef.FocusAsync();
+        }
+    }
+
+    private void HandleLinkAdded(CandidateLinkEntry entry)
+    {
+        if (entry.SourceId == entry.TargetId)
+            return;
+
+        if (!_links.Any(l => SameLink(l, entry)))
+            _links.Add(entry);
+        _ = SaveSessionAsync();
+    }
+
+    private void HandleLinkRemoved(CandidateLinkEntry entry)
+    {
+        _links.RemoveAll(l => SameLink(l, entry));
+        _ = SaveSessionAsync();
+    }
+
+    private static bool SameLink(CandidateLinkEntry left, CandidateLinkEntry right) =>
+        left.LinkType == right.LinkType &&
+        ((left.SourceId == right.SourceId && left.TargetId == right.TargetId) ||
+         (left.SourceId == right.TargetId && left.TargetId == right.SourceId));
+
+    private ReviewStatusCounts ComputeStatusCounts(ScenarioKind kind)
+    {
+        var candidates = PipelineResult!.Candidates.Where(c => c.Classification == kind);
+        return new ReviewStatusCounts(
+            New:         candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.New),
+            Accepted:    candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted),
+            Rejected:    candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.Rejected),
+            NeedsReview: candidates.Count(c => c.ReviewStatus == CandidateReviewStatus.NeedsReview));
+    }
+
+    private static ReviewStatusCounts ComputeStatusCountsFor(IList<ExtractionCandidate> items) =>
+        new(New:         items.Count(c => c.ReviewStatus == CandidateReviewStatus.New),
+            Accepted:    items.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted),
+            Rejected:    items.Count(c => c.ReviewStatus == CandidateReviewStatus.Rejected),
+            NeedsReview: items.Count(c => c.ReviewStatus == CandidateReviewStatus.NeedsReview));
+
+    private sealed record TestGroup(
+        string Key,
+        string Label,
+        int TotalCount,
+        List<ExtractionCandidate> VisibleItems);
+
+    private IReadOnlyList<TestGroup> GetTestGroups(IReadOnlyList<ExtractionCandidate> visibleTests)
+    {
+        var totalCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var groupOrder  = new List<string>();
+
+        foreach (var c in PipelineResult!.Candidates.Where(c => c.Classification == ScenarioKind.Test))
+        {
+            var key = c.ContextHeading ?? string.Empty;
+            if (!totalCounts.ContainsKey(key))
+            {
+                totalCounts[key] = 0;
+                groupOrder.Add(key);
+            }
+            totalCounts[key]++;
+        }
+
+        var visibleByKey = new Dictionary<string, List<ExtractionCandidate>>(StringComparer.Ordinal);
+        foreach (var c in visibleTests)
+        {
+            var key = c.ContextHeading ?? string.Empty;
+            if (!visibleByKey.TryGetValue(key, out var list))
+            {
+                list = [];
+                visibleByKey[key] = list;
+            }
+            list.Add(c);
+        }
+
+        var result = new List<TestGroup>();
+        foreach (var key in groupOrder)
+        {
+            if (!visibleByKey.TryGetValue(key, out var items)) continue;
+            result.Add(new TestGroup(
+                Key:          key,
+                Label:        string.IsNullOrEmpty(key) ? "Other Tests" : key,
+                TotalCount:   totalCounts[key],
+                VisibleItems: items));
+        }
+        return result;
+    }
+
+    private bool GetSubsectionExpanded(string key) =>
+        _testSubsectionExpanded.TryGetValue(key, out var v) && v;
+
+    private void SetSubsectionExpanded(string key, bool value)
+    {
+        _testSubsectionExpanded[key] = value;
+        _ = SaveSessionAsync();
+    }
+
+    private IReadOnlyList<TestGroup> GetClarificationGroups(IReadOnlyList<ExtractionCandidate> visibleNeeds)
+    {
+        var totalCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var groupOrder  = new List<string>();
+
+        foreach (var c in PipelineResult!.Candidates.Where(c => c.Classification == ScenarioKind.NeedsClarification))
+        {
+            var key = c.ContextHeading ?? string.Empty;
+            if (!totalCounts.ContainsKey(key))
+            {
+                totalCounts[key] = 0;
+                groupOrder.Add(key);
+            }
+            totalCounts[key]++;
+        }
+
+        var visibleByKey = new Dictionary<string, List<ExtractionCandidate>>(StringComparer.Ordinal);
+        foreach (var c in visibleNeeds)
+        {
+            var key = c.ContextHeading ?? string.Empty;
+            if (!visibleByKey.TryGetValue(key, out var list))
+            {
+                list = [];
+                visibleByKey[key] = list;
+            }
+            list.Add(c);
+        }
+
+        var result = new List<TestGroup>();
+        foreach (var key in groupOrder)
+        {
+            if (!visibleByKey.TryGetValue(key, out var items)) continue;
+            result.Add(new TestGroup(
+                Key:          key,
+                Label:        string.IsNullOrEmpty(key) ? "Other Clarifications" : key,
+                TotalCount:   totalCounts[key],
+                VisibleItems: items));
+        }
+        return result;
+    }
+
+    private bool GetClrSubsectionExpanded(string key) =>
+        _clrSubsectionExpanded.TryGetValue(key, out var v) && v;
+
+    private void SetClrSubsectionExpanded(string key, bool value)
+    {
+        _clrSubsectionExpanded[key] = value;
+        _ = SaveSessionAsync();
+    }
+
+    private IReadOnlyList<TestGroup> GetRequirementGroups(IReadOnlyList<ExtractionCandidate> visibleRequirements)
+    {
+        var totalCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var groupOrder  = new List<string>();
+
+        foreach (var c in PipelineResult!.Candidates.Where(c => c.Classification == ScenarioKind.Requirement))
+        {
+            var key = c.ContextHeading ?? string.Empty;
+            if (!totalCounts.ContainsKey(key))
+            {
+                totalCounts[key] = 0;
+                groupOrder.Add(key);
+            }
+            totalCounts[key]++;
+        }
+
+        var visibleByKey = new Dictionary<string, List<ExtractionCandidate>>(StringComparer.Ordinal);
+        foreach (var c in visibleRequirements)
+        {
+            var key = c.ContextHeading ?? string.Empty;
+            if (!visibleByKey.TryGetValue(key, out var list))
+            {
+                list = [];
+                visibleByKey[key] = list;
+            }
+            list.Add(c);
+        }
+
+        var result = new List<TestGroup>();
+        foreach (var key in groupOrder)
+        {
+            if (!visibleByKey.TryGetValue(key, out var items)) continue;
+            result.Add(new TestGroup(
+                Key:          key,
+                Label:        string.IsNullOrEmpty(key) ? "Other Requirements" : key,
+                TotalCount:   totalCounts[key],
+                VisibleItems: items));
+        }
+        return result;
+    }
+
+    private bool GetReqSubsectionExpanded(string key) =>
+        _reqSubsectionExpanded.TryGetValue(key, out var v) && v;
+
+    private void SetReqSubsectionExpanded(string key, bool value)
+    {
+        _reqSubsectionExpanded[key] = value;
+        _ = SaveSessionAsync();
+    }
+
+    private async Task HandleSaveReviewAsync()
+    {
+        if (PipelineResult is null)
+            return;
+
+        _reviewPersistState = ReviewPersistState.Saving;
+        StateHasChanged();
+
+        try
+        {
+            var items = PipelineResult.Candidates
+                .Select(c => new SaveReviewedCandidateItemInput
+                {
+                    CandidateId    = c.CandidateId.ToString(),
+                    Title          = c.Title,
+                    Classification = c.Classification,
+                    ReviewStatus   = c.ReviewStatus,
+                    SourceDocument = null,
+                    SourceSection  = c.ContextHeading,
+                    ProjectId      = ProjectId,
+                    ReviewedBy     = null,
+                    ReviewedAt     = c.ReviewStatus is CandidateReviewStatus.Accepted
+                                     or CandidateReviewStatus.Rejected
+                                     or CandidateReviewStatus.NeedsReview
+                                         ? DateTimeOffset.UtcNow
+                                         : null,
+                })
+                .ToList();
+
+            var input = new SaveReviewedCandidatesInput
+            {
+                Items     = items,
+                SessionId = _sessionId,
+            };
+
+            await SaveReviewedCandidatesMutation.ExecuteAsync(input);
+
+            var linkItems = _links
+                .Select(l => new SaveCandidateLinkItemInput
+                {
+                    SourceCandidateRef = l.SourceId.ToString(),
+                    TargetCandidateRef = l.TargetId.ToString(),
+                    LinkType           = l.LinkType,
+                })
+                .ToList();
+
+            var linkInput = new SaveCandidateLinksInput
+            {
+                ProjectId = ProjectId,
+                SessionId = _sessionId,
+                Links     = linkItems,
+            };
+
+            await SaveCandidateLinksMutation.ExecuteAsync(linkInput);
+            _reviewPersistState = ReviewPersistState.Saved;
+        }
+        catch (Exception)
+        {
+            _reviewPersistState = ReviewPersistState.Failed;
+        }
+    }
+
+    private void HandleSelectionToggled(Guid candidateId)
+    {
+        var candidate = PipelineResult?.Candidates.FirstOrDefault(c => c.CandidateId == candidateId);
+        if (candidate is null)
+            return;
+
+        if (candidate.IsSelected)
+            _selectedIds.Add(candidateId);
+        else
+            _selectedIds.Remove(candidateId);
+        _ = SaveSessionAsync();
+    }
+
+    private void HandleReviewStatusChanged(CandidateReviewStatus status) => _ = SaveSessionAsync();
+
+    private void BulkSetStatus(CandidateReviewStatus status)
+    {
+        foreach (var candidate in PipelineResult!.Candidates.Where(c => _selectedIds.Contains(c.CandidateId)))
+            candidate.ReviewStatus = status;
+        _ = SaveSessionAsync();
+    }
+
+    private void ClearSelection()
+    {
+        foreach (var candidate in PipelineResult!.Candidates)
+            candidate.IsSelected = false;
+        _selectedIds.Clear();
+    }
+
+    private async Task HandleSaveConfirm()
+    {
+        if (PipelineResult is null || _selectedIds.Count == 0)
+            return;
+
+        _savePhase = ReviewSavePhase.Saving;
+        _alreadySavedCount = 0;
+
+        var selectedCandidates = PipelineResult.Candidates
+            .Where(c => _selectedIds.Contains(c.CandidateId))
+            .ToList();
+
+        // Split: skip items already saved (client-side duplicate protection)
+        var alreadySaved = selectedCandidates.Where(c => c.SaveState == CandidateSaveState.Saved).ToList();
+        var toSave = selectedCandidates.Where(c => c.SaveState != CandidateSaveState.Saved).ToList();
+        _alreadySavedCount = alreadySaved.Count;
+
+        foreach (var c in toSave)
+            c.SaveState = CandidateSaveState.Saving;
+
+        StateHasChanged();
+
+        try
+        {
+            if (toSave.Count == 0)
+            {
+                // Everything was already saved — no API call needed
+                _savedSummary = new SavedTypeSummary(0, 0, 0);
+                _savePhase = ReviewSavePhase.Complete;
+            }
+            else
+            {
+                var items = toSave
+                    .Select(c => new CreateScenarioInput
+                    {
+                        Title = c.Title,
+                        Description = null,
+                        Kind = c.Classification,
+                        ProjectId = ProjectId,
+                    })
+                    .ToList();
+
+                var metadata = new ExtractionMetadataInput
+                {
+                    TotalExtracted = PipelineResult.Candidates.Count,
+                    SelectedCount = selectedCandidates.Count,
+                    ExtractionDurationMs = (int)PipelineResult.DurationMs,
+                    SessionId = _sessionId,
+                };
+
+                var input = new CreateScenariosInput
+                {
+                    Items = items,
+                    ExtractionMetadata = metadata,
+                };
+
+                var result = await CreateScenariosMutation.ExecuteAsync(input);
+
+                if (result.Data?.CreateScenarios is { } payload)
+                {
+                    var results = payload.Results;
+                    for (var i = 0; i < toSave.Count && i < results.Count; i++)
+                    {
+                        var candidate = toSave[i];
+                        var itemResult = results[i];
+
+                        if (itemResult is ICreateScenarios_CreateScenarios_Results_CreateScenarioSuccess success)
+                        {
+                            candidate.SaveState = CandidateSaveState.Saved;
+                            candidate.SavedScenarioId = success.Scenario.Id;
+                        }
+                        else if (itemResult is ICreateScenarios_CreateScenarios_Results_CreateScenarioError error)
+                        {
+                            candidate.SaveState = CandidateSaveState.Failed;
+                            candidate.SaveError = error.Message;
+                        }
+                    }
+
+                    _savedSummary = new SavedTypeSummary(
+                        toSave.Count(c => c.Classification == ScenarioKind.Requirement && c.SaveState == CandidateSaveState.Saved),
+                        toSave.Count(c => c.Classification == ScenarioKind.Test && c.SaveState == CandidateSaveState.Saved),
+                        toSave.Count(c => c.Classification == ScenarioKind.NeedsClarification && c.SaveState == CandidateSaveState.Saved));
+
+                    if (payload.SuggestionResult is { } sr)
+                        _suggestionResult = new SuggestionResultData(sr.TotalGenerated, sr.HighConfidenceCount, sr.NeedsReviewCount, sr.SuggestionsAvailable);
+
+                    _savePhase = payload.FailureCount == 0
+                        ? ReviewSavePhase.Complete
+                        : payload.SuccessCount == 0
+                            ? ReviewSavePhase.Failed
+                            : ReviewSavePhase.PartialSuccess;
+                }
+                else
+                {
+                    foreach (var c in toSave)
+                    {
+                        c.SaveState = CandidateSaveState.Failed;
+                        c.SaveError = "No response data received.";
+                    }
+                    _savePhase = ReviewSavePhase.Failed;
+                }
+            }
+
+            if (_savePhase is ReviewSavePhase.Complete or ReviewSavePhase.PartialSuccess)
+            {
+                ClearSelection();
+                await SaveSessionAsync();
+            }
+        }
+        catch (Exception)
+        {
+            foreach (var c in toSave)
+            {
+                if (c.SaveState == CandidateSaveState.Saving)
+                {
+                    c.SaveState = CandidateSaveState.Failed;
+                    c.SaveError = "Something went wrong. Please try again.";
+                }
+            }
+            _savePhase = ReviewSavePhase.Failed;
+        }
+    }
+
+    private void RestoreFromSession(ExtractionSessionSnapshot snapshot)
+    {
+        // Restore selection only for non-accepted, non-saved items (selection is temporary UI state)
+        _selectedIds.Clear();
+        foreach (var id in snapshot.SelectedIds)
+        {
+            var candidate = PipelineResult?.Candidates.FirstOrDefault(c => c.CandidateId == id);
+            if (candidate is null) continue;
+            if (candidate.ReviewStatus == CandidateReviewStatus.Accepted) continue;
+            if (candidate.SaveState == CandidateSaveState.Saved) continue;
+            _selectedIds.Add(id);
+        }
+        // Sync IsSelected on all candidates to match the filtered set
+        if (PipelineResult is not null)
+        {
+            foreach (var c in PipelineResult.Candidates)
+                c.IsSelected = _selectedIds.Contains(c.CandidateId);
+        }
+
+        _activeFilter = snapshot.ActiveFilter;
+        _activeReviewFilter = snapshot.ActiveReviewFilter;
+        _activeLinkFilter = snapshot.ActiveLinkFilter;
+        _searchTerm = snapshot.SearchTerm;
+        _activeViewMode = snapshot.HasActiveViewMode
+            ? snapshot.ActiveViewMode
+            : ExtractionViewMode.Traceability;
+
+        _sectionExpanded.Clear();
+        foreach (var kv in snapshot.SectionExpanded)
+        {
+            if (Enum.TryParse<ScenarioKind>(kv.Key, out var kind))
+                _sectionExpanded[kind] = kv.Value;
+        }
+
+        _reqSubsectionExpanded.Clear();
+        foreach (var kv in snapshot.ReqSubsectionExpanded)
+            _reqSubsectionExpanded[kv.Key] = kv.Value;
+
+        _testSubsectionExpanded.Clear();
+        foreach (var kv in snapshot.TestSubsectionExpanded)
+            _testSubsectionExpanded[kv.Key] = kv.Value;
+
+        _clrSubsectionExpanded.Clear();
+        foreach (var kv in snapshot.ClrSubsectionExpanded)
+            _clrSubsectionExpanded[kv.Key] = kv.Value;
+
+        _capabilityGroupExpanded.Clear();
+        foreach (var kv in snapshot.CapabilityGroupExpanded)
+            _capabilityGroupExpanded[kv.Key] = kv.Value;
+
+        _architectureGroupExpanded.Clear();
+        foreach (var kv in snapshot.ArchitectureGroupExpanded)
+            _architectureGroupExpanded[kv.Key] = kv.Value;
+
+        _links.Clear();
+        foreach (var l in snapshot.Links)
+            _links.Add(new CandidateLinkEntry(l.SourceId, l.TargetId, l.LinkType));
+
+        if (_sectionExpanded.Count == 0 && PipelineResult is not null)
+        {
+            foreach (var kind in PipelineResult.Candidates.Select(c => c.Classification).Distinct())
+                _sectionExpanded[kind] = true;
+        }
+    }
+
+    private async Task SaveSessionAsync()
+    {
+        if (PipelineResult is null) return;
+        try
+        {
+            await SessionService.SaveAsync(BuildSnapshot());
+        }
+        catch { }
+    }
+
+    private ExtractionSessionSnapshot BuildSnapshot()
+    {
+        var candidates = PipelineResult!.Candidates
+            .Select(c => new CandidateSnapshot(
+                CandidateId: c.CandidateId,
+                Title: c.Title,
+                Classification: c.Classification,
+                ClassificationSignal: c.ClassificationSignal,
+                ContextHeading: c.ContextHeading,
+                SourceBlockType: c.SourceBlockType,
+                Confidence: c.Confidence,
+                IsSelected: c.IsSelected,
+                ReviewStatus: c.ReviewStatus,
+                SaveState: c.SaveState,
+                SaveError: c.SaveError,
+                SavedScenarioId: c.SavedScenarioId))
+            .ToList();
+
+        var links = _links
+            .Select(l => new LinkSnapshot(l.SourceId, l.TargetId, l.LinkType))
+            .ToList();
+
+        return new ExtractionSessionSnapshot
+        {
+            SessionId = _sessionId,
+            Timestamp = DateTimeOffset.UtcNow,
+            Profile = PipelineResult.Profile,
+            PipelineStatus = PipelineResult.Status,
+            InputLengthChars = PipelineResult.InputLengthChars,
+            InputLineCount = PipelineResult.InputLineCount,
+            DurationMs = PipelineResult.DurationMs,
+            Candidates = candidates,
+            Links = links,
+            SelectedIds = _selectedIds.ToList(),
+            ActiveFilter = _activeFilter,
+            ActiveReviewFilter = _activeReviewFilter,
+            ActiveLinkFilter = _activeLinkFilter,
+            SearchTerm = _searchTerm,
+            ActiveViewMode = _activeViewMode,
+            HasActiveViewMode = true,
+            SpecMarkdown = SpecMarkdown,
+            SectionExpanded = _sectionExpanded.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
+            ReqSubsectionExpanded = new Dictionary<string, bool>(_reqSubsectionExpanded),
+            TestSubsectionExpanded = new Dictionary<string, bool>(_testSubsectionExpanded),
+            ClrSubsectionExpanded = new Dictionary<string, bool>(_clrSubsectionExpanded),
+            CapabilityGroupExpanded = new Dictionary<string, bool>(_capabilityGroupExpanded),
+            ArchitectureGroupExpanded = new Dictionary<string, bool>(_architectureGroupExpanded),
+        };
+    }
+
+    private static string FormatSessionAge(DateTimeOffset timestamp)
+    {
+        var age = DateTimeOffset.UtcNow - timestamp;
+        if (age.TotalMinutes < 1) return "just now";
+        if (age.TotalHours < 1)
+        {
+            var mins = (int)age.TotalMinutes;
+            return $"{mins} minute{(mins == 1 ? "" : "s")} ago";
+        }
+        var hours = (int)age.TotalHours;
+        return $"{hours} hour{(hours == 1 ? "" : "s")} ago";
+    }
+
+    private sealed record SuggestionResultData(int TotalGenerated, int HighConfidenceCount, int NeedsReviewCount, bool SuggestionsAvailable);
+    private sealed record SavedTypeSummary(int RequirementCount, int TestCount, int ClarificationCount);
+
+    private string SaveCompleteMessage
+    {
+        get
+        {
+            var newCount = _savedSummary is not null
+                ? _savedSummary.RequirementCount + _savedSummary.TestCount + _savedSummary.ClarificationCount
+                : 0;
+            if (_alreadySavedCount > 0 && newCount == 0)
+                return $"{_alreadySavedCount} artifact{(_alreadySavedCount == 1 ? "" : "s")} already saved — no duplicates created. Selection cleared.";
+            if (_alreadySavedCount > 0)
+                return $"{newCount} new artifact{(newCount == 1 ? "" : "s")} saved ({BuildSavedSummaryText(_savedSummary!)}). {_alreadySavedCount} already saved. Selection cleared.";
+            if (newCount > 0)
+                return $"{newCount} artifact{(newCount == 1 ? "" : "s")} saved ({BuildSavedSummaryText(_savedSummary!)}). Selection cleared.";
+            return "Saved successfully. Selection cleared.";
+        }
+    }
+
+    private static string BuildSavedSummaryText(SavedTypeSummary s)
+    {
+        var parts = new List<string>(3);
+        if (s.RequirementCount > 0) parts.Add($"{s.RequirementCount} requirement{(s.RequirementCount == 1 ? "" : "s")}");
+        if (s.TestCount > 0) parts.Add($"{s.TestCount} test{(s.TestCount == 1 ? "" : "s")}");
+        if (s.ClarificationCount > 0) parts.Add($"{s.ClarificationCount} clarification{(s.ClarificationCount == 1 ? "" : "s")}");
+        return string.Join(", ", parts);
+    }
+
+    public void Dispose()
+    {
+        // Not emitted when save phase is Complete: all selected candidates were successfully saved.
+        if (PipelineResult is null || _savePhase == ReviewSavePhase.Complete)
+            return;
+
+        var hasUnsaved = PipelineResult.Candidates.Any(c => c.SaveState != CandidateSaveState.Saved);
+        if (hasUnsaved)
+        {
+            // no raw text: only aggregate counts, no candidate titles or content
+            Logger.LogInformation(
+                "CandidateReviewAbandoned: totalExtracted={TotalExtracted}, selectedCount={SelectedCount}",
+                PipelineResult.Candidates.Count,
+                _selectedIds.Count);
+        }
+    }
+}
+

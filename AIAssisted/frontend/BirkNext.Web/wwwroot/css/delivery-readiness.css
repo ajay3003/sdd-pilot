@@ -1,0 +1,168 @@
+/* ── Delivery Readiness — dr- prefix ─────────────────────────────────────────── */
+
+/* ── Artifact input panel ────────────────────────────────────────────────────── */
+
+/* Collapsible panel wrapping the four artifact upload Cards. Unique to this page
+   because it owns the file-upload + paste workflow before an assessment is run. */
+.dr-input-panel {
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+}
+
+/* Auto-fit grid for the four upload Card components (Constitution, Spec, Plan,
+   Tasks). minmax(260px) keeps cards readable on narrow viewports without a fixed
+   column count. Upload card sizing is specific to the text-area height here. */
+.dr-artifact-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+/* ── Decision cards ──────────────────────────────────────────────────────────── */
+
+/* Fixed 3-column grid for exactly three gate decisions (Development, Testing,
+   Release). Column count is hardcoded because the page always shows all three. */
+.dr-decision-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-4);
+}
+
+@media (max-width: 900px) {
+    .dr-decision-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ── Score ring SVG ──────────────────────────────────────────────────────────── */
+
+/* SVG track circle (background stroke). Classes applied via inline SVG string
+   in RenderScoreRing(); cannot use scoped Blazor CSS for inline SVG. */
+.dr-score-ring-bg {
+    fill: none;
+    stroke: var(--border-subtle);
+    stroke-width: 8;
+}
+
+/* SVG fill circle with dash-offset animation. */
+.dr-score-ring-fill {
+    fill: none;
+    stroke-width: 8;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: center;
+    transition: stroke-dashoffset 0.5s ease;
+}
+
+/* Color variants matching StateChipStatus() return values ("healthy", "warning",
+   "critical", "neutral"). The old .is-ready/.is-blocked names were removed when
+   StateClass() was replaced by StateChipStatus() during component migration. */
+.dr-score-ring-fill.dr-ring-healthy  { stroke: var(--color-success); }
+.dr-score-ring-fill.dr-ring-warning  { stroke: #f59e0b; }
+.dr-score-ring-fill.dr-ring-critical { stroke: var(--color-danger); }
+.dr-score-ring-fill.dr-ring-neutral  { stroke: var(--border-subtle); }
+
+/* ── Gate detail layout ──────────────────────────────────────────────────────── */
+
+/* Side-by-side layout of score ring + gate metadata inside each gate tab.
+   Specific to the per-gate readiness view; no generic card matches this pattern. */
+.dr-gate-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    margin-bottom: var(--space-4);
+}
+
+.dr-gate-score-area {
+    flex-shrink: 0;
+}
+
+.dr-gate-info {
+    flex: 1;
+}
+
+.dr-gate-info h3 {
+    font-size: var(--text-md);
+    font-weight: 700;
+    margin: 0 0 var(--space-1);
+    color: var(--text-primary);
+}
+
+/* ── Check lists ─────────────────────────────────────────────────────────────── */
+
+/* 2-column grid for passed / failed check columns within gate tabs. The two
+   columns map 1:1 to "Passed Checks" and "Failed Checks" — hardcoded 2 columns
+   because the gate model always produces exactly these two groups. */
+.dr-check-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+}
+
+@media (max-width: 700px) {
+    .dr-check-columns {
+        grid-template-columns: 1fr;
+    }
+}
+
+.dr-check-section {
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+}
+
+.dr-check-section-title {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: var(--space-3);
+}
+
+.dr-check-section.is-passed .dr-check-section-title { color: var(--color-success-text); }
+.dr-check-section.is-failed .dr-check-section-title { color: var(--color-danger-text); }
+
+.dr-check-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.dr-check-item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.dr-check-item-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+    font-size: 13px;
+}
+
+.dr-check-item.is-passed .dr-check-item-icon { color: var(--color-success); }
+.dr-check-item.is-failed .dr-check-item-icon { color: var(--color-danger); }
+
+/* ── Recommendation list ─────────────────────────────────────────────────────── */
+
+/* Container for RecommendationCard items in the recommendations tab. */
+.dr-rec-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}

@@ -1,0 +1,11 @@
+query GetCandidateLinks($projectId: String!, $sessionId: String) {
+  candidateLinks(projectId: $projectId, sessionId: $sessionId) {
+    id
+    sourceCandidateRef
+    targetCandidateRef
+    linkType
+    projectId
+    sessionId
+    createdAt
+  }
+}

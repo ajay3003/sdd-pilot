@@ -1,0 +1,22 @@
+@* Within-page section divider: title + optional desc on left, optional actions on right.
+   Usage: <SectionHeader Title="…" Description="…"><Actions>…</Actions></SectionHeader> *@
+
+<div class="section-header">
+    <div class="section-header-left">
+        <div class="section-title">@Title</div>
+        @if (!string.IsNullOrWhiteSpace(Description))
+        {
+            <div class="section-desc">@Description</div>
+        }
+    </div>
+    @if (Actions is not null)
+    {
+        <div class="section-header-actions">@Actions</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title       { get; set; } = "";
+    [Parameter]                 public string? Description { get; set; }
+    [Parameter]                 public RenderFragment? Actions { get; set; }
+}

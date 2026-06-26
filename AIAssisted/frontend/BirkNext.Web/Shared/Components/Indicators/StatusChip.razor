@@ -1,0 +1,17 @@
+@* Semantic status pill with dot prefix and consistent color coding.
+   Status: "healthy" | "ready" | "warning" | "critical" | "info" | "neutral" | "not-assessed" | "partial"
+   Usage: <StatusChip Status="healthy" /> or <StatusChip Status="warning" Label="Needs Review" /> *@
+
+<span class="status-chip status-chip-@_key">@(Label ?? _formatted)</span>
+
+@code {
+    [Parameter, EditorRequired] public string Status { get; set; } = "neutral";
+    [Parameter]                 public string? Label { get; set; }
+
+    private string _key       => Status.ToLowerInvariant().Replace(" ", "-");
+    private string _formatted => Status switch
+    {
+        "not-assessed" => "Not Assessed",
+        _ => char.ToUpperInvariant(Status[0]) + Status[1..]
+    };
+}

@@ -1,0 +1,11 @@
+@page "/"
+@inject NavigationManager Navigation
+
+<PageTitle>QA Review Studio</PageTitle>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Navigation.NavigateTo("dashboard", replace: true);
+    }
+}

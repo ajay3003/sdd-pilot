@@ -1,0 +1,16 @@
+mutation GenerateTraceabilitySuggestions($input: GenerateTraceabilitySuggestionsInput!) {
+    generateTraceabilitySuggestions(input: $input) {
+        result {
+            totalGenerated
+            highConfidenceCount
+            needsReviewCount
+            suggestionsAvailable
+            message
+        }
+        errors {
+            code
+            message
+        }
+        correlationId
+    }
+}

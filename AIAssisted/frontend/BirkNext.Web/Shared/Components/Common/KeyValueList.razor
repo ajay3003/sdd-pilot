@@ -1,0 +1,8 @@
+@* Vertical list container for InfoRow components.
+   Usage: <KeyValueList><InfoRow Label="…" Value="…" /></KeyValueList> *@
+
+<div class="kv-list">@ChildContent</div>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

@@ -1,0 +1,25 @@
+@* Numeric KPI card with optional semantic color, sublabel, and trend indicator.
+   Variant: "success" | "warning" | "danger" | "info" — colors the value.
+   Usage: <MetricCard Value="42" Label="Open Issues" Variant="warning" /> *@
+
+<div class="metric-card">
+    <div class="metric-value @(Variant is not null ? $"text-{Variant}" : "")">@Value</div>
+    <div class="metric-label">@Label</div>
+    @if (!string.IsNullOrWhiteSpace(Sublabel))
+    {
+        <div class="metric-sublabel">@Sublabel</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(TrendLabel))
+    {
+        <div class="@(Trend == "up" ? "metric-trend-up" : "metric-trend-down")">@TrendLabel</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Value      { get; set; } = "—";
+    [Parameter, EditorRequired] public string Label      { get; set; } = "";
+    [Parameter]                 public string? Sublabel  { get; set; }
+    [Parameter]                 public string? Variant   { get; set; }
+    [Parameter]                 public string? Trend     { get; set; }
+    [Parameter]                 public string? TrendLabel { get; set; }
+}

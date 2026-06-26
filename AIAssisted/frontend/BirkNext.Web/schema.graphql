@@ -1,0 +1,611 @@
+type Query {
+  ping: String
+  scenarios(projectId: String!): [Scenario!]!
+  reviewedCandidates(projectId: String!, sessionId: String): [ReviewedCandidate!]!
+  candidateLinks(projectId: String!, sessionId: String): [CandidateLink!]!
+  qaDeltaReviews(projectId: String!): [QaDeltaReview!]!
+  qaDeltaReview(id: ID!): QaDeltaReview
+  traceabilityMatrix(projectId: String!): [TraceabilityMatrixRow!]!
+  coverageSummary(projectId: String!): CoverageSummary!
+  traceabilitySuggestions(projectId: String!): [TraceabilitySuggestionItem!]!
+  requirementImpact(projectId: String!, requirementId: ID!): RequirementImpact
+  impactSummary(projectId: String!): ImpactSummary!
+  specDriftReport(projectId: String!): SpecDriftReport!
+  codeFiles(projectId: String!): [CodeFile!]!
+  codeSummary(projectId: String!): CodeSummary!
+  codeImpact(projectId: String!, codeFileId: ID!): CodeImpact
+  qaAuditReport(projectId: String!, includeAiSummary: Boolean!): QaAuditReport!
+}
+
+type Mutation {
+  createScenario(input: CreateScenarioInput!): CreateScenarioPayload!
+  createScenarios(input: CreateScenariosInput!): CreateScenariosPayload!
+  saveReviewedCandidates(input: SaveReviewedCandidatesInput!): SaveReviewedCandidatesPayload!
+  saveCandidateLinks(input: SaveCandidateLinksInput!): SaveCandidateLinksPayload!
+  deleteScenario(id: ID!): DeleteScenarioPayload!
+  saveQaDeltaReview(input: SaveQaDeltaReviewInput!): SaveQaDeltaReviewPayload!
+  deleteQaDeltaReview(id: ID!): DeleteQaDeltaReviewPayload!
+  reorderTestScenarios(input: ReorderTestScenariosInput!): ReorderTestScenariosPayload!
+  createTraceLink(input: CreateTraceLinkInput!): CreateTraceLinkPayload!
+  deleteTraceLink(input: DeleteTraceLinkInput!): DeleteTraceLinkPayload!
+  analyzeChange(input: AnalyzeChangeInput!): AnalyzeChangePayload!
+  registerCodeFile(input: RegisterCodeFileInput!): RegisterCodeFilePayload!
+  deleteCodeFile(input: DeleteCodeFileInput!): DeleteCodeFilePayload!
+  createCodeLink(input: CreateCodeLinkInput!): CreateCodeLinkPayload!
+  deleteCodeLink(input: DeleteCodeLinkInput!): DeleteCodeLinkPayload!
+  generateTraceabilitySuggestions(input: GenerateTraceabilitySuggestionsInput!): GenerateTraceabilitySuggestionsPayload!
+  confirmSuggestion(input: ConfirmSuggestionInput!): ConfirmSuggestionPayload!
+  rejectSuggestion(input: RejectSuggestionInput!): RejectSuggestionPayload!
+  confirmHighConfidenceSuggestions(input: ConfirmHighConfidenceSuggestionsInput!): ConfirmHighConfidenceSuggestionsPayload!
+}
+
+type Scenario {
+  id: ID!
+  title: String!
+  description: String
+  kind: ScenarioKind!
+  projectId: String!
+  createdAt: DateTime!
+  displayOrder: Int!
+}
+
+enum ScenarioKind {
+  REQUIREMENT
+  TEST
+  NEEDS_CLARIFICATION
+}
+
+input CreateScenarioInput {
+  title: String!
+  description: String
+  kind: ScenarioKind!
+  projectId: String!
+}
+
+type CreateScenarioPayload {
+  scenario: Scenario
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type UserError {
+  field: String
+  message: String!
+  code: String!
+}
+
+input CreateScenariosInput {
+  items: [CreateScenarioInput!]!
+  extractionMetadata: ExtractionMetadataInput
+}
+
+input ExtractionMetadataInput {
+  totalExtracted: Int!
+  selectedCount: Int!
+  extractionDurationMs: Int!
+  sessionId: String!
+}
+
+type CreateScenariosPayload {
+  results: [CreateScenarioResult!]!
+  successCount: Int!
+  failureCount: Int!
+  correlationId: String!
+  suggestionResult: SuggestionGenerationResult
+}
+
+union CreateScenarioResult = CreateScenarioSuccess | CreateScenarioError
+
+type CreateScenarioSuccess {
+  scenario: Scenario!
+}
+
+type CreateScenarioError {
+  code: String!
+  message: String!
+  field: String
+}
+
+enum CandidateReviewStatus {
+  NEW
+  AUTO_ACCEPTED
+  ACCEPTED
+  REJECTED
+  NEEDS_REVIEW
+}
+
+type ReviewedCandidate {
+  id: ID!
+  candidateId: ID
+  title: String!
+  classification: ScenarioKind!
+  reviewStatus: CandidateReviewStatus!
+  sourceDocument: String
+  sourceSection: String
+  projectId: String!
+  reviewedBy: String!
+  sessionId: String!
+  createdAt: DateTime!
+  reviewedAt: DateTime
+}
+
+input SaveReviewedCandidateItemInput {
+  candidateId: ID
+  title: String!
+  classification: ScenarioKind!
+  reviewStatus: CandidateReviewStatus!
+  sourceDocument: String
+  sourceSection: String
+  projectId: String!
+  reviewedBy: String
+  reviewedAt: DateTime
+}
+
+input SaveReviewedCandidatesInput {
+  items: [SaveReviewedCandidateItemInput!]!
+  sessionId: String
+}
+
+type SaveReviewedCandidatesPayload {
+  savedCount: Int!
+  correlationId: String!
+}
+
+enum CandidateLinkType {
+    REQUIREMENT_TEST
+    REQUIREMENT_CLARIFICATION
+    TEST_CLARIFICATION
+  }
+
+type CandidateLink {
+  id: ID!
+  sourceCandidateRef: String!
+  targetCandidateRef: String!
+  linkType: CandidateLinkType!
+  projectId: String!
+  sessionId: String!
+  createdAt: DateTime!
+}
+
+input SaveCandidateLinkItemInput {
+  sourceCandidateRef: String!
+  targetCandidateRef: String!
+  linkType: CandidateLinkType!
+}
+
+input SaveCandidateLinksInput {
+  projectId: String!
+  sessionId: String!
+  links: [SaveCandidateLinkItemInput!]!
+}
+
+type SaveCandidateLinksPayload {
+  savedCount: Int!
+  correlationId: String!
+}
+
+type DeleteScenarioPayload {
+  deletedId: ID
+  success: Boolean!
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type QaDeltaReview {
+  id: ID!
+  title: String!
+  projectId: String!
+  createdAt: DateTime!
+  oldSpecFileName: String
+  newSpecFileName: String
+  oldSpecHash: String
+  newSpecHash: String
+  oldSpecSize: Int
+  newSpecSize: Int
+  analysisProfile: String!
+  summaryJson: String!
+  deltaItemsJson: String!
+}
+
+input SaveQaDeltaReviewInput {
+  title: String!
+  projectId: String!
+  oldSpecFileName: String
+  newSpecFileName: String
+  oldSpecHash: String
+  newSpecHash: String
+  oldSpecSize: Int
+  newSpecSize: Int
+  analysisProfile: String!
+  summaryJson: String!
+  deltaItemsJson: String!
+}
+
+type SaveQaDeltaReviewPayload {
+  review: QaDeltaReview
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type DeleteQaDeltaReviewPayload {
+  deletedId: ID
+  success: Boolean!
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+input ReorderTestScenariosInput {
+  projectId: String!
+  orderedIds: [String!]!
+}
+
+type ReorderTestScenariosPayload {
+  success: Boolean!
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+enum TraceLinkType {
+  COVERS
+  RELATED_TO
+}
+
+enum CoverageStatus {
+  COVERED
+  NOT_COVERED
+}
+
+type TraceLink {
+  id: ID!
+  projectId: String!
+  sourceId: ID!
+  sourceKind: String!
+  targetId: ID!
+  targetKind: String!
+  linkType: TraceLinkType!
+  createdAt: DateTime!
+  createdBy: String
+  notes: String
+}
+
+type TraceLinkWithTest {
+  link: TraceLink!
+  test: Scenario!
+}
+
+type TraceabilityMatrixRow {
+  requirement: Scenario!
+  linkedTests: [TraceLinkWithTest!]!
+  coverageStatus: CoverageStatus!
+}
+
+type CoverageSummary {
+  totalRequirements: Int!
+  coveredRequirements: Int!
+  notCoveredRequirements: Int!
+  coveragePercent: Float!
+  orphanTests: Int!
+  suggestedCoverageRequirements: Int!
+  pendingSuggestionCount: Int!
+  highConfidenceSuggestionCount: Int!
+}
+
+input CreateTraceLinkInput {
+  projectId: String!
+  sourceId: ID!
+  sourceKind: String!
+  targetId: ID!
+  targetKind: String!
+  linkType: TraceLinkType!
+  createdBy: String
+  notes: String
+}
+
+input DeleteTraceLinkInput {
+  id: ID!
+  projectId: String!
+}
+
+type CreateTraceLinkPayload {
+  traceLink: TraceLink
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type DeleteTraceLinkPayload {
+  deletedId: ID
+  success: Boolean!
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+type ImpactedTest {
+  test: Scenario!
+  link: TraceLink!
+}
+
+type RegressionItem {
+  test: Scenario!
+  reason: String!
+}
+
+type RequirementImpactSummary {
+  totalLinkedTests: Int!
+  acceptedTests: Int!
+  missingCoverage: Int!
+  riskLevel: RiskLevel!
+}
+
+type RequirementImpact {
+  requirement: Scenario!
+  linkedTests: [ImpactedTest!]!
+  regressionRecommendation: [RegressionItem!]!
+  summary: RequirementImpactSummary!
+}
+
+type RequirementRiskItem {
+  requirement: Scenario!
+  riskLevel: RiskLevel!
+  linkedTestCount: Int!
+}
+
+type ImpactSummary {
+  totalRequirements: Int!
+  highRiskCount: Int!
+  mediumRiskCount: Int!
+  lowRiskCount: Int!
+  requirements: [RequirementRiskItem!]!
+}
+
+scalar DateTime
+
+input AnalyzeChangeInput {
+  projectId: String!
+  changeDescription: String!
+}
+
+type AnalyzeChangePayload {
+  report: ChangeAuditReport
+  errors: [UserError!]!
+}
+
+type ChangeAuditReport {
+  changeDescription: String!
+  overallRiskLevel: RiskLevel!
+  aiReasoning: String!
+  regressionScope: String!
+  coverageGaps: [String!]!
+  affectedRequirements: [AuditAffectedRequirement!]!
+  affectedTests: [AuditAffectedTest!]!
+  recommendedRegressionTests: [RegressionItem!]!
+}
+
+type AuditAffectedRequirement {
+  requirement: Scenario!
+  riskLevel: RiskLevel!
+  linkedTestCount: Int!
+  aiRelevanceReason: String!
+}
+
+type AuditAffectedTest {
+  test: Scenario!
+  aiRelevanceReason: String!
+}
+
+type SpecDriftReport {
+  overallDriftRisk: RiskLevel!
+  totalRequirements: Int!
+  requirementsAtRisk: Int!
+  coverageGaps: Int!
+  orphanTestCount: Int!
+  coveragePercent: Float!
+  requirementsAtRiskList: [DriftRequirement!]!
+  orphanTests: [Scenario!]!
+  findings: [DriftFinding!]!
+  recommendedActions: [String!]!
+}
+
+type DriftRequirement {
+  requirement: Scenario!
+  driftRisk: RiskLevel!
+  linkedTestCount: Int!
+  driftReason: String!
+}
+
+type DriftFinding {
+  category: String!
+  description: String!
+  severity: RiskLevel!
+}
+
+type CodeFile {
+  id: ID!
+  projectId: String!
+  filePath: String!
+  fileName: String!
+  description: String
+  createdAt: DateTime!
+}
+
+type CodeLink {
+  id: ID!
+  projectId: String!
+  codeFileId: ID!
+  scenarioId: ID!
+  scenarioKind: String!
+  createdAt: DateTime!
+}
+
+type CodeLinkWithScenario {
+  link: CodeLink!
+  scenario: Scenario!
+}
+
+type CodeImpact {
+  file: CodeFile!
+  linkedRequirements: [CodeLinkWithScenario!]!
+  linkedTests: [CodeLinkWithScenario!]!
+}
+
+type CodeSummary {
+  totalFiles: Int!
+  linkedRequirements: Int!
+  linkedTests: Int!
+  unlinkedFiles: Int!
+}
+
+input RegisterCodeFileInput {
+  projectId: String!
+  filePath: String!
+  description: String
+}
+
+input DeleteCodeFileInput {
+  id: String!
+  projectId: String!
+}
+
+input CreateCodeLinkInput {
+  projectId: String!
+  codeFileId: String!
+  scenarioId: String!
+}
+
+input DeleteCodeLinkInput {
+  id: String!
+  projectId: String!
+}
+
+type RegisterCodeFilePayload {
+  file: CodeFile
+  errors: [UserError!]!
+}
+
+type DeleteCodeFilePayload {
+  deletedId: ID
+  success: Boolean!
+  errors: [UserError!]!
+}
+
+type CreateCodeLinkPayload {
+  link: CodeLink
+  errors: [UserError!]!
+}
+
+type DeleteCodeLinkPayload {
+  deletedId: ID
+  success: Boolean!
+  errors: [UserError!]!
+}
+
+enum QaReadinessStatus {
+  READY
+  REVIEW_NEEDED
+  HIGH_RISK
+  INSUFFICIENT_DATA
+}
+
+type QaScoreDeduction {
+  category: String!
+  reason: String!
+  points: Int!
+}
+
+type QaAuditReport {
+  qualityScore: Int!
+  readinessStatus: QaReadinessStatus!
+  aiExecutiveSummary: String
+  aiConcerns: [String!]!
+  aiRecommendedActions: [String!]!
+  coveragePercent: Float!
+  totalRequirements: Int!
+  requirementsAtRisk: Int!
+  highRiskRequirements: Int!
+  driftFindingsCount: Int!
+  highRiskDriftFindings: Int!
+  orphanTestCount: Int!
+  totalCodeFiles: Int!
+  unlinkedCodeFiles: Int!
+  driftFindings: [DriftFinding!]!
+  topRisks: [DriftRequirement!]!
+  recommendedActions: [String!]!
+  scoreDeductions: [QaScoreDeduction!]!
+}
+
+type TraceabilitySuggestion {
+  id: ID!
+  projectId: String!
+  sourceId: ID!
+  sourceKind: String!
+  targetId: ID!
+  targetKind: String!
+  linkType: String!
+  status: String!
+  confidence: Float!
+  reason: String!
+  signalsJson: String!
+  createdAt: DateTime!
+  confirmedAt: DateTime
+  rejectedAt: DateTime
+}
+
+type TraceabilitySuggestionItem {
+  suggestion: TraceabilitySuggestion!
+  sourceTitle: String!
+  targetTitle: String!
+}
+
+type SuggestionGenerationResult {
+  totalGenerated: Int!
+  highConfidenceCount: Int!
+  needsReviewCount: Int!
+  suggestionsAvailable: Boolean!
+  message: String
+}
+
+type GenerateTraceabilitySuggestionsPayload {
+  result: SuggestionGenerationResult
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type ConfirmSuggestionPayload {
+  traceLink: TraceLink
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type RejectSuggestionPayload {
+  success: Boolean!
+  errors: [UserError!]!
+  correlationId: String!
+}
+
+type ConfirmHighConfidenceSuggestionsPayload {
+  confirmedCount: Int!
+  correlationId: String!
+}
+
+input GenerateTraceabilitySuggestionsInput {
+  projectId: String!
+}
+
+input ConfirmSuggestionInput {
+  id: ID!
+  projectId: String!
+}
+
+input RejectSuggestionInput {
+  id: ID!
+  projectId: String!
+}
+
+input ConfirmHighConfidenceSuggestionsInput {
+  projectId: String!
+}

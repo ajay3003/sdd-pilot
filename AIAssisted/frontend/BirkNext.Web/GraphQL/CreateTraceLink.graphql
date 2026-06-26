@@ -1,0 +1,19 @@
+mutation CreateTraceLink($input: CreateTraceLinkInput!) {
+    createTraceLink(input: $input) {
+        traceLink {
+            id
+            sourceId
+            sourceKind
+            targetId
+            targetKind
+            linkType
+            createdAt
+        }
+        errors {
+            code
+            message
+            field
+        }
+        correlationId
+    }
+}

@@ -1,0 +1,19 @@
+@page "/scenarios/new"
+@using BirkNext.Web.Components
+@inject NavigationManager Navigation
+
+<PageTitle>Create Test Scenario</PageTitle>
+
+<div class="create-scenario-shell">
+    <PageHeader Title="Create Test Scenario"
+                Description="Create reusable QA test scenarios that support requirement coverage, traceability, and release readiness." />
+
+    <ScenarioForm OnScenarioCreated="HandleScenarioCreated" />
+</div>
+
+@code {
+    private void HandleScenarioCreated()
+    {
+        Navigation.NavigateTo("scenarios");
+    }
+}

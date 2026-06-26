@@ -1,0 +1,10 @@
+mutation RejectSuggestion($input: RejectSuggestionInput!) {
+    rejectSuggestion(input: $input) {
+        success
+        errors {
+            code
+            message
+        }
+        correlationId
+    }
+}

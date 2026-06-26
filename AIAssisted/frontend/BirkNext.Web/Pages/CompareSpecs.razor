@@ -1,0 +1,9 @@
+@page "/compare"
+@inject NavigationManager NavigationManager
+
+@code {
+    protected override void OnInitialized()
+    {
+        NavigationManager.NavigateTo("/spec-drift?tab=changes", replace: true);
+    }
+}

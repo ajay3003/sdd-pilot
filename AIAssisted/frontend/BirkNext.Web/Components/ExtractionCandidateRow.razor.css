@@ -1,0 +1,370 @@
+.extraction-candidate-row {
+    --candidate-accent: var(--clr-badge-req-text, #2563eb);
+    --candidate-tint: var(--clr-badge-req-bg, #eff6ff);
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.875rem 1rem 0.9rem 0.75rem;
+    background: white;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-left: 4px solid var(--candidate-accent);
+    border-radius: var(--radius-lg, 8px);
+    margin-bottom: 0.75rem;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+    transition:
+        border-color var(--transition, 0.15s ease),
+        background-color var(--transition, 0.15s ease),
+        box-shadow var(--transition, 0.15s ease);
+}
+
+.candidate-kind-requirement {
+    --candidate-accent: var(--clr-badge-req-text, #2563eb);
+    --candidate-tint: var(--clr-badge-req-bg, #eff6ff);
+}
+
+.candidate-kind-test {
+    --candidate-accent: var(--clr-badge-test-text, #047857);
+    --candidate-tint: var(--clr-badge-test-bg, #ecfdf5);
+}
+
+.candidate-kind-needsclarification {
+    --candidate-accent: var(--clr-badge-clr-text, #b45309);
+    --candidate-tint: var(--clr-badge-clr-bg, #fffbeb);
+    background: linear-gradient(90deg, var(--clr-badge-clr-bg, #fffbeb), white 74%);
+    border-style: solid;
+}
+
+.extraction-candidate-row:hover {
+    border-color: var(--clr-border-hover, #cbd5e1);
+    box-shadow: 0 3px 10px rgb(15 23 42 / 0.08);
+}
+
+.extraction-candidate-row.is-selected {
+    border-color: var(--clr-primary-focus, #3b82f6);
+    border-left-color: var(--clr-primary-focus, #3b82f6);
+    background: linear-gradient(90deg, var(--clr-surface-selected, #eff6ff), white 70%);
+    box-shadow: 0 0 0 2px var(--clr-primary-ring, #dbeafe);
+}
+
+.candidate-select-cell {
+    display: flex;
+    justify-content: center;
+    padding-top: 0.22rem;
+}
+
+input[type="checkbox"] {
+    width: 1.05rem;
+    height: 1.05rem;
+    margin: 0;
+    flex-shrink: 0;
+    cursor: pointer;
+    accent-color: var(--clr-primary-focus, #3b82f6);
+}
+
+input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--clr-primary-focus, #3b82f6);
+    outline-offset: 3px;
+}
+
+.candidate-body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.candidate-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.candidate-question-mark {
+    width: 1.45rem;
+    height: 1.45rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--candidate-accent) 14%, white);
+    color: var(--candidate-accent);
+    border: 1px solid color-mix(in srgb, var(--candidate-accent) 36%, transparent);
+    font-size: 0.9rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.candidate-identity {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 0.18rem 0.5rem;
+    border-radius: var(--radius-sm, 4px);
+    background: var(--candidate-tint);
+    color: var(--candidate-accent);
+    border: 1px solid color-mix(in srgb, var(--candidate-accent) 28%, transparent);
+    font-size: 0.86rem;
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: 0.01em;
+    overflow-wrap: anywhere;
+}
+
+.candidate-title {
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--clr-text-body, #1e293b);
+    line-height: 1.48;
+    overflow-wrap: anywhere;
+}
+
+.candidate-kind-needsclarification .candidate-title {
+    font-size: 1.02rem;
+    font-weight: 650;
+    color: #78350f;
+    padding-top: 0.05rem;
+}
+
+.candidate-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    color: var(--clr-text-subtle, #64748b);
+}
+
+.candidate-context-heading {
+    min-width: 0;
+    max-width: 100%;
+    font-size: 0.76rem;
+    color: var(--clr-text-subtle, #64748b);
+    font-style: italic;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.save-spinner {
+    display: inline-block;
+    margin-top: 0.1rem;
+    font-size: 0.78rem;
+    color: var(--clr-text-subtle, #64748b);
+}
+
+.save-badge-saved {
+    display: inline-block;
+    align-self: flex-start;
+    margin-top: 0.1rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--clr-success, #15803d);
+    background: var(--clr-success-bg, #dcfce7);
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--radius-sm, 4px);
+}
+
+.save-error {
+    display: inline-block;
+    margin-top: 0.1rem;
+    font-size: 0.78rem;
+    color: var(--clr-danger, #dc2626);
+}
+
+.extraction-candidate-row.is-review-accepted:not(.is-selected) {
+    background: linear-gradient(90deg, var(--clr-review-accepted-bg-light), white 68%);
+    border-left-color: var(--clr-review-accepted-text);
+}
+
+.extraction-candidate-row.is-review-rejected:not(.is-selected) {
+    background: linear-gradient(90deg, var(--clr-review-rejected-bg), white 70%);
+    border-left-color: var(--clr-review-rejected-text);
+}
+
+.extraction-candidate-row.is-review-rejected:not(.is-selected) .candidate-title,
+.extraction-candidate-row.is-review-rejected:not(.is-selected) .candidate-meta-row {
+    opacity: 0.7;
+}
+
+.extraction-candidate-row.is-review-needsreview:not(.is-selected) {
+    background: linear-gradient(90deg, var(--clr-review-needsreview-bg-light), white 68%);
+    border-left-color: var(--clr-review-needsreview-text);
+}
+
+.candidate-kind-needsclarification.is-review-accepted:not(.is-selected) {
+    background: linear-gradient(90deg, var(--clr-review-accepted-bg-light), var(--clr-badge-clr-bg, #fffbeb) 42%, white 86%);
+    border-left-color: var(--clr-review-accepted-text);
+}
+
+.candidate-kind-needsclarification.is-review-rejected:not(.is-selected) {
+    background: linear-gradient(90deg, var(--clr-review-rejected-bg), var(--clr-badge-clr-bg, #fffbeb) 46%, white 88%);
+    border-left-color: var(--clr-review-rejected-text);
+}
+
+.candidate-kind-needsclarification.is-review-needsreview:not(.is-selected) {
+    background: linear-gradient(90deg, var(--clr-review-needsreview-bg-light), var(--clr-badge-clr-bg, #fffbeb) 48%, white 88%);
+    border-left-color: var(--clr-review-needsreview-text);
+}
+
+.review-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.2rem;
+    flex-wrap: wrap;
+}
+
+.review-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1.65rem;
+    padding: 0.16rem 0.55rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    border: 1px solid var(--clr-border-input);
+    border-radius: var(--radius-pill);
+    background: white;
+    color: var(--clr-text-subtle);
+    cursor: pointer;
+    transition:
+        background-color var(--transition, 0.15s ease),
+        color var(--transition, 0.15s ease),
+        border-color var(--transition, 0.15s ease),
+        box-shadow var(--transition, 0.15s ease);
+    white-space: nowrap;
+}
+
+.review-action-btn:hover:not(.is-active) {
+    border-color: var(--clr-border-hover);
+    color: var(--clr-text-muted);
+    background: var(--clr-surface);
+}
+
+.review-action-btn:focus-visible {
+    outline: 2px solid var(--clr-primary-focus);
+    outline-offset: 2px;
+}
+
+.review-action-accept.is-active {
+    background: var(--clr-review-accepted-bg);
+    border-color: var(--clr-review-accepted-text);
+    color: var(--clr-review-accepted-text);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--clr-review-accepted-text) 20%, transparent);
+}
+
+.review-action-reject.is-active {
+    background: var(--clr-review-rejected-bg);
+    border-color: var(--clr-review-rejected-text);
+    color: var(--clr-review-rejected-text);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--clr-review-rejected-text) 20%, transparent);
+}
+
+.review-action-needsreview.is-active {
+    background: var(--clr-review-needsreview-bg);
+    border-color: var(--clr-review-needsreview-text);
+    color: var(--clr-review-needsreview-text);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--clr-review-needsreview-text) 20%, transparent);
+}
+
+.link-indicator {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.12rem 0.48rem;
+    font-size: 0.66rem;
+    font-weight: 650;
+    background: var(--clr-surface, #f8fafc);
+    border: 1px solid var(--clr-border-input);
+    border-radius: var(--radius-pill);
+    color: var(--clr-text-subtle);
+    cursor: pointer;
+    transition: background-color var(--transition), border-color var(--transition), color var(--transition);
+    white-space: nowrap;
+}
+
+.link-indicator:hover,
+.link-indicator.is-open {
+    background: var(--clr-primary-ring, #eff6ff);
+    border-color: var(--clr-primary-focus, #3b82f6);
+    color: var(--clr-primary, #2563eb);
+}
+
+.link-indicator.is-empty {
+    width: 1.35rem;
+    height: 1.35rem;
+    justify-content: center;
+    padding: 0;
+    color: var(--clr-text-subtle);
+    opacity: 0.62;
+}
+
+.link-indicator.is-empty:hover,
+.link-indicator.is-empty.is-open {
+    opacity: 1;
+}
+
+.link-indicator:focus-visible {
+    outline: 2px solid var(--clr-primary-focus);
+    outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+    .extraction-candidate-row {
+        grid-template-columns: 1.75rem minmax(0, 1fr);
+        padding: 0.75rem 0.75rem 0.8rem 0.625rem;
+        gap: 0.625rem;
+    }
+
+    .candidate-title {
+        font-size: 0.95rem;
+    }
+
+    .candidate-context-heading {
+        white-space: normal;
+    }
+
+    .review-actions {
+        gap: 0.25rem;
+    }
+}
+
+/* ─── Context-aware card action button variants ─────────────────────────── */
+
+.review-action-undo {
+    background: var(--clr-surface, #f8fafc);
+    color: var(--clr-text-muted, #475569);
+    border-color: var(--clr-border-input, #d1d5db);
+}
+
+.review-action-undo:hover {
+    background: #f1f5f9;
+    color: var(--clr-text-body, #1e293b);
+}
+
+.review-action-reopen {
+    background: var(--clr-surface, #f8fafc);
+    color: var(--clr-text-muted, #475569);
+    border-color: var(--clr-border-input, #d1d5db);
+}
+
+.review-action-reopen:hover {
+    background: #f1f5f9;
+    color: var(--clr-text-body, #1e293b);
+}
+
+.review-action-clear {
+    background: #fef9c3;
+    color: #a16207;
+    border-color: #fde68a;
+}
+
+.review-action-clear:hover {
+    background: #fef08a;
+    color: #92400e;
+}
+
+/* Checkbox disabled styling for saved items */
+.candidate-select-cell input[type="checkbox"]:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}

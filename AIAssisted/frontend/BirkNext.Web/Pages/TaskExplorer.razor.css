@@ -1,0 +1,14 @@
+/* ── Page wrapper ────────────────────────────────────────────────────────── */
+
+.tx-page {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding-bottom: 2rem;
+}
+
+/* ── Page body ───────────────────────────────────────────────────────────── */
+
+.tx-page-body {
+    padding: 0 1.25rem;
+}

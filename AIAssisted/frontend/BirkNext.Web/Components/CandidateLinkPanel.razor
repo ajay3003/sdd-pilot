@@ -1,0 +1,194 @@
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+
+<div class="candidate-link-panel" data-testid="candidate-link-panel">
+
+    <div class="link-panel-header">
+        <div class="link-panel-title-row">
+            <span class="link-panel-title">Suggested Traceability Links</span>
+            <button type="button" class="link-panel-close" @onclick="OnClose" aria-label="Close link panel" data-testid="link-drawer-close">×</button>
+        </div>
+        <div class="link-panel-help" data-testid="link-panel-help">
+            <p>Connect requirements to tests and success criteria to improve traceability coverage.</p>
+            <p>These links affect Traceability &amp; Coverage calculations.</p>
+        </div>
+        <div class="link-panel-context">
+            <span class="badge badge-@Candidate.Classification.ToString().ToLowerInvariant()">
+                @(Candidate.Classification switch {
+                    ScenarioKind.Requirement => "REQ",
+                    ScenarioKind.Test => "TEST",
+                    _ => "CLR"
+                })
+            </span>
+            <span class="link-panel-context-title">@Candidate.Title</span>
+        </div>
+    </div>
+
+    <div class="link-panel-search">
+        <input type="search"
+               class="link-search-input"
+               placeholder="Search artifacts…"
+               aria-label="Search artifacts"
+               data-testid="link-search"
+               value="@_searchQuery"
+               @oninput="e => _searchQuery = e.Value?.ToString() ?? string.Empty" />
+    </div>
+
+    <div class="link-panel-sections">
+        @if (Candidate.Classification == ScenarioKind.Requirement)
+        {
+            @RenderSection("Tests", "tests", LinkedTests, FilteredAvailableTests,
+                c => AddLink(c, CandidateLinkType.RequirementTest),
+                "No suggested links available for tests.", "test")
+
+            @RenderSection("Clarifications", "clarifications", LinkedClarifications, FilteredAvailableClarifications,
+                c => AddLink(c, CandidateLinkType.RequirementClarification),
+                "No suggested links available for success criteria.", "needsclarification")
+        }
+        else if (Candidate.Classification == ScenarioKind.Test)
+        {
+            @RenderSection("Requirements", "requirements", LinkedRequirements, FilteredAvailableRequirements,
+                c => AddLink(c, CandidateLinkType.RequirementTest),
+                "No suggested links available for requirements.", "requirement")
+
+            @RenderSection("Clarifications", "clarifications", LinkedClarifications, FilteredAvailableClarifications,
+                c => AddLink(c, CandidateLinkType.TestClarification),
+                "No suggested links available for success criteria.", "needsclarification")
+        }
+        else
+        {
+            @RenderSection("Requirements", "requirements", LinkedRequirements, FilteredAvailableRequirements,
+                c => AddLink(c, CandidateLinkType.RequirementClarification),
+                "No suggested links available for requirements.", "requirement")
+
+            @RenderSection("Tests", "tests", LinkedTests, FilteredAvailableTests,
+                c => AddLink(c, CandidateLinkType.TestClarification),
+                "No suggested links available for tests.", "test")
+        }
+    </div>
+
+    <div class="link-panel-footer">
+        <button type="button" class="btn-primary link-panel-done" @onclick="OnClose" data-testid="link-drawer-done">Done</button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ExtractionCandidate Candidate { get; set; } = default!;
+    [Parameter] public IReadOnlyList<CandidateLinkEntry> Links { get; set; } = [];
+    [Parameter] public IReadOnlyList<ExtractionCandidate> LinkableCandidates { get; set; } = [];
+    [Parameter] public EventCallback<CandidateLinkEntry> OnLinkAdded { get; set; }
+    [Parameter] public EventCallback<CandidateLinkEntry> OnLinkRemoved { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string _searchQuery = string.Empty;
+
+    private IEnumerable<CandidateLinkEntry> LinkedTests =>
+        Links.Where(l => l.LinkType == CandidateLinkType.RequirementTest ||
+                         l.LinkType == CandidateLinkType.TestClarification);
+
+    private IEnumerable<CandidateLinkEntry> LinkedClarifications =>
+        Links.Where(l => l.LinkType == CandidateLinkType.RequirementClarification ||
+                         l.LinkType == CandidateLinkType.TestClarification);
+
+    private IEnumerable<CandidateLinkEntry> LinkedRequirements =>
+        Links.Where(l => l.LinkType == CandidateLinkType.RequirementTest ||
+                         l.LinkType == CandidateLinkType.RequirementClarification);
+
+    private IEnumerable<ExtractionCandidate> AvailableTests =>
+        LinkableCandidates.Where(c => c.Classification == ScenarioKind.Test &&
+                                      c.CandidateId != Candidate.CandidateId &&
+                                      !LinkedTests.Any(l => l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
+
+    private IEnumerable<ExtractionCandidate> AvailableClarifications =>
+        LinkableCandidates.Where(c => c.Classification == ScenarioKind.NeedsClarification &&
+                                      c.CandidateId != Candidate.CandidateId &&
+                                      !LinkedClarifications.Any(l => l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
+
+    private IEnumerable<ExtractionCandidate> AvailableRequirements =>
+        LinkableCandidates.Where(c => c.Classification == ScenarioKind.Requirement &&
+                                      c.CandidateId != Candidate.CandidateId &&
+                                      !LinkedRequirements.Any(l => l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
+
+    private IEnumerable<ExtractionCandidate> FilteredAvailableTests =>
+        AvailableTests.Where(MatchesSearch);
+
+    private IEnumerable<ExtractionCandidate> FilteredAvailableClarifications =>
+        AvailableClarifications.Where(MatchesSearch);
+
+    private IEnumerable<ExtractionCandidate> FilteredAvailableRequirements =>
+        AvailableRequirements.Where(MatchesSearch);
+
+    private bool MatchesSearch(ExtractionCandidate c) =>
+        string.IsNullOrEmpty(_searchQuery) ||
+        c.Title.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase);
+
+    private ExtractionCandidate? CandidateById(Guid id) =>
+        LinkableCandidates.FirstOrDefault(c => c.CandidateId == id)
+        ?? (Candidate.CandidateId == id ? Candidate : null);
+
+    private async Task AddLink(ExtractionCandidate other, CandidateLinkType linkType)
+    {
+        var entry = new CandidateLinkEntry(Candidate.CandidateId, other.CandidateId, linkType);
+        await OnLinkAdded.InvokeAsync(entry);
+    }
+
+    private async Task RemoveLink(CandidateLinkEntry link)
+    {
+        await OnLinkRemoved.InvokeAsync(link);
+    }
+
+    private RenderFragment RenderSection(
+        string label,
+        string sectionKey,
+        IEnumerable<CandidateLinkEntry> linked,
+        IEnumerable<ExtractionCandidate> available,
+        Func<ExtractionCandidate, Task> onAdd,
+        string emptyMessage,
+        string badgeKind) => __builder =>
+    {
+        var linkedList = linked.ToList();
+        var availableList = available.ToList();
+        var hasSearchQuery = !string.IsNullOrEmpty(_searchQuery);
+
+        <div class="link-section" data-testid="link-section-@sectionKey">
+            <div class="link-section-header">
+                <span class="link-section-label">@label</span>
+                @if (linkedList.Count > 0)
+                {
+                    <span class="link-section-count" aria-label="@linkedList.Count linked">@linkedList.Count linked</span>
+                }
+            </div>
+
+            @foreach (var link in linkedList)
+            {
+                var other = CandidateById(link.TargetId == Candidate.CandidateId ? link.SourceId : link.TargetId);
+                <div class="link-linked-item" data-testid="link-linked-item">
+                    <span class="badge badge-@badgeKind link-item-badge">@badgeKind.ToUpperInvariant()</span>
+                    <span class="link-item-title">@(other?.Title ?? "(unknown)")</span>
+                    <button type="button" class="link-remove-btn" @onclick="@(() => RemoveLink(link))"
+                            aria-label="Remove link" data-testid="link-remove-btn">Remove</button>
+                </div>
+            }
+
+            @foreach (var c in availableList)
+            {
+                var candidate = c;
+                <div class="link-available-item" data-testid="link-available-item">
+                    <span class="badge badge-@badgeKind link-item-badge">@badgeKind.ToUpperInvariant()</span>
+                    <span class="link-item-title">@candidate.Title</span>
+                    <button type="button" class="link-add-btn" @onclick="@(() => onAdd(candidate))"
+                            aria-label="Add link to @candidate.Title" data-testid="link-add-btn">Add</button>
+                </div>
+            }
+
+            @if (hasSearchQuery && availableList.Count == 0)
+            {
+                <p class="link-empty-state link-search-empty">No matching candidates</p>
+            }
+            else if (availableList.Count == 0 && linkedList.Count == 0)
+            {
+                <p class="link-empty-state">@emptyMessage</p>
+            }
+        </div>
+    };
+}

@@ -1,0 +1,315 @@
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@{
+    EnsureModel();
+}
+
+@if (_viewModel is not null)
+{
+    <div class="doc-view">
+        <div class="doc-view-filter-bar">
+            <div class="doc-view-type-chips" role="group" aria-label="Filter by artifact type">
+                <button type="button"
+                        class="filter-chip @(_typeFilter is null ? "is-active" : "")"
+                        @onclick="() => _typeFilter = null"
+                        aria-pressed="@(_typeFilter is null)">
+                    All <span class="chip-count">@_viewModel.TotalArtifacts</span>
+                </button>
+                @if (_viewModel.RequirementCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-requirement @(_typeFilter == DocumentArtifactType.Requirement ? "is-active" : "")"
+                            @onclick="() => _typeFilter = DocumentArtifactType.Requirement"
+                            aria-pressed="@(_typeFilter == DocumentArtifactType.Requirement)">
+                        REQUIREMENT <span class="chip-count">@_viewModel.RequirementCount</span>
+                    </button>
+                }
+                @if (_viewModel.TestCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-test @(_typeFilter == DocumentArtifactType.AcceptanceTest ? "is-active" : "")"
+                            @onclick="() => _typeFilter = DocumentArtifactType.AcceptanceTest"
+                            aria-pressed="@(_typeFilter == DocumentArtifactType.AcceptanceTest)">
+                        TEST <span class="chip-count">@_viewModel.TestCount</span>
+                    </button>
+                }
+                @if (_viewModel.SuccessCriteriaCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-sc @(_typeFilter == DocumentArtifactType.SuccessCriterion ? "is-active" : "")"
+                            @onclick="() => _typeFilter = DocumentArtifactType.SuccessCriterion"
+                            aria-pressed="@(_typeFilter == DocumentArtifactType.SuccessCriterion)">
+                        SUCCESS CRITERION <span class="chip-count">@_viewModel.SuccessCriteriaCount</span>
+                    </button>
+                }
+                @if (_viewModel.ClarificationCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-needsclarification @(_typeFilter == DocumentArtifactType.Clarification ? "is-active" : "")"
+                            @onclick="() => _typeFilter = DocumentArtifactType.Clarification"
+                            aria-pressed="@(_typeFilter == DocumentArtifactType.Clarification)">
+                        CLARIFICATION <span class="chip-count">@_viewModel.ClarificationCount</span>
+                    </button>
+                }
+                @if (_viewModel.DecisionCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-decision @(_typeFilter == DocumentArtifactType.Decision ? "is-active" : "")"
+                            @onclick="() => _typeFilter = DocumentArtifactType.Decision"
+                            aria-pressed="@(_typeFilter == DocumentArtifactType.Decision)">
+                        DECISION <span class="chip-count">@_viewModel.DecisionCount</span>
+                    </button>
+                }
+                @if (_viewModel.EntityCount > 0)
+                {
+                    <button type="button"
+                            class="filter-chip filter-chip-entity @(_typeFilter == DocumentArtifactType.Entity ? "is-active" : "")"
+                            @onclick="() => _typeFilter = DocumentArtifactType.Entity"
+                            aria-pressed="@(_typeFilter == DocumentArtifactType.Entity)">
+                        ENTITY <span class="chip-count">@_viewModel.EntityCount</span>
+                    </button>
+                }
+            </div>
+            <input type="search"
+                   class="search-input"
+                   placeholder="Search artifacts…"
+                   value="@_searchTerm"
+                   @oninput="HandleSearchInput"
+                   aria-label="Search artifacts" />
+        </div>
+
+        @{
+            var anyVisible = false;
+        }
+
+        @foreach (var item in FlattenSections(_viewModel.Sections))
+        {
+            var sec   = item.Section;
+            var depth = item.Depth;
+
+            @if (item.Parent is not null && !GetExpanded(item.Parent.Title))
+            {
+                // Parent collapsed — skip this section
+            }
+            else if (SectionHasVisibleContent(sec))
+            {
+                anyVisible = true;
+                var visibleArtifacts = sec.Artifacts.Where(IsVisible).ToList();
+                var sectionKey = SectionKey(sec);
+                var isExpanded = GetExpanded(sectionKey);
+
+                <div class="doc-section doc-section-depth-@depth @(sec.IsDecisionSection ? "doc-section-decision" : "")" data-testid="doc-section">
+                    <button type="button" class="doc-section-header" @onclick="() => ToggleSection(sectionKey)" aria-expanded="@isExpanded">
+                        <span class="doc-section-caret @(isExpanded ? "is-expanded" : "")" aria-hidden="true">▶</span>
+                        <span class="doc-section-title">@sec.Title</span>
+                        @if (visibleArtifacts.Count > 0)
+                        {
+                            <span class="doc-section-counts" aria-hidden="true">
+                                @foreach (var (type, count) in ArtifactTypeCounts(visibleArtifacts))
+                                {
+                                    <span class="doc-count-chip doc-count-chip-@DocumentArtifactRow.CssKey(type)">@count @ShortLabel(type)</span>
+                                }
+                            </span>
+                        }
+                    </button>
+
+                    @if (isExpanded && visibleArtifacts.Count > 0)
+                    {
+                        <div class="doc-section-artifacts">
+                            @foreach (var artifact in visibleArtifacts)
+                            {
+                                <DocumentArtifactRow Artifact="artifact"
+                                                     IsSelected="@(artifact.LinkedCandidate?.IsSelected ?? false)"
+                                                     OnSelectionToggled="OnSelectionToggled"
+                                                     OnReviewStatusChanged="OnReviewStatusChanged"
+                                                     Links="@GetLinks(artifact)"
+                                                     OnOpenLinkPanel="OnOpenLinkPanel"
+                                                     IsLinkPanelOpen="@(artifact.LinkedCandidate?.CandidateId == LinkModalCandidateId)" />
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+
+        @{
+            var unmatchedVisible = _viewModel.UnmatchedArtifacts.Where(IsVisible).ToList();
+        }
+        @if (unmatchedVisible.Count > 0)
+        {
+            anyVisible = true;
+            var unmatchedKey = "__unmatched__";
+            var isExpanded = GetExpanded(unmatchedKey);
+
+            <div class="doc-section doc-section-depth-0 doc-section-unmatched" data-testid="doc-section-unmatched">
+                <button type="button" class="doc-section-header" @onclick="() => ToggleSection(unmatchedKey)" aria-expanded="@isExpanded">
+                    <span class="doc-section-caret @(isExpanded ? "is-expanded" : "")" aria-hidden="true">▶</span>
+                    <span class="doc-section-title">Other Artifacts</span>
+                    <span class="doc-section-counts" aria-hidden="true">
+                        @foreach (var (type, count) in ArtifactTypeCounts(unmatchedVisible))
+                        {
+                            <span class="doc-count-chip doc-count-chip-@DocumentArtifactRow.CssKey(type)">@count @ShortLabel(type)</span>
+                        }
+                    </span>
+                </button>
+                @if (isExpanded)
+                {
+                    <div class="doc-section-artifacts">
+                        @foreach (var artifact in unmatchedVisible)
+                        {
+                            <DocumentArtifactRow Artifact="artifact"
+                                                 IsSelected="@(artifact.LinkedCandidate?.IsSelected ?? false)"
+                                                 OnSelectionToggled="OnSelectionToggled"
+                                                 OnReviewStatusChanged="OnReviewStatusChanged"
+                                                 Links="@GetLinks(artifact)"
+                                                 OnOpenLinkPanel="OnOpenLinkPanel"
+                                                 IsLinkPanelOpen="@(artifact.LinkedCandidate?.CandidateId == LinkModalCandidateId)" />
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        @if (!anyVisible)
+        {
+            <div class="filter-empty-state" data-testid="doc-filter-empty-state">
+                @if (_searchTerm.Length > 0 || _typeFilter is not null)
+                {
+                    <p>No artifacts match@(_searchTerm.Length > 0 ? " your search" : " the selected filter").</p>
+                }
+                else
+                {
+                    <p>No artifacts require review. All extracted artifacts are currently accepted.</p>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string SpecMarkdown { get; set; } = string.Empty;
+    [Parameter] public IReadOnlyList<ExtractionCandidate> Candidates { get; set; } = [];
+    [Parameter] public IReadOnlyList<CandidateLinkEntry> Links { get; set; } = [];
+    [Parameter] public EventCallback<Guid> OnSelectionToggled { get; set; }
+    [Parameter] public EventCallback<CandidateReviewStatus> OnReviewStatusChanged { get; set; }
+    [Parameter] public EventCallback<ExtractionCandidate> OnOpenLinkPanel { get; set; }
+    [Parameter] public Guid? LinkModalCandidateId { get; set; }
+
+    private DocumentViewModel? _viewModel;
+    private string _cachedMarkdown = string.Empty;
+    private int _cachedCandidateCount = -1;
+
+    private DocumentArtifactType? _typeFilter;
+    private string _searchTerm = string.Empty;
+    private readonly Dictionary<string, bool> _sectionExpanded = new(StringComparer.Ordinal);
+
+    private void EnsureModel()
+    {
+        if (_viewModel is not null
+            && _cachedMarkdown == SpecMarkdown
+            && _cachedCandidateCount == Candidates.Count)
+            return;
+
+        _cachedMarkdown       = SpecMarkdown;
+        _cachedCandidateCount = Candidates.Count;
+        _viewModel            = DocumentViewModelBuilder.Build(SpecMarkdown, Candidates, Links);
+        _sectionExpanded.Clear();
+    }
+
+    private bool GetExpanded(string key)
+    {
+        if (!_sectionExpanded.TryGetValue(key, out var v))
+            _sectionExpanded[key] = v = true; // default expanded
+        return v;
+    }
+
+    private void ToggleSection(string key)
+    {
+        _sectionExpanded[key] = !GetExpanded(key);
+    }
+
+    private static string SectionKey(DocumentSection s) =>
+        $"{s.HeadingLevel}:{s.Title}";
+
+    private bool IsVisible(DocumentArtifact a)
+    {
+        if (_typeFilter is not null && a.ArtifactType != _typeFilter) return false;
+        if (_searchTerm.Length > 0)
+        {
+            var term = _searchTerm;
+            if (!a.Title.Contains(term, StringComparison.OrdinalIgnoreCase)
+                && !a.Excerpt.Contains(term, StringComparison.OrdinalIgnoreCase)
+                && (a.SpecItemId is null || !a.SpecItemId.Contains(term, StringComparison.OrdinalIgnoreCase)))
+                return false;
+        }
+        return true;
+    }
+
+    private bool SectionHasVisibleContent(DocumentSection section)
+    {
+        if (section.Artifacts.Any(IsVisible)) return true;
+        return section.SubSections.Any(SectionHasVisibleContent);
+    }
+
+    private IReadOnlyList<CandidateLinkEntry> GetLinks(DocumentArtifact artifact)
+    {
+        if (artifact.LinkedCandidate is null) return [];
+        var id = artifact.LinkedCandidate.CandidateId;
+        return Links.Where(l => l.SourceId == id || l.TargetId == id).ToList();
+    }
+
+    private void HandleSearchInput(ChangeEventArgs e) =>
+        _searchTerm = e.Value?.ToString() ?? string.Empty;
+
+    private record FlatItem(DocumentSection Section, int Depth, DocumentSection? Parent);
+
+    private static IEnumerable<FlatItem> FlattenSections(
+        IEnumerable<DocumentSection> sections,
+        int depth = 0,
+        DocumentSection? parent = null)
+    {
+        foreach (var s in sections)
+        {
+            yield return new FlatItem(s, depth, parent);
+            foreach (var child in FlattenSections(s.SubSections, depth + 1, s))
+                yield return child;
+        }
+    }
+
+    private static IEnumerable<(DocumentArtifactType Type, int Count)> ArtifactTypeCounts(
+        IEnumerable<DocumentArtifact> artifacts) =>
+        artifacts
+            .GroupBy(a => a.ArtifactType)
+            .OrderBy(g => TypeOrder(g.Key))
+            .Select(g => (g.Key, g.Count()));
+
+    private static int TypeOrder(DocumentArtifactType t) => t switch
+    {
+        DocumentArtifactType.Requirement      => 0,
+        DocumentArtifactType.UserStory        => 1,
+        DocumentArtifactType.AcceptanceTest   => 2,
+        DocumentArtifactType.SuccessCriterion => 3,
+        DocumentArtifactType.Clarification    => 4,
+        DocumentArtifactType.Decision         => 5,
+        DocumentArtifactType.Entity           => 6,
+        DocumentArtifactType.ApiSurfaceItem   => 7,
+        _                                     => 99,
+    };
+
+    private static string ShortLabel(DocumentArtifactType t) => t switch
+    {
+        DocumentArtifactType.Requirement      => "req",
+        DocumentArtifactType.UserStory        => "us",
+        DocumentArtifactType.AcceptanceTest   => "test",
+        DocumentArtifactType.SuccessCriterion => "sc",
+        DocumentArtifactType.Clarification    => "clr",
+        DocumentArtifactType.Decision         => "dec",
+        DocumentArtifactType.Entity           => "ent",
+        DocumentArtifactType.ApiSurfaceItem   => "api",
+        DocumentArtifactType.EdgeCase         => "edge",
+        DocumentArtifactType.Assumption       => "asm",
+        _                                     => t.ToString().ToLowerInvariant(),
+    };
+}

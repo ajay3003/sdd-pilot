@@ -1,0 +1,11 @@
+mutation DeleteTraceLink($input: DeleteTraceLinkInput!) {
+    deleteTraceLink(input: $input) {
+        deletedId
+        success
+        errors {
+            code
+            message
+        }
+        correlationId
+    }
+}

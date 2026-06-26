@@ -1,0 +1,102 @@
+:root {
+    /* ── Brand / Primary ── */
+    --clr-primary:       #2563eb;
+    --clr-primary-hover: #1d4ed8;
+    --clr-primary-focus: #3b82f6;
+    --clr-primary-ring:  rgba(59, 130, 246, 0.1);
+
+    /* ── Text ── */
+    --clr-text-heading:     #0f172a;
+    --clr-text-body:        #1e293b;
+    --clr-text-muted:       #475569;
+    --clr-text-subtle:      #64748b;
+    --clr-text-placeholder: #94a3b8;
+    --clr-text-disabled:    #6b7280;
+
+    /* ── Surfaces ── */
+    --clr-surface:          #f8fafc;
+    --clr-surface-white:    #ffffff;
+    --clr-surface-disabled: #f9fafb;
+    --clr-surface-selected: #eff6ff;
+
+    /* ── Borders ── */
+    --clr-border:        #e2e8f0;
+    --clr-border-hover:  #cbd5e1;
+    --clr-border-input:  #d1d5db;
+    --clr-border-subtle: #f1f5f9;
+
+    /* ── Sidebar ── */
+    --clr-sidebar:        #1e293b;
+    --clr-sidebar-border: #334155;
+
+    /* ── Success ── */
+    --clr-success:            #15803d;
+    --clr-success-bg:         #dcfce7;
+    --clr-success-bg-light:   #f0fdf4;
+    --clr-success-border:     #bbf7d0;
+
+    /* ── Warning ── */
+    --clr-warning:            #92400e;
+    --clr-warning-bg:         #fef3c7;
+    --clr-warning-bg-light:   #fefce8;
+    --clr-warning-border:     #fde68a;
+
+    /* ── Danger ── */
+    --clr-danger:             #dc2626;
+    --clr-danger-bg:          #fef2f2;
+    --clr-danger-border:      #fecaca;
+
+    /* ── Badge palette ── */
+    --clr-badge-req-bg:   #dbeafe;
+    --clr-badge-req-text: #1d4ed8;
+    --clr-badge-test-bg:  #dcfce7;
+    --clr-badge-test-text:#15803d;
+    --clr-badge-clr-bg:   #fef3c7;
+    --clr-badge-clr-text: #92400e;
+
+    /* ── Review status palette ── */
+    --clr-review-new-bg:              #f1f5f9;
+    --clr-review-new-text:            #64748b;
+    --clr-review-accepted-bg:         var(--clr-success-bg);
+    --clr-review-accepted-text:       var(--clr-success);
+    --clr-review-accepted-border:     var(--clr-success-border);
+    --clr-review-accepted-bg-light:   var(--clr-success-bg-light);
+    --clr-review-rejected-bg:         var(--clr-surface);
+    --clr-review-rejected-text:       var(--clr-text-placeholder);
+    --clr-review-needsreview-bg:      var(--clr-warning-bg);
+    --clr-review-needsreview-text:    var(--clr-warning);
+    --clr-review-needsreview-border:  var(--clr-warning-border);
+    --clr-review-needsreview-bg-light: var(--clr-warning-bg-light);
+
+    /* ── Info ── */
+    --clr-info:            #1d4ed8;
+    --clr-info-bg:         #dbeafe;
+    --clr-info-bg-light:   #eff6ff;
+    --clr-info-border:     #bfdbfe;
+
+    /* ── Accent (violet) ── */
+    --clr-accent:          #7c3aed;
+    --clr-accent-bg:       #ede9fe;
+    --clr-accent-border:   #ddd6fe;
+
+    /* ── Danger extra ── */
+    --clr-danger-bg-light: #fff1f2;
+
+    /* ── Typography ── */
+    --font-mono: 'Consolas', 'Courier New', monospace;
+
+    /* ── Shadows ── */
+    --shadow-sm:   0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04);
+    --shadow-md:   0 4px 6px rgba(0, 0, 0, 0.05);
+
+    /* ── Geometry ── */
+    --radius-sm:   4px;
+    --radius-md:   6px;
+    --radius-lg:   8px;
+    --radius-xl:   12px;
+    --radius-pill: 10px;
+
+    /* ── Transitions ── */
+    --transition: 0.15s ease;
+}

@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(dotnet *)",
+      "Bash(dir C:\\\\Users\\\\ajaan\\\\source\\\\sdd-repos\\\\BirkNext *)",
+      "Bash(Get-ChildItem -Recurse -Filter \"appsettings*.json\" \"C:\\\\Users\\\\ajaan\\\\source\\\\sdd-repos\\\\BirkNext\\\\AIAssisted\\\\frontend\")",
+      "Bash(Select-Object FullName)",
+      "Bash(grep -r \"FakeLogger\\\\|ITestOutputHelper\\\\|LogEntry\\\\|ILogger\\\\|TestLogger\" frontend/BirkNext.Web.Tests/ --include=\"*.csproj\")",
+      "Bash(grep -r \"FakeLogger\\\\|TestLogger\\\\|LogCapture\" frontend/BirkNext.Web.Tests/ --include=\"*.cs\" -l)",
+      "Bash(xargs grep -l \"ScenarioExtractionService\\\\|ExtractionPipeline\")",
+      "Bash(echo \"---FORMAT EXIT: $?\")",
+      "Bash(echo \"FORMAT_EXIT:$?\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/)",
+      "Bash(curl -s http://localhost:5173/)",
+      "Bash(npx playwright *)",
+      "Bash(mkdir -p /tmp/pw-test)",
+      "Read(//tmp/**)",
+      "Bash(npm init *)",
+      "Bash(npm install *)",
+      "Bash(dir \"C:\\\\Users\\\\ajaan\\\\AppData\\\\Local\\\\Temp\\\\pw-test\\\\\" 2>/dev/null | head -10)",
+      "Bash(pkill -f \"BirkNext.Web\")"
+    ]
+  }
+}

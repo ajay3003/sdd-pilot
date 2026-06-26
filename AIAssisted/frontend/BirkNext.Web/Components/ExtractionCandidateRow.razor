@@ -1,0 +1,241 @@
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+
+<div class="extraction-candidate-row candidate-kind-@_kindKey @(Candidate.IsSelected ? "is-selected" : "") is-review-@_reviewKey"
+     data-testid="candidate-row">
+    <div class="candidate-select-cell">
+        <input
+            type="checkbox"
+            checked="@Candidate.IsSelected"
+            @onchange="HandleCheckboxChange"
+            disabled="@(Candidate.SaveState == CandidateSaveState.Saved)"
+            data-testid="candidate-checkbox"
+            aria-label="Select candidate: @Candidate.Title" />
+    </div>
+
+    <div class="candidate-body">
+        <div class="candidate-header">
+            @if (Candidate.Classification == ScenarioKind.NeedsClarification)
+            {
+                <span class="candidate-question-mark" aria-hidden="true">?</span>
+            }
+            <span class="candidate-identity" data-testid="candidate-identity">@_identityLabel</span>
+            <span class="badge badge-@Candidate.Classification.ToString().ToLowerInvariant()" data-testid="classification-badge">
+                @_classificationLabel
+            </span>
+        </div>
+
+        <div class="candidate-title" data-testid="candidate-title">@Candidate.Title</div>
+
+        <div class="candidate-meta-row">
+            @if (Candidate.ReviewStatus != CandidateReviewStatus.New)
+            {
+                <ReviewStatusBadge Status="@Candidate.ReviewStatus" />
+            }
+            @if (Candidate.ContextHeading is not null)
+            {
+                <span class="candidate-context-heading" data-testid="context-heading">@Candidate.ContextHeading</span>
+            }
+            <button type="button" class="link-indicator @(Links.Count == 0 ? "is-empty" : "") @(IsLinkPanelOpen ? "is-open" : "")"
+                    @onclick="() => OnOpenLinkPanel.InvokeAsync(Candidate)"
+                    data-testid="link-indicator"
+                    aria-label="@_linkIndicatorLabel (@(IsLinkPanelOpen ? "collapse" : "expand") links)">
+                @if (Links.Count == 0)
+                {
+                    <span aria-hidden="true">+</span>
+                }
+                else
+                {
+                    @_linkIndicatorLabel
+                }
+            </button>
+        </div>
+
+        @if (Candidate.SaveState == CandidateSaveState.Saving || Candidate.SaveState == CandidateSaveState.Retrying)
+        {
+            <span class="save-spinner" data-testid="save-spinner" aria-label="Saving...">Saving...</span>
+        }
+        else if (Candidate.SaveState == CandidateSaveState.Saved)
+        {
+            <span class="save-badge-saved" data-testid="save-saved">Saved</span>
+        }
+        else if (Candidate.SaveState == CandidateSaveState.Failed)
+        {
+            <span class="save-error" data-testid="save-error">@Candidate.SaveError</span>
+        }
+
+        <div class="review-actions" role="group" aria-label="Review this candidate">
+            @if (Candidate.ReviewStatus == CandidateReviewStatus.New)
+            {
+                <button type="button"
+                        class="review-action-btn review-action-accept"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Accepted))"
+                        aria-pressed="false">
+                    Accept
+                </button>
+                <button type="button"
+                        class="review-action-btn review-action-reject"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Rejected))"
+                        aria-pressed="false">
+                    Reject
+                </button>
+                <button type="button"
+                        class="review-action-btn review-action-needsreview"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.NeedsReview))"
+                        aria-pressed="false">
+                    Needs Review
+                </button>
+            }
+            else if (Candidate.ReviewStatus == CandidateReviewStatus.Accepted
+                     && Candidate.SaveState != CandidateSaveState.Saved)
+            {
+                <button type="button"
+                        class="review-action-btn review-action-undo"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Accepted))">
+                    Undo Accept
+                </button>
+            }
+            else if (Candidate.ReviewStatus == CandidateReviewStatus.Accepted
+                     && Candidate.SaveState == CandidateSaveState.Saved)
+            {
+                <button type="button"
+                        class="review-action-btn review-action-reopen"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Accepted))">
+                    Reopen
+                </button>
+            }
+            else if (Candidate.ReviewStatus == CandidateReviewStatus.Rejected)
+            {
+                <button type="button"
+                        class="review-action-btn review-action-accept"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Accepted))"
+                        aria-pressed="false">
+                    Accept
+                </button>
+                <button type="button"
+                        class="review-action-btn review-action-reopen"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Rejected))">
+                    Reopen
+                </button>
+            }
+            else if (Candidate.ReviewStatus == CandidateReviewStatus.NeedsReview)
+            {
+                <button type="button"
+                        class="review-action-btn review-action-accept"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Accepted))"
+                        aria-pressed="false">
+                    Accept
+                </button>
+                <button type="button"
+                        class="review-action-btn review-action-reject"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.Rejected))"
+                        aria-pressed="false">
+                    Reject
+                </button>
+                <button type="button"
+                        class="review-action-btn review-action-clear"
+                        @onclick="@(() => SetReviewStatus(CandidateReviewStatus.NeedsReview))">
+                    Clear Review
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ExtractionCandidate Candidate { get; set; } = default!;
+    [Parameter] public EventCallback<Guid> OnSelectionToggled { get; set; }
+    [Parameter] public EventCallback<CandidateReviewStatus> OnReviewStatusChanged { get; set; }
+    [Parameter] public IReadOnlyList<CandidateLinkEntry> Links { get; set; } = [];
+    [Parameter] public EventCallback<ExtractionCandidate> OnOpenLinkPanel { get; set; }
+    [Parameter] public bool IsLinkPanelOpen { get; set; }
+
+    private string _linkIndicatorLabel
+    {
+        get
+        {
+            if (Links.Count == 0) return "No links";
+            if (Candidate.Classification == ScenarioKind.Requirement)
+            {
+                int tests = Links.Count(l => l.LinkType == CandidateLinkType.RequirementTest);
+                int clrs  = Links.Count(l => l.LinkType == CandidateLinkType.RequirementClarification);
+                var parts = new List<string>();
+                if (tests > 0) parts.Add($"{tests} test{(tests == 1 ? "" : "s")}");
+                if (clrs  > 0) parts.Add($"{clrs} clarification{(clrs == 1 ? "" : "s")}");
+                return parts.Count > 0 ? string.Join(" - ", parts) : "No links";
+            }
+            if (Candidate.Classification == ScenarioKind.Test)
+            {
+                int reqs = Links.Count(l => l.LinkType == CandidateLinkType.RequirementTest);
+                int clrs = Links.Count(l => l.LinkType == CandidateLinkType.TestClarification);
+                var parts = new List<string>();
+                if (reqs > 0) parts.Add($"{reqs} req{(reqs == 1 ? "" : "s")}");
+                if (clrs > 0) parts.Add($"{clrs} clarification{(clrs == 1 ? "" : "s")}");
+                return parts.Count > 0 ? string.Join(" - ", parts) : "No links";
+            }
+
+            int linkedReqs = Links.Count(l => l.LinkType == CandidateLinkType.RequirementClarification);
+            int linkedTests = Links.Count(l => l.LinkType == CandidateLinkType.TestClarification);
+            var clarificationParts = new List<string>();
+            if (linkedReqs > 0) clarificationParts.Add($"{linkedReqs} req{(linkedReqs == 1 ? "" : "s")}");
+            if (linkedTests > 0) clarificationParts.Add($"{linkedTests} test{(linkedTests == 1 ? "" : "s")}");
+            return clarificationParts.Count > 0 ? string.Join(" - ", clarificationParts) : "No links";
+        }
+    }
+
+    private string _classificationLabel => Candidate.Classification switch
+    {
+        ScenarioKind.Requirement         => "REQUIREMENT",
+        ScenarioKind.Test                => "TEST",
+        ScenarioKind.NeedsClarification  => "NEEDS_CLARIFICATION",
+        _                                => Candidate.Classification.ToString().ToUpperInvariant(),
+    };
+
+    private string _reviewKey => Candidate.ReviewStatus switch
+    {
+        CandidateReviewStatus.New         => "new",
+        CandidateReviewStatus.Accepted    => "accepted",
+        CandidateReviewStatus.Rejected    => "rejected",
+        CandidateReviewStatus.NeedsReview => "needsreview",
+        _                                 => "new",
+    };
+
+    private string _kindKey => Candidate.Classification switch
+    {
+        ScenarioKind.Requirement         => "requirement",
+        ScenarioKind.Test                => "test",
+        ScenarioKind.NeedsClarification  => "needsclarification",
+        _                                => "unknown",
+    };
+
+    private string _identityLabel => Candidate.Classification switch
+    {
+        ScenarioKind.Requirement => ExtractRequirementId(Candidate.Title) ?? "REQ",
+        ScenarioKind.Test => "TEST",
+        ScenarioKind.NeedsClarification => "NEEDS_CLARIFICATION",
+        _ => _classificationLabel,
+    };
+
+    private static string? ExtractRequirementId(string title)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(
+            title,
+            @"\b(?:FR|NFR|REQ|SC)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\b",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        return match.Success ? match.Value : null;
+    }
+
+    private async Task HandleCheckboxChange(ChangeEventArgs e)
+    {
+        Candidate.IsSelected = e.Value is true;
+        await OnSelectionToggled.InvokeAsync(Candidate.CandidateId);
+    }
+
+    private async Task SetReviewStatus(CandidateReviewStatus status)
+    {
+        Candidate.ReviewStatus = Candidate.ReviewStatus == status
+            ? CandidateReviewStatus.New
+            : status;
+        await OnReviewStatusChanged.InvokeAsync(Candidate.ReviewStatus);
+    }
+}

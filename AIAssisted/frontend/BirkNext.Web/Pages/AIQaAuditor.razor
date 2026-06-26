@@ -1,0 +1,719 @@
+@page "/ai-qa-auditor"
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using BirkNext.Web.GraphQL
+@inject IBirkNextClient Client
+@inject IConstitutionAnalysisService ConstitutionService
+@inject IPlanAnalysisService PlanService
+@inject IQAReadinessService ReadinessService
+@inject IDashboardSnapshotService DashboardSnapshot
+
+<PageTitle>QA Readiness</PageTitle>
+
+<div class="qa-auditor-page">
+
+    <PageHeader Title="QA Readiness"
+                Description="Assess cross-artifact readiness across Constitution, Specification, Plan, and Tasks. Answers whether the feature is ready for implementation, testing, and release." />
+
+    <!-- ══ Cross-Artifact Readiness Assessment ══════════════════════════════ -->
+    <div class="qr-section">
+
+        <!-- Artifact Input Panel -->
+        <div class="qr-input-panel">
+            <div class="qr-input-panel-header">
+                <span class="qr-input-panel-title">Load Artifacts</span>
+                @if (_readinessReport is not null)
+                {
+                    <button class="qr-input-panel-toggle" @onclick="() => _qrInputExpanded = !_qrInputExpanded">
+                        @(_qrInputExpanded ? "▾ Collapse" : "▸ Expand")
+                    </button>
+                }
+            </div>
+
+            @if (_qrInputExpanded)
+            {
+                <div class="qr-artifact-grid">
+
+                    <!-- Constitution (optional but enables compliance scoring) -->
+                    <div class="qr-artifact-card @(!string.IsNullOrEmpty(_qrConstitutionText) ? "is-loaded" : "")">
+                        <div class="qr-artifact-card-header">
+                            <span class="qr-artifact-icon" aria-hidden="true">📜</span>
+                            <span class="qr-artifact-name">Constitution</span>
+                            <span class="qr-artifact-status @(!string.IsNullOrEmpty(_qrConstitutionText) ? "is-loaded" : "")">
+                                @(!string.IsNullOrEmpty(_qrConstitutionText) ? "Loaded" : "Empty")
+                            </span>
+                        </div>
+                        <textarea class="qr-artifact-textarea" placeholder="Paste constitution.md here…" rows="3"
+                                  @bind="_qrConstitutionText"></textarea>
+                        @if (!string.IsNullOrEmpty(_qrConstitutionText))
+                        {
+                            <div class="qr-artifact-footer">
+                                <span>@_qrConstitutionText.Split('\n').Length lines</span>
+                                <button class="qr-artifact-clear" @onclick='() => _qrConstitutionText = string.Empty'>Clear</button>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Specification (required for spec score) -->
+                    <div class="qr-artifact-card @(!string.IsNullOrEmpty(_qrSpecText) ? "is-loaded" : "is-required")">
+                        <div class="qr-artifact-card-header">
+                            <span class="qr-artifact-icon" aria-hidden="true">📋</span>
+                            <span class="qr-artifact-name">Specification</span>
+                            <span class="qr-artifact-required-badge">Required</span>
+                            <span class="qr-artifact-status @(!string.IsNullOrEmpty(_qrSpecText) ? "is-loaded" : "")">
+                                @(!string.IsNullOrEmpty(_qrSpecText) ? "Loaded" : "Empty")
+                            </span>
+                        </div>
+                        <textarea class="qr-artifact-textarea" placeholder="Paste spec.md here…" rows="3"
+                                  @bind="_qrSpecText"></textarea>
+                        @if (!string.IsNullOrEmpty(_qrSpecText))
+                        {
+                            <div class="qr-artifact-footer">
+                                <span>@_qrSpecText.Split('\n').Length lines</span>
+                                <button class="qr-artifact-clear" @onclick='() => _qrSpecText = string.Empty'>Clear</button>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Plan -->
+                    <div class="qr-artifact-card @(!string.IsNullOrEmpty(_qrPlanText) ? "is-loaded" : "")">
+                        <div class="qr-artifact-card-header">
+                            <span class="qr-artifact-icon" aria-hidden="true">📐</span>
+                            <span class="qr-artifact-name">Plan</span>
+                            <span class="qr-artifact-status @(!string.IsNullOrEmpty(_qrPlanText) ? "is-loaded" : "")">
+                                @(!string.IsNullOrEmpty(_qrPlanText) ? "Loaded" : "Empty")
+                            </span>
+                        </div>
+                        <textarea class="qr-artifact-textarea" placeholder="Paste plan.md here…" rows="3"
+                                  @bind="_qrPlanText"></textarea>
+                        @if (!string.IsNullOrEmpty(_qrPlanText))
+                        {
+                            <div class="qr-artifact-footer">
+                                <span>@_qrPlanText.Split('\n').Length lines</span>
+                                <button class="qr-artifact-clear" @onclick='() => _qrPlanText = string.Empty'>Clear</button>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Tasks -->
+                    <div class="qr-artifact-card @(!string.IsNullOrEmpty(_qrTaskText) ? "is-loaded" : "")">
+                        <div class="qr-artifact-card-header">
+                            <span class="qr-artifact-icon" aria-hidden="true">✅</span>
+                            <span class="qr-artifact-name">Tasks</span>
+                            <span class="qr-artifact-status @(!string.IsNullOrEmpty(_qrTaskText) ? "is-loaded" : "")">
+                                @(!string.IsNullOrEmpty(_qrTaskText) ? "Loaded" : "Empty")
+                            </span>
+                        </div>
+                        <textarea class="qr-artifact-textarea" placeholder="Paste tasks.md here…" rows="3"
+                                  @bind="_qrTaskText"></textarea>
+                        @if (!string.IsNullOrEmpty(_qrTaskText))
+                        {
+                            <div class="qr-artifact-footer">
+                                <span>@_qrTaskText.Split('\n').Length lines</span>
+                                <button class="qr-artifact-clear" @onclick='() => _qrTaskText = string.Empty'>Clear</button>
+                            </div>
+                        }
+                    </div>
+
+                </div>
+
+                <div class="qr-analyze-bar">
+                    <span class="qr-loaded-summary">
+                        @if (string.IsNullOrWhiteSpace(_qrSpecText))
+                        { <span>Load at least a Specification to assess readiness</span> }
+                        else
+                        { <span>Specification loaded · @QrAdditionalCount additional artifact@(QrAdditionalCount != 1 ? "s" : "") loaded</span> }
+                    </span>
+                    <PrimaryButton Disabled="@string.IsNullOrWhiteSpace(_qrSpecText)"
+                                   OnClick="RunReadinessAssessment">
+                        Assess Readiness
+                    </PrimaryButton>
+                </div>
+            }
+        </div>
+
+        <!-- ── Report ──────────────────────────────────────────────────────── -->
+        @if (_readinessReport is not null)
+        {
+            <!-- Score ring + status -->
+            <div class="qr-score-row">
+                @RenderQrScoreRing(_readinessReport.OverallScore)
+                <div>
+                    <div class="qr-score-meta-title">@QrStatusLabel(_readinessReport.OverallStatus) Readiness</div>
+                    <div class="qr-score-meta-sub">
+                        @_readinessReport.OverallScore.ToString("0.#")% overall ·
+                        @_readinessReport.Scores.Count(s => s.IsAssessed) of 5 categories assessed
+                    </div>
+                    <StatusChip Status="@QrStatusToChip(_readinessReport.OverallStatus)"
+                                Label="@QrStatusLabel(_readinessReport.OverallStatus)" />
+                </div>
+            </div>
+
+            <!-- Category score cards -->
+            <div class="qr-category-grid">
+                @foreach (var score in _readinessReport.Scores)
+                {
+                    <div class='qr-category-card @(score.IsAssessed ? "is-" + QrStatusClass(score.Status) : "is-not-assessed")'
+                         @onclick="() => ToggleCategoryDetail(score.Category)"
+                         title="Click to see signals and weaknesses">
+                        <div class="qr-category-score">
+                            @(score.IsAssessed ? $"{score.Score:0.#}" : "—")
+                        </div>
+                        <div class="qr-category-name">@QrShortCategory(score.Category)</div>
+                        <div class="qr-category-status">
+                            @(score.IsAssessed ? QrStatusLabel(score.Status) : "Not loaded")
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- Expanded category detail -->
+            @if (_expandedCategory is not null)
+            {
+                var expandedScore = _readinessReport.Scores.FirstOrDefault(s => s.Category == _expandedCategory);
+                @if (expandedScore is not null && expandedScore.IsAssessed)
+                {
+                    <div class="qr-detail-panel">
+                        <div class="qr-detail-panel-title">@expandedScore.Category</div>
+                        @if (expandedScore.Signals.Count > 0)
+                        {
+                            <ul class="qr-signal-list">
+                                @foreach (var s in expandedScore.Signals)
+                                { <li>@s</li> }
+                            </ul>
+                        }
+                        @if (expandedScore.Weaknesses.Count > 0)
+                        {
+                            <ul class="qr-weak-list" style="margin-top:0.5rem;">
+                                @foreach (var w in expandedScore.Weaknesses)
+                                { <li>@w</li> }
+                            </ul>
+                        }
+                    </div>
+                }
+            }
+
+            <!-- Readiness gates -->
+            <SectionHeader Title="Readiness Gates" />
+            <div class="qr-gate-grid">
+                @foreach (var gate in _readinessReport.Gates)
+                {
+                    <div class='qr-gate-card @(gate.IsReady ? "is-ready" : "is-blocked")'>
+                        <div class="qr-gate-header">
+                            <span class="qr-gate-icon" aria-hidden="true">@(gate.IsReady ? "✅" : "🚫")</span>
+                            <span class="qr-gate-name">@gate.Name</span>
+                        </div>
+                        <div class="qr-gate-question">@gate.Question</div>
+                        @if (!gate.IsReady && !string.IsNullOrEmpty(gate.BlockReason))
+                        {
+                            <div class="qr-gate-reason">@gate.BlockReason</div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <!-- Gaps -->
+            @if (_readinessReport.Gaps.Count > 0)
+            {
+                <SectionHeader Title="Readiness Gaps"
+                               Description="@($"{_readinessReport.Gaps.Count} gap{(_readinessReport.Gaps.Count != 1 ? "s" : "")} · sorted by severity")" />
+                @foreach (var gap in _readinessReport.Gaps.Take(_gapShowAll ? 999 : 8))
+                {
+                    <IssueCard Severity="@gap.Severity.ToString().ToLowerInvariant()"
+                               Component="@QrShortCategory(gap.Category)"
+                               Description="@gap.Description" />
+                }
+                @if (_readinessReport.Gaps.Count > 8 && !_gapShowAll)
+                {
+                    <GhostButton OnClick="() => _gapShowAll = true">
+                        Show all @_readinessReport.Gaps.Count gaps
+                    </GhostButton>
+                }
+            }
+
+            <!-- Recommendations -->
+            @if (_readinessReport.Recommendations.Count > 0)
+            {
+                <SectionHeader Title="Recommendations"
+                               Description="@($"{_readinessReport.Recommendations.Count} recommendation{(_readinessReport.Recommendations.Count != 1 ? "s" : "")} · highest priority first")" />
+                @foreach (var rec in _readinessReport.Recommendations.Take(_recShowAll ? 999 : 8))
+                {
+                    <RecommendationCard Title="@rec.Text"
+                                        Description="@rec.TargetArtifact.ToString()"
+                                        Priority="@rec.Priority.ToString().ToLowerInvariant()" />
+                }
+                @if (_readinessReport.Recommendations.Count > 8 && !_recShowAll)
+                {
+                    <GhostButton OnClick="() => _recShowAll = true">
+                        Show all @_readinessReport.Recommendations.Count recommendations
+                    </GhostButton>
+                }
+            }
+        }
+
+    </div><!-- /qr-section -->
+
+    <!-- ── Divider before legacy API section ──────────────────────────────── -->
+    <div class="qr-legacy-divider">
+        <span>Legacy API Quality Metrics</span>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Calculating quality score&hellip;</p>
+        </div>
+    }
+    else if (_error != null)
+    {
+        <div class="error-banner">
+            <strong>Error:</strong> @_error
+            <button class="btn-secondary" style="margin-left:1rem;" @onclick='() => LoadReportAsync(false)'>Retry</button>
+        </div>
+    }
+    else if (_report != null)
+    {
+        <!-- Quality Score Banner -->
+        <div class="qa-score-banner qa-score-banner--@ReadinessClass">
+            <div class="qa-score-gauge qa-score-gauge--@ReadinessClass">
+                @if (_report.ReadinessStatus == QaReadinessStatus.InsufficientData)
+                {
+                    <span class="qa-score-number qa-score-number--empty">--</span>
+                }
+                else
+                {
+                    <span class="qa-score-number">@_report.QualityScore</span>
+                    <span class="qa-score-unit">/ 100</span>
+                }
+            </div>
+            <div class="qa-score-info">
+                <StatusChip Status="@(ReadinessClass switch {
+                    "ready" => "ready",
+                    "review" => "warning",
+                    "high-risk" => "critical",
+                    _ => "neutral"
+                })" Label="@ReadinessLabel" />
+                @if (_report.ReadinessStatus == QaReadinessStatus.InsufficientData)
+                {
+                    <p class="qa-score-subtitle">Add requirements, tests, and traceability links before QA readiness can be calculated.</p>
+                }
+                else
+                {
+                    <p class="qa-score-subtitle">
+                        Quality score computed from @_report.TotalRequirements requirement(s) across @_report.ScoreDeductions.Count deduction category(ies).
+                    </p>
+                    @if (_report.ScoreDeductions.Any())
+                    {
+                        <div class="qa-deduction-pills">
+                            @foreach (var d in _report.ScoreDeductions)
+                            {
+                                <span class="qa-deduction-pill">@d.Category &minus;@d.Points</span>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="qa-score-perfect">No deductions — full score.</p>
+                    }
+                }
+            </div>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="metric-grid-6">
+            <MetricCard Value="@(_report.CoveragePercent.ToString("F0") + "%")"
+                        Label="Requirement Coverage"
+                        Sublabel="@(_report.TotalRequirements + " requirement(s)")"
+                        Variant="@(CoverageKpiClass switch { "good" => "success", "warn" => "warning", _ => "danger" })" />
+            <MetricCard Value="@_report.RequirementsAtRisk.ToString()"
+                        Label="Requirements at Risk"
+                        Sublabel="@(_report.HighRiskRequirements + " with zero tests")"
+                        Variant="@(RiskKpiClass switch { "good" => "success", "warn" => "warning", _ => "danger" })" />
+            <MetricCard Value="@_report.DriftFindingsCount.ToString()"
+                        Label="Drift Findings"
+                        Sublabel="@(_report.HighRiskDriftFindings + " high-risk")"
+                        Variant="@(DriftKpiClass switch { "good" => "success", "warn" => "warning", _ => "danger" })" />
+            <MetricCard Value="@_report.OrphanTestCount.ToString()"
+                        Label="Orphan Tests"
+                        Sublabel="not linked to any requirement"
+                        Variant="@(_report.OrphanTestCount > 0 ? "warning" : "success")" />
+            <MetricCard Value="@_report.UnlinkedCodeFiles.ToString()"
+                        Label="Unlinked Code Files"
+                        Sublabel="@("of " + _report.TotalCodeFiles + " registered")"
+                        Variant="@(_report.UnlinkedCodeFiles > 0 ? "warning" : "success")" />
+            <MetricCard Value="@_report.HighRiskRequirements.ToString()"
+                        Label="High-Risk Requirements"
+                        Sublabel="no tests linked"
+                        Variant="@(_report.HighRiskRequirements > 0 ? "danger" : "success")" />
+        </div>
+
+        <!-- AI Executive Summary -->
+        <Card>
+            <Header>
+                <span class="card-title">
+                    <span class="nav-icon nav-icon-ai-auditor qa-section-icon" aria-hidden="true"></span>
+                    AI Executive Summary
+                </span>
+                @if (_report.AiExecutiveSummary == null && !_aiRequested
+                     && _report.ReadinessStatus != QaReadinessStatus.InsufficientData)
+                {
+                    <PrimaryButton OnClick="GenerateAiSummaryAsync" Disabled="@_generatingAi">
+                        @if (_generatingAi) { <span class="spinner-sm"></span> }
+                        Generate Summary
+                    </PrimaryButton>
+                }
+                else if (_report.AiExecutiveSummary != null)
+                {
+                    <SecondaryButton OnClick="GenerateAiSummaryAsync" Disabled="@_generatingAi">
+                        @if (_generatingAi) { <span class="spinner-sm"></span> }
+                        Regenerate
+                    </SecondaryButton>
+                }
+            </Header>
+            <ChildContent>
+            @if (_generatingAi)
+            {
+                <div class="qa-ai-loading">
+                    <div class="spinner-sm"></div>
+                    <span>Generating AI summary&hellip;</span>
+                </div>
+            }
+            else if (_report.AiExecutiveSummary != null)
+            {
+                <p class="qa-exec-summary">@_report.AiExecutiveSummary</p>
+
+                @if (_report.AiConcerns.Any())
+                {
+                    <h3 class="qa-ai-subheading">Key Concerns</h3>
+                    <ul class="qa-ai-list">
+                        @foreach (var concern in _report.AiConcerns)
+                        {
+                            <li>@concern</li>
+                        }
+                    </ul>
+                }
+
+                @if (_report.AiRecommendedActions.Any())
+                {
+                    <h3 class="qa-ai-subheading">AI Recommended Actions</h3>
+                    <ul class="qa-ai-list qa-ai-list--actions">
+                        @foreach (var action in _report.AiRecommendedActions)
+                        {
+                            <li>@action</li>
+                        }
+                    </ul>
+                }
+            }
+            else if (_aiRequested)
+            {
+                <p class="qa-ai-unavailable">AI summary unavailable — check that <code>Anthropic:ApiKey</code> is configured in <code>appsettings.json</code>.</p>
+            }
+            else
+            {
+                <p class="qa-ai-placeholder">Click <strong>Generate Summary</strong> to get an AI-written executive overview, specific concerns, and additional recommended actions based on the quality data above.</p>
+            }
+            </ChildContent>
+        </Card>
+
+        <!-- Drift Findings -->
+        @if (_report.DriftFindings.Any())
+        {
+            <Card Title="Spec Drift Findings">
+                <div class="issue-cards">
+                    @foreach (var finding in _report.DriftFindings)
+                    {
+                        <IssueCard Severity="@ToIssueSeverity(finding.Severity.ToString())"
+                                   Component="@finding.Category"
+                                   Description="@finding.Description" />
+                    }
+                </div>
+            </Card>
+        }
+
+        <!-- Top Requirements at Risk -->
+        @if (_report.TopRisks.Any())
+        {
+            <Card Title="Top Requirements at Risk">
+                <div class="issue-cards">
+                    @foreach (var risk in _report.TopRisks)
+                    {
+                        <IssueCard Severity="@ToIssueSeverity(risk.DriftRisk.ToString())"
+                                   Component="@risk.Requirement.Title"
+                                   Description="@($"{risk.LinkedTestCount} test(s) — {risk.DriftReason}")" />
+                    }
+                </div>
+            </Card>
+        }
+
+        <!-- Recommended Actions -->
+        @if (_report.RecommendedActions.Any())
+        {
+            <Card Title="Recommended Actions">
+                <ol class="qa-actions-list">
+                    @foreach (var action in _report.RecommendedActions)
+                    {
+                        <li>@action</li>
+                    }
+                </ol>
+            </Card>
+        }
+
+        <!-- Score Deductions Detail -->
+        @if (_report.ScoreDeductions.Any())
+        {
+            <Card Title="Score Deductions">
+                <div class="qa-deductions-table">
+                    <div class="qa-deductions-header">
+                        <span>Category</span>
+                        <span>Reason</span>
+                        <span>Points</span>
+                    </div>
+                    @foreach (var d in _report.ScoreDeductions)
+                    {
+                        <div class="qa-deductions-row">
+                            <span class="qa-ded-cat">@d.Category</span>
+                            <span class="qa-ded-reason">@d.Reason</span>
+                            <span class="qa-ded-pts">&minus;@d.Points</span>
+                        </div>
+                    }
+                    <div class="qa-deductions-footer">
+                        <span></span>
+                        <span>Final score</span>
+                        <span class="qa-ded-total">@_report.QualityScore / 100</span>
+                    </div>
+                </div>
+            </Card>
+        }
+
+        <!-- Feature Chain Diagram -->
+        <Card Title="Data Sources">
+            <div class="feature-chain-diagram">
+                <div class="chain-item chain-item--active">
+                    <span class="nav-icon nav-icon-traceability" aria-hidden="true"></span>
+                    Traceability
+                </div>
+                <div class="chain-arrow">&rarr;</div>
+                <div class="chain-item chain-item--active">
+                    <span class="nav-icon nav-icon-impact-analysis" aria-hidden="true"></span>
+                    Impact Analysis
+                </div>
+                <div class="chain-arrow">&rarr;</div>
+                <div class="chain-item chain-item--active">
+                    <span class="nav-icon nav-icon-spec-drift" aria-hidden="true"></span>
+                    Spec Drift
+                </div>
+                <div class="chain-arrow">&rarr;</div>
+                <div class="chain-item chain-item--active">
+                    <span class="nav-icon nav-icon-code-trace" aria-hidden="true"></span>
+                    Code Traceability
+                </div>
+                <div class="chain-arrow">&rarr;</div>
+                <div class="chain-item chain-item--current">
+                    <span class="nav-icon nav-icon-qa-auditor" aria-hidden="true"></span>
+                    QA Auditor
+                </div>
+            </div>
+        </Card>
+    }
+    else
+    {
+        <EmptyState Title="No data"
+                    Description="Make sure there are requirements and tests in the QA Artifact Library." />
+    }
+
+</div>
+
+@code {
+    private const string ProjectId = "birknext-demo";
+
+    private bool _loading = true;
+    private string? _error;
+    private IGetQaAuditReport_QaAuditReport? _report;
+    private bool _generatingAi;
+    private bool _aiRequested;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReportAsync(false);
+    }
+
+    private async Task LoadReportAsync(bool includeAiSummary)
+    {
+        if (!includeAiSummary) _loading = true;
+        _error = null;
+        try
+        {
+            var result = await Client.GetQaAuditReport.ExecuteAsync(ProjectId, includeAiSummary);
+            if (result.Errors?.Any() == true)
+                _error = result.Errors[0].Message;
+            else
+                _report = result.Data?.QaAuditReport;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task GenerateAiSummaryAsync()
+    {
+        _generatingAi = true;
+        _aiRequested = true;
+        StateHasChanged();
+        try
+        {
+            await LoadReportAsync(true);
+        }
+        finally
+        {
+            _generatingAi = false;
+        }
+    }
+
+    private string ReadinessClass => _report?.ReadinessStatus switch
+    {
+        QaReadinessStatus.Ready => "ready",
+        QaReadinessStatus.ReviewNeeded => "review",
+        QaReadinessStatus.InsufficientData => "insufficient",
+        _ => "high-risk",
+    };
+
+    private string ReadinessLabel => _report?.ReadinessStatus switch
+    {
+        QaReadinessStatus.Ready => "Ready",
+        QaReadinessStatus.ReviewNeeded => "Review Needed",
+        QaReadinessStatus.InsufficientData => "Insufficient Data",
+        _ => "High Risk",
+    };
+
+    private string CoverageKpiClass => (_report?.CoveragePercent ?? 0) >= 80 ? "good"
+        : (_report?.CoveragePercent ?? 0) >= 50 ? "warn" : "danger";
+
+    private string RiskKpiClass => (_report?.RequirementsAtRisk ?? 0) == 0 ? "good"
+        : (_report?.HighRiskRequirements ?? 0) > 0 ? "danger" : "warn";
+
+    private string DriftKpiClass => (_report?.DriftFindingsCount ?? 0) == 0 ? "good"
+        : (_report?.HighRiskDriftFindings ?? 0) > 0 ? "danger" : "warn";
+
+    private static string ToIssueSeverity(string s) => s.ToLowerInvariant() switch
+    {
+        "high" or "critical" => "critical",
+        "medium"             => "warning",
+        "low"                => "info",
+        _                    => s.ToLowerInvariant(),
+    };
+
+    // ── Cross-Artifact Readiness state ────────────────────────────────────────
+
+    private string _qrConstitutionText = string.Empty;
+    private string _qrSpecText         = string.Empty;
+    private string _qrPlanText         = string.Empty;
+    private string _qrTaskText         = string.Empty;
+    private QAReadinessReport? _readinessReport;
+    private bool _qrInputExpanded = true;
+    private string? _expandedCategory;
+    private bool _gapShowAll;
+    private bool _recShowAll;
+
+    private int QrAdditionalCount =>
+        (string.IsNullOrWhiteSpace(_qrConstitutionText) ? 0 : 1) +
+        (string.IsNullOrWhiteSpace(_qrPlanText) ? 0 : 1) +
+        (string.IsNullOrWhiteSpace(_qrTaskText) ? 0 : 1);
+
+    private void RunReadinessAssessment()
+    {
+        ConstitutionDocument? constitution = null;
+        SpecTree?             spec         = null;
+        PlanDocument?         plan         = null;
+        TaskTree?             tasks        = null;
+
+        if (!string.IsNullOrWhiteSpace(_qrConstitutionText))
+            constitution = ConstitutionService.Parse(_qrConstitutionText);
+        if (!string.IsNullOrWhiteSpace(_qrSpecText))
+            spec = SpecExplorerService.Parse(_qrSpecText);
+        if (!string.IsNullOrWhiteSpace(_qrPlanText))
+            plan = PlanService.Parse(_qrPlanText);
+        if (!string.IsNullOrWhiteSpace(_qrTaskText))
+            tasks = TaskExplorerService.Parse(_qrTaskText);
+
+        _readinessReport   = ReadinessService.Assess(constitution, spec, plan, tasks);
+        DashboardSnapshot.Publish(_readinessReport);
+        _qrInputExpanded   = false;
+        _expandedCategory  = null;
+        _gapShowAll        = false;
+        _recShowAll        = false;
+    }
+
+    private void ToggleCategoryDetail(string category)
+    {
+        _expandedCategory = _expandedCategory == category ? null : category;
+    }
+
+    // ── Readiness rendering helpers ───────────────────────────────────────────
+
+    private static string QrStatusToChip(ReadinessStatus s) => s switch
+    {
+        ReadinessStatus.Ready       => "ready",
+        ReadinessStatus.MostlyReady => "partial",
+        ReadinessStatus.NeedsWork   => "warning",
+        _                           => "critical",
+    };
+
+    private static string QrStatusClass(ReadinessStatus s) => s switch
+    {
+        ReadinessStatus.Ready       => "ready",
+        ReadinessStatus.MostlyReady => "mostly",
+        ReadinessStatus.NeedsWork   => "needs-work",
+        _                           => "not-ready",
+    };
+
+    private static string QrStatusLabel(ReadinessStatus s) => s switch
+    {
+        ReadinessStatus.Ready       => "Ready",
+        ReadinessStatus.MostlyReady => "Mostly Ready",
+        ReadinessStatus.NeedsWork   => "Needs Work",
+        _                           => "Not Ready",
+    };
+
+    private static string QrShortCategory(string category) => category switch
+    {
+        "Specification Quality" => "Spec",
+        "Plan Quality"          => "Plan",
+        "Task Readiness"        => "Tasks",
+        "Traceability"          => "Traceability",
+        "Compliance"            => "Compliance",
+        _                       => category,
+    };
+
+    private RenderFragment RenderQrScoreRing(double pct) => __builder =>
+    {
+        const int r  = 44;
+        const int cx = 60;
+        const int cy = 60;
+        var circumference = 2 * Math.PI * r;
+        var offset   = circumference - pct / 100.0 * circumference;
+        var variant  = pct >= 85 ? "is-ready" :
+                       pct >= 65 ? "is-mostly" :
+                       pct >= 40 ? "is-needs-work" : "is-not-ready";
+
+        var svgHtml = $"<svg viewBox=\"0 0 120 120\">" +
+                      $"<circle class=\"qr-score-ring-bg\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\" />" +
+                      $"<circle class=\"qr-score-ring-fill {variant}\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\"" +
+                      $" stroke-dasharray=\"{circumference:0.00}\" stroke-dashoffset=\"{offset:0.00}\" />" +
+                      $"</svg>";
+
+        __builder.OpenElement(0, "div");
+        __builder.AddAttribute(1, "class", "qr-score-ring");
+        __builder.AddMarkupContent(2, svgHtml);
+        __builder.OpenElement(3, "div");
+        __builder.AddAttribute(4, "class", "qr-score-label");
+        __builder.AddMarkupContent(5, $"{pct:0.#}<small>/ 100</small>");
+        __builder.CloseElement();
+        __builder.CloseElement();
+    };
+}

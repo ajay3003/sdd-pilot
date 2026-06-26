@@ -1,0 +1,189 @@
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+
+<div class="doc-artifact-row doc-artifact-@CssKey(Artifact.ArtifactType) @ReviewCssClass @(Artifact.LinkedCandidate is null ? "doc-artifact-spec-only" : "") @(IsSelected ? "is-selected" : "")"
+     data-testid="candidate-row">
+
+    <div class="doc-artifact-select">
+        @if (Artifact.LinkedCandidate is not null)
+        {
+            <input type="checkbox"
+                   checked="@IsSelected"
+                   @onchange="HandleCheckboxChange"
+                   disabled="@(Artifact.LinkedCandidate.SaveState == CandidateSaveState.Saved)"
+                   data-testid="candidate-checkbox"
+                   aria-label="Select: @Artifact.Title" />
+        }
+    </div>
+
+    <div class="doc-artifact-body">
+        <div class="doc-artifact-header">
+            @if (Artifact.SpecItemId is not null)
+            {
+                <span class="doc-artifact-spec-id">@Artifact.SpecItemId</span>
+            }
+            <span class="doc-artifact-badge doc-badge-@CssKey(Artifact.ArtifactType)">@TypeLabel(Artifact.ArtifactType)</span>
+            @if (Artifact.LinkedCandidate?.ReviewStatus is not null and not CandidateReviewStatus.New)
+            {
+                <ReviewStatusBadge Status="@Artifact.LinkedCandidate.ReviewStatus" />
+            }
+            @if (Artifact.LinkedCandidate?.SaveState == CandidateSaveState.Saved)
+            {
+                <span class="save-badge-saved" data-testid="save-saved">Saved</span>
+            }
+            else if (Artifact.LinkedCandidate?.SaveState is CandidateSaveState.Saving or CandidateSaveState.Retrying)
+            {
+                <span class="save-spinner" aria-label="Saving...">Saving…</span>
+            }
+            @if (Artifact.LinkedCandidate?.SaveState == CandidateSaveState.Failed)
+            {
+                <span class="save-badge-error" data-testid="save-error">@(Artifact.LinkedCandidate.SaveError ?? "Save failed")</span>
+            }
+        </div>
+
+        <div class="doc-artifact-title" data-testid="doc-artifact-title">@Artifact.Title</div>
+
+        @if (!string.IsNullOrWhiteSpace(Artifact.Excerpt) && Artifact.Excerpt != Artifact.Title)
+        {
+            <div class="doc-artifact-excerpt">@Artifact.Excerpt</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(Artifact.FullContent)
+            && Artifact.FullContent != Artifact.Title
+            && Artifact.FullContent != Artifact.Excerpt)
+        {
+            <div class="doc-artifact-full-content" data-testid="doc-artifact-full-content">@Artifact.FullContent</div>
+        }
+
+        @if (Artifact.QuestionText is not null)
+        {
+            <div class="doc-artifact-qa">
+                <div class="doc-qa-item doc-qa-question">
+                    <span class="doc-qa-label">Q</span>
+                    <span class="doc-qa-text">@Artifact.QuestionText</span>
+                </div>
+                @if (Artifact.AnswerText is not null)
+                {
+                    <div class="doc-qa-item doc-qa-answer">
+                        <span class="doc-qa-label">A</span>
+                        <span class="doc-qa-text">@Artifact.AnswerText</span>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (Artifact.LinkedCandidate is not null)
+        {
+            <div class="doc-artifact-footer">
+                <div class="doc-artifact-actions" role="group" aria-label="Review this artifact">
+                    @if (Artifact.LinkedCandidate.ReviewStatus == CandidateReviewStatus.New)
+                    {
+                        <button type="button" class="review-action-btn review-action-accept"   @onclick="() => SetStatus(CandidateReviewStatus.Accepted)">Accept</button>
+                        <button type="button" class="review-action-btn review-action-reject"   @onclick="() => SetStatus(CandidateReviewStatus.Rejected)">Reject</button>
+                        <button type="button" class="review-action-btn review-action-needsreview" @onclick="() => SetStatus(CandidateReviewStatus.NeedsReview)">Needs Review</button>
+                    }
+                    else if (Artifact.LinkedCandidate.ReviewStatus == CandidateReviewStatus.Accepted
+                             && Artifact.LinkedCandidate.SaveState != CandidateSaveState.Saved)
+                    {
+                        <button type="button" class="review-action-btn review-action-undo" @onclick="() => SetStatus(CandidateReviewStatus.Accepted)">Undo Accept</button>
+                    }
+                    else if (Artifact.LinkedCandidate.ReviewStatus == CandidateReviewStatus.Accepted
+                             && Artifact.LinkedCandidate.SaveState == CandidateSaveState.Saved)
+                    {
+                        <button type="button" class="review-action-btn review-action-reopen" @onclick="() => SetStatus(CandidateReviewStatus.Accepted)">Reopen</button>
+                    }
+                    else if (Artifact.LinkedCandidate.ReviewStatus == CandidateReviewStatus.Rejected)
+                    {
+                        <button type="button" class="review-action-btn review-action-accept" @onclick="() => SetStatus(CandidateReviewStatus.Accepted)">Accept</button>
+                        <button type="button" class="review-action-btn review-action-reopen" @onclick="() => SetStatus(CandidateReviewStatus.Rejected)">Reopen</button>
+                    }
+                    else if (Artifact.LinkedCandidate.ReviewStatus == CandidateReviewStatus.NeedsReview)
+                    {
+                        <button type="button" class="review-action-btn review-action-accept" @onclick="() => SetStatus(CandidateReviewStatus.Accepted)">Accept</button>
+                        <button type="button" class="review-action-btn review-action-reject" @onclick="() => SetStatus(CandidateReviewStatus.Rejected)">Reject</button>
+                        <button type="button" class="review-action-btn review-action-clear"  @onclick="() => SetStatus(CandidateReviewStatus.NeedsReview)">Clear Review</button>
+                    }
+                </div>
+
+                <button type="button"
+                        class="link-indicator @(Links.Count == 0 ? "is-empty" : "") @(IsLinkPanelOpen ? "is-open" : "")"
+                        @onclick="() => OnOpenLinkPanel.InvokeAsync(Artifact.LinkedCandidate)"
+                        data-testid="link-indicator"
+                        aria-label="Links (@(IsLinkPanelOpen ? "collapse" : "expand"))">
+                    @if (Links.Count == 0)
+                    {
+                        <span aria-hidden="true">+</span>
+                    }
+                    else
+                    {
+                        <span>@Links.Count link@(Links.Count == 1 ? "" : "s")</span>
+                    }
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public DocumentArtifact Artifact { get; set; } = default!;
+    [Parameter] public bool IsSelected { get; set; }
+    [Parameter] public EventCallback<Guid> OnSelectionToggled { get; set; }
+    [Parameter] public EventCallback<CandidateReviewStatus> OnReviewStatusChanged { get; set; }
+    [Parameter] public IReadOnlyList<CandidateLinkEntry> Links { get; set; } = [];
+    [Parameter] public EventCallback<ExtractionCandidate> OnOpenLinkPanel { get; set; }
+    [Parameter] public bool IsLinkPanelOpen { get; set; }
+
+    private string ReviewCssClass => Artifact.LinkedCandidate?.ReviewStatus switch
+    {
+        CandidateReviewStatus.Accepted    => "is-review-accepted",
+        CandidateReviewStatus.Rejected    => "is-review-rejected",
+        CandidateReviewStatus.NeedsReview => "is-review-needsreview",
+        _                                 => "is-review-new",
+    };
+
+    private void HandleCheckboxChange(ChangeEventArgs e)
+    {
+        if (Artifact.LinkedCandidate is null) return;
+        Artifact.LinkedCandidate.IsSelected = (bool)(e.Value ?? false);
+        _ = OnSelectionToggled.InvokeAsync(Artifact.LinkedCandidate.CandidateId);
+    }
+
+    private void SetStatus(CandidateReviewStatus status)
+    {
+        if (Artifact.LinkedCandidate is null) return;
+        Artifact.LinkedCandidate.ReviewStatus = Artifact.LinkedCandidate.ReviewStatus == status
+            ? CandidateReviewStatus.New
+            : status;
+        _ = OnReviewStatusChanged.InvokeAsync(Artifact.LinkedCandidate.ReviewStatus);
+    }
+
+    internal static string CssKey(DocumentArtifactType t) => t switch
+    {
+        DocumentArtifactType.Requirement      => "requirement",
+        DocumentArtifactType.UserStory        => "userstory",
+        DocumentArtifactType.AcceptanceTest   => "test",
+        DocumentArtifactType.SuccessCriterion => "sc",
+        DocumentArtifactType.Clarification    => "clarification",
+        DocumentArtifactType.Decision         => "decision",
+        DocumentArtifactType.Entity           => "entity",
+        DocumentArtifactType.ApiSurfaceItem   => "apisurface",
+        DocumentArtifactType.EdgeCase         => "edgecase",
+        DocumentArtifactType.Assumption       => "assumption",
+        _                                     => "generic",
+    };
+
+    internal static string TypeLabel(DocumentArtifactType t) => t switch
+    {
+        DocumentArtifactType.Requirement      => "REQUIREMENT",
+        DocumentArtifactType.UserStory        => "USER STORY",
+        DocumentArtifactType.AcceptanceTest   => "TEST",
+        DocumentArtifactType.SuccessCriterion => "SUCCESS CRITERION",
+        DocumentArtifactType.Clarification    => "CLARIFICATION",
+        DocumentArtifactType.Decision         => "DECISION",
+        DocumentArtifactType.Entity           => "ENTITY",
+        DocumentArtifactType.ApiSurfaceItem   => "API SURFACE",
+        DocumentArtifactType.EdgeCase         => "EDGE CASE",
+        DocumentArtifactType.Assumption       => "ASSUMPTION",
+        _                                     => t.ToString().ToUpperInvariant(),
+    };
+}

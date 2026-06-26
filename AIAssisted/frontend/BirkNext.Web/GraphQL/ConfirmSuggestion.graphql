@@ -1,0 +1,15 @@
+mutation ConfirmSuggestion($input: ConfirmSuggestionInput!) {
+    confirmSuggestion(input: $input) {
+        traceLink {
+            id
+            sourceId
+            targetId
+            linkType
+        }
+        errors {
+            code
+            message
+        }
+        correlationId
+    }
+}

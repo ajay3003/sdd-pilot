@@ -1,0 +1,272 @@
+@page "/ai-change-auditor"
+@using BirkNext.Web.GraphQL
+@inject IBirkNextClient Client
+
+<PageTitle>AI Change Review</PageTitle>
+
+<div class="auditor-page">
+    <PageHeader Title="AI Change Review"
+                Description="Describe what changed and let the AI identify affected requirements, tests, and the recommended regression scope. Analysis uses your live traceability data — no code scanning required." />
+
+    <section class="auditor-input-panel" aria-label="Change description input">
+        <label for="change-desc" class="auditor-input-label">
+            What changed?
+            <span class="auditor-input-hint">Be specific — the AI reads your requirements and tests for context.</span>
+        </label>
+        <textarea id="change-desc"
+                  class="auditor-textarea"
+                  placeholder='Examples: "Added duplicate scenario validation", "Modified traceability linking logic", "Updated risk threshold calculation"'
+                  rows="4"
+                  maxlength="2000"
+                  @bind="_changeDescription"
+                  @bind:event="oninput"
+                  disabled="@_isAnalyzing"
+                  aria-required="true"></textarea>
+        <div class="auditor-input-footer">
+            <span class="auditor-char-count @(_changeDescription.Length > 1800 ? "auditor-char-warn" : "")">
+                @_changeDescription.Length / 2000
+            </span>
+            <PrimaryButton Class="auditor-analyze-btn"
+                           OnClick="RunAnalysisAsync"
+                           Disabled="@(_isAnalyzing || string.IsNullOrWhiteSpace(_changeDescription))">
+                @if (_isAnalyzing)
+                {
+                    <span class="auditor-spinner" aria-hidden="true"></span>
+                    <span>Analyzing…</span>
+                }
+                else
+                {
+                    <span>Analyze Change</span>
+                }
+            </PrimaryButton>
+        </div>
+    </section>
+
+    @if (_error is not null)
+    {
+        <div class="notification notification-error" role="alert">@_error</div>
+    }
+
+    @if (_report is not null)
+    {
+        var report = _report;
+
+        <section class="auditor-results" aria-label="Audit report">
+
+            <div class="kpi-row" aria-label="Impact summary">
+                <div class="kpi-card @RiskKpiClass(report.OverallRiskLevel)">
+                    <span class="kpi-marker" aria-hidden="true"></span>
+                    <span class="kpi-value">@RiskLabel(report.OverallRiskLevel)</span>
+                    <span class="kpi-label">Overall Risk</span>
+                </div>
+                <div class="kpi-card kpi-card-risks">
+                    <span class="kpi-marker" aria-hidden="true"></span>
+                    <span class="kpi-value">@report.AffectedRequirements.Count</span>
+                    <span class="kpi-label">Requirements Impacted</span>
+                </div>
+                <div class="kpi-card kpi-card-coverage">
+                    <span class="kpi-marker" aria-hidden="true"></span>
+                    <span class="kpi-value">@report.AffectedTests.Count</span>
+                    <span class="kpi-label">Tests Impacted</span>
+                </div>
+                <div class="kpi-card kpi-card-traceability">
+                    <span class="kpi-marker" aria-hidden="true"></span>
+                    <span class="kpi-value">@report.RecommendedRegressionTests.Count</span>
+                    <span class="kpi-label">Regression Tests</span>
+                </div>
+            </div>
+
+            <div class="auditor-detail-grid">
+
+                @* ── Left column ─────────────────────────────────────────────── *@
+                <div class="auditor-col">
+
+                    @if (report.AffectedRequirements.Count > 0)
+                    {
+                        <div class="auditor-card">
+                            <div class="auditor-card-header">
+                                <p class="section-kicker">From your library</p>
+                                <h2>Affected Requirements</h2>
+                            </div>
+                            <ul class="auditor-artifact-list" aria-label="Affected requirements">
+                                @foreach (var r in report.AffectedRequirements)
+                                {
+                                    <li class="auditor-artifact-item">
+                                        <div class="auditor-artifact-header">
+                                            <span class="impact-risk-badge impact-risk-@r.RiskLevel.ToString().ToLower()">@RiskLabel(r.RiskLevel)</span>
+                                            <span class="auditor-test-count">@r.LinkedTestCount test@(r.LinkedTestCount == 1 ? "" : "s")</span>
+                                        </div>
+                                        <p class="auditor-artifact-title">@r.Requirement.Title</p>
+                                        <p class="auditor-artifact-reason">@r.AiRelevanceReason</p>
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    @if (report.AffectedTests.Count > 0)
+                    {
+                        <div class="auditor-card">
+                            <div class="auditor-card-header">
+                                <p class="section-kicker">Test scenarios</p>
+                                <h2>Affected Tests</h2>
+                            </div>
+                            <ul class="auditor-artifact-list" aria-label="Affected tests">
+                                @foreach (var t in report.AffectedTests)
+                                {
+                                    <li class="auditor-artifact-item">
+                                        <span class="badge badge-test">Test</span>
+                                        <p class="auditor-artifact-title">@t.Test.Title</p>
+                                        <p class="auditor-artifact-reason">@t.AiRelevanceReason</p>
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    @if (report.AffectedRequirements.Count == 0 && report.AffectedTests.Count == 0)
+                    {
+                        <div class="auditor-card auditor-card-empty">
+                            <p class="section-kicker">No matches found</p>
+                            <h2>No components identified</h2>
+                            <p>The AI did not find any requirements or tests that are likely affected by this change. Try rephrasing the description with more specific terminology.</p>
+                        </div>
+                    }
+
+                    @if (report.CoverageGaps.Count > 0)
+                    {
+                        <div class="auditor-card auditor-card-gaps">
+                            <div class="auditor-card-header">
+                                <p class="section-kicker">Attention required</p>
+                                <h2>Coverage Gaps</h2>
+                            </div>
+                            <ul class="auditor-gap-list" aria-label="Coverage gaps">
+                                @foreach (var gap in report.CoverageGaps)
+                                {
+                                    <li class="auditor-gap-item">
+                                        <span class="auditor-gap-icon" aria-hidden="true">!</span>
+                                        <span>@gap</span>
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                </div>
+
+                @* ── Right column ────────────────────────────────────────────── *@
+                <div class="auditor-col">
+
+                    <div class="auditor-card auditor-card-reasoning">
+                        <div class="auditor-card-header">
+                            <p class="section-kicker">Deterministic from your trace links</p>
+                            <h2>Regression Recommendation</h2>
+                        </div>
+                        <p class="auditor-regression-scope">@report.RegressionScope</p>
+
+                        @if (report.RecommendedRegressionTests.Count == 0)
+                        {
+                            <div class="impact-regression-empty">
+                                <span class="impact-risk-badge impact-risk-high">High Risk</span>
+                                <p>No tests are linked to the affected requirements. Manual testing is required before accepting this change.</p>
+                                <a href="/traceability" class="btn-primary">Add trace links in Traceability &amp; Coverage</a>
+                            </div>
+                        }
+                        else
+                        {
+                            <ul class="impact-regression-list" aria-label="Regression tests to run">
+                                @foreach (var item in report.RecommendedRegressionTests)
+                                {
+                                    <li class="impact-regression-item">
+                                        <div class="impact-regression-item-header">
+                                            <span class="impact-check" aria-hidden="true">✓</span>
+                                            <span class="badge badge-test">Test</span>
+                                            <strong>@item.Test.Title</strong>
+                                        </div>
+                                        <p class="impact-regression-reason">@item.Reason</p>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+
+                    <div class="auditor-card auditor-card-ai">
+                        <div class="auditor-card-header">
+                            <p class="section-kicker">Claude's interpretation</p>
+                            <h2>AI Reasoning</h2>
+                        </div>
+                        <p class="auditor-reasoning-text">@report.AiReasoning</p>
+                        <p class="auditor-ai-disclaimer">AI analysis may be incomplete. Always verify before accepting a change.</p>
+                    </div>
+
+                </div>
+            </div>
+
+        </section>
+    }
+</div>
+
+@code {
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+
+    private string _changeDescription = string.Empty;
+    private bool _isAnalyzing;
+    private string? _error;
+    private IAnalyzeChange_AnalyzeChange_Report? _report;
+
+    private async Task RunAnalysisAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_changeDescription)) return;
+
+        _isAnalyzing = true;
+        _error = null;
+        _report = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.AnalyzeChange.ExecuteAsync(ProjectId, _changeDescription.Trim());
+
+            if (result.Errors is { Count: > 0 })
+            {
+                _error = "The AI analysis could not be completed. Please try again.";
+                return;
+            }
+
+            var payload = result.Data?.AnalyzeChange;
+            if (payload?.Errors is { Count: > 0 } payloadErrors)
+            {
+                _error = payloadErrors[0].Message;
+                return;
+            }
+
+            _report = payload?.Report;
+            if (_report is null)
+                _error = "The AI analysis returned no results. Please try again.";
+        }
+        catch (Exception)
+        {
+            _error = "An unexpected error occurred. Check that the backend is running and try again.";
+        }
+        finally
+        {
+            _isAnalyzing = false;
+        }
+    }
+
+    private static string RiskLabel(BirkNext.Web.GraphQL.RiskLevel risk) => risk switch
+    {
+        BirkNext.Web.GraphQL.RiskLevel.High => "High Risk",
+        BirkNext.Web.GraphQL.RiskLevel.Medium => "Medium Risk",
+        BirkNext.Web.GraphQL.RiskLevel.Low => "Low Risk",
+        _ => risk.ToString(),
+    };
+
+    private static string RiskKpiClass(BirkNext.Web.GraphQL.RiskLevel risk) => risk switch
+    {
+        BirkNext.Web.GraphQL.RiskLevel.High => "impact-kpi-high",
+        BirkNext.Web.GraphQL.RiskLevel.Medium => "impact-kpi-medium",
+        BirkNext.Web.GraphQL.RiskLevel.Low => "impact-kpi-low",
+        _ => string.Empty,
+    };
+}

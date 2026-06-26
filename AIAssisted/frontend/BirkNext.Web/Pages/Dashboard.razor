@@ -1,0 +1,1035 @@
+@page "/dashboard"
+@using BirkNext.Web.Components
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IBirkNextClient Client
+@inject IDashboardMetricsService MetricsService
+@inject IDashboardSnapshotService Snapshot
+@inject IBlazorWasmPerformanceReviewService PerformanceService
+@inject IUIStructuralIntegrityAnalyzer UiIntegrityAnalyzer
+@inject NavigationManager Navigation
+
+<PageTitle>Dashboard</PageTitle>
+
+@* ── Onboarding ───────────────────────────────────────────────────────────── *@
+@if (!_isLoading && _metrics.TotalCandidates == 0 && !_hasAnySnapshot)
+{
+    <div class="dashboard-onboarding-card" data-testid="onboarding-card">
+        <div class="dashboard-onboarding-text">
+            <strong>New to QA Review Studio?</strong>
+            <span>Follow the recommended workflow to get started with the platform phase by phase.</span>
+        </div>
+        <a href="getting-started" class="btn-primary dashboard-onboarding-btn">Start Recommended Workflow</a>
+    </div>
+}
+
+@if (_isLoading)
+{
+    <p class="loading-state">Loading dashboard...</p>
+}
+else
+{
+    @if (_loadError is not null)
+    {
+        <div class="dashboard-load-error" role="alert" data-testid="dashboard-load-error">
+            @_loadError
+        </div>
+    }
+
+    <PageHeader Title="SDD Governance Dashboard">
+        <StatusChip Status="neutral" Label="@_projectPhase" />
+        @if (_hasAnyScore)
+        {
+            <StatusChip Status="@(_overallScore >= 80 ? "healthy" : _overallScore >= 50 ? "warning" : "critical")"
+                        Label="@_overallScoreLabel" />
+        }
+        @if (_hasAnySnapshot)
+        {
+            <StatusChip Status="neutral" Label="This session" />
+        }
+    </PageHeader>
+
+    @* ══════════════════════════════════════════════════════════════════════════
+       ZONE 1 · EXECUTIVE SUMMARY
+       KPI Strip → Governance Status → Readiness Summary
+       ══════════════════════════════════════════════════════════════════════════ *@
+
+    @* ── KPI Strip ─────────────────────────────────────────────────────────── *@
+    <div class="db-kpi-strip" aria-label="Key performance indicators">
+        <MetricCard Value="@($"{_governanceLoadPercent}%")"
+                    Label="Governance"
+                    Sublabel="@(_governanceLoadPercent == 100 ? "Complete" : _governanceLoadPercent > 0 ? "Partial" : "Setup")"
+                    Variant="@(_governanceLoadPercent == 100 ? "success" : _governanceLoadPercent > 0 ? "warning" : null)" />
+        <MetricCard Value="@TraceabilityHealthVal"
+                    Label="Traceability"
+                    Sublabel="@KpiStatusLabel(_traceabilityScore, _traceabilityHasData)"
+                    Variant="@(_traceabilityHasData ? (_traceabilityScore >= 80 ? "success" : _traceabilityScore >= 50 ? "warning" : "danger") : null)" />
+        <MetricCard Value="@ComplianceHealthVal"
+                    Label="Compliance"
+                    Sublabel="@KpiStatusLabel(_complianceScore, _complianceHasData)"
+                    Variant="@(_complianceHasData ? (_complianceScore >= 80 ? "success" : _complianceScore >= 50 ? "warning" : "danger") : null)" />
+        <MetricCard Value="@QaHealthVal"
+                    Label="QA"
+                    Sublabel="@KpiStatusLabel(_qaScore, _qaHasData)"
+                    Variant="@(_qaHasData ? (_qaScore >= 80 ? "success" : _qaScore >= 50 ? "warning" : "danger") : null)" />
+        <MetricCard Value="@DeliveryHealthVal"
+                    Label="Delivery"
+                    Sublabel="@KpiStatusLabel(_deliveryScore, _deliveryHasData)"
+                    Variant="@(_deliveryHasData ? (_deliveryScore >= 80 ? "success" : _deliveryScore >= 50 ? "warning" : "danger") : null)" />
+        @if (_perfReport?.ReadinessReport is { HasData: true } perfKpi)
+        {
+            <MetricCard Value="@perfKpi.OverallScore.ToString()"
+                        Label="Performance"
+                        Sublabel="@ReadinessStateLabel(perfKpi.OverallState)"
+                        Variant="@(perfKpi.OverallState == PerformanceReadinessState.Ready ? "success" : perfKpi.OverallState == PerformanceReadinessState.MostlyReady ? "warning" : "danger")" />
+        }
+        else
+        {
+            <MetricCard Value="—" Label="Performance" Sublabel="Not Run" />
+        }
+    </div>
+
+    @* ── Health Summary ────────────────────────────────────────────────────── *@
+    <section class="db-section">
+        <SectionHeader Title="Project Health" />
+        <div class="db-health-grid" aria-label="Project health by dimension">
+
+            <div class="db-health-card">
+                <span class="db-health-label">Governance</span>
+                <span class="db-health-value @(_governanceLoadPercent == 100 ? "db-val-good" : _governanceLoadPercent > 0 ? "db-val-warn" : "db-val-empty")">@_governanceLoadPercent%</span>
+                <StatusChip Status="@(_governanceLoadPercent == 100 ? "healthy" : _governanceLoadPercent > 0 ? "warning" : "neutral")"
+                            Label="@(_governanceLoadPercent == 100 ? "Complete" : _governanceLoadPercent > 0 ? "Partial" : "Setup")" />
+            </div>
+
+            <div class="db-health-card">
+                <span class="db-health-label">Traceability</span>
+                <span class="db-health-value @(_traceabilityHasData ? ScoreClass(_traceabilityScore) : "db-val-empty")">@TraceabilityHealthVal</span>
+                <StatusChip Status="@(_traceabilityHasData ? (_traceabilityScore >= 80 ? "healthy" : _traceabilityScore >= 50 ? "warning" : "critical") : "neutral")"
+                            Label="@KpiStatusLabel(_traceabilityScore, _traceabilityHasData)" />
+            </div>
+
+            <div class="db-health-card">
+                <span class="db-health-label">Compliance</span>
+                <span class="db-health-value @(_complianceHasData ? ScoreClass(_complianceScore) : "db-val-empty")">@ComplianceHealthVal</span>
+                <StatusChip Status="@(_complianceHasData ? (_complianceScore >= 80 ? "healthy" : _complianceScore >= 50 ? "warning" : "critical") : "neutral")"
+                            Label="@KpiStatusLabel(_complianceScore, _complianceHasData)" />
+            </div>
+
+            <div class="db-health-card">
+                <span class="db-health-label">QA</span>
+                <span class="db-health-value @(_qaHasData ? ScoreClass(_qaScore) : "db-val-empty")">@QaHealthVal</span>
+                <StatusChip Status="@(_qaHasData ? (_qaScore >= 80 ? "healthy" : _qaScore >= 50 ? "warning" : "critical") : "neutral")"
+                            Label="@KpiStatusLabel(_qaScore, _qaHasData)" />
+            </div>
+
+            <div class="db-health-card">
+                <span class="db-health-label">Delivery</span>
+                <span class="db-health-value @(_deliveryHasData ? ScoreClass(_deliveryScore) : "db-val-empty")">@DeliveryHealthVal</span>
+                <StatusChip Status="@(_deliveryHasData ? (_deliveryScore >= 80 ? "healthy" : _deliveryScore >= 50 ? "warning" : "critical") : "neutral")"
+                            Label="@KpiStatusLabel(_deliveryScore, _deliveryHasData)" />
+            </div>
+
+            @if (_perfReport?.ReadinessReport is { HasData: true } perfHealth)
+            {
+                <div class="db-health-card">
+                    <span class="db-health-label">Performance</span>
+                    <span class="db-health-value @ScoreClass(perfHealth.OverallScore)">@perfHealth.OverallScore</span>
+                    <StatusChip Status="@(perfHealth.OverallState == PerformanceReadinessState.Ready ? "healthy" : perfHealth.OverallState == PerformanceReadinessState.MostlyReady ? "warning" : "critical")"
+                                Label="@ReadinessStateLabel(perfHealth.OverallState)" />
+                </div>
+            }
+            else
+            {
+                <div class="db-health-card">
+                    <span class="db-health-label">Performance</span>
+                    <span class="db-health-value db-val-empty">—</span>
+                    <StatusChip Status="neutral" Label="Not Run" />
+                </div>
+            }
+
+        </div>
+    </section>
+
+    @* ── Governance Status ─────────────────────────────────────────────────── *@
+    <section class="db-section">
+        <SectionHeader Title="Governance Status" Description="Loaded · Reviewed · Analyzed" />
+        <div class="db-artifact-grid">
+
+            <div class="db-artifact-card db-artifact-constitution @(_constitutionLoaded ? "db-artifact-loaded" : "")">
+                <div class="db-artifact-icon" aria-hidden="true">⚖</div>
+                <div class="db-artifact-name">Constitution</div>
+                <div class="db-artifact-badges">
+                    @if (_constitutionLoaded)  { <span class="db-badge db-badge-loaded">Loaded</span> }
+                    @if (_constitutionAnalyzed) { <span class="db-badge db-badge-analyzed">Analyzed</span> }
+                    @if (!_constitutionLoaded)  { <span class="db-badge db-badge-empty">Not loaded</span> }
+                </div>
+                @if (Snapshot.ComplianceReport?.HasConstitution == true)
+                {
+                    <div class="db-artifact-stats">
+                        <span class="db-stat-pill">@Snapshot.ComplianceReport.Coverage.TotalItems rules</span>
+                    </div>
+                }
+                <div class="db-artifact-progress-track" aria-hidden="true">
+                    <div class="db-artifact-progress-fill" style="width: @((_constitutionLoaded ? 50 : 0) + (_constitutionAnalyzed ? 50 : 0))%"></div>
+                </div>
+                <a href="constitution-explorer" class="db-artifact-action">Open Constitution Explorer →</a>
+            </div>
+
+            <div class="db-artifact-card db-artifact-specification @(_specLoaded ? "db-artifact-loaded" : "")">
+                <div class="db-artifact-icon" aria-hidden="true">📋</div>
+                <div class="db-artifact-name">Specification</div>
+                <div class="db-artifact-badges">
+                    @if (_specLoaded)               { <span class="db-badge db-badge-loaded">Loaded</span> }
+                    @if (_metrics.ReviewedCount > 0) { <span class="db-badge db-badge-reviewed">Reviewed</span> }
+                    @if (_specAnalyzed)              { <span class="db-badge db-badge-analyzed">Analyzed</span> }
+                    @if (!_specLoaded && _metrics.RequirementCount == 0) { <span class="db-badge db-badge-empty">Not loaded</span> }
+                </div>
+                @if (_metrics.RequirementCount > 0)
+                {
+                    <div class="db-artifact-stats">
+                        <span class="db-stat-pill">@_metrics.RequirementCount requirements</span>
+                        <span class="db-stat-pill">@_metrics.ReviewedPercent% reviewed</span>
+                    </div>
+                }
+                <div class="db-artifact-progress-track" aria-hidden="true">
+                    <div class="db-artifact-progress-fill" style="width: @((_specLoaded ? 34 : 0) + (_metrics.ReviewedCount > 0 ? 33 : 0) + (_specAnalyzed ? 33 : 0))%"></div>
+                </div>
+                <a href="extract" class="db-artifact-action">Open Specification Review →</a>
+            </div>
+
+            <div class="db-artifact-card db-artifact-plan @(_planLoaded ? "db-artifact-loaded" : "")">
+                <div class="db-artifact-icon" aria-hidden="true">🗺</div>
+                <div class="db-artifact-name">Plan</div>
+                <div class="db-artifact-badges">
+                    @if (_planLoaded)   { <span class="db-badge db-badge-loaded">Loaded</span> }
+                    @if (_planAnalyzed) { <span class="db-badge db-badge-analyzed">Analyzed</span> }
+                    @if (!_planLoaded)  { <span class="db-badge db-badge-empty">Not loaded</span> }
+                </div>
+                @if (Snapshot.TraceabilityReport?.HasPlan == true)
+                {
+                    <div class="db-artifact-stats">
+                        <span class="db-stat-pill">@Snapshot.TraceabilityReport.PlanCoverage.TotalItems items</span>
+                    </div>
+                }
+                <div class="db-artifact-progress-track" aria-hidden="true">
+                    <div class="db-artifact-progress-fill" style="width: @((_planLoaded ? 50 : 0) + (_planAnalyzed ? 50 : 0))%"></div>
+                </div>
+                <a href="plan-explorer" class="db-artifact-action">Open Plan Explorer →</a>
+            </div>
+
+            <div class="db-artifact-card db-artifact-tasks @(_tasksLoaded ? "db-artifact-loaded" : "")">
+                <div class="db-artifact-icon" aria-hidden="true">✅</div>
+                <div class="db-artifact-name">Tasks</div>
+                <div class="db-artifact-badges">
+                    @if (_tasksLoaded) { <span class="db-badge db-badge-loaded">Loaded</span> }
+                    @if (_metrics.TotalCandidates > 0 && _metrics.ReviewedCount > 0) { <span class="db-badge db-badge-reviewed">Reviewed</span> }
+                    @if (_tasksAnalyzed) { <span class="db-badge db-badge-analyzed">Analyzed</span> }
+                    @if (!_tasksLoaded)  { <span class="db-badge db-badge-empty">Not loaded</span> }
+                </div>
+                @if (_metrics.TotalCandidates > 0)
+                {
+                    <div class="db-artifact-stats">
+                        <span class="db-stat-pill">@_metrics.TotalCandidates candidates</span>
+                        <span class="db-stat-pill">@_metrics.ReviewedPercent% reviewed</span>
+                    </div>
+                }
+                <div class="db-artifact-progress-track" aria-hidden="true">
+                    <div class="db-artifact-progress-fill" style="width: @((_tasksLoaded ? 34 : 0) + (_metrics.ReviewedCount > 0 ? 33 : 0) + (_tasksAnalyzed ? 33 : 0))%"></div>
+                </div>
+                <a href="task-explorer" class="db-artifact-action">Open Task Explorer →</a>
+            </div>
+
+        </div>
+    </section>
+
+    @* ── Readiness Summary ──────────────────────────────────────────────────── *@
+    <section class="db-section">
+        <SectionHeader Title="Readiness Summary" />
+        @if (Snapshot.DeliveryReport is not null || Snapshot.ReadinessReport is not null)
+        {
+            <div class="db-readiness-grid">
+                @ReadinessCard("Development", Snapshot.DeliveryReport?.DevelopmentDecision.State, Snapshot.DeliveryReport?.Health.DevelopmentScore, "delivery-readiness")
+                @ReadinessCard("Testing",     Snapshot.DeliveryReport?.TestingDecision.State,     Snapshot.DeliveryReport?.Health.TestingScore,     "delivery-readiness")
+                @ReadinessCard("Release",     Snapshot.DeliveryReport?.ReleaseDecision.State,     Snapshot.DeliveryReport?.Health.ReleaseScore,      "delivery-readiness")
+                @ReadinessCardScore("QA Readiness", Snapshot.ReadinessReport?.OverallScore, "ai-qa-auditor")
+            </div>
+        }
+        else
+        {
+            <div class="db-section-empty">
+                Run Delivery Readiness and QA Readiness to populate this section.
+                <div class="db-empty-actions">
+                    <a href="delivery-readiness" class="db-qa-btn">Delivery Readiness</a>
+                    <a href="ai-qa-auditor" class="db-qa-btn">QA Readiness</a>
+                </div>
+            </div>
+        }
+    </section>
+
+    @* ══════════════════════════════════════════════════════════════════════════
+       ZONE 2 · DECISION SUPPORT
+       Top Risks → Top Recommendations → Recent Activity
+       ══════════════════════════════════════════════════════════════════════════ *@
+
+    @* ── Top Risks ──────────────────────────────────────────────────────────── *@
+    <section class="db-section db-zone-start">
+        <SectionHeader Title="Top Risks" />
+        @{
+            var topRisks = _topRisks.ToList();
+        }
+        @if (topRisks.Count > 0)
+        {
+            <div class="issue-cards">
+                @foreach (var (Title, Severity, Category, Detail) in topRisks)
+                {
+                    <IssueCard Severity="@Severity" Component="@Category" Description="@Title" SuggestedFix="@Detail" />
+                }
+            </div>
+        }
+        else
+        {
+            <div class="db-section-empty">
+                No risks detected. Run QA Auditor or Delivery Readiness to surface governance risks.
+                <div class="db-empty-actions">
+                    <a href="qa-auditor" class="db-qa-btn">Run QA Auditor</a>
+                    <a href="delivery-readiness" class="db-qa-btn">Run Delivery Readiness</a>
+                </div>
+            </div>
+        }
+    </section>
+
+    @* ── Top Recommendations ────────────────────────────────────────────────── *@
+    <section class="db-section">
+        <SectionHeader Title="Top Recommendations" />
+        @{
+            var topRecs = _topRecs.ToList();
+        }
+        @if (topRecs.Count > 0)
+        {
+            <div class="db-rec-cards">
+                @{ int recIdx = 0; }
+                @foreach (var (Text, Category, ActionHref) in topRecs)
+                {
+                    recIdx++;
+                    <div class="db-rec-card">
+                        <div class="db-rec-num" aria-hidden="true">@recIdx</div>
+                        <div class="db-rec-body">
+                            <div class="db-rec-text">@Text</div>
+                            <div class="db-rec-footer">
+                                <span class="db-rec-cat">@Category</span>
+                                <a href="@ActionHref" class="db-rec-action">Open →</a>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="db-section-empty">
+                No recommendations yet. Run QA Auditor or Delivery Readiness to generate actionable recommendations.
+            </div>
+        }
+    </section>
+
+    @* ── Recent Activity ────────────────────────────────────────────────────── *@
+    <section class="db-section">
+        <SectionHeader Title="Recent Activity" />
+        <div class="db-timeline">
+            @{
+                bool anyActivity = false;
+
+                if (Snapshot.AuditReport is not null)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">QA Auditor completed</span>
+                            <span class="db-tl-meta">@Snapshot.AuditReport.Health.TotalFindings finding@(Snapshot.AuditReport.Health.TotalFindings != 1 ? "s" : "")</span>
+                        </div>
+                    </div>
+                }
+
+                if (Snapshot.DeliveryReport is not null)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">Delivery Readiness completed</span>
+                            <span class="db-tl-meta">@Snapshot.DeliveryReport.Health.OverallReadinessScore.ToString("0")% overall readiness</span>
+                        </div>
+                    </div>
+                }
+
+                if (Snapshot.TraceabilityReport is not null)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">Artifact Traceability completed</span>
+                            <span class="db-tl-meta">@Snapshot.TraceabilityReport.Health.CoveragePercentage.ToString("0")% coverage</span>
+                        </div>
+                    </div>
+                }
+
+                if (Snapshot.ComplianceReport is not null)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">Constitution Compliance completed</span>
+                            <span class="db-tl-meta">@Snapshot.ComplianceReport.Coverage.CompliancePercentage.ToString("0")% compliant</span>
+                        </div>
+                    </div>
+                }
+
+                if (Snapshot.ReadinessReport is not null)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">QA Readiness completed</span>
+                            <span class="db-tl-meta">@Snapshot.ReadinessReport.OverallScore.ToString("0")% overall</span>
+                        </div>
+                    </div>
+                }
+
+                if (_perfReport is not null)
+                {
+                    anyActivity = true;
+                    <div class="db-tl-entry">
+                        <span class="db-tl-dot db-tl-dot-perf" aria-hidden="true"></span>
+                        <div class="db-tl-body">
+                            <span class="db-tl-action">Performance Review completed</span>
+                            <span class="db-tl-meta">@_perfReport.Assets.Count assets · @FormatBytes(_perfReport.Health.TotalTransferBytes) transfer</span>
+                        </div>
+                    </div>
+                }
+
+                if (!anyActivity)
+                {
+                    <div class="db-tl-empty">
+                        No analyses have been run this session.
+                    </div>
+                }
+            }
+        </div>
+    </section>
+
+    @* ══════════════════════════════════════════════════════════════════════════
+       ZONE 3 · OPERATIONAL ACTIONS
+       Analysis Summary → Quick Actions
+       ══════════════════════════════════════════════════════════════════════════ *@
+
+    @* ── Analysis Summary ───────────────────────────────────────────────────── *@
+    <section class="db-section db-zone-start">
+        <SectionHeader Title="Analysis Summary" Description="Run each analysis to populate" />
+        <div class="db-analysis-grid">
+
+            @* Artifact Traceability *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">Artifact Traceability</span>
+                    <a href="artifact-traceability" class="db-summary-open" aria-label="Open Artifact Traceability">Open →</a>
+                </div>
+                @if (Snapshot.TraceabilityReport is { } tr)
+                {
+                    <div class="db-analysis-score @ScoreClass(tr.Health.CoveragePercentage)">@tr.Health.CoveragePercentage.ToString("0")%</div>
+                    <span class="db-analysis-status @KpiStatusClass(tr.Health.CoveragePercentage, true)">@KpiStatusLabel(tr.Health.CoveragePercentage, true)</span>
+                    <div class="db-analysis-chips">
+                        <span class="db-count-chip db-count-good">@tr.Health.CoveredCount covered</span>
+                        @if (tr.Health.PartialCount > 0) { <span class="db-count-chip db-count-warn">@tr.Health.PartialCount partial</span> }
+                        @if (tr.Health.MissingCount > 0) { <span class="db-count-chip db-count-poor">@tr.Health.MissingCount missing</span> }
+                    </div>
+                }
+                else
+                {
+                    <div class="db-analysis-empty">
+                        Not run — populate by running Artifact Traceability.
+                        <a href="artifact-traceability" class="db-analysis-run-link">Run now →</a>
+                    </div>
+                }
+            </div>
+
+            @* Constitution Compliance *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">Constitution Compliance</span>
+                    <a href="constitution-compliance" class="db-summary-open" aria-label="Open Constitution Compliance">Open →</a>
+                </div>
+                @if (Snapshot.ComplianceReport is { } cr)
+                {
+                    <div class="db-analysis-score @ScoreClass(cr.Coverage.CompliancePercentage)">@cr.Coverage.CompliancePercentage.ToString("0")%</div>
+                    <span class="db-analysis-status @KpiStatusClass(cr.Coverage.CompliancePercentage, true)">@KpiStatusLabel(cr.Coverage.CompliancePercentage, true)</span>
+                    <div class="db-analysis-chips">
+                        <span class="db-count-chip db-count-good">@cr.Coverage.CompliantItems compliant</span>
+                        @if (cr.Coverage.PartialItems > 0)  { <span class="db-count-chip db-count-warn">@cr.Coverage.PartialItems partial</span> }
+                        @if (cr.Coverage.MissingItems > 0)  { <span class="db-count-chip db-count-poor">@cr.Coverage.MissingItems missing</span> }
+                        @if (cr.Violations.Count > 0)        { <span class="db-count-chip db-count-poor">@cr.Violations.Count violations</span> }
+                    </div>
+                }
+                else
+                {
+                    <div class="db-analysis-empty">
+                        Not run — populate by running Constitution Compliance.
+                        <a href="constitution-compliance" class="db-analysis-run-link">Run now →</a>
+                    </div>
+                }
+            </div>
+
+            @* QA Audit *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">QA Audit</span>
+                    <a href="qa-auditor" class="db-summary-open" aria-label="Open QA Auditor">Open →</a>
+                </div>
+                @if (Snapshot.AuditReport is { } ar)
+                {
+                    <div class="db-analysis-score @ScoreClass(ar.Health.AuditScore)">@ar.Health.AuditScore.ToString("0")</div>
+                    <span class="db-analysis-status @KpiStatusClass(ar.Health.AuditScore, true)">@KpiStatusLabel(ar.Health.AuditScore, true)</span>
+                    @if (_topAuditRiskTitle is not null)
+                    {
+                        <div class="db-analysis-finding">@_topAuditRiskTitle</div>
+                    }
+                    <div class="db-analysis-chips">
+                        @if (ar.Health.CriticalCount > 0) { <span class="db-count-chip db-count-poor">@ar.Health.CriticalCount critical</span> }
+                        @if (ar.Health.HighCount > 0)     { <span class="db-count-chip db-count-poor">@ar.Health.HighCount high</span> }
+                        @if (ar.Health.MediumCount > 0)   { <span class="db-count-chip db-count-warn">@ar.Health.MediumCount medium</span> }
+                        @if (ar.Health.CriticalCount == 0 && ar.Health.HighCount == 0)
+                        { <span class="db-count-chip db-count-good">No critical findings</span> }
+                    </div>
+                }
+                else
+                {
+                    <div class="db-analysis-empty">
+                        Not run — populate by running QA Auditor.
+                        <a href="qa-auditor" class="db-analysis-run-link">Run now →</a>
+                    </div>
+                }
+            </div>
+
+            @* Delivery Readiness *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">Delivery Readiness</span>
+                    <a href="delivery-readiness" class="db-summary-open" aria-label="Open Delivery Readiness">Open →</a>
+                </div>
+                @if (Snapshot.DeliveryReport is { } dr)
+                {
+                    <div class="db-analysis-score @ScoreClass(dr.Health.OverallReadinessScore)">@dr.Health.OverallReadinessScore.ToString("0")%</div>
+                    <span class="db-analysis-status @ReadinessStatusClass(dr.DevelopmentDecision.State)">@ReadinessStateLabel(dr.DevelopmentDecision.State)</span>
+                    @if (_topBlockerTitle is not null)
+                    {
+                        <div class="db-analysis-finding">@_topBlockerTitle</div>
+                    }
+                    <div class="db-analysis-chips">
+                        <span class="db-count-chip @(dr.DevelopmentDecision.State == ReadinessState.Ready ? "db-count-good" : dr.DevelopmentDecision.State == ReadinessState.MostlyReady ? "db-count-warn" : "db-count-poor")">Dev</span>
+                        <span class="db-count-chip @(dr.TestingDecision.State     == ReadinessState.Ready ? "db-count-good" : dr.TestingDecision.State     == ReadinessState.MostlyReady ? "db-count-warn" : "db-count-poor")">Test</span>
+                        <span class="db-count-chip @(dr.ReleaseDecision.State     == ReadinessState.Ready ? "db-count-good" : dr.ReleaseDecision.State     == ReadinessState.MostlyReady ? "db-count-warn" : "db-count-poor")">Release</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="db-analysis-empty">
+                        Not run — populate by running Delivery Readiness.
+                        <a href="delivery-readiness" class="db-analysis-run-link">Run now →</a>
+                    </div>
+                }
+            </div>
+
+            @* Security Review *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">Security Review</span>
+                    <a href="wasm-security-review" class="db-summary-open" aria-label="Open Security Review">Open →</a>
+                </div>
+                <div class="db-analysis-empty">
+                    Not run this session — analyse headers, authentication, configuration, and exposures.
+                    <a href="wasm-security-review" class="db-analysis-run-link">Run now →</a>
+                </div>
+            </div>
+
+            @* Performance Review *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">Performance Review</span>
+                    <a href="wasm-performance-review" class="db-summary-open" aria-label="Open Performance Review">Open →</a>
+                </div>
+                @if (_perfReport?.ReadinessReport is { HasData: true } perfCard)
+                {
+                    <div class="db-analysis-score @ScoreClass(perfCard.OverallScore)">@perfCard.OverallScore</div>
+                    <span class="db-analysis-status @PerformanceStatusClass(perfCard.OverallState)">@ReadinessStateLabel(perfCard.OverallState)</span>
+                    <div class="db-analysis-chips">
+                        @if (perfCard.Health.CriticalFindings > 0) { <span class="db-count-chip db-count-poor">@perfCard.Health.CriticalFindings critical</span> }
+                        @if (perfCard.Health.HighFindings > 0)     { <span class="db-count-chip db-count-poor">@perfCard.Health.HighFindings high</span> }
+                        @if (perfCard.Health.CriticalFindings == 0 && perfCard.Health.HighFindings == 0)
+                        { <span class="db-count-chip db-count-good">No critical findings</span> }
+                    </div>
+                }
+                else if (_perfReport is not null)
+                {
+                    <div class="db-analysis-score db-val-empty">@_perfReport.Assets.Count</div>
+                    <span class="db-analysis-status db-status-notrun">Assets discovered</span>
+                    <div class="db-analysis-empty" style="margin-top: 0.25rem">
+                        Run a full Performance Review for readiness scoring.
+                    </div>
+                }
+                else
+                {
+                    <div class="db-analysis-empty">
+                        Not run — analyse startup, caching, compression, and API.
+                        <a href="wasm-performance-review" class="db-analysis-run-link">Run now →</a>
+                    </div>
+                }
+            </div>
+
+            @* UI Integrity *@
+            <div class="db-analysis-card" data-testid="ui-integrity-section">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">UI Integrity</span>
+                    <StatusChip Status="@(_uiIntegrity.StructuralRiskScore >= 60 ? "critical" : _uiIntegrity.StructuralRiskScore >= 30 ? "warning" : "healthy")"
+                                Label="@($"Risk {_uiIntegrity.StructuralRiskScore}/100")" />
+                </div>
+                <div class="db-analysis-score @ScoreClass(100 - _uiIntegrity.StructuralRiskScore)">@(100 - _uiIntegrity.StructuralRiskScore)</div>
+                <span class="db-analysis-status @(_uiIntegrity.StructuralRiskScore >= 60 ? "db-status-critical" : _uiIntegrity.StructuralRiskScore >= 30 ? "db-status-warning" : "db-status-healthy")">
+                    @(_uiIntegrity.StructuralRiskScore >= 60 ? "Critical" : _uiIntegrity.StructuralRiskScore >= 30 ? "Warning" : "Healthy")
+                </span>
+                @if (_topPatternFinding is not null)
+                {
+                    <div class="db-analysis-finding">@_topPatternFinding</div>
+                }
+                <div class="db-analysis-chips">
+                    <span class="db-count-chip db-count-good">@_uiIntegrity.FullyConsistentSectionCount consistent</span>
+                    @if (_uiIntegrity.HybridSectionCount > 0)
+                    {
+                        <span class="db-count-chip db-count-poor">@_uiIntegrity.HybridSectionCount hybrid</span>
+                    }
+                    @if (_uiIntegrity.PartiallyMigratedSectionCount > 0)
+                    {
+                        <span class="db-count-chip db-count-warn">@_uiIntegrity.PartiallyMigratedSectionCount partial</span>
+                    }
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    @* ── Quick Actions ───────────────────────────────────────────────────────── *@
+    <section class="db-section">
+        <SectionHeader Title="Quick Actions" />
+        <div class="db-quick-actions">
+            <div class="db-qa-group">
+                <div class="db-qa-group-label">Review</div>
+                <div class="db-qa-buttons">
+                    <a href="constitution-explorer"  class="db-qa-btn">Constitution Explorer</a>
+                    <a href="extract"                class="db-qa-btn">Specification Review</a>
+                    <a href="plan-explorer"          class="db-qa-btn">Plan Explorer</a>
+                    <a href="task-explorer"          class="db-qa-btn">Task Explorer</a>
+                </div>
+            </div>
+            <div class="db-qa-group">
+                <div class="db-qa-group-label">Analysis</div>
+                <div class="db-qa-buttons">
+                    <a href="artifact-traceability"   class="db-qa-btn">Artifact Traceability</a>
+                    <a href="constitution-compliance" class="db-qa-btn">Constitution Compliance</a>
+                    <a href="qa-auditor"              class="db-qa-btn">QA Auditor</a>
+                    <a href="delivery-readiness"      class="db-qa-btn">Delivery Readiness</a>
+                    <a href="wasm-security-review"    class="db-qa-btn">Security Review</a>
+                    <a href="wasm-performance-review" class="db-qa-btn">Performance Review</a>
+                </div>
+            </div>
+            <div class="db-qa-group">
+                <div class="db-qa-group-label">AI</div>
+                <div class="db-qa-buttons">
+                    <a href="ai-change-review" class="db-qa-btn">AI Change Review</a>
+                    <a href="ai-qa-auditor"    class="db-qa-btn">QA Readiness</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+}
+
+@code {
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+    private bool _isLoading;
+    private string? _loadError;
+    private DashboardMetrics _metrics = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    private List<DashboardCandidate> _candidates = [];
+    private UIStructuralIntegrityReport _uiIntegrity = new() { PageResults = [] };
+
+    // ── Performance cache ─────────────────────────────────────────────────────
+
+    private WasmPerformanceReviewReport? _perfReport => PerformanceService.GetCached();
+
+    // ── Snapshot aliases ──────────────────────────────────────────────────────
+
+    private bool _hasAnySnapshot =>
+        Snapshot.TraceabilityReport is not null ||
+        Snapshot.ComplianceReport   is not null ||
+        Snapshot.AuditReport        is not null ||
+        Snapshot.DeliveryReport     is not null;
+
+    // ── Artifact loaded / analyzed ────────────────────────────────────────────
+
+    private bool _constitutionLoaded =>
+        Snapshot.TraceabilityReport?.HasConstitution == true ||
+        Snapshot.ComplianceReport?.HasConstitution   == true ||
+        Snapshot.AuditReport?.HasConstitution        == true ||
+        Snapshot.DeliveryReport?.HasConstitution     == true;
+
+    private bool _constitutionAnalyzed =>
+        Snapshot.ComplianceReport?.HasConstitution == true;
+
+    private bool _specLoaded =>
+        _metrics.RequirementCount > 0 ||
+        Snapshot.TraceabilityReport?.HasSpecification == true ||
+        Snapshot.ComplianceReport?.HasSpecification   == true ||
+        Snapshot.AuditReport?.HasSpecification        == true;
+
+    private bool _specAnalyzed =>
+        Snapshot.AuditReport?.HasSpecification == true;
+
+    private bool _planLoaded =>
+        Snapshot.TraceabilityReport?.HasPlan == true ||
+        Snapshot.ComplianceReport?.HasPlan   == true ||
+        Snapshot.AuditReport?.HasPlan        == true ||
+        Snapshot.DeliveryReport?.HasPlan     == true;
+
+    private bool _planAnalyzed =>
+        Snapshot.TraceabilityReport?.HasPlan == true;
+
+    private bool _tasksLoaded =>
+        _metrics.TotalCandidates > 0 ||
+        Snapshot.TraceabilityReport?.HasTasks == true ||
+        Snapshot.AuditReport?.HasTasks        == true ||
+        Snapshot.DeliveryReport?.HasTasks     == true;
+
+    private bool _tasksAnalyzed =>
+        Snapshot.AuditReport?.HasTasks == true;
+
+    // ── Pre-computed health scores (numeric) ──────────────────────────────────
+
+    private bool _traceabilityHasData => Snapshot.TraceabilityReport is not null || _metrics.TotalCandidates > 0;
+    private double _traceabilityScore => Snapshot.TraceabilityReport is { } tr
+        ? tr.Health.CoveragePercentage
+        : _metrics.TotalCandidates > 0 ? _metrics.TraceabilityPercent : 0;
+
+    private bool _complianceHasData => Snapshot.ComplianceReport is not null;
+    private double _complianceScore => Snapshot.ComplianceReport?.Health.CompliancePercentage ?? 0;
+
+    private bool _qaHasData => Snapshot.AuditReport is not null || _metrics.TotalCandidates > 0;
+    private double _qaScore => Snapshot.AuditReport is { } ar
+        ? ar.Health.AuditScore
+        : _metrics.TotalCandidates > 0 ? _metrics.QaHealthScore : 0;
+
+    private bool _deliveryHasData => Snapshot.DeliveryReport is not null;
+    private double _deliveryScore => Snapshot.DeliveryReport?.Health.OverallReadinessScore ?? 0;
+
+    // ── Overall health ────────────────────────────────────────────────────────
+
+    private double _overallScore
+    {
+        get
+        {
+            var scores = new List<double>();
+            if (Snapshot.TraceabilityReport is not null) scores.Add(_traceabilityScore);
+            else if (_metrics.TotalCandidates > 0)       scores.Add(_traceabilityScore);
+            if (Snapshot.ComplianceReport is not null)   scores.Add(_complianceScore);
+            if (Snapshot.AuditReport is not null)        scores.Add(_qaScore);
+            if (Snapshot.DeliveryReport is not null)     scores.Add(_deliveryScore);
+            return scores.Count > 0 ? scores.Average() : 0;
+        }
+    }
+
+    private bool _hasAnyScore =>
+        Snapshot.TraceabilityReport is not null || Snapshot.ComplianceReport is not null ||
+        Snapshot.AuditReport is not null        || Snapshot.DeliveryReport is not null  ||
+        _metrics.TotalCandidates > 0;
+
+    private string _overallScoreLabel => _overallScore >= 80 ? "Healthy" : _overallScore >= 50 ? "Needs Attention" : "At Risk";
+
+    // ── Project phase & governance KPI ────────────────────────────────────────
+
+    private string _projectPhase =>
+        _tasksAnalyzed ? "Testing" :
+        _planLoaded    ? "Implementation" :
+        _specLoaded    ? "Specification" : "Setup";
+
+    private int _governanceLoadPercent =>
+        (_constitutionLoaded ? 25 : 0) + (_specLoaded ? 25 : 0) +
+        (_planLoaded         ? 25 : 0) + (_tasksLoaded ? 25 : 0);
+
+    // ── Top risks ─────────────────────────────────────────────────────────────
+
+    private IEnumerable<(string Title, string Severity, string Category, string? Detail)> _topRisks
+    {
+        get
+        {
+            var list = new List<(string, string, string, string?)>();
+            if (Snapshot.AuditReport is { } ar)
+                list.AddRange(ar.Risks
+                    .OrderBy(r => r.Severity)
+                    .Take(3)
+                    .Select(r => (r.Title, r.Severity.ToString(), r.Category.ToString(), r.Mitigation)));
+            if (list.Count < 3 && Snapshot.DeliveryReport is { } dr)
+                list.AddRange(dr.Blockers
+                    .OrderBy(b => b.Severity)
+                    .Take(3 - list.Count)
+                    .Select(b => (b.Title, b.Severity.ToString(), b.Category, (string?)b.Description)));
+            return list.Take(3);
+        }
+    }
+
+    // ── Top recommendations ───────────────────────────────────────────────────
+
+    private IEnumerable<(string Text, string Category, string ActionHref)> _topRecs
+    {
+        get
+        {
+            var list = new List<(string, string, string)>();
+            if (Snapshot.AuditReport is { } ar)
+                list.AddRange(ar.Recommendations
+                    .OrderBy(r => r.Priority)
+                    .Take(3)
+                    .Select(r => (r.Text, r.Category.ToString(), "qa-auditor")));
+            if (list.Count < 3 && Snapshot.DeliveryReport is { } dr)
+                list.AddRange(dr.Recommendations
+                    .OrderBy(r => r.Priority)
+                    .Take(3 - list.Count)
+                    .Select(r => (r.Text, r.Category, "delivery-readiness")));
+            return list.Take(3);
+        }
+    }
+
+    // ── Health Summary values ─────────────────────────────────────────────────
+
+    private string TraceabilityHealthVal =>
+        Snapshot.TraceabilityReport is { } tr
+            ? $"{tr.Health.CoveragePercentage:0}%"
+            : _metrics.TotalCandidates > 0 ? $"{_metrics.TraceabilityPercent}%" : "—";
+
+    private string ComplianceHealthVal =>
+        Snapshot.ComplianceReport is { } cr
+            ? $"{cr.Health.CompliancePercentage:0}%"
+            : "—";
+
+    private string QaHealthVal =>
+        Snapshot.AuditReport is { } ar
+            ? $"{ar.Health.AuditScore:0}/100"
+            : _metrics.TotalCandidates > 0 ? $"{_metrics.QaHealthScore}/100" : "—";
+
+    private string DeliveryHealthVal =>
+        Snapshot.DeliveryReport is { } dr
+            ? $"{dr.Health.OverallReadinessScore:0}%"
+            : "—";
+
+    // ── Top findings for analysis cards ──────────────────────────────────────
+
+    private string? _topAuditRiskTitle =>
+        Snapshot.AuditReport?.Risks?.OrderBy(r => r.Severity).FirstOrDefault()?.Title;
+
+    private string? _topBlockerTitle =>
+        Snapshot.DeliveryReport?.Blockers?.OrderBy(b => b.Severity).FirstOrDefault()?.Title;
+
+    private string? _topPatternFinding =>
+        _uiIntegrity.TopHybridPatterns?.FirstOrDefault() is { } p
+            ? $"{p.PageName} — {p.Description}"
+            : null;
+
+    // ── Render helpers ────────────────────────────────────────────────────────
+
+    private static string ScoreClass(double score) =>
+        score >= 80 ? "db-val-good" : score >= 50 ? "db-val-warn" : "db-val-poor";
+
+    private static string KpiStatusClass(double score, bool hasData) =>
+        !hasData ? "db-status-notrun" :
+        score >= 80 ? "db-status-healthy" :
+        score >= 50 ? "db-status-warning" : "db-status-critical";
+
+    private static string KpiStatusLabel(double score, bool hasData) =>
+        !hasData ? "Not Run" :
+        score >= 80 ? "Healthy" :
+        score >= 50 ? "Warning" : "Critical";
+
+    private static string ReadinessStatusClass(ReadinessState state) => state switch
+    {
+        ReadinessState.Ready       => "db-status-healthy",
+        ReadinessState.MostlyReady => "db-status-warning",
+        ReadinessState.Blocked     => "db-status-critical",
+        _                          => "db-status-critical",
+    };
+
+    private static string PerformanceStatusClass(PerformanceReadinessState state) => state switch
+    {
+        PerformanceReadinessState.Ready       => "db-status-healthy",
+        PerformanceReadinessState.MostlyReady => "db-status-warning",
+        PerformanceReadinessState.HighRisk    => "db-status-critical",
+        _                                     => "db-status-warning",
+    };
+
+    private static string ReadinessStateLabel(ReadinessState state) => state switch
+    {
+        ReadinessState.Ready       => "Ready",
+        ReadinessState.MostlyReady => "Mostly Ready",
+        ReadinessState.NotReady    => "Not Ready",
+        ReadinessState.Blocked     => "Blocked",
+        _                          => "—",
+    };
+
+    private static string ReadinessStateLabel(PerformanceReadinessState state) => state switch
+    {
+        PerformanceReadinessState.Ready            => "Ready",
+        PerformanceReadinessState.MostlyReady      => "Mostly Ready",
+        PerformanceReadinessState.NeedsImprovement => "Needs Improvement",
+        PerformanceReadinessState.HighRisk         => "High Risk",
+        _                                          => "Not Assessed",
+    };
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0)        return "0 B";
+        if (bytes < 1_024)     return $"{bytes} B";
+        if (bytes < 1_048_576) return $"{bytes / 1024} KB";
+        return $"{bytes / 1_048_576.0:F1} MB";
+    }
+
+    // ── RenderFragment helpers ────────────────────────────────────────────────
+
+    private RenderFragment ReadinessCard(string label, ReadinessState? state, double? score, string href) => __builder =>
+    {
+        <div class="db-readiness-card">
+            <div class="db-readiness-label">@label</div>
+            @if (state.HasValue && score.HasValue)
+            {
+                <div class="db-readiness-score @ScoreClass(score.Value)">@score.Value.ToString("0")%</div>
+                <div class="db-readiness-state @ReadinessStatusClass(state.Value)">@ReadinessStateLabel(state.Value)</div>
+            }
+            else
+            {
+                <div class="db-readiness-score db-val-empty">—</div>
+                <div class="db-readiness-state db-status-notrun">Not Run</div>
+            }
+            <a href="@href" class="db-readiness-link">Open →</a>
+        </div>
+    };
+
+    private RenderFragment ReadinessCardScore(string label, double? score, string href) => __builder =>
+    {
+        <div class="db-readiness-card">
+            <div class="db-readiness-label">@label</div>
+            @if (score.HasValue)
+            {
+                <div class="db-readiness-score @ScoreClass(score.Value)">@score.Value.ToString("0")%</div>
+                <div class="db-readiness-state @KpiStatusClass(score.Value, true)">@KpiStatusLabel(score.Value, true)</div>
+            }
+            else
+            {
+                <div class="db-readiness-score db-val-empty">—</div>
+                <div class="db-readiness-state db-status-notrun">Not Run</div>
+            }
+            <a href="@href" class="db-readiness-link">Open →</a>
+        </div>
+    };
+
+    // ── Data loading ──────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (IsPreviewMode)
+        {
+            _metrics = PreviewMetrics;
+            return;
+        }
+
+        _uiIntegrity = UiIntegrityAnalyzer.Analyze();
+
+        _isLoading = true;
+        _loadError = null;
+
+        try
+        {
+            var candidatesResult = await Client.GetReviewedCandidates.ExecuteAsync(ProjectId, null);
+            var linksResult      = await Client.GetCandidateLinks.ExecuteAsync(ProjectId, null);
+
+            if (candidatesResult.Errors is { Count: > 0 } || linksResult.Errors is { Count: > 0 })
+            {
+                _loadError = "We couldn't load dashboard data right now. Please try again later.";
+                return;
+            }
+
+            _candidates = candidatesResult.Data?.ReviewedCandidates
+                .Select(c => new DashboardCandidate(c.Id, c.Classification, c.ReviewStatus, c.Title ?? ""))
+                .ToList() ?? [];
+
+            var links = linksResult.Data?.CandidateLinks
+                .Select(l => new DashboardCandidateLink(l.SourceCandidateRef, l.TargetCandidateRef, l.LinkType))
+                .ToList() ?? [];
+
+            _metrics = MetricsService.Calculate(_candidates, links);
+        }
+        catch (Exception)
+        {
+            _loadError = "We couldn't load dashboard data right now. Please try again later.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private bool IsPreviewMode
+    {
+        get
+        {
+#if DEBUG
+            var query = Navigation.ToAbsoluteUri(Navigation.Uri).Query;
+            return query.Contains("demo=populated", StringComparison.OrdinalIgnoreCase)
+                || query.Contains("preview=populated", StringComparison.OrdinalIgnoreCase);
+#else
+            return false;
+#endif
+        }
+    }
+
+    private static DashboardMetrics PreviewMetrics => new(
+        TotalCandidates: 92,
+        RequirementCount: 24,
+        TestCount: 68,
+        ClarificationCount: 4,
+        ReviewedCount: 72,
+        ReviewedPercent: 78,
+        AcceptedCount: 74,
+        RejectedCount: 18,
+        NeedsReviewCount: 0,
+        UnreviewedCount: 0,
+        AcceptanceRatio: 80,
+        RejectionRatio: 20,
+        RequirementsWithTests: 22,
+        RequirementsWithoutTests: 3,
+        RequirementsCoveredPercent: 91,
+        RequirementsWithoutTestsPercent: 13,
+        TestsWithoutRequirements: 6,
+        TestsLinkedToRequirementsPercent: 88,
+        RequirementsWithUnresolvedClarifications: 2,
+        UnresolvedClarifications: 2,
+        ClarificationsWithoutRequirements: 0,
+        PendingRequirements: 3,
+        PendingTests: 0,
+        PendingClarifications: 2,
+        FunctionalTests: 30,
+        NegativeTests: 12,
+        EdgeCaseTests: 8,
+        PerformanceTests: 2,
+        SecurityTests: 1,
+        OtherTests: 5,
+        TraceabilityPercent: 87,
+        QaHealthScore: 82,
+        OpenRisksCount: 3);
+}

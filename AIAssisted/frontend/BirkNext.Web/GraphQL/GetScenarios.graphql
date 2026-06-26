@@ -1,0 +1,10 @@
+query GetScenarios($projectId: String!) {
+  scenarios(projectId: $projectId) {
+    id
+    title
+    description
+    kind
+    createdAt
+    displayOrder
+  }
+}

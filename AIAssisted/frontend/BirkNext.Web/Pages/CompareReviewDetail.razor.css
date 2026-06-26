@@ -1,0 +1,14 @@
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--clr-text-muted, #475569);
+    text-decoration: none;
+}
+
+.back-link:hover {
+    color: var(--clr-text-heading, #0f172a);
+}

@@ -1,0 +1,843 @@
+@page "/artifact-traceability"
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using BirkNext.Web.Components
+@inject IConstitutionAnalysisService ConstitutionService
+@inject IPlanAnalysisService PlanService
+@inject IArtifactTraceabilityService TraceabilityService
+@inject IDashboardSnapshotService DashboardSnapshot
+
+<PageTitle>Artifact Traceability</PageTitle>
+
+<div class="at-page">
+
+    <PageHeader Title="Artifact Traceability"
+                Description="End-to-end traceability across Constitution → Specification → Plan → Tasks. Surface coverage gaps, orphaned items, and a unified traceability matrix." />
+
+    <!-- ── Artifact input panel ──────────────────────────────────────────── -->
+    <div class="at-input-panel">
+        <div class="at-input-panel-header">
+            <span class="at-input-panel-title">Load Artifacts</span>
+            @if (_report is not null)
+            {
+                <button class="at-input-panel-toggle" @onclick="ToggleInputPanel">
+                    @(_inputExpanded ? "▾ Collapse" : "▸ Expand")
+                </button>
+            }
+        </div>
+
+        @if (_inputExpanded)
+        {
+            <div class="at-artifact-grid">
+
+                <!-- Constitution -->
+                <div class="at-artifact-card @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
+                    <div class="at-artifact-card-header">
+                        <span class="at-artifact-icon" aria-hidden="true">📜</span>
+                        <span class="at-artifact-name">Constitution</span>
+                        <span class="at-artifact-status @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
+                            @(!string.IsNullOrEmpty(_constitutionText) ? "Loaded" : "Empty")
+                        </span>
+                    </div>
+                    <SpecificationImport
+                        InputId="at-const-import"
+                        OnFileImported="t => { _constitutionText = t; }"
+                        OnFileRemoved="() => { _constitutionText = string.Empty; }"
+                        IsDisabled="false" />
+                    <textarea
+                        class="at-artifact-textarea"
+                        placeholder="Or paste constitution.md content here…"
+                        rows="4"
+                        @bind="_constitutionText"></textarea>
+                    @if (!string.IsNullOrEmpty(_constitutionText))
+                    {
+                        <div class="at-artifact-footer">
+                            <span>@_constitutionText.Split('\n').Length lines</span>
+                            <button class="at-artifact-clear" @onclick='() => _constitutionText = string.Empty'>Clear</button>
+                        </div>
+                    }
+                </div>
+
+                <!-- Specification -->
+                <div class="at-artifact-card @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
+                    <div class="at-artifact-card-header">
+                        <span class="at-artifact-icon" aria-hidden="true">📋</span>
+                        <span class="at-artifact-name">Specification</span>
+                        <span class="at-artifact-status @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
+                            @(!string.IsNullOrEmpty(_specText) ? "Loaded" : "Empty")
+                        </span>
+                    </div>
+                    <SpecificationImport
+                        InputId="at-spec-import"
+                        OnFileImported="t => { _specText = t; }"
+                        OnFileRemoved="() => { _specText = string.Empty; }"
+                        IsDisabled="false" />
+                    <textarea
+                        class="at-artifact-textarea"
+                        placeholder="Or paste spec.md content here…"
+                        rows="4"
+                        @bind="_specText"></textarea>
+                    @if (!string.IsNullOrEmpty(_specText))
+                    {
+                        <div class="at-artifact-footer">
+                            <span>@_specText.Split('\n').Length lines</span>
+                            <button class="at-artifact-clear" @onclick='() => _specText = string.Empty'>Clear</button>
+                        </div>
+                    }
+                </div>
+
+                <!-- Plan -->
+                <div class="at-artifact-card @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
+                    <div class="at-artifact-card-header">
+                        <span class="at-artifact-icon" aria-hidden="true">📐</span>
+                        <span class="at-artifact-name">Plan</span>
+                        <span class="at-artifact-status @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
+                            @(!string.IsNullOrEmpty(_planText) ? "Loaded" : "Empty")
+                        </span>
+                    </div>
+                    <SpecificationImport
+                        InputId="at-plan-import"
+                        OnFileImported="t => { _planText = t; }"
+                        OnFileRemoved="() => { _planText = string.Empty; }"
+                        IsDisabled="false" />
+                    <textarea
+                        class="at-artifact-textarea"
+                        placeholder="Or paste plan.md content here…"
+                        rows="4"
+                        @bind="_planText"></textarea>
+                    @if (!string.IsNullOrEmpty(_planText))
+                    {
+                        <div class="at-artifact-footer">
+                            <span>@_planText.Split('\n').Length lines</span>
+                            <button class="at-artifact-clear" @onclick='() => _planText = string.Empty'>Clear</button>
+                        </div>
+                    }
+                </div>
+
+                <!-- Tasks -->
+                <div class="at-artifact-card @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
+                    <div class="at-artifact-card-header">
+                        <span class="at-artifact-icon" aria-hidden="true">✅</span>
+                        <span class="at-artifact-name">Tasks</span>
+                        <span class="at-artifact-status @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
+                            @(!string.IsNullOrEmpty(_taskText) ? "Loaded" : "Empty")
+                        </span>
+                    </div>
+                    <SpecificationImport
+                        InputId="at-task-import"
+                        OnFileImported="t => { _taskText = t; }"
+                        OnFileRemoved="() => { _taskText = string.Empty; }"
+                        IsDisabled="false" />
+                    <textarea
+                        class="at-artifact-textarea"
+                        placeholder="Or paste tasks.md content here…"
+                        rows="4"
+                        @bind="_taskText"></textarea>
+                    @if (!string.IsNullOrEmpty(_taskText))
+                    {
+                        <div class="at-artifact-footer">
+                            <span>@_taskText.Split('\n').Length lines</span>
+                            <button class="at-artifact-clear" @onclick='() => _taskText = string.Empty'>Clear</button>
+                        </div>
+                    }
+                </div>
+
+            </div>
+
+            <div class="at-analyze-bar">
+                <span class="at-loaded-summary">
+                    @LoadedCount artifact@(LoadedCount != 1 ? "s" : "") loaded
+                    @if (LoadedCount < 2)
+                    { <span> — load at least 2 to analyze</span> }
+                </span>
+                <PrimaryButton OnClick="RunAnalysis" Disabled="@(LoadedCount < 2)">
+                    Analyze Traceability
+                </PrimaryButton>
+            </div>
+        }
+    </div>
+
+    <!-- ── Report view ────────────────────────────────────────────────────── -->
+    @if (_report is not null)
+    {
+        <!-- Health summary bar -->
+        <div class="at-health-bar">
+            <MetricCard Value="@(_report.ConstitutionCoverage.CoveragePercentage.ToString("0.#") + "%")" Label="Constitution Coverage"
+                        Variant="@(_report.ConstitutionCoverage.CoveragePercentage >= 80 ? "success" : _report.ConstitutionCoverage.CoveragePercentage >= 50 ? "warning" : _report.ConstitutionCoverage.CoveragePercentage > 0 ? "danger" : null)" />
+            <MetricCard Value="@(_report.SpecificationCoverage.CoveragePercentage.ToString("0.#") + "%")" Label="Spec Coverage"
+                        Variant="@(_report.SpecificationCoverage.CoveragePercentage >= 80 ? "success" : _report.SpecificationCoverage.CoveragePercentage >= 50 ? "warning" : _report.SpecificationCoverage.CoveragePercentage > 0 ? "danger" : null)" />
+            <MetricCard Value="@(_report.PlanCoverage.CoveragePercentage.ToString("0.#") + "%")" Label="Plan Coverage"
+                        Variant="@(_report.PlanCoverage.CoveragePercentage >= 80 ? "success" : _report.PlanCoverage.CoveragePercentage >= 50 ? "warning" : _report.PlanCoverage.CoveragePercentage > 0 ? "danger" : null)" />
+            <MetricCard Value="@(_report.TaskCoverage.CoveragePercentage.ToString("0.#") + "%")" Label="Task Coverage"
+                        Variant="@(_report.TaskCoverage.CoveragePercentage >= 80 ? "success" : _report.TaskCoverage.CoveragePercentage >= 50 ? "warning" : _report.TaskCoverage.CoveragePercentage > 0 ? "danger" : null)" />
+            @if (_report.Health.GapCount > 0)
+            {
+                <MetricCard Value="@_report.Health.GapCount.ToString()" Label="Gaps" Variant="warning" />
+            }
+        </div>
+
+        <!-- Tab bar -->
+        <div class="at-tab-bar" role="tablist">
+            <button class='at-tab-btn @(_tab == "overview"     ? "is-active" : "")' @onclick='() => SetTab("overview")'>Overview</button>
+            <button class='at-tab-btn @(_tab == "const-spec"   ? "is-active" : "")' @onclick='() => SetTab("const-spec")'>
+                Constitution → Spec @ConstitutionSpecBadge
+            </button>
+            <button class='at-tab-btn @(_tab == "spec-plan"    ? "is-active" : "")' @onclick='() => SetTab("spec-plan")'>
+                Spec → Plan @SpecPlanBadge
+            </button>
+            <button class='at-tab-btn @(_tab == "plan-task"    ? "is-active" : "")' @onclick='() => SetTab("plan-task")'>
+                Plan → Tasks @PlanTaskBadge
+            </button>
+            <button class='at-tab-btn @(_tab == "gaps"         ? "is-active" : "")' @onclick='() => SetTab("gaps")'>
+                Gaps @GapsBadge
+            </button>
+            <button class='at-tab-btn @(_tab == "matrix"       ? "is-active" : "")' @onclick='() => SetTab("matrix")'>
+                Matrix @MatrixBadge
+            </button>
+        </div>
+
+        <!-- Search bar (tabs that support search) -->
+        @if (_tab is "const-spec" or "spec-plan" or "plan-task" or "gaps" or "matrix")
+        {
+            <div class="at-search-bar">
+                <input
+                    type="search"
+                    class="at-search"
+                    placeholder="@SearchPlaceholder"
+                    value="@_search"
+                    @oninput="e => _search = e.Value?.ToString() ?? string.Empty"
+                    aria-label="Search" />
+                @if (!string.IsNullOrWhiteSpace(_search))
+                {
+                    <span class="at-search-clear" @onclick='() => _search = string.Empty' title="Clear">×</span>
+                }
+            </div>
+        }
+
+        <!-- Status filter (chain tabs + matrix + gaps) -->
+        @if (_tab is "const-spec" or "spec-plan" or "plan-task" or "matrix")
+        {
+            <div class="at-filter-strip" role="group" aria-label="Filter by status">
+                <button class='at-filter-chip @(_statusFilter is null ? "is-active" : "")' @onclick='() => _statusFilter = null'>All</button>
+                <button class='at-filter-chip @(_statusFilter == TraceabilityStatus.Covered ? "is-active" : "")' @onclick='() => _statusFilter = TraceabilityStatus.Covered'>Covered</button>
+                <button class='at-filter-chip @(_statusFilter == TraceabilityStatus.Partial ? "is-active" : "")' @onclick='() => _statusFilter = TraceabilityStatus.Partial'>Partial</button>
+                <button class='at-filter-chip @(_statusFilter == TraceabilityStatus.Missing ? "is-active" : "")' @onclick='() => _statusFilter = TraceabilityStatus.Missing'>Missing</button>
+            </div>
+        }
+        @if (_tab == "gaps")
+        {
+            <div class="at-filter-strip" role="group" aria-label="Filter gaps by artifact">
+                <button class='at-filter-chip @(_gapArtifactFilter is null ? "is-active" : "")' @onclick='() => _gapArtifactFilter = null'>All Artifacts</button>
+                <button class='at-filter-chip @(_gapArtifactFilter == ArtifactType.Constitution ? "is-active" : "")' @onclick='() => _gapArtifactFilter = ArtifactType.Constitution'>Constitution</button>
+                <button class='at-filter-chip @(_gapArtifactFilter == ArtifactType.Specification ? "is-active" : "")' @onclick='() => _gapArtifactFilter = ArtifactType.Specification'>Specification</button>
+                <button class='at-filter-chip @(_gapArtifactFilter == ArtifactType.Plan ? "is-active" : "")' @onclick='() => _gapArtifactFilter = ArtifactType.Plan'>Plan</button>
+                <button class='at-filter-chip @(_gapArtifactFilter == ArtifactType.Task ? "is-active" : "")' @onclick='() => _gapArtifactFilter = ArtifactType.Task'>Task</button>
+            </div>
+        }
+
+        <!-- Tab content -->
+        <div class="at-tab-body">
+
+            @if (_tab == "overview")
+            {
+                <!-- ── Overview ──────────────────────────────────────────── -->
+                <div>
+                    <!-- Quick stats -->
+                    <div class="at-quick-stats">
+                        @if (_report.Health.TotalRules > 0)
+                        {
+                            <span class="at-quick-stat"><span class="at-quick-stat-value">@_report.Health.TotalRules</span> rules</span>
+                        }
+                        @if (_report.Health.TotalRequirements > 0)
+                        {
+                            <span class="at-quick-stat"><span class="at-quick-stat-value">@_report.Health.TotalRequirements</span> requirements</span>
+                        }
+                        @if (_report.Health.TotalPlanItems > 0)
+                        {
+                            <span class="at-quick-stat"><span class="at-quick-stat-value">@_report.Health.TotalPlanItems</span> plan items</span>
+                        }
+                        @if (_report.Health.TotalTasks > 0)
+                        {
+                            <span class="at-quick-stat"><span class="at-quick-stat-value">@_report.Health.TotalTasks</span> tasks</span>
+                        }
+                        @if (_report.Health.GapCount > 0)
+                        {
+                            <span class="at-quick-stat"><span class="at-quick-stat-value">@_report.Health.GapCount</span> gaps</span>
+                        }
+                    </div>
+
+                    <!-- Coverage sections -->
+                    @if (_report.HasConstitution && _report.HasSpecification)
+                    {
+                        @RenderCoverageSection("Constitution → Specification", _report.ConstitutionCoverage, "const-spec")
+                    }
+                    @if (_report.HasSpecification && _report.HasPlan)
+                    {
+                        @RenderCoverageSection("Specification → Plan", _report.SpecificationCoverage, "spec-plan")
+                    }
+                    @if (_report.HasPlan && _report.HasTasks)
+                    {
+                        @RenderCoverageSection("Plan → Tasks", _report.PlanCoverage, "plan-task")
+                    }
+                    @if (_report.HasTasks)
+                    {
+                        @RenderCoverageSection("Task Traceability", _report.TaskCoverage, "plan-task")
+                    }
+
+                    <!-- Health indicators -->
+                    @if (_report.Health.Indicators.Count > 0)
+                    {
+                        <div class="at-health-indicators">
+                            @foreach (var ind in _report.Health.Indicators)
+                            {
+                                <div class="at-indicator at-indicator-@ind.Level.ToString().ToLowerInvariant()">
+                                    <span class="at-indicator-icon" aria-hidden="true">@ind.Icon</span>
+                                    <span>@ind.Message</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- Nav cards -->
+                    <div class="at-nav-cards">
+                        @if (_report.ConstitutionToSpec.Count > 0)
+                        {
+                            <button class="at-nav-card" @onclick='() => SetTab("const-spec")'>
+                                <div class="at-nav-card-count">@_report.ConstitutionToSpec.Count</div>
+                                <div class="at-nav-card-label">Constitution → Spec Rules</div>
+                                <div class="at-nav-card-arrow">→</div>
+                            </button>
+                        }
+                        @if (_report.SpecToPlan.Count > 0)
+                        {
+                            <button class="at-nav-card" @onclick='() => SetTab("spec-plan")'>
+                                <div class="at-nav-card-count">@_report.SpecToPlan.Count</div>
+                                <div class="at-nav-card-label">Spec → Plan Requirements</div>
+                                <div class="at-nav-card-arrow">→</div>
+                            </button>
+                        }
+                        @if (_report.PlanToTask.Count > 0)
+                        {
+                            <button class="at-nav-card" @onclick='() => SetTab("plan-task")'>
+                                <div class="at-nav-card-count">@_report.PlanToTask.Count</div>
+                                <div class="at-nav-card-label">Plan → Task Items</div>
+                                <div class="at-nav-card-arrow">→</div>
+                            </button>
+                        }
+                        @if (_report.Gaps.Count > 0)
+                        {
+                            <button class="at-nav-card" @onclick='() => SetTab("gaps")'>
+                                <div class="at-nav-card-count">@_report.Gaps.Count</div>
+                                <div class="at-nav-card-label">Traceability Gaps</div>
+                                <div class="at-nav-card-arrow">→</div>
+                            </button>
+                        }
+                        @if (_report.Matrix.Count > 0)
+                        {
+                            <button class="at-nav-card" @onclick='() => SetTab("matrix")'>
+                                <div class="at-nav-card-count">@_report.Matrix.Count</div>
+                                <div class="at-nav-card-label">Matrix Rows</div>
+                                <div class="at-nav-card-arrow">→</div>
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (_tab == "const-spec")
+            {
+                <!-- ── Constitution → Spec ────────────────────────────────── -->
+                @if (!_report.HasConstitution || !_report.HasSpecification)
+                {
+                    <EmptyState Icon="📭"
+                                Title="@(!_report.HasConstitution ? "No Constitution loaded." : "No Specification loaded.")"
+                                Description="Constitution → Spec analysis unavailable. Load the missing document above." />
+                }
+                else if (!VisibleConstToSpec.Any())
+                {
+                    <EmptyState Title="@((!string.IsNullOrWhiteSpace(_search) || _statusFilter is not null) ? "No rules match the current filter." : "No constitution rules found.")" />
+                }
+                else
+                {
+                    <div class="at-chain-table-wrap">
+                        <table class="at-chain-table" aria-label="Constitution to Specification coverage">
+                            <thead>
+                                <tr>
+                                    <th>Rule ID</th>
+                                    <th>Rule Title</th>
+                                    <th>Type</th>
+                                    <th>Referenced Requirements</th>
+                                    <th>Coverage</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var entry in VisibleConstToSpec)
+                                {
+                                    <tr>
+                                        <td><span class="at-rule-id">@entry.ItemId</span></td>
+                                        <td>@entry.ItemTitle</td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(entry.ItemSubType))
+                                            { <span class="at-rule-type-badge">@entry.ItemSubType</span> }
+                                        </td>
+                                        <td>
+                                            @if (entry.Links.Count > 0)
+                                            {
+                                                <div class="at-link-chips">
+                                                    @foreach (var link in entry.Links.Take(5))
+                                                    { <span class="at-link-chip">@link.TargetId</span> }
+                                                    @if (entry.Links.Count > 5)
+                                                    { <span class="at-link-chip">+@(entry.Links.Count - 5) more</span> }
+                                                </div>
+                                            }
+                                            else
+                                            { <span class="at-matrix-blank">—</span> }
+                                        </td>
+                                        <td>@StatusBadge(entry.Status)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+
+            @if (_tab == "spec-plan")
+            {
+                <!-- ── Spec → Plan ────────────────────────────────────────── -->
+                @if (!_report.HasSpecification || !_report.HasPlan)
+                {
+                    <EmptyState Icon="📭"
+                                Title="@(!_report.HasSpecification ? "No Specification loaded." : "No Plan loaded.")"
+                                Description="Spec → Plan analysis unavailable. Load the missing document above." />
+                }
+                else if (!VisibleSpecToPlan.Any())
+                {
+                    <EmptyState Title="@((!string.IsNullOrWhiteSpace(_search) || _statusFilter is not null) ? "No requirements match the current filter." : "No requirements with FR-### identifiers found in the specification.")" />
+                }
+                else
+                {
+                    <div class="at-chain-table-wrap">
+                        <table class="at-chain-table" aria-label="Specification to Plan coverage">
+                            <thead>
+                                <tr>
+                                    <th>Requirement</th>
+                                    <th>Title</th>
+                                    <th>Type</th>
+                                    <th>Plan Coverage</th>
+                                    <th>Coverage</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var entry in VisibleSpecToPlan)
+                                {
+                                    <tr>
+                                        <td><span class="at-rule-id">@entry.ItemId</span></td>
+                                        <td>@entry.ItemTitle</td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(entry.ItemSubType))
+                                            { <span class="at-rule-type-badge">@entry.ItemSubType</span> }
+                                        </td>
+                                        <td>
+                                            @if (entry.Links.Count > 0)
+                                            { <span class="at-link-chip">Referenced in plan</span> }
+                                            else
+                                            { <span class="at-matrix-blank">—</span> }
+                                        </td>
+                                        <td>@StatusBadge(entry.Status)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+
+            @if (_tab == "plan-task")
+            {
+                <!-- ── Plan → Tasks ───────────────────────────────────────── -->
+                @if (!_report.HasPlan)
+                {
+                    <EmptyState Icon="📭" Title="No Plan loaded." Description="Plan → Tasks analysis unavailable. Load a plan document above." />
+                }
+                else if (!_report.HasTasks && _report.PlanToTask.Count == 0)
+                {
+                    <EmptyState Icon="📭" Title="No Tasks loaded and no plan items found." Description="Load a tasks document above." />
+                }
+                else
+                {
+                    @if (!VisiblePlanToTask.Any() && !string.IsNullOrWhiteSpace(_search))
+                    {
+                        <div class="at-empty-tab"><span>No plan items match "<strong>@_search</strong>".</span></div>
+                    }
+                    else
+                    {
+                        <div class="at-chain-table-wrap">
+                            <table class="at-chain-table" aria-label="Plan to Tasks coverage">
+                                <thead>
+                                    <tr>
+                                        <th>Plan Item</th>
+                                        <th>Title</th>
+                                        <th>Related Tasks</th>
+                                        <th>Coverage</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var entry in VisiblePlanToTask)
+                                    {
+                                        <tr>
+                                            <td><span class="at-rule-id">@entry.ItemId</span></td>
+                                            <td>@entry.ItemTitle</td>
+                                            <td>
+                                                @if (entry.Links.Count > 0)
+                                                {
+                                                    <div class="at-link-chips">
+                                                        @foreach (var link in entry.Links.Take(4))
+                                                        { <span class="at-link-chip">@link.TargetId</span> }
+                                                        @if (entry.Links.Count > 4)
+                                                        { <span class="at-link-chip">+@(entry.Links.Count - 4) more</span> }
+                                                    </div>
+                                                }
+                                                else
+                                                { <span class="at-matrix-blank">—</span> }
+                                            </td>
+                                            <td>@StatusBadge(entry.Status)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Orphan tasks section -->
+                        @if (_report.Gaps.Any(g => g.GapIn == ArtifactType.Task && g.Status == TraceabilityStatus.Orphaned))
+                        {
+                            <div class="at-gaps-section" style="margin-top:1.5rem;">
+                                <SectionHeader Title="Orphan Tasks (no spec references)" />
+                                <div class="issue-cards">
+                                    @foreach (var gap in _report.Gaps.Where(g => g.GapIn == ArtifactType.Task && g.Status == TraceabilityStatus.Orphaned))
+                                    {
+                                        <IssueCard Severity="Medium"
+                                                   Component="@gap.ItemId"
+                                                   Description="@(string.IsNullOrEmpty(gap.ItemTitle) ? gap.Description : (string.IsNullOrEmpty(gap.Description) ? gap.ItemTitle : $"{gap.ItemTitle} — {gap.Description}"))" />
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                }
+            }
+
+            @if (_tab == "gaps")
+            {
+                <!-- ── Gaps ───────────────────────────────────────────────── -->
+                @if (!VisibleGaps.Any())
+                {
+                    @if (_gapArtifactFilter is not null || !string.IsNullOrWhiteSpace(_search))
+                    {
+                        <EmptyState Title="No gaps match the current filter." />
+                    }
+                    else
+                    {
+                        <EmptyState Icon="✓" Title="No traceability gaps detected." Description="All analyzed artifacts are covered." />
+                    }
+                }
+                else
+                {
+                    @foreach (var artifactGroup in VisibleGaps
+                        .GroupBy(g => g.GapIn)
+                        .OrderBy(g => (int)g.Key))
+                    {
+                        <div class="at-gaps-section">
+                            <SectionHeader Title="@(ArtifactLabel(artifactGroup.Key) + " Gaps")" />
+                            <div class="issue-cards">
+                                @foreach (var gap in artifactGroup.OrderBy(g => g.Severity))
+                                {
+                                    <IssueCard Severity="@gap.Severity.ToString()"
+                                               Component="@gap.ItemId"
+                                               Description="@(string.IsNullOrEmpty(gap.ItemTitle) ? gap.Description : (string.IsNullOrEmpty(gap.Description) ? gap.ItemTitle : $"{gap.ItemTitle} — {gap.Description}"))" />
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            }
+
+            @if (_tab == "matrix")
+            {
+                <!-- ── Traceability Matrix ────────────────────────────────── -->
+                @if (_report.Matrix.Count == 0 && !_report.HasConstitution)
+                {
+                    <EmptyState Icon="📭" Title="No Constitution loaded."
+                                Description="The traceability matrix requires a constitution as the starting point." />
+                }
+                else if (!VisibleMatrix.Any())
+                {
+                    <EmptyState Title="@((!string.IsNullOrWhiteSpace(_search) || _statusFilter is not null) ? "No matrix rows match the current filter." : "No traceability matrix rows generated. Load at least a constitution to start.")" />
+                }
+                else
+                {
+                    <div class="at-matrix-table-wrap">
+                        <table class="at-matrix-table" aria-label="Full traceability matrix">
+                            <thead>
+                                <tr>
+                                    <th>Constitution</th>
+                                    <th>Specification</th>
+                                    <th>Plan</th>
+                                    <th>Task</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in VisibleMatrix.Take(500))
+                                {
+                                    <tr>
+                                        <td>
+                                            <span class="at-rule-id">@row.ConstitutionRuleId</span>
+                                            @if (!string.IsNullOrEmpty(row.ConstitutionRuleTitle))
+                                            { <span style="margin-left:.4rem;font-size:.78rem;color:var(--clr-text-muted);">@row.ConstitutionRuleTitle</span> }
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(row.SpecRequirementId))
+                                            { <span class="at-rule-id">@row.SpecRequirementId</span>
+                                              @if (!string.IsNullOrEmpty(row.SpecRequirementTitle))
+                                              { <span style="margin-left:.4rem;font-size:.78rem;color:var(--clr-text-muted);">@row.SpecRequirementTitle</span> } }
+                                            else
+                                            { <span class="at-matrix-blank">—</span> }
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(row.PlanItemId))
+                                            { <span class="at-rule-id">@row.PlanItemId</span>
+                                              @if (!string.IsNullOrEmpty(row.PlanItemTitle))
+                                              { <span style="margin-left:.4rem;font-size:.78rem;color:var(--clr-text-muted);">@row.PlanItemTitle</span> } }
+                                            else
+                                            { <span class="at-matrix-blank">—</span> }
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(row.TaskId))
+                                            { <span class="at-rule-id">@row.TaskId</span>
+                                              @if (!string.IsNullOrEmpty(row.TaskTitle))
+                                              { <span style="margin-left:.4rem;font-size:.78rem;color:var(--clr-text-muted);">@row.TaskTitle</span> } }
+                                            else
+                                            { <span class="at-matrix-blank">—</span> }
+                                        </td>
+                                        <td>@StatusBadge(row.Status)</td>
+                                    </tr>
+                                }
+                                @if (VisibleMatrix.Count() > 500)
+                                {
+                                    <tr>
+                                        <td colspan="5" style="text-align:center;color:var(--clr-text-muted);font-size:.8rem;padding:.75rem;">
+                                            Showing 500 of @VisibleMatrix.Count() rows. Use search or filters to narrow down.
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+
+        </div>
+    }
+
+</div>
+
+@code {
+    private string _constitutionText = string.Empty;
+    private string _specText         = string.Empty;
+    private string _planText         = string.Empty;
+    private string _taskText         = string.Empty;
+
+    private ArtifactTraceabilityReport? _report;
+    private string _tab    = "overview";
+    private string _search = string.Empty;
+    private bool _inputExpanded = true;
+
+    private TraceabilityStatus? _statusFilter;
+    private ArtifactType? _gapArtifactFilter;
+
+    private int LoadedCount =>
+        (string.IsNullOrWhiteSpace(_constitutionText) ? 0 : 1) +
+        (string.IsNullOrWhiteSpace(_specText)         ? 0 : 1) +
+        (string.IsNullOrWhiteSpace(_planText)         ? 0 : 1) +
+        (string.IsNullOrWhiteSpace(_taskText)         ? 0 : 1);
+
+    // ── Computed filtered views ───────────────────────────────────────────
+
+    private IEnumerable<ChainCoverage> VisibleConstToSpec =>
+        _report is null ? [] :
+        TraceabilityService.FilterChainByStatus(
+            TraceabilityService.SearchChain(_report.ConstitutionToSpec, _search),
+            _statusFilter);
+
+    private IEnumerable<ChainCoverage> VisibleSpecToPlan =>
+        _report is null ? [] :
+        TraceabilityService.FilterChainByStatus(
+            TraceabilityService.SearchChain(_report.SpecToPlan, _search),
+            _statusFilter);
+
+    private IEnumerable<ChainCoverage> VisiblePlanToTask =>
+        _report is null ? [] :
+        TraceabilityService.FilterChainByStatus(
+            TraceabilityService.SearchChain(_report.PlanToTask, _search),
+            _statusFilter);
+
+    private IEnumerable<TraceabilityGap> VisibleGaps =>
+        _report is null ? [] :
+        TraceabilityService.SearchGaps(
+            TraceabilityService.FilterGapsByArtifact(_report.Gaps, _gapArtifactFilter),
+            _search);
+
+    private IEnumerable<TraceabilityMatrixRow> VisibleMatrix =>
+        _report is null ? [] :
+        TraceabilityService.FilterMatrixByStatus(
+            TraceabilityService.SearchMatrix(_report.Matrix, _search),
+            _statusFilter);
+
+    // ── Tab badges ────────────────────────────────────────────────────────
+
+    private string ConstitutionSpecBadge =>
+        _report?.ConstitutionToSpec.Count > 0 ? $"({_report.ConstitutionToSpec.Count})" : string.Empty;
+    private string SpecPlanBadge =>
+        _report?.SpecToPlan.Count > 0 ? $"({_report.SpecToPlan.Count})" : string.Empty;
+    private string PlanTaskBadge =>
+        _report?.PlanToTask.Count > 0 ? $"({_report.PlanToTask.Count})" : string.Empty;
+    private string GapsBadge =>
+        _report?.Gaps.Count > 0 ? $"({_report.Gaps.Count})" : string.Empty;
+    private string MatrixBadge =>
+        _report?.Matrix.Count > 0 ? $"({_report.Matrix.Count})" : string.Empty;
+
+    private string SearchPlaceholder => _tab switch
+    {
+        "const-spec" => "Search by rule ID (PP-01), title, or status…",
+        "spec-plan"  => "Search by requirement ID (FR-001) or title…",
+        "plan-task"  => "Search by plan item or task ID…",
+        "gaps"       => "Search gaps by ID, title, or description…",
+        "matrix"     => "Search matrix by rule, requirement, plan item, or task…",
+        _            => "Search…",
+    };
+
+    // ── Actions ───────────────────────────────────────────────────────────
+
+    private void RunAnalysis()
+    {
+        ConstitutionDocument? constitution = null;
+        SpecTree?             spec         = null;
+        PlanDocument?         plan         = null;
+        TaskTree?             tasks        = null;
+
+        if (!string.IsNullOrWhiteSpace(_constitutionText))
+            constitution = ConstitutionService.Parse(_constitutionText);
+        if (!string.IsNullOrWhiteSpace(_specText))
+            spec = SpecExplorerService.Parse(_specText);
+        if (!string.IsNullOrWhiteSpace(_planText))
+            plan = PlanService.Parse(_planText);
+        if (!string.IsNullOrWhiteSpace(_taskText))
+            tasks = TaskExplorerService.Parse(_taskText);
+
+        _report         = TraceabilityService.Analyze(constitution, spec, plan, tasks);
+        DashboardSnapshot.Publish(_report);
+        _tab            = "overview";
+        _search         = string.Empty;
+        _statusFilter   = null;
+        _gapArtifactFilter = null;
+        _inputExpanded  = false;
+    }
+
+    private void SetTab(string tab)
+    {
+        _tab    = tab;
+        _search = string.Empty;
+        _statusFilter = null;
+    }
+
+    private void ToggleInputPanel() => _inputExpanded = !_inputExpanded;
+
+    // ── Renderers ─────────────────────────────────────────────────────────
+
+    private RenderFragment RenderCoverageSection(string title, TraceabilityCoverageStats stats, string navTab) => __builder =>
+    {
+        __builder.OpenElement(0, "div");
+        __builder.AddAttribute(1, "class", "at-coverage-section");
+
+        __builder.OpenElement(2, "div");
+        __builder.AddAttribute(3, "class", "at-coverage-section-title");
+        __builder.AddContent(4, title);
+        __builder.CloseElement();
+
+        __builder.OpenElement(5, "div");
+        __builder.AddAttribute(6, "class", "at-coverage-stat-grid");
+
+        void AddCard(string label, int count, string variant)
+        {
+            __builder.OpenElement(7, "div");
+            __builder.AddAttribute(8, "class", $"at-coverage-stat-card is-{variant}");
+            __builder.OpenElement(9, "div");
+            __builder.AddAttribute(10, "class", "at-coverage-stat-num");
+            __builder.AddContent(11, count.ToString());
+            __builder.CloseElement();
+            __builder.OpenElement(12, "div");
+            __builder.AddAttribute(13, "class", "at-coverage-stat-label");
+            __builder.AddContent(14, label);
+            __builder.CloseElement();
+            __builder.CloseElement();
+        }
+
+        AddCard("Covered",  stats.CoveredItems,  "covered");
+        AddCard("Partial",  stats.PartialItems,  "partial");
+        AddCard("Missing",  stats.MissingItems,  "missing");
+        AddCard("Orphaned", stats.OrphanedItems, "orphaned");
+
+        __builder.CloseElement();
+
+        // Coverage bar
+        var pct         = stats.CoveragePercentage;
+        var barVariant  = pct >= 80 ? string.Empty : pct >= 50 ? "is-warning" : "is-error";
+        __builder.OpenElement(15, "div");
+        __builder.AddAttribute(16, "class", "at-coverage-bar-wrap");
+
+        __builder.OpenElement(17, "div");
+        __builder.AddAttribute(18, "class", "at-coverage-bar");
+        __builder.OpenElement(19, "div");
+        __builder.AddAttribute(20, "class", $"at-coverage-bar-fill {barVariant}");
+        __builder.AddAttribute(21, "style", $"width:{pct}%");
+        __builder.CloseElement();
+        __builder.CloseElement();
+
+        __builder.OpenElement(22, "span");
+        __builder.AddAttribute(23, "class", "at-coverage-pct");
+        __builder.AddContent(24, $"{pct:0.#}%");
+        __builder.CloseElement();
+
+        __builder.CloseElement(); // bar-wrap
+        __builder.CloseElement(); // section
+    };
+
+    private static RenderFragment StatusBadge(TraceabilityStatus status) => __builder =>
+    {
+        var (css, icon, label) = status switch
+        {
+            TraceabilityStatus.Covered  => ("at-status-covered",  "✓", "Covered"),
+            TraceabilityStatus.Partial  => ("at-status-partial",  "⚡", "Partial"),
+            TraceabilityStatus.Missing  => ("at-status-missing",  "✗", "Missing"),
+            TraceabilityStatus.Orphaned => ("at-status-orphaned", "○", "Orphaned"),
+            _                           => ("at-status-orphaned", "?", status.ToString()),
+        };
+        __builder.OpenElement(0, "span");
+        __builder.AddAttribute(1, "class", $"at-status-badge {css}");
+        __builder.AddContent(2, $"{icon} {label}");
+        __builder.CloseElement();
+    };
+
+    private static string HealthStatLevel(double pct) =>
+        pct >= 80 ? "is-good" : pct >= 50 ? "is-warning" : pct > 0 ? "is-error" : string.Empty;
+
+    private static string ArtifactLabel(ArtifactType type) => type switch
+    {
+        ArtifactType.Constitution  => "Constitution",
+        ArtifactType.Specification => "Specification",
+        ArtifactType.Plan          => "Plan",
+        ArtifactType.Task          => "Task",
+        _                          => type.ToString(),
+    };
+}

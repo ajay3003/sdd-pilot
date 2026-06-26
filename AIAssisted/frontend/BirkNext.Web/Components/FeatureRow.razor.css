@@ -1,0 +1,109 @@
+.fv-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid var(--clr-border-subtle);
+    gap: 0.5rem;
+}
+
+.fv-row:last-child {
+    border-bottom: none;
+}
+
+.fv-label {
+    font-size: 0.855rem;
+    color: var(--clr-text-body);
+}
+
+.fv-badge {
+    font-size: 0.67rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0.15rem 0.45rem;
+    border-radius: var(--radius-pill);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.fv-badge-enabled {
+    background: var(--clr-success-bg);
+    color: var(--clr-success);
+}
+
+.fv-badge-disabled {
+    background: var(--clr-surface);
+    color: var(--clr-text-placeholder);
+    border: 1px solid var(--clr-border);
+}
+
+/* ── Lock state ── */
+
+.fv-locked {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--clr-text-placeholder);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.fv-lock-icon {
+    opacity: 0.55;
+    flex-shrink: 0;
+}
+
+/* ── Toggle switch ── */
+
+.fv-toggle {
+    position: relative;
+    display: inline-block;
+    width: 2.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.fv-toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.fv-toggle-track {
+    position: absolute;
+    inset: 0;
+    border-radius: 0.625rem;
+    background: var(--clr-border-input, #cbd5e1);
+    transition: background 0.15s ease;
+}
+
+.fv-toggle-track::after {
+    content: '';
+    position: absolute;
+    top: 0.175rem;
+    left: 0.175rem;
+    width: 0.9rem;
+    height: 0.9rem;
+    border-radius: 50%;
+    background: white;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    transition: transform 0.15s ease;
+}
+
+.fv-toggle input:checked ~ .fv-toggle-track {
+    background: var(--clr-success);
+}
+
+.fv-toggle input:checked ~ .fv-toggle-track::after {
+    transform: translateX(1rem);
+}
+
+.fv-toggle input:focus-visible ~ .fv-toggle-track {
+    outline: 2px solid var(--clr-primary, #6366f1);
+    outline-offset: 2px;
+}

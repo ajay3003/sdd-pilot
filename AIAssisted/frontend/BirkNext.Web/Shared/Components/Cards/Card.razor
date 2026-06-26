@@ -1,0 +1,30 @@
+@* General-purpose card with optional header, body, and footer slots.
+   Usage: <Card Title="…"><Footer>…</Footer>body content</Card> *@
+
+<div class="card">
+    @if (!string.IsNullOrWhiteSpace(Title) || Header is not null)
+    {
+        <div class="card-header">
+            @if (!string.IsNullOrWhiteSpace(Title))
+            {
+                <span class="card-title">@Title</span>
+            }
+            @Header
+        </div>
+    }
+    <div class="card-body" style="@(NoPadding ? "padding:0" : "")">
+        @ChildContent
+    </div>
+    @if (Footer is not null)
+    {
+        <div class="card-footer">@Footer</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string?         Title        { get; set; }
+    [Parameter] public RenderFragment? Header       { get; set; }
+    [Parameter] public RenderFragment? Footer       { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public bool            NoPadding    { get; set; }
+}

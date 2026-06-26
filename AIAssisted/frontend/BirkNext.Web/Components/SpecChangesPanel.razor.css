@@ -1,0 +1,176 @@
+/* ── Panel wrapper ────────────────────────────────────────────────────────── */
+
+.scp-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 0.25rem 0 2rem;
+}
+
+/* ── Create header ───────────────────────────────────────────────────────── */
+
+.scp-create-header {
+    display: flex;
+    align-items: center;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--clr-border);
+}
+
+.scp-back-btn {
+    background: transparent;
+    border: 1px solid var(--clr-border);
+    border-radius: 0.375rem;
+    color: var(--clr-text-subtle);
+    font-size: 0.82rem;
+    padding: 0.4rem 0.9rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.scp-back-btn:hover {
+    color: var(--clr-text-primary);
+    border-color: var(--clr-text-subtle);
+}
+
+/* ── KPI grid ────────────────────────────────────────────────────────────── */
+
+.scp-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.75rem;
+}
+
+.scp-kpi-card {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.5rem;
+    padding: 1rem 0.875rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.scp-kpi-card strong {
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--clr-text-primary);
+}
+
+.scp-kpi-card span {
+    font-size: 0.72rem;
+    color: var(--clr-text-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.scp-kpi-added strong    { color: #4ade80; }
+.scp-kpi-changed strong  { color: #fbbf24; }
+.scp-kpi-removed strong  { color: #f87171; }
+.scp-kpi-coverage strong { color: #fb923c; }
+.scp-kpi-traceability strong { color: #60a5fa; }
+
+/* ── Impact overview ─────────────────────────────────────────────────────── */
+
+.scp-impact-overview {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.5rem;
+    padding: 1.25rem 1.5rem;
+}
+
+.scp-impact-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    gap: 1rem;
+}
+
+.scp-impact-header h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--clr-text-heading, #0f172a);
+}
+
+.scp-impact-header span {
+    font-size: 0.78rem;
+    color: var(--clr-text-subtle);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.scp-impact-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.75rem;
+}
+
+.scp-impact-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.375rem;
+    border: 1px solid var(--clr-border);
+    background: var(--clr-bg-surface, rgba(255,255,255,0.02));
+}
+
+.scp-impact-item strong {
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.scp-impact-item span {
+    font-size: 0.7rem;
+    color: var(--clr-text-subtle);
+}
+
+.scp-impact-added strong       { color: #4ade80; }
+.scp-impact-changed strong     { color: #fbbf24; }
+.scp-impact-removed strong     { color: #f87171; }
+.scp-impact-clarification strong { color: #a78bfa; }
+.scp-impact-coverage strong    { color: #fb923c; }
+.scp-impact-traceability strong { color: #60a5fa; }
+
+/* ── Reviews section ─────────────────────────────────────────────────────── */
+
+.scp-reviews-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.scp-reviews-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.scp-reviews-header h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--clr-text-heading, #0f172a);
+}
+
+.scp-new-btn {
+    background: var(--clr-accent, #3b82f6);
+    color: #fff;
+    border: none;
+    border-radius: 0.375rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 0.45rem 1rem;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+
+.scp-new-btn:hover {
+    background: #2563eb;
+}

@@ -1,0 +1,175 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.GraphQL
+
+<section class="compare-section compare-section-summary" data-testid="delta-summary-section">
+    <div class="delta-results-heading">
+        <div>
+            <p class="section-kicker">Analysis Results</p>
+            <h2>Changes</h2>
+        </div>
+        <span>Baseline -> Updated -> Comparison -> QA Impact</span>
+    </div>
+    <div class="delta-dashboard" aria-label="Change summary" data-testid="delta-dashboard">
+        <button type="button" class="delta-summary-tile delta-added" @onclick="@(() => _activeStatus = SpecDeltaStatus.Added)">
+            <span>@AddedCount</span>
+            <small>Added</small>
+        </button>
+        <button type="button" class="delta-summary-tile delta-modified" @onclick="@(() => _activeStatus = SpecDeltaStatus.Modified)">
+            <span>@ChangedCount</span>
+            <small>Changed</small>
+        </button>
+        <button type="button" class="delta-summary-tile delta-removed" @onclick="@(() => _activeStatus = SpecDeltaStatus.Removed)">
+            <span>@RemovedCount</span>
+            <small>Removed</small>
+        </button>
+        <div class="delta-summary-tile delta-clarifications">
+            <span>@ClarificationImpactCount</span>
+            <small>Clarifications</small>
+        </div>
+        <div class="delta-summary-tile delta-coverage">
+            <span>@CoverageImpactCount</span>
+            <small>Coverage Impact</small>
+        </div>
+        <div class="delta-summary-tile delta-traceability">
+            <span>0</span>
+            <small>Traceability Impact</small>
+        </div>
+    </div>
+</section>
+
+<section class="compare-section compare-section-explorer" data-testid="change-explorer-section">
+    <div class="change-explorer-heading">
+        <div>
+            <p class="section-kicker">Review Changes</p>
+            <h2>Change Explorer</h2>
+        </div>
+    </div>
+    <div class="delta-filter-row" role="toolbar" aria-label="Change filters">
+        <span class="filter-group-label" aria-hidden="true">Type</span>
+        <button type="button"
+                class="filter-chip @(_activeKind is null ? "is-active" : "")"
+                aria-pressed="@(_activeKind is null ? "true" : "false")"
+                data-testid="filter-all-types"
+                @onclick="@(() => _activeKind = null)">All</button>
+        <button type="button"
+                class="filter-chip @(_activeKind == ScenarioKind.Requirement ? "is-active" : "")"
+                aria-pressed="@(_activeKind == ScenarioKind.Requirement ? "true" : "false")"
+                data-testid="filter-requirements"
+                @onclick="@(() => _activeKind = ScenarioKind.Requirement)">Requirements</button>
+        <button type="button"
+                class="filter-chip @(_activeKind == ScenarioKind.Test ? "is-active" : "")"
+                aria-pressed="@(_activeKind == ScenarioKind.Test ? "true" : "false")"
+                data-testid="filter-tests"
+                @onclick="@(() => _activeKind = ScenarioKind.Test)">Tests</button>
+        <button type="button"
+                class="filter-chip @(_activeKind == ScenarioKind.NeedsClarification ? "is-active" : "")"
+                aria-pressed="@(_activeKind == ScenarioKind.NeedsClarification ? "true" : "false")"
+                data-testid="filter-clarifications"
+                @onclick="@(() => _activeKind = ScenarioKind.NeedsClarification)">Clarifications</button>
+
+        <span class="filter-group-divider" aria-hidden="true"></span>
+
+        <span class="filter-group-label" aria-hidden="true">Status</span>
+        <button type="button"
+                class="filter-chip @(_activeStatus is null ? "is-active" : "")"
+                aria-pressed="@(_activeStatus is null ? "true" : "false")"
+                data-testid="filter-all-deltas"
+                @onclick="@(() => _activeStatus = null)">All</button>
+        <button type="button"
+                class="filter-chip @(_activeStatus == SpecDeltaStatus.Added ? "is-active" : "")"
+                aria-pressed="@(_activeStatus == SpecDeltaStatus.Added ? "true" : "false")"
+                data-testid="filter-added"
+                @onclick="@(() => _activeStatus = SpecDeltaStatus.Added)">Added</button>
+        <button type="button"
+                class="filter-chip @(_activeStatus == SpecDeltaStatus.Modified ? "is-active" : "")"
+                aria-pressed="@(_activeStatus == SpecDeltaStatus.Modified ? "true" : "false")"
+                data-testid="filter-modified"
+                @onclick="@(() => _activeStatus = SpecDeltaStatus.Modified)">Changed</button>
+        <button type="button"
+                class="filter-chip @(_activeStatus == SpecDeltaStatus.Removed ? "is-active" : "")"
+                aria-pressed="@(_activeStatus == SpecDeltaStatus.Removed ? "true" : "false")"
+                data-testid="filter-removed"
+                @onclick="@(() => _activeStatus = SpecDeltaStatus.Removed)">Removed</button>
+    </div>
+
+    @if (!HasFilteredResults)
+    {
+        <div class="change-explorer-empty" data-testid="change-explorer-empty">
+            <p>No changes match the current filters.</p>
+        </div>
+    }
+    else
+    {
+        var reqVisible  = GetVisibleDeltas(ScenarioKind.Requirement,        Result.RequirementDeltas);
+        var testVisible = GetVisibleDeltas(ScenarioKind.Test,               Result.TestDeltas);
+        var clarVisible = GetVisibleDeltas(ScenarioKind.NeedsClarification, Result.ClarificationDeltas);
+        <div class="delta-section-grid">
+            @if (reqVisible.Count > 0)
+            {
+                <section class="delta-section">
+                    <h3 class="delta-section-heading">
+                        Requirements
+                        <span class="delta-section-count">@reqVisible.Count</span>
+                    </h3>
+                    @foreach (var delta in reqVisible)
+                    {
+                        <DeltaResultCard Delta="delta" />
+                    }
+                </section>
+            }
+            @if (testVisible.Count > 0)
+            {
+                <section class="delta-section">
+                    <h3 class="delta-section-heading">
+                        Tests
+                        <span class="delta-section-count">@testVisible.Count</span>
+                    </h3>
+                    @foreach (var delta in testVisible)
+                    {
+                        <DeltaResultCard Delta="delta" />
+                    }
+                </section>
+            }
+            @if (clarVisible.Count > 0)
+            {
+                <section class="delta-section">
+                    <h3 class="delta-section-heading">
+                        Clarifications
+                        <span class="delta-section-count">@clarVisible.Count</span>
+                    </h3>
+                    @foreach (var delta in clarVisible)
+                    {
+                        <DeltaResultCard Delta="delta" />
+                    }
+                </section>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public required SpecComparisonResult Result { get; set; }
+
+    private ScenarioKind? _activeKind;
+    private SpecDeltaStatus? _activeStatus;
+
+    private int AddedCount => Result.Summary.AddedRequirements + Result.Summary.AddedTests + Result.Summary.AddedClarifications;
+    private int ChangedCount => Result.Summary.ModifiedRequirements;
+    private int RemovedCount => Result.Summary.RemovedRequirements + Result.Summary.RemovedTests + Result.Summary.RemovedClarifications;
+    private int ClarificationImpactCount => Result.Summary.NewClarificationRisks + Result.Summary.AddedClarifications + Result.Summary.RemovedClarifications;
+    private int CoverageImpactCount => Result.Summary.PotentiallyImpactedTests + Result.Summary.UncoveredRequirements;
+
+    private IReadOnlyList<SpecDeltaItem> GetVisibleDeltas(ScenarioKind kind, IReadOnlyList<SpecDeltaItem> deltas)
+    {
+        if (_activeKind is not null && _activeKind != kind)
+            return [];
+        return deltas
+            .Where(d => _activeStatus is null || d.Status == _activeStatus)
+            .ToList();
+    }
+
+    private bool HasFilteredResults =>
+        GetVisibleDeltas(ScenarioKind.Requirement,       Result.RequirementDeltas).Count > 0 ||
+        GetVisibleDeltas(ScenarioKind.Test,              Result.TestDeltas).Count > 0 ||
+        GetVisibleDeltas(ScenarioKind.NeedsClarification, Result.ClarificationDeltas).Count > 0;
+}

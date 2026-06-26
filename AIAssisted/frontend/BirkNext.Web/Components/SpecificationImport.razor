@@ -1,0 +1,244 @@
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="spec-import @(_state == ImportState.FileLoaded ? "has-file" : "")
+                         @(_state == ImportState.Error ? "has-error" : "")
+                         @(IsDragOver ? "drag-over" : "")
+                         @(IsDisabled ? "is-disabled" : "")"
+     @ref="_dropZoneRef"
+     @ondragenter="HandleDragEnter"
+     @ondragleave="HandleDragLeave"
+     @ondragover:preventDefault="true"
+     data-testid="import-zone">
+
+    @if (_state == ImportState.FileLoaded)
+    {
+        <div class="import-file-loaded">
+            <span class="import-file-icon" aria-hidden="true">&#128196;</span>
+            <span class="import-file-name" data-testid="import-file-name">@_fileName</span>
+            <span class="import-file-size" data-testid="import-file-size">@FormatFileSize(_fileSize)</span>
+            <button type="button" class="import-remove btn-secondary"
+                    @onclick="HandleRemove" data-testid="import-remove"
+                    disabled="@IsDisabled">Remove</button>
+            <span class="import-file-subtitle">Content loaded &#8212; edit the text below if needed</span>
+            @if (_showMultipleFilesWarning)
+            {
+                <span class="import-multi-warn" role="status" aria-live="polite">
+                    &#9888; Multiple files detected &#8212; only the first was used.
+                </span>
+            }
+        </div>
+    }
+    else if (_state == ImportState.Error)
+    {
+        <div class="import-error notification notification-error" data-testid="import-error" role="alert">
+            <span>@_errorMessage</span>
+            <button type="button" class="import-try-again" @onclick="HandleTryAgain">Try again</button>
+        </div>
+    }
+    else if (_state == ImportState.Reading)
+    {
+        <div class="import-reading loading-state" data-testid="import-reading">Reading file&#8230;</div>
+    }
+    else
+    {
+        <InputFile id="@InputId" accept=".md,.txt" OnChange="HandleFileSelected"
+                   class="import-file-input-hidden"
+                   style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none;"
+                   disabled="@IsDisabled"
+                   data-testid="import-file-input" />
+        <label for="@InputId" class="import-dropzone-label">
+            <span class="import-icon" aria-hidden="true">&#128194;</span>
+            @if (IsDragOver)
+            {
+                <span class="import-primary-text">Drop to import</span>
+            }
+            else
+            {
+                <span class="import-primary-text">Drop a <strong>.md</strong> or <strong>.txt</strong> file here</span>
+            }
+            <span class="import-secondary-text">or <span class="import-browse-link">click to browse</span></span>
+        </label>
+    }
+</div>
+
+@code {
+    [Parameter] public EventCallback<string> OnFileImported { get; set; }
+    [Parameter] public EventCallback OnFileRemoved { get; set; }
+    [Parameter] public bool IsDisabled { get; set; }
+    [Parameter] public string InputId { get; set; } = "spec-file-input";
+
+    private enum ImportState { Idle, Reading, FileLoaded, Error }
+
+    private ImportState _state = ImportState.Idle;
+    private int _dragCounter;
+    private string? _fileName;
+    private long _fileSize;
+    private string? _errorMessage;
+    private bool _showMultipleFilesWarning;
+    private ElementReference _dropZoneRef;
+    private DotNetObjectReference<SpecificationImport>? _dotNetRef;
+
+    private bool IsDragOver => _dragCounter > 0 && _state == ImportState.Idle;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("fileImport.initDropZone", _dropZoneRef, _dotNetRef);
+        }
+    }
+
+    public void Dispose() => _dotNetRef?.Dispose();
+
+    public void HandleDragEnter() => _dragCounter++;
+
+    private void HandleDragLeave()
+    {
+        if (--_dragCounter < 0) _dragCounter = 0;
+    }
+
+    [JSInvokable]
+    public async Task OnFileDrop(string name, long size, string content)
+    {
+        _dragCounter = 0;
+        _state = ImportState.Reading;
+        await InvokeAsync(StateHasChanged);
+        await HandleFileContent(name, size, content);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnFileDropError()
+    {
+        _dragCounter = 0;
+        _errorMessage = "Could not read the dropped file. It may be binary or use an encoding your browser cannot decode — try re-saving the file as UTF-8.";
+        _state = ImportState.Error;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        _dragCounter = 0;
+        _showMultipleFilesWarning = e.FileCount > 1;
+        var file = e.File;
+        try
+        {
+            var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+            if (ext is not (".md" or ".txt"))
+            {
+                ShowError($"Only .md and .txt files are supported. \"{ext}\" files cannot be imported.");
+                return;
+            }
+            if (file.Size > 1_048_576)
+            {
+                ShowError($"File is too large ({FormatFileSize(file.Size)}). Please choose a file under 1 MB.");
+                return;
+            }
+
+            // Buffer all bytes into memory before calling StateHasChanged().
+            // Blazor WASM resets the JS file-tracking dictionary (_blazorFilesById) when
+            // the InputFile element leaves the DOM during a re-render.  Any OpenReadStream
+            // chunk read that spans an await after StateHasChanged() fires will throw a
+            // JSException.  Reading into MemoryStream first breaks this dependency.
+            byte[] fileBytes;
+            using (var fileStream = file.OpenReadStream(maxAllowedSize: 1_048_576))
+            {
+                using var ms = new MemoryStream((int)file.Size);
+                await fileStream.CopyToAsync(ms);
+                fileBytes = ms.ToArray();
+            }
+
+            _state = ImportState.Reading;
+            StateHasChanged();
+
+            using var reader = new StreamReader(
+                new MemoryStream(fileBytes),
+                System.Text.Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: true);
+            var content = await reader.ReadToEndAsync();
+            await HandleFileContent(file.Name, file.Size, content);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[SpecificationImport] {ex.GetType().FullName}: {ex.Message}");
+            ShowError("Could not read the file. Ensure it is a plain-text .md or .txt file saved as UTF-8 or UTF-16 and try again.");
+        }
+    }
+
+    private async Task HandleFileContent(string name, long size, string rawContent)
+    {
+        var ext = Path.GetExtension(name).ToLowerInvariant();
+        if (ext is not (".md" or ".txt"))
+        {
+            ShowError($"Only .md and .txt files are supported. \"{ext}\" files cannot be imported.");
+            return;
+        }
+        if (size > 1_048_576)
+        {
+            ShowError($"File is too large ({FormatFileSize(size)}). Please choose a file under 1 MB.");
+            return;
+        }
+
+        var content = NormalizeLineEndings(TrimBom(rawContent));
+        if (content.Contains('\0'))
+        {
+            ShowError("Binary content or encoding error detected — only plain-text .md and .txt files can be imported. Try re-saving the file as UTF-8.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            ShowError("The file appears to be empty. Please choose a file that contains text.");
+            return;
+        }
+
+        _fileName = name;
+        _fileSize = size;
+        _state = ImportState.FileLoaded;
+        await OnFileImported.InvokeAsync(content);
+    }
+
+    private async Task HandleRemove()
+    {
+        _state = ImportState.Idle;
+        _fileName = null;
+        _fileSize = 0;
+        _dragCounter = 0;
+        _showMultipleFilesWarning = false;
+        await OnFileRemoved.InvokeAsync();
+    }
+
+    public void HandleTryAgain()
+    {
+        _state = ImportState.Idle;
+        _errorMessage = null;
+        _dragCounter = 0;
+        _showMultipleFilesWarning = false;
+    }
+
+    public void Reset()
+    {
+        _state = ImportState.Idle;
+        _fileName = null;
+        _fileSize = 0;
+        _dragCounter = 0;
+        _errorMessage = null;
+        _showMultipleFilesWarning = false;
+    }
+
+    private void ShowError(string msg)
+    {
+        _errorMessage = msg;
+        _state = ImportState.Error;
+    }
+
+    private static string TrimBom(string s) => s.Length > 0 && s[0] == '﻿' ? s[1..] : s;
+
+    private static string NormalizeLineEndings(string s) => s.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    private static string FormatFileSize(long bytes) =>
+        bytes >= 1024
+            ? $"{(bytes / 1024.0).ToString("F1", System.Globalization.CultureInfo.InvariantCulture)} KB"
+            : $"{bytes} bytes";
+}

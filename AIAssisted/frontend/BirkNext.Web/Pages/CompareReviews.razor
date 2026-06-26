@@ -1,0 +1,179 @@
+@page "/compare/reviews"
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@using BirkNext.Web.Components
+@using BirkNext.Web.GraphQL
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IBirkNextClient Client
+@inject NavigationManager NavigationManager
+
+<PageTitle>Delta Reviews</PageTitle>
+
+<div class="delta-reviews-shell">
+    <PageHeader Title="Delta Review History"
+                Description="Review saved specification comparisons and track QA impact across versions." />
+
+    <div class="delta-kpi-grid" aria-label="Delta review executive summary">
+        <MetricCard Value="@_reviews.Count.ToString()" Label="Saved Delta Reviews" />
+        <MetricCard Value="@AddedRequirements.ToString()" Label="Added Requirements" Variant="success" />
+        <MetricCard Value="@ChangedRequirements.ToString()" Label="Changed Requirements" Variant="warning" />
+        <MetricCard Value="@RemovedRequirements.ToString()" Label="Removed Requirements" Variant="danger" />
+        <MetricCard Value="@CoverageImpactItems.ToString()" Label="Coverage Impact Items" Variant="info" />
+        <MetricCard Value="@TraceabilityImpactItems.ToString()" Label="Traceability Impact Items" />
+    </div>
+
+    <section class="impact-overview-panel" aria-label="Impact overview">
+        <div class="impact-overview-header">
+            <div>
+                <p class="section-kicker">Impact Overview</p>
+                <h2>Change Impact Summary</h2>
+            </div>
+            <span>@RiskReviewCount review@(Plural(RiskReviewCount)) needing attention</span>
+        </div>
+        <div class="impact-overview-grid">
+            <div class="impact-item impact-added"><strong>@AddedRequirements</strong><span>Requirements Added</span></div>
+            <div class="impact-item impact-changed"><strong>@ChangedRequirements</strong><span>Requirements Changed</span></div>
+            <div class="impact-item impact-removed"><strong>@RemovedRequirements</strong><span>Requirements Removed</span></div>
+            <div class="impact-item impact-clarification"><strong>@ClarificationsAdded</strong><span>Clarifications Added</span></div>
+            <div class="impact-item impact-coverage"><strong>@CoverageGapsIntroduced</strong><span>Coverage Gaps Introduced</span></div>
+            <div class="impact-item impact-traceability"><strong>@TraceabilityImpactItems</strong><span>Traceability Links Affected</span></div>
+        </div>
+    </section>
+
+    <section class="compare-reviews-section">
+        <div class="reviews-section-header">
+            <div>
+                <p class="section-kicker">Review Timeline</p>
+                <h2>Delta Reviews</h2>
+            </div>
+            <a class="btn-primary" href="compare">Compare Specifications</a>
+        </div>
+        @if (_isLoading)
+        {
+            <p class="loading-state">Loading reviews...</p>
+        }
+        else if (_loadError is not null)
+        {
+            <div class="notification notification-error" role="alert" data-testid="reviews-load-error">
+                @_loadError
+            </div>
+        }
+        else
+        {
+            <QaDeltaReviewList Reviews="_reviews"
+                               OnDeleteRequested="HandleDeleteAsync"
+                               DeletingId="_deletingId"
+                               DeleteErrors="_deleteErrors" />
+        }
+    </section>
+</div>
+
+@code {
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+    private IReadOnlyList<IGetQaDeltaReviews_QaDeltaReviews> _reviews = [];
+    private bool _isLoading;
+    private string? _loadError;
+    private string? _deletingId;
+    private Dictionary<string, string> _deleteErrors = [];
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
+
+    private IReadOnlyList<DeltaSummaryDto> Summaries => _reviews
+        .Select(r => TryParseSummary(r.SummaryJson))
+        .Where(s => s is not null)
+        .Cast<DeltaSummaryDto>()
+        .ToList();
+
+    private int AddedRequirements => Summaries.Sum(s => s.AddedRequirements);
+    private int ChangedRequirements => Summaries.Sum(s => s.ModifiedRequirements);
+    private int RemovedRequirements => Summaries.Sum(s => s.RemovedRequirements);
+    private int CoverageImpactItems => Summaries.Sum(s => s.PotentiallyImpactedTests + s.UncoveredRequirements);
+    private int TraceabilityImpactItems => 0;
+    private int ClarificationsAdded => Summaries.Sum(s => s.AddedClarifications + s.NewClarificationRisks);
+    private int CoverageGapsIntroduced => Summaries.Sum(s => s.UncoveredRequirements);
+    private int RiskReviewCount => Summaries.Count(s => s.RemovedRequirements > 0 || s.UncoveredRequirements > 0 || s.PotentiallyImpactedTests > 0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        NavigationManager.NavigateTo("/spec-drift?tab=changes", replace: true);
+        await LoadReviewsAsync();
+    }
+
+    private async Task LoadReviewsAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.GetQaDeltaReviews.ExecuteAsync(ProjectId);
+            if (result.Errors is { Count: > 0 })
+            {
+                _loadError = "We couldn't load delta reviews right now. Please try again later.";
+                return;
+            }
+
+            if (result.Data is { } data)
+            {
+                _reviews = data.QaDeltaReviews.ToList();
+            }
+            else
+            {
+                _loadError = "We couldn't load delta reviews right now. Please try again later.";
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = "We couldn't load delta reviews right now. Please try again later.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task HandleDeleteAsync(string id)
+    {
+        _deletingId = id;
+        _deleteErrors.Remove(id);
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.DeleteQaDeltaReview.ExecuteAsync(id);
+
+            if (result.Data?.DeleteQaDeltaReview is { Success: true })
+            {
+                _reviews = _reviews.Where(r => r.Id != id).ToList();
+            }
+            else
+            {
+                var errorMsg = result.Data?.DeleteQaDeltaReview?.Errors?.FirstOrDefault()?.Message
+                    ?? "Something went wrong. Please try again.";
+                _deleteErrors[id] = errorMsg;
+            }
+        }
+        catch (Exception)
+        {
+            _deleteErrors[id] = "Something went wrong. Please try again.";
+        }
+        finally
+        {
+            _deletingId = null;
+        }
+    }
+
+    private static DeltaSummaryDto? TryParseSummary(string summaryJson)
+    {
+        try { return JsonSerializer.Deserialize<DeltaSummaryDto>(summaryJson, JsonOptions); }
+        catch { return null; }
+    }
+
+    private static string Plural(int count) => count == 1 ? string.Empty : "s";
+}

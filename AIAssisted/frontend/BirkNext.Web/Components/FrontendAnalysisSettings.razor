@@ -1,0 +1,1086 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IFrontendAnalysisSettingsService FaSettings
+@inject IJSRuntime JS
+
+@* ── Load state ───────────────────────────────────────────────────────────── *@
+@if (!FaSettings.IsLoaded)
+{
+    <p class="loading-state">Loading frontend analysis settings…</p>
+    return;
+}
+
+@* ── Notifications ────────────────────────────────────────────────────────── *@
+@if (_saveSuccess is not null)
+{
+    <div class="notification notification-success" role="status">@_saveSuccess</div>
+}
+@if (_saveError is not null)
+{
+    <div class="notification notification-error" role="alert">@_saveError</div>
+}
+
+@* ── Active profile summary card ─────────────────────────────────────────── *@
+<div class="fa-active-card">
+    @if (FaSettings.ActiveProfile is { } ap)
+    {
+        <div class="fa-active-card-header">
+            <div class="fa-active-card-left">
+                <span class="fa-env-badge fa-env-badge-@ap.EnvironmentType.ToString().ToLowerInvariant()">@ap.EnvironmentType</span>
+                <span class="fa-active-card-name">@ap.Name</span>
+                <span class="fa-active-badge">Active Profile</span>
+            </div>
+        </div>
+        <div class="fa-active-card-grid">
+            <div class="fa-active-stat">
+                <span class="fa-active-stat-label">Target URL</span>
+                <span class="fa-active-stat-value fa-active-stat-mono">@(ap.TargetUrl ?? "—")</span>
+            </div>
+            <div class="fa-active-stat">
+                <span class="fa-active-stat-label">Authentication</span>
+                <span class="fa-active-stat-value">@ap.Authentication.AuthenticationType</span>
+            </div>
+            <div class="fa-active-stat">
+                <span class="fa-active-stat-label">Thresholds</span>
+                <span class="fa-active-stat-value">@ap.Performance.Mode</span>
+            </div>
+            @{ var _apv = FaSettings.ValidateProfile(ap); }
+            <div class="fa-active-stat">
+                <span class="fa-active-stat-label">Validation</span>
+                <span class="fa-active-stat-value @(_apv.IsValid ? "fa-stat-ok" : "fa-stat-err")">
+                    @(_apv.IsValid ? "Valid" : $"{_apv.Errors.Count} error(s)")
+                </span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <p class="fa-active-bar-none">No active profile selected. Select a profile below and click Set as Active.</p>
+    }
+</div>
+
+@* ── Profile list ─────────────────────────────────────────────────────────── *@
+<div class="fa-profiles-row">
+    <div class="fa-profiles-list">
+        @foreach (var p in FaSettings.Settings.Profiles)
+        {
+            <button class="fa-profile-chip @(p.Id == _selectedProfileId ? "fa-profile-chip-selected" : "")"
+                    @onclick="() => SelectProfile(p.Id)">
+                <span class="fa-env-dot fa-env-dot-@p.EnvironmentType.ToString().ToLowerInvariant()"></span>
+                @p.Name
+                @if (p.Id == FaSettings.Settings.ActiveProfileId)
+                {
+                    <span class="fa-active-badge">Active</span>
+                }
+            </button>
+        }
+    </div>
+    <SecondaryButton OnClick="OpenCreateDialog" Class="fa-btn-create">+ Create Profile</SecondaryButton>
+</div>
+
+@* ── Profile detail ───────────────────────────────────────────────────────── *@
+@if (SelectedProfile is { } profile)
+{
+    <div class="fa-profile-detail">
+
+        @* ── Header ── *@
+        <div class="fa-detail-header">
+            <div class="fa-detail-header-left">
+                <span class="fa-env-badge fa-env-badge-@profile.EnvironmentType.ToString().ToLowerInvariant()">@profile.EnvironmentType</span>
+                <span class="fa-detail-name">@profile.Name</span>
+                @if (profile.Id == FaSettings.Settings.ActiveProfileId)
+                {
+                    <span class="fa-active-badge fa-active-badge-lg">Active</span>
+                }
+            </div>
+            <div class="fa-detail-header-actions">
+                @if (_isEditMode)
+                {
+                    <SecondaryButton OnClick="CancelEdit" Disabled="@_isSaving">Cancel</SecondaryButton>
+                    <PrimaryButton OnClick="SaveProfileAsync" Disabled="@_isSaving">
+                        @(_isSaving ? "Saving…" : "Save Profile")
+                    </PrimaryButton>
+                }
+                else
+                {
+                    @if (profile.Id != FaSettings.Settings.ActiveProfileId)
+                    {
+                        <SecondaryButton OnClick="SetActiveProfileAsync">Set as Active</SecondaryButton>
+                    }
+                    <SecondaryButton OnClick="DuplicateProfileAsync">Duplicate</SecondaryButton>
+                    <SecondaryButton OnClick="EnterEditMode">Edit Profile</SecondaryButton>
+                    <DangerButton OnClick="@(() => _showDeleteConfirm = true)"
+                                  Disabled="@(FaSettings.Settings.Profiles.Count <= 1)">Delete</DangerButton>
+                }
+            </div>
+        </div>
+
+        @* ── Section tabs ── *@
+        <div class="fa-section-tabs" role="tablist">
+            @foreach (var (key, label) in Tabs)
+            {
+                <button class="fa-tab @(_activeTab == key ? "fa-tab-active" : "")"
+                        role="tab"
+                        aria-selected="@(_activeTab == key)"
+                        @onclick="() => _activeTab = key">
+                    @label
+                </button>
+            }
+        </div>
+
+        @* ── Tab content ── *@
+        <div class="fa-tab-content">
+
+            @* ── General ── *@
+            @if (_activeTab == "general")
+            {
+                @if (_isEditMode && _editProfile is not null)
+                {
+                    <div class="fa-form-grid">
+                        <div class="form-field">
+                            <label class="fa-label">Profile Name <span class="wsr-required">*</span></label>
+                            <input type="text" class="form-control" @bind="_editProfile.Name" />
+                        </div>
+                        <div class="form-field">
+                            <label class="fa-label">Environment Type</label>
+                            <select class="form-control" @bind="_editProfile.EnvironmentType">
+                                @foreach (var env in Enum.GetValues<FrontendEnvironmentType>())
+                                {
+                                    <option value="@env">@env</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Description <span class="form-optional">(optional)</span></label>
+                            <input type="text" class="form-control" @bind="_editProfile.Description" />
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Notes <span class="form-optional">(optional)</span></label>
+                            <textarea class="form-control" rows="3" @bind="_editProfile.Notes"></textarea>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <dl class="fa-detail-list">
+                        <div class="fa-dl-row"><dt>Profile Name</dt><dd>@profile.Name</dd></div>
+                        <div class="fa-dl-row"><dt>Environment Type</dt><dd>@profile.EnvironmentType</dd></div>
+                        <div class="fa-dl-row"><dt>Description</dt><dd>@(profile.Description ?? "No description")</dd></div>
+                        <div class="fa-dl-row"><dt>Notes</dt><dd>@(profile.Notes ?? "No notes")</dd></div>
+                    </dl>
+                }
+            }
+
+            @* ── Target Application ── *@
+            @if (_activeTab == "target")
+            {
+                @if (_isEditMode && _editProfile is not null)
+                {
+                    <div class="fa-form-grid">
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Target URL</label>
+                            <input type="url" class="form-control" placeholder="https://myapp.example.com" @bind="_editProfile.TargetUrl" />
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Expected API Gateway <span class="form-optional">(optional)</span></label>
+                            <input type="url" class="form-control" placeholder="https://apim.example.com" @bind="_editProfile.ExpectedApiGateway" />
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Expected CDN <span class="form-optional">(optional)</span></label>
+                            <input type="url" class="form-control" placeholder="https://cdn.example.com" @bind="_editProfile.ExpectedCdn" />
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Allowed REST Hosts <span class="form-optional">(one per line)</span></label>
+                            <textarea class="form-control" rows="3"
+                                      value="@ListToText(_editProfile.AllowedRestHosts)"
+                                      @onchange="e => _editProfile.AllowedRestHosts = TextToList(e.Value?.ToString())"></textarea>
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Allowed GraphQL Endpoints <span class="form-optional">(one per line)</span></label>
+                            <textarea class="form-control" rows="3"
+                                      value="@ListToText(_editProfile.AllowedGraphQlEndpoints)"
+                                      @onchange="e => _editProfile.AllowedGraphQlEndpoints = TextToList(e.Value?.ToString())"></textarea>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <dl class="fa-detail-list">
+                        <div class="fa-dl-row"><dt>Target URL</dt><dd>@(profile.TargetUrl ?? "—")</dd></div>
+                        <div class="fa-dl-row"><dt>Expected API Gateway</dt><dd>@(profile.ExpectedApiGateway ?? "—")</dd></div>
+                        <div class="fa-dl-row"><dt>Expected CDN</dt><dd>@(profile.ExpectedCdn ?? "—")</dd></div>
+                        <div class="fa-dl-row"><dt>Allowed REST Hosts</dt><dd>@HostList(profile.AllowedRestHosts)</dd></div>
+                        <div class="fa-dl-row"><dt>Allowed GraphQL Endpoints</dt><dd>@HostList(profile.AllowedGraphQlEndpoints)</dd></div>
+                    </dl>
+                }
+            }
+
+            @* ── Authentication ── *@
+            @if (_activeTab == "auth")
+            {
+                <p class="fa-section-note">
+                    These settings describe expected authentication behaviour only. No credentials are stored or used here.
+                    Secrets, passwords, tokens, and client secrets must never be entered.
+                </p>
+                @if (_isEditMode && _editProfile is not null)
+                {
+                    var auth = _editProfile.Authentication;
+                    <div class="fa-form-grid">
+                        <div class="form-field">
+                            <label class="fa-label">Authentication Type</label>
+                            <select class="form-control" @bind="auth.AuthenticationType">
+                                @foreach (var t in Enum.GetValues<FrontendAuthenticationType>())
+                                {
+                                    <option value="@t">@t</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-field fa-field-checks">
+                            <label class="fa-check-row">
+                                <input type="checkbox" @bind="auth.RequiresAuthentication" />
+                                <span>Requires Authentication</span>
+                            </label>
+                            <label class="fa-check-row">
+                                <input type="checkbox" @bind="auth.UseExistingBrowserSession" />
+                                <span>Use Existing Browser Session</span>
+                            </label>
+                            <label class="fa-check-row">
+                                <input type="checkbox" @bind="auth.AutomaticallyOpenLoginPage" />
+                                <span>Automatically Open Login Page</span>
+                            </label>
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Expected Authority <span class="form-optional">(optional)</span></label>
+                            <input type="url" class="form-control" placeholder="https://login.microsoftonline.com/…" @bind="auth.ExpectedAuthority" />
+                        </div>
+                        <div class="form-field">
+                            <label class="fa-label">Expected Tenant <span class="form-optional">(optional)</span></label>
+                            <input type="text" class="form-control" placeholder="00000000-0000-0000-0000-000000000000" @bind="auth.ExpectedTenant" />
+                        </div>
+                        <div class="form-field">
+                            <label class="fa-label">Expected Client ID <span class="form-optional">(optional)</span></label>
+                            <input type="text" class="form-control" placeholder="00000000-0000-0000-0000-000000000000" @bind="auth.ExpectedClientId" />
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Allowed Redirect URLs <span class="form-optional">(one per line)</span></label>
+                            <textarea class="form-control" rows="3"
+                                      value="@ListToText(auth.AllowedRedirectUrls)"
+                                      @onchange="e => auth.AllowedRedirectUrls = TextToList(e.Value?.ToString())"></textarea>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    var auth = profile.Authentication;
+                    <dl class="fa-detail-list">
+                        <div class="fa-dl-row"><dt>Authentication Type</dt><dd>@auth.AuthenticationType</dd></div>
+                        <div class="fa-dl-row"><dt>Requires Authentication</dt><dd>@BoolLabel(auth.RequiresAuthentication)</dd></div>
+                        <div class="fa-dl-row"><dt>Use Existing Browser Session</dt><dd>@BoolLabel(auth.UseExistingBrowserSession)</dd></div>
+                        <div class="fa-dl-row"><dt>Automatically Open Login Page</dt><dd>@BoolLabel(auth.AutomaticallyOpenLoginPage)</dd></div>
+                        <div class="fa-dl-row"><dt>Expected Authority</dt><dd>@(auth.ExpectedAuthority ?? "—")</dd></div>
+                        <div class="fa-dl-row"><dt>Expected Tenant</dt><dd>@(string.IsNullOrWhiteSpace(auth.ExpectedTenant) ? "—" : "Configured")</dd></div>
+                        <div class="fa-dl-row"><dt>Expected Client ID</dt><dd>@(string.IsNullOrWhiteSpace(auth.ExpectedClientId) ? "—" : "Configured")</dd></div>
+                        <div class="fa-dl-row"><dt>Allowed Redirect URLs</dt><dd>@HostList(auth.AllowedRedirectUrls)</dd></div>
+                    </dl>
+                }
+            }
+
+            @* ── Performance Thresholds ── *@
+            @if (_activeTab == "performance")
+            {
+                <p class="fa-section-note">
+                    These are QA baseline values intended for enterprise Blazor WASM applications.
+                    Adjust them after measuring your own application's baseline.
+                </p>
+                @if (_isEditMode && _editProfile is not null)
+                {
+                    <div class="fa-threshold-presets">
+                        <span class="fa-threshold-mode-label">
+                            Mode: <strong>@_editProfile.Performance.Mode</strong>
+                        </span>
+                        <button class="btn-secondary fa-btn-sm" @onclick="ApplyDefaultPreset">Set to Default</button>
+                        <button class="btn-secondary fa-btn-sm" @onclick="ApplyStrictPreset">Set to Strict Defaults</button>
+                    </div>
+                    <div class="fa-threshold-grid">
+                        <div class="fa-threshold-group">
+                            <div class="fa-threshold-group-title">Startup</div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum Startup Size</label>
+                                <input type="number" class="form-control fa-threshold-input" step="0.5" min="0"
+                                       value="@ToMB(_editProfile.Performance.MaxStartupSizeBytes)"
+                                       @onchange="e => SetMaxStartupSizeMb(e.Value)" />
+                                <span class="fa-threshold-unit">MB</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum Startup Requests</label>
+                                <input type="number" class="form-control fa-threshold-input" min="1"
+                                       @bind="_editProfile.Performance.MaxStartupRequests"
+                                       @bind:after="MarkThresholdsCustom" />
+                                <span class="fa-threshold-unit">requests</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum Startup API Calls</label>
+                                <input type="number" class="form-control fa-threshold-input" min="1"
+                                       @bind="_editProfile.Performance.MaxStartupApiCalls"
+                                       @bind:after="MarkThresholdsCustom" />
+                                <span class="fa-threshold-unit">calls</span>
+                            </div>
+                        </div>
+                        <div class="fa-threshold-group">
+                            <div class="fa-threshold-group-title">Payloads</div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum REST Payload</label>
+                                <input type="number" class="form-control fa-threshold-input" step="10" min="0"
+                                       value="@ToKB(_editProfile.Performance.MaxRestPayloadBytes)"
+                                       @onchange="e => SetMaxRestPayloadKb(e.Value)" />
+                                <span class="fa-threshold-unit">KB</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum GraphQL Payload</label>
+                                <input type="number" class="form-control fa-threshold-input" step="10" min="0"
+                                       value="@ToKB(_editProfile.Performance.MaxGraphQlPayloadBytes)"
+                                       @onchange="e => SetMaxGraphQlPayloadKb(e.Value)" />
+                                <span class="fa-threshold-unit">KB</span>
+                            </div>
+                        </div>
+                        <div class="fa-threshold-group">
+                            <div class="fa-threshold-group-title">Latency</div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum Average API Latency</label>
+                                <input type="number" class="form-control fa-threshold-input" min="1"
+                                       @bind="_editProfile.Performance.MaxAverageApiLatencyMs"
+                                       @bind:after="MarkThresholdsCustom" />
+                                <span class="fa-threshold-unit">ms</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum Single Request Latency</label>
+                                <input type="number" class="form-control fa-threshold-input" min="1"
+                                       @bind="_editProfile.Performance.MaxSingleRequestLatencyMs"
+                                       @bind:after="MarkThresholdsCustom" />
+                                <span class="fa-threshold-unit">ms</span>
+                            </div>
+                        </div>
+                        <div class="fa-threshold-group">
+                            <div class="fa-threshold-group-title">Bundle Sizes</div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum WASM Runtime Size</label>
+                                <input type="number" class="form-control fa-threshold-input" step="0.5" min="0"
+                                       value="@ToMB(_editProfile.Performance.MaxWasmRuntimeSizeBytes)"
+                                       @onchange="e => SetMaxWasmRuntimeSizeMb(e.Value)" />
+                                <span class="fa-threshold-unit">MB</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum Framework Size</label>
+                                <input type="number" class="form-control fa-threshold-input" step="0.5" min="0"
+                                       value="@ToMB(_editProfile.Performance.MaxFrameworkSizeBytes)"
+                                       @onchange="e => SetMaxFrameworkSizeMb(e.Value)" />
+                                <span class="fa-threshold-unit">MB</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum Application Assembly Size</label>
+                                <input type="number" class="form-control fa-threshold-input" step="0.5" min="0"
+                                       value="@ToMB(_editProfile.Performance.MaxApplicationAssemblySizeBytes)"
+                                       @onchange="e => SetMaxAppAssemblySizeMb(e.Value)" />
+                                <span class="fa-threshold-unit">MB</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum Individual Asset Size</label>
+                                <input type="number" class="form-control fa-threshold-input" step="0.5" min="0"
+                                       value="@ToMB(_editProfile.Performance.MaxIndividualAssetSizeBytes)"
+                                       @onchange="e => SetMaxIndividualAssetSizeMb(e.Value)" />
+                                <span class="fa-threshold-unit">MB</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    var perf = profile.Performance;
+                    <div class="fa-threshold-mode-pill fa-threshold-mode-pill-@perf.Mode.ToString().ToLowerInvariant()">
+                        @perf.Mode Thresholds
+                    </div>
+                    <div class="fa-threshold-card-groups">
+                        <div class="fa-threshold-card">
+                            <div class="fa-threshold-card-title">Startup</div>
+                            <div class="fa-threshold-display-row"><span>Startup Size</span><strong>@ToMB(perf.MaxStartupSizeBytes) MB</strong></div>
+                            <div class="fa-threshold-display-row"><span>Startup Requests</span><strong>@perf.MaxStartupRequests</strong></div>
+                            <div class="fa-threshold-display-row"><span>Startup API Calls</span><strong>@perf.MaxStartupApiCalls</strong></div>
+                        </div>
+                        <div class="fa-threshold-card">
+                            <div class="fa-threshold-card-title">Payload</div>
+                            <div class="fa-threshold-display-row"><span>REST Payload</span><strong>@ToKB(perf.MaxRestPayloadBytes) KB</strong></div>
+                            <div class="fa-threshold-display-row"><span>GraphQL Payload</span><strong>@ToKB(perf.MaxGraphQlPayloadBytes) KB</strong></div>
+                        </div>
+                        <div class="fa-threshold-card">
+                            <div class="fa-threshold-card-title">Latency</div>
+                            <div class="fa-threshold-display-row"><span>Average API Latency</span><strong>@perf.MaxAverageApiLatencyMs ms</strong></div>
+                            <div class="fa-threshold-display-row"><span>Single Request Latency</span><strong>@perf.MaxSingleRequestLatencyMs ms</strong></div>
+                        </div>
+                        <div class="fa-threshold-card">
+                            <div class="fa-threshold-card-title">Blazor Runtime</div>
+                            <div class="fa-threshold-display-row"><span>WASM Runtime</span><strong>@ToMB(perf.MaxWasmRuntimeSizeBytes) MB</strong></div>
+                            <div class="fa-threshold-display-row"><span>Framework</span><strong>@ToMB(perf.MaxFrameworkSizeBytes) MB</strong></div>
+                            <div class="fa-threshold-display-row"><span>App Assembly</span><strong>@ToMB(perf.MaxApplicationAssemblySizeBytes) MB</strong></div>
+                            <div class="fa-threshold-display-row"><span>Individual Asset</span><strong>@ToMB(perf.MaxIndividualAssetSizeBytes) MB</strong></div>
+                        </div>
+                    </div>
+                    <div class="fa-reset-row">
+                        <SecondaryButton OnClick="RestoreDefaultThresholdsAsync" Class="fa-btn-sm">Set to Default</SecondaryButton>
+                        <SecondaryButton OnClick="RestoreStrictThresholdsAsync" Class="fa-btn-sm">Set to Strict Defaults</SecondaryButton>
+                    </div>
+                }
+            }
+
+            @* ── Core Web Vitals ── *@
+            @if (_activeTab == "cwv")
+            {
+                @if (_isEditMode && _editProfile is not null)
+                {
+                    var cwv = _editProfile.CoreWebVitals;
+                    <div class="fa-threshold-grid">
+                        <div class="fa-threshold-group">
+                            <div class="fa-threshold-group-title">Largest Contentful Paint (LCP)</div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Good threshold</label>
+                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="cwv.LcpGoodMs" />
+                                <span class="fa-threshold-unit">ms</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Poor threshold</label>
+                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="cwv.LcpPoorMs" />
+                                <span class="fa-threshold-unit">ms</span>
+                            </div>
+                        </div>
+                        <div class="fa-threshold-group">
+                            <div class="fa-threshold-group-title">Interaction to Next Paint (INP)</div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Good threshold</label>
+                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="cwv.InpGoodMs" />
+                                <span class="fa-threshold-unit">ms</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Poor threshold</label>
+                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="cwv.InpPoorMs" />
+                                <span class="fa-threshold-unit">ms</span>
+                            </div>
+                        </div>
+                        <div class="fa-threshold-group">
+                            <div class="fa-threshold-group-title">Cumulative Layout Shift (CLS)</div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Good threshold</label>
+                                <input type="number" class="form-control fa-threshold-input" step="0.01" min="0" @bind="cwv.ClsGood" />
+                                <span class="fa-threshold-unit">score</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Poor threshold</label>
+                                <input type="number" class="form-control fa-threshold-input" step="0.01" min="0" @bind="cwv.ClsPoor" />
+                                <span class="fa-threshold-unit">score</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    var cwv = profile.CoreWebVitals;
+                    <div class="fa-threshold-display-grid">
+                        <div class="fa-threshold-display-row"><span>LCP Good</span><strong>@cwv.LcpGoodMs ms</strong></div>
+                        <div class="fa-threshold-display-row"><span>LCP Poor</span><strong>@cwv.LcpPoorMs ms</strong></div>
+                        <div class="fa-threshold-display-row"><span>INP Good</span><strong>@cwv.InpGoodMs ms</strong></div>
+                        <div class="fa-threshold-display-row"><span>INP Poor</span><strong>@cwv.InpPoorMs ms</strong></div>
+                        <div class="fa-threshold-display-row"><span>CLS Good</span><strong>@cwv.ClsGood</strong></div>
+                        <div class="fa-threshold-display-row"><span>CLS Poor</span><strong>@cwv.ClsPoor</strong></div>
+                    </div>
+                    <div class="fa-reset-row">
+                        <SecondaryButton OnClick="RestoreCoreWebVitalsAsync" Class="fa-btn-sm">Restore Default Core Web Vitals</SecondaryButton>
+                    </div>
+                }
+            }
+
+            @* ── Security Expectations ── *@
+            @if (_activeTab == "security")
+            {
+                <p class="fa-section-note">
+                    These are expectations only — no validation is performed yet. Never enter secrets, passwords, or tokens.
+                </p>
+                @if (_isEditMode && _editProfile is not null)
+                {
+                    var sec = _editProfile.Security;
+                    <div class="fa-form-grid">
+                        <div class="form-field">
+                            <label class="fa-label">Expected Authority <span class="form-optional">(optional)</span></label>
+                            <input type="url" class="form-control" @bind="sec.ExpectedAuthority" />
+                        </div>
+                        <div class="form-field">
+                            <label class="fa-label">Expected Tenant <span class="form-optional">(optional)</span></label>
+                            <input type="text" class="form-control" @bind="sec.ExpectedTenant" />
+                        </div>
+                        <div class="form-field">
+                            <label class="fa-label">Expected Client ID <span class="form-optional">(optional)</span></label>
+                            <input type="text" class="form-control" @bind="sec.ExpectedClientId" />
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Allowed Redirect URLs <span class="form-optional">(one per line)</span></label>
+                            <textarea class="form-control" rows="3"
+                                      value="@ListToText(sec.AllowedRedirectUrls)"
+                                      @onchange="e => sec.AllowedRedirectUrls = TextToList(e.Value?.ToString())"></textarea>
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Allowed Backend Domains <span class="form-optional">(one per line)</span></label>
+                            <textarea class="form-control" rows="3"
+                                      value="@ListToText(sec.AllowedBackendDomains)"
+                                      @onchange="e => sec.AllowedBackendDomains = TextToList(e.Value?.ToString())"></textarea>
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Allowed REST Hosts <span class="form-optional">(one per line)</span></label>
+                            <textarea class="form-control" rows="3"
+                                      value="@ListToText(sec.AllowedRestHosts)"
+                                      @onchange="e => sec.AllowedRestHosts = TextToList(e.Value?.ToString())"></textarea>
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Allowed GraphQL Hosts <span class="form-optional">(one per line)</span></label>
+                            <textarea class="form-control" rows="3"
+                                      value="@ListToText(sec.AllowedGraphQlHosts)"
+                                      @onchange="e => sec.AllowedGraphQlHosts = TextToList(e.Value?.ToString())"></textarea>
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Allowed CDN Hosts <span class="form-optional">(one per line)</span></label>
+                            <textarea class="form-control" rows="3"
+                                      value="@ListToText(sec.AllowedCdnHosts)"
+                                      @onchange="e => sec.AllowedCdnHosts = TextToList(e.Value?.ToString())"></textarea>
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Expected Security Headers <span class="form-optional">(one per line)</span></label>
+                            <textarea class="form-control" rows="5"
+                                      value="@ListToText(sec.ExpectedSecurityHeaders)"
+                                      @onchange="e => sec.ExpectedSecurityHeaders = TextToList(e.Value?.ToString())"></textarea>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    var sec = profile.Security;
+                    <dl class="fa-detail-list">
+                        <div class="fa-dl-row"><dt>Expected Authority</dt><dd>@(sec.ExpectedAuthority ?? "—")</dd></div>
+                        <div class="fa-dl-row"><dt>Expected Tenant</dt><dd>@(string.IsNullOrWhiteSpace(sec.ExpectedTenant) ? "—" : "Configured")</dd></div>
+                        <div class="fa-dl-row"><dt>Expected Client ID</dt><dd>@(string.IsNullOrWhiteSpace(sec.ExpectedClientId) ? "—" : "Configured")</dd></div>
+                        <div class="fa-dl-row"><dt>Allowed Redirect URLs</dt><dd>@HostList(sec.AllowedRedirectUrls)</dd></div>
+                        <div class="fa-dl-row"><dt>Allowed Backend Domains</dt><dd>@HostList(sec.AllowedBackendDomains)</dd></div>
+                        <div class="fa-dl-row"><dt>Allowed REST Hosts</dt><dd>@HostList(sec.AllowedRestHosts)</dd></div>
+                        <div class="fa-dl-row"><dt>Allowed GraphQL Hosts</dt><dd>@HostList(sec.AllowedGraphQlHosts)</dd></div>
+                        <div class="fa-dl-row"><dt>Allowed CDN Hosts</dt><dd>@HostList(sec.AllowedCdnHosts)</dd></div>
+                        <div class="fa-dl-row"><dt>Expected Security Headers</dt><dd>@HostList(sec.ExpectedSecurityHeaders)</dd></div>
+                    </dl>
+                    <div class="fa-reset-row">
+                        <SecondaryButton OnClick="RestoreSecurityExpectationsAsync" Class="fa-btn-sm">Restore Default Security Expectations</SecondaryButton>
+                        <SecondaryButton OnClick="RestoreSecurityHostsAsync" Class="fa-btn-sm">Restore Default Allowed Hosts</SecondaryButton>
+                        <SecondaryButton OnClick="RestoreSecurityHeadersAsync" Class="fa-btn-sm">Restore Default Expected Headers</SecondaryButton>
+                    </div>
+                }
+            }
+
+            @* ── Feature Toggles ── *@
+            @if (_activeTab == "features")
+            {
+                var feats = _isEditMode && _editProfile is not null ? _editProfile.Features : profile.Features;
+                <div class="fa-features-grid">
+                    <div class="fa-features-group">
+                        <div class="fa-features-group-title">Discovery</div>
+                        <FeatureRow Label="Asset Discovery"  Enabled="@feats.AssetDiscovery"  IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.AssetDiscovery = v)" />
+                        <FeatureRow Label="Startup Analysis" Enabled="@feats.StartupAnalysis" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.StartupAnalysis = v)" />
+                    </div>
+                    <div class="fa-features-group">
+                        <div class="fa-features-group-title">Performance</div>
+                        <FeatureRow Label="REST Analysis"         Enabled="@feats.RestAnalysis"         IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.RestAnalysis = v)" />
+                        <FeatureRow Label="GraphQL Analysis"      Enabled="@feats.GraphQlAnalysis"      IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.GraphQlAnalysis = v)" />
+                        <FeatureRow Label="Caching Review"        Enabled="@feats.CachingReview"        IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.CachingReview = v)" />
+                        <FeatureRow Label="Compression Review"    Enabled="@feats.CompressionReview"    IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.CompressionReview = v)" />
+                        <FeatureRow Label="Performance Readiness" Enabled="@feats.PerformanceReadiness" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.PerformanceReadiness = v)" />
+                    </div>
+                    <div class="fa-features-group">
+                        <div class="fa-features-group-title">Security</div>
+                        <FeatureRow Label="Security Header Review"        Enabled="@feats.SecurityHeaderReview"        IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.SecurityHeaderReview = v)" />
+                        <FeatureRow Label="Configuration Exposure Review" Enabled="@feats.ConfigurationExposureReview" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.ConfigurationExposureReview = v)" />
+                    </div>
+                    <div class="fa-features-group">
+                        <div class="fa-features-group-title">Blazor Runtime</div>
+                        <FeatureRow Label="Blazor Architecture Review" Enabled="@feats.BlazorArchitectureReview" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.BlazorArchitectureReview = v)" />
+                    </div>
+                    <div class="fa-features-group fa-features-group-future">
+                        <div class="fa-features-group-title">Browser <span class="fa-future-badge">Not yet implemented</span></div>
+                        <FeatureRow Label="Authenticated Browser Review"  Enabled="@feats.AuthenticatedBrowserReview"  IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.AuthenticatedBrowserReview = v)" />
+                        <FeatureRow Label="Lighthouse Integration"        Enabled="@feats.LighthouseIntegration"        IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.LighthouseIntegration = v)" />
+                        <FeatureRow Label="Playwright Runtime Inspection" Enabled="@feats.PlaywrightRuntimeInspection" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.PlaywrightRuntimeInspection = v)" />
+                    </div>
+                </div>
+                @if (!_isEditMode)
+                {
+                    <div class="fa-reset-row">
+                        <SecondaryButton OnClick="RestoreFeatureTogglesAsync" Class="fa-btn-sm">Restore Default Feature Toggles</SecondaryButton>
+                        <SecondaryButton OnClick="EnableCoreOnlyAsync" Class="fa-btn-sm">Enable Core Features</SecondaryButton>
+                        <SecondaryButton OnClick="DisableFutureFeaturesAsync" Class="fa-btn-sm">Disable Future Features</SecondaryButton>
+                    </div>
+                }
+            }
+
+            @* ── Validation ── *@
+            @if (_activeTab == "validation")
+            {
+                var v = FaSettings.ValidateProfile(profile);
+                @if (v.IsValid && v.Warnings.Count == 0)
+                {
+                    <div class="fa-validation-ok">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg>
+                        Valid — no errors or warnings.
+                    </div>
+                }
+                @if (v.Errors.Count > 0 || v.Warnings.Count > 0)
+                {
+                    <div class="fa-issue-cards">
+                        @foreach (var err in v.Errors)
+                        {
+                            <div class="fa-issue-card fa-issue-card-error">
+                                <span class="fa-issue-sev fa-issue-sev-error">Error</span>
+                                <span class="fa-issue-body">@err</span>
+                            </div>
+                        }
+                        @foreach (var warn in v.Warnings)
+                        {
+                            <div class="fa-issue-card fa-issue-card-warning">
+                                <span class="fa-issue-sev fa-issue-sev-warning">Warning</span>
+                                <span class="fa-issue-body">@warn</span>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+
+            @* ── Diagnostics ── *@
+            @if (_activeTab == "diagnostics")
+            {
+                var diag = FaSettings.GetDiagnostics();
+                <dl class="fa-detail-list">
+                    <div class="fa-dl-row"><dt>Active Profile</dt><dd>@diag.ActiveProfileName</dd></div>
+                    <div class="fa-dl-row"><dt>Environment</dt><dd>@diag.Environment</dd></div>
+                    <div class="fa-dl-row"><dt>Target URL</dt><dd>@(diag.TargetUrl ?? "—")</dd></div>
+                    <div class="fa-dl-row"><dt>Authentication Type</dt><dd>@diag.AuthenticationType</dd></div>
+                    <div class="fa-dl-row"><dt>Threshold Mode</dt><dd>@diag.ThresholdMode</dd></div>
+                    <div class="fa-dl-row">
+                        <dt>Enabled Features</dt>
+                        <dd>
+                            @if (diag.EnabledFeatures.Count == 0) { <span>None</span> }
+                            else { <span>@string.Join(", ", diag.EnabledFeatures)</span> }
+                        </dd>
+                    </div>
+                    <div class="fa-dl-row">
+                        <dt>Disabled Features</dt>
+                        <dd>
+                            @if (diag.DisabledFeatures.Count == 0) { <span>None</span> }
+                            else { <span>@string.Join(", ", diag.DisabledFeatures)</span> }
+                        </dd>
+                    </div>
+                    <div class="fa-dl-row">
+                        <dt>Validation Status</dt>
+                        <dd>
+                            @if (diag.ValidationStatus.IsValid) { <span class="fa-validation-ok-inline">Valid</span> }
+                            else { <span class="fa-validation-error-inline">@diag.ValidationStatus.Errors.Count error(s)</span> }
+                        </dd>
+                    </div>
+                </dl>
+            }
+
+        </div>
+
+        @* ── Reset entire profile ── *@
+        @if (!_isEditMode)
+        {
+            <div class="fa-profile-reset-zone">
+                <span class="fa-profile-reset-label">Reset entire profile to defaults — keeps Name, Environment Type, Target URL, and Notes.</span>
+                <SecondaryButton OnClick="@(() => _showResetConfirm = true)" Class="fa-btn-sm">Reset Profile</SecondaryButton>
+            </div>
+        }
+
+    </div>
+}
+else if (FaSettings.Settings.Profiles.Count == 0)
+{
+    <div class="fa-empty-state">
+        No profiles found. Create a profile to get started.
+    </div>
+}
+
+@* ── Create Profile Modal ─────────────────────────────────────────────────── *@
+@if (_showCreateDialog)
+{
+    <div class="modal-backdrop" @onclick="() => _showCreateDialog = false" role="dialog" aria-modal="true" aria-labelledby="fa-create-title">
+        <div class="modal-panel" @onclick:stopPropagation="true">
+            <h2 id="fa-create-title" class="modal-title">Create Profile</h2>
+            <div class="fa-form-grid">
+                <div class="form-field fa-field-full">
+                    <label class="fa-label">Profile Name <span class="wsr-required">*</span></label>
+                    <input type="text" class="form-control" @bind="_newProfileName" placeholder="e.g. Staging" autofocus />
+                </div>
+                <div class="form-field fa-field-full">
+                    <label class="fa-label">Environment Type</label>
+                    <select class="form-control" @bind="_newProfileEnv">
+                        @foreach (var env in Enum.GetValues<FrontendEnvironmentType>())
+                        {
+                            <option value="@env">@env</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <SecondaryButton OnClick="@(() => _showCreateDialog = false)">Cancel</SecondaryButton>
+                <PrimaryButton OnClick="CreateProfileAsync"
+                               Disabled="@string.IsNullOrWhiteSpace(_newProfileName)">Create Profile</PrimaryButton>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Delete Confirmation Modal ────────────────────────────────────────────── *@
+@if (_showDeleteConfirm)
+{
+    <div class="modal-backdrop" @onclick="() => _showDeleteConfirm = false" role="dialog" aria-modal="true" aria-labelledby="fa-delete-title">
+        <div class="modal-panel" @onclick:stopPropagation="true">
+            <h2 id="fa-delete-title" class="modal-title">Delete Profile</h2>
+            <div class="notification notification-warning">
+                This will permanently delete the profile <strong>@SelectedProfile?.Name</strong> and all its settings.
+            </div>
+            <div class="modal-actions">
+                <SecondaryButton OnClick="@(() => _showDeleteConfirm = false)" Disabled="@_isDeleting">Cancel</SecondaryButton>
+                <DangerButton OnClick="ExecuteDeleteAsync" Disabled="@_isDeleting">
+                    @(_isDeleting ? "Deleting…" : "Delete Profile")
+                </DangerButton>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Reset Profile Confirmation Modal ────────────────────────────────────── *@
+@if (_showResetConfirm)
+{
+    <div class="modal-backdrop" @onclick="() => _showResetConfirm = false" role="dialog" aria-modal="true" aria-labelledby="fa-reset-title">
+        <div class="modal-panel" @onclick:stopPropagation="true">
+            <h2 id="fa-reset-title" class="modal-title">Reset Profile</h2>
+            <div class="notification notification-warning">
+                This resets Performance Thresholds, Core Web Vitals, Security Expectations, and Feature Toggles to defaults.
+                Profile Name, Environment Type, Target URL, and Notes are kept.
+            </div>
+            <div class="modal-actions">
+                <SecondaryButton OnClick="@(() => _showResetConfirm = false)" Disabled="@_isResetting">Cancel</SecondaryButton>
+                <DangerButton OnClick="ResetProfileAsync" Disabled="@_isResetting">
+                    @(_isResetting ? "Resetting…" : "Reset Profile")
+                </DangerButton>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────────
+
+    private string?                  _selectedProfileId;
+    private bool                     _isEditMode;
+    private FrontendAnalysisProfile? _editProfile;
+    private string                   _activeTab = "general";
+
+    private string? _saveSuccess;
+    private string? _saveError;
+    private bool    _isSaving;
+
+    private bool   _showCreateDialog;
+    private string _newProfileName = "";
+    private FrontendEnvironmentType _newProfileEnv = FrontendEnvironmentType.Local;
+
+    private bool _showDeleteConfirm;
+    private bool _isDeleting;
+
+    private bool _showResetConfirm;
+    private bool _isResetting;
+
+    private static readonly (string Key, string Label)[] Tabs =
+    [
+        ("general",     "General"),
+        ("target",      "Target Application"),
+        ("auth",        "Authentication"),
+        ("performance", "Performance Thresholds"),
+        ("cwv",         "Core Web Vitals"),
+        ("security",    "Security Expectations"),
+        ("features",    "Feature Toggles"),
+        ("validation",  "Validation"),
+        ("diagnostics", "Diagnostics"),
+    ];
+
+    // ── Computed ─────────────────────────────────────────────────────────────
+
+    private FrontendAnalysisProfile? SelectedProfile =>
+        string.IsNullOrEmpty(_selectedProfileId)
+            ? null
+            : FaSettings.Settings.Profiles.FirstOrDefault(p => p.Id == _selectedProfileId);
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        await FaSettings.LoadAsync(JS);
+
+        _selectedProfileId = FaSettings.Settings.ActiveProfileId
+            ?? FaSettings.Settings.Profiles.FirstOrDefault()?.Id;
+    }
+
+    // ── Profile selection ────────────────────────────────────────────────────
+
+    private void SelectProfile(string profileId)
+    {
+        if (_isEditMode) CancelEdit();
+        _selectedProfileId = profileId;
+        _activeTab         = "general";
+    }
+
+    // ── Edit mode ────────────────────────────────────────────────────────────
+
+    private void EnterEditMode()
+    {
+        if (SelectedProfile is null) return;
+        var json     = System.Text.Json.JsonSerializer.Serialize(SelectedProfile);
+        _editProfile = System.Text.Json.JsonSerializer.Deserialize<FrontendAnalysisProfile>(json);
+        _isEditMode  = true;
+        _saveError   = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editProfile = null;
+        _isEditMode  = false;
+        _saveError   = null;
+    }
+
+    private async Task SaveProfileAsync()
+    {
+        if (_editProfile is null || _isSaving) return;
+
+        var validation = FaSettings.ValidateProfile(_editProfile);
+        if (!validation.IsValid)
+        {
+            _saveError = string.Join(" | ", validation.Errors);
+            return;
+        }
+
+        _isSaving  = true;
+        _saveError = null;
+        try
+        {
+            FaSettings.UpdateProfile(_editProfile);
+            await FaSettings.SaveAsync(JS);
+            _selectedProfileId = _editProfile.Id;
+            _isEditMode        = false;
+            _editProfile       = null;
+            _saveSuccess       = "Profile saved.";
+            StateHasChanged();
+            await Task.Delay(4000);
+            _saveSuccess = null;
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    // ── Profile operations ───────────────────────────────────────────────────
+
+    private async Task SetActiveProfileAsync()
+    {
+        if (_selectedProfileId is null) return;
+        FaSettings.SelectActiveProfile(_selectedProfileId);
+        await FaSettings.SaveAsync(JS);
+    }
+
+    private async Task DuplicateProfileAsync()
+    {
+        if (_selectedProfileId is null) return;
+        var copy = FaSettings.DuplicateProfile(_selectedProfileId);
+        await FaSettings.SaveAsync(JS);
+        _selectedProfileId = copy.Id;
+        _activeTab         = "general";
+    }
+
+    private async Task ExecuteDeleteAsync()
+    {
+        if (_selectedProfileId is null) return;
+        _isDeleting = true;
+        try
+        {
+            FaSettings.DeleteProfile(_selectedProfileId);
+            await FaSettings.SaveAsync(JS);
+            _selectedProfileId = FaSettings.Settings.ActiveProfileId
+                ?? FaSettings.Settings.Profiles.FirstOrDefault()?.Id;
+            _showDeleteConfirm = false;
+        }
+        finally
+        {
+            _isDeleting = false;
+        }
+    }
+
+    private async Task CreateProfileAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newProfileName)) return;
+        var profile = FaSettings.CreateProfile(_newProfileName.Trim(), _newProfileEnv);
+        await FaSettings.SaveAsync(JS);
+        _selectedProfileId = profile.Id;
+        _showCreateDialog  = false;
+        _activeTab         = "general";
+    }
+
+    private void OpenCreateDialog()
+    {
+        _newProfileName = "";
+        _newProfileEnv  = FrontendEnvironmentType.Local;
+        _showCreateDialog = true;
+    }
+
+    // ── Reset / restore ──────────────────────────────────────────────────────
+
+    private async Task ResetProfileAsync()
+    {
+        if (_selectedProfileId is null) return;
+        _isResetting = true;
+        try
+        {
+            FaSettings.ResetProfile(_selectedProfileId);
+            await FaSettings.SaveAsync(JS);
+            _showResetConfirm = false;
+        }
+        finally
+        {
+            _isResetting = false;
+        }
+    }
+
+    private async Task RestoreDefaultThresholdsAsync()
+    {
+        if (_selectedProfileId is null) return;
+        FaSettings.RestoreDefaultThresholds(_selectedProfileId);
+        await FaSettings.SaveAsync(JS);
+    }
+
+    private async Task RestoreStrictThresholdsAsync()
+    {
+        if (_selectedProfileId is null) return;
+        FaSettings.RestoreStrictThresholds(_selectedProfileId);
+        await FaSettings.SaveAsync(JS);
+    }
+
+    private async Task RestoreCoreWebVitalsAsync()
+    {
+        if (_selectedProfileId is null) return;
+        FaSettings.RestoreDefaultCoreWebVitals(_selectedProfileId);
+        await FaSettings.SaveAsync(JS);
+    }
+
+    private async Task RestoreSecurityExpectationsAsync()
+    {
+        if (_selectedProfileId is null) return;
+        FaSettings.RestoreDefaultSecurityExpectations(_selectedProfileId);
+        await FaSettings.SaveAsync(JS);
+    }
+
+    private async Task RestoreSecurityHostsAsync()
+    {
+        if (SelectedProfile is null) return;
+        SelectedProfile.Security.AllowedBackendDomains  = [];
+        SelectedProfile.Security.AllowedRestHosts       = [];
+        SelectedProfile.Security.AllowedGraphQlHosts    = [];
+        SelectedProfile.Security.AllowedCdnHosts        = [];
+        SelectedProfile.Security.AllowedRedirectUrls    = [];
+        await FaSettings.SaveAsync(JS);
+    }
+
+    private async Task RestoreSecurityHeadersAsync()
+    {
+        if (SelectedProfile is null) return;
+        SelectedProfile.Security.ExpectedSecurityHeaders = FaSettings.GetDefaultSecuritySettings().ExpectedSecurityHeaders;
+        await FaSettings.SaveAsync(JS);
+    }
+
+    private async Task RestoreFeatureTogglesAsync()
+    {
+        if (_selectedProfileId is null) return;
+        FaSettings.RestoreDefaultFeatureToggles(_selectedProfileId);
+        await FaSettings.SaveAsync(JS);
+    }
+
+    private async Task EnableCoreOnlyAsync()
+    {
+        if (SelectedProfile is null) return;
+        var f = SelectedProfile.Features;
+        f.AssetDiscovery = f.StartupAnalysis = f.RestAnalysis = f.GraphQlAnalysis =
+        f.CachingReview = f.CompressionReview = f.BlazorArchitectureReview =
+        f.SecurityHeaderReview = f.ConfigurationExposureReview = f.PerformanceReadiness = true;
+        await FaSettings.SaveAsync(JS);
+    }
+
+    private async Task DisableFutureFeaturesAsync()
+    {
+        if (SelectedProfile is null) return;
+        var f = SelectedProfile.Features;
+        f.AuthenticatedBrowserReview = f.LighthouseIntegration = f.PlaywrightRuntimeInspection = false;
+        await FaSettings.SaveAsync(JS);
+    }
+
+    // ── Threshold presets (edit mode) ────────────────────────────────────────
+
+    private void ApplyDefaultPreset()
+    {
+        if (_editProfile is null) return;
+        _editProfile.Performance = FaSettings.GetDefaultThresholds();
+    }
+
+    private void ApplyStrictPreset()
+    {
+        if (_editProfile is null) return;
+        _editProfile.Performance = FaSettings.GetStrictThresholds();
+    }
+
+    private void MarkThresholdsCustom()
+    {
+        if (_editProfile is not null)
+            _editProfile.Performance.Mode = FrontendThresholdMode.Custom;
+    }
+
+    // ── Threshold field setters (with unit conversion + auto-custom) ─────────
+
+    private void SetMaxStartupSizeMb(object? v)     { if (_editProfile is not null) { _editProfile.Performance.MaxStartupSizeBytes             = MB(v); MarkThresholdsCustom(); } }
+    private void SetMaxRestPayloadKb(object? v)     { if (_editProfile is not null) { _editProfile.Performance.MaxRestPayloadBytes             = KB(v); MarkThresholdsCustom(); } }
+    private void SetMaxGraphQlPayloadKb(object? v)  { if (_editProfile is not null) { _editProfile.Performance.MaxGraphQlPayloadBytes          = KB(v); MarkThresholdsCustom(); } }
+    private void SetMaxWasmRuntimeSizeMb(object? v) { if (_editProfile is not null) { _editProfile.Performance.MaxWasmRuntimeSizeBytes         = MB(v); MarkThresholdsCustom(); } }
+    private void SetMaxFrameworkSizeMb(object? v)   { if (_editProfile is not null) { _editProfile.Performance.MaxFrameworkSizeBytes           = MB(v); MarkThresholdsCustom(); } }
+    private void SetMaxAppAssemblySizeMb(object? v) { if (_editProfile is not null) { _editProfile.Performance.MaxApplicationAssemblySizeBytes = MB(v); MarkThresholdsCustom(); } }
+    private void SetMaxIndividualAssetSizeMb(object? v) { if (_editProfile is not null) { _editProfile.Performance.MaxIndividualAssetSizeBytes = MB(v); MarkThresholdsCustom(); } }
+
+    // ── Unit helpers ─────────────────────────────────────────────────────────
+
+    private static double ToMB(long bytes) => Math.Round((double)bytes / (1024 * 1024), 1);
+    private static double ToKB(long bytes) => Math.Round((double)bytes / 1024, 0);
+    private static long   MB(object? v)    => (long)(ParseDouble(v) * 1024 * 1024);
+    private static long   KB(object? v)    => (long)(ParseDouble(v) * 1024);
+
+    private static double ParseDouble(object? v) =>
+        double.TryParse(v?.ToString(), out var d) ? d : 0;
+
+    // ── Display helpers ──────────────────────────────────────────────────────
+
+    private static string BoolLabel(bool v) => v ? "Yes" : "No";
+
+    private static string HostList(List<string> items) =>
+        items.Count == 0 ? "—" : string.Join(", ", items);
+
+    private static string ListToText(List<string> items) =>
+        string.Join("\n", items);
+
+    private static List<string> TextToList(string? text) =>
+        string.IsNullOrWhiteSpace(text)
+            ? []
+            : text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+}

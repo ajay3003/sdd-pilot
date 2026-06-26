@@ -1,0 +1,783 @@
+@page "/task-alignment"
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using BirkNext.Web.Components
+
+<PageTitle>Implementation Review</PageTitle>
+
+<div class="align-page">
+
+    <PageHeader Title="Implementation Review"
+                Description="Review implementation tasks against the specification to detect undocumented behavior, identify risky areas, and surface recommended regression testing." />
+
+    @if (_report is null)
+    {
+        <section class="align-info-panel" aria-label="About Implementation Review">
+            <div class="align-info-header">
+                <span class="align-info-icon" aria-hidden="true">ℹ</span>
+                <strong class="align-info-title">What is this page for?</strong>
+            </div>
+            <div class="align-info-body">
+                <div class="align-info-col">
+                    <p class="align-info-sub">Designed primarily for:</p>
+                    <ul class="align-info-list">
+                        <li>Bug fixes</li>
+                        <li>Security changes</li>
+                        <li>Technical changes</li>
+                        <li>Refactoring with business impact</li>
+                        <li>Integration changes</li>
+                    </ul>
+                </div>
+                <div class="align-info-col">
+                    <p class="align-info-sub">Helps identify:</p>
+                    <ul class="align-info-list">
+                        <li>Possible specification deviations</li>
+                        <li>Areas affected by implementation work</li>
+                        <li>High-risk changes</li>
+                        <li>Recommended regression testing</li>
+                    </ul>
+                </div>
+                <div class="align-info-col">
+                    <p class="align-info-sub">For larger feature development, use:</p>
+                    <ul class="align-info-list align-info-list-links">
+                        <li><a href="/spec-drift?tab=changes">Spec Drift</a></li>
+                        <li><a href="/impact-analysis">Impact Analysis</a></li>
+                        <li><a href="/traceability">Traceability &amp; Coverage</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="align-bestfor">
+                <span class="align-bestfor-badge">🐞 Bug Fixes</span>
+                <span class="align-bestfor-badge">🔒 Security Changes</span>
+                <span class="align-bestfor-badge">🔧 Technical Changes</span>
+                <span class="align-bestfor-badge">🔄 Refactoring</span>
+            </div>
+        </section>
+
+        <section class="align-input-section" aria-label="Analysis input">
+            <div class="align-input-grid">
+
+                @* ── spec.md column ── *@
+                <div class="align-input-col">
+                    <label for="align-spec-text" class="align-input-label">
+                        <span class="align-input-icon" aria-hidden="true">📋</span>
+                        spec.md content
+                        <span class="align-required" aria-label="required">*</span>
+                    </label>
+                    <SpecificationImport @ref="_specImport"
+                                        InputId="align-spec-import"
+                                        OnFileImported="OnSpecFileImported"
+                                        OnFileRemoved="OnSpecFileRemoved" />
+                    <textarea id="align-spec-text"
+                              class="align-textarea @(string.IsNullOrWhiteSpace(_specText) && _analyseAttempted ? "align-textarea-invalid" : "")"
+                              placeholder="Or paste spec.md content here…&#10;Include FR-01, US-1, acceptance scenarios, success criteria…"
+                              rows="10"
+                              @bind="_specText"
+                              aria-required="true"
+                              aria-describedby="spec-meta spec-err"></textarea>
+                    <div class="align-input-footer">
+                        @if (!string.IsNullOrWhiteSpace(_specText))
+                        {
+                            <span class="align-content-meta" id="spec-meta" aria-live="polite">
+                                @(_specText.Split('\n').Length) lines
+                            </span>
+                            <button type="button" class="align-clear-btn" @onclick="ClearSpec"
+                                    aria-label="Clear spec.md content">
+                                ✕ Clear
+                            </button>
+                        }
+                        else
+                        {
+                            <span class="align-empty-hint" id="spec-meta">
+                                Paste content or import a .md file to begin.
+                            </span>
+                        }
+                    </div>
+                    @if (string.IsNullOrWhiteSpace(_specText) && _analyseAttempted)
+                    {
+                        <p class="align-field-error" id="spec-err" role="alert">spec.md content is required.</p>
+                    }
+                </div>
+
+                @* ── tasks.md column ── *@
+                <div class="align-input-col">
+                    <label for="align-tasks-text" class="align-input-label">
+                        <span class="align-input-icon" aria-hidden="true">✅</span>
+                        tasks.md content
+                        <span class="align-required" aria-label="required">*</span>
+                    </label>
+                    <SpecificationImport @ref="_tasksImport"
+                                        InputId="align-tasks-import"
+                                        OnFileImported="OnTasksFileImported"
+                                        OnFileRemoved="OnTasksFileRemoved" />
+                    <textarea id="align-tasks-text"
+                              class="align-textarea @(string.IsNullOrWhiteSpace(_tasksText) && _analyseAttempted ? "align-textarea-invalid" : "")"
+                              placeholder="Or paste tasks.md content here…&#10;Supports T001 - Title format or - [ ] checkbox format."
+                              rows="10"
+                              @bind="_tasksText"
+                              aria-required="true"
+                              aria-describedby="tasks-meta tasks-err"></textarea>
+                    <div class="align-input-footer">
+                        @if (!string.IsNullOrWhiteSpace(_tasksText))
+                        {
+                            <span class="align-content-meta" id="tasks-meta" aria-live="polite">
+                                @(_tasksText.Split('\n').Length) lines
+                            </span>
+                            <button type="button" class="align-clear-btn" @onclick="ClearTasks"
+                                    aria-label="Clear tasks.md content">
+                                ✕ Clear
+                            </button>
+                        }
+                        else
+                        {
+                            <span class="align-empty-hint" id="tasks-meta">
+                                Paste content or import a .md file to begin.
+                            </span>
+                        }
+                    </div>
+                    @if (string.IsNullOrWhiteSpace(_tasksText) && _analyseAttempted)
+                    {
+                        <p class="align-field-error" id="tasks-err" role="alert">tasks.md content is required.</p>
+                    }
+                </div>
+
+            </div>
+            <div class="align-input-actions">
+                <PrimaryButton OnClick="RunAnalysis"
+                               Disabled="@(string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))">
+                    Analyse Alignment
+                </PrimaryButton>
+                @if (string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))
+                {
+                    <span class="align-analyse-hint" aria-live="polite">
+                        Both inputs are required to run analysis.
+                    </span>
+                }
+            </div>
+        </section>
+    }
+    else
+    {
+        var report = _report!;
+
+        @if (report.TotalTasks == 0)
+        {
+            <div class="align-parse-empty">
+                <p class="align-parse-empty-heading">No tasks found</p>
+                <p class="align-parse-empty-hint">No tasks could be parsed from the provided content. Supported formats:</p>
+                <ul class="align-parse-empty-formats">
+                    <li><code>T001 - Task title</code> or <code>T001: Task title</code></li>
+                    <li><code>- [ ] Task title</code> (GitHub checkbox format)</li>
+                </ul>
+                <SecondaryButton OnClick="Reset">Try again</SecondaryButton>
+            </div>
+        }
+        else
+        {
+            @* ── Tab switcher ── *@
+            <div class="align-page-tabs" role="tablist">
+                <button type="button"
+                        class="align-page-tab @(_activePageTab == "alignment" ? "is-active" : "")"
+                        @onclick='() => _activePageTab = "alignment"'
+                        role="tab" aria-selected="@(_activePageTab == "alignment")">
+                    Spec Alignment
+                </button>
+                <button type="button"
+                        class="align-page-tab @(_activePageTab == "impact" ? "is-active" : "")"
+                        @onclick='() => _activePageTab = "impact"'
+                        role="tab" aria-selected="@(_activePageTab == "impact")">
+                    Risk &amp; Testing
+                    @if (report.HighImpactTasks > 0)
+                    {
+                        <span class="align-tab-badge">@report.HighImpactTasks high risk</span>
+                    }
+                </button>
+                <button type="button"
+                        class="align-page-tab @(_activePageTab == "explorer" ? "is-active" : "")"
+                        @onclick='() => _activePageTab = "explorer"'
+                        role="tab" aria-selected="@(_activePageTab == "explorer")">
+                    Task Explorer
+                </button>
+            </div>
+
+            @if (_activePageTab == "alignment")
+            {
+                var filtered = GetFiltered(report.Findings);
+
+                @* ── Summary KPI row ── *@
+                <div class="kpi-row align-kpi-row" role="region" aria-label="Alignment summary">
+                    <div class="kpi-card">
+                        <span class="kpi-marker" aria-hidden="true"></span>
+                        <span class="kpi-value">@report.TotalTasks</span>
+                        <span class="kpi-label">Total Tasks</span>
+                        <span class="kpi-hint">from tasks.md</span>
+                    </div>
+                    <button type="button"
+                            class="kpi-card kpi-card-traceability @(_activeFilter == "Linked" ? "kpi-card-active" : "")"
+                            @onclick='() => ToggleFilter("Linked")'
+                            aria-pressed="@(_activeFilter == "Linked")">
+                        <span class="kpi-marker" aria-hidden="true"></span>
+                        <span class="kpi-value">@report.LinkedTasks</span>
+                        <span class="kpi-label">Spec Linked</span>
+                        <span class="kpi-hint">covered by spec</span>
+                    </button>
+                    <button type="button"
+                            class="kpi-card @(_activeFilter == "TechnicalOnly" ? "kpi-card-active" : "")"
+                            @onclick='() => ToggleFilter("TechnicalOnly")'
+                            aria-pressed="@(_activeFilter == "TechnicalOnly")">
+                        <span class="kpi-marker" aria-hidden="true"></span>
+                        <span class="kpi-value">@report.TechnicalOnlyTasks</span>
+                        <span class="kpi-label">Technical Only</span>
+                        <span class="kpi-hint">no spec needed</span>
+                    </button>
+                    <button type="button"
+                            class="kpi-card @(report.NeedsReviewTasks > 0 ? "kpi-card-risks" : "kpi-card-coverage") @(_activeFilter == "NeedsReview" ? "kpi-card-active" : "")"
+                            @onclick='() => ToggleFilter("NeedsReview")'
+                            aria-pressed="@(_activeFilter == "NeedsReview")">
+                        <span class="kpi-marker" aria-hidden="true"></span>
+                        <span class="kpi-value">@report.NeedsReviewTasks</span>
+                        <span class="kpi-label">Needs Review</span>
+                        <span class="kpi-hint">partial or unclear link</span>
+                    </button>
+                    <button type="button"
+                            class="kpi-card @(report.PossibleDeviations > 0 ? "kpi-card-risks align-kpi-deviation" : "kpi-card-coverage") @(_activeFilter == "PossibleDeviation" ? "kpi-card-active" : "")"
+                            @onclick='() => ToggleFilter("PossibleDeviation")'
+                            aria-pressed="@(_activeFilter == "PossibleDeviation")">
+                        <span class="kpi-marker" aria-hidden="true"></span>
+                        <span class="kpi-value">@report.PossibleDeviations</span>
+                        <span class="kpi-label">Possible Deviations</span>
+                        <span class="kpi-hint">no spec coverage found</span>
+                    </button>
+                </div>
+
+                @* ── Filter + Reanalyse row ── *@
+                <div class="align-filter-row" role="group" aria-label="Filter findings">
+                    <div class="align-filter-chips">
+                        <button type="button"
+                                class="align-chip @(_activeFilter is null ? "align-chip-active" : "")"
+                                @onclick='() => _activeFilter = null'
+                                aria-pressed="@(_activeFilter is null)">
+                            All <span class="align-chip-count">@report.TotalTasks</span>
+                        </button>
+                        <button type="button"
+                                class="align-chip align-chip-deviation @(_activeFilter == "PossibleDeviation" ? "align-chip-active" : "")"
+                                @onclick='() => ToggleFilter("PossibleDeviation")'
+                                aria-pressed="@(_activeFilter == "PossibleDeviation")">
+                            Deviations <span class="align-chip-count">@report.PossibleDeviations</span>
+                        </button>
+                        <button type="button"
+                                class="align-chip align-chip-review @(_activeFilter == "NeedsReview" ? "align-chip-active" : "")"
+                                @onclick='() => ToggleFilter("NeedsReview")'
+                                aria-pressed="@(_activeFilter == "NeedsReview")">
+                            Needs Review <span class="align-chip-count">@report.NeedsReviewTasks</span>
+                        </button>
+                        <button type="button"
+                                class="align-chip @(_activeFilter == "TechnicalOnly" ? "align-chip-active" : "")"
+                                @onclick='() => ToggleFilter("TechnicalOnly")'
+                                aria-pressed="@(_activeFilter == "TechnicalOnly")">
+                            Technical Only <span class="align-chip-count">@report.TechnicalOnlyTasks</span>
+                        </button>
+                        <button type="button"
+                                class="align-chip align-chip-linked @(_activeFilter == "Linked" ? "align-chip-active" : "")"
+                                @onclick='() => ToggleFilter("Linked")'
+                                aria-pressed="@(_activeFilter == "Linked")">
+                            Spec Linked <span class="align-chip-count">@report.LinkedTasks</span>
+                        </button>
+                    </div>
+                    <SecondaryButton Class="align-reanalyse" OnClick="Reset">Reanalyse</SecondaryButton>
+                </div>
+
+                @* ── Findings ── *@
+                @if (filtered.Count == 0)
+                {
+                    <div class="align-filter-empty">
+                        <p>No findings match the selected filter.</p>
+                        <button type="button" class="align-clear-filter" @onclick='() => _activeFilter = null'>
+                            Clear filter ×
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <p class="align-scope-note">
+                        This analysis is most effective for bug fixes, technical changes, and implementation review.
+                        It checks whether implementation tasks are covered by the spec and suggests risk-based testing.
+                        Large feature development should primarily use
+                        <a href="/spec-drift?tab=changes">Spec Drift</a> and
+                        <a href="/impact-analysis">Impact Analysis</a>.
+                        Technical Only tasks are valid implementation work, but are not expected to have direct specification coverage.
+                    </p>
+                    <section class="align-findings-list" aria-label="Alignment findings">
+                        <p class="section-kicker">@filtered.Count finding@(filtered.Count == 1 ? "" : "s")</p>
+                        @foreach (var finding in filtered)
+                        {
+                            var isExpanded = _expandedFindings.Contains(finding.TaskId);
+                            <div class="align-finding align-finding-@finding.Status.ToString().ToLowerInvariant()">
+                                <button type="button"
+                                        class="align-finding-toggle"
+                                        @onclick="() => ToggleFinding(finding.TaskId)"
+                                        aria-expanded="@isExpanded">
+                                    <span class="align-task-id">@finding.TaskId</span>
+                                    <span class="align-finding-title">@finding.Title</span>
+                                    <div class="align-finding-badges">
+                                        <span class="align-status-badge align-status-@finding.Status.ToString().ToLowerInvariant()">
+                                            @StatusLabel(finding.Status)
+                                        </span>
+                                        <span class="align-confidence-badge">@((int)(finding.Confidence * 100))%</span>
+                                        @foreach (var sm in finding.Matches.Take(3))
+                                        {
+                                            <span class="align-match-chip">@sm.ItemId</span>
+                                        }
+                                        @foreach (var area in finding.AffectedAreas.Take(3))
+                                        {
+                                            <span class="align-area-chip">@AreaShortLabel(area)</span>
+                                        }
+                                    </div>
+                                    <span class="align-chevron" aria-hidden="true">@(isExpanded ? "▲" : "▼")</span>
+                                </button>
+
+                                @if (isExpanded)
+                                {
+                                    <div class="align-finding-body">
+                                        @if (!string.IsNullOrEmpty(finding.MatchReason))
+                                        {
+                                            <div class="align-detail-row">
+                                                <span class="align-detail-label">Match signal</span>
+                                                <p class="align-detail-text align-detail-signal">@finding.MatchReason</p>
+                                            </div>
+                                        }
+                                        @if (finding.Matches.Count > 0)
+                                        {
+                                            <div class="align-detail-row">
+                                                <span class="align-detail-label">Matched spec items</span>
+                                                <div class="align-matches">
+                                                    @foreach (var specMatch in finding.Matches)
+                                                    {
+                                                        <span class="align-match-item">
+                                                            <span class="align-match-id">@specMatch.ItemId</span>
+                                                            <span class="align-match-type">@SpecMatchTypeLabel(specMatch.MatchType)</span>
+                                                        </span>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+                                        <div class="align-detail-row">
+                                            <span class="align-detail-label">Reason</span>
+                                            <p class="align-detail-text">@finding.Reason</p>
+                                        </div>
+                                        <div class="align-detail-row">
+                                            <span class="align-detail-label">Recommended action</span>
+                                            <p class="align-detail-text align-detail-action">@finding.RecommendedAction</p>
+                                        </div>
+                                        <div class="align-detail-row align-confidence-row">
+                                            <span class="align-detail-label">Confidence</span>
+                                            <div class="align-confidence">
+                                                <div class="align-confidence-bar">
+                                                    <div class="align-confidence-fill" style="width:@((int)(finding.Confidence * 100))%"></div>
+                                                </div>
+                                                <span class="align-confidence-pct">@((int)(finding.Confidence * 100))%</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </section>
+                }
+            }
+            else if (_activePageTab == "impact")
+            {
+                @* ── Risk & Testing tab ── *@
+                var impactFiltered = GetFilteredImpact(report.Findings);
+
+                <p class="align-risk-help">
+                    Risk &amp; Testing is task-based guidance. It suggests affected areas, risk level, and recommended testing based on tasks.md and spec.md.
+                    For change-driven impact analysis, use the separate <a href="/impact-analysis">Impact Analysis</a> page.
+                </p>
+
+                <div class="kpi-row align-kpi-row align-kpi-row-6" role="region" aria-label="Risk & Testing summary">
+                    <div class="kpi-card">
+                        <span class="kpi-marker" aria-hidden="true"></span>
+                        <span class="kpi-value">@report.TotalTasks</span>
+                        <span class="kpi-label">Total Tasks</span>
+                        <span class="kpi-hint">analysed</span>
+                    </div>
+                    <button type="button"
+                            class="kpi-card @(report.HighImpactTasks > 0 ? "kpi-card-risks align-kpi-deviation" : "kpi-card-coverage") @(_activeImpactFilter == "High" ? "kpi-card-active" : "")"
+                            @onclick='() => ToggleImpactFilter("High")'
+                            aria-pressed="@(_activeImpactFilter == "High")">
+                        <span class="kpi-marker" aria-hidden="true"></span>
+                        <span class="kpi-value">@report.HighImpactTasks</span>
+                        <span class="kpi-label">High Risk</span>
+                        <span class="kpi-hint">security, auth, audit</span>
+                    </button>
+                    <button type="button"
+                            class="kpi-card @(report.MediumImpactTasks > 0 ? "kpi-card-risks" : "kpi-card-coverage") @(_activeImpactFilter == "Medium" ? "kpi-card-active" : "")"
+                            @onclick='() => ToggleImpactFilter("Medium")'
+                            aria-pressed="@(_activeImpactFilter == "Medium")">
+                        <span class="kpi-marker" aria-hidden="true"></span>
+                        <span class="kpi-value">@report.MediumImpactTasks</span>
+                        <span class="kpi-label">Medium Risk</span>
+                        <span class="kpi-hint">search, profile, ingestion</span>
+                    </button>
+                    <button type="button"
+                            class="kpi-card kpi-card-traceability @(_activeImpactFilter == "Low" ? "kpi-card-active" : "")"
+                            @onclick='() => ToggleImpactFilter("Low")'
+                            aria-pressed="@(_activeImpactFilter == "Low")">
+                        <span class="kpi-marker" aria-hidden="true"></span>
+                        <span class="kpi-value">@report.LowImpactTasks</span>
+                        <span class="kpi-label">Low Risk</span>
+                        <span class="kpi-hint">infra, setup</span>
+                    </button>
+                    <button type="button"
+                            class="kpi-card @(_activeImpactFilter == "Unknown" ? "kpi-card-active" : "")"
+                            @onclick='() => ToggleImpactFilter("Unknown")'
+                            aria-pressed="@(_activeImpactFilter == "Unknown")">
+                        <span class="kpi-marker" aria-hidden="true"></span>
+                        <span class="kpi-value">@report.UnknownImpactTasks</span>
+                        <span class="kpi-label">Unknown Risk</span>
+                        <span class="kpi-hint">no area detected</span>
+                    </button>
+                    <button type="button"
+                            class="kpi-card @(report.RegressionCandidates > 0 ? "kpi-card-risks" : "") @(_activeImpactFilter == "Regression" ? "kpi-card-active" : "")"
+                            @onclick='() => ToggleImpactFilter("Regression")'
+                            aria-pressed="@(_activeImpactFilter == "Regression")">
+                        <span class="kpi-marker" aria-hidden="true"></span>
+                        <span class="kpi-value">@report.RegressionCandidates</span>
+                        <span class="kpi-label">Regression Candidates</span>
+                        <span class="kpi-hint">tasks needing regression focus</span>
+                    </button>
+                </div>
+
+                <div class="align-filter-row" role="group" aria-label="Filter by risk level">
+                    <div class="align-filter-chips">
+                        <button type="button"
+                                class="align-chip @(_activeImpactFilter is null ? "align-chip-active" : "")"
+                                @onclick='() => _activeImpactFilter = null'
+                                aria-pressed="@(_activeImpactFilter is null)">
+                            All <span class="align-chip-count">@report.TotalTasks</span>
+                        </button>
+                        <button type="button"
+                                class="align-chip align-chip-impact-high @(_activeImpactFilter == "High" ? "align-chip-active" : "")"
+                                @onclick='() => ToggleImpactFilter("High")'
+                                aria-pressed="@(_activeImpactFilter == "High")">
+                            High Risk <span class="align-chip-count">@report.HighImpactTasks</span>
+                        </button>
+                        <button type="button"
+                                class="align-chip align-chip-impact-medium @(_activeImpactFilter == "Medium" ? "align-chip-active" : "")"
+                                @onclick='() => ToggleImpactFilter("Medium")'
+                                aria-pressed="@(_activeImpactFilter == "Medium")">
+                            Medium Risk <span class="align-chip-count">@report.MediumImpactTasks</span>
+                        </button>
+                        <button type="button"
+                                class="align-chip align-chip-linked @(_activeImpactFilter == "Low" ? "align-chip-active" : "")"
+                                @onclick='() => ToggleImpactFilter("Low")'
+                                aria-pressed="@(_activeImpactFilter == "Low")">
+                            Low Risk <span class="align-chip-count">@report.LowImpactTasks</span>
+                        </button>
+                        <button type="button"
+                                class="align-chip @(_activeImpactFilter == "Unknown" ? "align-chip-active" : "")"
+                                @onclick='() => ToggleImpactFilter("Unknown")'
+                                aria-pressed="@(_activeImpactFilter == "Unknown")">
+                            Unknown Risk <span class="align-chip-count">@report.UnknownImpactTasks</span>
+                        </button>
+                        <button type="button"
+                                class="align-chip align-chip-regression @(_activeImpactFilter == "Regression" ? "align-chip-active" : "")"
+                                @onclick='() => ToggleImpactFilter("Regression")'
+                                aria-pressed="@(_activeImpactFilter == "Regression")">
+                            Regression Candidates <span class="align-chip-count">@report.RegressionCandidates</span>
+                        </button>
+                    </div>
+                    <SecondaryButton Class="align-reanalyse" OnClick="Reset">Reanalyse</SecondaryButton>
+                </div>
+
+                @if (impactFiltered.Count == 0)
+                {
+                    <div class="align-filter-empty">
+                        <p>No findings match the selected risk filter.</p>
+                        <button type="button" class="align-clear-filter" @onclick='() => _activeImpactFilter = null'>
+                            Clear filter ×
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <p class="align-scope-note">
+                        This analysis is most effective for bug fixes, technical changes, and implementation review.
+                        It checks whether implementation tasks are covered by the spec and suggests risk-based testing.
+                        Large feature development should primarily use
+                        <a href="/spec-drift?tab=changes">Spec Drift</a> and
+                        <a href="/impact-analysis">Impact Analysis</a>.
+                        Technical Only tasks are valid implementation work, but are not expected to have direct specification coverage.
+                    </p>
+                    <section class="align-findings-list" aria-label="Impact findings">
+                        <p class="section-kicker">@impactFiltered.Count task@(impactFiltered.Count == 1 ? "" : "s")</p>
+                        @foreach (var finding in impactFiltered)
+                        {
+                            var isExpanded = _expandedFindings.Contains(finding.TaskId + "-impact");
+                            <div class="align-finding align-finding-impact-@finding.ImpactLevel.ToString().ToLowerInvariant()">
+                                <button type="button"
+                                        class="align-finding-toggle"
+                                        @onclick='() => ToggleFinding(finding.TaskId + "-impact")'
+                                        aria-expanded="@isExpanded">
+                                    <span class="align-task-id">@finding.TaskId</span>
+                                    <span class="align-finding-title">@finding.Title</span>
+                                    <div class="align-finding-badges">
+                                        <span class="align-impact-badge align-impact-@finding.ImpactLevel.ToString().ToLowerInvariant()">
+                                            @ImpactLabel(finding.ImpactLevel)
+                                        </span>
+                                        @if (finding.IsRegressionCandidate)
+                                        {
+                                            <span class="align-rt-regression-badge" title="Regression candidate — needs targeted regression testing">↺ Regression</span>
+                                        }
+                                        @foreach (var area in finding.AffectedAreas.Take(4))
+                                        {
+                                            <span class="align-area-chip">@AreaShortLabel(area)</span>
+                                        }
+                                    </div>
+                                    <span class="align-chevron" aria-hidden="true">@(isExpanded ? "▲" : "▼")</span>
+                                </button>
+
+                                @if (isExpanded)
+                                {
+                                    <div class="align-finding-body">
+                                        @if (finding.AffectedAreas.Count > 0)
+                                        {
+                                            <div class="align-detail-row">
+                                                <span class="align-detail-label">Affected areas</span>
+                                                <div class="align-area-chips-row">
+                                                    @foreach (var area in finding.AffectedAreas)
+                                                    {
+                                                        <span class="align-area-chip-lg align-area-@area.ToString().ToLowerInvariant()">
+                                                            @AreaLabel(area)
+                                                        </span>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(finding.RiskReason))
+                                        {
+                                            <div class="align-detail-row align-risk-reason-row">
+                                                <span class="align-detail-label">Why this risk?</span>
+                                                <p class="align-detail-text align-detail-risk-reason">@finding.RiskReason</p>
+                                            </div>
+                                        }
+                                        @if (finding.RecommendedTests.Count > 0)
+                                        {
+                                            <div class="align-detail-row">
+                                                <span class="align-detail-label">Recommended testing</span>
+                                                <ul class="align-test-list">
+                                                    @foreach (var test in finding.RecommendedTests)
+                                                    {
+                                                        <li>@test</li>
+                                                    }
+                                                </ul>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="align-detail-row">
+                                                <span class="align-detail-label">Recommended testing</span>
+                                                <p class="align-detail-text align-no-tests">
+                                                    No specific test recommendations — check the Spec Alignment tab for context.
+                                                </p>
+                                            </div>
+                                        }
+                                        @if (finding.Matches.Count > 0)
+                                        {
+                                            <div class="align-detail-row">
+                                                <span class="align-detail-label">Linked spec items</span>
+                                                <div class="align-matches">
+                                                    @foreach (var specMatch in finding.Matches)
+                                                    {
+                                                        <span class="align-match-item">
+                                                            <span class="align-match-id">@specMatch.ItemId</span>
+                                                            <span class="align-match-type">@SpecMatchTypeLabel(specMatch.MatchType)</span>
+                                                        </span>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </section>
+                }
+            }
+            else if (_activePageTab == "explorer")
+            {
+                @* ── Task Explorer tab ── *@
+                <TaskExplorerPanel TasksText="@_tasksText" Report="@_report" />
+            }
+        }
+
+        @* ── Feature chain (always shown when results are present) ── *@
+        <div class="align-feature-chain">
+            <p class="section-kicker">Analysis chain</p>
+            <div class="align-chain-row" aria-label="Analysis dependency chain">
+                <span class="align-chain-node">spec.md</span>
+                <span class="align-chain-arrow">↔</span>
+                <span class="align-chain-node">tasks.md</span>
+                <span class="align-chain-arrow">→</span>
+                <span class="align-chain-node align-chain-node-active">Implementation Review</span>
+                <span class="align-chain-arrow">→</span>
+                <span class="align-chain-node"><a href="/spec-drift" class="align-chain-link">Spec Drift</a></span>
+            </div>
+        </div>
+    }
+
+</div>
+
+@code {
+    private string _specText = string.Empty;
+    private string _tasksText = string.Empty;
+    private AlignmentReport? _report;
+    private string? _activeFilter;
+    private string? _activeImpactFilter;
+    private string _activePageTab = "alignment";
+    private bool _analyseAttempted;
+    private readonly HashSet<string> _expandedFindings = [];
+
+    private SpecificationImport? _specImport;
+    private SpecificationImport? _tasksImport;
+
+    private void OnSpecFileImported(string content) => _specText = content;
+    private void OnSpecFileRemoved() => _specText = string.Empty;
+    private void OnTasksFileImported(string content) => _tasksText = content;
+    private void OnTasksFileRemoved() => _tasksText = string.Empty;
+
+    private void ClearSpec()
+    {
+        _specText = string.Empty;
+        _specImport?.Reset();
+    }
+
+    private void ClearTasks()
+    {
+        _tasksText = string.Empty;
+        _tasksImport?.Reset();
+    }
+
+    private void RunAnalysis()
+    {
+        _analyseAttempted = true;
+        if (string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))
+            return;
+        _report = TaskSpecAlignmentService.Analyse(_specText, _tasksText);
+        _activeFilter = null;
+        _activeImpactFilter = null;
+        _activePageTab = "alignment";
+        _expandedFindings.Clear();
+    }
+
+    private void Reset()
+    {
+        _report = null;
+        _activeFilter = null;
+        _activeImpactFilter = null;
+        _activePageTab = "alignment";
+        _analyseAttempted = false;
+        _expandedFindings.Clear();
+    }
+
+    private void ToggleFilter(string filter)
+    {
+        _activeFilter = _activeFilter == filter ? null : filter;
+    }
+
+    private void ToggleImpactFilter(string filter)
+    {
+        _activeImpactFilter = _activeImpactFilter == filter ? null : filter;
+    }
+
+    private void ToggleFinding(string key)
+    {
+        if (!_expandedFindings.Remove(key))
+            _expandedFindings.Add(key);
+    }
+
+    private List<TaskFinding> GetFiltered(List<TaskFinding> all) =>
+        _activeFilter is null ? all : all.Where(f => f.Status.ToString() == _activeFilter).ToList();
+
+    private List<TaskFinding> GetFilteredImpact(List<TaskFinding> all) =>
+        _activeImpactFilter switch
+        {
+            "Regression" => all.Where(f => f.IsRegressionCandidate).ToList(),
+            null => all,
+            _ => all.Where(f => f.ImpactLevel.ToString() == _activeImpactFilter).ToList(),
+        };
+
+    private static string StatusLabel(AlignmentStatus s) => s switch
+    {
+        AlignmentStatus.Linked => "Spec Linked",
+        AlignmentStatus.TechnicalOnly => "Technical Only",
+        AlignmentStatus.NeedsReview => "Needs Review",
+        AlignmentStatus.PossibleDeviation => "Possible Deviation",
+        _ => s.ToString(),
+    };
+
+    private static string ImpactLabel(ImpactLevel l) => l switch
+    {
+        ImpactLevel.High => "High Risk",
+        ImpactLevel.Medium => "Medium Risk",
+        ImpactLevel.Low => "Low Risk",
+        ImpactLevel.Unknown => "Unknown Risk",
+        _ => l.ToString(),
+    };
+
+    private static string SpecMatchTypeLabel(SpecMatchType t) => t switch
+    {
+        SpecMatchType.Requirement => "Requirement",
+        SpecMatchType.UserStory => "User Story",
+        SpecMatchType.AcceptanceScenario => "Acceptance Scenario",
+        SpecMatchType.SuccessCriterion => "Success Criterion",
+        SpecMatchType.Clarification => "Clarification",
+        SpecMatchType.None => "—",
+        _ => t.ToString(),
+    };
+
+    private static string AreaLabel(AffectedArea a) => a switch
+    {
+        AffectedArea.Security => "Security",
+        AffectedArea.Authorization => "Authorization",
+        AffectedArea.Search => "Search",
+        AffectedArea.Profile => "Profile",
+        AffectedArea.AccessManagement => "Access Management",
+        AffectedArea.ReferenceData => "Reference Data",
+        AffectedArea.Ingestion => "Ingestion",
+        AffectedArea.DomainEvents => "Domain Events",
+        AffectedArea.Audit => "Audit",
+        AffectedArea.OperationRegistration => "Operation Registration",
+        AffectedArea.HealthMonitoring => "Health / Monitoring",
+        AffectedArea.Infrastructure => "Infrastructure",
+        AffectedArea.BusinessRules => "Business Rules",
+        AffectedArea.Workflow => "Workflow",
+        AffectedArea.Validation => "Validation",
+        AffectedArea.Testing => "Testing",
+        AffectedArea.ExceptionHandling => "Exception Handling",
+        _ => a.ToString(),
+    };
+
+    private static string AreaShortLabel(AffectedArea a) => a switch
+    {
+        AffectedArea.Security => "Security",
+        AffectedArea.Authorization => "Auth",
+        AffectedArea.Search => "Search",
+        AffectedArea.Profile => "Profile",
+        AffectedArea.AccessManagement => "Access Mgmt",
+        AffectedArea.ReferenceData => "Ref Data",
+        AffectedArea.Ingestion => "Ingestion",
+        AffectedArea.DomainEvents => "Events",
+        AffectedArea.Audit => "Audit",
+        AffectedArea.OperationRegistration => "Op. Reg.",
+        AffectedArea.HealthMonitoring => "Health",
+        AffectedArea.Infrastructure => "Infra",
+        AffectedArea.BusinessRules => "Biz Rules",
+        AffectedArea.Workflow => "Workflow",
+        AffectedArea.Validation => "Validation",
+        AffectedArea.Testing => "Testing",
+        AffectedArea.ExceptionHandling => "Exceptions",
+        _ => a.ToString(),
+    };
+}

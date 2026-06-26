@@ -1,0 +1,263 @@
+@using BirkNext.Web.Services
+@inject FeatureVisibilityService FeatureViz
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="dashboard">QA Review Studio</a>
+        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+    </div>
+</div>
+
+<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
+    <nav class="flex-column">
+
+        @if (FeatureViz.ShowSectionGettingStarted)
+        {
+            <div class="nav-section px-3">Getting Started</div>
+            @if (FeatureViz.RecommendedWorkflow)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="getting-started" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-workflow" aria-hidden="true"></span> Recommended Workflow
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.UserGuide)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="user-guide" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-user-guide" aria-hidden="true"></span> User Guide
+                    </NavLink>
+                </div>
+            }
+        }
+
+        @if (FeatureViz.ShowSectionReview)
+        {
+            <div class="nav-section px-3">Review</div>
+            @if (FeatureViz.Dashboard)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="dashboard">
+                        <span class="nav-icon nav-icon-dashboard" aria-hidden="true"></span> Dashboard
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.SpecificationReview)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="extract">
+                        <span class="nav-icon nav-icon-extract" aria-hidden="true"></span> Specification Review
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.ConstitutionExplorer)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="constitution-explorer" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-constitution" aria-hidden="true"></span> Constitution Explorer
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.PlanExplorer)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="plan-explorer" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-plan-explorer" aria-hidden="true"></span> Plan Explorer
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.TaskExplorer)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="task-explorer" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-task-explorer" aria-hidden="true"></span> Task Explorer
+                    </NavLink>
+                </div>
+            }
+        }
+
+        @if (FeatureViz.ShowSectionLibrary)
+        {
+            <div class="nav-section px-3">Library</div>
+            @if (FeatureViz.QaArtifactLibrary)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="scenarios" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-scenarios" aria-hidden="true"></span> QA Artifact Library
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.CreateTestScenario)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="scenarios/new">
+                        <span class="nav-icon nav-icon-new-scenario" aria-hidden="true"></span> Create Test Scenario
+                    </NavLink>
+                </div>
+            }
+        }
+
+        @if (FeatureViz.ShowSectionTraceability)
+        {
+            <div class="nav-section px-3">Traceability</div>
+            @if (FeatureViz.TraceabilityCoverage)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="traceability" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-traceability" aria-hidden="true"></span> Traceability &amp; Coverage
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.TraceabilitySuggestions)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="traceability/suggestions" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-suggestions" aria-hidden="true"></span> Traceability Suggestions
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.CodeTraceability)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="code-traceability" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-code-trace" aria-hidden="true"></span> Code Traceability
+                    </NavLink>
+                </div>
+            }
+        }
+
+        @if (FeatureViz.ShowSectionAnalysis)
+        {
+            <div class="nav-section px-3">Analysis</div>
+            @if (FeatureViz.SpecDrift)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="spec-drift" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-spec-drift" aria-hidden="true"></span> Spec Drift
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.ImpactAnalysis)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="impact-analysis" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-impact-analysis" aria-hidden="true"></span> Impact Analysis
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.ArtifactTraceability)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="artifact-traceability" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-artifact-traceability" aria-hidden="true"></span> Artifact Traceability
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.ConstitutionCompliance)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="constitution-compliance" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Constitution Compliance
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.BlazorWasmSecurityReview)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="wasm-security-review" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> WASM Security Review
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.BlazorWasmPerformanceReview)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="wasm-performance-review" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> WASM Performance Review
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.QaAuditor)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="qa-auditor" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-qa-auditor" aria-hidden="true"></span> QA Auditor
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.DeliveryReadiness)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="delivery-readiness" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-delivery-readiness" aria-hidden="true"></span> Delivery Readiness
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.ImplementationReview)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="task-alignment" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-task-alignment" aria-hidden="true"></span> Implementation Review
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.ImplementationTraceability)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="implementation-traceability" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-task-alignment" aria-hidden="true"></span> Implementation Traceability
+                    </NavLink>
+                </div>
+            }
+        }
+
+        @if (FeatureViz.ShowSectionAiReview)
+        {
+            <div class="nav-section px-3">AI Review</div>
+            @if (FeatureViz.AiChangeReview)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="ai-change-auditor" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-ai-auditor" aria-hidden="true"></span> AI Change Review
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.QaReadiness)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="ai-qa-auditor" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-qa-auditor" aria-hidden="true"></span> QA Readiness
+                    </NavLink>
+                </div>
+            }
+        }
+
+        @if (FeatureViz.ShowSectionAdmin)
+        {
+            <div class="nav-section px-3">Admin</div>
+            @if (FeatureViz.AdminSystemSettings)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="admin/system-settings" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-settings" aria-hidden="true"></span> System Settings
+                    </NavLink>
+                </div>
+            }
+        }
+
+    </nav>
+</div>
+
+@code {
+    private bool collapseNavMenu = false;
+
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+}

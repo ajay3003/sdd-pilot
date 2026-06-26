@@ -1,0 +1,27 @@
+@* Structured finding card with left severity border, badge, component label, description, and optional fix hint.
+   Severity: "critical" | "error" | "warning" | "info" | "success"
+   Usage: <IssueCard Severity="warning" Component="Auth" Description="…" SuggestedFix="…" /> *@
+
+<div class="issue-card issue-card-@_sev">
+    <span class="issue-sev issue-sev-@_sev">@Severity</span>
+    <div class="issue-content">
+        @if (!string.IsNullOrWhiteSpace(Component))
+        {
+            <div class="issue-component">@Component</div>
+        }
+        <div class="issue-body">@Description</div>
+        @if (!string.IsNullOrWhiteSpace(SuggestedFix))
+        {
+            <div class="issue-fix">Fix: @SuggestedFix</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Severity     { get; set; } = "warning";
+    [Parameter]                 public string? Component   { get; set; }
+    [Parameter, EditorRequired] public string Description  { get; set; } = "";
+    [Parameter]                 public string? SuggestedFix { get; set; }
+
+    private string _sev => Severity.ToLowerInvariant();
+}
