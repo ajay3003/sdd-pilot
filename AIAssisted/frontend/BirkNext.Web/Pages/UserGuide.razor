@@ -29,6 +29,8 @@
         <span class="ug-toc-sep">·</span>
         <a href="#faq"         class="ug-toc-link">FAQ</a>
         <span class="ug-toc-sep">·</span>
+        <a href="#glossary"    class="ug-toc-link">Glossary</a>
+        <span class="ug-toc-sep">·</span>
         <a href="#ecosystem"   class="ug-toc-link">Ecosystem</a>
         <span class="ug-toc-sep">·</span>
         <a href="#about"       class="ug-toc-link">About</a>
@@ -101,6 +103,18 @@
             }
         </div>
 
+        <h3 class="ug-subsection-title" id="glossary">Glossary</h3>
+        <p>Common terms used throughout QA Review Studio and its documentation.</p>
+        <div class="ug-concept-grid">
+            @foreach (var g in Glossary)
+            {
+                <div class="ug-concept-card">
+                    <div class="ug-concept-name">@g.Term</div>
+                    <div class="ug-concept-desc">@g.Definition</div>
+                </div>
+            }
+        </div>
+
         <h3 class="ug-subsection-title">AI Review</h3>
         <p>AI Review features augment the deterministic analysis layer with AI-powered advisors and readiness summaries.</p>
         <div class="ug-concept-grid">
@@ -166,13 +180,13 @@
                 <div class="ug-flow-conn">↓</div>
                 <div class="ug-flow-node ug-flow-primary">3 · Implementation Planning</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-secondary">4 · Artifact Publishing (Optional)</div>
+                <div class="ug-flow-node ug-flow-primary">4 · Traceability &amp; Governance</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-primary">5 · Traceability &amp; Governance</div>
+                <div class="ug-flow-node ug-flow-primary">5 · Implementation Review</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-primary">6 · Implementation Review</div>
+                <div class="ug-flow-node ug-flow-primary">6 · Quality &amp; Readiness</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-terminal">7 · Quality &amp; Readiness</div>
+                <div class="ug-flow-node ug-flow-secondary">7 · Artifact Publishing (Optional)</div>
             </div>
 
             <div class="ug-flow-branches">
@@ -191,19 +205,19 @@
                 </div>
                 <div class="ug-branch-item">
                     <span class="ug-branch-badge">Phase 4</span>
-                    <span class="ug-branch-when">QA Artifact Library — publish &amp; reuse assets</span>
-                </div>
-                <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Phase 5</span>
                     <span class="ug-branch-when">Artifact Traceability + Constitution Compliance</span>
                 </div>
                 <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Phase 6</span>
+                    <span class="ug-branch-badge">Phase 5</span>
                     <span class="ug-branch-when">Implementation Review — task-to-spec alignment</span>
                 </div>
                 <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Phase 7</span>
+                    <span class="ug-branch-badge">Phase 6</span>
                     <span class="ug-branch-when">QA Readiness + QA Auditor — readiness gates</span>
+                </div>
+                <div class="ug-branch-item">
+                    <span class="ug-branch-badge">Phase 7</span>
+                    <span class="ug-branch-when">QA Artifact Library — publish &amp; reuse assets (optional)</span>
                 </div>
             </div>
         </div>
@@ -540,6 +554,8 @@
                     <div class="ug-eco-conn">↓</div>
                     <div class="ug-eco-node">Constitution Compliance</div>
                     <div class="ug-eco-conn">↓</div>
+                    <div class="ug-eco-node">Implementation Review</div>
+                    <div class="ug-eco-conn">↓</div>
                     <div class="ug-eco-node">QA Auditor</div>
                     <div class="ug-eco-conn">↓</div>
                     <div class="ug-eco-node ug-eco-terminal">Delivery Readiness</div>
@@ -548,10 +564,6 @@
             <div class="ug-ecosystem-support">
                 <h4 class="ug-ecosystem-subtitle">Supporting Capabilities</h4>
                 <div class="ug-support-list">
-                    <div class="ug-support-item">
-                        <div class="ug-support-name">Implementation Review</div>
-                        <div class="ug-support-desc">Validates tasks.md against spec.md for alignment, risk, and regression candidates.</div>
-                    </div>
                     <div class="ug-support-item">
                         <div class="ug-support-name">Spec Drift</div>
                         <div class="ug-support-desc">Detects coverage gaps, orphan tests, and drift as the codebase evolves.</div>
@@ -625,6 +637,44 @@
     {
         if (!_openFeature.Add(id)) _openFeature.Remove(id);
     }
+
+    // ── Glossary ──────────────────────────────────────────────────────────
+
+    private sealed record GlossaryTerm(string Term, string Definition);
+
+    private static readonly GlossaryTerm[] Glossary =
+    [
+        new("Artifact",
+            "A structured markdown document loaded into the Studio for analysis. The four SDD artifacts are constitution.md, spec.md, plan.md, and tasks.md."),
+        new("Specification",
+            "The functional requirements document (spec.md) defining what the system must do — requirements, user stories, acceptance criteria, and success criteria."),
+        new("Constitution",
+            "The governance document (constitution.md) defining the rules, policies, and quality standards that all other artifacts must comply with."),
+        new("Plan",
+            "The implementation plan (plan.md) containing architecture decisions (ADRs), implementation phases, quality gates, risks, and dependencies."),
+        new("Task",
+            "A discrete implementation work item from tasks.md, typically referencing a functional requirement and organized by sprint or phase."),
+        new("Traceability",
+            "The measurable chain of references connecting governance rules through requirements, plans, and tasks. High traceability means every item can be traced to its origin."),
+        new("Coverage",
+            "The percentage of requirements, tests, or governance rules that are addressed by linked artifacts. Low coverage indicates gaps that need remediation."),
+        new("Compliance",
+            "Whether artifacts satisfy the governance rules defined in the constitution. Constitution Compliance performs a rule-by-rule verdict across all four artifacts."),
+        new("Governance",
+            "The set of rules, policies, and quality standards enforced across the SDD artifact chain, originating from the project constitution."),
+        new("Finding",
+            "A specific quality issue, gap, or violation identified by an analysis module, classified by severity and category."),
+        new("Recommendation",
+            "An actionable suggestion generated by an analysis module to address a finding or improve quality."),
+        new("Severity",
+            "The impact classification of a finding: Critical (blocks delivery), High (must be resolved before release), Medium (should be resolved), Low (informational)."),
+        new("Confidence",
+            "The likelihood that an AI-generated finding or suggestion is accurate. Expressed as High, Medium, or Low. Low-confidence findings still warrant review."),
+        new("Delivery Readiness",
+            "A go/no-go assessment across three delivery gates: Ready for Development, Ready for Testing, and Ready for Release. Each gate produces a pass/fail verdict with blockers."),
+        new("QA Score",
+            "A scored assessment of quality across five categories: Specification Quality, Plan Quality, Task Readiness, Traceability, and Compliance. Produced by QA Readiness."),
+    ];
 
     // ── Core capabilities ─────────────────────────────────────────────────
 
@@ -707,13 +757,13 @@
     private static readonly Feature[] AllFeatures =
     [
         new("dashboard", "Dashboard", "Review", "review", "/dashboard",
-            "Overall QA and analysis status overview.",
-            "No input",
-            "KPI summary, status indicators",
-            "Starting any QA session or sprint review.",
+            "SDD Governance Dashboard — overall project health, KPI scores, and recent activity at a glance.",
+            "No input — aggregates data across all analyses",
+            "Governance Score, Traceability %, Compliance %, QA Score, Delivery status, Performance, Project Health, Analysis Summary, Recent Activity",
+            "Starting any QA session, sprint review, or executive status check.",
             ["All roles", "Test Leads", "Scrum Masters"],
-            ["Checking project-wide QA health", "Starting a sprint review"],
-            ["Deep feature analysis — use the specific feature page"]),
+            ["Checking project-wide QA health at a glance", "Interpreting Governance Score, Traceability, Compliance, and QA Score KPIs", "Monitoring Delivery status and Performance indicators", "Reviewing Project Health and Recent Activity summaries", "Starting a sprint review with a snapshot of current status"],
+            ["Deep feature analysis — navigate to the specific feature page for details"]),
 
         new("constitution-explorer", "Constitution Explorer", "Review", "review", "/constitution-explorer",
             "Review governance rules, policies, standards, and principles from the project constitution.",
@@ -849,6 +899,69 @@
             ["Test Leads", "Scrum Masters", "Product Owners"],
             ["Pre-release readiness gates", "Sprint QA sign-off", "Executive readiness summary"],
             ["Early-stage feature planning — start with Specification Review"]),
+
+        new("wasm-security", "WASM Security Review", "Analysis", "analysis", "/wasm-security-review",
+            "Scan a Blazor WebAssembly application for security vulnerabilities — exposed secrets, missing CSP headers, insecure token storage, and direct backend URL exposure.",
+            "Frontend analysis profile (configured in System Settings)",
+            "Security findings by category with severity classification",
+            "When reviewing a Blazor WASM application for deployment security compliance.",
+            ["Architects", "Developers", "Test Leads"],
+            ["Pre-deployment security gate for Blazor WASM apps", "Checking CSP, auth guards, and sensitive data exposure", "Validating HTTPS enforcement and secure token storage patterns"],
+            ["Non-WASM applications — this scanner targets Blazor WebAssembly specifically"]),
+
+        new("wasm-performance", "WASM Performance Review", "Analysis", "analysis", "/wasm-performance-review",
+            "Analyse a Blazor WebAssembly application for performance issues — bundle size, compression, caching, Core Web Vitals compliance, and startup waterfall.",
+            "Frontend analysis profile (configured in System Settings)",
+            "Performance findings by category with severity classification",
+            "When reviewing a Blazor WASM application for performance compliance before release.",
+            ["Architects", "Developers", "Test Leads"],
+            ["Pre-release performance gate for Blazor WASM apps", "Identifying bundle size, startup time, and caching issues", "Validating Core Web Vitals compliance against configured thresholds"],
+            ["Non-WASM applications — this reviewer targets Blazor WebAssembly specifically"]),
+
+        new("impl-traceability", "Implementation Traceability", "Analysis", "analysis", "/implementation-traceability",
+            "Map implementation work items (Azure DevOps) to pull requests, commits, and changed files — producing a deterministic evidence chain for delivery governance.",
+            "Azure DevOps work item IDs",
+            "Work Item → Pull Request → Commit → Changed Files traceability chain",
+            "When you need to verify that implementation work is tracked in Azure DevOps and traceable to source code changes.",
+            ["Test Leads", "Architects", "Developers"],
+            ["Governance audits requiring ADO-to-code implementation evidence", "Verifying that work items have linked PRs and commits", "Release readiness checks requiring end-to-end implementation traceability"],
+            ["SDD artifact analysis — use Artifact Traceability for cross-artifact coverage"]),
+
+        new("traceability-coverage", "Traceability & Coverage", "Traceability", "traceability", "/traceability",
+            "View session-level coverage analysis — which requirements have tests, which user stories are covered, and where gaps exist.",
+            "Extracted analysis from Specification Review",
+            "Coverage percentages, gap indicators, requirement and test counts by category",
+            "When you want a persistent summary view of coverage results from the current session.",
+            ["Testers", "Test Leads"],
+            ["Reviewing session coverage results without re-running analysis", "Tracking requirement and test counts across the session"],
+            ["Running new coverage analysis — use Specification Review to re-analyse"]),
+
+        new("traceability-suggestions", "Traceability Suggestions", "Traceability", "traceability", "/traceability/suggestions",
+            "Review and act on AI-generated suggestions for improving traceability links — accept or reject recommended connections between requirements and tests.",
+            "AI-generated link suggestions from session analysis",
+            "Pending suggestions with confidence scores; accept or reject each to update coverage",
+            "When coverage is low and you want AI guidance on which test-to-requirement links to create.",
+            ["Testers", "Test Leads"],
+            ["Improving coverage by acting on AI-suggested traceability links", "Prioritising link work by confidence score"],
+            ["Deep coverage analysis — use Specification Review for a fresh analysis run"]),
+
+        new("code-traceability", "Code Traceability", "Traceability", "traceability", "/code-traceability",
+            "Link source code files to specification requirements and tests — providing code-level implementation evidence against requirements.",
+            "Source code file registrations via the UI",
+            "KPIs: tracked files, requirements implemented, tests implemented, files missing traceability links",
+            "When you need to verify that source code is linked to requirements and tests for implementation governance.",
+            ["Developers", "Architects", "Test Leads"],
+            ["Confirming source code is traceable to functional requirements", "Identifying files missing requirement or test links", "Code-level governance audits requiring implementation evidence"],
+            ["Artifact-level traceability — use Artifact Traceability for the cross-artifact chain"]),
+
+        new("system-settings", "System Settings", "Admin", "admin", "/admin/system-settings",
+            "Configure platform-wide settings — feature visibility, frontend analysis profiles, AI parameters, diagnostics, and maintenance.",
+            "No input — configuration interface",
+            "Platform configuration across all modules and features",
+            "When configuring the platform for your team or setting up frontend analysis profiles.",
+            ["Architects", "Test Leads"],
+            ["Enabling or disabling features via Feature Visibility", "Configuring Frontend Analysis profiles for WASM Security and Performance Review", "Reviewing Configuration Health and connection status", "Setting AI parameters and API credentials", "Running diagnostics or maintenance tasks"],
+            ["Feature-level analysis — navigate to the specific feature page for analysis work"]),
     ];
 
     // ── Quick navigation reference ─────────────────────────────────────────
@@ -857,21 +970,29 @@
 
     private static readonly NavEntry[] NavReference =
     [
-        new("Constitution Explorer", "Review governance rules",        "Review",   "review",   "/constitution-explorer"),
-        new("Specification Review",  "Review requirements & AC",        "Review",   "review",   "/extract"),
-        new("Plan Explorer",         "Review implementation plans",      "Review",   "review",   "/plan-explorer"),
-        new("Task Explorer",         "Review implementation tasks",      "Review",   "review",   "/task-explorer"),
-        new("QA Artifact Library",   "Store & reuse QA assets",          "Library",  "library",  "/scenarios"),
-        new("Create Test Scenario",  "Author manual test cases",         "Library",  "library",  "/scenarios/new"),
-        new("Spec Drift",            "Detect coverage drift",            "Analysis", "analysis", "/spec-drift"),
-        new("Impact Analysis",       "Scope regression impact",          "Analysis", "analysis", "/impact-analysis"),
-        new("Artifact Traceability", "Analyze cross-artifact coverage",  "Analysis", "analysis", "/artifact-traceability"),
-        new("Constitution Compliance","Verify governance compliance",    "Analysis", "analysis", "/constitution-compliance"),
-        new("QA Auditor",            "Find gaps with rule-based audit",  "Analysis", "analysis", "/qa-auditor"),
-        new("Delivery Readiness",    "Get go/no-go decisions",           "Analysis", "analysis", "/delivery-readiness"),
-        new("Implementation Review", "Align tasks to spec",              "Analysis", "analysis", "/task-alignment"),
-        new("AI Change Review",      "Review AI-generated changes",      "AI Review","ai",       "/ai-change-auditor"),
-        new("QA Readiness",          "Executive readiness summary",      "AI Review","ai",       "/ai-qa-auditor"),
+        new("Dashboard",                "Project health KPIs at a glance",    "Review",      "review",      "/dashboard"),
+        new("Constitution Explorer",    "Review governance rules",             "Review",      "review",      "/constitution-explorer"),
+        new("Specification Review",     "Review requirements & AC",            "Review",      "review",      "/extract"),
+        new("Plan Explorer",            "Review implementation plans",         "Review",      "review",      "/plan-explorer"),
+        new("Task Explorer",            "Review implementation tasks",         "Review",      "review",      "/task-explorer"),
+        new("QA Artifact Library",      "Store & reuse QA assets",             "Library",     "library",     "/scenarios"),
+        new("Create Test Scenario",     "Author manual test cases",            "Library",     "library",     "/scenarios/new"),
+        new("Traceability & Coverage",  "View session coverage results",       "Traceability","traceability","/traceability"),
+        new("Traceability Suggestions", "Act on AI traceability suggestions",  "Traceability","traceability","/traceability/suggestions"),
+        new("Code Traceability",        "Link source files to requirements",   "Traceability","traceability","/code-traceability"),
+        new("Spec Drift",               "Detect coverage drift",               "Analysis",    "analysis",    "/spec-drift"),
+        new("Impact Analysis",          "Scope regression impact",             "Analysis",    "analysis",    "/impact-analysis"),
+        new("Artifact Traceability",    "Analyze cross-artifact coverage",     "Analysis",    "analysis",    "/artifact-traceability"),
+        new("Constitution Compliance",  "Verify governance compliance",        "Analysis",    "analysis",    "/constitution-compliance"),
+        new("WASM Security Review",     "Scan WASM app for security issues",   "Analysis",    "analysis",    "/wasm-security-review"),
+        new("WASM Performance Review",  "Analyse WASM app performance",        "Analysis",    "analysis",    "/wasm-performance-review"),
+        new("QA Auditor",               "Find gaps with rule-based audit",     "Analysis",    "analysis",    "/qa-auditor"),
+        new("Delivery Readiness",       "Get go/no-go decisions",              "Analysis",    "analysis",    "/delivery-readiness"),
+        new("Implementation Review",    "Align tasks to spec",                 "Analysis",    "analysis",    "/task-alignment"),
+        new("Implementation Traceability","Map ADO work items to code changes","Analysis",    "analysis",    "/implementation-traceability"),
+        new("AI Change Review",         "Review AI-generated changes",         "AI Review",   "ai",          "/ai-change-auditor"),
+        new("QA Readiness",             "Executive readiness summary",         "AI Review",   "ai",          "/ai-qa-auditor"),
+        new("System Settings",          "Configure platform settings",         "Admin",       "admin",       "/admin/system-settings"),
     ];
 
     // ── Helpful scenarios ─────────────────────────────────────────────────
@@ -916,6 +1037,21 @@
         new("I want to assess the regression impact of a change.",
             "Impact Analysis", "/impact-analysis",
             "Scope regression and identify high-risk areas"),
+        new("I want to check security vulnerabilities in my Blazor WASM app.",
+            "WASM Security Review", "/wasm-security-review",
+            "Configure a frontend analysis profile in System Settings first"),
+        new("I want to review performance of my Blazor WASM application.",
+            "WASM Performance Review", "/wasm-performance-review",
+            "Configure a frontend analysis profile in System Settings first"),
+        new("I want to verify that ADO work items are linked to code changes.",
+            "Implementation Traceability", "/implementation-traceability",
+            "Enter work item IDs from Azure DevOps"),
+        new("I want to link source code files to requirements.",
+            "Code Traceability", "/code-traceability",
+            "Register source files to create code-level traceability links"),
+        new("I want to enable or disable features for my team.",
+            "System Settings", "/admin/system-settings",
+            "Use the Feature Visibility tab"),
     ];
 
     // ── Typical workflows ─────────────────────────────────────────────────
@@ -925,11 +1061,23 @@
     private static readonly Workflow[] TypicalWorkflows =
     [
         new("Full SDD Governance Review",
-            ["Constitution Explorer", "Specification Review", "Plan Explorer", "Artifact Traceability", "Constitution Compliance", "QA Auditor", "Delivery Readiness"],
-            "Complete seven-phase SDD governance workflow from constitution review to readiness sign-off."),
-        new("New Feature",
-            ["Specification Review", "Traceability & Coverage", "Implementation Review", "QA Auditor", "QA Readiness"],
-            "End-to-end quality validation for a new feature from spec to release."),
+            ["Constitution Explorer", "Specification Review", "Plan Explorer", "Artifact Traceability", "Constitution Compliance", "Implementation Review", "QA Auditor", "Delivery Readiness"],
+            "Complete seven-phase SDD governance workflow from constitution review to delivery readiness sign-off."),
+        new("New Feature Review",
+            ["Specification Review", "Traceability & Coverage", "Plan Explorer", "Artifact Traceability", "Implementation Review", "QA Auditor", "QA Readiness"],
+            "End-to-end quality validation for a new feature from spec extraction to readiness gate."),
+        new("Existing Project Review",
+            ["Constitution Explorer", "Specification Review", "Artifact Traceability", "Constitution Compliance", "Spec Drift", "Delivery Readiness"],
+            "Onboard an existing project — establish governance baseline, assess traceability, and identify drift."),
+        new("Specification Validation",
+            ["Specification Review", "Traceability & Coverage", "Flow View", "Spec Explorer"],
+            "Deep review of a single specification — extract requirements, assess coverage, and explore story readiness."),
+        new("Implementation Validation",
+            ["Plan Explorer", "Implementation Review", "Risk & Testing", "Artifact Traceability", "QA Auditor"],
+            "Validate that implementation plans and tasks are correctly aligned to the specification and constitution."),
+        new("Release Readiness Assessment",
+            ["Constitution Compliance", "Artifact Traceability", "QA Auditor", "Delivery Readiness", "QA Readiness"],
+            "Pre-release sign-off across compliance, traceability, audit, delivery gates, and AI readiness summary."),
         new("Compliance Check",
             ["Constitution Explorer", "Constitution Compliance", "QA Auditor"],
             "Focused governance review — verify that all artifacts comply with the project constitution."),
@@ -942,9 +1090,6 @@
         new("AI Generated Change",
             ["AI Change Review", "Implementation Review", "QA Auditor", "Delivery Readiness"],
             "After AI generates implementation — review alignment, coverage, and readiness."),
-        new("Release Gate",
-            ["Constitution Compliance", "QA Auditor", "Delivery Readiness", "QA Readiness"],
-            "Pre-release sign-off across compliance, audit, delivery gates, and AI readiness summary."),
     ];
 
     // ── FAQ ───────────────────────────────────────────────────────────────
@@ -992,5 +1137,29 @@
         new("qa-readiness-chain",
             "How does QA Readiness use previous analysis?",
             "<p><strong>QA Readiness</strong> synthesises findings from the full artifact set across five quality categories: Specification Quality, Plan Quality, Task Readiness, Traceability, and Compliance. Load all four artifacts (constitution, spec, plan, tasks) to get the most accurate readiness assessment. The more artifacts provided, the more categories are scored.</p>"),
+
+        new("governance-low",
+            "Why is my Governance Score low?",
+            "<p>The <strong>Governance Score</strong> reflects the overall compliance and traceability health of your artifact set. A low score typically means one or more of: constitution rules are not referenced in downstream artifacts, traceability links between artifacts are missing, or compliance checks have identified rule violations.</p><p>Start with <a href='/artifact-traceability'>Artifact Traceability</a> to identify gaps in the Constitution→Spec→Plan→Tasks chain. Then run <a href='/constitution-compliance'>Constitution Compliance</a> to see which specific rules are missing coverage. Work through the findings and re-run to see the score improve.</p>"),
+
+        new("traceability-zero",
+            "Why is Traceability showing 0%?",
+            "<p><strong>0% Traceability</strong> usually means no artifacts have been loaded or the cross-artifact references are absent. Traceability is calculated across the four-artifact chain — if only one artifact is loaded, links to the others cannot be found.</p><p>Open <a href='/artifact-traceability'>Artifact Traceability</a> and load all four artifacts: constitution.md, spec.md, plan.md, and tasks.md. Run analysis — the coverage matrix will show which layers have references and which are missing them.</p>"),
+
+        new("compliance-unavailable",
+            "Why is Compliance showing as unavailable?",
+            "<p><strong>Compliance unavailable</strong> means the constitution.md has not been loaded, or it has been loaded but the analysis has not been run yet. Constitution Compliance requires the constitution to derive the rule set to check against.</p><p>Open <a href='/constitution-compliance'>Constitution Compliance</a>, load constitution.md along with spec.md, plan.md, and tasks.md, then run analysis. If the constitution file is missing, create or locate it and load it via the file import.</p>"),
+
+        new("not-run",
+            "What does 'Not Run' mean?",
+            "<p><strong>Not Run</strong> indicates that an analysis has not been executed yet for the current session. Most analysis modules require you to load one or more artifact files and then explicitly run analysis — results are not generated automatically on page load.</p><p>To resolve: open the relevant feature page, upload the required artifacts using the file import control, and click the analysis/run button. Once analysis completes, the 'Not Run' status is replaced with real results.</p>"),
+
+        new("begin-review",
+            "How do I begin a new review?",
+            "<p>Navigate to the relevant feature for your goal. For a full SDD governance review, follow the <a href='/getting-started'>Recommended Workflow</a> phase by phase. For a quick feature review, start with <a href='/extract'>Specification Review</a>.</p><p>Each page has its own file import control — upload the required markdown artifacts (constitution.md, spec.md, plan.md, tasks.md as needed) and run analysis. Session state is preserved automatically while you navigate between tabs and related features.</p>"),
+
+        new("when-delivery-readiness",
+            "When should I run Delivery Readiness?",
+            "<p>Run <a href='/delivery-readiness'>Delivery Readiness</a> when you need a formal go/no-go decision before a major milestone — before starting development, before handing off to QA, or before a release.</p><p>For maximum accuracy, run it after completing Artifact Traceability, Constitution Compliance, and QA Auditor — Delivery Readiness aggregates their findings into gate decisions. Load all four artifacts (constitution, spec, plan, tasks) to enable all three gates: Development, Testing, and Release.</p>"),
     ];
 }

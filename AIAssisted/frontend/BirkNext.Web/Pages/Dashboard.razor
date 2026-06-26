@@ -50,6 +50,7 @@ else
         }
     </PageHeader>
 
+    @* ══ 1 · KPI Strip ════════════════════════════════════════════════════════ *@
     <div class="db-kpi-strip" aria-label="Key performance indicators">
         <MetricCard Value="@($"{_governanceLoadPercent}%")"
                     Label="Governance"
@@ -84,7 +85,7 @@ else
         }
     </div>
 
-    @* ══ 3 · Governance Status ════════════════════════════════════════════════ *@
+    @* ══ 2 · Governance Status ════════════════════════════════════════════════ *@
     <section class="db-section">
         <SectionHeader Title="Governance Status" Description="Loaded · Reviewed · Analyzed" />
         <div class="db-artifact-grid">
@@ -176,23 +177,79 @@ else
         </div>
     </section>
 
-    @* ══ 4 · Project Health ═══════════════════════════════════════════════════ *@
+    @* ══ 3 · Readiness Summary ════════════════════════════════════════════════ *@
     <section class="db-section">
-        <SectionHeader Title="Project Health" />
-        <div class="db-health-bars">
-            <HealthBar Label="Governance"   Value="@_governanceLoadPercent" ValueLabel="@($"{_governanceLoadPercent:0}%")" />
-            <HealthBar Label="Traceability" Value="@(_traceabilityHasData ? _traceabilityScore : 0)" ValueLabel="@(_traceabilityHasData ? $"{_traceabilityScore:0}%" : "Not Run")" />
-            <HealthBar Label="Compliance"   Value="@(_complianceHasData ? _complianceScore : 0)"    ValueLabel="@(_complianceHasData ? $"{_complianceScore:0}%" : "Not Run")" />
-            <HealthBar Label="QA"           Value="@(_qaHasData ? _qaScore : 0)"                    ValueLabel="@(_qaHasData ? $"{_qaScore:0}%" : "Not Run")" />
-            <HealthBar Label="Delivery"     Value="@(_deliveryHasData ? _deliveryScore : 0)"        ValueLabel="@(_deliveryHasData ? $"{_deliveryScore:0}%" : "Not Run")" />
-            @if (_perfReport?.ReadinessReport is { HasData: true } perfBar)
-            {
-                <HealthBar Label="Performance" Value="@perfBar.OverallScore" ValueLabel="@(perfBar.OverallScore.ToString())" />
-            }
+        <SectionHeader Title="Readiness Summary" />
+        <div class="db-readiness-grid">
+            @ReadinessCard("Development", Snapshot.DeliveryReport?.DevelopmentDecision.State, Snapshot.DeliveryReport?.Health.DevelopmentScore, "delivery-readiness")
+            @ReadinessCard("Testing",     Snapshot.DeliveryReport?.TestingDecision.State,     Snapshot.DeliveryReport?.Health.TestingScore,     "delivery-readiness")
+            @ReadinessCard("Release",     Snapshot.DeliveryReport?.ReleaseDecision.State,     Snapshot.DeliveryReport?.Health.ReleaseScore,      "delivery-readiness")
+            @ReadinessCardScore("QA Readiness", Snapshot.ReadinessReport?.OverallScore, "ai-qa-auditor")
         </div>
     </section>
 
-    @* ══ 5 · Analysis Summary ════════════════════════════════════════════════ *@
+    @* ══ 4 · Top Risks ════════════════════════════════════════════════════════ *@
+    <section class="db-section">
+        <SectionHeader Title="Top Risks" />
+        @{
+            var topRisks = _topRisks.ToList();
+        }
+        @if (topRisks.Count > 0)
+        {
+            <div class="issue-cards">
+                @foreach (var (Title, Severity, Category, Detail) in topRisks)
+                {
+                    <IssueCard Severity="@Severity" Component="@Category" Description="@Title" SuggestedFix="@Detail" />
+                }
+            </div>
+        }
+        else
+        {
+            <div class="db-section-empty">
+                No risks detected. Run QA Auditor or Delivery Readiness to surface governance risks.
+                <div class="db-empty-actions">
+                    <a href="qa-auditor" class="db-qa-btn">Run QA Auditor</a>
+                    <a href="delivery-readiness" class="db-qa-btn">Run Delivery Readiness</a>
+                </div>
+            </div>
+        }
+    </section>
+
+    @* ══ 5 · Top Recommendations ══════════════════════════════════════════════ *@
+    <section class="db-section">
+        <SectionHeader Title="Top Recommendations" />
+        @{
+            var topRecs = _topRecs.ToList();
+        }
+        @if (topRecs.Count > 0)
+        {
+            <div class="db-rec-cards">
+                @{ int recIdx = 0; }
+                @foreach (var (Text, Category, ActionHref) in topRecs)
+                {
+                    recIdx++;
+                    <div class="db-rec-card">
+                        <div class="db-rec-num" aria-hidden="true">@recIdx</div>
+                        <div class="db-rec-body">
+                            <div class="db-rec-text">@Text</div>
+                            <div class="db-rec-footer">
+                                <span class="db-rec-cat">@Category</span>
+                                <a href="@ActionHref" class="db-rec-action">Open →</a>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="db-section-empty">
+                No recommendations yet. Run QA Auditor or Delivery Readiness to generate actionable recommendations.
+            </div>
+        }
+    </section>
+
+    @* ══ 6 · Analysis Summary ════════════════════════════════════════════════ *@
     <section class="db-section">
         <SectionHeader Title="Analysis Summary" Description="Run each analysis to populate" />
         <div class="db-analysis-grid">
@@ -300,11 +357,11 @@ else
                 }
             </div>
 
-            @* WASM Security Review *@
+            @* Security Review *@
             <div class="db-analysis-card">
                 <div class="db-analysis-card-header">
-                    <span class="db-analysis-card-title">WASM Security Review</span>
-                    <a href="wasm-security-review" class="db-summary-open" aria-label="Open WASM Security Review">Open →</a>
+                    <span class="db-analysis-card-title">Security Review</span>
+                    <a href="wasm-security-review" class="db-summary-open" aria-label="Open Security Review">Open →</a>
                 </div>
                 <div class="db-analysis-empty">
                     Not run this session — analyse headers, authentication, configuration, and exposures.
@@ -312,11 +369,11 @@ else
                 </div>
             </div>
 
-            @* WASM Performance *@
+            @* Performance Review *@
             <div class="db-analysis-card">
                 <div class="db-analysis-card-header">
-                    <span class="db-analysis-card-title">WASM Performance</span>
-                    <a href="wasm-performance-review" class="db-summary-open" aria-label="Open WASM Performance Review">Open →</a>
+                    <span class="db-analysis-card-title">Performance Review</span>
+                    <a href="wasm-performance-review" class="db-summary-open" aria-label="Open Performance Review">Open →</a>
                 </div>
                 @if (_perfReport?.ReadinessReport is { HasData: true } perfCard)
                 {
@@ -346,10 +403,50 @@ else
                 }
             </div>
 
+            @* UI Integrity *@
+            <div class="db-analysis-card" data-testid="ui-integrity-section">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">UI Integrity</span>
+                    <StatusChip Status="@(_uiIntegrity.StructuralRiskScore >= 60 ? "critical" : _uiIntegrity.StructuralRiskScore >= 30 ? "warning" : "healthy")"
+                                Label="@($"Risk {_uiIntegrity.StructuralRiskScore}/100")" />
+                </div>
+                <div class="db-analysis-score @ScoreClass(100 - _uiIntegrity.StructuralRiskScore)">@(100 - _uiIntegrity.StructuralRiskScore)</div>
+                <span class="db-analysis-status @(_uiIntegrity.StructuralRiskScore >= 60 ? "db-status-critical" : _uiIntegrity.StructuralRiskScore >= 30 ? "db-status-warning" : "db-status-healthy")">
+                    @(_uiIntegrity.StructuralRiskScore >= 60 ? "Critical" : _uiIntegrity.StructuralRiskScore >= 30 ? "Warning" : "Healthy")
+                </span>
+                <div class="db-analysis-chips">
+                    <span class="db-count-chip db-count-good">@_uiIntegrity.FullyConsistentSectionCount consistent</span>
+                    @if (_uiIntegrity.HybridSectionCount > 0)
+                    {
+                        <span class="db-count-chip db-count-poor">@_uiIntegrity.HybridSectionCount hybrid</span>
+                    }
+                    @if (_uiIntegrity.PartiallyMigratedSectionCount > 0)
+                    {
+                        <span class="db-count-chip db-count-warn">@_uiIntegrity.PartiallyMigratedSectionCount partial</span>
+                    }
+                </div>
+            </div>
+
         </div>
     </section>
 
-    @* ══ 6 · Recent Activity ══════════════════════════════════════════════════ *@
+    @* ══ 7 · Project Health ═══════════════════════════════════════════════════ *@
+    <section class="db-section">
+        <SectionHeader Title="Project Health" />
+        <div class="db-health-bars">
+            <HealthBar Label="Governance"   Value="@_governanceLoadPercent" ValueLabel="@($"{_governanceLoadPercent:0}%")" />
+            <HealthBar Label="Traceability" Value="@(_traceabilityHasData ? _traceabilityScore : 0)" ValueLabel="@(_traceabilityHasData ? $"{_traceabilityScore:0}%" : "Not Run")" />
+            <HealthBar Label="Compliance"   Value="@(_complianceHasData ? _complianceScore : 0)"    ValueLabel="@(_complianceHasData ? $"{_complianceScore:0}%" : "Not Run")" />
+            <HealthBar Label="QA"           Value="@(_qaHasData ? _qaScore : 0)"                    ValueLabel="@(_qaHasData ? $"{_qaScore:0}%" : "Not Run")" />
+            <HealthBar Label="Delivery"     Value="@(_deliveryHasData ? _deliveryScore : 0)"        ValueLabel="@(_deliveryHasData ? $"{_deliveryScore:0}%" : "Not Run")" />
+            @if (_perfReport?.ReadinessReport is { HasData: true } perfBar)
+            {
+                <HealthBar Label="Performance" Value="@perfBar.OverallScore" ValueLabel="@(perfBar.OverallScore.ToString())" />
+            }
+        </div>
+    </section>
+
+    @* ══ 8 · Recent Activity ══════════════════════════════════════════════════ *@
     <section class="db-section">
         <SectionHeader Title="Recent Activity" />
         <div class="db-timeline">
@@ -465,172 +562,7 @@ else
         </div>
     </section>
 
-    @* ══ 7 · Top Risks ════════════════════════════════════════════════════════ *@
-    <section class="db-section">
-        <SectionHeader Title="Top Risks" />
-        @{
-            var topRisks = _topRisks.ToList();
-        }
-        @if (topRisks.Count > 0)
-        {
-            <div class="issue-cards">
-                @foreach (var (Title, Severity, Category, Detail) in topRisks)
-                {
-                    <IssueCard Severity="@Severity" Component="@Category" Description="@Title" SuggestedFix="@Detail" />
-                }
-            </div>
-        }
-        else
-        {
-            <EmptyState Title="No risks detected." Description="Run QA Auditor or Delivery Readiness to surface governance risks.">
-                <a href="qa-auditor" class="db-qa-btn">Run QA Auditor</a>
-                <a href="delivery-readiness" class="db-qa-btn">Run Delivery Readiness</a>
-            </EmptyState>
-        }
-    </section>
-
-    @* ══ 8 · Top Recommendations ══════════════════════════════════════════════ *@
-    <section class="db-section">
-        <SectionHeader Title="Top Recommendations" />
-        @{
-            var topRecs = _topRecs.ToList();
-        }
-        @if (topRecs.Count > 0)
-        {
-            <div class="db-rec-cards">
-                @{ int recIdx = 0; }
-                @foreach (var (Text, Category, ActionHref) in topRecs)
-                {
-                    recIdx++;
-                    <div class="db-rec-card">
-                        <div class="db-rec-num" aria-hidden="true">@recIdx</div>
-                        <div class="db-rec-body">
-                            <div class="db-rec-text">@Text</div>
-                            <div class="db-rec-footer">
-                                <span class="db-rec-cat">@Category</span>
-                                <a href="@ActionHref" class="db-rec-action">Open →</a>
-                            </div>
-                        </div>
-                    </div>
-                }
-            </div>
-        }
-        else
-        {
-            <EmptyState Title="No recommendations yet." Description="Run QA Auditor or Delivery Readiness to generate actionable recommendations." />
-        }
-    </section>
-
-    @* ══ 9 · Readiness Summary ════════════════════════════════════════════════ *@
-    <section class="db-section">
-        <SectionHeader Title="Readiness Summary" />
-        <div class="db-readiness-grid">
-            @ReadinessCard("Development", Snapshot.DeliveryReport?.DevelopmentDecision.State, Snapshot.DeliveryReport?.Health.DevelopmentScore, "delivery-readiness")
-            @ReadinessCard("Testing",     Snapshot.DeliveryReport?.TestingDecision.State,     Snapshot.DeliveryReport?.Health.TestingScore,     "delivery-readiness")
-            @ReadinessCard("Release",     Snapshot.DeliveryReport?.ReleaseDecision.State,     Snapshot.DeliveryReport?.Health.ReleaseScore,      "delivery-readiness")
-            @ReadinessCardScore("QA Readiness", Snapshot.ReadinessReport?.OverallScore, "ai-qa-auditor")
-        </div>
-    </section>
-
-    @* ══ 10 · Performance Summary ════════════════════════════════════════════ *@
-    @if (_perfReport is not null)
-    {
-        <section class="db-section">
-            <SectionHeader Title="Performance Summary">
-                <Actions>
-                    <a href="wasm-performance-review" class="db-summary-open">Open Performance Review →</a>
-                </Actions>
-            </SectionHeader>
-            <div class="db-perf-summary">
-                @if (_perfReport.ReadinessReport is { HasData: true } perfDetail)
-                {
-                    <div class="db-perf-main">
-                        <div class="db-perf-score @ScoreClass(perfDetail.OverallScore)">@perfDetail.OverallScore</div>
-                        <div class="db-perf-label">@ReadinessStateLabel(perfDetail.OverallState)</div>
-                        <div class="db-perf-sub">out of 100</div>
-                    </div>
-                    @if (perfDetail.Categories.Count > 0)
-                    {
-                        <div class="db-perf-cat-grid">
-                            @foreach (var cat in perfDetail.Categories)
-                            {
-                                <div class="db-perf-cat">
-                                    <span class="db-perf-cat-name">@cat.CategoryName</span>
-                                    <span class="db-perf-cat-score @(cat.WasAssessed ? ScoreClass(cat.Score) : "db-val-empty")">
-                                        @(cat.WasAssessed ? cat.Score.ToString() : "—")
-                                    </span>
-                                </div>
-                            }
-                        </div>
-                    }
-                }
-                else
-                {
-                    <div class="db-perf-partial-note">
-                        @_perfReport.Assets.Count assets discovered.
-                        Open Performance Review to run a full readiness analysis.
-                    </div>
-                }
-            </div>
-        </section>
-    }
-
-    @* ══ 11 · Security Summary ════════════════════════════════════════════════ *@
-    <section class="db-section">
-        <SectionHeader Title="Security Summary">
-            <Actions>
-                <a href="wasm-security-review" class="db-summary-open">Open Security Review →</a>
-            </Actions>
-        </SectionHeader>
-        <EmptyState Title="No security scan has been run this session." Description="Open WASM Security Review to analyse headers, authentication, configuration, and exposures.">
-            <a href="wasm-security-review" class="btn-primary db-empty-cta">Open WASM Security Review</a>
-        </EmptyState>
-    </section>
-
-    @* ══ 12 · Structural UI Integrity ════════════════════════════════════════ *@
-    <section class="db-section" data-testid="ui-integrity-section">
-        <SectionHeader Title="Structural UI Integrity"
-                       Description="Section-level audit — detects hybrid rendering, legacy contamination, and mixed component patterns per UI region.">
-            <Actions>
-                <StatusChip Status="@(_uiIntegrity.StructuralRiskScore >= 60 ? "critical" : _uiIntegrity.StructuralRiskScore >= 30 ? "warning" : "healthy")"
-                            Label="@($"Risk Score {_uiIntegrity.StructuralRiskScore}/100")" />
-            </Actions>
-        </SectionHeader>
-
-        <div class="db-kpi-strip">
-            <MetricCard Value="@_uiIntegrity.FullyConsistentSectionCount.ToString()"
-                        Label="Fully Consistent"
-                        Sublabel="Sections"
-                        Variant="success" />
-            <MetricCard Value="@_uiIntegrity.HybridSectionCount.ToString()"
-                        Label="Hybrid Sections"
-                        Sublabel="Critical findings"
-                        Variant="@(_uiIntegrity.HybridSectionCount > 0 ? "danger" : "success")" />
-            <MetricCard Value="@_uiIntegrity.PartiallyMigratedSectionCount.ToString()"
-                        Label="Partially Migrated"
-                        Sublabel="Sections"
-                        Variant="@(_uiIntegrity.PartiallyMigratedSectionCount > 0 ? "warning" : null)" />
-            <MetricCard Value="@_uiIntegrity.LegacySectionCount.ToString()"
-                        Label="Legacy Sections"
-                        Sublabel="Not migrated"
-                        Variant="@(_uiIntegrity.LegacySectionCount > 0 ? "warning" : null)" />
-        </div>
-
-        @if (_uiIntegrity.TopHybridPatterns.Count > 0)
-        {
-            <div class="issue-cards">
-                @foreach (var pattern in _uiIntegrity.TopHybridPatterns)
-                {
-                    <IssueCard Severity="critical"
-                               Component="@($"{pattern.PageName} — {pattern.SectionName}")"
-                               Description="@($"[{pattern.PatternType}] {pattern.Description}")"
-                               SuggestedFix="@(pattern.LegacyElement is not null ? $"Replace {pattern.LegacyElement} with {pattern.SharedElement ?? "shared component"}" : null)" />
-                }
-            </div>
-        }
-    </section>
-
-    @* ══ 13 · Quick Actions ═══════════════════════════════════════════════════ *@
+    @* ══ 9 · Quick Actions ═══════════════════════════════════════════════════ *@
     <section class="db-section">
         <SectionHeader Title="Quick Actions" />
         <div class="db-quick-actions">
@@ -650,8 +582,8 @@ else
                     <a href="constitution-compliance" class="db-qa-btn">Constitution Compliance</a>
                     <a href="qa-auditor"              class="db-qa-btn">QA Auditor</a>
                     <a href="delivery-readiness"      class="db-qa-btn">Delivery Readiness</a>
-                    <a href="wasm-security-review"    class="db-qa-btn">WASM Security Review</a>
-                    <a href="wasm-performance-review" class="db-qa-btn">WASM Performance Review</a>
+                    <a href="wasm-security-review"    class="db-qa-btn">Security Review</a>
+                    <a href="wasm-performance-review" class="db-qa-btn">Performance Review</a>
                 </div>
             </div>
             <div class="db-qa-group">
@@ -770,7 +702,6 @@ else
         Snapshot.AuditReport is not null        || Snapshot.DeliveryReport is not null  ||
         _metrics.TotalCandidates > 0;
 
-    private string _overallScoreClass => ScoreHealthClass(_overallScore);
     private string _overallScoreLabel => _overallScore >= 80 ? "Healthy" : _overallScore >= 50 ? "Needs Attention" : "At Risk";
 
     // ── Project phase & governance KPI ────────────────────────────────────────
@@ -833,51 +764,25 @@ else
             ? $"{tr.Health.CoveragePercentage:0}%"
             : _metrics.TotalCandidates > 0 ? $"{_metrics.TraceabilityPercent}%" : "—";
 
-    private string TraceabilityHealthClass =>
-        Snapshot.TraceabilityReport is { } tr
-            ? ScoreHealthClass(tr.Health.CoveragePercentage)
-            : _metrics.TotalCandidates > 0 ? ScoreHealthClass(_metrics.TraceabilityPercent) : "db-health-empty";
-
     private string ComplianceHealthVal =>
         Snapshot.ComplianceReport is { } cr
             ? $"{cr.Health.CompliancePercentage:0}%"
             : "—";
-
-    private string ComplianceHealthClass =>
-        Snapshot.ComplianceReport is { } cr
-            ? ScoreHealthClass(cr.Health.CompliancePercentage)
-            : "db-health-empty";
 
     private string QaHealthVal =>
         Snapshot.AuditReport is { } ar
             ? $"{ar.Health.AuditScore:0}/100"
             : _metrics.TotalCandidates > 0 ? $"{_metrics.QaHealthScore}/100" : "—";
 
-    private string QaHealthClass =>
-        Snapshot.AuditReport is { } ar
-            ? ScoreHealthClass(ar.Health.AuditScore)
-            : _metrics.TotalCandidates > 0 ? ScoreHealthClass(_metrics.QaHealthScore) : "db-health-empty";
-
     private string DeliveryHealthVal =>
         Snapshot.DeliveryReport is { } dr
             ? $"{dr.Health.OverallReadinessScore:0}%"
             : "—";
 
-    private string DeliveryHealthClass =>
-        Snapshot.DeliveryReport is { } dr
-            ? ScoreHealthClass(dr.Health.OverallReadinessScore)
-            : "db-health-empty";
-
     // ── Render helpers ────────────────────────────────────────────────────────
-
-    private static string ScoreHealthClass(double score) =>
-        score >= 80 ? "db-health-good" : score >= 50 ? "db-health-warn" : "db-health-poor";
 
     private static string ScoreClass(double score) =>
         score >= 80 ? "db-val-good" : score >= 50 ? "db-val-warn" : "db-val-poor";
-
-    private static string ScoreChipClass(double score) =>
-        score >= 80 ? "db-count-good" : score >= 50 ? "db-count-warn" : "db-count-poor";
 
     private static string KpiStatusClass(double score, bool hasData) =>
         !hasData ? "db-status-notrun" :
@@ -904,12 +809,6 @@ else
         PerformanceReadinessState.HighRisk         => "db-status-critical",
         _                                          => "db-status-warning",
     };
-
-    private static string CovVal(int total, int pct) =>
-        total > 0 ? $"{pct}%" : "—";
-
-    private static string CovClass(int total, int pct) =>
-        total == 0 ? "db-val-empty" : pct >= 80 ? "db-val-good" : "db-val-warn";
 
     private static string ReadinessStateLabel(ReadinessState state) => state switch
     {
@@ -938,7 +837,6 @@ else
     }
 
     // ── RenderFragment helpers ────────────────────────────────────────────────
-
 
     private RenderFragment ReadinessCard(string label, ReadinessState? state, double? score, string href) => __builder =>
     {

@@ -6,45 +6,6 @@
     margin: 0 auto;
 }
 
-/* ── Hero ────────────────────────────────────────────────────────────────── */
-
-.ug-hero {
-    text-align: center;
-    padding: 2.5rem 1rem 2rem;
-    border-bottom: 1px solid var(--clr-border);
-    margin-bottom: 1.5rem;
-}
-
-.ug-hero-eyebrow {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--clr-text-subtle);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    margin-bottom: 0.6rem;
-}
-
-.ug-hero-title {
-    font-size: 2rem;
-    font-weight: 800;
-    color: var(--clr-text-primary);
-    margin: 0 0 0.6rem;
-    letter-spacing: -0.02em;
-}
-
-.ug-hero-sub {
-    font-size: 0.95rem;
-    color: var(--clr-text-subtle);
-    max-width: 600px;
-    margin: 0 auto 1rem;
-    line-height: 1.6;
-}
-
-.ug-hero-audience {
-    font-size: 0.78rem;
-    color: var(--clr-text-subtle);
-    opacity: 0.75;
-}
 
 /* ── Table of contents ───────────────────────────────────────────────────── */
 
@@ -282,6 +243,7 @@
 .ug-area-traceability { background: rgba(34, 197, 94, 0.15); color: #86efac; }
 .ug-area-analysis { background: rgba(245, 158, 11, 0.15); color: #fcd34d; }
 .ug-area-ai { background: rgba(168, 85, 247, 0.15); color: #d8b4fe; }
+.ug-area-admin { background: rgba(100, 116, 139, 0.15); color: #94a3b8; }
 
 /* ── Section 3: Core workflow ────────────────────────────────────────────── */
 
@@ -547,6 +509,7 @@
 .ug-fcard-traceability { border-top: 2px solid rgba(34, 197, 94, 0.4); }
 .ug-fcard-analysis { border-top: 2px solid rgba(245, 158, 11, 0.4); }
 .ug-fcard-ai { border-top: 2px solid rgba(168, 85, 247, 0.4); }
+.ug-fcard-admin { border-top: 2px solid rgba(100, 116, 139, 0.4); }
 
 .ug-feature-header {
     display: flex;

@@ -5,7 +5,7 @@
 }
 
 
-/* ══ 2 · KPI Strip ═══════════════════════════════════════════════════════════ */
+/* ══ 1 · KPI Strip ═══════════════════════════════════════════════════════════ */
 
 .db-kpi-strip {
     display: grid;
@@ -37,7 +37,7 @@
 .db-val-warn  { color: #d97706; }
 .db-val-poor  { color: var(--clr-danger); }
 
-/* ══ 3 · Governance Artifact Cards ══════════════════════════════════════════ */
+/* ══ 2 · Governance Artifact Cards ══════════════════════════════════════════ */
 
 .db-artifact-grid {
     display: grid;
@@ -146,97 +146,151 @@
 
 .db-artifact-action:hover { text-decoration: underline; }
 
-/* ══ 4 · Project Health Bars ════════════════════════════════════════════════ */
+/* ══ 3 · Readiness Summary ══════════════════════════════════════════════════ */
 
-.db-health-bars {
+.db-readiness-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+}
+
+@media (max-width: 900px) { .db-readiness-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .db-readiness-grid { grid-template-columns: 1fr; } }
+
+.db-readiness-card {
     background: var(--clr-surface-white);
     border: 1px solid var(--clr-border);
     border-radius: var(--radius-md);
-    padding: 0.875rem 1.25rem;
+    padding: 1rem 1.125rem;
     display: flex;
     flex-direction: column;
-    gap: 0;
+    gap: 0.3rem;
 }
 
-/* Prevent status labels ("Not Run", "Critical", "Partial") from wrapping inside
-   the narrow shared health-bar-row grid. Value column is widened to auto. */
-.db-health-bars ::deep .health-bar-row {
-    grid-template-columns: 120px 1fr auto;
-}
-
-.db-health-bars ::deep .health-bar-value {
-    white-space: nowrap;
-}
-
-.db-health-bar-row {
-    display: grid;
-    grid-template-columns: 100px 1fr 50px 80px;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 0.55rem 0;
-    border-bottom: 1px solid var(--clr-border-subtle);
-}
-
-.db-health-bar-row:last-child { border-bottom: none; }
-
-.db-health-bar-label {
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--clr-text-body);
-    white-space: nowrap;
-}
-
-.db-health-bar-track {
-    height: 8px;
-    background: var(--clr-surface);
-    border: 1px solid var(--clr-border);
-    border-radius: 4px;
-    overflow: hidden;
-}
-
-.db-health-bar-fill {
-    height: 100%;
-    border-radius: 4px;
-    transition: width 0.4s ease;
-}
-
-.db-health-bar-fill.db-health-good { background: var(--clr-success); }
-.db-health-bar-fill.db-health-warn { background: #d97706; }
-.db-health-bar-fill.db-health-poor { background: var(--clr-danger); }
-.db-health-bar-fill.db-health-empty { background: var(--clr-border); }
-
-.db-health-bar-pct {
-    font-size: 0.8rem;
+.db-readiness-label {
+    font-size: 0.72rem;
     font-weight: 700;
-    font-family: monospace;
-    text-align: right;
-    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-subtle);
 }
 
-.db-health-bar-pct.db-health-good { color: var(--clr-success); }
-.db-health-bar-pct.db-health-warn { color: #d97706; }
-.db-health-bar-pct.db-health-poor { color: var(--clr-danger); }
-.db-health-bar-pct.db-health-empty { color: var(--clr-text-placeholder); }
+.db-readiness-score {
+    font-size: 1.75rem;
+    font-weight: 800;
+    font-family: monospace;
+    line-height: 1;
+    margin-top: 0.2rem;
+}
 
-.db-health-chip-sm {
+.db-readiness-state {
     display: inline-block;
-    font-size: 0.65rem;
-    font-weight: 600;
-    padding: 0.15rem 0.5rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.1rem 0.45rem;
     border-radius: var(--radius-pill);
-    white-space: nowrap;
-    text-align: center;
+    width: fit-content;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    margin-top: 0.15rem;
 }
 
-.db-health-chip-sm.db-health-good  { background: var(--clr-success-bg); color: var(--clr-success); }
-.db-health-chip-sm.db-health-warn  { background: var(--clr-warning-bg); color: var(--clr-warning); }
-.db-health-chip-sm.db-health-poor  { background: var(--clr-danger-bg); color: var(--clr-danger); }
-.db-health-chip-sm.db-health-empty { background: var(--clr-surface); color: var(--clr-text-muted); border: 1px solid var(--clr-border); }
+.db-readiness-link {
+    font-size: 0.75rem;
+    color: var(--clr-primary);
+    text-decoration: none;
+    margin-top: auto;
+    padding-top: 0.5rem;
+}
 
+.db-readiness-link:hover { text-decoration: underline; }
 
-/* ══ 5 · Analysis Summary Grid ══════════════════════════════════════════════ */
+/* ══ 4-5 · Section compact empty states ════════════════════════════════════ */
+
+.db-section-empty {
+    background: var(--clr-surface-white);
+    border: 1px dashed var(--clr-border);
+    border-radius: var(--radius-md);
+    padding: 1rem 1.25rem;
+    font-size: 0.85rem;
+    color: var(--clr-text-muted);
+    line-height: 1.6;
+}
+
+.db-empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+/* ══ 5 · Top Recommendations ════════════════════════════════════════════════ */
+
+.db-rec-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+}
+
+.db-rec-card {
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    padding: 0.875rem 1.125rem;
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+}
+
+.db-rec-num {
+    background: var(--clr-primary);
+    color: white;
+    font-size: 0.78rem;
+    font-weight: 700;
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+}
+
+.db-rec-body { flex: 1; }
+
+.db-rec-text {
+    font-size: 0.85rem;
+    color: var(--clr-text-body);
+    line-height: 1.5;
+    margin-bottom: 0.4rem;
+}
+
+.db-rec-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.db-rec-cat {
+    font-size: 0.7rem;
+    color: var(--clr-text-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 500;
+}
+
+.db-rec-action {
+    font-size: 0.75rem;
+    color: var(--clr-primary);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.db-rec-action:hover { text-decoration: underline; }
+
+/* ══ 6 · Analysis Summary Grid ══════════════════════════════════════════════ */
 
 .db-analysis-grid {
     display: grid;
@@ -255,6 +309,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
+    min-height: 9rem;
 }
 
 .db-analysis-card-header {
@@ -344,7 +399,28 @@
 .db-count-warn { background: var(--clr-warning-bg); color: var(--clr-warning); }
 .db-count-poor { background: var(--clr-danger-bg);  color: var(--clr-danger); }
 
-/* ══ 6 · Recent Activity Timeline ══════════════════════════════════════════ */
+/* ══ 7 · Project Health Bars ════════════════════════════════════════════════ */
+
+.db-health-bars {
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    padding: 0.875rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* Prevent value labels from wrapping inside the shared health-bar-row grid */
+.db-health-bars ::deep .health-bar-row {
+    grid-template-columns: 120px 1fr auto;
+}
+
+.db-health-bars ::deep .health-bar-value {
+    white-space: nowrap;
+}
+
+/* ══ 8 · Recent Activity Timeline ══════════════════════════════════════════ */
 
 .db-timeline {
     background: var(--clr-surface-white);
@@ -410,221 +486,7 @@
     text-align: center;
 }
 
-
-/* ══ 8 · Top Recommendations ════════════════════════════════════════════════ */
-
-.db-rec-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-}
-
-.db-rec-card {
-    background: var(--clr-surface-white);
-    border: 1px solid var(--clr-border);
-    border-radius: var(--radius-md);
-    padding: 0.875rem 1.125rem;
-    display: flex;
-    gap: 1rem;
-    align-items: flex-start;
-}
-
-.db-rec-num {
-    background: var(--clr-primary);
-    color: white;
-    font-size: 0.78rem;
-    font-weight: 700;
-    width: 26px;
-    height: 26px;
-    min-width: 26px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    margin-top: 0.1rem;
-}
-
-.db-rec-body { flex: 1; }
-
-.db-rec-text {
-    font-size: 0.85rem;
-    color: var(--clr-text-body);
-    line-height: 1.5;
-    margin-bottom: 0.4rem;
-}
-
-.db-rec-footer {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-
-.db-rec-cat {
-    font-size: 0.7rem;
-    color: var(--clr-text-subtle);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-weight: 500;
-}
-
-.db-rec-action {
-    font-size: 0.75rem;
-    color: var(--clr-primary);
-    text-decoration: none;
-    font-weight: 500;
-}
-
-.db-rec-action:hover { text-decoration: underline; }
-
-/* ══ 9 · Readiness Summary ══════════════════════════════════════════════════ */
-
-.db-readiness-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 0.75rem;
-}
-
-@media (max-width: 900px) { .db-readiness-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 560px) { .db-readiness-grid { grid-template-columns: 1fr; } }
-
-.db-readiness-card {
-    background: var(--clr-surface-white);
-    border: 1px solid var(--clr-border);
-    border-radius: var(--radius-md);
-    padding: 1rem 1.125rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-}
-
-.db-readiness-label {
-    font-size: 0.72rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--clr-text-subtle);
-}
-
-.db-readiness-score {
-    font-size: 1.75rem;
-    font-weight: 800;
-    font-family: monospace;
-    line-height: 1;
-    margin-top: 0.2rem;
-}
-
-.db-readiness-state {
-    display: inline-block;
-    font-size: 0.68rem;
-    font-weight: 700;
-    padding: 0.1rem 0.45rem;
-    border-radius: var(--radius-pill);
-    width: fit-content;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-top: 0.15rem;
-}
-
-.db-readiness-link {
-    font-size: 0.75rem;
-    color: var(--clr-primary);
-    text-decoration: none;
-    margin-top: auto;
-    padding-top: 0.5rem;
-}
-
-.db-readiness-link:hover { text-decoration: underline; }
-
-/* ══ 10 · Performance Summary ═══════════════════════════════════════════════ */
-
-.db-perf-summary {
-    background: var(--clr-surface-white);
-    border: 1px solid var(--clr-border);
-    border-radius: var(--radius-md);
-    padding: 1.25rem 1.5rem;
-    display: flex;
-    gap: 2rem;
-    align-items: flex-start;
-    flex-wrap: wrap;
-}
-
-.db-perf-main {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    min-width: 100px;
-}
-
-.db-perf-score {
-    font-size: 3rem;
-    font-weight: 800;
-    font-family: monospace;
-    line-height: 1;
-}
-
-.db-perf-label {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--clr-text-heading);
-}
-
-.db-perf-sub {
-    font-size: 0.72rem;
-    color: var(--clr-text-subtle);
-}
-
-.db-perf-cat-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.5rem 1.5rem;
-    flex: 1;
-    min-width: 200px;
-    align-content: start;
-}
-
-.db-perf-cat {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.3rem 0;
-    border-bottom: 1px solid var(--clr-border-subtle);
-    font-size: 0.82rem;
-}
-
-.db-perf-cat-name { color: var(--clr-text-body); }
-.db-perf-cat-score { font-weight: 700; font-family: monospace; }
-
-.db-perf-partial-note {
-    font-size: 0.85rem;
-    color: var(--clr-text-subtle);
-    font-style: italic;
-    line-height: 1.5;
-}
-
-/* ══ Section empty states ═══════════════════════════════════════════════════ */
-
-.db-section-empty {
-    background: var(--clr-surface-white);
-    border: 1px dashed var(--clr-border);
-    border-radius: var(--radius-md);
-    padding: 1.25rem 1.5rem;
-    font-size: 0.85rem;
-    color: var(--clr-text-muted);
-    line-height: 1.6;
-}
-
-.db-empty-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-}
-
-.db-empty-cta { font-size: 0.82rem; }
-
-/* ══ Quick Actions ══════════════════════════════════════════════════════════ */
+/* ══ 9 · Quick Actions ══════════════════════════════════════════════════════ */
 
 .db-quick-actions {
     display: flex;
@@ -718,6 +580,4 @@
 
 @media (max-width: 560px) {
     .dashboard-onboarding-card { flex-direction: column; align-items: flex-start; }
-    .db-health-bar-row { grid-template-columns: 80px 1fr 42px; }
-    .db-health-bar-row .db-health-chip-sm { display: none; }
 }
