@@ -890,7 +890,7 @@
 
 .wsr-spinner { display: inline-block; animation: wsr-spin 1s linear infinite; margin-right: 4px; }
 
-@@keyframes wsr-spin { to { transform: rotate(360deg); } }
+@keyframes wsr-spin { to { transform: rotate(360deg); } }
 
 /* ── Responsive ──────────────────────────────────────────────────────────────── */
 

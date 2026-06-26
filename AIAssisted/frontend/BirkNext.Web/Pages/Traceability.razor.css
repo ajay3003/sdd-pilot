@@ -99,11 +99,6 @@
     border-color: var(--clr-primary, #2563eb) !important;
 }
 
-/* Suppress the "active" highlight on the percentage card which just resets to All */
-.trace-kpi-percent.kpi-card-active {
-    box-shadow: none !important;
-    border-color: #e2e8f0 !important;
-}
 
 /* ─── Display labels (REQ-001, TEST-001) ────────────────────────────────── */
 

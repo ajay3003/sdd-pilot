@@ -3,89 +3,6 @@
     margin: 0 auto;
 }
 
-.review-wizard-hero {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 1rem;
-    align-items: start;
-    margin-bottom: 1rem;
-    padding: 1.35rem 1.45rem;
-    border: 1px solid #cbd5e1;
-    border-radius: var(--radius-lg, 8px);
-    background: linear-gradient(135deg, #f8fafc 0%, #eef6ff 52%, #dbeafe 100%);
-    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.1);
-}
-
-.review-step-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 4.8rem;
-    min-height: 2rem;
-    padding: 0.32rem 0.65rem;
-    border: 1px solid #bfdbfe;
-    border-radius: var(--radius-md, 6px);
-    background: rgba(255, 255, 255, 0.78);
-    color: #1d4ed8;
-    font-size: 0.72rem;
-    font-weight: 850;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
-.review-hero-content h1 {
-    margin: 0;
-    color: var(--clr-text-heading, #0f172a);
-    font-size: 1.75rem;
-    font-weight: 850;
-}
-
-.review-hero-lead {
-    max-width: 42rem;
-    margin: 0.4rem 0 0;
-    color: var(--clr-text-muted, #475569);
-    font-size: 0.94rem;
-    line-height: 1.45;
-}
-
-.review-extract-list {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    flex-wrap: wrap;
-    margin-top: 0.95rem;
-    color: var(--clr-text-body, #1e293b);
-    font-size: 0.84rem;
-    font-weight: 800;
-}
-
-.review-extract-list ul {
-    display: flex;
-    align-items: center;
-    gap: 0.48rem;
-    flex-wrap: wrap;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-.review-extract-list li {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.34rem;
-    padding: 0.28rem 0.52rem;
-    border: 1px solid rgba(34, 197, 94, 0.28);
-    border-radius: var(--radius-pill, 999px);
-    background: rgba(240, 253, 244, 0.9);
-    color: #166534;
-    font-size: 0.76rem;
-    font-weight: 800;
-}
-
-.review-extract-list li::before {
-    color: #16a34a;
-    content: "\2713";
-}
 
 .review-results-panel {
     padding: 1.2rem;
@@ -262,11 +179,6 @@
 }
 
 @media (max-width: 900px) {
-    .review-wizard-hero,
-    .review-results-header {
-        grid-template-columns: 1fr;
-    }
-
     .review-results-header {
         align-items: stretch;
         flex-direction: column;
@@ -279,11 +191,6 @@
 }
 
 @media (max-width: 620px) {
-    .review-wizard-hero {
-        grid-template-columns: 1fr;
-        padding: 1rem;
-    }
-
     .extract-pre-state ul {
         grid-template-columns: 1fr;
     }
