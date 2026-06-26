@@ -118,17 +118,15 @@
                 }
                 else if (_detail is null)
                 {
-                    <div class="impact-detail-placeholder">
-                        @if (_summary.TotalRequirements == 0)
-                        {
-                            <h3>No requirements yet</h3>
-                            <p>Add requirement scenarios to the QA Artifact Library to begin impact analysis.</p>
-                        }
-                        else
-                        {
-                            <p>Loading analysis&hellip;</p>
-                        }
-                    </div>
+                    @if (_summary.TotalRequirements == 0)
+                    {
+                        <EmptyState Title="No requirements yet"
+                                    Description="Add requirement scenarios to the QA Artifact Library to begin impact analysis." />
+                    }
+                    else
+                    {
+                        <p class="loading-state">Loading analysis&hellip;</p>
+                    }
                 }
                 else
                 {

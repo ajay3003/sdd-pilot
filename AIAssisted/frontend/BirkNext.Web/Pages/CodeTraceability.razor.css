@@ -8,8 +8,6 @@
     max-width: 1200px;
 }
 
-.traceability-hero { padding-bottom: 0.5rem; }
-
 /* ─── Two-column layout ──────────────────────────────────────────────────── */
 
 .code-trace-layout {
@@ -20,31 +18,6 @@
 }
 
 /* ─── Left panel: code file registry ────────────────────────────────────── */
-
-.code-file-panel {
-    display: flex;
-    flex-direction: column;
-    border: 1px solid var(--clr-border, #e2e8f0);
-    border-radius: var(--radius-lg, 8px);
-    background: #fff;
-    overflow: hidden;
-}
-
-.code-panel-header {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    padding: 0.85rem 1rem 0.6rem;
-    border-bottom: 1px solid var(--clr-border, #e2e8f0);
-    background: var(--clr-surface, #f8fafc);
-}
-
-.code-panel-header h2 {
-    margin: 0;
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: var(--clr-text-heading, #0f172a);
-}
 
 .code-register-toggle {
     display: inline-block;
@@ -211,31 +184,6 @@
     min-height: 420px;
 }
 
-.code-impact-placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 420px;
-    padding: 2rem;
-    text-align: center;
-    color: var(--clr-text-subtle, #94a3b8);
-}
-
-.code-impact-placeholder h3 {
-    margin: 0.5rem 0 0.3rem;
-    font-size: 1rem;
-    font-weight: 700;
-    color: var(--clr-text-muted, #64748b);
-}
-
-.code-impact-placeholder p {
-    font-size: 0.82rem;
-    margin: 0;
-    max-width: 28rem;
-    line-height: 1.5;
-}
-
 .code-impact-content {
     display: flex;
     flex-direction: column;
@@ -282,30 +230,6 @@
     gap: 0.5rem;
     padding-top: 1rem;
     border-top: 1px solid var(--clr-border, #e2e8f0);
-}
-
-.code-link-section-header h3 {
-    margin: 0;
-    font-size: 0.88rem;
-    font-weight: 700;
-    color: var(--clr-text-heading, #0f172a);
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-}
-
-.code-link-count {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 1.3rem;
-    height: 1.3rem;
-    padding: 0 0.25rem;
-    background: #e2e8f0;
-    color: #475569;
-    border-radius: 999px;
-    font-size: 0.65rem;
-    font-weight: 700;
 }
 
 .code-link-add-row {

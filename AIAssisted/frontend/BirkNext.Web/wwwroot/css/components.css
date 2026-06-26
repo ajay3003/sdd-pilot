@@ -904,6 +904,28 @@
 
 
 /* ======================================================
+   ARTIFACT DISPLAY LABEL
+   Monospace pill showing REQ-001 / TEST-001 identifiers.
+   Used by ImpactAnalysis and Traceability pages.
+   ====================================================== */
+
+.artifact-display-label {
+    display: inline-block;
+    padding: 0.08rem 0.36rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--clr-surface, #f8fafc);
+    color: var(--clr-text-muted, #475569);
+    font-size: 0.65rem;
+    font-weight: 700;
+    font-family: ui-monospace, "Cascadia Code", monospace;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    user-select: all;
+}
+
+
+/* ======================================================
    UTILITY CLASSES
    ====================================================== */
 

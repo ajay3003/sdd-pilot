@@ -8,9 +8,6 @@
     max-width: 1200px;
 }
 
-/* Scoped redeclaration — required for hero styles to apply in this component */
-.traceability-hero { padding-bottom: 0.5rem; }
-
 /* ─── 5-column KPI row override ──────────────────────────────────────────── */
 
 .align-kpi-row {
@@ -394,31 +391,6 @@ button.kpi-card:focus-visible {
 .align-status-needsreview       { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
 .align-status-technicalonly     { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
 .align-status-linked            { background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
-
-/* Risk badges (scoped redeclaration — required in each component) */
-.impact-risk-badge {
-    display: inline-block;
-    padding: 0.1rem 0.45rem;
-    border-radius: 999px;
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    white-space: nowrap;
-}
-
-.impact-risk-high   { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
-.impact-risk-medium { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
-.impact-risk-low    { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
-
-.align-match-ref {
-    font-size: 0.68rem;
-    font-weight: 700;
-    font-family: ui-monospace, "Cascadia Code", monospace;
-    color: #5b21b6;
-    background: #ede9fe;
-    padding: 0.1rem 0.4rem;
-    border-radius: 3px;
-}
 
 /* ─── Finding detail body ────────────────────────────────────────────────── */
 

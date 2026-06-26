@@ -74,12 +74,9 @@
         </div>
 
         <div class="delta-analyse-row">
-            <button
-                class="delta-analyse-btn"
-                disabled="@(!CanAnalyse)"
-                @onclick="RunAnalysis">
+            <PrimaryButton Disabled="@(!CanAnalyse)" OnClick="RunAnalysis">
                 Compare Tasks
-            </button>
+            </PrimaryButton>
             @if (!CanAnalyse)
             {
                 <span class="delta-analyse-hint">Paste or import both versions to compare</span>
@@ -102,14 +99,13 @@
                     }
                 </p>
             </div>
-            <button class="delta-back-btn" @onclick="Reset">← New Comparison</button>
+            <SecondaryButton OnClick="Reset">← New Comparison</SecondaryButton>
         </div>
 
         @if (_report.TotalChanges == 0)
         {
-            <div class="delta-no-changes">
-                <strong>No changes found.</strong> Both task files contain the same tasks with identical content.
-            </div>
+            <EmptyState Title="No changes found"
+                        Description="Both task files contain the same tasks with identical content." />
         }
         else
         {

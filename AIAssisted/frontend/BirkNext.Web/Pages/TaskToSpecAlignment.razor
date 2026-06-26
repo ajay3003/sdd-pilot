@@ -143,11 +143,10 @@
 
             </div>
             <div class="align-input-actions">
-                <button type="button" class="btn-primary"
-                        @onclick="RunAnalysis"
-                        disabled="@(string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))">
+                <PrimaryButton OnClick="RunAnalysis"
+                               Disabled="@(string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))">
                     Analyse Alignment
-                </button>
+                </PrimaryButton>
                 @if (string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))
                 {
                     <span class="align-analyse-hint" aria-live="polite">
@@ -170,7 +169,7 @@
                     <li><code>T001 - Task title</code> or <code>T001: Task title</code></li>
                     <li><code>- [ ] Task title</code> (GitHub checkbox format)</li>
                 </ul>
-                <button type="button" class="btn-secondary" @onclick="Reset">Try again</button>
+                <SecondaryButton OnClick="Reset">Try again</SecondaryButton>
             </div>
         }
         else
@@ -285,9 +284,7 @@
                             Spec Linked <span class="align-chip-count">@report.LinkedTasks</span>
                         </button>
                     </div>
-                    <button type="button" class="btn-secondary align-reanalyse" @onclick="Reset">
-                        Reanalyse
-                    </button>
+                    <SecondaryButton Class="align-reanalyse" OnClick="Reset">Reanalyse</SecondaryButton>
                 </div>
 
                 @* ── Findings ── *@
@@ -491,9 +488,7 @@
                             Regression Candidates <span class="align-chip-count">@report.RegressionCandidates</span>
                         </button>
                     </div>
-                    <button type="button" class="btn-secondary align-reanalyse" @onclick="Reset">
-                        Reanalyse
-                    </button>
+                    <SecondaryButton Class="align-reanalyse" OnClick="Reset">Reanalyse</SecondaryButton>
                 </div>
 
                 @if (impactFiltered.Count == 0)

@@ -8,8 +8,6 @@
     max-width: 1200px;
 }
 
-.traceability-hero { padding-bottom: 0.5rem; }
-
 /* ─── Tab strip ──────────────────────────────────────────────────────────── */
 
 .sd-tab-strip {
@@ -132,21 +130,6 @@
     border: 1px solid #fcd34d;
 }
 
-/* ─── Risk badges (redeclared for scoped CSS) ────────────────────────────── */
-
-.impact-risk-badge {
-    display: inline-block;
-    padding: 0.1rem 0.45rem;
-    border-radius: 999px;
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    white-space: nowrap;
-}
-
-.impact-risk-high   { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
-.impact-risk-medium { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
-.impact-risk-low    { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
 
 /* ─── Two-column detail grid ─────────────────────────────────────────────── */
 
@@ -301,15 +284,6 @@
     color: var(--clr-text-muted, #64748b);
 }
 
-.drift-empty-padded {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.75rem;
-    padding: 1.25rem 1rem;
-}
-
-.drift-empty-padded p { margin: 0; }
-
 .drift-empty-icon {
     color: #22c55e;
     font-size: 1rem;
@@ -334,15 +308,6 @@
     line-height: 1.45;
 }
 
-.drift-action-links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    padding: 0.85rem 1rem;
-    margin-top: 0.5rem;
-    border-top: 1px solid var(--clr-border, #f1f5f9);
-}
-
 .drift-link-btn {
     display: inline-block;
     padding: 0.3rem 0.7rem;
@@ -359,44 +324,6 @@
 .drift-link-btn:hover {
     background: #eff6ff;
     border-color: var(--clr-primary, #2563eb);
-}
-
-/* ─── Feature chain diagram ──────────────────────────────────────────────── */
-
-.drift-feature-chain {
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--clr-border, #e2e8f0);
-}
-
-.drift-chain-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-}
-
-.drift-chain-node {
-    display: inline-block;
-    padding: 0.25rem 0.6rem;
-    border: 1px solid var(--clr-border, #e2e8f0);
-    border-radius: var(--radius-sm, 4px);
-    font-size: 0.72rem;
-    font-weight: 500;
-    color: var(--clr-text-muted, #64748b);
-    background: var(--clr-surface, #f8fafc);
-}
-
-.drift-chain-node-active {
-    background: #eff6ff;
-    border-color: var(--clr-primary, #2563eb);
-    color: var(--clr-primary, #2563eb);
-    font-weight: 700;
-}
-
-.drift-chain-arrow {
-    color: var(--clr-text-subtle, #94a3b8);
-    font-size: 0.75rem;
 }
 
 /* ─── Top-level empty state (no requirements) ────────────────────────────── */
@@ -591,9 +518,5 @@
 @media (max-width: 860px) {
     .drift-detail-grid {
         grid-template-columns: 1fr;
-    }
-
-    .drift-chain-row {
-        gap: 0.35rem;
     }
 }

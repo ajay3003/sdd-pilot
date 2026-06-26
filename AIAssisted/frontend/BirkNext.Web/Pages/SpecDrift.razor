@@ -113,7 +113,7 @@
                                     aria-pressed="@isActive">
                                 <div class="drift-finding-header">
                                     <span class="drift-finding-badge @DriftBadgeClass(finding.Severity)">@FindingLabel(finding.Category)</span>
-                                    <span class="impact-risk-badge impact-risk-@finding.Severity.ToString().ToLower()">@RiskLabel(finding.Severity)</span>
+                                    <StatusChip Status="@(finding.Severity switch { RiskLevel.High => "critical", RiskLevel.Medium => "warning", _ => "ready" })" Label="@RiskLabel(finding.Severity)" />
                                     <span class="drift-finding-filter-hint">@(isActive ? "Filtering ↓" : "Filter ↓")</span>
                                 </div>
                                 <p class="drift-finding-desc">@finding.Description</p>
@@ -155,7 +155,7 @@
                                     {
                                         <li class="drift-req-item @DriftReqClass(r.DriftRisk)">
                                             <div class="drift-req-header">
-                                                <span class="impact-risk-badge impact-risk-@r.DriftRisk.ToString().ToLower()">@RiskLabel(r.DriftRisk)</span>
+                                                <StatusChip Status="@(r.DriftRisk switch { RiskLevel.High => "critical", RiskLevel.Medium => "warning", _ => "ready" })" Label="@RiskLabel(r.DriftRisk)" />
                                                 <span class="drift-test-count">@r.LinkedTestCount test@(r.LinkedTestCount == 1 ? "" : "s")</span>
                                             </div>
                                             <p class="drift-req-title">@r.Requirement.Title</p>

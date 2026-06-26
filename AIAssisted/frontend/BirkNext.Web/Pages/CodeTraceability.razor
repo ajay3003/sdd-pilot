@@ -45,95 +45,96 @@
         <div class="code-trace-layout">
 
             @* ── Left: Code file registry ───────────────────────────────────── *@
-            <section class="code-file-panel" aria-label="Code file registry">
-                <div class="code-panel-header">
-                    <div>
-                        <p class="section-kicker">Source files</p>
-                        <h2>Tracked Source Files</h2>
-                    </div>
-                    <button class="code-register-toggle"
-                            @onclick="ToggleRegisterForm"
-                            aria-expanded="@_showRegisterForm">
-                        @(_showRegisterForm ? "Cancel" : "+ Track File")
-                    </button>
-                </div>
+            <Card NoPadding="true">
+                <Header>
+                    <SectionHeader Title="Tracked Source Files" Description="Source files">
+                        <Actions>
+                            <button class="code-register-toggle"
+                                    @onclick="ToggleRegisterForm"
+                                    aria-expanded="@_showRegisterForm">
+                                @(_showRegisterForm ? "Cancel" : "+ Track File")
+                            </button>
+                        </Actions>
+                    </SectionHeader>
+                </Header>
+                <ChildContent>
+                    @if (_showRegisterForm)
+                    {
+                        <div class="code-register-form" role="form" aria-label="Register new code file">
+                            <label class="code-form-label" for="file-path">File path</label>
+                            <input id="file-path"
+                                   class="code-form-input"
+                                   type="text"
+                                   placeholder="e.g. backend/Services/ScenarioService.cs"
+                                   @bind="_newFilePath"
+                                   @bind:event="oninput"
+                                   disabled="@_isRegistering" />
+                            <label class="code-form-label" for="file-desc">Description (optional)</label>
+                            <input id="file-desc"
+                                   class="code-form-input"
+                                   type="text"
+                                   placeholder="What this file does"
+                                   @bind="_newFileDescription"
+                                   @bind:event="oninput"
+                                   disabled="@_isRegistering" />
+                            @if (_registerError is not null)
+                            {
+                                <p class="code-form-error" role="alert">@_registerError</p>
+                            }
+                            <PrimaryButton Class="code-register-btn"
+                                           OnClick="RegisterFileAsync"
+                                           Disabled="@(_isRegistering || string.IsNullOrWhiteSpace(_newFilePath))">
+                                @(_isRegistering ? "Registering…" : "Register")
+                            </PrimaryButton>
+                        </div>
+                    }
 
-                @if (_showRegisterForm)
-                {
-                    <div class="code-register-form" role="form" aria-label="Register new code file">
-                        <label class="code-form-label" for="file-path">File path</label>
-                        <input id="file-path"
-                               class="code-form-input"
-                               type="text"
-                               placeholder="e.g. backend/Services/ScenarioService.cs"
-                               @bind="_newFilePath"
-                               @bind:event="oninput"
-                               disabled="@_isRegistering" />
-                        <label class="code-form-label" for="file-desc">Description (optional)</label>
-                        <input id="file-desc"
-                               class="code-form-input"
-                               type="text"
-                               placeholder="What this file does"
-                               @bind="_newFileDescription"
-                               @bind:event="oninput"
-                               disabled="@_isRegistering" />
-                        @if (_registerError is not null)
-                        {
-                            <p class="code-form-error" role="alert">@_registerError</p>
-                        }
-                        <button class="btn-primary code-register-btn"
-                                @onclick="RegisterFileAsync"
-                                disabled="@(_isRegistering || string.IsNullOrWhiteSpace(_newFilePath))">
-                            @(_isRegistering ? "Registering…" : "Register")
-                        </button>
-                    </div>
-                }
-
-                @if (_files.Count == 0)
-                {
-                    <div class="code-file-empty">
-                        <p>Register your first source file to begin linking requirements and tests to implementation.</p>
-                        <div class="code-getting-started">
-                            <p class="code-gs-label">Example file paths to track:</p>
-                            <div class="code-gs-examples">
-                                <span class="code-gs-example">ScenarioService.cs</span>
-                                <span class="code-gs-example">ScenarioValidator.cs</span>
-                                <span class="code-gs-example">TraceabilityPage.razor</span>
+                    @if (_files.Count == 0)
+                    {
+                        <div class="code-file-empty">
+                            <p>Register your first source file to begin linking requirements and tests to implementation.</p>
+                            <div class="code-getting-started">
+                                <p class="code-gs-label">Example file paths to track:</p>
+                                <div class="code-gs-examples">
+                                    <span class="code-gs-example">ScenarioService.cs</span>
+                                    <span class="code-gs-example">ScenarioValidator.cs</span>
+                                    <span class="code-gs-example">TraceabilityPage.razor</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                }
-                else
-                {
-                    <ul class="code-file-list" aria-label="Registered code files">
-                        @foreach (var file in _files)
-                        {
-                            var isSelected = _selectedFileId == file.Id;
-                            <li class="code-file-row @(isSelected ? "code-file-row-selected" : "")"
-                                role="button"
-                                tabindex="0"
-                                @onclick="() => SelectFileAsync(file.Id)"
-                                @onkeydown='async e => { if (e.Key == "Enter" || e.Key == " ") await SelectFileAsync(file.Id); }'
-                                aria-selected="@isSelected"
-                                aria-label="Select @file.FileName">
-                                <div class="code-file-row-main">
-                                    <span class="code-file-name">@file.FileName</span>
-                                    <button class="code-file-delete"
-                                            @onclick:stopPropagation="true"
-                                            @onclick="() => DeleteFileAsync(file.Id)"
-                                            aria-label="Remove @file.FileName"
-                                            title="Remove file">×</button>
-                                </div>
-                                <span class="code-file-path">@file.FilePath</span>
-                                @if (!string.IsNullOrWhiteSpace(file.Description))
-                                {
-                                    <span class="code-file-desc">@file.Description</span>
-                                }
-                            </li>
-                        }
-                    </ul>
-                }
-            </section>
+                    }
+                    else
+                    {
+                        <ul class="code-file-list" aria-label="Registered code files">
+                            @foreach (var file in _files)
+                            {
+                                var isSelected = _selectedFileId == file.Id;
+                                <li class="code-file-row @(isSelected ? "code-file-row-selected" : "")"
+                                    role="button"
+                                    tabindex="0"
+                                    @onclick="() => SelectFileAsync(file.Id)"
+                                    @onkeydown='async e => { if (e.Key == "Enter" || e.Key == " ") await SelectFileAsync(file.Id); }'
+                                    aria-selected="@isSelected"
+                                    aria-label="Select @file.FileName">
+                                    <div class="code-file-row-main">
+                                        <span class="code-file-name">@file.FileName</span>
+                                        <button class="code-file-delete"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => DeleteFileAsync(file.Id)"
+                                                aria-label="Remove @file.FileName"
+                                                title="Remove file">×</button>
+                                    </div>
+                                    <span class="code-file-path">@file.FilePath</span>
+                                    @if (!string.IsNullOrWhiteSpace(file.Description))
+                                    {
+                                        <span class="code-file-desc">@file.Description</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </ChildContent>
+            </Card>
 
             @* ── Right: Code impact detail ──────────────────────────────────── *@
             <section class="code-impact-panel" aria-label="Code impact detail" aria-live="polite">
@@ -215,9 +216,9 @@
 
                         @* Linked Requirements *@
                         <div class="code-link-section">
-                            <div class="code-link-section-header">
-                                <h3>Requirements Implemented <span class="code-link-count">@impact.LinkedRequirements.Count</span></h3>
-                            </div>
+                            <SectionHeader Title="Requirements Implemented">
+                                <Actions><span class="count-badge">@impact.LinkedRequirements.Count</span></Actions>
+                            </SectionHeader>
                             <div class="code-link-add-row">
                                 <select class="code-link-select"
                                         @bind="_selectedRequirementId"
@@ -262,9 +263,9 @@
 
                         @* Linked Tests *@
                         <div class="code-link-section">
-                            <div class="code-link-section-header">
-                                <h3>Tests Implemented <span class="code-link-count">@impact.LinkedTests.Count</span></h3>
-                            </div>
+                            <SectionHeader Title="Tests Implemented">
+                                <Actions><span class="count-badge">@impact.LinkedTests.Count</span></Actions>
+                            </SectionHeader>
                             <div class="code-link-add-row">
                                 <select class="code-link-select"
                                         @bind="_selectedTestId"
