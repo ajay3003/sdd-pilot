@@ -31,12 +31,12 @@
             <div class="cc-artifact-grid">
 
                 <!-- Constitution (required) -->
-                <div class="cc-artifact-card @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "is-required")">
-                    <div class="cc-artifact-card-header">
-                        <span class="cc-artifact-icon" aria-hidden="true">📜</span>
-                        <span class="cc-artifact-name">Constitution</span>
-                        <span class="cc-artifact-required-badge">Required</span>
-                        <span class="cc-artifact-status @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
+                <div class="artifact-card @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "is-required")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">📜</span>
+                        <span class="artifact-name">Constitution</span>
+                        <span class="artifact-required-badge">Required</span>
+                        <span class="artifact-status @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
                             @(!string.IsNullOrEmpty(_constitutionText) ? "Loaded" : "Empty")
                         </span>
                     </div>
@@ -46,25 +46,25 @@
                         OnFileRemoved="() => { _constitutionText = string.Empty; }"
                         IsDisabled="false" />
                     <textarea
-                        class="cc-artifact-textarea"
+                        class="artifact-textarea"
                         placeholder="Or paste constitution.md content here…"
                         rows="4"
                         @bind="_constitutionText"></textarea>
                     @if (!string.IsNullOrEmpty(_constitutionText))
                     {
-                        <div class="cc-artifact-footer">
+                        <div class="artifact-footer">
                             <span>@_constitutionText.Split('\n').Length lines</span>
-                            <button class="cc-artifact-clear" @onclick='() => _constitutionText = string.Empty'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => _constitutionText = string.Empty'>Clear</button>
                         </div>
                     }
                 </div>
 
                 <!-- Specification -->
-                <div class="cc-artifact-card @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
-                    <div class="cc-artifact-card-header">
-                        <span class="cc-artifact-icon" aria-hidden="true">📋</span>
-                        <span class="cc-artifact-name">Specification</span>
-                        <span class="cc-artifact-status @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
+                <div class="artifact-card @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">📋</span>
+                        <span class="artifact-name">Specification</span>
+                        <span class="artifact-status @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
                             @(!string.IsNullOrEmpty(_specText) ? "Loaded" : "Empty")
                         </span>
                     </div>
@@ -74,25 +74,25 @@
                         OnFileRemoved="() => { _specText = string.Empty; }"
                         IsDisabled="false" />
                     <textarea
-                        class="cc-artifact-textarea"
+                        class="artifact-textarea"
                         placeholder="Or paste spec.md content here…"
                         rows="4"
                         @bind="_specText"></textarea>
                     @if (!string.IsNullOrEmpty(_specText))
                     {
-                        <div class="cc-artifact-footer">
+                        <div class="artifact-footer">
                             <span>@_specText.Split('\n').Length lines</span>
-                            <button class="cc-artifact-clear" @onclick='() => _specText = string.Empty'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => _specText = string.Empty'>Clear</button>
                         </div>
                     }
                 </div>
 
                 <!-- Plan -->
-                <div class="cc-artifact-card @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
-                    <div class="cc-artifact-card-header">
-                        <span class="cc-artifact-icon" aria-hidden="true">📐</span>
-                        <span class="cc-artifact-name">Plan</span>
-                        <span class="cc-artifact-status @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
+                <div class="artifact-card @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">📐</span>
+                        <span class="artifact-name">Plan</span>
+                        <span class="artifact-status @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
                             @(!string.IsNullOrEmpty(_planText) ? "Loaded" : "Empty")
                         </span>
                     </div>
@@ -102,25 +102,25 @@
                         OnFileRemoved="() => { _planText = string.Empty; }"
                         IsDisabled="false" />
                     <textarea
-                        class="cc-artifact-textarea"
+                        class="artifact-textarea"
                         placeholder="Or paste plan.md content here…"
                         rows="4"
                         @bind="_planText"></textarea>
                     @if (!string.IsNullOrEmpty(_planText))
                     {
-                        <div class="cc-artifact-footer">
+                        <div class="artifact-footer">
                             <span>@_planText.Split('\n').Length lines</span>
-                            <button class="cc-artifact-clear" @onclick='() => _planText = string.Empty'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => _planText = string.Empty'>Clear</button>
                         </div>
                     }
                 </div>
 
                 <!-- Tasks -->
-                <div class="cc-artifact-card @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
-                    <div class="cc-artifact-card-header">
-                        <span class="cc-artifact-icon" aria-hidden="true">✅</span>
-                        <span class="cc-artifact-name">Tasks</span>
-                        <span class="cc-artifact-status @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
+                <div class="artifact-card @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">✅</span>
+                        <span class="artifact-name">Tasks</span>
+                        <span class="artifact-status @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
                             @(!string.IsNullOrEmpty(_taskText) ? "Loaded" : "Empty")
                         </span>
                     </div>
@@ -130,15 +130,15 @@
                         OnFileRemoved="() => { _taskText = string.Empty; }"
                         IsDisabled="false" />
                     <textarea
-                        class="cc-artifact-textarea"
+                        class="artifact-textarea"
                         placeholder="Or paste tasks.md content here…"
                         rows="4"
                         @bind="_taskText"></textarea>
                     @if (!string.IsNullOrEmpty(_taskText))
                     {
-                        <div class="cc-artifact-footer">
+                        <div class="artifact-footer">
                             <span>@_taskText.Split('\n').Length lines</span>
-                            <button class="cc-artifact-clear" @onclick='() => _taskText = string.Empty'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => _taskText = string.Empty'>Clear</button>
                         </div>
                     }
                 </div>
@@ -203,17 +203,17 @@
 
         <!-- Tab bar -->
         <div class="cc-tab-bar" role="tablist">
-            <button class='cc-tab-btn @(_tab == "overview"   ? "is-active" : "")' @onclick='() => SetTab("overview")'>Overview</button>
-            <button class='cc-tab-btn @(_tab == "coverage"   ? "is-active" : "")' @onclick='() => SetTab("coverage")'>
+            <button class='cc-tab-btn @(_tab == "overview"   ? "is-active" : "")' role="tab" aria-selected="@(_tab == "overview")"   @onclick='() => SetTab("overview")'>Overview</button>
+            <button class='cc-tab-btn @(_tab == "coverage"   ? "is-active" : "")' role="tab" aria-selected="@(_tab == "coverage")"   @onclick='() => SetTab("coverage")'>
                 Rule Coverage @CoverageBadge
             </button>
-            <button class='cc-tab-btn @(_tab == "violations" ? "is-active" : "")' @onclick='() => SetTab("violations")'>
+            <button class='cc-tab-btn @(_tab == "violations" ? "is-active" : "")' role="tab" aria-selected="@(_tab == "violations")" @onclick='() => SetTab("violations")'>
                 Violations @ViolationsBadge
             </button>
-            <button class='cc-tab-btn @(_tab == "missing"    ? "is-active" : "")' @onclick='() => SetTab("missing")'>
+            <button class='cc-tab-btn @(_tab == "missing"    ? "is-active" : "")' role="tab" aria-selected="@(_tab == "missing")"    @onclick='() => SetTab("missing")'>
                 Missing Coverage @MissingBadge
             </button>
-            <button class='cc-tab-btn @(_tab == "recs"       ? "is-active" : "")' @onclick='() => SetTab("recs")'>
+            <button class='cc-tab-btn @(_tab == "recs"       ? "is-active" : "")' role="tab" aria-selected="@(_tab == "recs")"       @onclick='() => SetTab("recs")'>
                 Recommendations @RecsBadge
             </button>
         </div>

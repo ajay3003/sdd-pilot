@@ -1,0 +1,221 @@
+name: qa-review-studio-ci
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+      - "bugfix/**"
+      - "008-traceability-first"
+  pull_request:
+    branches:
+      - main
+      - "feature/**"
+      - "bugfix/**"
+  workflow_dispatch:
+
+env:
+  RUN_TESTS: "false"
+  BUILD_BACKEND: "true"
+  BUILD_FRONTEND: "true"
+  PUBLISH_TESTER_PACKAGE: "true"
+
+  POSTGRES_DB: birknext
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Pipeline configuration
+        run: |
+          echo "Branch: $GITHUB_REF"
+          echo "Commit: $GITHUB_SHA"
+          echo "RUN_TESTS=$RUN_TESTS"
+          echo "BUILD_BACKEND=$BUILD_BACKEND"
+          echo "BUILD_FRONTEND=$BUILD_FRONTEND"
+          echo "PUBLISH_TESTER_PACKAGE=$PUBLISH_TESTER_PACKAGE"
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Create CI .env
+        run: |
+          cat > AIAssisted/.env << EOF
+          POSTGRES_DB=$POSTGRES_DB
+          POSTGRES_USER=$POSTGRES_USER
+          POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+          EOF
+
+      - name: Start PostgreSQL container
+        working-directory: AIAssisted
+        run: |
+          docker compose up -d
+          docker compose ps
+
+      - name: Wait for PostgreSQL
+        working-directory: AIAssisted
+        run: |
+          set -e
+          for i in {1..30}; do
+            HEALTH=$(docker inspect --format='{{.State.Health.Status}}' $(docker compose ps -q postgres) 2>/dev/null || echo "unknown")
+            echo "Attempt $i: PostgreSQL health = $HEALTH"
+
+            if [ "$HEALTH" = "healthy" ]; then
+              echo "PostgreSQL is healthy"
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          docker compose logs postgres
+          exit 1
+
+      - name: Restore backend
+        if: env.BUILD_BACKEND == 'true'
+        working-directory: AIAssisted/backend
+        run: dotnet restore BirkNext.sln
+
+      - name: Build backend
+        if: env.BUILD_BACKEND == 'true'
+        working-directory: AIAssisted/backend
+        run: dotnet build BirkNext.sln --configuration Release --no-restore
+
+      - name: Test backend
+        if: env.BUILD_BACKEND == 'true' && env.RUN_TESTS == 'true'
+        continue-on-error: true
+        working-directory: AIAssisted/backend
+        run: |
+          dotnet test BirkNext.sln \
+            --configuration Release \
+            --no-build \
+            --logger trx \
+            --results-directory ${{ runner.temp }}/test-results/backend
+
+      - name: Publish backend app
+        if: env.BUILD_BACKEND == 'true'
+        working-directory: AIAssisted/backend
+        run: |
+          dotnet publish BirkNext.Api/BirkNext.Api.csproj \
+            --configuration Release \
+            --output ${{ github.workspace }}/artifact/tester-package/AIAssisted/backend
+
+      - name: Verify backend publish
+        if: env.BUILD_BACKEND == 'true'
+        run: |
+          test -f artifact/tester-package/AIAssisted/backend/BirkNext.Api.dll
+          test -f artifact/tester-package/AIAssisted/backend/BirkNext.Api.runtimeconfig.json
+          echo "Backend publish OK"
+
+      - name: Restore frontend
+        if: env.BUILD_FRONTEND == 'true'
+        working-directory: AIAssisted/frontend
+        run: dotnet restore BirkNext.sln
+
+      - name: Build frontend
+        if: env.BUILD_FRONTEND == 'true'
+        working-directory: AIAssisted/frontend
+        run: dotnet build BirkNext.sln --configuration Release --no-restore
+
+      - name: Test frontend
+        if: env.BUILD_FRONTEND == 'true' && env.RUN_TESTS == 'true'
+        continue-on-error: true
+        working-directory: AIAssisted/frontend
+        run: |
+          dotnet test BirkNext.sln \
+            --configuration Release \
+            --no-build \
+            --logger trx \
+            --results-directory ${{ runner.temp }}/test-results/frontend
+
+      - name: Publish frontend Blazor WebAssembly app
+        if: env.BUILD_FRONTEND == 'true'
+        working-directory: AIAssisted/frontend
+        run: |
+          dotnet publish BirkNext.Web/BirkNext.Web.csproj \
+            --configuration Release \
+            --output ${{ github.workspace }}/artifact/tester-package/AIAssisted/frontend
+
+      - name: Verify frontend publish
+        if: env.BUILD_FRONTEND == 'true'
+        run: |
+          FRONTEND_DIR="artifact/tester-package/AIAssisted/frontend"
+
+          if [ -f "$FRONTEND_DIR/wwwroot/index.html" ]; then
+            echo "Found wwwroot/index.html"
+          elif [ -f "$FRONTEND_DIR/index.html" ]; then
+            echo "Found index.html"
+          else
+            echo "ERROR: No Blazor index.html found"
+            exit 1
+          fi
+
+      - name: Prepare tester package
+        if: env.PUBLISH_TESTER_PACKAGE == 'true'
+        run: |
+          PACKAGE_DIR="artifact/tester-package"
+
+          mkdir -p "$PACKAGE_DIR/scripts"
+          mkdir -p "$PACKAGE_DIR/AIAssisted"
+          mkdir -p "$PACKAGE_DIR/test-results"
+
+          cp AIAssisted/docker-compose.yml "$PACKAGE_DIR/AIAssisted/"
+          cp AIAssisted/.env.example "$PACKAGE_DIR/AIAssisted/" || true
+
+          cp scripts/start-local.bat "$PACKAGE_DIR/scripts/"
+          cp scripts/start-local.ps1 "$PACKAGE_DIR/scripts/"
+
+          cp -r "${{ runner.temp }}/test-results"/* "$PACKAGE_DIR/test-results/" || true
+
+          cat > "$PACKAGE_DIR/README.md" << 'EOF'
+          # BirkNext Studio Tester Package
+
+          Download and unzip this artifact.
+
+          ## Start locally
+
+          Run:
+
+          scripts/start-local.bat
+
+          or:
+
+          scripts/start-local.ps1
+
+          ## Important
+
+          - Backend is a runnable ASP.NET Core app.
+          - Frontend is Blazor WebAssembly static output.
+          - Do not run `dotnet BirkNext.Web.dll`.
+          EOF
+
+          find "$PACKAGE_DIR" -maxdepth 5 -type f | sort
+
+      - name: Upload tester package
+        if: env.PUBLISH_TESTER_PACKAGE == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: birknext-tester-package
+          path: artifact/tester-package
+
+      - name: Upload test results
+        if: always() && env.RUN_TESTS == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ${{ runner.temp }}/test-results
+
+      - name: Cleanup containers
+        if: always()
+        working-directory: AIAssisted
+        run: docker compose down -v

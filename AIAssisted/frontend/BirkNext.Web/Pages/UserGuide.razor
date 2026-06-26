@@ -9,31 +9,31 @@
 
     <!-- ── Table of Contents ────────────────────────────────────────────── -->
     <nav class="ug-toc" aria-label="Page contents">
-        <a href="#overview"    class="ug-toc-link">Overview</a>
+        <a href="/user-guide#overview" class="ug-toc-link" onclick="userGuide.scrollToSection('overview'); return false;">Overview</a>
         <span class="ug-toc-sep">·</span>
-        <a href="#concepts"    class="ug-toc-link">Core Concepts</a>
+        <a href="/user-guide#concepts" class="ug-toc-link" onclick="userGuide.scrollToSection('concepts'); return false;">Core Concepts</a>
         <span class="ug-toc-sep">·</span>
-        <a href="#features"    class="ug-toc-link">Feature Matrix</a>
+        <a href="/user-guide#features" class="ug-toc-link" onclick="userGuide.scrollToSection('features'); return false;">Feature Matrix</a>
         <span class="ug-toc-sep">·</span>
-        <a href="#workflow"    class="ug-toc-link">SDD Workflow</a>
+        <a href="/user-guide#workflow" class="ug-toc-link" onclick="userGuide.scrollToSection('workflow'); return false;">SDD Workflow</a>
         <span class="ug-toc-sep">·</span>
-        <a href="#workflows"   class="ug-toc-link">Typical Workflows</a>
+        <a href="/user-guide#workflows" class="ug-toc-link" onclick="userGuide.scrollToSection('workflows'); return false;">Typical Workflows</a>
         <span class="ug-toc-sep">·</span>
-        <a href="#feature-details" class="ug-toc-link">Feature Details</a>
+        <a href="/user-guide#feature-details" class="ug-toc-link" onclick="userGuide.scrollToSection('feature-details'); return false;">Feature Details</a>
         <span class="ug-toc-sep">·</span>
-        <a href="#where"       class="ug-toc-link">Where Do I Find This?</a>
+        <a href="/user-guide#where" class="ug-toc-link" onclick="userGuide.scrollToSection('where'); return false;">Where Do I Find This?</a>
         <span class="ug-toc-sep">·</span>
-        <a href="#scenarios"   class="ug-toc-link">Helpful Scenarios</a>
+        <a href="/user-guide#scenarios" class="ug-toc-link" onclick="userGuide.scrollToSection('scenarios'); return false;">Helpful Scenarios</a>
         <span class="ug-toc-sep">·</span>
-        <a href="#discovery"   class="ug-toc-link">Feature Discovery</a>
+        <a href="/user-guide#discovery" class="ug-toc-link" onclick="userGuide.scrollToSection('discovery'); return false;">Feature Discovery</a>
         <span class="ug-toc-sep">·</span>
-        <a href="#faq"         class="ug-toc-link">FAQ</a>
+        <a href="/user-guide#faq" class="ug-toc-link" onclick="userGuide.scrollToSection('faq'); return false;">FAQ</a>
         <span class="ug-toc-sep">·</span>
-        <a href="#glossary"    class="ug-toc-link">Glossary</a>
+        <a href="/user-guide#glossary" class="ug-toc-link" onclick="userGuide.scrollToSection('glossary'); return false;">Glossary</a>
         <span class="ug-toc-sep">·</span>
-        <a href="#ecosystem"   class="ug-toc-link">Ecosystem</a>
+        <a href="/user-guide#ecosystem" class="ug-toc-link" onclick="userGuide.scrollToSection('ecosystem'); return false;">Ecosystem</a>
         <span class="ug-toc-sep">·</span>
-        <a href="#about"       class="ug-toc-link">About</a>
+        <a href="/user-guide#about" class="ug-toc-link" onclick="userGuide.scrollToSection('about'); return false;">About</a>
     </nav>
 
     <div class="ug-callout ug-callout-tip" style="margin-bottom: 1.5rem;">
@@ -99,18 +99,6 @@
                     <div class="ug-concept-question"><em>@a.Question</em></div>
                     <div class="ug-concept-desc">@a.Desc</div>
                     <div class="ug-concept-feature">Feature: <a href="@a.Route" class="ug-inline-link">@a.Feature</a></div>
-                </div>
-            }
-        </div>
-
-        <h3 class="ug-subsection-title" id="glossary">Glossary</h3>
-        <p>Common terms used throughout QA Review Studio and its documentation.</p>
-        <div class="ug-concept-grid">
-            @foreach (var g in Glossary)
-            {
-                <div class="ug-concept-card">
-                    <div class="ug-concept-name">@g.Term</div>
-                    <div class="ug-concept-desc">@g.Definition</div>
                 </div>
             }
         </div>
@@ -536,6 +524,20 @@
     </section>
 
     <!-- ── Section 12: Analysis Ecosystem ─────────────────────────────── -->
+    <section id="glossary" class="ug-section">
+        <h2 class="ug-section-title">Glossary</h2>
+        <p class="ug-section-lead">Common terms used throughout QA Review Studio and its documentation.</p>
+        <div class="ug-concept-grid">
+            @foreach (var g in Glossary)
+            {
+                <div class="ug-concept-card">
+                    <div class="ug-concept-name">@g.Term</div>
+                    <div class="ug-concept-desc">@g.Definition</div>
+                </div>
+            }
+        </div>
+    </section>
+
     <section id="ecosystem" class="ug-section">
         <h2 class="ug-section-title">Analysis Ecosystem</h2>
         <p class="ug-section-lead">How the Analysis features relate to each other and to the full SDD governance workflow.</p>
@@ -1116,7 +1118,7 @@
 
         new("embedded-views",
             "Where are Traceability & Coverage, Flow View, and Spec Explorer?",
-            "<p>These are embedded tabs inside <strong>Specification Review</strong> (<a href='/extract'>/extract</a>) and appear automatically after a successful spec analysis:</p><ul><li><strong>Traceability &amp; Coverage</strong> — active by default. Shows coverage gaps, missing tests, orphan tests.</li><li><strong>Flow View</strong> — QA readiness by user story. Click the Flow View tab.</li><li><strong>Spec Explorer</strong> — specification structure and navigation. Click the Spec Explorer tab.</li></ul><p>Once analysis completes, switching between tabs does not require re-uploading files. See the <a href='#discovery'>Feature Discovery</a> section for full details.</p>"),
+            "<p>These are embedded tabs inside <strong>Specification Review</strong> (<a href='/extract'>/extract</a>) and appear automatically after a successful spec analysis:</p><ul><li><strong>Traceability &amp; Coverage</strong> — active by default. Shows coverage gaps, missing tests, orphan tests.</li><li><strong>Flow View</strong> — QA readiness by user story. Click the Flow View tab.</li><li><strong>Spec Explorer</strong> — specification structure and navigation. Click the Spec Explorer tab.</li></ul><p>Once analysis completes, switching between tabs does not require re-uploading files. See the <a href='/user-guide#discovery'>Feature Discovery</a> section for full details.</p>"),
 
         new("drift-vs-review",
             "What is the difference between Spec Drift and Implementation Review?",

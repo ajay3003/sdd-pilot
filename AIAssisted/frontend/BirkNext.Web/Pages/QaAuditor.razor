@@ -30,81 +30,81 @@
             <div class="aud-artifact-grid">
 
                 <!-- Constitution -->
-                <div class="aud-artifact-card @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
-                    <div class="aud-artifact-card-header">
-                        <span class="aud-artifact-icon" aria-hidden="true">📜</span>
-                        <span class="aud-artifact-name">Constitution</span>
-                        <span class="aud-artifact-status @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
+                <div class="artifact-card @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">📜</span>
+                        <span class="artifact-name">Constitution</span>
+                        <span class="artifact-status @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
                             @(!string.IsNullOrEmpty(_constitutionText) ? "Loaded" : "Empty")
                         </span>
                     </div>
-                    <textarea class="aud-artifact-textarea" placeholder="Paste constitution.md…" rows="3"
+                    <textarea class="artifact-textarea" placeholder="Paste constitution.md…" rows="3"
                               @bind="_constitutionText"></textarea>
                     @if (!string.IsNullOrEmpty(_constitutionText))
                     {
-                        <div class="aud-artifact-footer">
+                        <div class="artifact-footer">
                             <span>@_constitutionText.Split('\n').Length lines</span>
-                            <button class="aud-artifact-clear" @onclick='() => _constitutionText = string.Empty'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => _constitutionText = string.Empty'>Clear</button>
                         </div>
                     }
                 </div>
 
                 <!-- Specification -->
-                <div class="aud-artifact-card @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
-                    <div class="aud-artifact-card-header">
-                        <span class="aud-artifact-icon" aria-hidden="true">📋</span>
-                        <span class="aud-artifact-name">Specification</span>
-                        <span class="aud-artifact-status @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
+                <div class="artifact-card @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">📋</span>
+                        <span class="artifact-name">Specification</span>
+                        <span class="artifact-status @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
                             @(!string.IsNullOrEmpty(_specText) ? "Loaded" : "Empty")
                         </span>
                     </div>
-                    <textarea class="aud-artifact-textarea" placeholder="Paste spec.md…" rows="3"
+                    <textarea class="artifact-textarea" placeholder="Paste spec.md…" rows="3"
                               @bind="_specText"></textarea>
                     @if (!string.IsNullOrEmpty(_specText))
                     {
-                        <div class="aud-artifact-footer">
+                        <div class="artifact-footer">
                             <span>@_specText.Split('\n').Length lines</span>
-                            <button class="aud-artifact-clear" @onclick='() => _specText = string.Empty'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => _specText = string.Empty'>Clear</button>
                         </div>
                     }
                 </div>
 
                 <!-- Plan -->
-                <div class="aud-artifact-card @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
-                    <div class="aud-artifact-card-header">
-                        <span class="aud-artifact-icon" aria-hidden="true">📐</span>
-                        <span class="aud-artifact-name">Plan</span>
-                        <span class="aud-artifact-status @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
+                <div class="artifact-card @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">📐</span>
+                        <span class="artifact-name">Plan</span>
+                        <span class="artifact-status @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
                             @(!string.IsNullOrEmpty(_planText) ? "Loaded" : "Empty")
                         </span>
                     </div>
-                    <textarea class="aud-artifact-textarea" placeholder="Paste plan.md…" rows="3"
+                    <textarea class="artifact-textarea" placeholder="Paste plan.md…" rows="3"
                               @bind="_planText"></textarea>
                     @if (!string.IsNullOrEmpty(_planText))
                     {
-                        <div class="aud-artifact-footer">
+                        <div class="artifact-footer">
                             <span>@_planText.Split('\n').Length lines</span>
-                            <button class="aud-artifact-clear" @onclick='() => _planText = string.Empty'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => _planText = string.Empty'>Clear</button>
                         </div>
                     }
                 </div>
 
                 <!-- Tasks -->
-                <div class="aud-artifact-card @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
-                    <div class="aud-artifact-card-header">
-                        <span class="aud-artifact-icon" aria-hidden="true">✅</span>
-                        <span class="aud-artifact-name">Tasks</span>
-                        <span class="aud-artifact-status @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
+                <div class="artifact-card @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">✅</span>
+                        <span class="artifact-name">Tasks</span>
+                        <span class="artifact-status @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
                             @(!string.IsNullOrEmpty(_taskText) ? "Loaded" : "Empty")
                         </span>
                     </div>
-                    <textarea class="aud-artifact-textarea" placeholder="Paste tasks.md…" rows="3"
+                    <textarea class="artifact-textarea" placeholder="Paste tasks.md…" rows="3"
                               @bind="_taskText"></textarea>
                     @if (!string.IsNullOrEmpty(_taskText))
                     {
-                        <div class="aud-artifact-footer">
+                        <div class="artifact-footer">
                             <span>@_taskText.Split('\n').Length lines</span>
-                            <button class="aud-artifact-clear" @onclick='() => _taskText = string.Empty'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => _taskText = string.Empty'>Clear</button>
                         </div>
                     }
                 </div>

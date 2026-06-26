@@ -98,18 +98,18 @@ else
     </div>
 
     <!-- Tab bar -->
-    <div class="tab-bar">
-        <button class="tab-btn @(_tab == "overview"     ? "active" : "")" @onclick='() => _tab = "overview"'>Overview</button>
-        <button class="tab-btn @(_tab == "development"  ? "active" : "")" @onclick='() => _tab = "development"'>
+    <div class="tab-bar" role="tablist">
+        <button class="tab-btn @(_tab == "overview"     ? "is-active" : "")" role="tab" aria-selected="@(_tab == "overview")"     @onclick='() => _tab = "overview"'>Overview</button>
+        <button class="tab-btn @(_tab == "development"  ? "is-active" : "")" role="tab" aria-selected="@(_tab == "development")"  @onclick='() => _tab = "development"'>
             @StateIcon(_report.DevelopmentDecision.State) Development
         </button>
-        <button class="tab-btn @(_tab == "testing"      ? "active" : "")" @onclick='() => _tab = "testing"'>
+        <button class="tab-btn @(_tab == "testing"      ? "is-active" : "")" role="tab" aria-selected="@(_tab == "testing")"      @onclick='() => _tab = "testing"'>
             @StateIcon(_report.TestingDecision.State) Testing
         </button>
-        <button class="tab-btn @(_tab == "release"      ? "active" : "")" @onclick='() => _tab = "release"'>
+        <button class="tab-btn @(_tab == "release"      ? "is-active" : "")" role="tab" aria-selected="@(_tab == "release")"      @onclick='() => _tab = "release"'>
             @StateIcon(_report.ReleaseDecision.State) Release
         </button>
-        <button class="tab-btn @(_tab == "blockers"     ? "active" : "")" @onclick='() => _tab = "blockers"'>
+        <button class="tab-btn @(_tab == "blockers"     ? "is-active" : "")" role="tab" aria-selected="@(_tab == "blockers")"     @onclick='() => _tab = "blockers"'>
             Blockers
             @if (_report.Blockers.Count > 0)
             {
@@ -118,7 +118,7 @@ else
                 </span>
             }
         </button>
-        <button class="tab-btn @(_tab == "recommendations" ? "active" : "")" @onclick='() => _tab = "recommendations"'>
+        <button class="tab-btn @(_tab == "recommendations" ? "is-active" : "")" role="tab" aria-selected="@(_tab == "recommendations")" @onclick='() => _tab = "recommendations"'>
             Recommendations
             @if (_report.Recommendations.Count > 0)
             {

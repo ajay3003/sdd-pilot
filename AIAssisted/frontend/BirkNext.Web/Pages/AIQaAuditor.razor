@@ -35,82 +35,82 @@
                 <div class="qr-artifact-grid">
 
                     <!-- Constitution (optional but enables compliance scoring) -->
-                    <div class="qr-artifact-card @(!string.IsNullOrEmpty(_qrConstitutionText) ? "is-loaded" : "")">
-                        <div class="qr-artifact-card-header">
-                            <span class="qr-artifact-icon" aria-hidden="true">📜</span>
-                            <span class="qr-artifact-name">Constitution</span>
-                            <span class="qr-artifact-status @(!string.IsNullOrEmpty(_qrConstitutionText) ? "is-loaded" : "")">
+                    <div class="artifact-card @(!string.IsNullOrEmpty(_qrConstitutionText) ? "is-loaded" : "")">
+                        <div class="artifact-card-header">
+                            <span class="artifact-icon" aria-hidden="true">📜</span>
+                            <span class="artifact-name">Constitution</span>
+                            <span class="artifact-status @(!string.IsNullOrEmpty(_qrConstitutionText) ? "is-loaded" : "")">
                                 @(!string.IsNullOrEmpty(_qrConstitutionText) ? "Loaded" : "Empty")
                             </span>
                         </div>
-                        <textarea class="qr-artifact-textarea" placeholder="Paste constitution.md here…" rows="3"
+                        <textarea class="artifact-textarea" placeholder="Paste constitution.md here…" rows="3"
                                   @bind="_qrConstitutionText"></textarea>
                         @if (!string.IsNullOrEmpty(_qrConstitutionText))
                         {
-                            <div class="qr-artifact-footer">
+                            <div class="artifact-footer">
                                 <span>@_qrConstitutionText.Split('\n').Length lines</span>
-                                <button class="qr-artifact-clear" @onclick='() => _qrConstitutionText = string.Empty'>Clear</button>
+                                <button class="artifact-clear" @onclick='() => _qrConstitutionText = string.Empty'>Clear</button>
                             </div>
                         }
                     </div>
 
                     <!-- Specification (required for spec score) -->
-                    <div class="qr-artifact-card @(!string.IsNullOrEmpty(_qrSpecText) ? "is-loaded" : "is-required")">
-                        <div class="qr-artifact-card-header">
-                            <span class="qr-artifact-icon" aria-hidden="true">📋</span>
-                            <span class="qr-artifact-name">Specification</span>
-                            <span class="qr-artifact-required-badge">Required</span>
-                            <span class="qr-artifact-status @(!string.IsNullOrEmpty(_qrSpecText) ? "is-loaded" : "")">
+                    <div class="artifact-card @(!string.IsNullOrEmpty(_qrSpecText) ? "is-loaded" : "is-required")">
+                        <div class="artifact-card-header">
+                            <span class="artifact-icon" aria-hidden="true">📋</span>
+                            <span class="artifact-name">Specification</span>
+                            <span class="artifact-required-badge">Required</span>
+                            <span class="artifact-status @(!string.IsNullOrEmpty(_qrSpecText) ? "is-loaded" : "")">
                                 @(!string.IsNullOrEmpty(_qrSpecText) ? "Loaded" : "Empty")
                             </span>
                         </div>
-                        <textarea class="qr-artifact-textarea" placeholder="Paste spec.md here…" rows="3"
+                        <textarea class="artifact-textarea" placeholder="Paste spec.md here…" rows="3"
                                   @bind="_qrSpecText"></textarea>
                         @if (!string.IsNullOrEmpty(_qrSpecText))
                         {
-                            <div class="qr-artifact-footer">
+                            <div class="artifact-footer">
                                 <span>@_qrSpecText.Split('\n').Length lines</span>
-                                <button class="qr-artifact-clear" @onclick='() => _qrSpecText = string.Empty'>Clear</button>
+                                <button class="artifact-clear" @onclick='() => _qrSpecText = string.Empty'>Clear</button>
                             </div>
                         }
                     </div>
 
                     <!-- Plan -->
-                    <div class="qr-artifact-card @(!string.IsNullOrEmpty(_qrPlanText) ? "is-loaded" : "")">
-                        <div class="qr-artifact-card-header">
-                            <span class="qr-artifact-icon" aria-hidden="true">📐</span>
-                            <span class="qr-artifact-name">Plan</span>
-                            <span class="qr-artifact-status @(!string.IsNullOrEmpty(_qrPlanText) ? "is-loaded" : "")">
+                    <div class="artifact-card @(!string.IsNullOrEmpty(_qrPlanText) ? "is-loaded" : "")">
+                        <div class="artifact-card-header">
+                            <span class="artifact-icon" aria-hidden="true">📐</span>
+                            <span class="artifact-name">Plan</span>
+                            <span class="artifact-status @(!string.IsNullOrEmpty(_qrPlanText) ? "is-loaded" : "")">
                                 @(!string.IsNullOrEmpty(_qrPlanText) ? "Loaded" : "Empty")
                             </span>
                         </div>
-                        <textarea class="qr-artifact-textarea" placeholder="Paste plan.md here…" rows="3"
+                        <textarea class="artifact-textarea" placeholder="Paste plan.md here…" rows="3"
                                   @bind="_qrPlanText"></textarea>
                         @if (!string.IsNullOrEmpty(_qrPlanText))
                         {
-                            <div class="qr-artifact-footer">
+                            <div class="artifact-footer">
                                 <span>@_qrPlanText.Split('\n').Length lines</span>
-                                <button class="qr-artifact-clear" @onclick='() => _qrPlanText = string.Empty'>Clear</button>
+                                <button class="artifact-clear" @onclick='() => _qrPlanText = string.Empty'>Clear</button>
                             </div>
                         }
                     </div>
 
                     <!-- Tasks -->
-                    <div class="qr-artifact-card @(!string.IsNullOrEmpty(_qrTaskText) ? "is-loaded" : "")">
-                        <div class="qr-artifact-card-header">
-                            <span class="qr-artifact-icon" aria-hidden="true">✅</span>
-                            <span class="qr-artifact-name">Tasks</span>
-                            <span class="qr-artifact-status @(!string.IsNullOrEmpty(_qrTaskText) ? "is-loaded" : "")">
+                    <div class="artifact-card @(!string.IsNullOrEmpty(_qrTaskText) ? "is-loaded" : "")">
+                        <div class="artifact-card-header">
+                            <span class="artifact-icon" aria-hidden="true">✅</span>
+                            <span class="artifact-name">Tasks</span>
+                            <span class="artifact-status @(!string.IsNullOrEmpty(_qrTaskText) ? "is-loaded" : "")">
                                 @(!string.IsNullOrEmpty(_qrTaskText) ? "Loaded" : "Empty")
                             </span>
                         </div>
-                        <textarea class="qr-artifact-textarea" placeholder="Paste tasks.md here…" rows="3"
+                        <textarea class="artifact-textarea" placeholder="Paste tasks.md here…" rows="3"
                                   @bind="_qrTaskText"></textarea>
                         @if (!string.IsNullOrEmpty(_qrTaskText))
                         {
-                            <div class="qr-artifact-footer">
+                            <div class="artifact-footer">
                                 <span>@_qrTaskText.Split('\n').Length lines</span>
-                                <button class="qr-artifact-clear" @onclick='() => _qrTaskText = string.Empty'>Clear</button>
+                                <button class="artifact-clear" @onclick='() => _qrTaskText = string.Empty'>Clear</button>
                             </div>
                         }
                     </div>

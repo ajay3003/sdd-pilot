@@ -76,7 +76,8 @@
                 }
                 else if (FilteredRequirements.Count == 0)
                 {
-                    <div class="mapping-empty">No requirements match the current risk filter.</div>
+                    <EmptyState Title="No requirements match this filter."
+                                Description="Try a different risk level or clear the filter to show all." />
                 }
                 else
                 {
@@ -118,15 +119,7 @@
                 }
                 else if (_detail is null)
                 {
-                    @if (_summary.TotalRequirements == 0)
-                    {
-                        <EmptyState Title="No requirements yet"
-                                    Description="Add requirement scenarios to the QA Artifact Library to begin impact analysis." />
-                    }
-                    else
-                    {
-                        <p class="loading-state">Loading analysis&hellip;</p>
-                    }
+                    <p class="loading-state">Loading analysis&hellip;</p>
                 }
                 else
                 {
