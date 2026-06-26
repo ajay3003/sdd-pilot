@@ -4,6 +4,13 @@
     margin-top: 1.75rem;
 }
 
+/* Zone separator — applied to the first section of each new zone */
+.db-zone-start {
+    margin-top: 2.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--clr-border);
+}
+
 
 /* ══ 1 · KPI Strip ═══════════════════════════════════════════════════════════ */
 
@@ -359,6 +366,18 @@
     flex-wrap: wrap;
     gap: 0.3rem;
     margin-top: 0.2rem;
+}
+
+/* One-line top finding beneath the status pill */
+.db-analysis-finding {
+    font-size: 0.74rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.4;
+    margin-top: 0.1rem;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
 }
 
 .db-analysis-empty {
