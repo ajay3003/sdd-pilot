@@ -1006,8 +1006,8 @@ else if (_settings is not null)
                         <div class="danger-zone-action">
                             <div class="danger-zone-description">
                                 <strong>Reset Local Database</strong>
-                                <p>Deletes all imported artifacts, AI reviews, test scenarios, traceability links, implementation mappings, analysis results, and other application data stored in the local database. The database server continues running and the application will recreate its schema when required. This operation cannot be undone.</p>
-                                <p>This operation affects only the local QA Review Studio database. It does not modify application binaries, source code, configuration files, frontend profiles, or any files outside the database.</p>
+                                <p>Deletes all imported artifacts, AI reviews, test scenarios, traceability links, traceability suggestions, implementation mappings, analysis results, and other application data stored in the local database. Also clears browser-stored content from Constitution Explorer, Plan Explorer, Task Explorer, and any active extraction session. The database server continues running and the application will recreate its schema when required. This operation cannot be undone.</p>
+                                <p>This operation does not modify application binaries, source code, configuration files, or frontend analysis profiles.</p>
                                 @if (!_settings.Maintenance.ResetAllowed && !string.IsNullOrWhiteSpace(_settings.Maintenance.ResetNotAllowedReason))
                                 {
                                     <p class="danger-zone-reason">@_settings.Maintenance.ResetNotAllowedReason</p>
@@ -1455,6 +1455,13 @@ else if (_settings is not null)
             var (success, message) = await AdminApi.ResetLocalDatabaseAsync();
             _resetSuccess       = success;
             _resetResultMessage = message;
+            if (success)
+            {
+                await JS.InvokeVoidAsync("localStorage.removeItem", "ce-standalone-constitution");
+                await JS.InvokeVoidAsync("localStorage.removeItem", "pe-standalone-plan");
+                await JS.InvokeVoidAsync("localStorage.removeItem", "te-standalone-tasks");
+                await JS.InvokeVoidAsync("localStorage.removeItem", "birknext:extraction:session");
+            }
         }
         finally
         {

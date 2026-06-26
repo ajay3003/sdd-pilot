@@ -387,14 +387,19 @@ public class AdminService
 
         try
         {
-            // Delete in dependency order: CodeLinks depend on CodeFiles and Scenarios
+            await using var transaction = await _db.Database.BeginTransactionAsync();
+
+            // Delete in dependency order: child tables first, then parent tables
             await _db.CodeLinks.ExecuteDeleteAsync();
             await _db.TraceLinks.ExecuteDeleteAsync();
             await _db.CandidateLinks.ExecuteDeleteAsync();
+            await _db.TraceabilitySuggestions.ExecuteDeleteAsync();
             await _db.CodeFiles.ExecuteDeleteAsync();
             await _db.QaDeltaReviews.ExecuteDeleteAsync();
             await _db.ReviewedCandidates.ExecuteDeleteAsync();
             await _db.Scenarios.ExecuteDeleteAsync();
+
+            await transaction.CommitAsync();
 
             _logger.LogWarning("Local database reset completed — all application data cleared");
             return (true, "Database reset successfully. All application data has been cleared.");
