@@ -11,48 +11,17 @@
 <PageTitle>Delta Reviews</PageTitle>
 
 <div class="delta-reviews-shell">
-    <section class="delta-reviews-hero" aria-label="Delta review history overview">
-        <div>
-            <p class="section-kicker">Change Impact History</p>
-            <h1>Delta Review History</h1>
-            <p class="page-lead">Review saved specification comparisons and track QA impact across versions.</p>
-            <p class="hero-description">Delta reviews capture the difference between specification versions and help QA teams understand change impact before releases.</p>
-        </div>
-        <div class="delta-hero-benefits" aria-label="Delta review benefits">
-            <span>Track requirement changes</span>
-            <span>Detect coverage impact</span>
-            <span>Identify traceability gaps</span>
-            <span>Monitor release risk</span>
-            <span>Maintain specification history</span>
-        </div>
-    </section>
+    <PageHeader Title="Delta Review History"
+                Description="Review saved specification comparisons and track QA impact across versions." />
 
-    <section class="delta-kpi-grid" aria-label="Delta review executive summary">
-        <div class="delta-kpi-card">
-            <strong>@_reviews.Count</strong>
-            <span>Saved Delta Reviews</span>
-        </div>
-        <div class="delta-kpi-card kpi-added">
-            <strong>@AddedRequirements</strong>
-            <span>Added Requirements</span>
-        </div>
-        <div class="delta-kpi-card kpi-changed">
-            <strong>@ChangedRequirements</strong>
-            <span>Changed Requirements</span>
-        </div>
-        <div class="delta-kpi-card kpi-removed">
-            <strong>@RemovedRequirements</strong>
-            <span>Removed Requirements</span>
-        </div>
-        <div class="delta-kpi-card kpi-coverage">
-            <strong>@CoverageImpactItems</strong>
-            <span>Coverage Impact Items</span>
-        </div>
-        <div class="delta-kpi-card kpi-traceability">
-            <strong>@TraceabilityImpactItems</strong>
-            <span>Traceability Impact Items</span>
-        </div>
-    </section>
+    <div class="delta-kpi-grid" aria-label="Delta review executive summary">
+        <MetricCard Value="@_reviews.Count.ToString()" Label="Saved Delta Reviews" />
+        <MetricCard Value="@AddedRequirements.ToString()" Label="Added Requirements" Variant="success" />
+        <MetricCard Value="@ChangedRequirements.ToString()" Label="Changed Requirements" Variant="warning" />
+        <MetricCard Value="@RemovedRequirements.ToString()" Label="Removed Requirements" Variant="danger" />
+        <MetricCard Value="@CoverageImpactItems.ToString()" Label="Coverage Impact Items" Variant="info" />
+        <MetricCard Value="@TraceabilityImpactItems.ToString()" Label="Traceability Impact Items" />
+    </div>
 
     <section class="impact-overview-panel" aria-label="Impact overview">
         <div class="impact-overview-header">

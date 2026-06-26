@@ -12,11 +12,8 @@
 
 <div class="qa-auditor-page">
 
-    <div class="qa-hero traceability-hero">
-        <p class="section-kicker">Executive Command Center</p>
-        <h1 class="page-title">QA Readiness</h1>
-        <p class="page-subtitle">Assess cross-artifact readiness across Constitution, Specification, Plan, and Tasks. Answers whether the feature is ready for implementation, testing, and release.</p>
-    </div>
+    <PageHeader Title="QA Readiness"
+                Description="Assess cross-artifact readiness across Constitution, Specification, Plan, and Tasks. Answers whether the feature is ready for implementation, testing, and release." />
 
     <!-- ══ Cross-Artifact Readiness Assessment ══════════════════════════════ -->
     <div class="qr-section">
@@ -127,10 +124,10 @@
                         else
                         { <span>Specification loaded · @QrAdditionalCount additional artifact@(QrAdditionalCount != 1 ? "s" : "") loaded</span> }
                     </span>
-                    <button class="qr-analyze-btn" disabled="@string.IsNullOrWhiteSpace(_qrSpecText)"
-                            @onclick="RunReadinessAssessment">
+                    <PrimaryButton Disabled="@string.IsNullOrWhiteSpace(_qrSpecText)"
+                                   OnClick="RunReadinessAssessment">
                         Assess Readiness
-                    </button>
+                    </PrimaryButton>
                 </div>
             }
         </div>
@@ -147,9 +144,8 @@
                         @_readinessReport.OverallScore.ToString("0.#")% overall ·
                         @_readinessReport.Scores.Count(s => s.IsAssessed) of 5 categories assessed
                     </div>
-                    <span class="qr-status-badge qr-status-@QrStatusClass(_readinessReport.OverallStatus)">
-                        @QrStatusLabel(_readinessReport.OverallStatus)
-                    </span>
+                    <StatusChip Status="@QrStatusToChip(_readinessReport.OverallStatus)"
+                                Label="@QrStatusLabel(_readinessReport.OverallStatus)" />
                 </div>
             </div>
 
@@ -198,9 +194,7 @@
             }
 
             <!-- Readiness gates -->
-            <div class="qr-section-header" style="margin-top:1rem;">
-                <span class="qr-section-title">Readiness Gates</span>
-            </div>
+            <SectionHeader Title="Readiness Gates" />
             <div class="qr-gate-grid">
                 @foreach (var gate in _readinessReport.Gates)
                 {
@@ -221,57 +215,38 @@
             <!-- Gaps -->
             @if (_readinessReport.Gaps.Count > 0)
             {
-                <div class="qr-section-header" style="margin-top:1.25rem;">
-                    <span class="qr-section-title">Readiness Gaps</span>
-                    <span style="font-size:0.78rem;color:var(--clr-text-muted);">
-                        @_readinessReport.Gaps.Count gap@(_readinessReport.Gaps.Count != 1 ? "s" : "") · sorted by severity
-                    </span>
-                </div>
+                <SectionHeader Title="Readiness Gaps"
+                               Description="@($"{_readinessReport.Gaps.Count} gap{(_readinessReport.Gaps.Count != 1 ? "s" : "")} · sorted by severity")" />
                 @foreach (var gap in _readinessReport.Gaps.Take(_gapShowAll ? 999 : 8))
                 {
-                    <div class="qr-gap-item sev-@gap.Severity.ToString().ToLowerInvariant()">
-                        <span class="qr-gap-cat">@QrShortCategory(gap.Category)</span>
-                        <span class="qr-sev-badge qr-sev-@gap.Severity.ToString().ToLowerInvariant()">@gap.Severity</span>
-                        <span>@gap.Description</span>
-                    </div>
+                    <IssueCard Severity="@gap.Severity.ToString().ToLowerInvariant()"
+                               Component="@QrShortCategory(gap.Category)"
+                               Description="@gap.Description" />
                 }
                 @if (_readinessReport.Gaps.Count > 8 && !_gapShowAll)
                 {
-                    <button class="qr-analyze-btn" style="background:var(--clr-bg-subtle);color:var(--clr-primary);border:1px solid var(--clr-border);margin-top:0.25rem;"
-                            @onclick="() => _gapShowAll = true">
+                    <GhostButton OnClick="() => _gapShowAll = true">
                         Show all @_readinessReport.Gaps.Count gaps
-                    </button>
+                    </GhostButton>
                 }
             }
 
             <!-- Recommendations -->
             @if (_readinessReport.Recommendations.Count > 0)
             {
-                <div class="qr-section-header" style="margin-top:1.25rem;">
-                    <span class="qr-section-title">Recommendations</span>
-                    <span style="font-size:0.78rem;color:var(--clr-text-muted);">
-                        @_readinessReport.Recommendations.Count recommendation@(_readinessReport.Recommendations.Count != 1 ? "s" : "") · highest priority first
-                    </span>
-                </div>
+                <SectionHeader Title="Recommendations"
+                               Description="@($"{_readinessReport.Recommendations.Count} recommendation{(_readinessReport.Recommendations.Count != 1 ? "s" : "")} · highest priority first")" />
                 @foreach (var rec in _readinessReport.Recommendations.Take(_recShowAll ? 999 : 8))
                 {
-                    <div class="qr-rec-item">
-                        <span class="qr-rec-bullet" aria-hidden="true">→</span>
-                        <div>
-                            <p class="qr-rec-text">@rec.Text</p>
-                            <div class="qr-rec-meta">
-                                <span class="qr-rec-target">@rec.TargetArtifact</span>
-                                <span class="qr-sev-badge qr-sev-@rec.Priority.ToString().ToLowerInvariant()">@rec.Priority</span>
-                            </div>
-                        </div>
-                    </div>
+                    <RecommendationCard Title="@rec.Text"
+                                        Description="@rec.TargetArtifact.ToString()"
+                                        Priority="@rec.Priority.ToString().ToLowerInvariant()" />
                 }
                 @if (_readinessReport.Recommendations.Count > 8 && !_recShowAll)
                 {
-                    <button class="qr-analyze-btn" style="background:var(--clr-bg-subtle);color:var(--clr-primary);border:1px solid var(--clr-border);margin-top:0.25rem;"
-                            @onclick="() => _recShowAll = true">
+                    <GhostButton OnClick="() => _recShowAll = true">
                         Show all @_readinessReport.Recommendations.Count recommendations
-                    </button>
+                    </GhostButton>
                 }
             }
         }
@@ -313,7 +288,12 @@
                 }
             </div>
             <div class="qa-score-info">
-                <div class="qa-readiness-badge qa-readiness--@ReadinessClass">@ReadinessLabel</div>
+                <StatusChip Status="@(ReadinessClass switch {
+                    "ready" => "ready",
+                    "review" => "warning",
+                    "high-risk" => "critical",
+                    _ => "neutral"
+                })" Label="@ReadinessLabel" />
                 @if (_report.ReadinessStatus == QaReadinessStatus.InsufficientData)
                 {
                     <p class="qa-score-subtitle">Add requirements, tests, and traceability links before QA readiness can be calculated.</p>
@@ -341,69 +321,57 @@
         </div>
 
         <!-- KPI Cards -->
-        <div class="qa-kpi-grid">
-            <div class="kpi-card kpi-card--@CoverageKpiClass">
-                <div class="kpi-label">Requirement Coverage</div>
-                <div class="kpi-value">@_report.CoveragePercent.ToString("F0")%</div>
-                <div class="kpi-sublabel">@_report.TotalRequirements requirement(s)</div>
-            </div>
-            <div class="kpi-card kpi-card--@RiskKpiClass">
-                <div class="kpi-label">Requirements at Risk</div>
-                <div class="kpi-value">@_report.RequirementsAtRisk</div>
-                <div class="kpi-sublabel">@_report.HighRiskRequirements with zero tests</div>
-            </div>
-            <div class="kpi-card kpi-card--@DriftKpiClass">
-                <div class="kpi-label">Drift Findings</div>
-                <div class="kpi-value">@_report.DriftFindingsCount</div>
-                <div class="kpi-sublabel">@_report.HighRiskDriftFindings high-risk</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-label">Orphan Tests</div>
-                <div class="kpi-value kpi-value--@(_report.OrphanTestCount > 0 ? "warn" : "ok")">@_report.OrphanTestCount</div>
-                <div class="kpi-sublabel">not linked to any requirement</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-label">Unlinked Code Files</div>
-                <div class="kpi-value kpi-value--@(_report.UnlinkedCodeFiles > 0 ? "warn" : "ok")">@_report.UnlinkedCodeFiles</div>
-                <div class="kpi-sublabel">of @_report.TotalCodeFiles registered</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-label">High-Risk Requirements</div>
-                <div class="kpi-value kpi-value--@(_report.HighRiskRequirements > 0 ? "danger" : "ok")">@_report.HighRiskRequirements</div>
-                <div class="kpi-sublabel">no tests linked</div>
-            </div>
+        <div class="metric-grid-6">
+            <MetricCard Value="@(_report.CoveragePercent.ToString("F0") + "%")"
+                        Label="Requirement Coverage"
+                        Sublabel="@(_report.TotalRequirements + " requirement(s)")"
+                        Variant="@(CoverageKpiClass switch { "good" => "success", "warn" => "warning", _ => "danger" })" />
+            <MetricCard Value="@_report.RequirementsAtRisk.ToString()"
+                        Label="Requirements at Risk"
+                        Sublabel="@(_report.HighRiskRequirements + " with zero tests")"
+                        Variant="@(RiskKpiClass switch { "good" => "success", "warn" => "warning", _ => "danger" })" />
+            <MetricCard Value="@_report.DriftFindingsCount.ToString()"
+                        Label="Drift Findings"
+                        Sublabel="@(_report.HighRiskDriftFindings + " high-risk")"
+                        Variant="@(DriftKpiClass switch { "good" => "success", "warn" => "warning", _ => "danger" })" />
+            <MetricCard Value="@_report.OrphanTestCount.ToString()"
+                        Label="Orphan Tests"
+                        Sublabel="not linked to any requirement"
+                        Variant="@(_report.OrphanTestCount > 0 ? "warning" : "success")" />
+            <MetricCard Value="@_report.UnlinkedCodeFiles.ToString()"
+                        Label="Unlinked Code Files"
+                        Sublabel="@("of " + _report.TotalCodeFiles + " registered")"
+                        Variant="@(_report.UnlinkedCodeFiles > 0 ? "warning" : "success")" />
+            <MetricCard Value="@_report.HighRiskRequirements.ToString()"
+                        Label="High-Risk Requirements"
+                        Sublabel="no tests linked"
+                        Variant="@(_report.HighRiskRequirements > 0 ? "danger" : "success")" />
         </div>
 
         <!-- AI Executive Summary -->
-        <div class="qa-section">
-            <div class="qa-section-header">
-                <h2 class="qa-section-title">
+        <Card>
+            <Header>
+                <span class="card-title">
                     <span class="nav-icon nav-icon-ai-auditor qa-section-icon" aria-hidden="true"></span>
                     AI Executive Summary
-                </h2>
+                </span>
                 @if (_report.AiExecutiveSummary == null && !_aiRequested
                      && _report.ReadinessStatus != QaReadinessStatus.InsufficientData)
                 {
-                    <button class="btn-primary btn-sm" @onclick="GenerateAiSummaryAsync" disabled="@_generatingAi">
-                        @if (_generatingAi)
-                        {
-                            <span class="spinner-sm"></span>
-                        }
+                    <PrimaryButton OnClick="GenerateAiSummaryAsync" Disabled="@_generatingAi">
+                        @if (_generatingAi) { <span class="spinner-sm"></span> }
                         Generate Summary
-                    </button>
+                    </PrimaryButton>
                 }
                 else if (_report.AiExecutiveSummary != null)
                 {
-                    <button class="btn-secondary btn-sm" @onclick="GenerateAiSummaryAsync" disabled="@_generatingAi">
-                        @if (_generatingAi)
-                        {
-                            <span class="spinner-sm"></span>
-                        }
+                    <SecondaryButton OnClick="GenerateAiSummaryAsync" Disabled="@_generatingAi">
+                        @if (_generatingAi) { <span class="spinner-sm"></span> }
                         Regenerate
-                    </button>
+                    </SecondaryButton>
                 }
-            </div>
-
+            </Header>
+            <ChildContent>
             @if (_generatingAi)
             {
                 <div class="qa-ai-loading">
@@ -445,63 +413,56 @@
             {
                 <p class="qa-ai-placeholder">Click <strong>Generate Summary</strong> to get an AI-written executive overview, specific concerns, and additional recommended actions based on the quality data above.</p>
             }
-        </div>
+            </ChildContent>
+        </Card>
 
         <!-- Drift Findings -->
         @if (_report.DriftFindings.Any())
         {
-            <div class="qa-section">
-                <h2 class="qa-section-title">Spec Drift Findings</h2>
-                <div class="qa-findings-list">
+            <Card Title="Spec Drift Findings">
+                <div class="issue-cards">
                     @foreach (var finding in _report.DriftFindings)
                     {
-                        <div class="qa-finding-item qa-finding--@finding.Severity.ToString().ToLowerInvariant()">
-                            <span class="impact-risk-badge impact-risk-badge--@finding.Severity.ToString().ToLowerInvariant()">@finding.Severity</span>
-                            <span class="qa-finding-cat">@finding.Category</span>
-                            <span class="qa-finding-desc">@finding.Description</span>
-                        </div>
+                        <IssueCard Severity="@ToIssueSeverity(finding.Severity.ToString())"
+                                   Component="@finding.Category"
+                                   Description="@finding.Description" />
                     }
                 </div>
-            </div>
+            </Card>
         }
 
         <!-- Top Requirements at Risk -->
         @if (_report.TopRisks.Any())
         {
-            <div class="qa-section">
-                <h2 class="qa-section-title">Top Requirements at Risk</h2>
-                <div class="qa-risks-list">
+            <Card Title="Top Requirements at Risk">
+                <div class="issue-cards">
                     @foreach (var risk in _report.TopRisks)
                     {
-                        <div class="qa-risk-row">
-                            <span class="impact-risk-badge impact-risk-badge--@risk.DriftRisk.ToString().ToLowerInvariant()">@risk.DriftRisk</span>
-                            <span class="qa-risk-title">@risk.Requirement.Title</span>
-                            <span class="qa-risk-meta">@risk.LinkedTestCount test(s) — @risk.DriftReason</span>
-                        </div>
+                        <IssueCard Severity="@ToIssueSeverity(risk.DriftRisk.ToString())"
+                                   Component="@risk.Requirement.Title"
+                                   Description="@($"{risk.LinkedTestCount} test(s) — {risk.DriftReason}")" />
                     }
                 </div>
-            </div>
+            </Card>
         }
 
         <!-- Recommended Actions -->
         @if (_report.RecommendedActions.Any())
         {
-            <div class="qa-section">
-                <h2 class="qa-section-title">Recommended Actions</h2>
+            <Card Title="Recommended Actions">
                 <ol class="qa-actions-list">
                     @foreach (var action in _report.RecommendedActions)
                     {
                         <li>@action</li>
                     }
                 </ol>
-            </div>
+            </Card>
         }
 
         <!-- Score Deductions Detail -->
         @if (_report.ScoreDeductions.Any())
         {
-            <div class="qa-section">
-                <h2 class="qa-section-title">Score Deductions</h2>
+            <Card Title="Score Deductions">
                 <div class="qa-deductions-table">
                     <div class="qa-deductions-header">
                         <span>Category</span>
@@ -522,12 +483,11 @@
                         <span class="qa-ded-total">@_report.QualityScore / 100</span>
                     </div>
                 </div>
-            </div>
+            </Card>
         }
 
         <!-- Feature Chain Diagram -->
-        <div class="qa-feature-chain">
-            <h2 class="qa-section-title">Data Sources</h2>
+        <Card Title="Data Sources">
             <div class="feature-chain-diagram">
                 <div class="chain-item chain-item--active">
                     <span class="nav-icon nav-icon-traceability" aria-hidden="true"></span>
@@ -554,13 +514,12 @@
                     QA Auditor
                 </div>
             </div>
-        </div>
+        </Card>
     }
     else
     {
-        <div class="empty-state-actions">
-            <p>No data found. Make sure there are requirements and tests in the QA Artifact Library.</p>
-        </div>
+        <EmptyState Title="No data"
+                    Description="Make sure there are requirements and tests in the QA Artifact Library." />
     }
 
 </div>
@@ -641,6 +600,14 @@
     private string DriftKpiClass => (_report?.DriftFindingsCount ?? 0) == 0 ? "good"
         : (_report?.HighRiskDriftFindings ?? 0) > 0 ? "danger" : "warn";
 
+    private static string ToIssueSeverity(string s) => s.ToLowerInvariant() switch
+    {
+        "high" or "critical" => "critical",
+        "medium"             => "warning",
+        "low"                => "info",
+        _                    => s.ToLowerInvariant(),
+    };
+
     // ── Cross-Artifact Readiness state ────────────────────────────────────────
 
     private string _qrConstitutionText = string.Empty;
@@ -688,6 +655,14 @@
     }
 
     // ── Readiness rendering helpers ───────────────────────────────────────────
+
+    private static string QrStatusToChip(ReadinessStatus s) => s switch
+    {
+        ReadinessStatus.Ready       => "ready",
+        ReadinessStatus.MostlyReady => "partial",
+        ReadinessStatus.NeedsWork   => "warning",
+        _                           => "critical",
+    };
 
     private static string QrStatusClass(ReadinessStatus s) => s switch
     {

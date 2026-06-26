@@ -7,6 +7,7 @@
 @inject IDashboardMetricsService MetricsService
 @inject IDashboardSnapshotService Snapshot
 @inject IBlazorWasmPerformanceReviewService PerformanceService
+@inject IUIStructuralIntegrityAnalyzer UiIntegrityAnalyzer
 @inject NavigationManager Navigation
 
 <PageTitle>Dashboard</PageTitle>
@@ -36,76 +37,51 @@ else
         </div>
     }
 
-    @* ══ 1 · Executive Header ═════════════════════════════════════════════════ *@
-    <div class="db-exec-header">
-        <div class="db-exec-header-left">
-            <h1 class="db-exec-title">SDD Governance Dashboard</h1>
-            <div class="db-exec-chips">
-                <span class="db-exec-chip db-exec-chip-phase">@_projectPhase</span>
-                @if (_hasAnyScore)
-                {
-                    <span class="db-exec-chip db-exec-chip-@(_overallScore >= 80 ? "good" : _overallScore >= 50 ? "warn" : "poor")">@_overallScoreLabel</span>
-                }
-                @if (_hasAnySnapshot)
-                {
-                    <span class="db-exec-chip db-exec-chip-neutral">This session</span>
-                }
-            </div>
-        </div>
-        <div class="db-exec-header-right">
-            <div class="db-exec-score-ring @_overallScoreClass" aria-label="Overall health score: @(_hasAnyScore ? _overallScore.ToString("0") + " out of 100" : "No data")">
-                <span class="db-exec-score-val">@(_hasAnyScore ? _overallScore.ToString("0") : "—")</span>
-                <span class="db-exec-score-sub">@(_hasAnyScore ? "/ 100" : "No data")</span>
-            </div>
-        </div>
-    </div>
+    <PageHeader Title="SDD Governance Dashboard">
+        <StatusChip Status="neutral" Label="@_projectPhase" />
+        @if (_hasAnyScore)
+        {
+            <StatusChip Status="@(_overallScore >= 80 ? "healthy" : _overallScore >= 50 ? "warning" : "critical")"
+                        Label="@_overallScoreLabel" />
+        }
+        @if (_hasAnySnapshot)
+        {
+            <StatusChip Status="neutral" Label="This session" />
+        }
+    </PageHeader>
 
-    @* ══ 2 · Executive KPI Cards ══════════════════════════════════════════════ *@
     <div class="db-kpi-strip" aria-label="Key performance indicators">
-        <div class="db-kpi-card">
-            <span class="db-kpi-label">Governance</span>
-            <span class="db-kpi-value">@_governanceLoadPercent%</span>
-            <span class="db-kpi-status @(_governanceLoadPercent == 100 ? "db-status-healthy" : _governanceLoadPercent > 0 ? "db-status-warning" : "db-status-notrun")">
-                @(_governanceLoadPercent == 100 ? "Complete" : _governanceLoadPercent > 0 ? "Partial" : "Setup")
-            </span>
-        </div>
-        <div class="db-kpi-card">
-            <span class="db-kpi-label">Traceability</span>
-            <span class="db-kpi-value">@TraceabilityHealthVal</span>
-            <span class="db-kpi-status @KpiStatusClass(_traceabilityScore, _traceabilityHasData)">@KpiStatusLabel(_traceabilityScore, _traceabilityHasData)</span>
-        </div>
-        <div class="db-kpi-card">
-            <span class="db-kpi-label">Compliance</span>
-            <span class="db-kpi-value">@ComplianceHealthVal</span>
-            <span class="db-kpi-status @KpiStatusClass(_complianceScore, _complianceHasData)">@KpiStatusLabel(_complianceScore, _complianceHasData)</span>
-        </div>
-        <div class="db-kpi-card">
-            <span class="db-kpi-label">QA</span>
-            <span class="db-kpi-value">@QaHealthVal</span>
-            <span class="db-kpi-status @KpiStatusClass(_qaScore, _qaHasData)">@KpiStatusLabel(_qaScore, _qaHasData)</span>
-        </div>
-        <div class="db-kpi-card">
-            <span class="db-kpi-label">Delivery</span>
-            <span class="db-kpi-value">@DeliveryHealthVal</span>
-            <span class="db-kpi-status @KpiStatusClass(_deliveryScore, _deliveryHasData)">@KpiStatusLabel(_deliveryScore, _deliveryHasData)</span>
-        </div>
-        <div class="db-kpi-card">
-            <span class="db-kpi-label">Performance</span>
-            @if (_perfReport?.ReadinessReport is { HasData: true } perfKpi)
-            {
-                <span class="db-kpi-value">@perfKpi.OverallScore</span>
-                <span class="db-kpi-status @PerformanceStatusClass(perfKpi.OverallState)">@ReadinessStateLabel(perfKpi.OverallState)</span>
-                @if (perfKpi.Health.CriticalFindings + perfKpi.Health.HighFindings > 0)
-                {
-                    <span class="db-kpi-findings">@(perfKpi.Health.CriticalFindings + perfKpi.Health.HighFindings) findings</span>
-                }
-            }
-            else
-            {
-                <span class="db-kpi-value db-val-empty">—</span>
-                <span class="db-kpi-status db-status-notrun">Not Run</span>
-            }
-        </div>
+        <MetricCard Value="@($"{_governanceLoadPercent}%")"
+                    Label="Governance"
+                    Sublabel="@(_governanceLoadPercent == 100 ? "Complete" : _governanceLoadPercent > 0 ? "Partial" : "Setup")"
+                    Variant="@(_governanceLoadPercent == 100 ? "success" : _governanceLoadPercent > 0 ? "warning" : null)" />
+        <MetricCard Value="@TraceabilityHealthVal"
+                    Label="Traceability"
+                    Sublabel="@KpiStatusLabel(_traceabilityScore, _traceabilityHasData)"
+                    Variant="@(_traceabilityHasData ? (_traceabilityScore >= 80 ? "success" : _traceabilityScore >= 50 ? "warning" : "danger") : null)" />
+        <MetricCard Value="@ComplianceHealthVal"
+                    Label="Compliance"
+                    Sublabel="@KpiStatusLabel(_complianceScore, _complianceHasData)"
+                    Variant="@(_complianceHasData ? (_complianceScore >= 80 ? "success" : _complianceScore >= 50 ? "warning" : "danger") : null)" />
+        <MetricCard Value="@QaHealthVal"
+                    Label="QA"
+                    Sublabel="@KpiStatusLabel(_qaScore, _qaHasData)"
+                    Variant="@(_qaHasData ? (_qaScore >= 80 ? "success" : _qaScore >= 50 ? "warning" : "danger") : null)" />
+        <MetricCard Value="@DeliveryHealthVal"
+                    Label="Delivery"
+                    Sublabel="@KpiStatusLabel(_deliveryScore, _deliveryHasData)"
+                    Variant="@(_deliveryHasData ? (_deliveryScore >= 80 ? "success" : _deliveryScore >= 50 ? "warning" : "danger") : null)" />
+        @if (_perfReport?.ReadinessReport is { HasData: true } perfKpi)
+        {
+            <MetricCard Value="@perfKpi.OverallScore.ToString()"
+                        Label="Performance"
+                        Sublabel="@ReadinessStateLabel(perfKpi.OverallState)"
+                        Variant="@(perfKpi.OverallState == PerformanceReadinessState.Ready ? "success" : perfKpi.OverallState == PerformanceReadinessState.MostlyReady ? "warning" : "danger")" />
+        }
+        else
+        {
+            <MetricCard Value="—" Label="Performance" Sublabel="Not Run" />
+        }
     </div>
 
     @* ══ 3 · Governance Status ════════════════════════════════════════════════ *@
@@ -204,14 +180,14 @@ else
     <section class="db-section">
         <SectionHeader Title="Project Health" />
         <div class="db-health-bars">
-            @HealthBar("Governance",   _governanceLoadPercent, true)
-            @HealthBar("Traceability", _traceabilityScore,     _traceabilityHasData)
-            @HealthBar("Compliance",   _complianceScore,       _complianceHasData)
-            @HealthBar("QA",           _qaScore,               _qaHasData)
-            @HealthBar("Delivery",     _deliveryScore,         _deliveryHasData)
+            <HealthBar Label="Governance"   Value="@_governanceLoadPercent" ValueLabel="@($"{_governanceLoadPercent:0}%")" />
+            <HealthBar Label="Traceability" Value="@(_traceabilityHasData ? _traceabilityScore : 0)" ValueLabel="@(_traceabilityHasData ? $"{_traceabilityScore:0}%" : "Not Run")" />
+            <HealthBar Label="Compliance"   Value="@(_complianceHasData ? _complianceScore : 0)"    ValueLabel="@(_complianceHasData ? $"{_complianceScore:0}%" : "Not Run")" />
+            <HealthBar Label="QA"           Value="@(_qaHasData ? _qaScore : 0)"                    ValueLabel="@(_qaHasData ? $"{_qaScore:0}%" : "Not Run")" />
+            <HealthBar Label="Delivery"     Value="@(_deliveryHasData ? _deliveryScore : 0)"        ValueLabel="@(_deliveryHasData ? $"{_deliveryScore:0}%" : "Not Run")" />
             @if (_perfReport?.ReadinessReport is { HasData: true } perfBar)
             {
-                @HealthBar("Performance", perfBar.OverallScore, true)
+                <HealthBar Label="Performance" Value="@perfBar.OverallScore" ValueLabel="@(perfBar.OverallScore.ToString())" />
             }
         </div>
     </section>
@@ -611,7 +587,50 @@ else
         </EmptyState>
     </section>
 
-    @* ══ 12 · Quick Actions ═══════════════════════════════════════════════════ *@
+    @* ══ 12 · Structural UI Integrity ════════════════════════════════════════ *@
+    <section class="db-section" data-testid="ui-integrity-section">
+        <SectionHeader Title="Structural UI Integrity"
+                       Description="Section-level audit — detects hybrid rendering, legacy contamination, and mixed component patterns per UI region.">
+            <Actions>
+                <StatusChip Status="@(_uiIntegrity.StructuralRiskScore >= 60 ? "critical" : _uiIntegrity.StructuralRiskScore >= 30 ? "warning" : "healthy")"
+                            Label="@($"Risk Score {_uiIntegrity.StructuralRiskScore}/100")" />
+            </Actions>
+        </SectionHeader>
+
+        <div class="db-kpi-strip">
+            <MetricCard Value="@_uiIntegrity.FullyConsistentSectionCount.ToString()"
+                        Label="Fully Consistent"
+                        Sublabel="Sections"
+                        Variant="success" />
+            <MetricCard Value="@_uiIntegrity.HybridSectionCount.ToString()"
+                        Label="Hybrid Sections"
+                        Sublabel="Critical findings"
+                        Variant="@(_uiIntegrity.HybridSectionCount > 0 ? "danger" : "success")" />
+            <MetricCard Value="@_uiIntegrity.PartiallyMigratedSectionCount.ToString()"
+                        Label="Partially Migrated"
+                        Sublabel="Sections"
+                        Variant="@(_uiIntegrity.PartiallyMigratedSectionCount > 0 ? "warning" : null)" />
+            <MetricCard Value="@_uiIntegrity.LegacySectionCount.ToString()"
+                        Label="Legacy Sections"
+                        Sublabel="Not migrated"
+                        Variant="@(_uiIntegrity.LegacySectionCount > 0 ? "warning" : null)" />
+        </div>
+
+        @if (_uiIntegrity.TopHybridPatterns.Count > 0)
+        {
+            <div class="issue-cards">
+                @foreach (var pattern in _uiIntegrity.TopHybridPatterns)
+                {
+                    <IssueCard Severity="critical"
+                               Component="@($"{pattern.PageName} — {pattern.SectionName}")"
+                               Description="@($"[{pattern.PatternType}] {pattern.Description}")"
+                               SuggestedFix="@(pattern.LegacyElement is not null ? $"Replace {pattern.LegacyElement} with {pattern.SharedElement ?? "shared component"}" : null)" />
+                }
+            </div>
+        }
+    </section>
+
+    @* ══ 13 · Quick Actions ═══════════════════════════════════════════════════ *@
     <section class="db-section">
         <SectionHeader Title="Quick Actions" />
         <div class="db-quick-actions">
@@ -653,6 +672,7 @@ else
     private string? _loadError;
     private DashboardMetrics _metrics = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     private List<DashboardCandidate> _candidates = [];
+    private UIStructuralIntegrityReport _uiIntegrity = new() { PageResults = [] };
 
     // ── Performance cache ─────────────────────────────────────────────────────
 
@@ -919,28 +939,6 @@ else
 
     // ── RenderFragment helpers ────────────────────────────────────────────────
 
-    private RenderFragment HealthBar(string label, double value, bool hasData) => __builder =>
-    {
-        var fillClass = hasData ? ScoreHealthClass(value) : "db-health-empty";
-        <div class="db-health-bar-row">
-            <span class="db-health-bar-label">@label</span>
-            <div class="db-health-bar-track"
-                 role="progressbar"
-                 aria-label="@label health"
-                 aria-valuenow="@(hasData ? (int)value : 0)"
-                 aria-valuemin="0"
-                 aria-valuemax="100">
-                @if (hasData)
-                {
-                    <div class="db-health-bar-fill @fillClass" style="width: clamp(0%, @value.ToString("0")%, 100%)"></div>
-                }
-            </div>
-            <span class="db-health-bar-pct @fillClass">@(hasData ? $"{value:0}%" : "—")</span>
-            <span class="db-health-chip-sm @(hasData ? fillClass : "db-health-empty")">
-                @(hasData ? (value >= 80 ? "Healthy" : value >= 50 ? "Warning" : "Poor") : "Not Run")
-            </span>
-        </div>
-    };
 
     private RenderFragment ReadinessCard(string label, ReadinessState? state, double? score, string href) => __builder =>
     {
@@ -987,6 +985,8 @@ else
             _metrics = PreviewMetrics;
             return;
         }
+
+        _uiIntegrity = UiIntegrityAnalyzer.Analyze();
 
         _isLoading = true;
         _loadError = null;

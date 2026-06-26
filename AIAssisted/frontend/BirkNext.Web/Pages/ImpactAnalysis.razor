@@ -5,11 +5,8 @@
 <PageTitle>Impact Analysis</PageTitle>
 
 <div class="impact-page">
-    <section class="traceability-hero">
-        <p class="section-kicker">Regression Planning</p>
-        <h1>Impact Analysis</h1>
-        <p class="page-lead">Understand what needs testing before you accept a change. Select a requirement to see its risk level and regression recommendation.</p>
-    </section>
+    <PageHeader Title="Impact Analysis"
+                Description="Understand what needs testing before you accept a change. Select a requirement to see its risk level and regression recommendation." />
 
     @if (_isLoading)
     {
@@ -61,24 +58,21 @@
         </div>
 
         <div class="impact-layout">
-            <section class="impact-matrix-panel" aria-label="Requirements by risk">
-                <div class="requirement-map-header">
-                    <div>
-                        <p class="section-kicker">Click a requirement to analyse it</p>
-                        <h2>Requirements by Risk</h2>
-                    </div>
-                    <span>@FilteredRequirements.Count shown</span>
-                </div>
-
+            <Card NoPadding="true">
+                <Header>
+                    <SectionHeader Title="Requirements by Risk"
+                                   Description="Click a requirement to analyse it">
+                        <Actions><span>@FilteredRequirements.Count shown</span></Actions>
+                    </SectionHeader>
+                </Header>
+                <ChildContent>
                 @if (_summary.TotalRequirements == 0)
                 {
-                    <div class="empty-state empty-state-dashed">
-                        <h3>No requirements yet</h3>
-                        <p>Add requirement scenarios to the library to see their risk profile here.</p>
-                        <div class="empty-state-actions">
-                            <a href="/scenarios">Go to QA Artifact Library</a>
-                        </div>
-                    </div>
+                    <EmptyState Title="No requirements yet"
+                                Description="Add requirement scenarios to the library to see their risk profile here."
+                                Dashed="true">
+                        <a href="/scenarios">Go to QA Artifact Library</a>
+                    </EmptyState>
                 }
                 else if (FilteredRequirements.Count == 0)
                 {
@@ -101,16 +95,19 @@
                                     <span class="impact-req-title">@item.Title</span>
                                 </div>
                                 <div class="impact-req-right">
-                                    <span class="impact-risk-badge impact-risk-@item.RiskLevel.ToLower()">@RiskLabel(item.RiskLevel)</span>
+                                    <StatusChip Status="@(item.RiskLevel.ToLower() switch { "high" => "critical", "medium" => "warning", _ => "ready" })"
+                                                Label="@RiskLabel(item.RiskLevel)" />
                                     <span class="impact-test-count">@item.LinkedTestCount test@(Plural(item.LinkedTestCount))</span>
                                 </div>
                             </button>
                         }
                     </div>
                 }
-            </section>
+                </ChildContent>
+            </Card>
 
-            <section class="impact-detail-panel" aria-label="Requirement impact detail" aria-live="polite">
+            <section aria-label="Requirement impact detail" aria-live="polite">
+            <Card NoPadding="true">
                 @if (_isLoadingDetail)
                 {
                     <p class="loading-state">Loading impact detail...</p>
@@ -140,7 +137,8 @@
                         <div class="impact-detail-header">
                             <span class="artifact-display-label">@reqLabel</span>
                             <span class="badge badge-requirement">Requirement</span>
-                            <span class="impact-risk-badge impact-risk-@_detail.RiskLevel.ToLower()">@RiskLabel(_detail.RiskLevel)</span>
+                            <StatusChip Status="@(_detail.RiskLevel.ToLower() switch { "high" => "critical", "medium" => "warning", _ => "ready" })"
+                                        Label="@RiskLabel(_detail.RiskLevel)" />
                         </div>
                         <h2 class="impact-detail-title">@_detail.RequirementTitle</h2>
                         @if (!string.IsNullOrWhiteSpace(_detail.RequirementDescription))
@@ -148,30 +146,25 @@
                             <p class="impact-detail-desc">@_detail.RequirementDescription</p>
                         }
 
-                        <div class="kpi-row impact-detail-kpis" aria-label="Impact metrics">
-                            <div class="kpi-card @(_detail.TotalLinkedTests > 0 ? "kpi-card-coverage" : "kpi-card-risks")">
-                                <span class="kpi-value">@_detail.TotalLinkedTests</span>
-                                <span class="kpi-label">Linked Tests</span>
-                            </div>
-                            <div class="kpi-card kpi-card-coverage">
-                                <span class="kpi-value">@_detail.AcceptedTests</span>
-                                <span class="kpi-label">Accepted Tests</span>
-                            </div>
-                            <div class="kpi-card @(_detail.MissingCoverage > 0 ? "kpi-card-risks" : "kpi-card-traceability")">
-                                <span class="kpi-value">@_detail.MissingCoverage</span>
-                                <span class="kpi-label">Missing Coverage</span>
-                            </div>
+                        <div class="metric-grid-3" aria-label="Impact metrics">
+                            <MetricCard Value="@_detail.TotalLinkedTests.ToString()"
+                                        Label="Linked Tests"
+                                        Variant="@(_detail.TotalLinkedTests > 0 ? "success" : "danger")" />
+                            <MetricCard Value="@_detail.AcceptedTests.ToString()"
+                                        Label="Accepted Tests"
+                                        Variant="success" />
+                            <MetricCard Value="@_detail.MissingCoverage.ToString()"
+                                        Label="Missing Coverage"
+                                        Variant="@(_detail.MissingCoverage > 0 ? "danger" : null)" />
                         </div>
 
                         <div class="impact-regression-section">
-                            <div class="impact-regression-header">
-                                <p class="section-kicker">Deterministic — no AI involved</p>
-                                <h3>Regression Recommendation</h3>
-                            </div>
+                            <SectionHeader Title="Regression Recommendation"
+                                           Description="Deterministic — no AI involved" />
                             @if (_detail.RegressionItems.Count == 0)
                             {
                                 <div class="impact-regression-empty">
-                                    <span class="impact-risk-badge impact-risk-high">High Risk</span>
+                                    <StatusChip Status="critical" Label="High Risk" />
                                     <p>No tests are linked to this requirement.</p>
                                     <p>Manual testing is required before accepting any change to this requirement.</p>
                                     <a href="/traceability" class="btn-primary">Go to Traceability &amp; Coverage to add tests</a>
@@ -198,6 +191,7 @@
                         </div>
                     </div>
                 }
+            </Card>
             </section>
         </div>
     }

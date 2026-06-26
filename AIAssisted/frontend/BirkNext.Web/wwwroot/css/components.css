@@ -589,17 +589,21 @@
 .metric-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
 .metric-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
 .metric-grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.75rem; }
+.metric-grid-6 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.75rem; }
 
 @media (max-width: 1000px) {
+    .metric-grid-6 { grid-template-columns: repeat(3, 1fr); }
     .metric-grid-5 { grid-template-columns: repeat(3, 1fr); }
     .metric-grid-4 { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 680px) {
+    .metric-grid-6,
     .metric-grid-5,
     .metric-grid-4,
     .metric-grid-3 { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 420px) {
+    .metric-grid-6,
     .metric-grid-5,
     .metric-grid-4,
     .metric-grid-3,
@@ -983,4 +987,49 @@
     flex-wrap: wrap;
     gap: 0.375rem;
     align-items: center;
+}
+
+/* ======================================================
+   METRIC STRIP
+   Flex row container for MetricCard components.
+   Migrated from DeliveryReadiness (dr-overview-stats) — usable by any page
+   that renders a horizontal strip of MetricCards.
+   Usage: <div class="metric-strip"><MetricCard .../><MetricCard .../></div>
+   ====================================================== */
+
+.metric-strip {
+    display: flex;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+}
+
+/* ======================================================
+   FILTER STRIP
+   Horizontal flex row for filter controls (label + select + search).
+   Migrated from DeliveryReadiness (dr-filter-strip) — usable by any page
+   with inline filter/search controls above a results list.
+   Usage: <div class="filter-strip"><label>…</label><select>…</select></div>
+   ====================================================== */
+
+.filter-strip {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-4);
+}
+
+.filter-strip label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.filter-strip select {
+    font-size: var(--text-sm);
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 4px 8px;
+    color: var(--text-primary);
 }

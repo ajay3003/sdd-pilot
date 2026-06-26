@@ -8,11 +8,6 @@
     max-width: 1200px;
 }
 
-/* Reuse the hero header style from Traceability (scoped — must be redeclared) */
-.traceability-hero {
-    padding-bottom: 0.5rem;
-}
-
 /* ─── Shared display label (REQ-001, TEST-001) ──────────────────────────── */
 
 .artifact-display-label {

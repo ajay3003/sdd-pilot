@@ -8,11 +8,8 @@
 <PageTitle>Spec Drift</PageTitle>
 
 <div class="drift-page">
-    <section class="traceability-hero">
-        <p class="section-kicker">Specification Analysis</p>
-        <h1>Spec Drift</h1>
-        <p class="page-lead">The single entry point for specification changes, change history, and drift analysis — all in one place.</p>
-    </section>
+    <PageHeader Title="Spec Drift"
+                Description="The single entry point for specification changes, change history, and drift analysis — all in one place." />
 
     <div class="sd-tab-strip" role="tablist">
         <button class='sd-tab @(_activeTab == "overview" ? "is-active" : "")' @onclick='() => SetTab("overview")' role="tab">Overview</button>

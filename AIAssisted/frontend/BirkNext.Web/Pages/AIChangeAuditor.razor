@@ -5,11 +5,8 @@
 <PageTitle>AI Change Review</PageTitle>
 
 <div class="auditor-page">
-    <section class="traceability-hero">
-        <p class="section-kicker">AI-Assisted Analysis</p>
-        <h1>AI Change Review</h1>
-        <p class="page-lead">Describe what changed and let the AI identify affected requirements, tests, and the recommended regression scope. Analysis uses your live traceability data — no code scanning required.</p>
-    </section>
+    <PageHeader Title="AI Change Review"
+                Description="Describe what changed and let the AI identify affected requirements, tests, and the recommended regression scope. Analysis uses your live traceability data — no code scanning required." />
 
     <section class="auditor-input-panel" aria-label="Change description input">
         <label for="change-desc" class="auditor-input-label">
@@ -29,9 +26,9 @@
             <span class="auditor-char-count @(_changeDescription.Length > 1800 ? "auditor-char-warn" : "")">
                 @_changeDescription.Length / 2000
             </span>
-            <button class="btn-primary auditor-analyze-btn"
-                    @onclick="RunAnalysisAsync"
-                    disabled="@(_isAnalyzing || string.IsNullOrWhiteSpace(_changeDescription))">
+            <PrimaryButton Class="auditor-analyze-btn"
+                           OnClick="RunAnalysisAsync"
+                           Disabled="@(_isAnalyzing || string.IsNullOrWhiteSpace(_changeDescription))">
                 @if (_isAnalyzing)
                 {
                     <span class="auditor-spinner" aria-hidden="true"></span>
@@ -41,7 +38,7 @@
                 {
                     <span>Analyze Change</span>
                 }
-            </button>
+            </PrimaryButton>
         </div>
     </section>
 

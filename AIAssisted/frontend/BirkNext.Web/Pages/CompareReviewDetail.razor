@@ -21,20 +21,24 @@ else if (_loadError is not null)
 }
 else if (_review is not null && _comparisonResult is not null)
 {
-    <div class="review-detail-header" data-testid="review-detail-header">
-        <h1>@_review.Title</h1>
-        <div class="review-detail-meta">
-            <span>@_review.CreatedAt.LocalDateTime.ToString("MMMM d, yyyy")</span>
-            <span class="review-detail-profile">@_review.AnalysisProfile</span>
-            @if (_review.OldSpecFileName is not null)
-            {
-                <span>Old: @_review.OldSpecFileName</span>
-            }
-            @if (_review.NewSpecFileName is not null)
-            {
-                <span>New: @_review.NewSpecFileName</span>
-            }
-        </div>
+    <div data-testid="review-detail-header">
+        <PageHeader Title="@_review.Title" />
+        <Card>
+            <KeyValueList>
+                <InfoRow Label="Date" Value="@(_review.CreatedAt.LocalDateTime.ToString("MMMM d, yyyy"))" />
+                <InfoRow Label="Profile">
+                    <StatusChip Status="info" Label="@_review.AnalysisProfile" />
+                </InfoRow>
+                @if (_review.OldSpecFileName is not null)
+                {
+                    <InfoRow Label="Old Spec" Value="@_review.OldSpecFileName" />
+                }
+                @if (_review.NewSpecFileName is not null)
+                {
+                    <InfoRow Label="New Spec" Value="@_review.NewSpecFileName" />
+                }
+            </KeyValueList>
+        </Card>
     </div>
 
     <SpecDeltaResultsPanel Result="_comparisonResult" />

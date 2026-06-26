@@ -64,6 +64,7 @@ builder.Services.AddSingleton<IQaAuditorService, QaAuditorService>();
 builder.Services.AddSingleton<IDeliveryReadinessAssessmentService, DeliveryReadinessService>();
 builder.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
+builder.Services.AddSingleton<IUIStructuralIntegrityAnalyzer, UIStructuralIntegrityAnalyzer>();
 builder.Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
 
 builder.Services.AddHttpClient<ImplementationTraceabilityApiService>(client =>

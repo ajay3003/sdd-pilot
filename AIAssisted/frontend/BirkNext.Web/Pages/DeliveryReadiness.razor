@@ -6,158 +6,153 @@
 @inject IDeliveryReadinessAssessmentService ReadinessService
 @inject IDashboardSnapshotService DashboardSnapshot
 
-<div class="page-hero">
-    <span class="section-kicker">Go / No-Go Assessment</span>
-    <h1>Delivery Readiness</h1>
-    <p class="hero-description">
-        Objective, multi-gate readiness assessment across the SDD artifact chain.
-        Answers: Ready for Development? Ready for Testing? Ready for Release?
-    </p>
-</div>
+<PageTitle>Delivery Readiness</PageTitle>
+<PageHeader Title="Delivery Readiness"
+            Description="Objective, multi-gate readiness assessment across the SDD artifact chain. Ready for Development? Ready for Testing? Ready for Release?" />
 
-<div class="dr-page">
-
-    <!-- Input panel -->
-    @if (_inputExpanded || _report is null)
-    {
-        <div class="dr-input-panel">
-            <div class="dr-input-panel-header">
-                <h3>Artifact Inputs</h3>
+<!-- Input panel -->
+@if (_inputExpanded || _report is null)
+{
+    <div class="dr-input-panel">
+        <SectionHeader Title="Artifact Inputs">
+            <Actions>
                 @if (_report is not null)
                 {
-                    <button class="btn btn-ghost btn-sm" @onclick="() => _inputExpanded = false">
-                        Collapse
-                    </button>
+                    <GhostButton OnClick="() => _inputExpanded = false">Collapse</GhostButton>
                 }
-            </div>
-            <div class="dr-artifact-grid">
-                <div class="dr-artifact-card @(_constitutionLoaded ? "is-loaded" : "")">
-                    <div class="dr-artifact-card-header">
-                        Constitution
-                        <span class="dr-artifact-card-status">@(_constitutionLoaded ? "Loaded" : "Optional")</span>
-                    </div>
+            </Actions>
+        </SectionHeader>
+        <div class="dr-artifact-grid">
+            <Card Title="Constitution">
+                <Header>
+                    <StatusChip Status="@(_constitutionLoaded ? "healthy" : "neutral")"
+                                Label="@(_constitutionLoaded ? "Loaded" : "Optional")" />
+                </Header>
+                <ChildContent>
                     <InputFile OnChange="e => LoadFile(e, ArtifactSlot.Constitution)" accept=".md,.txt" class="form-control form-control-sm" />
                     <textarea class="form-control" rows="3" placeholder="Paste constitution markdown…"
                               @bind="_constitutionText" @bind:event="oninput"></textarea>
-                </div>
-                <div class="dr-artifact-card @(_specLoaded ? "is-loaded" : "")">
-                    <div class="dr-artifact-card-header">
-                        Specification
-                        <span class="dr-artifact-card-status">@(_specLoaded ? "Loaded" : "Optional")</span>
-                    </div>
+                </ChildContent>
+            </Card>
+            <Card Title="Specification">
+                <Header>
+                    <StatusChip Status="@(_specLoaded ? "healthy" : "neutral")"
+                                Label="@(_specLoaded ? "Loaded" : "Optional")" />
+                </Header>
+                <ChildContent>
                     <InputFile OnChange="e => LoadFile(e, ArtifactSlot.Specification)" accept=".md,.txt" class="form-control form-control-sm" />
                     <textarea class="form-control" rows="3" placeholder="Paste specification markdown…"
                               @bind="_specText" @bind:event="oninput"></textarea>
-                </div>
-                <div class="dr-artifact-card @(_planLoaded ? "is-loaded" : "")">
-                    <div class="dr-artifact-card-header">
-                        Implementation Plan
-                        <span class="dr-artifact-card-status">@(_planLoaded ? "Loaded" : "Optional")</span>
-                    </div>
+                </ChildContent>
+            </Card>
+            <Card Title="Implementation Plan">
+                <Header>
+                    <StatusChip Status="@(_planLoaded ? "healthy" : "neutral")"
+                                Label="@(_planLoaded ? "Loaded" : "Optional")" />
+                </Header>
+                <ChildContent>
                     <InputFile OnChange="e => LoadFile(e, ArtifactSlot.Plan)" accept=".md,.txt" class="form-control form-control-sm" />
                     <textarea class="form-control" rows="3" placeholder="Paste plan markdown…"
                               @bind="_planText" @bind:event="oninput"></textarea>
-                </div>
-                <div class="dr-artifact-card @(_tasksLoaded ? "is-loaded" : "")">
-                    <div class="dr-artifact-card-header">
-                        Task File
-                        <span class="dr-artifact-card-status">@(_tasksLoaded ? "Loaded" : "Optional")</span>
-                    </div>
+                </ChildContent>
+            </Card>
+            <Card Title="Task File">
+                <Header>
+                    <StatusChip Status="@(_tasksLoaded ? "healthy" : "neutral")"
+                                Label="@(_tasksLoaded ? "Loaded" : "Optional")" />
+                </Header>
+                <ChildContent>
                     <InputFile OnChange="e => LoadFile(e, ArtifactSlot.Tasks)" accept=".md,.txt" class="form-control form-control-sm" />
                     <textarea class="form-control" rows="3" placeholder="Paste task markdown…"
                               @bind="_taskText" @bind:event="oninput"></textarea>
-                </div>
-            </div>
-            <div class="d-flex gap-2 align-items-center">
-                <button class="btn btn-primary" @onclick="RunAssessment" disabled="@(!AnyArtifactLoaded)">
-                    Assess Delivery Readiness
-                </button>
-                @if (!AnyArtifactLoaded)
-                {
-                    <span class="text-muted small">Load at least one artifact to begin.</span>
-                }
-            </div>
+                </ChildContent>
+            </Card>
         </div>
-    }
-    else
+        <div class="d-flex gap-2 align-items-center">
+            <PrimaryButton OnClick="RunAssessment" Disabled="@(!AnyArtifactLoaded)">
+                Assess Delivery Readiness
+            </PrimaryButton>
+            @if (!AnyArtifactLoaded)
+            {
+                <span class="text-muted small">Load at least one artifact to begin.</span>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="d-flex align-items-center gap-3">
+        <GhostButton OnClick="() => _inputExpanded = true">Edit Artifacts</GhostButton>
+        <span class="small text-muted">@ArtifactSummary</span>
+    </div>
+}
+
+<!-- Results -->
+@if (_report is not null)
+{
+    <!-- 3 decision cards -->
+    <div class="dr-decision-grid">
+        @RenderDecisionCard(_report.DevelopmentDecision)
+        @RenderDecisionCard(_report.TestingDecision)
+        @RenderDecisionCard(_report.ReleaseDecision)
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+        <button class="tab-btn @(_tab == "overview"     ? "active" : "")" @onclick='() => _tab = "overview"'>Overview</button>
+        <button class="tab-btn @(_tab == "development"  ? "active" : "")" @onclick='() => _tab = "development"'>
+            @StateIcon(_report.DevelopmentDecision.State) Development
+        </button>
+        <button class="tab-btn @(_tab == "testing"      ? "active" : "")" @onclick='() => _tab = "testing"'>
+            @StateIcon(_report.TestingDecision.State) Testing
+        </button>
+        <button class="tab-btn @(_tab == "release"      ? "active" : "")" @onclick='() => _tab = "release"'>
+            @StateIcon(_report.ReleaseDecision.State) Release
+        </button>
+        <button class="tab-btn @(_tab == "blockers"     ? "active" : "")" @onclick='() => _tab = "blockers"'>
+            Blockers
+            @if (_report.Blockers.Count > 0)
+            {
+                <span class="badge @(_report.Blockers.Any(b => b.Severity == GateSeverity.Critical) ? "badge-danger" : "badge-warning") ms-1">
+                    @_report.Blockers.Count
+                </span>
+            }
+        </button>
+        <button class="tab-btn @(_tab == "recommendations" ? "active" : "")" @onclick='() => _tab = "recommendations"'>
+            Recommendations
+            @if (_report.Recommendations.Count > 0)
+            {
+                <span class="badge badge-secondary ms-1">@_report.Recommendations.Count</span>
+            }
+        </button>
+    </div>
+
+    <!-- Tab content -->
+    @if (_tab == "overview")
     {
-        <div class="d-flex align-items-center gap-3">
-            <button class="btn btn-ghost btn-sm" @onclick="() => _inputExpanded = true">
-                Edit Artifacts
-            </button>
-            <span class="small text-muted">
-                @ArtifactSummary
-            </span>
-        </div>
+        @RenderOverviewTab()
     }
-
-    <!-- Results -->
-    @if (_report is not null)
+    else if (_tab == "development")
     {
-        <!-- 3 decision cards -->
-        <div class="dr-decision-grid">
-            @RenderDecisionCard(_report.DevelopmentDecision)
-            @RenderDecisionCard(_report.TestingDecision)
-            @RenderDecisionCard(_report.ReleaseDecision)
-        </div>
-
-        <!-- Tab bar -->
-        <div class="tab-bar">
-            <button class="tab-btn @(_tab == "overview"     ? "active" : "")" @onclick='() => _tab = "overview"'>Overview</button>
-            <button class="tab-btn @(_tab == "development"  ? "active" : "")" @onclick='() => _tab = "development"'>
-                @StateIcon(_report.DevelopmentDecision.State) Development
-            </button>
-            <button class="tab-btn @(_tab == "testing"      ? "active" : "")" @onclick='() => _tab = "testing"'>
-                @StateIcon(_report.TestingDecision.State) Testing
-            </button>
-            <button class="tab-btn @(_tab == "release"      ? "active" : "")" @onclick='() => _tab = "release"'>
-                @StateIcon(_report.ReleaseDecision.State) Release
-            </button>
-            <button class="tab-btn @(_tab == "blockers"     ? "active" : "")" @onclick='() => _tab = "blockers"'>
-                Blockers
-                @if (_report.Blockers.Count > 0)
-                {
-                    <span class="badge @(_report.Blockers.Any(b => b.Severity == GateSeverity.Critical) ? "badge-danger" : "badge-warning") ms-1">
-                        @_report.Blockers.Count
-                    </span>
-                }
-            </button>
-            <button class="tab-btn @(_tab == "recommendations" ? "active" : "")" @onclick='() => _tab = "recommendations"'>
-                Recommendations
-                @if (_report.Recommendations.Count > 0)
-                {
-                    <span class="badge badge-secondary ms-1">@_report.Recommendations.Count</span>
-                }
-            </button>
-        </div>
-
-        <!-- Tab content -->
-        @if (_tab == "overview")
-        {
-            @RenderOverviewTab()
-        }
-        else if (_tab == "development")
-        {
-            @RenderGateTab(_report.DevelopmentGate)
-        }
-        else if (_tab == "testing")
-        {
-            @RenderGateTab(_report.TestingGate)
-        }
-        else if (_tab == "release")
-        {
-            @RenderGateTab(_report.ReleaseGate)
-        }
-        else if (_tab == "blockers")
-        {
-            @RenderBlockersTab()
-        }
-        else if (_tab == "recommendations")
-        {
-            @RenderRecommendationsTab()
-        }
+        @RenderGateTab(_report.DevelopmentGate)
     }
-</div>
+    else if (_tab == "testing")
+    {
+        @RenderGateTab(_report.TestingGate)
+    }
+    else if (_tab == "release")
+    {
+        @RenderGateTab(_report.ReleaseGate)
+    }
+    else if (_tab == "blockers")
+    {
+        @RenderBlockersTab()
+    }
+    else if (_tab == "recommendations")
+    {
+        @RenderRecommendationsTab()
+    }
+}
 
 @code {
 
@@ -239,16 +234,7 @@
 
     // ── Render helpers ─────────────────────────────────────────────────────────
 
-    private string StateClass(ReadinessState state) => state switch
-    {
-        ReadinessState.Ready       => "is-ready",
-        ReadinessState.MostlyReady => "is-mostly-ready",
-        ReadinessState.NotReady    => "is-not-ready",
-        ReadinessState.Blocked     => "is-blocked",
-        _                          => "",
-    };
-
-    private string StateLabel(ReadinessState state) => state switch
+    private static string StateLabel(ReadinessState state) => state switch
     {
         ReadinessState.Ready       => "Ready",
         ReadinessState.MostlyReady => "Mostly Ready",
@@ -257,7 +243,7 @@
         _                          => state.ToString(),
     };
 
-    private string StateIcon(ReadinessState state) => state switch
+    private static string StateIcon(ReadinessState state) => state switch
     {
         ReadinessState.Ready       => "✓",
         ReadinessState.MostlyReady => "~",
@@ -266,22 +252,21 @@
         _                          => "",
     };
 
-    private string SevClass(GateSeverity sev) => sev switch
+    private static string StateChipStatus(ReadinessState state) => state switch
     {
-        GateSeverity.Critical => "sev-critical",
-        GateSeverity.High     => "sev-high",
-        GateSeverity.Medium   => "sev-medium",
-        GateSeverity.Low      => "sev-low",
-        _                     => "",
+        ReadinessState.Ready       => "healthy",
+        ReadinessState.MostlyReady => "warning",
+        ReadinessState.NotReady    => "critical",
+        ReadinessState.Blocked     => "critical",
+        _                          => "neutral",
     };
 
-    private string SevBadgeClass(GateSeverity sev) => sev switch
+    private static string SevToIssueCard(GateSeverity sev) => sev switch
     {
-        GateSeverity.Critical => "dr-badge-sev-critical",
-        GateSeverity.High     => "dr-badge-sev-high",
-        GateSeverity.Medium   => "dr-badge-sev-medium",
-        GateSeverity.Low      => "dr-badge-sev-low",
-        _                     => "",
+        GateSeverity.Critical => "critical",
+        GateSeverity.High     => "error",
+        GateSeverity.Medium   => "warning",
+        _                     => "info",
     };
 
     // ── Score ring ─────────────────────────────────────────────────────────────
@@ -296,11 +281,11 @@
             double circumference = 2 * Math.PI * r;
             double pct    = Math.Min(100, Math.Max(0, score)) / 100.0;
             double offset = circumference * (1.0 - pct);
-            string variant = StateClass(state);
+            string stateClass = StateChipStatus(state);
 
             var svgHtml = "<svg viewBox=\"0 0 " + sz + " " + sz + "\" width=\"" + sz + "\" height=\"" + sz + "\">" +
                           "<circle class=\"dr-score-ring-bg\" cx=\"" + cx + "\" cy=\"" + cy + "\" r=\"" + r + "\" />" +
-                          "<circle class=\"dr-score-ring-fill " + variant + "\" cx=\"" + cx + "\" cy=\"" + cy + "\" r=\"" + r + "\"" +
+                          "<circle class=\"dr-score-ring-fill dr-ring-" + stateClass + "\" cx=\"" + cx + "\" cy=\"" + cy + "\" r=\"" + r + "\"" +
                           " stroke-dasharray=\"" + circumference.ToString("0.00") + "\" stroke-dashoffset=\"" + offset.ToString("0.00") + "\" />" +
                           "<text x=\"50%\" y=\"50%\" dominant-baseline=\"middle\" text-anchor=\"middle\"" +
                           " font-size=\"" + (sz / 4) + "\" font-weight=\"700\" fill=\"currentColor\">" +
@@ -314,28 +299,20 @@
     private RenderFragment RenderDecisionCard(ReadinessDecision decision) =>
         __builder =>
         {
-            string cls = StateClass(decision.State);
-            string icon = decision.State switch
-            {
-                ReadinessState.Ready       => "✓",
-                ReadinessState.MostlyReady => "~",
-                ReadinessState.NotReady    => "✗",
-                ReadinessState.Blocked     => "⊘",
-                _                          => "",
-            };
-
-            <div class="dr-decision-card @cls">
-                <div class="dr-decision-card-phase">@decision.Name Readiness</div>
-                <div class="dr-decision-state">
-                    <div class="dr-decision-state-icon">@icon</div>
-                    <span class="dr-decision-state-label">@StateLabel(decision.State)</span>
-                </div>
-                <div class="dr-decision-score">Score: @decision.Score.ToString("0.#") / 100</div>
-                @if (!string.IsNullOrEmpty(decision.Summary))
-                {
-                    <div class="dr-decision-summary">@decision.Summary</div>
-                }
-            </div>
+            <Card Title="@($"{decision.Name} Readiness")">
+                <Header>
+                    <StatusChip Status="@StateChipStatus(decision.State)" Label="@StateLabel(decision.State)" />
+                </Header>
+                <ChildContent>
+                    <KeyValueList>
+                        <InfoRow Label="Score" Value="@($"{decision.Score:0.#} / 100")" />
+                        @if (!string.IsNullOrEmpty(decision.Summary))
+                        {
+                            <InfoRow Label="Summary" Value="@decision.Summary" />
+                        }
+                    </KeyValueList>
+                </ChildContent>
+            </Card>
         };
 
     // ── Overview tab ───────────────────────────────────────────────────────────
@@ -345,55 +322,50 @@
         {
             var r = _report!;
 
-            <div class="dr-overview-stats">
-                <div class="dr-stat-chip">
-                    <span class="dr-stat-chip-value">@r.Health.OverallReadinessScore.ToString("0.#")</span>
-                    <span class="dr-stat-chip-label">/ 100 overall</span>
-                </div>
-                <div class="dr-stat-chip">
-                    <span class="dr-stat-chip-value" style="color: var(--color-danger)">
-                        @r.Blockers.Count(b => b.Severity == GateSeverity.Critical)
-                    </span>
-                    <span class="dr-stat-chip-label">critical blockers</span>
-                </div>
-                <div class="dr-stat-chip">
-                    <span class="dr-stat-chip-value">@r.Blockers.Count</span>
-                    <span class="dr-stat-chip-label">total blockers</span>
-                </div>
-                <div class="dr-stat-chip">
-                    <span class="dr-stat-chip-value">@r.Recommendations.Count</span>
-                    <span class="dr-stat-chip-label">recommendations</span>
-                </div>
+            <div class="metric-strip">
+                <MetricCard Value="@r.Health.OverallReadinessScore.ToString("0.#")"
+                            Label="Overall Score"
+                            Sublabel="/ 100"
+                            Variant="@StateChipStatus(r.DevelopmentDecision.State)" />
+                <MetricCard Value="@r.Blockers.Count(b => b.Severity == GateSeverity.Critical).ToString()"
+                            Label="Critical Blockers"
+                            Variant="@(r.Blockers.Any(b => b.Severity == GateSeverity.Critical) ? "danger" : null)" />
+                <MetricCard Value="@r.Blockers.Count.ToString()"
+                            Label="Total Blockers"
+                            Variant="@(r.Blockers.Count > 0 ? "warning" : null)" />
+                <MetricCard Value="@r.Recommendations.Count.ToString()"
+                            Label="Recommendations" />
             </div>
 
             <div class="dr-check-columns" style="margin-top: var(--space-5)">
-                <div class="card p-4">
-                    <div class="fw-bold mb-3">Loaded Artifacts</div>
-                    <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px;font-size:var(--text-sm)">
+                <Card Title="Loaded Artifacts">
+                    <KeyValueList>
                         @ArtifactRow("Constitution", r.HasConstitution)
                         @ArtifactRow("Specification", r.HasSpecification)
                         @ArtifactRow("Plan", r.HasPlan)
                         @ArtifactRow("Tasks", r.HasTasks)
-                    </ul>
-                </div>
-                <div class="card p-4">
-                    <div class="fw-bold mb-3">Gate Scores</div>
+                    </KeyValueList>
+                </Card>
+                <Card Title="Gate Scores">
                     <div style="display:flex;flex-direction:column;gap:12px">
                         @GateScoreRow("Development", r.DevelopmentDecision)
                         @GateScoreRow("Testing", r.TestingDecision)
                         @GateScoreRow("Release", r.ReleaseDecision)
                     </div>
-                </div>
+                </Card>
             </div>
 
             @if (r.Blockers.Count > 0)
             {
                 <div style="margin-top:var(--space-2)">
-                    <div class="fw-bold mb-3">Critical Blockers</div>
-                    <div class="dr-blockers-list">
+                    <SectionHeader Title="Critical Blockers" />
+                    <div class="issue-cards">
                         @foreach (var b in r.Blockers.Where(b => b.Severity == GateSeverity.Critical).Take(3))
                         {
-                            @RenderBlockerCard(b)
+                            <IssueCard Severity="critical"
+                                       Component="@b.Phase"
+                                       Description="@b.Title"
+                                       SuggestedFix="@(string.IsNullOrEmpty(b.Description) ? null : b.Description)" />
                         }
                         @if (r.Blockers.Count(b => b.Severity == GateSeverity.Critical) > 3)
                         {
@@ -410,31 +382,21 @@
     private RenderFragment ArtifactRow(string name, bool loaded) =>
         __builder =>
         {
-            string icon  = loaded ? "✓" : "○";
-            string color = loaded ? "var(--color-success)" : "var(--text-muted)";
-            <li style="display:flex;align-items:center;gap:8px">
-                <span style="color:@color;font-size:13px">@icon</span>
-                <span>@name</span>
-                @if (!loaded)
-                {
-                    <span class="text-muted small">not loaded</span>
-                }
-            </li>
+            <InfoRow Label="@name">
+                <StatusChip Status="@(loaded ? "healthy" : "neutral")" Label="@(loaded ? "Loaded" : "Not loaded")" />
+            </InfoRow>
         };
 
     private RenderFragment GateScoreRow(string phase, ReadinessDecision decision) =>
         __builder =>
         {
-            string cls = StateClass(decision.State);
             <div style="display:flex;align-items:center;gap:12px">
                 <div style="width:36px;height:36px;flex-shrink:0">
                     @RenderScoreRing(decision.Score, decision.State, 36)
                 </div>
                 <div>
                     <div style="font-size:var(--text-sm);font-weight:600">@phase</div>
-                    <div class="dr-gate-state-badge @cls" style="margin-top:2px">
-                        @StateLabel(decision.State)
-                    </div>
+                    <StatusChip Status="@StateChipStatus(decision.State)" Label="@StateLabel(decision.State)" />
                 </div>
             </div>
         };
@@ -444,17 +406,14 @@
     private RenderFragment RenderGateTab(DeliveryGate gate) =>
         __builder =>
         {
-            string cls = StateClass(gate.State);
-
             <div class="dr-gate-header">
                 <div class="dr-gate-score-area">
                     @RenderScoreRing(gate.Score, gate.State, 72)
                 </div>
                 <div class="dr-gate-info">
                     <h3>@gate.Phase Readiness Gate</h3>
-                    <div class="dr-gate-state-badge @cls">
-                        @StateIcon(gate.State) @StateLabel(gate.State)
-                    </div>
+                    <StatusChip Status="@StateChipStatus(gate.State)"
+                                Label="@($"{StateIcon(gate.State)} {StateLabel(gate.State)}")" />
                     <div class="text-muted small mt-2">
                         @gate.PassedChecks.Count passed · @gate.FailedChecks.Count failed
                         @if (gate.Blockers.Count > 0)
@@ -508,14 +467,15 @@
 
             @if (gate.Blockers.Count > 0)
             {
-                <div>
-                    <div class="fw-bold mb-3">Gate Blockers</div>
-                    <div class="dr-blockers-list">
-                        @foreach (var b in gate.Blockers)
-                        {
-                            @RenderBlockerCard(b)
-                        }
-                    </div>
+                <SectionHeader Title="Gate Blockers" />
+                <div class="issue-cards">
+                    @foreach (var b in gate.Blockers)
+                    {
+                        <IssueCard Severity="@SevToIssueCard(b.Severity)"
+                                   Component="@($"{b.Phase}{(b.RuleCode is not null ? $" [{b.RuleCode}]" : "")}")"
+                                   Description="@b.Title"
+                                   SuggestedFix="@(string.IsNullOrEmpty(b.Description) ? null : b.Description)" />
+                    }
                 </div>
             }
         };
@@ -530,7 +490,7 @@
                 ReadinessService.FilterBlockersByPhase(r.Blockers, _blockerPhaseFilter),
                 _blockerSeverityFilter).ToList();
 
-            <div class="dr-filter-strip">
+            <div class="filter-strip">
                 <label>Severity:</label>
                 <select @bind="_blockerSeverityFilter">
                     <option value="">All</option>
@@ -554,46 +514,21 @@
 
             @if (filtered.Count == 0)
             {
-                <div class="dr-empty">
-                    <div class="dr-empty-icon">✓</div>
-                    <div>No blockers@(r.Blockers.Count > 0 ? " match the current filter" : " found — all gates clear").</div>
-                </div>
+                <EmptyState Title="@(r.Blockers.Count > 0 ? "No blockers match the current filter." : "No blockers found.")"
+                            Description="@(r.Blockers.Count == 0 ? "All gates are clear." : null)" />
             }
             else
             {
-                <div class="dr-blockers-list">
+                <div class="issue-cards">
                     @foreach (var b in filtered)
                     {
-                        @RenderBlockerCard(b)
+                        <IssueCard Severity="@SevToIssueCard(b.Severity)"
+                                   Component="@($"{b.Phase}{(b.RuleCode is not null ? $" [{b.RuleCode}]" : "")}")"
+                                   Description="@b.Title"
+                                   SuggestedFix="@(string.IsNullOrEmpty(b.Description) ? null : b.Description)" />
                     }
                 </div>
             }
-        };
-
-    private RenderFragment RenderBlockerCard(ReadinessBlocker b) =>
-        __builder =>
-        {
-            <div class="dr-blocker-card @SevClass(b.Severity)">
-                <div class="dr-blocker-header">
-                    <span class="dr-blocker-title">@b.Title</span>
-                    <span class="dr-badge @SevBadgeClass(b.Severity)">@b.Severity</span>
-                    @if (!string.IsNullOrEmpty(b.Phase))
-                    {
-                        <span class="dr-badge dr-badge-phase">@b.Phase</span>
-                    }
-                    @if (!string.IsNullOrEmpty(b.RuleCode))
-                    {
-                        <span class="dr-badge dr-badge-category">@b.RuleCode</span>
-                    }
-                </div>
-                <div class="dr-blocker-desc">@b.Description</div>
-                @if (!string.IsNullOrEmpty(b.Category))
-                {
-                    <div class="dr-blocker-meta">
-                        <span class="text-muted small">Category: @b.Category</span>
-                    </div>
-                }
-            </div>
         };
 
     // ── Recommendations tab ────────────────────────────────────────────────────
@@ -606,7 +541,7 @@
                 ReadinessService.FilterRecommendationsByPhase(r.Recommendations, _recPhaseFilter),
                 _recSearch).ToList();
 
-            <div class="dr-filter-strip">
+            <div class="filter-strip">
                 <label>Phase:</label>
                 <select @bind="_recPhaseFilter">
                     <option value="">All</option>
@@ -625,30 +560,17 @@
 
             @if (filtered.Count == 0)
             {
-                <div class="dr-empty">
-                    <div class="dr-empty-icon">✓</div>
-                    <div>No recommendations@(r.Recommendations.Count > 0 ? " match the current filter" : " — delivery readiness looks good").</div>
-                </div>
+                <EmptyState Title="@(r.Recommendations.Count > 0 ? "No recommendations match the current filter." : "No recommendations.")"
+                            Description="@(r.Recommendations.Count == 0 ? "Delivery readiness looks good." : null)" />
             }
             else
             {
                 <div class="dr-rec-list">
                     @foreach (var rec in filtered)
                     {
-                        <div class="dr-rec-item">
-                            <div class="dr-rec-text">@rec.Text</div>
-                            <div class="dr-rec-meta">
-                                <span class="dr-badge @SevBadgeClass(rec.Priority)">@rec.Priority</span>
-                                @if (!string.IsNullOrEmpty(rec.Phase))
-                                {
-                                    <span class="dr-badge dr-badge-phase">@rec.Phase</span>
-                                }
-                                @if (!string.IsNullOrEmpty(rec.Category))
-                                {
-                                    <span class="dr-badge dr-badge-category">@rec.Category</span>
-                                }
-                            </div>
-                        </div>
+                        <RecommendationCard Title="@rec.Text"
+                                            Priority="@rec.Priority.ToString().ToLowerInvariant()"
+                                            Description="@($"{rec.Phase}{(string.IsNullOrEmpty(rec.Category) ? "" : $" · {rec.Category}")}")" />
                     }
                 </div>
             }

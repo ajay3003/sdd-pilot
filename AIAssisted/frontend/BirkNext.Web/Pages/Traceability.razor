@@ -5,12 +5,8 @@
 <PageTitle>Traceability &amp; Coverage</PageTitle>
 
 <div class="traceability-page">
-    <section class="traceability-hero">
-        <div class="workflow-step-badge"><a href="getting-started" class="workflow-step-link">Workflow</a> · Step 3 of 6</div>
-        <p class="section-kicker">QA Risk Assessment</p>
-        <h1>Traceability &amp; Coverage</h1>
-        <p class="page-lead">Coverage helps you see which requirements are tested and where QA risk exists.</p>
-    </section>
+    <PageHeader Title="Traceability &amp; Coverage"
+                Description="Coverage helps you see which requirements are tested and where QA risk exists." />
 
     @if (_isLoading)
     {
@@ -88,14 +84,11 @@
         {
             var notCovered = _matrix.Where(r => r.CoverageStatus == "NotCovered").ToList();
 
-            <section class="requirement-map-panel" aria-label="Requirements without tests">
-                <div class="requirement-map-header">
-                    <div>
-                        <p class="section-kicker">Requirements with no linked test</p>
-                        <h2>Requirements without Tests</h2>
-                    </div>
-                    <span>@notCovered.Count requirement@(Plural(notCovered.Count))</span>
-                </div>
+            <section aria-label="Requirements without tests">
+                <SectionHeader Title="Requirements without Tests"
+                               Description="Requirements with no linked test">
+                    <Actions><span>@notCovered.Count requirement@(Plural(notCovered.Count))</span></Actions>
+                </SectionHeader>
                 @if (notCovered.Count == 0)
                 {
                     <div class="mapping-empty">All requirements have at least one linked test.</div>
@@ -134,12 +127,11 @@
                                                     <option value="@t.Id">@(TestLabel(t.Id)) — @t.Title</option>
                                                 }
                                             </select>
-                                            <button class="btn-primary btn-sm"
-                                                    disabled="@(string.IsNullOrEmpty(_selectedTestId) || _isLinking)"
-                                                    @onclick="() => HandleLinkAsync(row.Id)">
+                                            <PrimaryButton Disabled="@(string.IsNullOrEmpty(_selectedTestId) || _isLinking)"
+                                                           OnClick="() => HandleLinkAsync(row.Id)">
                                                 @if (_isLinking) {<span>Linking…</span>} else {<span>Link</span>}
-                                            </button>
-                                            <button class="btn-secondary btn-sm" @onclick="CancelLinking">Cancel</button>
+                                            </PrimaryButton>
+                                            <SecondaryButton OnClick="CancelLinking">Cancel</SecondaryButton>
                                         </div>
                                         @if (_linkError is not null)
                                         {
@@ -153,14 +145,11 @@
                 }
             </section>
 
-            <section class="requirement-map-panel" aria-label="Orphan tests">
-                <div class="requirement-map-header">
-                    <div>
-                        <p class="section-kicker">Tests not linked to any requirement</p>
-                        <h2>Orphan Tests</h2>
-                    </div>
-                    <span>@OrphanTests.Count test@(Plural(OrphanTests.Count))</span>
-                </div>
+            <section aria-label="Orphan tests">
+                <SectionHeader Title="Orphan Tests"
+                               Description="Tests not linked to any requirement">
+                    <Actions><span>@OrphanTests.Count test@(Plural(OrphanTests.Count))</span></Actions>
+                </SectionHeader>
                 @if (OrphanTests.Count == 0)
                 {
                     <div class="mapping-empty">No orphan tests — every test is linked to at least one requirement.</div>
@@ -203,12 +192,11 @@
                                                     <option value="@row.Id">@(ReqLabel(row.Id)) — @row.Title</option>
                                                 }
                                             </select>
-                                            <button class="btn-primary btn-sm"
-                                                    disabled="@(string.IsNullOrEmpty(_selectedOrphanRequirementId) || _isOrphanLinking)"
-                                                    @onclick="() => HandleOrphanLinkAsync(test.Id)">
+                                            <PrimaryButton Disabled="@(string.IsNullOrEmpty(_selectedOrphanRequirementId) || _isOrphanLinking)"
+                                                           OnClick="() => HandleOrphanLinkAsync(test.Id)">
                                                 @if (_isOrphanLinking) {<span>Linking…</span>} else {<span>Link</span>}
-                                            </button>
-                                            <button class="btn-secondary btn-sm" @onclick="CancelOrphanLinking">Cancel</button>
+                                            </PrimaryButton>
+                                            <SecondaryButton OnClick="CancelOrphanLinking">Cancel</SecondaryButton>
                                         </div>
                                         @if (_orphanLinkError is not null)
                                         {
@@ -236,24 +224,19 @@
                 </button>
             </div>
 
-            <section class="requirement-map-panel" aria-label="Requirement to test coverage matrix">
-                <div class="requirement-map-header">
-                    <div>
-                        <p class="section-kicker">Requirement → Test Traceability</p>
-                        <h2>Coverage Matrix</h2>
-                    </div>
-                    <span>@FilteredMatrix.Count requirement@(Plural(FilteredMatrix.Count)) shown</span>
-                </div>
+            <section aria-label="Requirement to test coverage matrix">
+                <SectionHeader Title="Coverage Matrix"
+                               Description="Requirement → Test Traceability">
+                    <Actions><span>@FilteredMatrix.Count requirement@(Plural(FilteredMatrix.Count)) shown</span></Actions>
+                </SectionHeader>
 
                 @if (FilteredMatrix.Count == 0 && _matrix.Count == 0)
                 {
-                    <div class="empty-state empty-state-dashed">
-                        <h3>No requirements yet</h3>
-                        <p>Add requirement scenarios to the library to see their coverage status here.</p>
-                        <div class="empty-state-actions">
-                            <a href="/scenarios">Go to QA Artifact Library</a>
-                        </div>
-                    </div>
+                    <EmptyState Title="No requirements yet"
+                                Description="Add requirement scenarios to the library to see their coverage status here."
+                                Dashed="true">
+                        <a href="/scenarios">Go to QA Artifact Library</a>
+                    </EmptyState>
                 }
                 else if (FilteredMatrix.Count == 0)
                 {
@@ -300,13 +283,13 @@
                                             }
                                         </td>
                                         <td class="trace-col-coverage">
-                                            <span class="trace-badge @(row.CoverageStatus == "Covered" ? "trace-badge--covered" : "trace-badge--missing")">
-                                                @(row.CoverageStatus == "Covered" ? "Covered" : "Missing Coverage")
-                                            </span>
+                                            <StatusChip Status="@(row.CoverageStatus == "Covered" ? "ready" : "critical")"
+                                                        Label="@(row.CoverageStatus == "Covered" ? "Covered" : "Missing Coverage")" />
                                         </td>
                                         <td class="trace-col-count">@row.LinkedTests.Count</td>
                                         <td class="trace-col-risk">
-                                            <span class="trace-badge trace-badge--@RiskClass(row)">@RiskLabel(row)</span>
+                                            <StatusChip Status="@(RiskClass(row) switch { "high" => "critical", "medium" => "warning", _ => "ready" })"
+                                                        Label="@RiskLabel(row)" />
                                         </td>
                                         <td class="trace-col-actions">
                                             @if (row.LinkedTests.Count == 0 && !isLinking)
@@ -353,12 +336,11 @@
                                                             <option value="@t.Id">@(TestLabel(t.Id)) — @t.Title</option>
                                                         }
                                                     </select>
-                                                    <button class="btn-primary btn-sm"
-                                                            disabled="@(string.IsNullOrEmpty(_selectedTestId) || _isLinking)"
-                                                            @onclick="() => HandleLinkAsync(row.Id)">
+                                                    <PrimaryButton Disabled="@(string.IsNullOrEmpty(_selectedTestId) || _isLinking)"
+                                                                   OnClick="() => HandleLinkAsync(row.Id)">
                                                         @if (_isLinking) {<span>Linking…</span>} else {<span>Link</span>}
-                                                    </button>
-                                                    <button class="btn-secondary btn-sm" @onclick="CancelLinking">Cancel</button>
+                                                    </PrimaryButton>
+                                                    <SecondaryButton OnClick="CancelLinking">Cancel</SecondaryButton>
                                                 </div>
                                                 @if (_linkError is not null)
                                                 {

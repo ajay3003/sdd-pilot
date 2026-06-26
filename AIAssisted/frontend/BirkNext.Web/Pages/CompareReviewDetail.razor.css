@@ -12,25 +12,3 @@
 .back-link:hover {
     color: var(--clr-text-heading, #0f172a);
 }
-
-.review-detail-header {
-    margin-bottom: 1.25rem;
-}
-
-.review-detail-header h1 {
-    margin: 0 0 0.375rem;
-}
-
-.review-detail-meta {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    font-size: 0.78rem;
-    color: var(--clr-text-subtle, #64748b);
-}
-
-.review-detail-profile {
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}

@@ -6,10 +6,6 @@
     max-width: 1100px;
 }
 
-.traceability-hero {
-    padding-bottom: 0.25rem;
-}
-
 /* ─── Tab bar ───────────────────────────────────────────────────────────── */
 
 .trace-tab-bar {
@@ -134,23 +130,6 @@
     color: var(--clr-text-subtle, #94a3b8);
     margin-right: 0.25rem;
     text-transform: uppercase;
-}
-
-/* ─── Requirement row identity row ──────────────────────────────────────── */
-
-.mapping-req-identity {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    margin-bottom: 0.3rem;
-}
-
-.mapping-req-title {
-    display: block;
-    font-size: 0.9rem;
-    line-height: 1.35;
-    color: var(--clr-text-heading, #0f172a);
 }
 
 /* Short description in orphan test rows */
@@ -302,26 +281,6 @@
 .trace-row--missing td:first-child {
     box-shadow: inset 3px 0 0 #fca5a5;
 }
-
-/* ─── Coverage & risk badges ─────────────────────────────────────────────── */
-
-.trace-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.18rem 0.5rem;
-    border-radius: 3px;
-    font-size: 0.67rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-}
-
-.trace-badge--covered { background: #dcfce7; color: #15803d; }
-.trace-badge--missing { background: #fee2e2; color: #b91c1c; }
-.trace-badge--low     { background: #dcfce7; color: #15803d; }
-.trace-badge--medium  { background: #fef9c3; color: #a16207; }
-.trace-badge--high    { background: #fee2e2; color: #b91c1c; }
 
 /* ─── Title truncation controls ──────────────────────────────────────────── */
 

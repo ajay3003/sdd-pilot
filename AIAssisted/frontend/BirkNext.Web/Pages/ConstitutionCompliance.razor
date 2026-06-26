@@ -11,11 +11,8 @@
 
 <div class="cc-page">
 
-    <section class="traceability-hero">
-        <p class="section-kicker">Governance Analysis</p>
-        <h1>Constitution Compliance Review</h1>
-        <p class="page-lead">Evaluate whether your Specification, Plan, and Tasks comply with the loaded Constitution. Surface violations, missing coverage, and actionable recommendations.</p>
-    </section>
+    <PageHeader Title="Constitution Compliance Review"
+                Description="Evaluate whether your Specification, Plan, and Tasks comply with the loaded Constitution. Surface violations, missing coverage, and actionable recommendations." />
 
     <!-- ── Artifact input panel ──────────────────────────────────────────── -->
     <div class="cc-input-panel">
@@ -155,9 +152,9 @@
                     else
                     { <span>Constitution loaded · @(AdditionalLoadedCount) additional artifact@(AdditionalLoadedCount != 1 ? "s" : "") loaded</span> }
                 </span>
-                <button class="cc-analyze-btn" disabled="@string.IsNullOrWhiteSpace(_constitutionText)" @onclick="RunAnalysis">
+                <PrimaryButton OnClick="RunAnalysis" Disabled="@string.IsNullOrWhiteSpace(_constitutionText)">
                     Run Compliance Review
-                </button>
+                </PrimaryButton>
             </div>
         }
     </div>
@@ -306,19 +303,16 @@
                     <!-- Top violations -->
                     @if (_report.Violations.Count > 0)
                     {
-                        <div class="cc-section-title">Top Violations</div>
-                        @foreach (var v in _report.Violations.Take(3))
-                        {
-                            <div class="cc-violation-card sev-@v.Severity.ToString().ToLowerInvariant()">
-                                <div class="cc-violation-header">
-                                    @SeverityBadge(v.Severity)
-                                    <span class="cc-rule-id">@v.RuleId</span>
-                                    <span class="cc-violation-artifact">@v.Artifact</span>
-                                    <span class="cc-violation-title">@v.RuleTitle</span>
-                                </div>
-                                <p class="cc-violation-issue">@v.Issue</p>
-                            </div>
-                        }
+                        <SectionHeader Title="Top Violations" />
+                        <div class="issue-cards">
+                            @foreach (var v in _report.Violations.Take(3))
+                            {
+                                <IssueCard Severity="@v.Severity.ToString()"
+                                           Component="@($"{v.RuleId} · {v.Artifact}")"
+                                           Description="@v.RuleTitle"
+                                           SuggestedFix="@v.Issue" />
+                            }
+                        </div>
                         @if (_report.Violations.Count > 3)
                         {
                             <button class="cc-filter-chip" style="margin-top:.5rem;" @onclick='() => SetTab("violations")'>
@@ -330,20 +324,15 @@
                     <!-- Top recommendations -->
                     @if (_report.Recommendations.Count > 0)
                     {
-                        <div class="cc-section-title" style="margin-top:1.25rem;">Top Recommendations</div>
-                        @foreach (var r in _report.Recommendations.Take(5))
-                        {
-                            <div class="cc-rec-card">
-                                <span class="cc-rec-bullet" aria-hidden="true">→</span>
-                                <div class="cc-rec-body">
-                                    <p class="cc-rec-text">@r.Text</p>
-                                    <div class="cc-rec-meta">
-                                        <span class="cc-rec-artifact">@r.TargetArtifact</span>
-                                        @SeverityBadge(r.Priority)
-                                    </div>
-                                </div>
-                            </div>
-                        }
+                        <SectionHeader Title="Top Recommendations" />
+                        <div class="rec-cards">
+                            @foreach (var r in _report.Recommendations.Take(5))
+                            {
+                                <RecommendationCard Title="@r.Text"
+                                                    Description="@r.TargetArtifact.ToString()"
+                                                    Priority="@r.Priority.ToString().ToLowerInvariant()" />
+                            }
+                        </div>
                         @if (_report.Recommendations.Count > 5)
                         {
                             <button class="cc-filter-chip" style="margin-top:.5rem;" @onclick='() => SetTab("recs")'>
@@ -359,13 +348,8 @@
                 <!-- ── Rule Coverage ──────────────────────────────────────── -->
                 @if (!VisibleResults.Any())
                 {
-                    <div class="cc-empty-tab">
-                        <span class="cc-empty-tab-icon" aria-hidden="true">📭</span>
-                        @if (!string.IsNullOrWhiteSpace(_search) || _statusFilter is not null || _typeFilter is not null)
-                        { <span>No rules match the current filter.</span> }
-                        else
-                        { <span>No constitution rules found.</span> }
-                    </div>
+                    <EmptyState Icon="📭"
+                                Title="@((!string.IsNullOrWhiteSpace(_search) || _statusFilter is not null || _typeFilter is not null) ? "No rules match the current filter." : "No constitution rules found.")" />
                 }
                 else
                 {
@@ -406,32 +390,21 @@
                 <!-- ── Violations ─────────────────────────────────────────── -->
                 @if (!VisibleViolations.Any())
                 {
-                    <div class="cc-empty-tab">
-                        <span class="cc-empty-tab-icon" aria-hidden="true">✓</span>
-                        @if (!string.IsNullOrWhiteSpace(_search) || _severityFilter is not null)
-                        { <span>No violations match the current filter.</span> }
-                        else
-                        { <span>No violations detected. All loaded artifacts comply with the constitution.</span> }
-                    </div>
+                    <EmptyState Icon="✓"
+                                Title="@((!string.IsNullOrWhiteSpace(_search) || _severityFilter is not null) ? "No violations match the current filter." : "No violations detected.")"
+                                Description="@((!string.IsNullOrWhiteSpace(_search) || _severityFilter is not null) ? null : "All loaded artifacts comply with the constitution.")" />
                 }
                 else
                 {
-                    @foreach (var v in VisibleViolations)
-                    {
-                        <div class="cc-violation-card sev-@v.Severity.ToString().ToLowerInvariant()">
-                            <div class="cc-violation-header">
-                                @SeverityBadge(v.Severity)
-                                <span class="cc-rule-id">@v.RuleId</span>
-                                <span class="cc-violation-artifact">@v.Artifact</span>
-                                <span class="cc-violation-title">@v.RuleTitle</span>
-                            </div>
-                            <p class="cc-violation-issue">@v.Issue</p>
-                            @if (!string.IsNullOrEmpty(v.Evidence))
-                            {
-                                <p class="cc-violation-evidence">Evidence: @v.Evidence</p>
-                            }
-                        </div>
-                    }
+                    <div class="issue-cards">
+                        @foreach (var v in VisibleViolations)
+                        {
+                            <IssueCard Severity="@v.Severity.ToString()"
+                                       Component="@($"{v.RuleId} · {v.Artifact}")"
+                                       Description="@(v.RuleTitle + " — " + v.Issue)"
+                                       SuggestedFix="@(string.IsNullOrEmpty(v.Evidence) ? null : v.Evidence)" />
+                        }
+                    </div>
                 }
             }
 
@@ -440,30 +413,26 @@
                 <!-- ── Missing Coverage ───────────────────────────────────── -->
                 @if (!VisibleGaps.Any())
                 {
-                    <div class="cc-empty-tab">
-                        <span class="cc-empty-tab-icon" aria-hidden="true">✓</span>
-                        @if (!string.IsNullOrWhiteSpace(_search))
-                        { <span>No gaps match "<strong>@_search</strong>".</span> }
-                        else
-                        { <span>No missing coverage detected across loaded artifacts.</span> }
-                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_search))
+                    {
+                        <EmptyState Title="@($"No gaps match \"{_search}\".")" />
+                    }
+                    else
+                    {
+                        <EmptyState Icon="✓" Title="No missing coverage detected." Description="All loaded artifacts are covered." />
+                    }
                 }
                 else
                 {
-                    @foreach (var gap in VisibleGaps)
-                    {
-                        <div class="cc-gap-card sev-@gap.Severity.ToString().ToLowerInvariant()">
-                            <div class="cc-gap-header">
-                                @SeverityBadge(gap.Severity)
-                                <span class="cc-rule-id">@gap.RuleId</span>
-                                <span class="cc-rule-type-badge">@gap.RuleType</span>
-                                <span style="font-size:.82rem;font-weight:500;color:var(--clr-text);">@gap.RuleTitle</span>
-                            </div>
-                            <p class="cc-gap-missing">
-                                Missing in: @gap.MissingSummary
-                            </p>
-                        </div>
-                    }
+                    <div class="issue-cards">
+                        @foreach (var gap in VisibleGaps)
+                        {
+                            <IssueCard Severity="@gap.Severity.ToString()"
+                                       Component="@($"{gap.RuleId} · {gap.RuleType}")"
+                                       Description="@gap.RuleTitle"
+                                       SuggestedFix="@($"Missing in: {gap.MissingSummary}")" />
+                        }
+                    </div>
                 }
             }
 
@@ -472,29 +441,25 @@
                 <!-- ── Recommendations ────────────────────────────────────── -->
                 @if (!VisibleRecommendations.Any())
                 {
-                    <div class="cc-empty-tab">
-                        <span class="cc-empty-tab-icon" aria-hidden="true">✓</span>
-                        @if (!string.IsNullOrWhiteSpace(_search))
-                        { <span>No recommendations match "<strong>@_search</strong>".</span> }
-                        else
-                        { <span>No recommendations — all rules are covered across loaded artifacts.</span> }
-                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_search))
+                    {
+                        <EmptyState Title="@($"No recommendations match \"{_search}\".")" />
+                    }
+                    else
+                    {
+                        <EmptyState Icon="✓" Title="No recommendations." Description="All rules are covered across loaded artifacts." />
+                    }
                 }
                 else
                 {
-                    @foreach (var r in VisibleRecommendations)
-                    {
-                        <div class="cc-rec-card">
-                            <span class="cc-rec-bullet" aria-hidden="true">→</span>
-                            <div class="cc-rec-body">
-                                <p class="cc-rec-text">@r.Text</p>
-                                <div class="cc-rec-meta">
-                                    <span class="cc-rec-artifact">@r.TargetArtifact</span>
-                                    @SeverityBadge(r.Priority)
-                                </div>
-                            </div>
-                        </div>
-                    }
+                    <div class="rec-cards">
+                        @foreach (var r in VisibleRecommendations)
+                        {
+                            <RecommendationCard Title="@r.Text"
+                                                Description="@r.TargetArtifact.ToString()"
+                                                Priority="@r.Priority.ToString().ToLowerInvariant()" />
+                        }
+                    </div>
                 }
             }
 

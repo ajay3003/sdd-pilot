@@ -11,11 +11,8 @@
 
 <div class="at-page">
 
-    <section class="traceability-hero">
-        <p class="section-kicker">Cross-Artifact Analysis</p>
-        <h1>Artifact Traceability</h1>
-        <p class="page-lead">End-to-end traceability across Constitution → Specification → Plan → Tasks. Surface coverage gaps, orphaned items, and a unified traceability matrix.</p>
-    </section>
+    <PageHeader Title="Artifact Traceability"
+                Description="End-to-end traceability across Constitution → Specification → Plan → Tasks. Surface coverage gaps, orphaned items, and a unified traceability matrix." />
 
     <!-- ── Artifact input panel ──────────────────────────────────────────── -->
     <div class="at-input-panel">
@@ -153,9 +150,9 @@
                     @if (LoadedCount < 2)
                     { <span> — load at least 2 to analyze</span> }
                 </span>
-                <button class="at-analyze-btn" disabled="@(LoadedCount < 2)" @onclick="RunAnalysis">
+                <PrimaryButton OnClick="RunAnalysis" Disabled="@(LoadedCount < 2)">
                     Analyze Traceability
-                </button>
+                </PrimaryButton>
             </div>
         }
     </div>
@@ -165,28 +162,17 @@
     {
         <!-- Health summary bar -->
         <div class="at-health-bar">
-            <div class="at-health-stat @(HealthStatLevel(_report.ConstitutionCoverage.CoveragePercentage))">
-                <span class="at-health-stat-value">@_report.ConstitutionCoverage.CoveragePercentage.ToString("0.#")%</span>
-                <span class="at-health-stat-label">Constitution Coverage</span>
-            </div>
-            <div class="at-health-stat @(HealthStatLevel(_report.SpecificationCoverage.CoveragePercentage))">
-                <span class="at-health-stat-value">@_report.SpecificationCoverage.CoveragePercentage.ToString("0.#")%</span>
-                <span class="at-health-stat-label">Spec Coverage</span>
-            </div>
-            <div class="at-health-stat @(HealthStatLevel(_report.PlanCoverage.CoveragePercentage))">
-                <span class="at-health-stat-value">@_report.PlanCoverage.CoveragePercentage.ToString("0.#")%</span>
-                <span class="at-health-stat-label">Plan Coverage</span>
-            </div>
-            <div class="at-health-stat @(HealthStatLevel(_report.TaskCoverage.CoveragePercentage))">
-                <span class="at-health-stat-value">@_report.TaskCoverage.CoveragePercentage.ToString("0.#")%</span>
-                <span class="at-health-stat-label">Task Coverage</span>
-            </div>
+            <MetricCard Value="@(_report.ConstitutionCoverage.CoveragePercentage.ToString("0.#") + "%")" Label="Constitution Coverage"
+                        Variant="@(_report.ConstitutionCoverage.CoveragePercentage >= 80 ? "success" : _report.ConstitutionCoverage.CoveragePercentage >= 50 ? "warning" : _report.ConstitutionCoverage.CoveragePercentage > 0 ? "danger" : null)" />
+            <MetricCard Value="@(_report.SpecificationCoverage.CoveragePercentage.ToString("0.#") + "%")" Label="Spec Coverage"
+                        Variant="@(_report.SpecificationCoverage.CoveragePercentage >= 80 ? "success" : _report.SpecificationCoverage.CoveragePercentage >= 50 ? "warning" : _report.SpecificationCoverage.CoveragePercentage > 0 ? "danger" : null)" />
+            <MetricCard Value="@(_report.PlanCoverage.CoveragePercentage.ToString("0.#") + "%")" Label="Plan Coverage"
+                        Variant="@(_report.PlanCoverage.CoveragePercentage >= 80 ? "success" : _report.PlanCoverage.CoveragePercentage >= 50 ? "warning" : _report.PlanCoverage.CoveragePercentage > 0 ? "danger" : null)" />
+            <MetricCard Value="@(_report.TaskCoverage.CoveragePercentage.ToString("0.#") + "%")" Label="Task Coverage"
+                        Variant="@(_report.TaskCoverage.CoveragePercentage >= 80 ? "success" : _report.TaskCoverage.CoveragePercentage >= 50 ? "warning" : _report.TaskCoverage.CoveragePercentage > 0 ? "danger" : null)" />
             @if (_report.Health.GapCount > 0)
             {
-                <div class="at-health-stat is-warning">
-                    <span class="at-health-stat-value">@_report.Health.GapCount</span>
-                    <span class="at-health-stat-label">Gaps</span>
-                </div>
+                <MetricCard Value="@_report.Health.GapCount.ToString()" Label="Gaps" Variant="warning" />
             }
         </div>
 
@@ -363,22 +349,13 @@
                 <!-- ── Constitution → Spec ────────────────────────────────── -->
                 @if (!_report.HasConstitution || !_report.HasSpecification)
                 {
-                    <div class="at-empty-tab">
-                        <span class="at-empty-tab-icon" aria-hidden="true">📭</span>
-                        @if (!_report.HasConstitution)
-                        { <span>No Constitution loaded. Constitution → Spec analysis unavailable. Load a constitution document above.</span> }
-                        else
-                        { <span>No Specification loaded. Constitution → Spec analysis unavailable. Load a specification document above.</span> }
-                    </div>
+                    <EmptyState Icon="📭"
+                                Title="@(!_report.HasConstitution ? "No Constitution loaded." : "No Specification loaded.")"
+                                Description="Constitution → Spec analysis unavailable. Load the missing document above." />
                 }
                 else if (!VisibleConstToSpec.Any())
                 {
-                    <div class="at-empty-tab">
-                        @if (!string.IsNullOrWhiteSpace(_search) || _statusFilter is not null)
-                        { <span>No rules match the current filter.</span> }
-                        else
-                        { <span>No constitution rules found.</span> }
-                    </div>
+                    <EmptyState Title="@((!string.IsNullOrWhiteSpace(_search) || _statusFilter is not null) ? "No rules match the current filter." : "No constitution rules found.")" />
                 }
                 else
                 {
@@ -430,22 +407,13 @@
                 <!-- ── Spec → Plan ────────────────────────────────────────── -->
                 @if (!_report.HasSpecification || !_report.HasPlan)
                 {
-                    <div class="at-empty-tab">
-                        <span class="at-empty-tab-icon" aria-hidden="true">📭</span>
-                        @if (!_report.HasSpecification)
-                        { <span>No Specification loaded. Spec → Plan analysis unavailable.</span> }
-                        else
-                        { <span>No Plan loaded. Spec → Plan analysis unavailable.</span> }
-                    </div>
+                    <EmptyState Icon="📭"
+                                Title="@(!_report.HasSpecification ? "No Specification loaded." : "No Plan loaded.")"
+                                Description="Spec → Plan analysis unavailable. Load the missing document above." />
                 }
                 else if (!VisibleSpecToPlan.Any())
                 {
-                    <div class="at-empty-tab">
-                        @if (!string.IsNullOrWhiteSpace(_search) || _statusFilter is not null)
-                        { <span>No requirements match the current filter.</span> }
-                        else
-                        { <span>No requirements with FR-### identifiers found in the specification.</span> }
-                    </div>
+                    <EmptyState Title="@((!string.IsNullOrWhiteSpace(_search) || _statusFilter is not null) ? "No requirements match the current filter." : "No requirements with FR-### identifiers found in the specification.")" />
                 }
                 else
                 {
@@ -490,17 +458,11 @@
                 <!-- ── Plan → Tasks ───────────────────────────────────────── -->
                 @if (!_report.HasPlan)
                 {
-                    <div class="at-empty-tab">
-                        <span class="at-empty-tab-icon" aria-hidden="true">📭</span>
-                        <span>No Plan loaded. Plan → Tasks analysis unavailable.</span>
-                    </div>
+                    <EmptyState Icon="📭" Title="No Plan loaded." Description="Plan → Tasks analysis unavailable. Load a plan document above." />
                 }
                 else if (!_report.HasTasks && _report.PlanToTask.Count == 0)
                 {
-                    <div class="at-empty-tab">
-                        <span class="at-empty-tab-icon" aria-hidden="true">📭</span>
-                        <span>No Tasks loaded and no plan items found. Load a tasks document above.</span>
-                    </div>
+                    <EmptyState Icon="📭" Title="No Tasks loaded and no plan items found." Description="Load a tasks document above." />
                 }
                 else
                 {
@@ -550,18 +512,15 @@
                         @if (_report.Gaps.Any(g => g.GapIn == ArtifactType.Task && g.Status == TraceabilityStatus.Orphaned))
                         {
                             <div class="at-gaps-section" style="margin-top:1.5rem;">
-                                <div class="at-gaps-section-title">Orphan Tasks (no spec references)</div>
-                                @foreach (var gap in _report.Gaps.Where(g => g.GapIn == ArtifactType.Task && g.Status == TraceabilityStatus.Orphaned))
-                                {
-                                    <div class="at-gap-card at-gap-medium">
-                                        <div class="at-gap-card-header">
-                                            <span class="at-gap-severity medium">Medium</span>
-                                            <span class="at-gap-item-id">@gap.ItemId</span>
-                                            <span class="at-gap-item-title">@gap.ItemTitle</span>
-                                        </div>
-                                        <p class="at-gap-desc">@gap.Description</p>
-                                    </div>
-                                }
+                                <SectionHeader Title="Orphan Tasks (no spec references)" />
+                                <div class="issue-cards">
+                                    @foreach (var gap in _report.Gaps.Where(g => g.GapIn == ArtifactType.Task && g.Status == TraceabilityStatus.Orphaned))
+                                    {
+                                        <IssueCard Severity="Medium"
+                                                   Component="@gap.ItemId"
+                                                   Description="@(string.IsNullOrEmpty(gap.ItemTitle) ? gap.Description : (string.IsNullOrEmpty(gap.Description) ? gap.ItemTitle : $"{gap.ItemTitle} — {gap.Description}"))" />
+                                    }
+                                </div>
                             </div>
                         }
                     }
@@ -573,13 +532,14 @@
                 <!-- ── Gaps ───────────────────────────────────────────────── -->
                 @if (!VisibleGaps.Any())
                 {
-                    <div class="at-empty-tab">
-                        @if (_gapArtifactFilter is not null || !string.IsNullOrWhiteSpace(_search))
-                        { <span>No gaps match the current filter.</span> }
-                        else
-                        { <span class="at-empty-tab-icon" aria-hidden="true">✓</span>
-                          <span>No traceability gaps detected. All analyzed artifacts are covered.</span> }
-                    </div>
+                    @if (_gapArtifactFilter is not null || !string.IsNullOrWhiteSpace(_search))
+                    {
+                        <EmptyState Title="No gaps match the current filter." />
+                    }
+                    else
+                    {
+                        <EmptyState Icon="✓" Title="No traceability gaps detected." Description="All analyzed artifacts are covered." />
+                    }
                 }
                 else
                 {
@@ -588,19 +548,15 @@
                         .OrderBy(g => (int)g.Key))
                     {
                         <div class="at-gaps-section">
-                            <div class="at-gaps-section-title">@ArtifactLabel(artifactGroup.Key) Gaps</div>
-                            @foreach (var gap in artifactGroup.OrderBy(g => g.Severity))
-                            {
-                                <div class="at-gap-card at-gap-@gap.Severity.ToString().ToLowerInvariant()">
-                                    <div class="at-gap-card-header">
-                                        <span class="at-gap-severity @gap.Severity.ToString().ToLowerInvariant()">@gap.Severity</span>
-                                        <span class="at-gap-item-id">@gap.ItemId</span>
-                                        <span class="at-gap-item-title">@gap.ItemTitle</span>
-                                        @StatusBadge(gap.Status)
-                                    </div>
-                                    <p class="at-gap-desc">@gap.Description</p>
-                                </div>
-                            }
+                            <SectionHeader Title="@(ArtifactLabel(artifactGroup.Key) + " Gaps")" />
+                            <div class="issue-cards">
+                                @foreach (var gap in artifactGroup.OrderBy(g => g.Severity))
+                                {
+                                    <IssueCard Severity="@gap.Severity.ToString()"
+                                               Component="@gap.ItemId"
+                                               Description="@(string.IsNullOrEmpty(gap.ItemTitle) ? gap.Description : (string.IsNullOrEmpty(gap.Description) ? gap.ItemTitle : $"{gap.ItemTitle} — {gap.Description}"))" />
+                                }
+                            </div>
                         </div>
                     }
                 }
@@ -611,19 +567,12 @@
                 <!-- ── Traceability Matrix ────────────────────────────────── -->
                 @if (_report.Matrix.Count == 0 && !_report.HasConstitution)
                 {
-                    <div class="at-empty-tab">
-                        <span class="at-empty-tab-icon" aria-hidden="true">📭</span>
-                        <span>No Constitution loaded. The traceability matrix requires a constitution as the starting point.</span>
-                    </div>
+                    <EmptyState Icon="📭" Title="No Constitution loaded."
+                                Description="The traceability matrix requires a constitution as the starting point." />
                 }
                 else if (!VisibleMatrix.Any())
                 {
-                    <div class="at-empty-tab">
-                        @if (!string.IsNullOrWhiteSpace(_search) || _statusFilter is not null)
-                        { <span>No matrix rows match the current filter.</span> }
-                        else
-                        { <span>No traceability matrix rows generated. Load at least a constitution to start.</span> }
-                    </div>
+                    <EmptyState Title="@((!string.IsNullOrWhiteSpace(_search) || _statusFilter is not null) ? "No matrix rows match the current filter." : "No traceability matrix rows generated. Load at least a constitution to start.")" />
                 }
                 else
                 {

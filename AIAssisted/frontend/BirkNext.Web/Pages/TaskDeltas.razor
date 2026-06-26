@@ -8,13 +8,11 @@
 
 <div class="delta-page">
 
+    <PageHeader Title="Task Deltas"
+                Description="Compare two versions of a tasks.md file to surface added, removed, and modified tasks — with scope analysis and risk classification." />
+
     @if (_report is null)
     {
-        <div class="delta-hero">
-            <h1 class="delta-hero-title">Task Deltas</h1>
-            <p class="delta-hero-sub">Compare two versions of a tasks.md file to surface added, removed, and modified tasks — with scope analysis and risk classification.</p>
-        </div>
-
         <div class="delta-info-panel">
             <strong>Best for:</strong>
             <span class="delta-bestfor-badge">Sprint planning reviews</span>

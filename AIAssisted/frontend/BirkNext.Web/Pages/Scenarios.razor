@@ -7,32 +7,15 @@
 
 <div class="artifact-library-shell">
 
-    <!-- ── Hero: purpose + counts ─────────────────────────────────────── -->
-    <section class="artifact-hero" aria-label="QA artifact library summary">
-        <div>
-            <p class="section-kicker">QA Knowledge Base</p>
-            <h1>QA Artifact Library</h1>
-            <p class="page-lead">Store, discover, reuse, and curate QA assets across specifications and projects.</p>
-        </div>
-        <div class="artifact-hero-metrics" aria-label="Asset summary">
-            <div class="artifact-health-panel">
-                <span class="artifact-health-score">@_scenarios.Count</span>
-                <span>Published Assets</span>
-            </div>
-            <div class="artifact-health-panel">
-                <span class="artifact-health-score">@TestCount</span>
-                <span>Tests</span>
-            </div>
-            <div class="artifact-health-panel">
-                <span class="artifact-health-score">@RequirementCount</span>
-                <span>Requirements</span>
-            </div>
-            <div class="artifact-health-panel">
-                <span class="artifact-health-score">@ClarificationCount</span>
-                <span>Clarifications</span>
-            </div>
-        </div>
-    </section>
+    <PageHeader Title="QA Artifact Library"
+                Description="Store, discover, reuse, and curate QA assets across specifications and projects." />
+
+    <div class="artifact-kpi-strip" aria-label="Asset summary">
+        <MetricCard Value="@_scenarios.Count.ToString()" Label="Published Assets" />
+        <MetricCard Value="@TestCount.ToString()" Label="Tests" />
+        <MetricCard Value="@RequirementCount.ToString()" Label="Requirements" />
+        <MetricCard Value="@ClarificationCount.ToString()" Label="Clarifications" />
+    </div>
 
     <!-- ── Traceability redirect note ─────────────────────────────────── -->
     <div class="ql-traceability-redirect" role="note" data-testid="ql-traceability-redirect">

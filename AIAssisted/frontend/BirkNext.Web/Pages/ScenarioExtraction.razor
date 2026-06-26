@@ -7,22 +7,8 @@
 <PageTitle>Analyze Specification</PageTitle>
 
 <div class="review-page-shell">
-    <div class="review-wizard-hero">
-        <div class="review-step-badge">Step 1</div>
-        <div class="review-hero-content">
-            <h1>Analyze Specification</h1>
-            <p class="review-hero-lead">Upload or paste a specification document and generate review candidates for QA analysis.</p>
-            <div class="review-extract-list" aria-label="Extracted review candidate types">
-                <span>Extract:</span>
-                <ul>
-                    <li>Requirements</li>
-                    <li>Test Scenarios</li>
-                    <li>Clarifications</li>
-                    <li>Traceability Candidates</li>
-                </ul>
-            </div>
-        </div>
-    </div>
+    <PageHeader Title="Analyze Specification"
+                Description="Upload or paste a specification document and generate review candidates for QA analysis." />
 
     <ExtractionInput OnExtractionCompleted="HandleExtractionCompleted" />
 

@@ -10,11 +10,8 @@
 
 <div class="qa-auditor-page">
 
-    <section class="traceability-hero">
-        <p class="section-kicker">Analysis · Rule-Based</p>
-        <h1>QA Auditor</h1>
-        <p class="page-lead">Deterministic quality analysis across the SDD artifact chain. Identifies coverage gaps, governance concerns, missing acceptance criteria, and traceability issues — without AI.</p>
-    </section>
+    <PageHeader Title="QA Auditor"
+                Description="Deterministic quality analysis across the SDD artifact chain. Identifies coverage gaps, governance concerns, missing acceptance criteria, and traceability issues — without AI." />
 
     <!-- ── Artifact Input Panel ──────────────────────────────────────────── -->
     <div class="aud-input-panel">
@@ -121,9 +118,7 @@
                     else
                     { <span>@LoadedCount artifact@(LoadedCount != 1 ? "s" : "") loaded · audit covers @CoveredAreas</span> }
                 </span>
-                <button class="aud-run-btn" disabled="@(!AnyArtifactLoaded)" @onclick="RunAudit">
-                    Run Audit
-                </button>
+                <PrimaryButton Disabled="@(!AnyArtifactLoaded)" OnClick="RunAudit">Run Audit</PrimaryButton>
             </div>
         }
     </div>
@@ -224,13 +219,9 @@
 
             @if (_tab == "overview")
             {
-                <!-- Top findings -->
                 @if (_report.Findings.Count == 0)
                 {
-                    <div class="aud-empty">
-                        <span class="aud-empty-icon" aria-hidden="true">✓</span>
-                        No findings — all loaded artifacts pass the audit rules.
-                    </div>
+                    <EmptyState Icon="✓" Title="No findings — all loaded artifacts pass the audit rules." />
                 }
                 else
                 {
@@ -244,15 +235,9 @@
                     </p>
                     @foreach (var f in _report.Findings.Take(6))
                     {
-                        <div class="aud-risk-card sev-@f.Severity.ToString().ToLowerInvariant()">
-                            <div class="aud-risk-header">
-                                @SevBadge(f.Severity)
-                                <span class="aud-cat-badge">@f.Category</span>
-                                <span class="aud-rule-code">@f.RuleCode</span>
-                                <span class="aud-risk-title">@f.Title</span>
-                            </div>
-                            <p class="aud-risk-desc">@f.Description</p>
-                        </div>
+                        <IssueCard Severity="@SevString(f.Severity)"
+                                   Component="@($"{f.Category} · {f.RuleCode}")"
+                                   Description="@($"{f.Title} — {f.Description}")" />
                     }
                     @if (_report.Findings.Count > 6)
                     {
@@ -262,7 +247,6 @@
                     }
                 }
 
-                <!-- Coverage summary -->
                 @if (_report.Gaps.Count > 0)
                 {
                     <div style="margin-top:1.25rem;">
@@ -282,42 +266,19 @@
             {
                 @if (!VisibleFindings.Any())
                 {
-                    <div class="aud-empty">
-                        <span class="aud-empty-icon" aria-hidden="true">📭</span>
-                        @(string.IsNullOrWhiteSpace(_search) && _sevFilter is null && _catFilter is null
-                            ? "No findings detected."
-                            : "No findings match the current filter.")
-                    </div>
+                    <EmptyState Icon="📭"
+                                Title="@(string.IsNullOrWhiteSpace(_search) && _sevFilter is null && _catFilter is null
+                                    ? "No findings detected."
+                                    : "No findings match the current filter.")" />
                 }
                 else
                 {
-                    <div class="aud-table-wrap">
-                        <table class="aud-table" aria-label="Audit findings">
-                            <thead>
-                                <tr>
-                                    <th>Severity</th>
-                                    <th>Rule</th>
-                                    <th>Category</th>
-                                    <th>Title</th>
-                                    <th>Description</th>
-                                    <th>Artifact</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var f in VisibleFindings)
-                                {
-                                    <tr>
-                                        <td>@SevBadge(f.Severity)</td>
-                                        <td><span class="aud-rule-code">@f.RuleCode</span></td>
-                                        <td><span class="aud-cat-badge">@f.Category</span></td>
-                                        <td style="font-weight:500;">@f.Title</td>
-                                        <td>@f.Description</td>
-                                        <td>@(f.AffectedArtifact ?? "—")</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
+                    @foreach (var f in VisibleFindings)
+                    {
+                        <IssueCard Severity="@SevString(f.Severity)"
+                                   Component="@($"{f.Category} · {f.RuleCode}{(f.AffectedArtifact is not null ? " · " + f.AffectedArtifact : "")}")"
+                                   Description="@($"{f.Title} — {f.Description}")" />
+                    }
                 }
             }
 
@@ -325,29 +286,16 @@
             {
                 @if (_report.Risks.Count == 0)
                 {
-                    <div class="aud-empty">
-                        <span class="aud-empty-icon" aria-hidden="true">✓</span>
-                        No high-risk findings detected.
-                    </div>
+                    <EmptyState Icon="✓" Title="No high-risk findings detected." />
                 }
                 else
                 {
                     @foreach (var risk in _report.Risks)
                     {
-                        <div class="aud-risk-card sev-@risk.Severity.ToString().ToLowerInvariant()">
-                            <div class="aud-risk-header">
-                                @SevBadge(risk.Severity)
-                                <span class="aud-cat-badge">@risk.Category</span>
-                                @if (!string.IsNullOrEmpty(risk.RuleCode))
-                                { <span class="aud-rule-code">@risk.RuleCode</span> }
-                                <span class="aud-risk-title">@risk.Title</span>
-                            </div>
-                            <p class="aud-risk-desc">@risk.Description</p>
-                            @if (!string.IsNullOrEmpty(risk.Mitigation))
-                            {
-                                <p class="aud-risk-mitigation">→ @risk.Mitigation</p>
-                            }
-                        </div>
+                        <IssueCard Severity="@SevString(risk.Severity)"
+                                   Component="@($"{risk.Category}{(!string.IsNullOrEmpty(risk.RuleCode) ? " · " + risk.RuleCode : "")}")"
+                                   Description="@($"{risk.Title}{(string.IsNullOrEmpty(risk.Description) ? "" : " — " + risk.Description)}")"
+                                   SuggestedFix="@risk.Mitigation" />
                     }
                 }
             }
@@ -356,10 +304,8 @@
             {
                 @if (!VisibleGaps.Any())
                 {
-                    <div class="aud-empty">
-                        <span class="aud-empty-icon" aria-hidden="true">✓</span>
-                        @(string.IsNullOrWhiteSpace(_search) ? "No coverage gaps detected." : "No gaps match the search.")
-                    </div>
+                    <EmptyState Icon="✓"
+                                Title="@(string.IsNullOrWhiteSpace(_search) ? "No coverage gaps detected." : "No gaps match the search.")" />
                 }
                 else
                 {
@@ -372,12 +318,9 @@
                             </div>
                             @foreach (var gap in group)
                             {
-                                <div class="aud-gap-item sev-@gap.Severity.ToString().ToLowerInvariant()">
-                                    @SevBadge(gap.Severity)
-                                    <span>@gap.Description</span>
-                                    @if (!string.IsNullOrEmpty(gap.ItemId))
-                                    { <span class="aud-rule-code">@gap.ItemId</span> }
-                                </div>
+                                <IssueCard Severity="@SevString(gap.Severity)"
+                                           Component="@(!string.IsNullOrEmpty(gap.ItemId) ? gap.ItemId : null)"
+                                           Description="@gap.Description" />
                             }
                         </div>
                     }
@@ -388,27 +331,16 @@
             {
                 @if (!VisibleRecs.Any())
                 {
-                    <div class="aud-empty">
-                        <span class="aud-empty-icon" aria-hidden="true">✓</span>
-                        @(string.IsNullOrWhiteSpace(_search) ? "No recommendations — all loaded artifacts pass audit rules." : "No recommendations match the search.")
-                    </div>
+                    <EmptyState Icon="✓"
+                                Title="@(string.IsNullOrWhiteSpace(_search) ? "No recommendations — all loaded artifacts pass audit rules." : "No recommendations match the search.")" />
                 }
                 else
                 {
                     @foreach (var rec in VisibleRecs)
                     {
-                        <div class="aud-rec-item">
-                            <span class="aud-rec-bullet" aria-hidden="true">→</span>
-                            <div class="aud-rec-body">
-                                <p class="aud-rec-text">@rec.Text</p>
-                                <div class="aud-rec-meta">
-                                    <span class="aud-cat-badge">@rec.Category</span>
-                                    @SevBadge(rec.Priority)
-                                    @if (!string.IsNullOrEmpty(rec.RuleCode))
-                                    { <span class="aud-rule-code">@rec.RuleCode</span> }
-                                </div>
-                            </div>
-                        </div>
+                        <RecommendationCard Title="@rec.Text"
+                                            Description="@($"{rec.Category}{(!string.IsNullOrEmpty(rec.RuleCode) ? " · " + rec.RuleCode : "")}")"
+                                            Priority="@rec.Priority.ToString().ToLowerInvariant()" />
                     }
                 }
             }
@@ -559,20 +491,13 @@
         __builder.CloseElement();
     };
 
-    private static RenderFragment SevBadge(QaSeverity sev) => __builder =>
+    private static string SevString(QaSeverity sev) => sev switch
     {
-        var (css, label) = sev switch
-        {
-            QaSeverity.Critical => ("aud-sev-critical", "Critical"),
-            QaSeverity.High     => ("aud-sev-high",     "High"),
-            QaSeverity.Medium   => ("aud-sev-medium",   "Medium"),
-            QaSeverity.Low      => ("aud-sev-low",      "Low"),
-            _                   => ("aud-sev-info",     "Info"),
-        };
-        __builder.OpenElement(0, "span");
-        __builder.AddAttribute(1, "class", $"aud-sev-badge {css}");
-        __builder.AddContent(2, label);
-        __builder.CloseElement();
+        QaSeverity.Critical => "critical",
+        QaSeverity.High     => "error",
+        QaSeverity.Medium   => "warning",
+        QaSeverity.Low      => "info",
+        _                   => "info",
     };
 
     private static string ScoreLabel(double score) =>
