@@ -64,6 +64,7 @@ builder.Services.AddScoped<ScenarioService>();
 builder.Services.AddScoped<ReviewedCandidateService>();
 builder.Services.AddScoped<CandidateLinkService>();
 builder.Services.AddScoped<QaDeltaReviewService>();
+builder.Services.AddScoped<ProjectDocumentService>();
 builder.Services.AddScoped<TraceLinkService>();
 builder.Services.AddScoped<TraceabilitySuggestionService>();
 builder.Services.AddScoped<ImpactAnalysisService>();

@@ -80,4 +80,7 @@ builder.Services.AddSingleton<IFrontendAnalysisContextFactory, FrontendAnalysisC
 builder.Services.AddHttpClient<IBlazorWasmPerformanceReviewService, BlazorWasmPerformanceReviewService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
+builder.Services.AddHttpClient<ProjectDocumentApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
+
 await builder.Build().RunAsync();

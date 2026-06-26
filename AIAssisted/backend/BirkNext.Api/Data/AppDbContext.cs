@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<TraceabilitySuggestion> TraceabilitySuggestions => Set<TraceabilitySuggestion>();
     public DbSet<CodeFile> CodeFiles => Set<CodeFile>();
     public DbSet<CodeLink> CodeLinks => Set<CodeLink>();
+    public DbSet<ProjectDocument> ProjectDocuments => Set<ProjectDocument>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -378,6 +379,31 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(l => new { l.ProjectId, l.ScenarioId })
                 .HasDatabaseName("ix_code_links_project_scenario");
+        });
+
+        modelBuilder.Entity<ProjectDocument>(entity =>
+        {
+            entity.ToTable("project_documents");
+
+            entity.Property(d => d.Id).HasColumnName("id");
+
+            entity.Property(d => d.DocumentKind)
+                .HasColumnName("document_kind")
+                .HasMaxLength(50)
+                .IsRequired()
+                .HasConversion<string>();
+
+            entity.Property(d => d.Content)
+                .HasColumnName("content")
+                .HasColumnType("text")
+                .IsRequired();
+
+            entity.Property(d => d.CreatedUtc).HasColumnName("created_utc");
+            entity.Property(d => d.UpdatedUtc).HasColumnName("updated_utc");
+
+            entity.HasIndex(d => d.DocumentKind)
+                .HasDatabaseName("ix_project_documents_kind")
+                .IsUnique();
         });
     }
 }

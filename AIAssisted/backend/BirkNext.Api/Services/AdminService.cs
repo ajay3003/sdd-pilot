@@ -394,6 +394,7 @@ public class AdminService
             await _db.TraceLinks.ExecuteDeleteAsync();
             await _db.CandidateLinks.ExecuteDeleteAsync();
             await _db.TraceabilitySuggestions.ExecuteDeleteAsync();
+            await _db.ProjectDocuments.ExecuteDeleteAsync();
             await _db.CodeFiles.ExecuteDeleteAsync();
             await _db.QaDeltaReviews.ExecuteDeleteAsync();
             await _db.ReviewedCandidates.ExecuteDeleteAsync();

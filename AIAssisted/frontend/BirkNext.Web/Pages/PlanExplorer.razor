@@ -5,6 +5,7 @@
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
 @inject NavigationManager NavigationManager
+@inject BirkNext.Web.Services.ProjectDocumentApiService DocumentApi
 
 <PageTitle>Plan Explorer — QA Review Studio</PageTitle>
 
@@ -39,31 +40,36 @@
     {
         if (!firstRender) return;
 
-        try
+        string? content = null;
+        try { content = await DocumentApi.GetAsync("plan"); } catch { }
+
+        if (!string.IsNullOrWhiteSpace(content))
         {
-            var saved = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey);
-            if (!string.IsNullOrWhiteSpace(saved) && saved != _initialText)
-            {
-                _initialText = saved;
-                StateHasChanged();
-            }
+            _initialText = content;
+            StateHasChanged();
+            return;
         }
-        catch
+
+        string? legacy = null;
+        try { legacy = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey); } catch { }
+
+        if (!string.IsNullOrWhiteSpace(legacy))
         {
-            // localStorage unavailable — continue without restore
+            try
+            {
+                await DocumentApi.SaveAsync("plan", legacy);
+                await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey);
+            }
+            catch { }
+            _initialText = legacy;
+            StateHasChanged();
         }
     }
 
     private async Task OnPlanBuilt(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
-        try
-        {
-            await JS.InvokeVoidAsync("localStorage.setItem", StorageKey, text);
-        }
-        catch
-        {
-            // ignore storage errors
-        }
+        try { await DocumentApi.SaveAsync("plan", text); } catch { }
+        try { await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey); } catch { }
     }
 }

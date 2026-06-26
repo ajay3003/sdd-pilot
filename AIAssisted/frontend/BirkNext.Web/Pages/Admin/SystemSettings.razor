@@ -3,6 +3,7 @@
 @using BirkNext.Web.Components
 @inject AdminApiService AdminApi
 @inject ImplementationTraceabilityApiService AdoApi
+@inject ProjectDocumentApiService DocumentApi
 @inject IJSRuntime JS
 
 <PageTitle>System Settings — QA Review Studio</PageTitle>
@@ -981,6 +982,38 @@ else if (_settings is not null)
                                 </table>
                             </div>
 
+                            <!-- Project Documents -->
+                            <div class="dev-diag-section">
+                                <div class="dev-diag-section-title">Project Documents</div>
+                                <table class="settings-table">
+                                    @if (!_diagDocLoaded)
+                                    {
+                                        <tr><td colspan="3" style="color:var(--clr-text-muted)">Loading…</td></tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var kind in new[] { "constitution", "plan", "tasks" })
+                                        {
+                                            var doc = _diagDocSummary.FirstOrDefault(d => string.Equals(d.DocumentKind, kind, StringComparison.OrdinalIgnoreCase));
+                                            <tr>
+                                                <td>@kind</td>
+                                                <td>
+                                                    @if (doc is not null)
+                                                    {
+                                                        <span class="settings-badge settings-badge-local">Stored</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="settings-badge">Empty</span>
+                                                    }
+                                                </td>
+                                                <td>@(doc is not null ? $"{doc.ContentLengthChars:N0} chars" : "—")</td>
+                                            </tr>
+                                        }
+                                    }
+                                </table>
+                            </div>
+
                         </div>
                     </div>
                 </div>
@@ -1006,7 +1039,7 @@ else if (_settings is not null)
                         <div class="danger-zone-action">
                             <div class="danger-zone-description">
                                 <strong>Reset Local Database</strong>
-                                <p>Deletes all imported artifacts, AI reviews, test scenarios, traceability links, traceability suggestions, implementation mappings, analysis results, and other application data stored in the local database. Also clears browser-stored content from Constitution Explorer, Plan Explorer, Task Explorer, and any active extraction session. The database server continues running and the application will recreate its schema when required. This operation cannot be undone.</p>
+                                <p>Deletes all imported artifacts, AI reviews, test scenarios, traceability links, traceability suggestions, implementation mappings, project documents, analysis results, and other application data stored in the local database. Also clears any active extraction session. The database server continues running and the application will recreate its schema when required. This operation cannot be undone.</p>
                                 <p>This operation does not modify application binaries, source code, configuration files, or frontend analysis profiles.</p>
                                 @if (!_settings.Maintenance.ResetAllowed && !string.IsNullOrWhiteSpace(_settings.Maintenance.ResetNotAllowedReason))
                                 {
@@ -1079,6 +1112,10 @@ else if (_settings is not null)
     private bool    _resetSuccess;
 
     private bool _copiedDiag;
+
+    // Project Documents diagnostics (lazy-loaded when diagnostics section is opened)
+    private IReadOnlyList<DocumentSummaryDto> _diagDocSummary = [];
+    private bool _diagDocLoaded;
 
     // Azure DevOps connection test
     private bool _adoTestRunning;
@@ -1248,6 +1285,16 @@ else if (_settings is not null)
         finally
         {
             _isLoading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_activeSection == "diagnostics" && !_diagDocLoaded)
+        {
+            _diagDocLoaded = true;
+            _diagDocSummary = await DocumentApi.GetSummaryAsync();
+            StateHasChanged();
         }
     }
 

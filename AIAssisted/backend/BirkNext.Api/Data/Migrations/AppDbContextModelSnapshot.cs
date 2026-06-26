@@ -498,6 +498,41 @@ namespace BirkNext.Api.Data.Migrations
 
                     b.ToTable("traceability_suggestions", (string)null);
                 });
+
+            modelBuilder.Entity("BirkNext.Api.Models.ProjectDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("DocumentKind")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("document_kind");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("content");
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_utc");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentKind")
+                        .IsUnique()
+                        .HasDatabaseName("ix_project_documents_kind");
+
+                    b.ToTable("project_documents", (string)null);
+                });
 #pragma warning restore 612, 618
         }
     }
