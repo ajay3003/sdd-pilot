@@ -90,6 +90,67 @@ else
         }
     </div>
 
+    @* ── Health Summary ────────────────────────────────────────────────────── *@
+    <section class="db-section">
+        <SectionHeader Title="Project Health" />
+        <div class="db-health-grid" aria-label="Project health by dimension">
+
+            <div class="db-health-card">
+                <span class="db-health-label">Governance</span>
+                <span class="db-health-value @(_governanceLoadPercent == 100 ? "db-val-good" : _governanceLoadPercent > 0 ? "db-val-warn" : "db-val-empty")">@_governanceLoadPercent%</span>
+                <StatusChip Status="@(_governanceLoadPercent == 100 ? "healthy" : _governanceLoadPercent > 0 ? "warning" : "neutral")"
+                            Label="@(_governanceLoadPercent == 100 ? "Complete" : _governanceLoadPercent > 0 ? "Partial" : "Setup")" />
+            </div>
+
+            <div class="db-health-card">
+                <span class="db-health-label">Traceability</span>
+                <span class="db-health-value @(_traceabilityHasData ? ScoreClass(_traceabilityScore) : "db-val-empty")">@TraceabilityHealthVal</span>
+                <StatusChip Status="@(_traceabilityHasData ? (_traceabilityScore >= 80 ? "healthy" : _traceabilityScore >= 50 ? "warning" : "critical") : "neutral")"
+                            Label="@KpiStatusLabel(_traceabilityScore, _traceabilityHasData)" />
+            </div>
+
+            <div class="db-health-card">
+                <span class="db-health-label">Compliance</span>
+                <span class="db-health-value @(_complianceHasData ? ScoreClass(_complianceScore) : "db-val-empty")">@ComplianceHealthVal</span>
+                <StatusChip Status="@(_complianceHasData ? (_complianceScore >= 80 ? "healthy" : _complianceScore >= 50 ? "warning" : "critical") : "neutral")"
+                            Label="@KpiStatusLabel(_complianceScore, _complianceHasData)" />
+            </div>
+
+            <div class="db-health-card">
+                <span class="db-health-label">QA</span>
+                <span class="db-health-value @(_qaHasData ? ScoreClass(_qaScore) : "db-val-empty")">@QaHealthVal</span>
+                <StatusChip Status="@(_qaHasData ? (_qaScore >= 80 ? "healthy" : _qaScore >= 50 ? "warning" : "critical") : "neutral")"
+                            Label="@KpiStatusLabel(_qaScore, _qaHasData)" />
+            </div>
+
+            <div class="db-health-card">
+                <span class="db-health-label">Delivery</span>
+                <span class="db-health-value @(_deliveryHasData ? ScoreClass(_deliveryScore) : "db-val-empty")">@DeliveryHealthVal</span>
+                <StatusChip Status="@(_deliveryHasData ? (_deliveryScore >= 80 ? "healthy" : _deliveryScore >= 50 ? "warning" : "critical") : "neutral")"
+                            Label="@KpiStatusLabel(_deliveryScore, _deliveryHasData)" />
+            </div>
+
+            @if (_perfReport?.ReadinessReport is { HasData: true } perfHealth)
+            {
+                <div class="db-health-card">
+                    <span class="db-health-label">Performance</span>
+                    <span class="db-health-value @ScoreClass(perfHealth.OverallScore)">@perfHealth.OverallScore</span>
+                    <StatusChip Status="@(perfHealth.OverallState == PerformanceReadinessState.Ready ? "healthy" : perfHealth.OverallState == PerformanceReadinessState.MostlyReady ? "warning" : "critical")"
+                                Label="@ReadinessStateLabel(perfHealth.OverallState)" />
+                </div>
+            }
+            else
+            {
+                <div class="db-health-card">
+                    <span class="db-health-label">Performance</span>
+                    <span class="db-health-value db-val-empty">—</span>
+                    <StatusChip Status="neutral" Label="Not Run" />
+                </div>
+            }
+
+        </div>
+    </section>
+
     @* ── Governance Status ─────────────────────────────────────────────────── *@
     <section class="db-section">
         <SectionHeader Title="Governance Status" Description="Loaded · Reviewed · Analyzed" />

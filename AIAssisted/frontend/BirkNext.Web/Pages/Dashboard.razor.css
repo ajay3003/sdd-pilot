@@ -418,25 +418,40 @@
 .db-count-warn { background: var(--clr-warning-bg); color: var(--clr-warning); }
 .db-count-poor { background: var(--clr-danger-bg);  color: var(--clr-danger); }
 
-/* ══ 7 · Project Health Bars ════════════════════════════════════════════════ */
+/* ══ Project Health Summary cards ════════════════════════════════════════════ */
 
-.db-health-bars {
+.db-health-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+}
+
+@media (max-width: 960px) { .db-health-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .db-health-grid { grid-template-columns: 1fr; } }
+
+.db-health-card {
     background: var(--clr-surface-white);
     border: 1px solid var(--clr-border);
     border-radius: var(--radius-md);
-    padding: 0.875rem 1.25rem;
+    padding: 0.875rem 1rem;
     display: flex;
     flex-direction: column;
-    gap: 0;
+    gap: 0.4rem;
 }
 
-/* Prevent value labels from wrapping inside the shared health-bar-row grid */
-.db-health-bars ::deep .health-bar-row {
-    grid-template-columns: 120px 1fr auto;
+.db-health-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--clr-text-subtle);
 }
 
-.db-health-bars ::deep .health-bar-value {
-    white-space: nowrap;
+.db-health-value {
+    font-size: 1.45rem;
+    font-weight: 800;
+    font-family: monospace;
+    line-height: 1;
 }
 
 /* ══ 8 · Recent Activity Timeline ══════════════════════════════════════════ */
