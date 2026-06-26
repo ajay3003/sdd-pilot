@@ -83,14 +83,14 @@ else if (_settings is not null)
         @if (_configHealthIssueCount > 0)
         {
             <span class="ss-status-pill ss-status-pill-warn">
-                <span class="ss-status-label">Health</span>
+                <span class="ss-status-label">Config Health</span>
                 <span class="ss-status-value">@_configHealthIssueCount issue@(_configHealthIssueCount != 1 ? "s" : "")</span>
             </span>
         }
         else
         {
             <span class="ss-status-pill ss-status-pill-ok">
-                <span class="ss-status-label">Health</span>
+                <span class="ss-status-label">Config Health</span>
                 <span class="ss-status-value">All clear</span>
             </span>
         }
@@ -156,7 +156,7 @@ else if (_settings is not null)
                         <MetricCard Value="@OrUnknown(_settings.Application.PackageMode)" Label="Package" />
                         <MetricCard Value="@OrUnknown(_settings.Database.Mode)" Label="Database" />
                         <MetricCard Value="@OrUnknown(_settings.Logging.MinimumLevel)" Label="Logging" />
-                        <MetricCard Value="@OrUnknown(_settings.Application.Version)" Label="Version" />
+                        <MetricCard Value="@SemVerCore(_settings.Application.Version)" Label="Version" />
                         <MetricCard Value="@(_settings.Frontend.StaticHostingMode ? "Blazor WASM" : "Server-side")" Label="Hosting" />
                     </div>
 
@@ -500,7 +500,7 @@ else if (_settings is not null)
                             @if (UnflaggedList.Count > 0)
                             {
                                 <div class="fv-sync-warnings">
-                                    <div class="fv-sync-warn-title">Menu items with no visibility flag:</div>
+                                    <div class="fv-sync-warn-title">Menu items missing configuration:</div>
                                     @foreach (var item in UnflaggedList)
                                     {
                                         <div class="fv-sync-warn-row">
@@ -1006,7 +1006,8 @@ else if (_settings is not null)
                         <div class="danger-zone-action">
                             <div class="danger-zone-description">
                                 <strong>Reset Local Database</strong>
-                                <p>Deletes all application data — scenarios, reviews, traceability links, and code links. The database server keeps running. This cannot be undone.</p>
+                                <p>Deletes all imported artifacts, AI reviews, test scenarios, traceability links, implementation mappings, analysis results, and other application data stored in the local database. The database server continues running and the application will recreate its schema when required. This operation cannot be undone.</p>
+                                <p>This operation affects only the local QA Review Studio database. It does not modify application binaries, source code, configuration files, frontend profiles, or any files outside the database.</p>
                                 @if (!_settings.Maintenance.ResetAllowed && !string.IsNullOrWhiteSpace(_settings.Maintenance.ResetNotAllowedReason))
                                 {
                                     <p class="danger-zone-reason">@_settings.Maintenance.ResetNotAllowedReason</p>
@@ -1032,8 +1033,8 @@ else if (_settings is not null)
         <div class="modal-panel" @onclick:stopPropagation="true">
             <h2 id="modal-title" class="modal-title">Reset Local Database</h2>
             <div class="notification notification-warning">
-                This will permanently delete all application data: scenarios, reviews, traceability links, and code links.
-                The database server will keep running. This action cannot be undone.
+                All local QA Review Studio data will be permanently deleted: imported artifacts, AI reviews, test scenarios, traceability links, implementation mappings, and analysis results.
+                The database server will continue running. This action cannot be undone.
             </div>
             <p class="modal-body-text">Type <strong>RESET</strong> in the box below to confirm.</p>
             <input class="modal-confirm-input"
@@ -1125,7 +1126,8 @@ else if (_settings is not null)
         new(StringComparer.OrdinalIgnoreCase)
         {
             "SpecDrift", "ImpactAnalysis", "ArtifactTraceability", "ConstitutionCompliance",
-            "BlazorWasmSecurityReview", "QaAuditor", "DeliveryReadiness", "ImplementationReview", "ImplementationTraceability"
+            "BlazorWasmSecurityReview", "BlazorWasmPerformanceReview", "QaAuditor", "DeliveryReadiness",
+            "ImplementationReview", "ImplementationTraceability"
         };
 
     private static readonly HashSet<string> AiReviewKeys =
@@ -1137,30 +1139,53 @@ else if (_settings is not null)
     private static readonly HashSet<string> AdvancedOptionalKeys =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "CodeTraceability", "EnableArchitectureView",
-            "EnableExtractionReview", "LegacyTraceabilityNavigationEnabled"
+            "LegacyTraceabilityNavigationEnabled", "TraceabilityCoverage",
+            "TraceabilitySuggestions", "CodeTraceability",
+            "EnableArchitectureView", "EnableExtractionReview"
         };
 
-    // All known menu items with their flag keys (used for Menu Synchronization check)
+    // All known menu items with their flag keys (used for Menu Synchronization check).
+    // Platform items (locked, always-on) are included so the total count matches the sidebar.
     private static readonly (string Label, string Key)[] MenuItemRegistry =
     [
+        // Getting Started (Platform — always on)
+        ("Recommended Workflow",    "RecommendedWorkflow"),
+        ("User Guide",              "UserGuide"),
+
+        // Review
+        ("Dashboard",               "Dashboard"),
         ("Specification Review",    "SpecificationReview"),
         ("Constitution Explorer",   "ConstitutionExplorer"),
         ("Plan Explorer",           "PlanExplorer"),
         ("Task Explorer",           "TaskExplorer"),
+
+        // Library
         ("QA Artifact Library",     "QaArtifactLibrary"),
         ("Create Test Scenario",    "CreateTestScenario"),
+
+        // Traceability (legacy — shown only when LegacyTraceabilityNavigationEnabled)
+        ("Traceability & Coverage", "TraceabilityCoverage"),
+        ("Traceability Suggestions","TraceabilitySuggestions"),
+        ("Code Traceability",       "CodeTraceability"),
+
+        // Analysis
         ("Spec Drift",              "SpecDrift"),
         ("Impact Analysis",         "ImpactAnalysis"),
         ("Artifact Traceability",   "ArtifactTraceability"),
         ("Constitution Compliance", "ConstitutionCompliance"),
+        ("WASM Security Review",    "BlazorWasmSecurityReview"),
+        ("WASM Performance Review", "BlazorWasmPerformanceReview"),
         ("QA Auditor",              "QaAuditor"),
         ("Delivery Readiness",      "DeliveryReadiness"),
-        ("Implementation Review",        "ImplementationReview"),
-        ("Implementation Traceability",  "ImplementationTraceability"),
-        ("WASM Security Review",         "BlazorWasmSecurityReview"),
-        ("AI Change Review",             "AiChangeReview"),
+        ("Implementation Review",   "ImplementationReview"),
+        ("Implementation Traceability", "ImplementationTraceability"),
+
+        // AI Review
+        ("AI Change Review",        "AiChangeReview"),
         ("QA Readiness",            "QaReadiness"),
+
+        // Admin (Platform — always on)
+        ("System Settings",         "AdminSystemSettings"),
     ];
 
     private IEnumerable<FeatureEntryDto> AllEditableFeatures =>
@@ -1180,7 +1205,9 @@ else if (_settings is not null)
     private IEnumerable<(string Label, string Key)> UnflaggedMenuItems =>
         MenuItemRegistry.Where(item =>
             !AllEditableFeatures.Any(e =>
-                string.Equals(e.Key, item.Key, StringComparison.OrdinalIgnoreCase)));
+                string.Equals(e.Key, item.Key, StringComparison.OrdinalIgnoreCase)) &&
+            !(_editableSettings?.FeatureVisibility.Platform.Any(e =>
+                string.Equals(e.Key, item.Key, StringComparison.OrdinalIgnoreCase)) ?? false));
 
     // Count summary properties for the template
     private int ReviewEnabled   => EnabledCount(ReviewSectionKeys);
@@ -1348,6 +1375,13 @@ else if (_settings is not null)
 
     private static string OrUnknown(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "Not configured" : value;
+
+    private static string SemVerCore(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version)) return "—";
+        var idx = version.IndexOfAny(['+', '-']);
+        return idx > 0 ? version[..idx] : version;
+    }
 
     private async Task CopyAsync(string text)
     {

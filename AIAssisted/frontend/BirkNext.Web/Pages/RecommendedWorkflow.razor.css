@@ -6,40 +6,6 @@
     margin: 0 auto;
 }
 
-/* ── Hero ────────────────────────────────────────────────────────────────── */
-
-.rw-hero {
-    text-align: center;
-    padding: 2.5rem 1rem 2rem;
-    border-bottom: 1px solid var(--clr-border);
-    margin-bottom: 2rem;
-}
-
-.rw-hero-eyebrow {
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: var(--clr-primary);
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    margin-bottom: 0.5rem;
-}
-
-.rw-hero-title {
-    font-size: 2rem;
-    font-weight: 800;
-    color: var(--clr-text-heading);
-    margin: 0 0 0.65rem;
-    letter-spacing: -0.02em;
-}
-
-.rw-hero-sub {
-    font-size: 0.95rem;
-    color: var(--clr-text-subtle);
-    max-width: 600px;
-    margin: 0 auto;
-    line-height: 1.65;
-}
-
 /* ── Phase list ──────────────────────────────────────────────────────────── */
 
 .rw-phases {
@@ -169,7 +135,7 @@
     line-height: 1.6;
 }
 
-/* ── CTA button ──────────────────────────────────────────────────────────── */
+/* ── CTA buttons ─────────────────────────────────────────────────────────── */
 
 .rw-cta {
     display: inline-block;
@@ -188,6 +154,16 @@
     opacity: 0.88;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
     color: #fff;
+}
+
+.rw-cta-secondary {
+    background: color-mix(in srgb, var(--rw-phase-color) 12%, transparent);
+    color: var(--rw-phase-color);
+    border: 1.5px solid var(--rw-phase-color);
+}
+
+.rw-cta-secondary:hover {
+    color: var(--rw-phase-color);
 }
 
 /* ── Inline links within phase content ──────────────────────────────────── */

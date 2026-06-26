@@ -75,7 +75,7 @@
             </button>
         }
     </div>
-    <button class="btn-secondary fa-btn-create" @onclick="OpenCreateDialog">+ Create Profile</button>
+    <SecondaryButton OnClick="OpenCreateDialog" Class="fa-btn-create">+ Create Profile</SecondaryButton>
 </div>
 
 @* ── Profile detail ───────────────────────────────────────────────────────── *@
@@ -90,27 +90,27 @@
                 <span class="fa-detail-name">@profile.Name</span>
                 @if (profile.Id == FaSettings.Settings.ActiveProfileId)
                 {
-                    <span class="fa-active-badge fa-active-badge-lg">Active Profile</span>
+                    <span class="fa-active-badge fa-active-badge-lg">Active</span>
                 }
             </div>
             <div class="fa-detail-header-actions">
                 @if (_isEditMode)
                 {
-                    <button class="btn-secondary" @onclick="CancelEdit" disabled="@_isSaving">Cancel</button>
-                    <button class="btn-primary"   @onclick="SaveProfileAsync" disabled="@_isSaving">
+                    <SecondaryButton OnClick="CancelEdit" Disabled="@_isSaving">Cancel</SecondaryButton>
+                    <PrimaryButton OnClick="SaveProfileAsync" Disabled="@_isSaving">
                         @(_isSaving ? "Saving…" : "Save Profile")
-                    </button>
+                    </PrimaryButton>
                 }
                 else
                 {
                     @if (profile.Id != FaSettings.Settings.ActiveProfileId)
                     {
-                        <button class="btn-secondary" @onclick="SetActiveProfileAsync">Set as Active</button>
+                        <SecondaryButton OnClick="SetActiveProfileAsync">Set as Active</SecondaryButton>
                     }
-                    <button class="btn-secondary" @onclick="DuplicateProfileAsync">Duplicate</button>
-                    <button class="btn-secondary" @onclick="EnterEditMode">Edit Profile</button>
-                    <button class="btn-danger-outline" @onclick="() => _showDeleteConfirm = true"
-                            disabled="@(FaSettings.Settings.Profiles.Count <= 1)">Delete</button>
+                    <SecondaryButton OnClick="DuplicateProfileAsync">Duplicate</SecondaryButton>
+                    <SecondaryButton OnClick="EnterEditMode">Edit Profile</SecondaryButton>
+                    <DangerButton OnClick="@(() => _showDeleteConfirm = true)"
+                                  Disabled="@(FaSettings.Settings.Profiles.Count <= 1)">Delete</DangerButton>
                 }
             </div>
         </div>
@@ -165,8 +165,8 @@
                     <dl class="fa-detail-list">
                         <div class="fa-dl-row"><dt>Profile Name</dt><dd>@profile.Name</dd></div>
                         <div class="fa-dl-row"><dt>Environment Type</dt><dd>@profile.EnvironmentType</dd></div>
-                        <div class="fa-dl-row"><dt>Description</dt><dd>@(profile.Description ?? "—")</dd></div>
-                        <div class="fa-dl-row"><dt>Notes</dt><dd>@(profile.Notes ?? "—")</dd></div>
+                        <div class="fa-dl-row"><dt>Description</dt><dd>@(profile.Description ?? "No description")</dd></div>
+                        <div class="fa-dl-row"><dt>Notes</dt><dd>@(profile.Notes ?? "No notes")</dd></div>
                     </dl>
                 }
             }
@@ -425,8 +425,8 @@
                         </div>
                     </div>
                     <div class="fa-reset-row">
-                        <button class="btn-secondary fa-btn-sm" @onclick="RestoreDefaultThresholdsAsync">Set to Default</button>
-                        <button class="btn-secondary fa-btn-sm" @onclick="RestoreStrictThresholdsAsync">Set to Strict Defaults</button>
+                        <SecondaryButton OnClick="RestoreDefaultThresholdsAsync" Class="fa-btn-sm">Set to Default</SecondaryButton>
+                        <SecondaryButton OnClick="RestoreStrictThresholdsAsync" Class="fa-btn-sm">Set to Strict Defaults</SecondaryButton>
                     </div>
                 }
             }
@@ -491,7 +491,7 @@
                         <div class="fa-threshold-display-row"><span>CLS Poor</span><strong>@cwv.ClsPoor</strong></div>
                     </div>
                     <div class="fa-reset-row">
-                        <button class="btn-secondary fa-btn-sm" @onclick="RestoreCoreWebVitalsAsync">Restore Default Core Web Vitals</button>
+                        <SecondaryButton OnClick="RestoreCoreWebVitalsAsync" Class="fa-btn-sm">Restore Default Core Web Vitals</SecondaryButton>
                     </div>
                 }
             }
@@ -571,9 +571,9 @@
                         <div class="fa-dl-row"><dt>Expected Security Headers</dt><dd>@HostList(sec.ExpectedSecurityHeaders)</dd></div>
                     </dl>
                     <div class="fa-reset-row">
-                        <button class="btn-secondary fa-btn-sm" @onclick="RestoreSecurityExpectationsAsync">Restore Default Security Expectations</button>
-                        <button class="btn-secondary fa-btn-sm" @onclick="RestoreSecurityHostsAsync">Restore Default Allowed Hosts</button>
-                        <button class="btn-secondary fa-btn-sm" @onclick="RestoreSecurityHeadersAsync">Restore Default Expected Headers</button>
+                        <SecondaryButton OnClick="RestoreSecurityExpectationsAsync" Class="fa-btn-sm">Restore Default Security Expectations</SecondaryButton>
+                        <SecondaryButton OnClick="RestoreSecurityHostsAsync" Class="fa-btn-sm">Restore Default Allowed Hosts</SecondaryButton>
+                        <SecondaryButton OnClick="RestoreSecurityHeadersAsync" Class="fa-btn-sm">Restore Default Expected Headers</SecondaryButton>
                     </div>
                 }
             }
@@ -615,9 +615,9 @@
                 @if (!_isEditMode)
                 {
                     <div class="fa-reset-row">
-                        <button class="btn-secondary fa-btn-sm" @onclick="RestoreFeatureTogglesAsync">Restore Default Feature Toggles</button>
-                        <button class="btn-secondary fa-btn-sm" @onclick="EnableCoreOnlyAsync">Enable Core Features</button>
-                        <button class="btn-secondary fa-btn-sm" @onclick="DisableFutureFeaturesAsync">Disable Future Features</button>
+                        <SecondaryButton OnClick="RestoreFeatureTogglesAsync" Class="fa-btn-sm">Restore Default Feature Toggles</SecondaryButton>
+                        <SecondaryButton OnClick="EnableCoreOnlyAsync" Class="fa-btn-sm">Enable Core Features</SecondaryButton>
+                        <SecondaryButton OnClick="DisableFutureFeaturesAsync" Class="fa-btn-sm">Disable Future Features</SecondaryButton>
                     </div>
                 }
             }
@@ -694,8 +694,8 @@
         @if (!_isEditMode)
         {
             <div class="fa-profile-reset-zone">
-                <span class="fa-profile-reset-label">Reset entire profile to defaults (keeps Name, Type, URL, Notes):</span>
-                <button class="btn-danger-outline fa-btn-sm" @onclick="() => _showResetConfirm = true">Reset Profile</button>
+                <span class="fa-profile-reset-label">Reset entire profile to defaults — keeps Name, Environment Type, Target URL, and Notes.</span>
+                <SecondaryButton OnClick="@(() => _showResetConfirm = true)" Class="fa-btn-sm">Reset Profile</SecondaryButton>
             </div>
         }
 
@@ -730,10 +730,9 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 </div>
             </div>
             <div class="modal-actions">
-                <button class="btn-secondary" @onclick="() => _showCreateDialog = false">Cancel</button>
-                <button class="btn-primary"
-                        disabled="@string.IsNullOrWhiteSpace(_newProfileName)"
-                        @onclick="CreateProfileAsync">Create Profile</button>
+                <SecondaryButton OnClick="@(() => _showCreateDialog = false)">Cancel</SecondaryButton>
+                <PrimaryButton OnClick="CreateProfileAsync"
+                               Disabled="@string.IsNullOrWhiteSpace(_newProfileName)">Create Profile</PrimaryButton>
             </div>
         </div>
     </div>
@@ -749,10 +748,10 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 This will permanently delete the profile <strong>@SelectedProfile?.Name</strong> and all its settings.
             </div>
             <div class="modal-actions">
-                <button class="btn-secondary" @onclick="() => _showDeleteConfirm = false" disabled="@_isDeleting">Cancel</button>
-                <button class="btn-danger" @onclick="ExecuteDeleteAsync" disabled="@_isDeleting">
+                <SecondaryButton OnClick="@(() => _showDeleteConfirm = false)" Disabled="@_isDeleting">Cancel</SecondaryButton>
+                <DangerButton OnClick="ExecuteDeleteAsync" Disabled="@_isDeleting">
                     @(_isDeleting ? "Deleting…" : "Delete Profile")
-                </button>
+                </DangerButton>
             </div>
         </div>
     </div>
@@ -769,10 +768,10 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 Profile Name, Environment Type, Target URL, and Notes are kept.
             </div>
             <div class="modal-actions">
-                <button class="btn-secondary" @onclick="() => _showResetConfirm = false" disabled="@_isResetting">Cancel</button>
-                <button class="btn-danger" @onclick="ResetProfileAsync" disabled="@_isResetting">
+                <SecondaryButton OnClick="@(() => _showResetConfirm = false)" Disabled="@_isResetting">Cancel</SecondaryButton>
+                <DangerButton OnClick="ResetProfileAsync" Disabled="@_isResetting">
                     @(_isResetting ? "Resetting…" : "Reset Profile")
-                </button>
+                </DangerButton>
             </div>
         </div>
     </div>

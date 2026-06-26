@@ -4,117 +4,6 @@
     margin-top: 1.75rem;
 }
 
-.db-section-header {
-    display: flex;
-    align-items: baseline;
-    gap: 0.75rem;
-    margin-bottom: 0.875rem;
-    flex-wrap: wrap;
-}
-
-.db-section-title {
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: var(--clr-text-muted);
-    margin: 0;
-}
-
-.db-section-hint {
-    font-size: 0.73rem;
-    color: var(--clr-text-placeholder);
-    font-style: italic;
-}
-
-/* ══ 1 · Executive Header ════════════════════════════════════════════════════ */
-
-.db-exec-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-    background: var(--clr-surface-white);
-    border: 1px solid var(--clr-border);
-    border-radius: var(--radius-lg);
-    padding: 1.25rem 1.5rem;
-    margin-bottom: 1.25rem;
-}
-
-.db-exec-header-left {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.db-exec-title {
-    margin: 0;
-    font-size: 1.3rem;
-    font-weight: 800;
-    color: var(--clr-text-heading);
-    line-height: 1.2;
-}
-
-.db-exec-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-}
-
-.db-exec-chip {
-    display: inline-block;
-    font-size: 0.72rem;
-    font-weight: 600;
-    padding: 0.15rem 0.55rem;
-    border-radius: var(--radius-pill);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.db-exec-chip-phase   { background: var(--clr-surface-selected); color: var(--clr-primary); border: 1px solid var(--clr-primary-ring); }
-.db-exec-chip-good    { background: var(--clr-success-bg); color: var(--clr-success); border: 1px solid var(--clr-success-border); }
-.db-exec-chip-warn    { background: var(--clr-warning-bg); color: var(--clr-warning); border: 1px solid var(--clr-warning-border); }
-.db-exec-chip-poor    { background: var(--clr-danger-bg); color: var(--clr-danger); border: 1px solid var(--clr-danger-border); }
-.db-exec-chip-neutral { background: var(--clr-surface); color: var(--clr-text-muted); border: 1px solid var(--clr-border); }
-
-.db-exec-header-right {
-    flex-shrink: 0;
-}
-
-.db-exec-score-ring {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    border: 3px solid var(--clr-border);
-    gap: 0;
-}
-
-.db-exec-score-ring.db-health-good { border-color: var(--clr-success); }
-.db-exec-score-ring.db-health-warn { border-color: #d97706; }
-.db-exec-score-ring.db-health-poor { border-color: var(--clr-danger); }
-
-.db-exec-score-val {
-    font-size: 1.55rem;
-    font-weight: 800;
-    font-family: monospace;
-    line-height: 1;
-    color: var(--clr-text-heading);
-}
-
-.db-exec-score-ring.db-health-good .db-exec-score-val { color: var(--clr-success); }
-.db-exec-score-ring.db-health-warn .db-exec-score-val { color: #d97706; }
-.db-exec-score-ring.db-health-poor .db-exec-score-val { color: var(--clr-danger); }
-.db-exec-score-ring.db-health-empty .db-exec-score-val { color: var(--clr-text-muted); }
-
-.db-exec-score-sub {
-    font-size: 0.65rem;
-    color: var(--clr-text-subtle);
-}
 
 /* ══ 2 · KPI Strip ═══════════════════════════════════════════════════════════ */
 
@@ -133,49 +22,6 @@
     .db-kpi-strip { grid-template-columns: repeat(2, 1fr); }
 }
 
-.db-kpi-card {
-    background: var(--clr-surface-white);
-    border: 1px solid var(--clr-border);
-    border-radius: var(--radius-md);
-    padding: 0.875rem 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.db-kpi-label {
-    font-size: 0.68rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--clr-text-subtle);
-}
-
-.db-kpi-value {
-    font-size: 1.45rem;
-    font-weight: 800;
-    font-family: monospace;
-    line-height: 1;
-    color: var(--clr-text-heading);
-}
-
-.db-kpi-status {
-    display: inline-block;
-    margin-top: 0.2rem;
-    font-size: 0.68rem;
-    font-weight: 700;
-    padding: 0.1rem 0.45rem;
-    border-radius: var(--radius-pill);
-    width: fit-content;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-.db-kpi-findings {
-    font-size: 0.7rem;
-    color: var(--clr-text-subtle);
-    margin-top: 0.15rem;
-}
 
 /* ══ Status pills (shared across KPI, analysis cards, readiness) ════════════ */
 
@@ -183,8 +29,6 @@
 .db-status-warning  { background: var(--clr-warning-bg);   color: var(--clr-warning); border: 1px solid var(--clr-warning-border); }
 .db-status-critical { background: var(--clr-danger-bg);    color: var(--clr-danger);  border: 1px solid var(--clr-danger-border); }
 .db-status-notrun   { background: var(--clr-surface);      color: var(--clr-text-muted); border: 1px solid var(--clr-border); }
-.db-status-ready    { background: var(--clr-success-bg);   color: var(--clr-success); border: 1px solid var(--clr-success-border); }
-.db-status-blocked  { background: var(--clr-danger-bg);    color: var(--clr-danger);  border: 1px solid var(--clr-danger-border); }
 
 /* ══ Scalar value colors ════════════════════════════════════════════════════ */
 
@@ -222,7 +66,7 @@
 .db-artifact-tasks         { border-left-color: #f97316; }
 
 .db-artifact-loaded {
-    background: color-mix(in srgb, var(--clr-success-bg-light) 60%, white);
+    background: color-mix(in srgb, #dbeafe 20%, white);
 }
 
 .db-artifact-icon {
@@ -314,6 +158,16 @@
     gap: 0;
 }
 
+/* Prevent status labels ("Not Run", "Critical", "Partial") from wrapping inside
+   the narrow shared health-bar-row grid. Value column is widened to auto. */
+.db-health-bars ::deep .health-bar-row {
+    grid-template-columns: 120px 1fr auto;
+}
+
+.db-health-bars ::deep .health-bar-value {
+    white-space: nowrap;
+}
+
 .db-health-bar-row {
     display: grid;
     grid-template-columns: 100px 1fr 50px 80px;
@@ -381,37 +235,6 @@
 .db-health-chip-sm.db-health-poor  { background: var(--clr-danger-bg); color: var(--clr-danger); }
 .db-health-chip-sm.db-health-empty { background: var(--clr-surface); color: var(--clr-text-muted); border: 1px solid var(--clr-border); }
 
-/* Legacy health strip chips (kept for backward compat if referenced elsewhere) */
-
-.db-health-strip {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 0.5rem;
-}
-
-.db-health-chip {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.2rem;
-    padding: 0.625rem 0.5rem;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--clr-border);
-    background: var(--clr-surface-white);
-    text-align: center;
-}
-
-.db-health-value { font-size: 1.1rem; font-weight: 800; line-height: 1; }
-.db-health-label { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--clr-text-muted); }
-
-.db-health-good  { border-color: var(--clr-success-border); }
-.db-health-good  .db-health-value { color: var(--clr-success); }
-.db-health-warn  { border-color: var(--clr-warning-border); }
-.db-health-warn  .db-health-value { color: #d97706; }
-.db-health-poor  { border-color: var(--clr-danger-border); }
-.db-health-poor  .db-health-value { color: var(--clr-danger); }
-.db-health-empty .db-health-value { color: var(--clr-text-placeholder); }
 
 /* ══ 5 · Analysis Summary Grid ══════════════════════════════════════════════ */
 
@@ -587,70 +410,6 @@
     text-align: center;
 }
 
-/* ══ 7 · Top Risks ══════════════════════════════════════════════════════════ */
-
-.db-risk-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-}
-
-.db-risk-card {
-    background: var(--clr-surface-white);
-    border: 1px solid var(--clr-border);
-    border-left: 4px solid var(--clr-border);
-    border-radius: var(--radius-md);
-    padding: 0.875rem 1.125rem;
-}
-
-.db-risk-card.db-risk-critical { border-left-color: var(--clr-danger); }
-.db-risk-card.db-risk-high     { border-left-color: #f97316; }
-.db-risk-card.db-risk-medium   { border-left-color: #d97706; }
-.db-risk-card.db-risk-low      { border-left-color: var(--clr-success); }
-
-.db-risk-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.35rem;
-}
-
-.db-risk-sev {
-    display: inline-block;
-    font-size: 0.66rem;
-    font-weight: 700;
-    padding: 0.1rem 0.45rem;
-    border-radius: var(--radius-pill);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-}
-
-.db-risk-sev-critical { background: var(--clr-danger-bg);  color: var(--clr-danger);  border: 1px solid var(--clr-danger-border); }
-.db-risk-sev-high     { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
-.db-risk-sev-medium   { background: var(--clr-warning-bg); color: var(--clr-warning); border: 1px solid var(--clr-warning-border); }
-.db-risk-sev-low      { background: var(--clr-success-bg); color: var(--clr-success); border: 1px solid var(--clr-success-border); }
-
-.db-risk-cat {
-    font-size: 0.7rem;
-    color: var(--clr-text-subtle);
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-.db-risk-title {
-    font-size: 0.88rem;
-    font-weight: 600;
-    color: var(--clr-text-heading);
-    margin-bottom: 0.25rem;
-}
-
-.db-risk-detail {
-    font-size: 0.8rem;
-    color: var(--clr-text-subtle);
-    line-height: 1.5;
-}
 
 /* ══ 8 · Top Recommendations ════════════════════════════════════════════════ */
 
