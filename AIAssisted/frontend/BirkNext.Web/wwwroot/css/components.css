@@ -1055,3 +1055,67 @@
     padding: 4px 8px;
     color: var(--text-primary);
 }
+
+
+/* ======================================================
+   MODAL
+   Overlay dialog used by SystemSettings and FrontendAnalysisSettings.
+   ====================================================== */
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+}
+
+.modal-panel {
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-lg);
+    padding: 1.75rem 2rem;
+    max-width: 480px;
+    width: 100%;
+    box-shadow: 0 16px 48px rgba(15, 23, 42, 0.18);
+}
+
+.modal-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--clr-text-heading);
+    margin-bottom: 1rem;
+}
+
+.modal-body-text {
+    font-size: 0.9rem;
+    color: var(--clr-text-body);
+    margin: 0.875rem 0 0.5rem;
+}
+
+.modal-confirm-input {
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.875rem;
+    border: 1px solid var(--clr-border-input);
+    border-radius: var(--radius-md);
+    margin-bottom: 1.25rem;
+    box-sizing: border-box;
+    color: var(--clr-text-body);
+    background: var(--clr-surface-white);
+}
+
+.modal-confirm-input:focus {
+    outline: none;
+    border-color: var(--clr-danger);
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);
+}
+
+.modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+}

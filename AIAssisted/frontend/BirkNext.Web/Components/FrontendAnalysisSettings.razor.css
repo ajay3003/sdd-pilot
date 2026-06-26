@@ -243,6 +243,11 @@
     cursor: pointer;
 }
 
+.wsr-required {
+    color: var(--clr-danger);
+    font-weight: 600;
+}
+
 
 /* ── Detail list (read-only) ─────────────────────────────────────────────────── */
 
