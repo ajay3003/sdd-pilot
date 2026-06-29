@@ -40,6 +40,17 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
 }
 
+/* Optional phases are visually softer */
+.rw-phase-optional {
+    border-left-style: dashed;
+    opacity: 0.92;
+}
+
+/* The central Quality Review phase gets a subtle emphasis ring */
+.rw-phase-central {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--rw-phase-color, #be185d) 18%, transparent);
+}
+
 /* ── Phase header (number + titles) ─────────────────────────────────────── */
 
 .rw-phase-header {
@@ -95,11 +106,22 @@
 .rw-goal {
     font-size: 0.875rem;
     color: var(--clr-text-body);
-    margin: 0 0 1rem;
+    margin: 0 0 0.625rem;
     line-height: 1.55;
 }
 
-/* ── Two-column layout for actions / outcome ─────────────────────────────── */
+.rw-rationale {
+    font-size: 0.825rem;
+    color: var(--clr-text-muted);
+    margin: 0 0 1rem;
+    line-height: 1.5;
+    padding: 0.5rem 0.75rem;
+    background: color-mix(in srgb, var(--rw-phase-color, #2563eb) 6%, transparent);
+    border-radius: var(--radius-sm, 4px);
+    border-left: 2px solid color-mix(in srgb, var(--rw-phase-color, #2563eb) 30%, transparent);
+}
+
+/* ── Two-column layout for activities / outcome ──────────────────────────── */
 
 .rw-phase-columns {
     display: grid;
@@ -133,6 +155,63 @@
     color: var(--clr-text-muted);
     margin: 0;
     line-height: 1.6;
+}
+
+/* ── Review packs section (inside Quality Review phase) ──────────────────── */
+
+.rw-pack-section {
+    margin-bottom: 1.25rem;
+}
+
+.rw-pack-section-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--clr-text-subtle);
+    margin-bottom: 0.625rem;
+}
+
+.rw-pack-groups {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.625rem;
+    margin-bottom: 0.625rem;
+}
+
+.rw-pack-group {
+    background: var(--clr-surface-raised, var(--clr-surface-white));
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    padding: 0.625rem 0.75rem;
+}
+
+.rw-pack-group-title {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--rw-phase-color, #be185d);
+    margin-bottom: 0.375rem;
+}
+
+.rw-pack-group-items {
+    margin: 0;
+    padding-left: 1rem;
+    list-style: disc;
+}
+
+.rw-pack-group-item {
+    font-size: 0.8rem;
+    color: var(--clr-text-body);
+    line-height: 1.5;
+}
+
+.rw-pack-note {
+    font-size: 0.8rem;
+    color: var(--clr-text-muted);
+    margin: 0;
+    font-style: italic;
 }
 
 /* ── CTA buttons ─────────────────────────────────────────────────────────── */
@@ -178,10 +257,116 @@
     text-decoration: underline;
 }
 
+/* ── Release milestone ───────────────────────────────────────────────────── */
+
+.rw-release {
+    margin-top: 0.375rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+    background: color-mix(in srgb, #15803d 8%, transparent);
+    border: 1px solid color-mix(in srgb, #15803d 25%, transparent);
+    border-left: 4px solid #15803d;
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+}
+
+.rw-release-icon {
+    flex: 0 0 2rem;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: #15803d;
+    color: #fff;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.rw-release-content {
+    flex: 1;
+}
+
+.rw-release-label {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #15803d;
+    margin-bottom: 0.25rem;
+}
+
+.rw-release-desc {
+    font-size: 0.855rem;
+    color: var(--clr-text-muted);
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* ── Developer maintenance block ─────────────────────────────────────────── */
+
+.rw-maintenance {
+    margin-top: 2.5rem;
+    padding: 1rem 1.25rem;
+    background: var(--clr-surface-raised, #f8f9fa);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-lg);
+    border-left: 4px solid var(--clr-border-strong, #94a3b8);
+}
+
+.rw-maintenance-header {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--clr-text-subtle);
+    margin-bottom: 0.5rem;
+}
+
+.rw-maintenance-text {
+    font-size: 0.825rem;
+    color: var(--clr-text-muted);
+    margin: 0 0 0.625rem;
+}
+
+.rw-maintenance-rules {
+    margin: 0 0 0.875rem;
+    padding-left: 1.1rem;
+    font-size: 0.8rem;
+    color: var(--clr-text-muted);
+    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.rw-maintenance-routes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    align-items: center;
+}
+
+.rw-maintenance-routes-label {
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle);
+    font-weight: 600;
+    margin-right: 0.25rem;
+}
+
+.rw-maintenance-routes code {
+    font-size: 0.72rem;
+    padding: 0.1rem 0.4rem;
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: 3px;
+    color: var(--clr-text-body);
+    font-family: var(--font-mono, monospace);
+}
+
 /* ── Footer note ─────────────────────────────────────────────────────────── */
 
 .rw-footer-note {
-    margin-top: 2.5rem;
+    margin-top: 2rem;
     padding-top: 1.25rem;
     border-top: 1px solid var(--clr-border);
     font-size: 0.825rem;
@@ -207,5 +392,9 @@
 
     .rw-phase-header {
         gap: 0.75rem;
+    }
+
+    .rw-pack-groups {
+        grid-template-columns: 1fr;
     }
 }

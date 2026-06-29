@@ -31,11 +31,6 @@ public sealed class UIStructuralIntegrityAnalyzer : IUIStructuralIntegrityAnalyz
             S(UIPageSection.ContentCards,    UISectionStatus.Consistent),
             S(UIPageSection.Recommendations, UISectionStatus.Consistent)),
 
-        P("Constitution Compliance", "/constitution-compliance",
-            S(UIPageSection.PageHeader,      UISectionStatus.Consistent),
-            S(UIPageSection.ContentCards,    UISectionStatus.Consistent),
-            S(UIPageSection.Recommendations, UISectionStatus.Consistent)),
-
         // ── Legacy Contaminated — HYBRID sections detected ────────────────────
         // At least one section mixes shared components with custom div structures.
 
@@ -76,11 +71,11 @@ public sealed class UIStructuralIntegrityAnalyzer : IUIStructuralIntegrityAnalyz
                     "delta-filter-chip, delta-filter-bar",
                     "BadgeList or shared filter chips"))),
 
-        P("Task-to-Spec Alignment", "/task-spec-alignment",
+        P("Implementation Review", "/task-alignment",
             S(UIPageSection.PageHeader,   UISectionStatus.Legacy),
             S(UIPageSection.KpiMetrics,   UISectionStatus.Legacy),
             S(UIPageSection.ContentCards, UISectionStatus.Hybrid,
-                H("Task-to-Spec Alignment", "Content Cards",
+                H("Implementation Review", "Content Cards",
                     "Legacy card div + isolated shared component imports",
                     ".align-card custom divs host imported shared button components without using Card wrapper — hybrid container pattern.",
                     "align-card, align-body",
@@ -127,10 +122,10 @@ public sealed class UIStructuralIntegrityAnalyzer : IUIStructuralIntegrityAnalyz
                     "Card")),
             S(UIPageSection.EmptyStates,  UISectionStatus.PartiallyMigrated)),
 
-        P("AI QA Auditor", "/ai-qa-auditor",
+        P("AI Change Review", "/ai-change-auditor",
             S(UIPageSection.PageHeader, UISectionStatus.Consistent),
             S(UIPageSection.KpiMetrics, UISectionStatus.Hybrid,
-                H("AI QA Auditor", "KPI / Metrics",
+                H("AI Change Review", "KPI / Metrics",
                     "KPI strip hybrid rendering",
                     ".qa-score-banner occupies the KPI zone alongside correctly used PageHeader — banner duplicates score display that MetricCard should own.",
                     "qa-score-banner, qa-kpi-grid",
@@ -138,7 +133,7 @@ public sealed class UIStructuralIntegrityAnalyzer : IUIStructuralIntegrityAnalyz
             S(UIPageSection.ContentCards,    UISectionStatus.PartiallyMigrated),
             S(UIPageSection.Recommendations, UISectionStatus.PartiallyMigrated)),
 
-        P("Compare Reviews", "/spec-drift",
+        P("Compare Reviews", "/compare/reviews",
             S(UIPageSection.PageHeader, UISectionStatus.Hybrid,
                 H("Compare Reviews", "Page Header",
                     "Legacy hero + PageHeader coexistence",
@@ -176,7 +171,7 @@ public sealed class UIStructuralIntegrityAnalyzer : IUIStructuralIntegrityAnalyz
             S(UIPageSection.InputFilterPanels, UISectionStatus.Consistent),
             S(UIPageSection.ContentCards,      UISectionStatus.PartiallyMigrated)),
 
-        P("User Guide", "/getting-started",
+        P("User Guide", "/user-guide",
             S(UIPageSection.PageHeader, UISectionStatus.Hybrid,
                 H("User Guide", "Page Header",
                     "Legacy hero + PageHeader coexistence",
@@ -187,27 +182,26 @@ public sealed class UIStructuralIntegrityAnalyzer : IUIStructuralIntegrityAnalyz
 
         // ── Partially Migrated — PartiallyMigrated sections, no Hybrid ────────
 
-        P("QA Auditor", "/qa-auditor",
-            S(UIPageSection.PageHeader,      UISectionStatus.Consistent),
-            S(UIPageSection.KpiMetrics,      UISectionStatus.PartiallyMigrated),
-            S(UIPageSection.ContentCards,    UISectionStatus.PartiallyMigrated),
-            S(UIPageSection.Recommendations, UISectionStatus.Consistent)),
+        P("Quality Review", "/quality-review",
+            S(UIPageSection.PageHeader,        UISectionStatus.Consistent),
+            S(UIPageSection.InputFilterPanels, UISectionStatus.PartiallyMigrated),
+            S(UIPageSection.ContentCards,      UISectionStatus.PartiallyMigrated)),
+
+        P("Dashboard", "/dashboard",
+            S(UIPageSection.PageHeader,   UISectionStatus.Consistent),
+            S(UIPageSection.KpiMetrics,   UISectionStatus.PartiallyMigrated),
+            S(UIPageSection.ContentCards, UISectionStatus.PartiallyMigrated)),
 
         P("System Settings", "/admin/system-settings",
             S(UIPageSection.PageHeader,      UISectionStatus.Consistent),
             S(UIPageSection.ContentCards,    UISectionStatus.PartiallyMigrated),
             S(UIPageSection.InputFilterPanels, UISectionStatus.PartiallyMigrated)),
 
-        P("AI Change Auditor", "/ai-change-review",
-            S(UIPageSection.PageHeader,   UISectionStatus.PartiallyMigrated),
-            S(UIPageSection.ContentCards, UISectionStatus.PartiallyMigrated),
-            S(UIPageSection.Recommendations, UISectionStatus.PartiallyMigrated)),
-
-        P("Traceability Suggestions", "/traceability-suggestions",
+        P("Traceability Suggestions", "/traceability/suggestions",
             S(UIPageSection.ContentCards,    UISectionStatus.PartiallyMigrated),
             S(UIPageSection.Recommendations, UISectionStatus.PartiallyMigrated)),
 
-        P("Recommended Workflow", "/recommended-workflow",
+        P("Recommended Workflow", "/getting-started",
             S(UIPageSection.PageHeader,   UISectionStatus.PartiallyMigrated),
             S(UIPageSection.ContentCards, UISectionStatus.PartiallyMigrated),
             S(UIPageSection.FooterAuxiliary, UISectionStatus.Consistent)),
@@ -222,7 +216,6 @@ public sealed class UIStructuralIntegrityAnalyzer : IUIStructuralIntegrityAnalyz
         P("Home",                   "/"),
         P("Constitution Explorer",  "/constitution-explorer"),
         P("Plan Explorer",          "/plan-explorer"),
-        P("Delivery Readiness",     "/delivery-readiness"),
         P("Task Explorer",          "/task-explorer"),
     ];
 

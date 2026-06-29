@@ -158,54 +158,66 @@
     <!-- ── Section 4: SDD Workflow ─────────────────────────────────────── -->
     <section id="workflow" class="ug-section">
         <h2 class="ug-section-title">SDD Workflow</h2>
-        <p class="ug-section-lead">The seven-phase governance workflow — from constitution review to quality &amp; readiness sign-off.</p>
+        <p class="ug-section-lead">The recommended nine-step workflow — from specification review to implementation traceability. Core steps are required; Optional steps apply when the relevant artifact or scenario exists.</p>
 
         <div class="ug-core-flow-layout">
             <div class="ug-core-flow">
-                <div class="ug-flow-node ug-flow-primary">1 · Constitution Review</div>
+                <div class="ug-flow-node ug-flow-primary">1 · Specification Review</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-primary">2 · Specification Review</div>
+                <div class="ug-flow-node ug-flow-secondary">2 · Constitution Explorer (Optional)</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-primary">3 · Implementation Planning</div>
+                <div class="ug-flow-node ug-flow-secondary">3 · Plan Explorer (Optional)</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-primary">4 · Traceability &amp; Governance</div>
+                <div class="ug-flow-node ug-flow-secondary">4 · Task Explorer (Optional)</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-primary">5 · Implementation Review</div>
+                <div class="ug-flow-node ug-flow-secondary">5 · QA Artifact Library (Optional)</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-primary">6 · Quality &amp; Readiness</div>
+                <div class="ug-flow-node ug-flow-primary">6 · Quality Review</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-secondary">7 · Artifact Publishing (Optional)</div>
+                <div class="ug-flow-node ug-flow-secondary">7 · AI Change Review (Optional)</div>
+                <div class="ug-flow-conn">↓</div>
+                <div class="ug-flow-node ug-flow-primary">8 · Implementation Review</div>
+                <div class="ug-flow-conn">↓</div>
+                <div class="ug-flow-node ug-flow-primary">9 · Implementation Traceability</div>
             </div>
 
             <div class="ug-flow-branches">
-                <h4 class="ug-branches-title">Phase → Primary Feature</h4>
+                <h4 class="ug-branches-title">Step → Primary Feature</h4>
                 <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Phase 1</span>
-                    <span class="ug-branch-when">Constitution Explorer — review governance rules</span>
-                </div>
-                <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Phase 2</span>
+                    <span class="ug-branch-badge">Step 1</span>
                     <span class="ug-branch-when">Specification Review — extract requirements &amp; AC</span>
                 </div>
                 <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Phase 3</span>
-                    <span class="ug-branch-when">Plan Explorer — review ADRs, phases, gates</span>
+                    <span class="ug-branch-badge">Step 2</span>
+                    <span class="ug-branch-when">Constitution Explorer — review governance rules (Optional)</span>
                 </div>
                 <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Phase 4</span>
-                    <span class="ug-branch-when">Artifact Traceability + Constitution Compliance</span>
+                    <span class="ug-branch-badge">Step 3</span>
+                    <span class="ug-branch-when">Plan Explorer — review ADRs, phases, gates (Optional)</span>
                 </div>
                 <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Phase 5</span>
+                    <span class="ug-branch-badge">Step 4</span>
+                    <span class="ug-branch-when">Task Explorer — review implementation coverage (Optional)</span>
+                </div>
+                <div class="ug-branch-item">
+                    <span class="ug-branch-badge">Step 5</span>
+                    <span class="ug-branch-when">QA Artifact Library — publish &amp; reuse QA assets (Optional)</span>
+                </div>
+                <div class="ug-branch-item">
+                    <span class="ug-branch-badge">Step 6</span>
+                    <span class="ug-branch-when">Quality Review — Quality, Governance, Standards, Readiness packs</span>
+                </div>
+                <div class="ug-branch-item">
+                    <span class="ug-branch-badge">Step 7</span>
+                    <span class="ug-branch-when">AI Change Review — AI-assisted implementation review (Optional)</span>
+                </div>
+                <div class="ug-branch-item">
+                    <span class="ug-branch-badge">Step 8</span>
                     <span class="ug-branch-when">Implementation Review — task-to-spec alignment</span>
                 </div>
                 <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Phase 6</span>
-                    <span class="ug-branch-when">Quality Review — compliance, audit, and readiness packs</span>
-                </div>
-                <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Phase 7</span>
-                    <span class="ug-branch-when">QA Artifact Library — publish &amp; reuse assets (optional)</span>
+                    <span class="ug-branch-badge">Step 9</span>
+                    <span class="ug-branch-when">Implementation Traceability — ADO work items to code evidence chain</span>
                 </div>
             </div>
         </div>
@@ -770,7 +782,7 @@
             "Before reviewing specifications and plans — the constitution defines the governance rules everything else must comply with.",
             ["Architects", "Test Leads", "Product Owners"],
             ["Starting an SDD governance review", "Understanding what rules apply before writing specs or plans", "Identifying mandatory rules that gate downstream approval"],
-            ["Implementation-level analysis — use Artifact Traceability or QA Auditor after loading all artifacts"]),
+            ["Implementation-level analysis — use Artifact Traceability or Quality Review (QA Auditor pack) after loading all artifacts"]),
 
         new("spec-review", "Specification Review", "Review", "review", "/extract",
             "Upload and review a spec.md file; extract and classify candidates. Analysis results include Traceability & Coverage, Flow View, and Spec Explorer.",
@@ -1028,36 +1040,36 @@
 
     private static readonly Workflow[] TypicalWorkflows =
     [
-        new("Full SDD Governance Review",
-            ["Constitution Explorer", "Specification Review", "Plan Explorer", "Artifact Traceability", "Implementation Review", "Quality Review"],
-            "Complete governance workflow from constitution review to delivery sign-off — run Governance, Quality, and Readiness packs in Quality Review for the final gate."),
+        new("Full SDD Review",
+            ["Specification Review", "Constitution Explorer", "Plan Explorer", "Task Explorer", "Quality Review", "Implementation Review", "Implementation Traceability"],
+            "Complete end-to-end workflow — from spec extraction through governance, plan, and task review to the final Quality Review gate and implementation traceability sign-off."),
         new("New Feature Review",
-            ["Specification Review", "Traceability & Coverage", "Plan Explorer", "Artifact Traceability", "Implementation Review", "Quality Review"],
-            "End-to-end quality validation for a new feature — use Quality Review with QA Auditor and QA Readiness packs for the final sign-off."),
+            ["Specification Review", "Plan Explorer", "Quality Review", "Implementation Review"],
+            "Quality validation for a new feature — extract requirements, review the plan, run Quality Review with Quality and Readiness packs, then validate task alignment."),
         new("Existing Project Review",
-            ["Constitution Explorer", "Specification Review", "Artifact Traceability", "Spec Drift", "Quality Review"],
-            "Onboard an existing project — establish governance baseline, assess traceability, identify drift, then run Quality Review to check compliance and readiness."),
+            ["Specification Review", "Constitution Explorer", "Spec Drift", "Quality Review"],
+            "Onboard an existing project — extract the spec, review governance rules, identify drift, then run Quality Review with Governance and Readiness packs."),
         new("Specification Validation",
             ["Specification Review", "Traceability & Coverage", "Flow View", "Spec Explorer"],
             "Deep review of a single specification — extract requirements, assess coverage, and explore story readiness."),
         new("Implementation Validation",
-            ["Plan Explorer", "Implementation Review", "Risk & Testing", "Artifact Traceability", "Quality Review"],
-            "Validate that implementation plans and tasks are correctly aligned to the specification and constitution — use QA Auditor pack in Quality Review."),
+            ["Plan Explorer", "Task Explorer", "Quality Review", "Implementation Review", "Implementation Traceability"],
+            "Validate that plans and tasks are correctly aligned to the specification and traceable to code — use the Quality (QA Auditor) and Readiness packs in Quality Review."),
         new("Release Readiness Assessment",
-            ["Artifact Traceability", "Implementation Review", "Quality Review"],
-            "Pre-release sign-off — run Quality Review with all Governance, Quality, and Readiness packs selected for a comprehensive gate."),
+            ["Quality Review", "Implementation Review", "Implementation Traceability"],
+            "Pre-release sign-off — run Quality Review with Governance, Quality, and Readiness packs, validate task alignment, then confirm ADO traceability."),
         new("Compliance Check",
             ["Constitution Explorer", "Quality Review"],
             "Focused governance review — run Quality Review with the Constitution Compliance (Governance) and QA Auditor (Quality) packs."),
         new("Bug Fix",
-            ["Implementation Review", "Risk & Testing", "Regression Candidates", "Quality Review"],
-            "Fast-path quality check for a targeted bug fix — use Quality Review with QA Readiness pack for a scored readiness assessment."),
+            ["Specification Review", "Implementation Review", "Quality Review"],
+            "Fast-path quality check for a targeted bug fix — review the spec, validate task alignment, then run Quality Review with the QA Readiness (Readiness) pack."),
         new("Requirement Change",
-            ["Spec Drift", "Artifact Traceability", "Impact Analysis", "Implementation Review"],
-            "When a requirement changes — trace from spec delta to implementation impact."),
+            ["Spec Drift", "Impact Analysis", "Implementation Review", "Quality Review"],
+            "When a requirement changes — identify drift, assess impact, validate task alignment, then re-run Quality Review."),
         new("AI Generated Change",
             ["AI Change Review", "Implementation Review", "Quality Review"],
-            "After AI generates implementation — review alignment and coverage, then run Quality Review with QA Auditor and Delivery Readiness packs."),
+            "After AI generates implementation — review alignment with AI Change Review, validate tasks against the spec, then run Quality Review with Quality and Readiness packs."),
     ];
 
     // ── FAQ ───────────────────────────────────────────────────────────────

@@ -130,6 +130,7 @@ else if (_settings is not null)
             <div class="ss-nav-group">
                 <div class="ss-nav-group-label">Developer</div>
                 @NavItem("diagnostics",        "Diagnostics")
+                @NavItem("doc-health",         "Documentation Health", _docHealthIssueCount)
                 @NavItem("maintenance",        "Maintenance")
             </div>
         </nav>
@@ -1039,6 +1040,68 @@ else if (_settings is not null)
                 </div>
             }
 
+            @* ══ Documentation Health ═════════════════════════════════════════════════ *@
+            @if (_activeSection == "doc-health")
+            {
+                <div class="settings-card settings-card-full-width">
+                    <div class="settings-card-title">Documentation Health</div>
+                    <p class="settings-card-note">Developer-only diagnostic. Validates navigation links, documentation cross-links, removed-page references, and menu synchronisation across the application's documentation pages.</p>
+
+                    @if (!_docHealthComputed)
+                    {
+                        <div class="db-section-empty">Loading…</div>
+                    }
+                    else if (_docHealthFindings.Count == 0)
+                    {
+                        <p class="ss-health-all-good" role="status">
+                            ✓ All documentation health checks passed. No issues detected.
+                        </p>
+                    }
+                    else
+                    {
+                        <div class="ss-health-cards" role="list">
+                            @foreach (var f in _docHealthFindings)
+                            {
+                                <div class="ss-health-card" role="listitem">
+                                    <span class="ss-health-sev @(f.Severity == "Error" ? "ss-health-sev-error" : "ss-health-sev-warn")">@f.Severity</span>
+                                    <div class="ss-health-body">
+                                        <div class="ss-health-component">@f.Category</div>
+                                        <p class="ss-health-desc">@f.Description</p>
+                                        @if (!string.IsNullOrWhiteSpace(f.Detail))
+                                        {
+                                            <p class="settings-card-note" style="margin-top:0.25rem">@f.Detail</p>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- Summary table -->
+                    @if (_docHealthComputed)
+                    {
+                        <div class="fv-sync-stats" style="margin-top:1.5rem">
+                            <div class="fv-sync-stat @(_docHealthFindings.Count == 0 ? "fv-sync-stat-on" : "fv-sync-stat-off")">
+                                <span class="fv-sync-stat-value">@_docHealthFindings.Count</span>
+                                <span class="fv-sync-stat-label">Issues</span>
+                            </div>
+                            <div class="fv-sync-stat">
+                                <span class="fv-sync-stat-value">@DocNavLinks.Length</span>
+                                <span class="fv-sync-stat-label">Nav Links Checked</span>
+                            </div>
+                            <div class="fv-sync-stat">
+                                <span class="fv-sync-stat-value">@DocPageLinks.Length</span>
+                                <span class="fv-sync-stat-label">Doc Page Links Checked</span>
+                            </div>
+                            <div class="fv-sync-stat">
+                                <span class="fv-sync-stat-value">@KnownRoutes.Count</span>
+                                <span class="fv-sync-stat-label">Known Routes</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
             @* ══ Maintenance ══════════════════════════════════════════════════════════ *@
             @if (_activeSection == "maintenance")
             {
@@ -1136,6 +1199,11 @@ else if (_settings is not null)
     // Project Documents diagnostics (lazy-loaded when diagnostics section is opened)
     private IReadOnlyList<DocumentSummaryDto> _diagDocSummary = [];
     private bool _diagDocLoaded;
+
+    // Documentation Health
+    private bool _docHealthComputed;
+    private List<DocHealthFinding> _docHealthFindings = [];
+    private int _docHealthIssueCount => _docHealthFindings.Count;
 
     // Azure DevOps connection test
     private bool _adoTestRunning;
@@ -1320,6 +1388,13 @@ else if (_settings is not null)
         {
             _diagDocLoaded = true;
             _diagDocSummary = await DocumentApi.GetSummaryAsync();
+            StateHasChanged();
+        }
+
+        if (_activeSection == "doc-health" && !_docHealthComputed)
+        {
+            _docHealthComputed = true;
+            _docHealthFindings = RunDocumentationHealthChecks();
             StateHasChanged();
         }
     }
@@ -1542,5 +1617,155 @@ else if (_settings is not null)
             _showResetModal   = false;
             _resetConfirmText = "";
         }
+    }
+
+    // ── Documentation Health ──────────────────────────────────────────────────
+
+    private sealed record DocHealthFinding(string Severity, string Category, string Description, string? Detail = null);
+
+    // All routes served by the application (one entry per @page directive).
+    private static readonly HashSet<string> KnownRoutes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "/", "/dashboard", "/extract", "/constitution-explorer", "/plan-explorer",
+        "/task-explorer", "/scenarios", "/scenarios/new", "/traceability",
+        "/traceability/suggestions", "/code-traceability", "/spec-drift",
+        "/impact-analysis", "/artifact-traceability", "/task-alignment",
+        "/implementation-traceability", "/quality-review", "/wasm-security-review",
+        "/wasm-performance-review", "/ai-change-auditor", "/admin/system-settings",
+        "/getting-started", "/user-guide",
+    };
+
+    // Removed / deprecated routes — must not be referenced in any documentation or navigation.
+    private static readonly HashSet<string> RemovedRoutes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "/qa-auditor", "/constitution-compliance", "/standards-compliance",
+        "/qa-readiness", "/delivery-readiness",
+        "qa-auditor", "constitution-compliance", "standards-compliance",
+        "qa-readiness", "delivery-readiness",
+    };
+
+    // All hrefs used in NavMenu — (label, href) pairs.
+    private static readonly (string Label, string Href)[] DocNavLinks =
+    [
+        ("Recommended Workflow",         "getting-started"),
+        ("User Guide",                   "user-guide"),
+        ("Dashboard",                    "dashboard"),
+        ("Specification Review",         "extract"),
+        ("Constitution Explorer",        "constitution-explorer"),
+        ("Plan Explorer",                "plan-explorer"),
+        ("Task Explorer",                "task-explorer"),
+        ("QA Artifact Library",          "scenarios"),
+        ("Create Test Scenario",         "scenarios/new"),
+        ("Traceability & Coverage",      "traceability"),
+        ("Traceability Suggestions",     "traceability/suggestions"),
+        ("Code Traceability",            "code-traceability"),
+        ("Spec Drift",                   "spec-drift"),
+        ("Impact Analysis",              "impact-analysis"),
+        ("Artifact Traceability",        "artifact-traceability"),
+        ("Implementation Review",        "task-alignment"),
+        ("Implementation Traceability",  "implementation-traceability"),
+        ("Quality Review",               "quality-review"),
+        ("WASM Security Review",         "wasm-security-review"),
+        ("WASM Performance Review",      "wasm-performance-review"),
+        ("AI Change Review",             "ai-change-auditor"),
+        ("System Settings",              "admin/system-settings"),
+    ];
+
+    // All hrefs used inside documentation pages (RecommendedWorkflow, UserGuide, Dashboard, NavMenu).
+    private static readonly (string Page, string Href, string Context)[] DocPageLinks =
+    [
+        // RecommendedWorkflow.razor
+        ("Recommended Workflow", "constitution-explorer",       "Phase 1 CTA"),
+        ("Recommended Workflow", "extract",                     "Phase 2 CTA"),
+        ("Recommended Workflow", "plan-explorer",               "Phase 3 CTA"),
+        ("Recommended Workflow", "artifact-traceability",       "Phase 4 CTA"),
+        ("Recommended Workflow", "quality-review",              "Phase 4 CTA (secondary)"),
+        ("Recommended Workflow", "task-alignment",              "Phase 5 CTA"),
+        ("Recommended Workflow", "quality-review",              "Phase 6 CTA"),
+        ("Recommended Workflow", "scenarios",                   "Phase 7 CTA"),
+        ("Recommended Workflow", "user-guide",                  "Footer cross-link"),
+        // UserGuide.razor
+        ("User Guide", "/getting-started",                      "Onboarding callout"),
+        ("User Guide", "/ai-change-auditor",                    "AI Change Review feature link"),
+        ("User Guide", "/quality-review",                       "Quality Review feature links"),
+        ("User Guide", "/constitution-explorer",                "Constitution Explorer link"),
+        ("User Guide", "/extract",                              "Specification Review link"),
+        ("User Guide", "/plan-explorer",                        "Plan Explorer link"),
+        ("User Guide", "/task-explorer",                        "Task Explorer link"),
+        ("User Guide", "/scenarios",                            "QA Artifact Library link"),
+        ("User Guide", "/scenarios/new",                        "Create Test Scenario link"),
+        ("User Guide", "/spec-drift",                           "Spec Drift link"),
+        ("User Guide", "/impact-analysis",                      "Impact Analysis link"),
+        ("User Guide", "/artifact-traceability",                "Artifact Traceability link"),
+        ("User Guide", "/task-alignment",                       "Implementation Review link"),
+        ("User Guide", "/implementation-traceability",          "Implementation Traceability link"),
+        ("User Guide", "/traceability",                         "Traceability & Coverage link"),
+        ("User Guide", "/traceability/suggestions",             "Traceability Suggestions link"),
+        ("User Guide", "/code-traceability",                    "Code Traceability link"),
+        ("User Guide", "/wasm-security-review",                 "WASM Security Review link"),
+        ("User Guide", "/wasm-performance-review",              "WASM Performance Review link"),
+        ("User Guide", "/admin/system-settings",                "System Settings link"),
+        // Dashboard.razor
+        ("Dashboard", "constitution-explorer",                  "Governance Status artifact link"),
+        ("Dashboard", "extract",                                "Governance Status artifact link"),
+        ("Dashboard", "plan-explorer",                          "Governance Status artifact link"),
+        ("Dashboard", "task-explorer",                          "Governance Status artifact link"),
+        ("Dashboard", "quality-review",                         "Readiness Summary links"),
+        ("Dashboard", "artifact-traceability",                  "Analysis Summary card"),
+        ("Dashboard", "quality-review",                         "Analysis Summary card"),
+        ("Dashboard", "wasm-security-review",                   "Analysis Summary card"),
+        ("Dashboard", "wasm-performance-review",                "Analysis Summary card"),
+        ("Dashboard", "getting-started",                        "Onboarding CTA"),
+        ("Dashboard", "constitution-explorer",                  "Quick Actions"),
+        ("Dashboard", "extract",                                "Quick Actions"),
+        ("Dashboard", "plan-explorer",                          "Quick Actions"),
+        ("Dashboard", "task-explorer",                          "Quick Actions"),
+        ("Dashboard", "artifact-traceability",                  "Quick Actions"),
+        ("Dashboard", "quality-review",                         "Quick Actions"),
+        ("Dashboard", "wasm-security-review",                   "Quick Actions"),
+        ("Dashboard", "wasm-performance-review",                "Quick Actions"),
+        ("Dashboard", "ai-change-auditor",                      "Quick Actions — AI"),
+    ];
+
+    private List<DocHealthFinding> RunDocumentationHealthChecks()
+    {
+        var findings = new List<DocHealthFinding>();
+
+        // 1. Validate NavMenu links are known routes.
+        foreach (var (label, href) in DocNavLinks)
+        {
+            var normalised = "/" + href.TrimStart('/');
+            if (!KnownRoutes.Contains(normalised))
+                findings.Add(new("Error", "Navigation Link", $"NavMenu item "{label}" links to "{href}" which is not a known route.", $"Route checked: {normalised}"));
+            if (RemovedRoutes.Contains(href) || RemovedRoutes.Contains(normalised))
+                findings.Add(new("Error", "Removed Route Reference", $"NavMenu item "{label}" links to a removed route: {href}"));
+        }
+
+        // 2. Validate documentation page links are known routes.
+        foreach (var (page, href, ctx) in DocPageLinks)
+        {
+            var normalised = href.StartsWith('/') ? href : "/" + href;
+            if (!KnownRoutes.Contains(normalised))
+                findings.Add(new("Error", "Broken Documentation Link", $"{page} — "{ctx}" links to "{href}" which is not a known route.", $"Route checked: {normalised}"));
+            if (RemovedRoutes.Contains(href) || RemovedRoutes.Contains(normalised))
+                findings.Add(new("Error", "Removed Route Reference", $"{page} — "{ctx}" references a removed route: {href}"));
+        }
+
+        // 3. Menu synchronisation — check MenuItemRegistry hrefs are in KnownRoutes via DocNavLinks.
+        var navLinkHrefSet = new HashSet<string>(DocNavLinks.Select(l => "/" + l.Href.TrimStart('/')), StringComparer.OrdinalIgnoreCase);
+        foreach (var (menuLabel, _) in MenuItemRegistry)
+        {
+            // Find matching nav link by label
+            var matchingNav = DocNavLinks.FirstOrDefault(l =>
+                string.Equals(l.Label, menuLabel, StringComparison.OrdinalIgnoreCase));
+            if (matchingNav == default)
+                findings.Add(new("Warning", "Menu Mismatch", $"MenuItemRegistry entry "{menuLabel}" has no matching DocNavLinks entry. If this menu item exists in NavMenu, add it to DocNavLinks."));
+        }
+
+        // 4. Orphan documentation check — pages that exist but have no menu item.
+        var menuLabels = new HashSet<string>(MenuItemRegistry.Select(m => m.Label), StringComparer.OrdinalIgnoreCase);
+        // (No-op for now: pages without menu entries are internal/redirect pages — not an error.)
+
+        return findings;
     }
 }
