@@ -104,7 +104,7 @@
         </div>
 
         <h3 class="ug-subsection-title">AI Review</h3>
-        <p>AI Review features augment the deterministic analysis layer with AI-powered advisors and readiness summaries.</p>
+        <p>AI Review features augment the deterministic analysis layer with AI-powered advisors.</p>
         <div class="ug-concept-grid">
             <div class="ug-concept-card">
                 <div class="ug-concept-name">AI Change Review</div>
@@ -113,10 +113,10 @@
                 <div class="ug-concept-feature">Feature: <a href="/ai-change-auditor" class="ug-inline-link">AI Change Review</a></div>
             </div>
             <div class="ug-concept-card">
-                <div class="ug-concept-name">QA Readiness</div>
-                <div class="ug-concept-question"><em>Is the feature ready for release?</em></div>
-                <div class="ug-concept-desc">Executive readiness assessment combining all analysis outputs into scored gates. Use at the end of the analysis chain before a release or major milestone.</div>
-                <div class="ug-concept-feature">Feature: <a href="/quality-review" class="ug-inline-link">QA Readiness</a></div>
+                <div class="ug-concept-name">Quality Review</div>
+                <div class="ug-concept-question"><em>Does the artifact set meet the quality bar?</em></div>
+                <div class="ug-concept-desc">Run multiple deterministic review packs simultaneously — compliance, audit, standards, and readiness checks — in a single unified run. Select any combination of packs for each review session.</div>
+                <div class="ug-concept-feature">Feature: <a href="/quality-review" class="ug-inline-link">Quality Review</a></div>
             </div>
         </div>
     </section>
@@ -201,7 +201,7 @@
                 </div>
                 <div class="ug-branch-item">
                     <span class="ug-branch-badge">Phase 6</span>
-                    <span class="ug-branch-when">QA Readiness + QA Auditor — readiness gates</span>
+                    <span class="ug-branch-when">Quality Review — compliance, audit, and readiness packs</span>
                 </div>
                 <div class="ug-branch-item">
                     <span class="ug-branch-badge">Phase 7</span>
@@ -472,32 +472,32 @@
                 </div>
                 <div class="ug-ai-arrow">↓</div>
                 <div class="ug-ai-node ug-ai-node-terminal">
-                    <div class="ug-ai-node-label">Delivery Readiness</div>
-                    <div class="ug-ai-node-desc">Go/no-go gate for Development, Testing, and Release</div>
+                    <div class="ug-ai-node-label">Quality Review</div>
+                    <div class="ug-ai-node-desc">Compliance, audit, and readiness gates in one run</div>
                 </div>
             </div>
             <div class="ug-ai-concepts">
                 <div class="ug-ai-concept">
                     <div class="ug-ai-concept-title">Specification-First Development</div>
-                    <p>Every task and implementation decision traces back to a requirement. QA Review Studio enforces this by surfacing alignment gaps early using Constitution Compliance and Artifact Traceability.</p>
+                    <p>Every task and implementation decision traces back to a requirement. QA Review Studio enforces this by surfacing alignment gaps early using Artifact Traceability and Implementation Review.</p>
                 </div>
                 <div class="ug-ai-concept">
                     <div class="ug-ai-concept-title">Governance</div>
-                    <p>Constitution Explorer and Constitution Compliance ensure the project's governance rules are defined, understood, and verified across all artifacts before development begins.</p>
+                    <p>Constitution Explorer establishes the governance rule set. Quality Review's Constitution Compliance pack verifies that all artifacts comply with those rules before development begins.</p>
                 </div>
                 <div class="ug-ai-concept">
                     <div class="ug-ai-concept-title">Traceability</div>
-                    <p>Artifact Traceability maintains a complete chain from governance rule to implementation task. QA Auditor identifies missing traceability links with deterministic rule-based findings.</p>
+                    <p>Artifact Traceability maintains a complete chain from governance rule to implementation task. Quality Review's QA Auditor pack identifies missing traceability links with deterministic rule-based findings.</p>
                 </div>
                 <div class="ug-ai-concept">
                     <div class="ug-ai-concept-title">Readiness</div>
-                    <p>QA Readiness and Delivery Readiness aggregate all analysis outputs into scored readiness gates — clearing the team to proceed with confidence through Development, Testing, and Release.</p>
+                    <p>Quality Review's QA Readiness and Delivery Readiness packs aggregate all analysis outputs into scored readiness gates — clearing the team to proceed with confidence through Development, Testing, and Release.</p>
                 </div>
             </div>
         </div>
 
         <div class="ug-callout ug-callout-tip">
-            <strong>Tip:</strong> When using AI to generate tasks from a spec, run Implementation Review immediately after to catch any tasks that introduce undocumented behavior. Then run QA Auditor to surface rule-based quality findings across the full artifact set.
+            <strong>Tip:</strong> When using AI to generate tasks from a spec, run Implementation Review immediately after to catch any tasks that introduce undocumented behavior. Then run Quality Review to surface rule-based findings across the full artifact set.
         </div>
     </section>
 
@@ -554,13 +554,9 @@
                     <div class="ug-eco-conn">↓</div>
                     <div class="ug-eco-node">Artifact Traceability</div>
                     <div class="ug-eco-conn">↓</div>
-                    <div class="ug-eco-node">Constitution Compliance</div>
-                    <div class="ug-eco-conn">↓</div>
                     <div class="ug-eco-node">Implementation Review</div>
                     <div class="ug-eco-conn">↓</div>
-                    <div class="ug-eco-node">QA Auditor</div>
-                    <div class="ug-eco-conn">↓</div>
-                    <div class="ug-eco-node ug-eco-terminal">Delivery Readiness</div>
+                    <div class="ug-eco-node ug-eco-terminal">Quality Review</div>
                 </div>
             </div>
             <div class="ug-ecosystem-support">
@@ -579,8 +575,8 @@
                         <div class="ug-support-desc">Reviews AI-generated implementation changes for alignment and quality concerns.</div>
                     </div>
                     <div class="ug-support-item">
-                        <div class="ug-support-name">QA Readiness</div>
-                        <div class="ug-support-desc">AI-assisted executive summary and readiness assessment based on all analysis outputs.</div>
+                        <div class="ug-support-name">Implementation Traceability</div>
+                        <div class="ug-support-desc">Maps Azure DevOps work items to pull requests, commits, and source files — delivery governance evidence chain.</div>
                     </div>
                 </div>
             </div>
@@ -661,7 +657,7 @@
         new("Coverage",
             "The percentage of requirements, tests, or governance rules that are addressed by linked artifacts. Low coverage indicates gaps that need remediation."),
         new("Compliance",
-            "Whether artifacts satisfy the governance rules defined in the constitution. Constitution Compliance performs a rule-by-rule verdict across all four artifacts."),
+            "Whether artifacts satisfy the governance rules defined in the constitution. Quality Review's Constitution Compliance pack performs a rule-by-rule verdict across all four artifacts."),
         new("Governance",
             "The set of rules, policies, and quality standards enforced across the SDD artifact chain, originating from the project constitution."),
         new("Finding",
@@ -673,9 +669,9 @@
         new("Confidence",
             "The likelihood that an AI-generated finding or suggestion is accurate. Expressed as High, Medium, or Low. Low-confidence findings still warrant review."),
         new("Delivery Readiness",
-            "A go/no-go assessment across three delivery gates: Ready for Development, Ready for Testing, and Ready for Release. Each gate produces a pass/fail verdict with blockers."),
+            "A go/no-go assessment across three delivery gates: Ready for Development, Ready for Testing, and Ready for Release. Each gate produces a pass/fail verdict with blockers. Available as a pack in Quality Review."),
         new("QA Score",
-            "A scored assessment of quality across five categories: Specification Quality, Plan Quality, Task Readiness, Traceability, and Compliance. Produced by QA Readiness."),
+            "A scored assessment of quality across five categories: Specification Quality, Plan Quality, Task Readiness, Traceability, and Compliance. Produced by the QA Readiness pack in Quality Review."),
     ];
 
     // ── Core capabilities ─────────────────────────────────────────────────
@@ -704,10 +700,10 @@
 
     private static readonly (string Role, string Desc)[] Audiences =
     [
-        ("Tester", "Use Specification Review, Traceability, QA Auditor, and QA Readiness to plan and execute test coverage."),
-        ("Test Lead", "Orchestrate the full SDD governance workflow, track compliance, and sign off on delivery readiness gates."),
+        ("Tester", "Use Specification Review, Traceability, and Quality Review to plan and execute test coverage."),
+        ("Test Lead", "Orchestrate the full SDD governance workflow, track compliance, and sign off on Quality Review readiness gates."),
         ("Scrum Master", "Monitor delivery quality, spot scope changes in Spec Drift, and track QA health on the Dashboard."),
-        ("Product Owner", "Review spec alignment, verify requirements are covered, and use Delivery Readiness to assess go/no-go."),
+        ("Product Owner", "Review spec alignment, verify requirements are covered, and use Quality Review to assess go/no-go readiness."),
         ("Developer", "Validate implementation plans against the spec using Plan Explorer and Implementation Review before writing code."),
         ("Architect", "Use Constitution Explorer, Artifact Traceability, and Impact Analysis to govern architecture across the delivery chain."),
     ];
@@ -848,32 +844,14 @@
             ["Full-chain traceability check before a release", "Identifying orphaned requirements or tasks", "Verifying that constitution rules appear in downstream artifacts"],
             ["Single-artifact review — use the dedicated explorer for each artifact type"]),
 
-        new("constitution-compliance", "Constitution Compliance", "Analysis", "analysis", "/quality-review",
-            "Verify that specifications, plans, and tasks comply with the project constitution's governance rules.",
-            "constitution.md + spec.md + plan.md + tasks.md",
-            "Compliance report with rule-by-rule coverage, violations, and recommendations",
-            "After reviewing artifacts and before a release — ensures all governance rules are covered.",
-            ["Test Leads", "Architects", "Product Owners"],
-            ["Governance review before a milestone", "Checking rule coverage across all artifacts", "Identifying violations before release"],
-            ["Early-stage planning — check individual artifacts first using their dedicated explorers"]),
-
-        new("qa-auditor", "QA Auditor", "Analysis", "analysis", "/quality-review",
-            "Perform deterministic, rule-based quality audits across all SDD artifacts. Not AI-based.",
-            "constitution.md + spec.md + plan.md + tasks.md",
-            "Findings, risks, coverage gaps, and recommendations sorted by severity and category",
-            "When you need an objective, non-AI quality assessment of your artifact set.",
-            ["Test Leads", "Architects", "QA Engineers"],
-            ["Pre-release quality gate", "Finding specific gaps across all artifacts", "Getting a scored quality assessment without AI"],
-            ["AI-driven analysis — use QA Readiness for AI-assisted readiness summary"]),
-
-        new("delivery-readiness", "Delivery Readiness", "Analysis", "analysis", "/quality-review",
-            "Assess go/no-go readiness across three gates: Development, Testing, and Release.",
-            "constitution.md + spec.md + plan.md + tasks.md",
-            "Gate decisions with scores, blockers, and recommendations for each delivery phase",
-            "Before major milestones — answers whether the team can proceed to development, testing, or release.",
-            ["Test Leads", "Scrum Masters", "Product Owners"],
-            ["Pre-sprint delivery gate check", "Release readiness assessment", "Executive go/no-go decision support"],
-            ["Detailed quality audit — use QA Auditor for rule-by-rule findings"]),
+        new("quality-review", "Quality Review", "Quality", "quality", "/quality-review",
+            "Run multiple deterministic review packs simultaneously — select any combination of Quality, Governance, Standards, and Readiness packs for a single unified run.",
+            "constitution.md + spec.md + plan.md + tasks.md (any combination)",
+            "Combined findings dashboard, per-pack score cards, top issues, and detailed results grouped by pack",
+            "When you need a comprehensive quality assessment before a milestone — combine any of the eight available packs in one run.",
+            ["Test Leads", "Architects", "Product Owners", "QA Engineers"],
+            ["Pre-release quality gate combining compliance, audit, and readiness", "Running Constitution Compliance (Governance pack) to verify governance rules are covered", "Running QA Auditor (Quality pack) for deterministic rule-based findings", "Checking delivery gates with Delivery Readiness (Readiness pack)", "Assessing QA health with QA Readiness (Readiness pack)", "Checking accessibility, security, or privacy standards (Standards packs)"],
+            ["Individual artifact review — use the dedicated explorers (Constitution Explorer, Specification Review, Plan Explorer, Task Explorer)"]),
 
         new("impl-review", "Implementation Review", "Analysis", "analysis", "/task-alignment",
             "Validate a tasks.md against spec.md for alignment, risk, and test coverage.",
@@ -893,16 +871,7 @@
             ["Post-AI-generation review", "AI-assisted sprint work"],
             ["Manual implementation review — use Implementation Review"]),
 
-        new("qa-readiness", "QA Readiness", "AI Review", "ai", "/quality-review",
-            "Cross-artifact readiness assessment combining all analysis outputs into scored readiness gates.",
-            "constitution.md + spec.md + plan.md + tasks.md",
-            "Readiness scores per category, readiness gates, gaps, and recommendations",
-            "Before a release or major milestone to assess overall QA health.",
-            ["Test Leads", "Scrum Masters", "Product Owners"],
-            ["Pre-release readiness gates", "Sprint QA sign-off", "Executive readiness summary"],
-            ["Early-stage feature planning — start with Specification Review"]),
-
-        new("wasm-security", "WASM Security Review", "Analysis", "analysis", "/wasm-security-review",
+        new("wasm-security", "WASM Security Review", "Quality", "quality", "/wasm-security-review",
             "Scan a Blazor WebAssembly application for security vulnerabilities — exposed secrets, missing CSP headers, insecure token storage, and direct backend URL exposure.",
             "Frontend analysis profile (configured in System Settings)",
             "Security findings by category with severity classification",
@@ -911,7 +880,7 @@
             ["Pre-deployment security gate for Blazor WASM apps", "Checking CSP, auth guards, and sensitive data exposure", "Validating HTTPS enforcement and secure token storage patterns"],
             ["Non-WASM applications — this scanner targets Blazor WebAssembly specifically"]),
 
-        new("wasm-performance", "WASM Performance Review", "Analysis", "analysis", "/wasm-performance-review",
+        new("wasm-performance", "WASM Performance Review", "Quality", "quality", "/wasm-performance-review",
             "Analyse a Blazor WebAssembly application for performance issues — bundle size, compression, caching, Core Web Vitals compliance, and startup waterfall.",
             "Frontend analysis profile (configured in System Settings)",
             "Performance findings by category with severity classification",
@@ -985,15 +954,12 @@
         new("Spec Drift",               "Detect coverage drift",               "Analysis",    "analysis",    "/spec-drift"),
         new("Impact Analysis",          "Scope regression impact",             "Analysis",    "analysis",    "/impact-analysis"),
         new("Artifact Traceability",    "Analyze cross-artifact coverage",     "Analysis",    "analysis",    "/artifact-traceability"),
-        new("Constitution Compliance",  "Verify governance compliance",        "Analysis",    "analysis",    "/quality-review"),
-        new("WASM Security Review",     "Scan WASM app for security issues",   "Analysis",    "analysis",    "/wasm-security-review"),
-        new("WASM Performance Review",  "Analyse WASM app performance",        "Analysis",    "analysis",    "/wasm-performance-review"),
-        new("QA Auditor",               "Find gaps with rule-based audit",     "Analysis",    "analysis",    "/quality-review"),
-        new("Delivery Readiness",       "Get go/no-go decisions",              "Analysis",    "analysis",    "/quality-review"),
         new("Implementation Review",    "Align tasks to spec",                 "Analysis",    "analysis",    "/task-alignment"),
         new("Implementation Traceability","Map ADO work items to code changes","Analysis",    "analysis",    "/implementation-traceability"),
+        new("Quality Review",           "Run compliance, audit, and readiness packs","Quality","quality",   "/quality-review"),
+        new("WASM Security Review",     "Scan WASM app for security issues",   "Quality",     "quality",     "/wasm-security-review"),
+        new("WASM Performance Review",  "Analyse WASM app performance",        "Quality",     "quality",     "/wasm-performance-review"),
         new("AI Change Review",         "Review AI-generated changes",         "AI Review",   "ai",          "/ai-change-auditor"),
-        new("QA Readiness",             "Executive readiness summary",         "AI Review",   "ai",          "/quality-review"),
         new("System Settings",          "Configure platform settings",         "Admin",       "admin",       "/admin/system-settings"),
     ];
 
@@ -1016,17 +982,17 @@
             "Artifact Traceability", "/artifact-traceability",
             "Load all four artifacts for full-chain analysis"),
         new("I want to know whether governance rules are covered.",
-            "Constitution Compliance", "/quality-review",
-            "Get a rule-by-rule compliance verdict"),
+            "Quality Review", "/quality-review",
+            "Select the Constitution Compliance (Governance) pack"),
         new("I want to know what is missing across my artifacts.",
-            "QA Auditor", "/quality-review",
-            "Deterministic rule-based audit — no AI"),
+            "Quality Review", "/quality-review",
+            "Select the QA Auditor (Quality) pack — deterministic, no AI"),
         new("I want to know if the feature is ready for development, testing, or release.",
-            "Delivery Readiness", "/quality-review",
-            "Three-gate go/no-go assessment"),
+            "Quality Review", "/quality-review",
+            "Select the Delivery Readiness (Readiness) pack for three-gate go/no-go"),
         new("I want to know if the feature is ready from a QA perspective.",
-            "QA Readiness", "/quality-review",
-            "AI-assisted executive readiness summary"),
+            "Quality Review", "/quality-review",
+            "Select the QA Readiness (Readiness) pack for scored readiness gates"),
         new("I want to review AI-generated changes.",
             "AI Change Review", "/ai-change-auditor",
             "After AI generates or modifies implementation"),
@@ -1063,35 +1029,35 @@
     private static readonly Workflow[] TypicalWorkflows =
     [
         new("Full SDD Governance Review",
-            ["Constitution Explorer", "Specification Review", "Plan Explorer", "Artifact Traceability", "Constitution Compliance", "Implementation Review", "QA Auditor", "Delivery Readiness"],
-            "Complete seven-phase SDD governance workflow from constitution review to delivery readiness sign-off."),
+            ["Constitution Explorer", "Specification Review", "Plan Explorer", "Artifact Traceability", "Implementation Review", "Quality Review"],
+            "Complete governance workflow from constitution review to delivery sign-off — run Governance, Quality, and Readiness packs in Quality Review for the final gate."),
         new("New Feature Review",
-            ["Specification Review", "Traceability & Coverage", "Plan Explorer", "Artifact Traceability", "Implementation Review", "QA Auditor", "QA Readiness"],
-            "End-to-end quality validation for a new feature from spec extraction to readiness gate."),
+            ["Specification Review", "Traceability & Coverage", "Plan Explorer", "Artifact Traceability", "Implementation Review", "Quality Review"],
+            "End-to-end quality validation for a new feature — use Quality Review with QA Auditor and QA Readiness packs for the final sign-off."),
         new("Existing Project Review",
-            ["Constitution Explorer", "Specification Review", "Artifact Traceability", "Constitution Compliance", "Spec Drift", "Delivery Readiness"],
-            "Onboard an existing project — establish governance baseline, assess traceability, and identify drift."),
+            ["Constitution Explorer", "Specification Review", "Artifact Traceability", "Spec Drift", "Quality Review"],
+            "Onboard an existing project — establish governance baseline, assess traceability, identify drift, then run Quality Review to check compliance and readiness."),
         new("Specification Validation",
             ["Specification Review", "Traceability & Coverage", "Flow View", "Spec Explorer"],
             "Deep review of a single specification — extract requirements, assess coverage, and explore story readiness."),
         new("Implementation Validation",
-            ["Plan Explorer", "Implementation Review", "Risk & Testing", "Artifact Traceability", "QA Auditor"],
-            "Validate that implementation plans and tasks are correctly aligned to the specification and constitution."),
+            ["Plan Explorer", "Implementation Review", "Risk & Testing", "Artifact Traceability", "Quality Review"],
+            "Validate that implementation plans and tasks are correctly aligned to the specification and constitution — use QA Auditor pack in Quality Review."),
         new("Release Readiness Assessment",
-            ["Constitution Compliance", "Artifact Traceability", "QA Auditor", "Delivery Readiness", "QA Readiness"],
-            "Pre-release sign-off across compliance, traceability, audit, delivery gates, and AI readiness summary."),
+            ["Artifact Traceability", "Implementation Review", "Quality Review"],
+            "Pre-release sign-off — run Quality Review with all Governance, Quality, and Readiness packs selected for a comprehensive gate."),
         new("Compliance Check",
-            ["Constitution Explorer", "Constitution Compliance", "QA Auditor"],
-            "Focused governance review — verify that all artifacts comply with the project constitution."),
+            ["Constitution Explorer", "Quality Review"],
+            "Focused governance review — run Quality Review with the Constitution Compliance (Governance) and QA Auditor (Quality) packs."),
         new("Bug Fix",
-            ["Implementation Review", "Risk & Testing", "Regression Candidates", "QA Readiness"],
-            "Fast-path quality check for a targeted bug fix with regression scope."),
+            ["Implementation Review", "Risk & Testing", "Regression Candidates", "Quality Review"],
+            "Fast-path quality check for a targeted bug fix — use Quality Review with QA Readiness pack for a scored readiness assessment."),
         new("Requirement Change",
             ["Spec Drift", "Artifact Traceability", "Impact Analysis", "Implementation Review"],
             "When a requirement changes — trace from spec delta to implementation impact."),
         new("AI Generated Change",
-            ["AI Change Review", "Implementation Review", "QA Auditor", "Delivery Readiness"],
-            "After AI generates implementation — review alignment, coverage, and readiness."),
+            ["AI Change Review", "Implementation Review", "Quality Review"],
+            "After AI generates implementation — review alignment and coverage, then run Quality Review with QA Auditor and Delivery Readiness packs."),
     ];
 
     // ── FAQ ───────────────────────────────────────────────────────────────
@@ -1102,19 +1068,19 @@
     [
         new("what-is-constitution",
             "What is the Constitution and why does it matter?",
-            "<p>The <strong>Constitution</strong> is a governance document (constitution.md) that defines the rules, policies, quality standards, and principles that all other SDD artifacts must comply with. Think of it as the project's law book.</p><p>Use <a href='/constitution-explorer'>Constitution Explorer</a> to review the rule catalog. Then use <a href='/constitution-compliance'>Constitution Compliance</a> to verify that the spec, plan, and tasks all comply with its rules. QA Auditor and Delivery Readiness also factor in constitution compliance as part of their assessments.</p>"),
+            "<p>The <strong>Constitution</strong> is a governance document (constitution.md) that defines the rules, policies, quality standards, and principles that all other SDD artifacts must comply with. Think of it as the project's law book.</p><p>Use <a href='/constitution-explorer'>Constitution Explorer</a> to review the rule catalog. Then run <a href='/quality-review'>Quality Review</a> with the Constitution Compliance (Governance) pack selected to verify that the spec, plan, and tasks all comply with its rules.</p>"),
 
         new("traceability-vs-artifact-traceability",
             "What is the difference between Traceability & Coverage and Artifact Traceability?",
             "<p><strong>Traceability &amp; Coverage</strong> (inside Specification Review) analyzes relationships <em>within the specification</em> — which requirements have tests, which user stories are covered, and what is missing from the spec.</p><p><strong>Artifact Traceability</strong> (<a href='/artifact-traceability'>/artifact-traceability</a>) analyzes relationships <em>across all four artifacts</em> — does the Constitution→Spec→Plan→Tasks chain hold together? Are constitution rules traceable to spec requirements? Are spec requirements traceable to plan items? Are plan items covered by tasks?</p><p>Use both: Traceability &amp; Coverage for intra-spec QA analysis, and Artifact Traceability for cross-artifact governance coverage.</p>"),
 
         new("qa-auditor-vs-qa-readiness",
-            "What is the difference between QA Auditor and QA Readiness?",
-            "<p><strong>QA Auditor</strong> is a <em>deterministic</em>, rule-based audit — it applies specific rules to the artifact set and produces findings, risks, and gaps with no AI involvement. The output is objective: rule X fired because condition Y was true.</p><p><strong>QA Readiness</strong> is an <em>AI-assisted</em> readiness assessment that synthesises all analysis outputs (including QA Auditor findings) into a scored cross-category readiness report with gates for Implementation, Testing, and Release. It answers: <em>Is this feature ready?</em></p><p>Use QA Auditor for objective gap detection. Use QA Readiness for executive readiness sign-off.</p>"),
+            "What is the difference between the QA Auditor pack and the QA Readiness pack in Quality Review?",
+            "<p><strong>QA Auditor</strong> (Quality group) is a <em>deterministic</em>, rule-based audit — it applies specific rules to the artifact set and produces findings, risks, and gaps with no AI involvement. The output is objective: rule X fired because condition Y was true.</p><p><strong>QA Readiness</strong> (Readiness group) is a cross-artifact readiness assessment that scores five quality categories (Specification Quality, Plan Quality, Task Readiness, Traceability, Compliance) and answers: <em>Is this feature ready?</em></p><p>Both are packs within <a href='/quality-review'>Quality Review</a> — you can run them together in a single review session.</p>"),
 
         new("delivery-readiness-vs-qa-readiness",
-            "What is the difference between Delivery Readiness and QA Readiness?",
-            "<p><strong>Delivery Readiness</strong> (<a href='/delivery-readiness'>/delivery-readiness</a>) provides go/no-go decisions across three delivery-phase gates: Development, Testing, and Release. It answers: <em>Can we proceed to the next phase?</em> The assessment is deterministic and does not use AI.</p><p><strong>QA Readiness</strong> (<a href='/ai-qa-auditor'>/ai-qa-auditor</a>) is an AI-assisted cross-artifact readiness assessment that scores five quality categories (Specification, Plan, Tasks, Traceability, Compliance) and answers: <em>Is this feature ready for release from a QA perspective?</em></p><p>They are complementary: Delivery Readiness gives you a gate verdict, QA Readiness gives you a quality score and executive summary.</p>"),
+            "What is the difference between the Delivery Readiness pack and the QA Readiness pack?",
+            "<p><strong>Delivery Readiness</strong> (Readiness group) provides go/no-go decisions across three delivery-phase gates: Development, Testing, and Release. It answers: <em>Can we proceed to the next phase?</em> The assessment is deterministic.</p><p><strong>QA Readiness</strong> (Readiness group) scores five quality categories (Specification, Plan, Tasks, Traceability, Compliance) and answers: <em>Is this feature ready for release from a QA perspective?</em></p><p>Both are packs within <a href='/quality-review'>Quality Review</a> — they are complementary: Delivery Readiness gives you a gate verdict, QA Readiness gives you a quality score. Select both in one run for a complete readiness picture.</p>"),
 
         new("embedded-views",
             "Where are Traceability & Coverage, Flow View, and Spec Explorer?",
@@ -1137,12 +1103,12 @@
             "<p>A <strong>Regression Candidate</strong> is a task flagged as likely to require regression testing before release. A task becomes a Regression Candidate if it has High Risk classification, or touches a high-sensitivity area (Security, Authorization, Audit, or Domain Events), or has Medium Risk with recommended tests.</p><p>Find them in the Risk &amp; Testing tab of Implementation Review.</p>"),
 
         new("qa-readiness-chain",
-            "How does QA Readiness use previous analysis?",
-            "<p><strong>QA Readiness</strong> synthesises findings from the full artifact set across five quality categories: Specification Quality, Plan Quality, Task Readiness, Traceability, and Compliance. Load all four artifacts (constitution, spec, plan, tasks) to get the most accurate readiness assessment. The more artifacts provided, the more categories are scored.</p>"),
+            "How does the QA Readiness pack work?",
+            "<p>The <strong>QA Readiness</strong> pack (in <a href='/quality-review'>Quality Review</a>) scores the artifact set across five quality categories: Specification Quality, Plan Quality, Task Readiness, Traceability, and Compliance. Load all four artifacts (constitution, spec, plan, tasks) to get the most accurate readiness assessment. The more artifacts provided, the more categories are scored. Run it alongside QA Auditor and Delivery Readiness packs in the same Quality Review session for a comprehensive gate.</p>"),
 
         new("governance-low",
             "Why is my Governance Score low?",
-            "<p>The <strong>Governance Score</strong> reflects the overall compliance and traceability health of your artifact set. A low score typically means one or more of: constitution rules are not referenced in downstream artifacts, traceability links between artifacts are missing, or compliance checks have identified rule violations.</p><p>Start with <a href='/artifact-traceability'>Artifact Traceability</a> to identify gaps in the Constitution→Spec→Plan→Tasks chain. Then run <a href='/constitution-compliance'>Constitution Compliance</a> to see which specific rules are missing coverage. Work through the findings and re-run to see the score improve.</p>"),
+            "<p>The <strong>Governance Score</strong> reflects the overall compliance and traceability health of your artifact set. A low score typically means one or more of: constitution rules are not referenced in downstream artifacts, traceability links between artifacts are missing, or compliance checks have identified rule violations.</p><p>Start with <a href='/artifact-traceability'>Artifact Traceability</a> to identify gaps in the Constitution→Spec→Plan→Tasks chain. Then run <a href='/quality-review'>Quality Review</a> with the Constitution Compliance (Governance) pack to see which specific rules are missing coverage. Work through the findings and re-run to see the score improve.</p>"),
 
         new("traceability-zero",
             "Why is Traceability showing 0%?",
@@ -1150,7 +1116,7 @@
 
         new("compliance-unavailable",
             "Why is Compliance showing as unavailable?",
-            "<p><strong>Compliance unavailable</strong> means the constitution.md has not been loaded, or it has been loaded but the analysis has not been run yet. Constitution Compliance requires the constitution to derive the rule set to check against.</p><p>Open <a href='/constitution-compliance'>Constitution Compliance</a>, load constitution.md along with spec.md, plan.md, and tasks.md, then run analysis. If the constitution file is missing, create or locate it and load it via the file import.</p>"),
+            "<p><strong>Compliance unavailable</strong> means the constitution.md has not been loaded, or it has been loaded but the analysis has not been run yet. The Constitution Compliance pack requires the constitution to derive the rule set to check against.</p><p>Open <a href='/quality-review'>Quality Review</a>, select the Constitution Compliance pack, load constitution.md along with spec.md, plan.md, and tasks.md, then run the review. If the constitution file is missing, create or locate it and load it via the file import.</p>"),
 
         new("not-run",
             "What does 'Not Run' mean?",
@@ -1158,10 +1124,10 @@
 
         new("begin-review",
             "How do I begin a new review?",
-            "<p>Navigate to the relevant feature for your goal. For a full SDD governance review, follow the <a href='/getting-started'>Recommended Workflow</a> phase by phase. For a quick feature review, start with <a href='/extract'>Specification Review</a>.</p><p>Each page has its own file import control — upload the required markdown artifacts (constitution.md, spec.md, plan.md, tasks.md as needed) and run analysis. Session state is preserved automatically while you navigate between tabs and related features.</p>"),
+            "<p>Navigate to the relevant feature for your goal. For a full SDD governance review, follow the <a href='/getting-started'>Recommended Workflow</a> phase by phase. For a quick feature review, start with <a href='/extract'>Specification Review</a>.</p><p>For compliance, audit, or readiness checks, open <a href='/quality-review'>Quality Review</a>, select the review packs you need, load your artifact files, and click <strong>Run Quality Review</strong>. Session state is preserved automatically while you navigate between tabs and related features.</p>"),
 
         new("when-delivery-readiness",
-            "When should I run Delivery Readiness?",
-            "<p>Run <a href='/delivery-readiness'>Delivery Readiness</a> when you need a formal go/no-go decision before a major milestone — before starting development, before handing off to QA, or before a release.</p><p>For maximum accuracy, run it after completing Artifact Traceability, Constitution Compliance, and QA Auditor — Delivery Readiness aggregates their findings into gate decisions. Load all four artifacts (constitution, spec, plan, tasks) to enable all three gates: Development, Testing, and Release.</p>"),
+            "When should I run the Delivery Readiness pack?",
+            "<p>Run the <strong>Delivery Readiness</strong> pack (in <a href='/quality-review'>Quality Review</a>) when you need a formal go/no-go decision before a major milestone — before starting development, before handing off to QA, or before a release.</p><p>For maximum accuracy, also select the QA Auditor and Constitution Compliance packs in the same Quality Review run — Delivery Readiness aggregates all findings into gate decisions. Load all four artifacts (constitution, spec, plan, tasks) to enable all three gates: Development, Testing, and Release.</p>"),
     ];
 }

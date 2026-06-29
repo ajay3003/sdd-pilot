@@ -326,7 +326,7 @@ else
         else
         {
             <div class="db-section-empty">
-                No recommendations yet. Run QA Auditor or Delivery Readiness to generate actionable recommendations.
+                No recommendations yet. Run Quality Review with the QA Auditor or Delivery Readiness pack to generate actionable recommendations.
             </div>
         }
     </section>
@@ -344,7 +344,7 @@ else
                     <div class="db-tl-entry">
                         <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
                         <div class="db-tl-body">
-                            <span class="db-tl-action">QA Auditor completed</span>
+                            <span class="db-tl-action">Quality Review — QA Auditor completed</span>
                             <span class="db-tl-meta">@Snapshot.AuditReport.Health.TotalFindings finding@(Snapshot.AuditReport.Health.TotalFindings != 1 ? "s" : "")</span>
                         </div>
                     </div>
@@ -356,7 +356,7 @@ else
                     <div class="db-tl-entry">
                         <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
                         <div class="db-tl-body">
-                            <span class="db-tl-action">Delivery Readiness completed</span>
+                            <span class="db-tl-action">Quality Review — Delivery Readiness completed</span>
                             <span class="db-tl-meta">@Snapshot.DeliveryReport.Health.OverallReadinessScore.ToString("0")% overall readiness</span>
                         </div>
                     </div>
@@ -380,7 +380,7 @@ else
                     <div class="db-tl-entry">
                         <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
                         <div class="db-tl-body">
-                            <span class="db-tl-action">Constitution Compliance completed</span>
+                            <span class="db-tl-action">Quality Review — Constitution Compliance completed</span>
                             <span class="db-tl-meta">@Snapshot.ComplianceReport.Coverage.CompliancePercentage.ToString("0")% compliant</span>
                         </div>
                     </div>
@@ -392,7 +392,7 @@ else
                     <div class="db-tl-entry">
                         <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
                         <div class="db-tl-body">
-                            <span class="db-tl-action">QA Readiness completed</span>
+                            <span class="db-tl-action">Quality Review — QA Readiness completed</span>
                             <span class="db-tl-meta">@Snapshot.ReadinessReport.OverallScore.ToString("0")% overall</span>
                         </div>
                     </div>
