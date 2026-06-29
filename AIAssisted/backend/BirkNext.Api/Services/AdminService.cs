@@ -29,11 +29,9 @@ public class AdminService
         ("QaArtifactLibrary",          "QA Artifact Library"),
         ("TraceabilityCoverage",       "Traceability & Coverage"),
         ("ArtifactTraceability",       "Artifact Traceability"),
-        ("ConstitutionCompliance",     "Constitution Compliance"),
-        ("BlazorWasmSecurityReview",   "Blazor WASM Security Review"),
+        ("QualityReview",              "Quality Review"),
+        ("BlazorWasmSecurityReview",   "WASM Security Review"),
         ("BlazorWasmPerformanceReview","WASM Performance Review"),
-        ("QaAuditor",                  "QA Auditor"),
-        ("DeliveryReadiness",          "Delivery Readiness"),
         ("ImplementationReview",       "Implementation Review"),
         ("ImplementationTraceability", "Implementation Traceability")
     ];
@@ -48,8 +46,7 @@ public class AdminService
         ("CodeTraceability",    "Code Traceability"),
         ("ImpactAnalysis",      "Impact Analysis"),
         ("SpecDrift",           "Spec Drift"),
-        ("AiChangeReview",      "AI Change Review"),
-        ("QaReadiness",         "QA Readiness")
+        ("AiChangeReview",      "AI Change Review")
     ];
 
     private static readonly string[] ValidLogLevels =
@@ -234,14 +231,11 @@ public class AdminService
             ConstitutionExplorer        = s.GetValue("ConstitutionExplorer",        true),
             PlanExplorer                = s.GetValue("PlanExplorer",                true),
             ArtifactTraceability        = s.GetValue("ArtifactTraceability",        true),
-            ConstitutionCompliance      = s.GetValue("ConstitutionCompliance",      true),
             BlazorWasmSecurityReview    = s.GetValue("BlazorWasmSecurityReview",    true),
             BlazorWasmPerformanceReview = s.GetValue("BlazorWasmPerformanceReview", true),
             TaskExplorer                = s.GetValue("TaskExplorer",                true),
-            QaAuditor                   = s.GetValue("QaAuditor",                   true),
-            DeliveryReadiness           = s.GetValue("DeliveryReadiness",           true),
+            QualityReview               = s.GetValue("QualityReview",               true),
             AiChangeReview       = s.GetValue("AiChangeReview",       true),
-            QaReadiness          = s.GetValue("QaReadiness",          true),
             EnableExtractionReview = s.GetValue("EnableExtractionReview", false),
             EnableArchitectureView = s.GetValue("EnableArchitectureView", false),
             AdminSystemSettings  = s.GetValue("AdminSystemSettings",  true)

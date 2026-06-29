@@ -136,14 +136,11 @@ public class FeatureVisibilityInfo
     public bool ConstitutionExplorer { get; set; } = true;
     public bool PlanExplorer { get; set; } = true;
     public bool ArtifactTraceability { get; set; } = true;
-    public bool ConstitutionCompliance { get; set; } = true;
     public bool BlazorWasmSecurityReview { get; set; } = true;
     public bool BlazorWasmPerformanceReview { get; set; } = true;
     public bool TaskExplorer { get; set; } = true;
-    public bool QaAuditor { get; set; } = true;
-    public bool DeliveryReadiness { get; set; } = true;
+    public bool QualityReview { get; set; } = true;
     public bool AiChangeReview { get; set; } = true;
-    public bool QaReadiness { get; set; } = true;
     public bool EnableExtractionReview { get; set; } = false;
     public bool EnableArchitectureView { get; set; } = false;
     public bool AdminSystemSettings { get; set; } = true;

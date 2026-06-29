@@ -16,7 +16,7 @@
     <!-- ── Input panel ────────────────────────────────────────────────────── -->
     <div class="qr-input-panel">
         <div class="qr-input-panel-header">
-            <span class="qr-input-panel-title">Load Artifacts</span>
+            <span class="qr-input-panel-title"><span class="qr-step-badge">1</span> Load Artifacts</span>
             @if (_report is not null)
             {
                 <button class="qr-input-panel-toggle" @onclick="() => _inputExpanded = !_inputExpanded">
@@ -130,9 +130,19 @@
 
             <!-- ── Review pack selector ─────────────────────────────────── -->
             <div class="qr-packs-section">
-                <div class="qr-packs-title">Review Packs</div>
+                <div class="qr-packs-title"><span class="qr-step-badge">2</span> Review Packs</div>
+                <div class="qr-shortcut-bar">
+                    <button class="qr-shortcut-btn" @onclick="SelectAllPacks">All</button>
+                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Quality")'>Quality</button>
+                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Governance")'>Governance</button>
+                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Standards")'>Standards</button>
+                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Readiness")'>Readiness</button>
+                    <button class="qr-shortcut-btn qr-shortcut-btn--clear" @onclick="() => _selectedPacks.Clear()">Clear</button>
+                </div>
                 <div class="qr-packs-grid">
-                    @foreach (var group in QrService.AvailablePacks.GroupBy(p => p.PackGroup))
+                    @foreach (var group in QrService.AvailablePacks
+                        .GroupBy(p => p.PackGroup)
+                        .OrderBy(g => _groupOrder.GetValueOrDefault(g.Key, 99)))
                     {
                         <div class="qr-pack-group">
                             <div class="qr-pack-group-title">@group.Key</div>
@@ -145,6 +155,10 @@
                                     <span class="qr-pack-label">
                                         <span class="qr-pack-name">@pack.PackName</span>
                                         <span class="qr-pack-desc">@pack.PackDescription</span>
+                                        @if (PackPrerequisiteWarning(pack) is string warn)
+                                        {
+                                            <span class="qr-prereq-warn">⚠ @warn</span>
+                                        }
                                     </span>
                                 </label>
                             }
@@ -155,7 +169,7 @@
 
             <!-- ── Run bar ──────────────────────────────────────────────── -->
             <div class="qr-run-bar">
-                <span class="qr-run-summary">@RunSummaryText</span>
+                <span class="qr-run-summary"><span class="qr-step-badge">3</span> @RunSummaryText</span>
                 <PrimaryButton OnClick="RunReview" Disabled="@CannotRun">
                     @if (_running) { <span>Running…</span> } else { <span>Run Quality Review</span> }
                 </PrimaryButton>
@@ -182,6 +196,10 @@
 
         <!-- ── Finding counts ─────────────────────────────────────────── -->
         <div class="qr-count-grid">
+            <div class="qr-count-card qr-count-total">
+                <div class="qr-count-num">@_report.TotalFindings</div>
+                <div class="qr-count-label">Findings</div>
+            </div>
             <div class="qr-count-card qr-count-critical">
                 <div class="qr-count-num">@_report.CriticalCount</div>
                 <div class="qr-count-label">Critical</div>
@@ -198,21 +216,17 @@
                 <div class="qr-count-num">@_report.LowCount</div>
                 <div class="qr-count-label">Low</div>
             </div>
-            @if (TotalDeliveryBlockers > 0)
-            {
-                <div class="qr-count-card qr-count-blocker">
-                    <div class="qr-count-num">@TotalDeliveryBlockers</div>
-                    <div class="qr-count-label">Blockers</div>
-                </div>
-            }
+            <div class="qr-count-card qr-count-blocker">
+                <div class="qr-count-num">@TotalDeliveryBlockers</div>
+                <div class="qr-count-label">Blockers</div>
+            </div>
+            <div class="qr-count-card qr-count-warnings">
+                <div class="qr-count-num">@(_report.MediumCount + _report.LowCount)</div>
+                <div class="qr-count-label">Warnings</div>
+            </div>
         </div>
 
         <!-- ── By review pack summary cards ───────────────────────────── -->
-        @{
-            var validResults = _report.PackResults.Where(r => r.Error is null).ToList();
-            var weakestId    = validResults.Count > 1 ? validResults.MinBy(r => r.Score)?.PackId : null;
-            var strongestId  = validResults.Count > 1 ? validResults.MaxBy(r => r.Score)?.PackId : null;
-        }
         @if (_report.PackResults.Count > 0)
         {
             <div class="qr-pack-cards-section">
@@ -220,12 +234,17 @@
                 <div class="qr-pack-cards">
                     @foreach (var result in _report.PackResults)
                     {
-                        var isWeakest   = result.PackId == weakestId;
-                        var isStrongest = result.PackId == strongestId;
+                        var isWeakest   = result.PackId == WeakestPackId;
+                        var isStrongest = result.PackId == StrongestPackId;
                         var cardClass   = result.Error is not null ? "is-error"
                                         : isWeakest                ? $"{ScoreVariant(result.Score)} is-weakest"
                                         : isStrongest              ? $"{ScoreVariant(result.Score)} is-strongest"
                                         : ScoreVariant(result.Score);
+                        var totalF      = result.Critical + result.High + result.Medium + result.Low;
+                        var hSev        = result.Critical > 0 ? "Critical"
+                                        : result.High > 0     ? "High"
+                                        : result.Medium > 0   ? "Medium"
+                                        : result.Low > 0      ? "Low" : "None";
 
                         <div class="qr-pack-card @cardClass">
                             @if (isWeakest || isStrongest)
@@ -241,13 +260,6 @@
                             else
                             {
                                 <div class="qr-pack-card-score">@((int)Math.Round(result.Score))%</div>
-                                @{
-                                    int totalF  = result.Critical + result.High + result.Medium + result.Low;
-                                    string hSev = result.Critical > 0 ? "Critical"
-                                                : result.High > 0     ? "High"
-                                                : result.Medium > 0   ? "Medium"
-                                                : result.Low > 0      ? "Low" : "None";
-                                }
                                 <div class="qr-pack-card-findings">
                                     @if (totalF == 0) { <span class="qr-pack-card-ok">No issues</span> }
                                     else { <span>@totalF finding@(totalF != 1 ? "s" : "")</span> }
@@ -263,6 +275,21 @@
                         </div>
                     }
                 </div>
+            </div>
+        }
+
+        <!-- ── Top Issues ─────────────────────────────────────────────── -->
+        @if (_topIssues.Count > 0)
+        {
+            <div class="qr-top-issues">
+                <div class="qr-top-issues-title">Top Issues</div>
+                @foreach (var issue in _topIssues)
+                {
+                    <IssueCard Severity="@issue.Severity"
+                               Component="@issue.PackName"
+                               Description="@issue.Title"
+                               SuggestedFix="@(string.IsNullOrEmpty(issue.Detail) ? null : issue.Detail)" />
+                }
             </div>
         }
 
@@ -350,8 +377,14 @@
     private readonly HashSet<string> _expanded      = [];
 
     private QualityReviewReport? _report;
+    private List<TopIssueItem>   _topIssues = [];
     private bool _running;
     private bool _inputExpanded = true;
+
+    private static readonly Dictionary<string, int> _groupOrder = new()
+    {
+        ["Quality"] = 0, ["Governance"] = 1, ["Standards"] = 2, ["Readiness"] = 3,
+    };
 
     // ── QA Readiness detail state ─────────────────────────────────────────────
     private string? _qaExpandedCategory;
@@ -389,6 +422,24 @@
         .Where(r => r.DeliveryReadiness is not null)
         .Sum(r => r.DeliveryReadiness!.Blockers.Count) ?? 0;
 
+    private string? WeakestPackId
+    {
+        get
+        {
+            var valid = _report?.PackResults.Where(r => r.Error is null).ToList();
+            return valid is { Count: > 1 } ? valid.MinBy(r => r.Score)?.PackId : null;
+        }
+    }
+
+    private string? StrongestPackId
+    {
+        get
+        {
+            var valid = _report?.PackResults.Where(r => r.Error is null).ToList();
+            return valid is { Count: > 1 } ? valid.MaxBy(r => r.Score)?.PackId : null;
+        }
+    }
+
     private string RunSummaryText
     {
         get
@@ -400,6 +451,17 @@
             return $"{loaded} artifact{(loaded != 1 ? "s" : "")} loaded · {_selectedPacks.Count} pack{(_selectedPacks.Count != 1 ? "s" : "")} selected";
         }
     }
+
+    private string? PackPrerequisiteWarning(QualityReviewPackDescriptor pack) =>
+        pack.PackId == "constitution-compliance" && string.IsNullOrWhiteSpace(_constitutionText)
+            ? "Requires constitution"
+        : pack.PackGroup == "Standards" && string.IsNullOrWhiteSpace(_specText)
+            ? "Requires specification"
+        : pack.PackId == "qa-readiness" && string.IsNullOrWhiteSpace(_specText)
+            ? "Requires specification"
+        : pack.PackId == "delivery-readiness" && !AnyArtifactLoaded
+            ? "Requires artifacts"
+        : null;
 
     // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -425,6 +487,7 @@
             if (drResult?.DeliveryReadiness is not null)
                 DashboardSnapshot.Publish(drResult.DeliveryReadiness);
 
+            _topIssues     = GetTopIssues(5);
             _inputExpanded = false;
             _expanded.Clear();
             foreach (var r in _report.PackResults)
@@ -456,6 +519,86 @@
     {
         if (!_expanded.Remove(packId))
             _expanded.Add(packId);
+    }
+
+    private void SelectAllPacks()
+    {
+        foreach (var p in QrService.AvailablePacks)
+            _selectedPacks.Add(p.PackId);
+    }
+
+    private void SelectPackGroup(string group)
+    {
+        _selectedPacks.Clear();
+        foreach (var p in QrService.AvailablePacks.Where(p => p.PackGroup == group))
+            _selectedPacks.Add(p.PackId);
+    }
+
+    // ── Top Issues ────────────────────────────────────────────────────────────
+
+    private record TopIssueItem(string PackName, string Title, string Severity, int SortKey, string? Detail = null);
+
+    private static int SeveritySortKey(string sev) => sev.ToLowerInvariant() switch
+    {
+        "critical"          => 0,
+        "high" or "error"   => 1,
+        "medium" or "warning" => 2,
+        _                   => 3,
+    };
+
+    private static string ViolSevToCard(ViolationSeverity sev) => sev switch
+    {
+        ViolationSeverity.Critical => "critical",
+        ViolationSeverity.High     => "error",
+        ViolationSeverity.Medium   => "warning",
+        _                          => "info",
+    };
+
+    private List<TopIssueItem> GetTopIssues(int limit = 5)
+    {
+        if (_report is null) return [];
+        var items = new List<TopIssueItem>();
+        foreach (var r in _report.PackResults.Where(r => r.Error is null))
+        {
+            if (r.QaAudit is not null)
+                foreach (var f in r.QaAudit.Findings)
+                {
+                    var sev = QaSevString(f.Severity);
+                    items.Add(new(r.PackName, f.Title, sev, SeveritySortKey(sev)));
+                }
+            if (r.Compliance is not null)
+            {
+                foreach (var v in r.Compliance.Violations)
+                {
+                    var sev = ViolSevToCard(v.Severity);
+                    items.Add(new(r.PackName, v.RuleTitle, sev, SeveritySortKey(sev), v.Issue));
+                }
+                foreach (var g in r.Compliance.Gaps)
+                {
+                    var sev = ViolSevToCard(g.Severity);
+                    items.Add(new(r.PackName, g.RuleTitle, sev, SeveritySortKey(sev)));
+                }
+            }
+            if (r.Standards is not null)
+                foreach (var s in r.Standards.Results.Where(s => s.Status == CheckStatus.Failed))
+                {
+                    var sev = StdSevString(s.Severity);
+                    items.Add(new(r.PackName, s.Title, sev, SeveritySortKey(sev), s.Recommendation));
+                }
+            if (r.QaReadiness is not null)
+                foreach (var g in r.QaReadiness.Gaps)
+                {
+                    var sev = ViolSevToCard(g.Severity);
+                    items.Add(new(r.PackName, g.Description, sev, SeveritySortKey(sev)));
+                }
+            if (r.DeliveryReadiness is not null)
+                foreach (var b in r.DeliveryReadiness.Blockers)
+                {
+                    var sev = DrSevCard(b.Severity);
+                    items.Add(new(r.PackName, b.Title, sev, SeveritySortKey(sev), b.Description));
+                }
+        }
+        return [.. items.OrderBy(i => i.SortKey).Take(limit)];
     }
 
     // ── Score helpers ─────────────────────────────────────────────────────────

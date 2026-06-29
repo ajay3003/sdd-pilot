@@ -8,10 +8,11 @@ namespace BirkNext.Web.Services;
 /// shared parsed artifacts — artifacts are parsed exactly once regardless of
 /// how many packs are selected.
 ///
-/// Three pack types are supported:
-///   Core          — QA Auditor (structural quality, code-driven)
+/// Four pack groups are supported:
+///   Quality       — QA Auditor (structural quality, code-driven)
 ///   Governance    — Constitution Compliance (code-driven)
-///   Industry Standards — keyword-based packs discovered from index.json
+///   Standards     — keyword-based packs discovered from index.json
+///   Readiness     — QA Readiness, Delivery Readiness (code-driven)
 ///
 /// Adding a new industry standard requires only a JSON file and an index.json
 /// entry — no changes to this service or the Quality Review page.
@@ -159,9 +160,9 @@ public sealed class QualityReviewService : IQualityReviewService
 
         public QualityReviewPackDescriptor Descriptor { get; } = new(
             PackId:          "qa-auditor",
-            PackGroup:       "Core",
+            PackGroup:       "Quality",
             PackName:        "QA Auditor",
-            PackDescription: "Structural quality checks across the artifact chain",
+            PackDescription: "Structural consistency checks",
             IsDefault:       true);
 
         public QaAuditorAdapter(IQaAuditorService auditor) => _auditor = auditor;
@@ -195,7 +196,7 @@ public sealed class QualityReviewService : IQualityReviewService
             PackId:          "constitution-compliance",
             PackGroup:       "Governance",
             PackName:        "Constitution Compliance",
-            PackDescription: "Coverage and violation analysis against your constitution",
+            PackDescription: "Governance rule validation",
             IsDefault:       true);
 
         public ConstitutionComplianceAdapter(IConstitutionComplianceService compliance) =>
@@ -255,7 +256,7 @@ public sealed class QualityReviewService : IQualityReviewService
             PackId:          "qa-readiness",
             PackGroup:       "Readiness",
             PackName:        "QA Readiness",
-            PackDescription: "Cross-artifact readiness across requirements, traceability, tasks, and compliance",
+            PackDescription: "Testing readiness assessment",
             IsDefault:       false);
 
         public QaReadinessAdapter(IQAReadinessService qaReadiness) => _qaReadiness = qaReadiness;
@@ -294,7 +295,7 @@ public sealed class QualityReviewService : IQualityReviewService
             PackId:          "delivery-readiness",
             PackGroup:       "Readiness",
             PackName:        "Delivery Readiness",
-            PackDescription: "Development, testing, and release gate assessment with blocker tracking",
+            PackDescription: "Release readiness assessment",
             IsDefault:       false);
 
         public DeliveryReadinessAdapter(IDeliveryReadinessAssessmentService delivery) =>
@@ -339,10 +340,10 @@ public sealed class QualityReviewService : IQualityReviewService
             _entry     = entry;
             Descriptor = new QualityReviewPackDescriptor(
                 PackId:          entry.StandardId,
-                PackGroup:       "Industry Standards",
+                PackGroup:       "Standards",
                 PackName:        entry.Label,
                 PackDescription: entry.Description,
-                IsDefault:       true);
+                IsDefault:       entry.StandardId is "WCAG22" or "OWASP");
         }
 
         public Task<QualityReviewPackResult> ExecuteAsync(RunContext ctx)

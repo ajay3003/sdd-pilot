@@ -507,3 +507,91 @@
 .qr-pack-card-status {
     margin-top: 0.25rem;
 }
+
+/* ─── Step badge ───────────────────────────────────────────────────────────── */
+
+.qr-step-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.35em;
+    height: 1.35em;
+    border-radius: 50%;
+    background: var(--clr-primary, #6366f1);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    margin-right: 0.4rem;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
+/* ─── Quick selection shortcuts ────────────────────────────────────────────── */
+
+.qr-shortcut-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.85rem;
+}
+
+.qr-shortcut-btn {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.18rem 0.65rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: 999px;
+    background: var(--clr-surface, #f8fafc);
+    color: var(--clr-text-muted, #64748b);
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    line-height: 1.5;
+}
+
+.qr-shortcut-btn:hover {
+    background: var(--clr-primary, #6366f1);
+    border-color: var(--clr-primary, #6366f1);
+    color: #fff;
+}
+
+.qr-shortcut-btn--clear {
+    color: #b91c1c;
+    border-color: #fecaca;
+}
+
+.qr-shortcut-btn--clear:hover {
+    background: #fee2e2;
+    border-color: #fca5a5;
+    color: #b91c1c;
+}
+
+/* ─── Prerequisite warning ─────────────────────────────────────────────────── */
+
+.qr-prereq-warn {
+    font-size: 0.69rem;
+    color: #a16207;
+    font-weight: 500;
+    margin-top: 0.05rem;
+}
+
+/* ─── Count card color additions ───────────────────────────────────────────── */
+
+.qr-count-total    .qr-count-num { color: var(--clr-text, #1e293b); }
+.qr-count-warnings .qr-count-num { color: #64748b; }
+
+/* ─── Top Issues section ───────────────────────────────────────────────────── */
+
+.qr-top-issues {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.qr-top-issues-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--clr-text-muted, #64748b);
+    margin-bottom: 0.1rem;
+}

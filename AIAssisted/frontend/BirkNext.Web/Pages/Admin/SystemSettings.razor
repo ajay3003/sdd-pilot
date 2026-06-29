@@ -373,6 +373,12 @@ else if (_settings is not null)
                                 <span class="fv-count-off">@(AnalysisTotal - AnalysisEnabled) disabled</span>
                             </div>
                             <div class="fv-count-chip">
+                                <span class="fv-count-group">Quality</span>
+                                <span class="fv-count-on">@QualityEnabled enabled</span>
+                                <span class="fv-count-sep">/</span>
+                                <span class="fv-count-off">@(QualityTotal - QualityEnabled) disabled</span>
+                            </div>
+                            <div class="fv-count-chip">
                                 <span class="fv-count-group">AI Review</span>
                                 <span class="fv-count-on">@AiEnabled enabled</span>
                                 <span class="fv-count-sep">/</span>
@@ -416,6 +422,20 @@ else if (_settings is not null)
                                     <span class="fv-section-label">Analysis</span>
                                 </div>
                                 @foreach (var entry in GetSectionEntries(AnalysisSectionKeys))
+                                {
+                                    <FeatureRow Label="@entry.Label"
+                                                Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
+                                                IsLocked="false"
+                                                IsEditMode="@_isEditMode"
+                                                OnToggle="@(v => ToggleFeature(entry.Key, v))" />
+                                }
+                            </div>
+
+                            <div class="fv-section">
+                                <div class="fv-section-header">
+                                    <span class="fv-section-label">Quality</span>
+                                </div>
+                                @foreach (var entry in GetSectionEntries(QualitySectionKeys))
                                 {
                                     <FeatureRow Label="@entry.Label"
                                                 Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
@@ -1162,15 +1182,20 @@ else if (_settings is not null)
     private static readonly HashSet<string> AnalysisSectionKeys =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "SpecDrift", "ImpactAnalysis", "ArtifactTraceability", "ConstitutionCompliance",
-            "BlazorWasmSecurityReview", "BlazorWasmPerformanceReview", "QaAuditor", "DeliveryReadiness",
+            "SpecDrift", "ImpactAnalysis", "ArtifactTraceability",
             "ImplementationReview", "ImplementationTraceability"
+        };
+
+    private static readonly HashSet<string> QualitySectionKeys =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "QualityReview", "BlazorWasmSecurityReview", "BlazorWasmPerformanceReview"
         };
 
     private static readonly HashSet<string> AiReviewKeys =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "AiChangeReview", "QaReadiness"
+            "AiChangeReview"
         };
 
     private static readonly HashSet<string> AdvancedOptionalKeys =
@@ -1209,17 +1234,16 @@ else if (_settings is not null)
         ("Spec Drift",              "SpecDrift"),
         ("Impact Analysis",         "ImpactAnalysis"),
         ("Artifact Traceability",   "ArtifactTraceability"),
-        ("Constitution Compliance", "ConstitutionCompliance"),
-        ("WASM Security Review",    "BlazorWasmSecurityReview"),
-        ("WASM Performance Review", "BlazorWasmPerformanceReview"),
-        ("QA Auditor",              "QaAuditor"),
-        ("Delivery Readiness",      "DeliveryReadiness"),
         ("Implementation Review",   "ImplementationReview"),
         ("Implementation Traceability", "ImplementationTraceability"),
 
+        // Quality
+        ("Quality Review",          "QualityReview"),
+        ("WASM Security Review",    "BlazorWasmSecurityReview"),
+        ("WASM Performance Review", "BlazorWasmPerformanceReview"),
+
         // AI Review
         ("AI Change Review",        "AiChangeReview"),
-        ("QA Readiness",            "QaReadiness"),
 
         // Admin (Platform — always on)
         ("System Settings",         "AdminSystemSettings"),
@@ -1253,6 +1277,8 @@ else if (_settings is not null)
     private int LibraryTotal    => TotalCount(LibrarySectionKeys);
     private int AnalysisEnabled => EnabledCount(AnalysisSectionKeys);
     private int AnalysisTotal   => TotalCount(AnalysisSectionKeys);
+    private int QualityEnabled  => EnabledCount(QualitySectionKeys);
+    private int QualityTotal    => TotalCount(QualitySectionKeys);
     private int AiEnabled       => EnabledCount(AiReviewKeys);
     private int AiTotal         => TotalCount(AiReviewKeys);
 
