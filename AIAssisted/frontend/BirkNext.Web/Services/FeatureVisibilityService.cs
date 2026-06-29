@@ -52,14 +52,11 @@ public class FeatureVisibilityService
     public bool ConstitutionExplorer => _flags.ConstitutionExplorer;
     public bool PlanExplorer           => _flags.PlanExplorer;
     public bool ArtifactTraceability     => _flags.ArtifactTraceability;
-    public bool ConstitutionCompliance   => _flags.ConstitutionCompliance;
-    public bool QaAuditor               => _flags.QaAuditor;
-    public bool DeliveryReadiness       => _flags.DeliveryReadiness;
     public bool AiChangeReview           => _flags.AiChangeReview;
-    public bool QaReadiness          => _flags.QaReadiness;
     public bool EnableExtractionReview => _flags.EnableExtractionReview;
     public bool EnableArchitectureView => _flags.EnableArchitectureView;
     public bool AdminSystemSettings  => _flags.AdminSystemSettings;
+    public bool QualityReview        => _flags.QualityReview;
 
     // Section-level helpers: show the section header only if at least one child item is visible.
     public bool ShowSectionGettingStarted => RecommendedWorkflow || UserGuide;
@@ -67,8 +64,9 @@ public class FeatureVisibilityService
     public bool ShowSectionLibrary        => QaArtifactLibrary || CreateTestScenario;
     public bool ShowSectionTraceability   => LegacyTraceabilityNavigationEnabled
                                              && (TraceabilityCoverage || TraceabilitySuggestions || CodeTraceability);
-    public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || ImplementationTraceability || ArtifactTraceability || ConstitutionCompliance || BlazorWasmSecurityReview || BlazorWasmPerformanceReview || QaAuditor || DeliveryReadiness;
-    public bool ShowSectionAiReview       => AiChangeReview || QaReadiness;
+    public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || ImplementationTraceability || ArtifactTraceability;
+    public bool ShowSectionQuality        => QualityReview || BlazorWasmSecurityReview || BlazorWasmPerformanceReview;
+    public bool ShowSectionAiReview       => AiChangeReview;
     public bool ShowSectionAdmin          => AdminSystemSettings;
 
     public void ApplyLocalFlags(FeatureVisibilityDto flags)

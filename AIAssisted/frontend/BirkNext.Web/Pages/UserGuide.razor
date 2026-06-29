@@ -116,7 +116,7 @@
                 <div class="ug-concept-name">QA Readiness</div>
                 <div class="ug-concept-question"><em>Is the feature ready for release?</em></div>
                 <div class="ug-concept-desc">Executive readiness assessment combining all analysis outputs into scored gates. Use at the end of the analysis chain before a release or major milestone.</div>
-                <div class="ug-concept-feature">Feature: <a href="/ai-qa-auditor" class="ug-inline-link">QA Readiness</a></div>
+                <div class="ug-concept-feature">Feature: <a href="/quality-review" class="ug-inline-link">QA Readiness</a></div>
             </div>
         </div>
     </section>
@@ -740,13 +740,13 @@
             "Artifact Traceability", "/artifact-traceability"),
         new("Compliance", "Are artifacts compliant?",
             "Verifies that all artifacts collectively satisfy the governance rules defined in the constitution. Produces a rule-by-rule compliance verdict.",
-            "Constitution Compliance", "/constitution-compliance"),
+            "Quality Review", "/quality-review"),
         new("Readiness", "Can we proceed?",
             "Objective go/no-go assessment across three delivery gates: Development, Testing, and Release. Aggregates all analysis results.",
-            "Delivery Readiness", "/delivery-readiness"),
+            "Quality Review", "/quality-review"),
         new("Auditing", "What is missing?",
             "Deterministic, rule-based quality audit that finds specific gaps, violations, and risks across all artifacts — no AI involved.",
-            "QA Auditor", "/qa-auditor"),
+            "Quality Review", "/quality-review"),
     ];
 
     // ── Feature matrix ────────────────────────────────────────────────────
@@ -848,7 +848,7 @@
             ["Full-chain traceability check before a release", "Identifying orphaned requirements or tasks", "Verifying that constitution rules appear in downstream artifacts"],
             ["Single-artifact review — use the dedicated explorer for each artifact type"]),
 
-        new("constitution-compliance", "Constitution Compliance", "Analysis", "analysis", "/constitution-compliance",
+        new("constitution-compliance", "Constitution Compliance", "Analysis", "analysis", "/quality-review",
             "Verify that specifications, plans, and tasks comply with the project constitution's governance rules.",
             "constitution.md + spec.md + plan.md + tasks.md",
             "Compliance report with rule-by-rule coverage, violations, and recommendations",
@@ -857,7 +857,7 @@
             ["Governance review before a milestone", "Checking rule coverage across all artifacts", "Identifying violations before release"],
             ["Early-stage planning — check individual artifacts first using their dedicated explorers"]),
 
-        new("qa-auditor", "QA Auditor", "Analysis", "analysis", "/qa-auditor",
+        new("qa-auditor", "QA Auditor", "Analysis", "analysis", "/quality-review",
             "Perform deterministic, rule-based quality audits across all SDD artifacts. Not AI-based.",
             "constitution.md + spec.md + plan.md + tasks.md",
             "Findings, risks, coverage gaps, and recommendations sorted by severity and category",
@@ -866,7 +866,7 @@
             ["Pre-release quality gate", "Finding specific gaps across all artifacts", "Getting a scored quality assessment without AI"],
             ["AI-driven analysis — use QA Readiness for AI-assisted readiness summary"]),
 
-        new("delivery-readiness", "Delivery Readiness", "Analysis", "analysis", "/delivery-readiness",
+        new("delivery-readiness", "Delivery Readiness", "Analysis", "analysis", "/quality-review",
             "Assess go/no-go readiness across three gates: Development, Testing, and Release.",
             "constitution.md + spec.md + plan.md + tasks.md",
             "Gate decisions with scores, blockers, and recommendations for each delivery phase",
@@ -893,7 +893,7 @@
             ["Post-AI-generation review", "AI-assisted sprint work"],
             ["Manual implementation review — use Implementation Review"]),
 
-        new("qa-readiness", "QA Readiness", "AI Review", "ai", "/ai-qa-auditor",
+        new("qa-readiness", "QA Readiness", "AI Review", "ai", "/quality-review",
             "Cross-artifact readiness assessment combining all analysis outputs into scored readiness gates.",
             "constitution.md + spec.md + plan.md + tasks.md",
             "Readiness scores per category, readiness gates, gaps, and recommendations",
@@ -985,15 +985,15 @@
         new("Spec Drift",               "Detect coverage drift",               "Analysis",    "analysis",    "/spec-drift"),
         new("Impact Analysis",          "Scope regression impact",             "Analysis",    "analysis",    "/impact-analysis"),
         new("Artifact Traceability",    "Analyze cross-artifact coverage",     "Analysis",    "analysis",    "/artifact-traceability"),
-        new("Constitution Compliance",  "Verify governance compliance",        "Analysis",    "analysis",    "/constitution-compliance"),
+        new("Constitution Compliance",  "Verify governance compliance",        "Analysis",    "analysis",    "/quality-review"),
         new("WASM Security Review",     "Scan WASM app for security issues",   "Analysis",    "analysis",    "/wasm-security-review"),
         new("WASM Performance Review",  "Analyse WASM app performance",        "Analysis",    "analysis",    "/wasm-performance-review"),
-        new("QA Auditor",               "Find gaps with rule-based audit",     "Analysis",    "analysis",    "/qa-auditor"),
-        new("Delivery Readiness",       "Get go/no-go decisions",              "Analysis",    "analysis",    "/delivery-readiness"),
+        new("QA Auditor",               "Find gaps with rule-based audit",     "Analysis",    "analysis",    "/quality-review"),
+        new("Delivery Readiness",       "Get go/no-go decisions",              "Analysis",    "analysis",    "/quality-review"),
         new("Implementation Review",    "Align tasks to spec",                 "Analysis",    "analysis",    "/task-alignment"),
         new("Implementation Traceability","Map ADO work items to code changes","Analysis",    "analysis",    "/implementation-traceability"),
         new("AI Change Review",         "Review AI-generated changes",         "AI Review",   "ai",          "/ai-change-auditor"),
-        new("QA Readiness",             "Executive readiness summary",         "AI Review",   "ai",          "/ai-qa-auditor"),
+        new("QA Readiness",             "Executive readiness summary",         "AI Review",   "ai",          "/quality-review"),
         new("System Settings",          "Configure platform settings",         "Admin",       "admin",       "/admin/system-settings"),
     ];
 
@@ -1016,16 +1016,16 @@
             "Artifact Traceability", "/artifact-traceability",
             "Load all four artifacts for full-chain analysis"),
         new("I want to know whether governance rules are covered.",
-            "Constitution Compliance", "/constitution-compliance",
+            "Constitution Compliance", "/quality-review",
             "Get a rule-by-rule compliance verdict"),
         new("I want to know what is missing across my artifacts.",
-            "QA Auditor", "/qa-auditor",
+            "QA Auditor", "/quality-review",
             "Deterministic rule-based audit — no AI"),
         new("I want to know if the feature is ready for development, testing, or release.",
-            "Delivery Readiness", "/delivery-readiness",
+            "Delivery Readiness", "/quality-review",
             "Three-gate go/no-go assessment"),
         new("I want to know if the feature is ready from a QA perspective.",
-            "QA Readiness", "/ai-qa-auditor",
+            "QA Readiness", "/quality-review",
             "AI-assisted executive readiness summary"),
         new("I want to review AI-generated changes.",
             "AI Change Review", "/ai-change-auditor",

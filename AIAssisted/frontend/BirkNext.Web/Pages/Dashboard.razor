@@ -249,19 +249,18 @@ else
         @if (Snapshot.DeliveryReport is not null || Snapshot.ReadinessReport is not null)
         {
             <div class="db-readiness-grid">
-                @ReadinessCard("Development", Snapshot.DeliveryReport?.DevelopmentDecision.State, Snapshot.DeliveryReport?.Health.DevelopmentScore, "delivery-readiness")
-                @ReadinessCard("Testing",     Snapshot.DeliveryReport?.TestingDecision.State,     Snapshot.DeliveryReport?.Health.TestingScore,     "delivery-readiness")
-                @ReadinessCard("Release",     Snapshot.DeliveryReport?.ReleaseDecision.State,     Snapshot.DeliveryReport?.Health.ReleaseScore,      "delivery-readiness")
-                @ReadinessCardScore("QA Readiness", Snapshot.ReadinessReport?.OverallScore, "ai-qa-auditor")
+                @ReadinessCard("Development", Snapshot.DeliveryReport?.DevelopmentDecision.State, Snapshot.DeliveryReport?.Health.DevelopmentScore, "quality-review")
+                @ReadinessCard("Testing",     Snapshot.DeliveryReport?.TestingDecision.State,     Snapshot.DeliveryReport?.Health.TestingScore,     "quality-review")
+                @ReadinessCard("Release",     Snapshot.DeliveryReport?.ReleaseDecision.State,     Snapshot.DeliveryReport?.Health.ReleaseScore,      "quality-review")
+                @ReadinessCardScore("QA Readiness", Snapshot.ReadinessReport?.OverallScore, "quality-review")
             </div>
         }
         else
         {
             <div class="db-section-empty">
-                Run Delivery Readiness and QA Readiness to populate this section.
+                Run a Quality Review with Readiness packs selected to populate this section.
                 <div class="db-empty-actions">
-                    <a href="delivery-readiness" class="db-qa-btn">Delivery Readiness</a>
-                    <a href="ai-qa-auditor" class="db-qa-btn">QA Readiness</a>
+                    <a href="quality-review" class="db-qa-btn">Quality Review</a>
                 </div>
             </div>
         }
@@ -290,10 +289,9 @@ else
         else
         {
             <div class="db-section-empty">
-                No risks detected. Run QA Auditor or Delivery Readiness to surface governance risks.
+                No risks detected. Run Quality Review to surface governance risks.
                 <div class="db-empty-actions">
-                    <a href="qa-auditor" class="db-qa-btn">Run QA Auditor</a>
-                    <a href="delivery-readiness" class="db-qa-btn">Run Delivery Readiness</a>
+                    <a href="quality-review" class="db-qa-btn">Run Quality Review</a>
                 </div>
             </div>
         }
@@ -461,7 +459,7 @@ else
             <div class="db-analysis-card">
                 <div class="db-analysis-card-header">
                     <span class="db-analysis-card-title">Constitution Compliance</span>
-                    <a href="constitution-compliance" class="db-summary-open" aria-label="Open Constitution Compliance">Open →</a>
+                    <a href="quality-review" class="db-summary-open" aria-label="Open Quality Review">Open →</a>
                 </div>
                 @if (Snapshot.ComplianceReport is { } cr)
                 {
@@ -477,8 +475,8 @@ else
                 else
                 {
                     <div class="db-analysis-empty">
-                        Not run — populate by running Constitution Compliance.
-                        <a href="constitution-compliance" class="db-analysis-run-link">Run now →</a>
+                        Not run — populate by running Quality Review.
+                        <a href="quality-review" class="db-analysis-run-link">Run now →</a>
                     </div>
                 }
             </div>
@@ -487,7 +485,7 @@ else
             <div class="db-analysis-card">
                 <div class="db-analysis-card-header">
                     <span class="db-analysis-card-title">QA Audit</span>
-                    <a href="qa-auditor" class="db-summary-open" aria-label="Open QA Auditor">Open →</a>
+                    <a href="quality-review" class="db-summary-open" aria-label="Open Quality Review">Open →</a>
                 </div>
                 @if (Snapshot.AuditReport is { } ar)
                 {
@@ -508,8 +506,8 @@ else
                 else
                 {
                     <div class="db-analysis-empty">
-                        Not run — populate by running QA Auditor.
-                        <a href="qa-auditor" class="db-analysis-run-link">Run now →</a>
+                        Not run — populate by running Quality Review.
+                        <a href="quality-review" class="db-analysis-run-link">Run now →</a>
                     </div>
                 }
             </div>
@@ -518,7 +516,7 @@ else
             <div class="db-analysis-card">
                 <div class="db-analysis-card-header">
                     <span class="db-analysis-card-title">Delivery Readiness</span>
-                    <a href="delivery-readiness" class="db-summary-open" aria-label="Open Delivery Readiness">Open →</a>
+                    <a href="quality-review" class="db-summary-open" aria-label="Open Quality Review">Open →</a>
                 </div>
                 @if (Snapshot.DeliveryReport is { } dr)
                 {
@@ -537,8 +535,8 @@ else
                 else
                 {
                     <div class="db-analysis-empty">
-                        Not run — populate by running Delivery Readiness.
-                        <a href="delivery-readiness" class="db-analysis-run-link">Run now →</a>
+                        Not run — populate by running Quality Review.
+                        <a href="quality-review" class="db-analysis-run-link">Run now →</a>
                     </div>
                 }
             </div>
@@ -637,9 +635,7 @@ else
                 <div class="db-qa-group-label">Analysis</div>
                 <div class="db-qa-buttons">
                     <a href="artifact-traceability"   class="db-qa-btn">Artifact Traceability</a>
-                    <a href="constitution-compliance" class="db-qa-btn">Constitution Compliance</a>
-                    <a href="qa-auditor"              class="db-qa-btn">QA Auditor</a>
-                    <a href="delivery-readiness"      class="db-qa-btn">Delivery Readiness</a>
+                    <a href="quality-review"          class="db-qa-btn">Quality Review</a>
                     <a href="wasm-security-review"    class="db-qa-btn">Security Review</a>
                     <a href="wasm-performance-review" class="db-qa-btn">Performance Review</a>
                 </div>
@@ -648,7 +644,6 @@ else
                 <div class="db-qa-group-label">AI</div>
                 <div class="db-qa-buttons">
                     <a href="ai-change-review" class="db-qa-btn">AI Change Review</a>
-                    <a href="ai-qa-auditor"    class="db-qa-btn">QA Readiness</a>
                 </div>
             </div>
         </div>
@@ -798,12 +793,12 @@ else
                 list.AddRange(ar.Recommendations
                     .OrderBy(r => r.Priority)
                     .Take(3)
-                    .Select(r => (r.Text, r.Category.ToString(), "qa-auditor")));
+                    .Select(r => (r.Text, r.Category.ToString(), "quality-review")));
             if (list.Count < 3 && Snapshot.DeliveryReport is { } dr)
                 list.AddRange(dr.Recommendations
                     .OrderBy(r => r.Priority)
                     .Take(3 - list.Count)
-                    .Select(r => (r.Text, r.Category, "delivery-readiness")));
+                    .Select(r => (r.Text, r.Category, "quality-review")));
             return list.Take(3);
         }
     }

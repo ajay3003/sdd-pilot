@@ -1,0 +1,26 @@
+[
+  {
+    "standardId": "WCAG22",
+    "label": "WCAG 2.2",
+    "description": "Web Content Accessibility Guidelines",
+    "path": "standards/wcag/2.2/rule-pack.json"
+  },
+  {
+    "standardId": "OWASP",
+    "label": "OWASP ASVS / Top 10",
+    "description": "Security documentation coverage",
+    "path": "standards/owasp/asvs-top10/rule-pack.json"
+  },
+  {
+    "standardId": "GDPR",
+    "label": "GDPR",
+    "description": "Data protection documentation coverage",
+    "path": "standards/gdpr/documentation/rule-pack.json"
+  },
+  {
+    "standardId": "ISO25010",
+    "label": "ISO 25010",
+    "description": "Software product quality characteristics",
+    "path": "standards/iso/25010/rule-pack.json"
+  }
+]

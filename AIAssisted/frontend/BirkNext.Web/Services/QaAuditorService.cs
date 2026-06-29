@@ -1,11 +1,35 @@
 using BirkNext.Web.Models;
+using BirkNext.Web.Services.Engine;
+using BirkNext.Web.Services.Engine.Packs;
 
 namespace BirkNext.Web.Services;
 
+/// <summary>
+/// Orchestrates the deterministic QA audit using the shared <see cref="RuleEngine"/>.
+/// Each dimension of the audit is a separate <see cref="IRulePack"/>:
+///   <see cref="QaConstitutionRulePack"/>   — constitution coverage + violations
+///   <see cref="QaSpecificationRulePack"/>  — spec quality (acceptance criteria, ambiguity)
+///   <see cref="QaPlanRulePack"/>           — plan quality (phases, ADRs, testing, risks)
+///   <see cref="QaTaskRulePack"/>           — task list quality (orphans, testing tasks)
+///   <see cref="QaTraceabilityRulePack"/>   — end-to-end traceability chain
+///
+/// Adding a new audit dimension requires only a new <see cref="IRulePack"/> implementation
+/// added to the <c>_rulePacks</c> list — no changes to this service or any page.
+/// </summary>
 public sealed class QaAuditorService : IQaAuditorService
 {
     private readonly IArtifactTraceabilityService   _traceability;
     private readonly IConstitutionComplianceService _compliance;
+    private readonly RuleEngine                     _engine = new();
+
+    private static readonly IRulePack[] _rulePacks =
+    [
+        new QaConstitutionRulePack(),
+        new QaSpecificationRulePack(),
+        new QaPlanRulePack(),
+        new QaTaskRulePack(),
+        new QaTraceabilityRulePack(),
+    ];
 
     public QaAuditorService(
         IArtifactTraceabilityService   traceability,
@@ -23,27 +47,36 @@ public sealed class QaAuditorService : IQaAuditorService
         PlanDocument?         plan,
         TaskTree?             tasks)
     {
-        // Run sub-analyses once; all rule groups share the results
+        // Pre-compute sub-reports once. All rule packs share them via RuleContext —
+        // no pack triggers duplicate sub-analysis.
         var traceReport = _traceability.Analyze(constitution, spec, plan, tasks);
         var compReport  = constitution is not null
             ? _compliance.Analyze(constitution, spec, plan, tasks)
             : new ConstitutionComplianceReport { HasConstitution = false };
 
-        var findings = new List<QaFinding>();
-        var gaps     = new List<QaGap>();
+        var context = new RuleContext
+        {
+            Constitution     = constitution,
+            Spec             = spec,
+            Plan             = plan,
+            Tasks            = tasks,
+            Trace            = traceReport,
+            ComplianceReport = compReport,
+        };
 
-        RunConstitutionRules(compReport,  constitution,           findings, gaps);
-        RunSpecificationRules(spec,       traceReport,            findings, gaps);
-        RunPlanRules(plan,                traceReport,            findings, gaps);
-        RunTaskRules(tasks,               traceReport,            findings, gaps);
-        RunTraceabilityRules(traceReport, constitution, spec, plan, tasks, findings, gaps);
+        var packResults = _engine.Run(context, _rulePacks);
 
-        // Sort by severity (Critical first)
+        var rawFindings = packResults.SelectMany(pr => pr.Findings).ToList();
+        var rawGaps     = packResults.SelectMany(pr => pr.Gaps).ToList();
+
+        var findings = rawFindings.Select(MapToQaFinding).ToList();
+        var gaps     = rawGaps.Select(MapToQaGap).ToList();
+
         findings.Sort((a, b) => a.Severity.CompareTo(b.Severity));
         gaps.Sort((a, b)     => a.Severity.CompareTo(b.Severity));
 
-        var risks = BuildRisks(findings);
-        var recs  = BuildRecommendations(findings);
+        var risks  = BuildRisks(findings);
+        var recs   = BuildRecommendations(rawFindings);
         var health = BuildHealth(findings, gaps);
 
         return new QaAuditReport
@@ -87,7 +120,7 @@ public sealed class QaAuditorService : IQaAuditorService
         return gaps.Where(g =>
             g.GapArea.Contains(query, ci) ||
             g.Description.Contains(query, ci) ||
-            (g.ItemId?.Contains(query, ci) ?? false) ||
+            (g.ItemId?.Contains(query, ci)    ?? false) ||
             (g.ItemTitle?.Contains(query, ci) ?? false));
     }
 
@@ -105,351 +138,43 @@ public sealed class QaAuditorService : IQaAuditorService
         IEnumerable<QaRecommendation> recs, QaCategory? category) =>
         category is null ? recs : recs.Where(r => r.Category == category);
 
-    // ── Rule group: Constitution ───────────────────────────────────────────────
+    // ── Mapping: engine types → domain types ─────────────────────────────────
 
-    private static void RunConstitutionRules(
-        ConstitutionComplianceReport compReport,
-        ConstitutionDocument?        constitution,
-        List<QaFinding>              findings,
-        List<QaGap>                  gaps)
+    private static QaFinding MapToQaFinding(RuleFinding f) => new()
     {
-        if (constitution is null) return;
+        RuleCode         = f.RuleId,
+        Title            = f.Title,
+        Description      = f.Description,
+        Severity         = ParseSeverity(f.Severity),
+        Category         = ParseCategory(f.Category),
+        AffectedArtifact = f.AffectedItem,
+    };
 
-        // CONST-001: Rule not covered
-        foreach (var result in compReport.Results.Where(r => r.Status == ComplianceStatus.Missing))
-        {
-            var sev = result.RuleType == ConstitutionRuleType.Principle  ? QaSeverity.Critical :
-                      result.RuleType == ConstitutionRuleType.Standard   ? QaSeverity.High :
-                      result.RuleType == ConstitutionRuleType.Constraint ? QaSeverity.High :
-                                                                           QaSeverity.Medium;
-            findings.Add(F("CONST-001",
-                $"Constitution rule {result.RuleId} not covered by any artifact",
-                $"Rule '{result.RuleTitle}' ({result.RuleType}) has no coverage in the Specification, Plan, or Tasks.",
-                sev, QaCategory.Constitution, result.RuleId));
-
-            gaps.Add(new QaGap
-            {
-                GapArea     = "Missing Constitution Coverage",
-                Description = $"{result.RuleId}: {result.RuleTitle}",
-                ItemId      = result.RuleId,
-                ItemTitle   = result.RuleTitle,
-                Severity    = sev,
-            });
-        }
-
-        // CONST-002: Rule partially covered
-        foreach (var result in compReport.Results.Where(r => r.Status == ComplianceStatus.Partial))
-        {
-            findings.Add(F("CONST-002",
-                $"Constitution rule {result.RuleId} only partially covered",
-                $"Rule '{result.RuleTitle}' is not consistently referenced across all loaded artifacts.",
-                QaSeverity.Medium, QaCategory.Constitution, result.RuleId));
-        }
-
-        // CONST-003: Violations
-        foreach (var v in compReport.Violations)
-        {
-            var sev = v.Severity == ViolationSeverity.Critical ? QaSeverity.Critical :
-                      v.Severity == ViolationSeverity.High     ? QaSeverity.High :
-                                                                 QaSeverity.Medium;
-            findings.Add(F("CONST-003",
-                $"Constitution violation: {v.RuleId} in {v.Artifact}",
-                v.Issue,
-                sev, QaCategory.Compliance, $"{v.Artifact}: {v.RuleId}"));
-        }
-    }
-
-    // ── Rule group: Specification ─────────────────────────────────────────────
-
-    private static void RunSpecificationRules(
-        SpecTree?                    spec,
-        ArtifactTraceabilityReport   trace,
-        List<QaFinding>              findings,
-        List<QaGap>                  gaps)
+    private static QaGap MapToQaGap(RuleGap g) => new()
     {
-        if (spec is null)
-        {
-            gaps.Add(new QaGap
-            {
-                GapArea     = "Missing Specification Coverage",
-                Description = "Specification not loaded — specification audit unavailable",
-                Severity    = QaSeverity.High,
-            });
-            return;
-        }
+        GapArea     = g.GapArea,
+        Description = g.Description,
+        ItemId      = g.ItemId,
+        ItemTitle   = g.ItemTitle,
+        Severity    = ParseSeverity(g.Severity),
+    };
 
-        var h = spec.Health;
-
-        // SPEC-001: Requirements with no acceptance criteria
-        // Use spec.Roots.Count as a presence check since FR-### headings are often SubSection
-        bool hasSpecContent = spec.Roots.Count > 0 && h.TotalHeadings > 1;
-        if (hasSpecContent && h.Tests + h.BddScenarios + h.SuccessCriteria == 0)
-        {
-            int reqCount = h.Requirements > 0 ? h.Requirements : h.TotalHeadings - 1;
-            findings.Add(F("SPEC-001",
-                "No acceptance criteria defined across requirements",
-                $"Specification has {reqCount} requirement(s) but no acceptance criteria, BDD scenarios, or success criteria.",
-                QaSeverity.High, QaCategory.Specification));
-        }
-
-        // SPEC-002: Unplanned requirements (from Spec→Plan chain)
-        int unplanned = trace.SpecificationCoverage.MissingItems;
-        if (unplanned > 0)
-        {
-            findings.Add(F("SPEC-002",
-                $"{unplanned} requirement(s) without plan coverage",
-                $"{unplanned} specification requirement(s) are not referenced in the implementation plan.",
-                unplanned > 3 ? QaSeverity.High : QaSeverity.Medium, QaCategory.Specification));
-
-            gaps.Add(new QaGap
-            {
-                GapArea     = "Missing Plan Coverage",
-                Description = $"{unplanned} requirement(s) not covered by the plan",
-                Severity    = unplanned > 3 ? QaSeverity.High : QaSeverity.Medium,
-            });
-        }
-
-        // SPEC-003: Requirements with no task coverage (from Spec chain, when tasks loaded)
-        int untasked = trace.SpecificationCoverage.MissingItems > 0
-            ? trace.SpecificationCoverage.MissingItems  // already counted above
-            : 0;
-        // Use plan→task orphan count as a proxy for requirements without task coverage
-        int orphanPlan = trace.PlanCoverage.MissingItems;
-        if (orphanPlan > 0 && trace.PlanCoverage.TotalItems > 0)
-        {
-            findings.Add(F("SPEC-003",
-                $"{orphanPlan} plan item(s) without task coverage, indicating untasked requirements",
-                $"{orphanPlan} plan item(s) have no associated tasks — requirements they address may not be implemented.",
-                orphanPlan > 3 ? QaSeverity.High : QaSeverity.Medium, QaCategory.Specification));
-        }
-
-        // SPEC-004: Ambiguous spec (high clarification count)
-        if (h.Clarifications > 5)
-        {
-            findings.Add(F("SPEC-004",
-                "High clarification count indicates specification ambiguity",
-                $"{h.Clarifications} open clarification(s) detected. Resolve them before implementation.",
-                QaSeverity.Medium, QaCategory.Specification));
-        }
-
-        // SPEC-005: Missing edge cases (uses same hasSpecContent as SPEC-001)
-        if (hasSpecContent && h.EdgeCases == 0)
-        {
-            findings.Add(F("SPEC-005",
-                "No edge cases documented",
-                "Specification has requirements but no edge cases. Document boundary conditions and failure scenarios.",
-                QaSeverity.Low, QaCategory.Specification));
-        }
-    }
-
-    // ── Rule group: Plan ──────────────────────────────────────────────────────
-
-    private static void RunPlanRules(
-        PlanDocument?              plan,
-        ArtifactTraceabilityReport trace,
-        List<QaFinding>            findings,
-        List<QaGap>                gaps)
+    private static QaSeverity ParseSeverity(string s) => s switch
     {
-        if (plan is null)
-        {
-            gaps.Add(new QaGap
-            {
-                GapArea     = "Missing Plan Coverage",
-                Description = "Plan not loaded — plan audit unavailable",
-                Severity    = QaSeverity.High,
-            });
-            return;
-        }
+        "Critical" => QaSeverity.Critical,
+        "High"     => QaSeverity.High,
+        "Low"      => QaSeverity.Low,
+        "Info"     => QaSeverity.Info,
+        _          => QaSeverity.Medium,
+    };
 
-        var h = plan.Health;
-
-        // PLAN-001: Missing implementation phases
-        if (!h.HasImplementationPhases)
-        {
-            findings.Add(F("PLAN-001",
-                "Missing implementation phases",
-                "Plan has no implementation phases. Add phased delivery sections with tasks and deliverables.",
-                QaSeverity.High, QaCategory.Plan));
-        }
-
-        // PLAN-002: Architecture decisions without rationale
-        // Check both structured Rationale field and inline keyword in RawText
-        foreach (var adr in plan.ArchitectureDecisions.Where(a =>
-            string.IsNullOrWhiteSpace(a.Rationale) &&
-            !a.RawText.Contains("Rationale", StringComparison.OrdinalIgnoreCase)))
-        {
-            findings.Add(F("PLAN-002",
-                $"Architecture decision {(string.IsNullOrEmpty(adr.Id) ? adr.Title : adr.Id)} missing rationale",
-                $"ADR '{adr.Title}' has no documented rationale. Explain why this decision was made.",
-                QaSeverity.Medium, QaCategory.Architecture,
-                string.IsNullOrEmpty(adr.Id) ? adr.Title : adr.Id));
-        }
-
-        // PLAN-003: Missing risk analysis
-        if (h.TotalRisks == 0)
-        {
-            findings.Add(F("PLAN-003",
-                "Missing risk analysis",
-                "Plan has no risks documented. Identify delivery risks with probability, impact, and mitigation.",
-                QaSeverity.Medium, QaCategory.Plan));
-        }
-
-        // PLAN-004: Missing testing strategy
-        if (!h.HasTestingInfo)
-        {
-            findings.Add(F("PLAN-004",
-                "Missing testing strategy",
-                "Plan has no testing section. Document test frameworks, coverage targets, and test approach.",
-                QaSeverity.High, QaCategory.Testing));
-
-            gaps.Add(new QaGap
-            {
-                GapArea     = "Missing Testing Coverage",
-                Description = "No testing strategy documented in the plan",
-                Severity    = QaSeverity.High,
-            });
-        }
-
-        // PLAN-005: Plan items without task coverage
-        int uncoveredItems = trace.PlanCoverage.MissingItems;
-        if (uncoveredItems > 0 && trace.PlanCoverage.TotalItems > 0)
-        {
-            findings.Add(F("PLAN-005",
-                $"{uncoveredItems} plan item(s) without task coverage",
-                $"{uncoveredItems} plan item(s) have no associated tasks — implementation cannot be verified.",
-                uncoveredItems > 3 ? QaSeverity.High : QaSeverity.Medium, QaCategory.Plan));
-
-            gaps.Add(new QaGap
-            {
-                GapArea     = "Missing Task Coverage",
-                Description = $"{uncoveredItems} plan item(s) with no associated tasks",
-                Severity    = QaSeverity.Medium,
-            });
-        }
-    }
-
-    // ── Rule group: Tasks ─────────────────────────────────────────────────────
-
-    private static void RunTaskRules(
-        TaskTree?                  tasks,
-        ArtifactTraceabilityReport trace,
-        List<QaFinding>            findings,
-        List<QaGap>                gaps)
-    {
-        if (tasks is null)
-        {
-            gaps.Add(new QaGap
-            {
-                GapArea     = "Missing Task Coverage",
-                Description = "Tasks not loaded — task audit unavailable",
-                Severity    = QaSeverity.High,
-            });
-            return;
-        }
-
-        var h = tasks.Health;
-
-        // TASK-001: Orphan tasks (no plan/requirement linkage from traceability gaps)
-        var orphanGaps = trace.Gaps
-            .Where(g => g.GapIn == ArtifactType.Task && g.Status == TraceabilityStatus.Orphaned)
-            .ToList();
-        if (orphanGaps.Count > 0)
-        {
-            findings.Add(F("TASK-001",
-                $"{orphanGaps.Count} orphan task(s) with no requirement or plan coverage",
-                $"{orphanGaps.Count} task(s) are not linked to any specification requirement or plan item.",
-                QaSeverity.Medium, QaCategory.Task));
-        }
-
-        // TASK-002: No testing tasks
-        if (h.TotalTasks > 0 && h.TestingTasks == 0)
-        {
-            findings.Add(F("TASK-002",
-                "No testing tasks defined",
-                "Task list has no test implementation tasks. Add unit test, integration test, and verification tasks.",
-                QaSeverity.High, QaCategory.Testing));
-
-            gaps.Add(new QaGap
-            {
-                GapArea     = "Missing Testing Coverage",
-                Description = "No testing tasks found in the task list",
-                Severity    = QaSeverity.High,
-            });
-        }
-
-        // TASK-003: Tasks without requirement references
-        if (h.TotalTasks > 0 && h.UnlinkedTasks > 0)
-        {
-            findings.Add(F("TASK-003",
-                $"{h.UnlinkedTasks} task(s) without requirement reference",
-                $"{h.UnlinkedTasks} task(s) have no FR or SC references — traceability cannot be verified for these tasks.",
-                QaSeverity.Low, QaCategory.Task));
-        }
-
-        // TASK-004: Missing verification/test tasks for coverage
-        if (h.TotalTasks > 0 && h.SecurityTasks == 0 && h.FrLinkedTasks > 0)
-        {
-            // Tasks exist but no security verification found
-            // Only flag as Info — not every feature needs security tasks
-        }
-    }
-
-    // ── Rule group: Traceability ──────────────────────────────────────────────
-
-    private static void RunTraceabilityRules(
-        ArtifactTraceabilityReport trace,
-        ConstitutionDocument?      constitution,
-        SpecTree?                  spec,
-        PlanDocument?              plan,
-        TaskTree?                  tasks,
-        List<QaFinding>            findings,
-        List<QaGap>                gaps)
-    {
-        // TRACE-001: Missing Constitution→Spec links (only when both loaded)
-        if (constitution is not null && spec is not null && trace.ConstitutionCoverage.TotalItems > 0)
-        {
-            int missing = trace.ConstitutionCoverage.MissingItems;
-            if (missing > 0)
-            {
-                findings.Add(F("TRACE-001",
-                    $"{missing} constitution rule(s) not referenced in specification",
-                    $"{missing} constitution rule(s) have no corresponding requirements in the specification.",
-                    missing > 3 ? QaSeverity.High : QaSeverity.Medium, QaCategory.Traceability));
-            }
-        }
-
-        // TRACE-002: Missing Spec→Plan links (only when both loaded)
-        if (spec is not null && plan is not null && trace.SpecificationCoverage.TotalItems > 0)
-        {
-            int missing = trace.SpecificationCoverage.MissingItems;
-            if (missing > 0)
-            {
-                findings.Add(F("TRACE-002",
-                    $"{missing} requirement(s) not referenced in the plan",
-                    $"{missing} specification requirement(s) are not mentioned in the implementation plan.",
-                    missing > 3 ? QaSeverity.High : QaSeverity.Medium, QaCategory.Traceability));
-            }
-        }
-
-        // TRACE-003: Missing Plan→Task links (only when both loaded)
-        if (plan is not null && tasks is not null && trace.PlanCoverage.TotalItems > 0)
-        {
-            int missing = trace.PlanCoverage.MissingItems;
-            if (missing > 0)
-            {
-                findings.Add(F("TRACE-003",
-                    $"{missing} plan item(s) with no covering tasks",
-                    $"{missing} plan item(s) are not referenced in the task list — implementation coverage is incomplete.",
-                    missing > 3 ? QaSeverity.High : QaSeverity.Medium, QaCategory.Traceability));
-            }
-        }
-    }
+    private static QaCategory ParseCategory(string s) =>
+        Enum.TryParse<QaCategory>(s, ignoreCase: true, out var c) ? c : QaCategory.Constitution;
 
     // ── Risks ─────────────────────────────────────────────────────────────────
 
-    private static List<QaRisk> BuildRisks(List<QaFinding> findings)
-    {
-        return findings
+    private static List<QaRisk> BuildRisks(List<QaFinding> findings) =>
+        findings
             .Where(f => f.Severity == QaSeverity.Critical || f.Severity == QaSeverity.High)
             .Select(f => new QaRisk
             {
@@ -461,28 +186,28 @@ public sealed class QaAuditorService : IQaAuditorService
                 Mitigation  = InferMitigation(f.RuleCode),
             })
             .ToList();
-    }
 
     // ── Recommendations ───────────────────────────────────────────────────────
 
-    private static List<QaRecommendation> BuildRecommendations(List<QaFinding> findings)
+    private static List<QaRecommendation> BuildRecommendations(List<RuleFinding> rawFindings)
     {
         var recs = new List<QaRecommendation>();
 
-        foreach (var f in findings)
+        foreach (var f in rawFindings)
         {
-            var text = f.RuleCode switch
+            // Map rule codes to recommendation text — preserves exact phrasing from the original service.
+            var text = f.RuleId switch
             {
-                "CONST-001" => $"Add coverage for {f.AffectedArtifact} to the specification, plan, and task list.",
-                "CONST-002" => $"Extend coverage for {f.AffectedArtifact} across all loaded artifacts.",
-                "CONST-003" => $"Resolve the violation for {f.AffectedArtifact?.Split(':').LastOrDefault()?.Trim()} in the plan.",
+                "CONST-001" => $"Add coverage for {f.AffectedItem} to the specification, plan, and task list.",
+                "CONST-002" => $"Extend coverage for {f.AffectedItem} across all loaded artifacts.",
+                "CONST-003" => $"Resolve the violation for {f.AffectedItem?.Split(':').LastOrDefault()?.Trim()} in the plan.",
                 "SPEC-001"  => "Add acceptance criteria (tests, BDD scenarios, or success criteria) to each requirement.",
                 "SPEC-002"  => "Reference all specification requirements in the implementation plan.",
                 "SPEC-003"  => "Create tasks for all plan items that cover specification requirements.",
                 "SPEC-004"  => "Resolve open specification clarifications to eliminate ambiguity before implementation.",
                 "SPEC-005"  => "Add edge case documentation to the specification.",
                 "PLAN-001"  => "Add implementation phases with tasks and deliverables to the plan.",
-                "PLAN-002"  => $"Document the rationale for architecture decision {f.AffectedArtifact}.",
+                "PLAN-002"  => $"Document the rationale for architecture decision {f.AffectedItem}.",
                 "PLAN-003"  => "Add a risk section to the plan with probability, impact, and mitigation for each risk.",
                 "PLAN-004"  => "Add a testing strategy section to the plan documenting test frameworks and coverage targets.",
                 "PLAN-005"  => "Create implementation tasks for all uncovered plan items.",
@@ -492,20 +217,19 @@ public sealed class QaAuditorService : IQaAuditorService
                 "TRACE-001" => "Add references to the missing constitution rules in specification requirements.",
                 "TRACE-002" => "Ensure the plan explicitly addresses all specification requirements.",
                 "TRACE-003" => "Create tasks for all plan items that lack task coverage.",
-                _           => f.Title,
+                _           => f.Recommendation.Length > 0 ? f.Recommendation : f.Title,
             };
 
             recs.Add(new QaRecommendation
             {
                 Text             = text,
-                Category         = f.Category,
-                Priority         = f.Severity,
-                AffectedArtifact = f.AffectedArtifact,
-                RuleCode         = f.RuleCode,
+                Category         = ParseCategory(f.Category),
+                Priority         = ParseSeverity(f.Severity),
+                AffectedArtifact = f.AffectedItem,
+                RuleCode         = f.RuleId,
             });
         }
 
-        // De-duplicate by text
         return recs
             .GroupBy(r => r.Text, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.First())
@@ -517,14 +241,13 @@ public sealed class QaAuditorService : IQaAuditorService
 
     private static QaAuditHealth BuildHealth(List<QaFinding> findings, List<QaGap> gaps)
     {
-        int critical = findings.Count(f => f.Severity == QaSeverity.Critical);
-        int high     = findings.Count(f => f.Severity == QaSeverity.High);
-        int medium   = findings.Count(f => f.Severity == QaSeverity.Medium);
-        int low      = findings.Count(f => f.Severity == QaSeverity.Low);
-        int info     = findings.Count(f => f.Severity == QaSeverity.Info);
+        int critical   = findings.Count(f => f.Severity == QaSeverity.Critical);
+        int high       = findings.Count(f => f.Severity == QaSeverity.High);
+        int medium     = findings.Count(f => f.Severity == QaSeverity.Medium);
+        int low        = findings.Count(f => f.Severity == QaSeverity.Low);
+        int info       = findings.Count(f => f.Severity == QaSeverity.Info);
         int violations = findings.Count(f => f.RuleCode?.StartsWith("CONST-003") ?? false);
 
-        // Score: start at 100, deduct per finding severity
         double score = Math.Max(0.0,
             100.0
             - critical * 10.0
@@ -546,21 +269,7 @@ public sealed class QaAuditorService : IQaAuditorService
         };
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static QaFinding F(
-        string ruleCode, string title, string description,
-        QaSeverity severity, QaCategory category,
-        string? affected = null) =>
-        new QaFinding
-        {
-            RuleCode         = ruleCode,
-            Title            = title,
-            Description      = description,
-            Severity         = severity,
-            Category         = category,
-            AffectedArtifact = affected,
-        };
+    // ── Mitigation hints ──────────────────────────────────────────────────────
 
     private static string? InferMitigation(string ruleCode) => ruleCode switch
     {

@@ -1,0 +1,179 @@
+{
+  "standardId": "ISO25010",
+  "standardName": "ISO 25010",
+  "standardVersion": "25010",
+  "rulePackVersion": "1.0",
+  "lastUpdated": "2026-06-29",
+  "description": "Documentation coverage checks for ISO 25010 software product quality characteristics. Checks whether quality requirements across performance, reliability, usability, security, maintainability, compatibility, and portability are documented in the project artifacts.",
+  "rules": [
+    {
+      "ruleId": "iso-performance",
+      "category": "Performance Efficiency",
+      "title": "Performance Efficiency",
+      "description": "Performance requirements such as response time and throughput must be specified.",
+      "severity": "Medium",
+      "requiredSections": ["non-functional requirements", "performance", "quality"],
+      "requiredKeywords": [
+        "performance requirement",
+        "response time requirement",
+        "throughput requirement",
+        "performance sla",
+        "latency requirement",
+        "performance target"
+      ],
+      "optionalKeywords": [
+        "performance",
+        "response time",
+        "latency",
+        "load time"
+      ],
+      "evidenceHint": "Look for response time SLAs, throughput targets, or performance acceptance criteria.",
+      "recommendation": "Document performance requirements such as response time SLAs, throughput, and load handling."
+    },
+    {
+      "ruleId": "iso-reliability",
+      "category": "Reliability",
+      "title": "Reliability & Availability",
+      "description": "Availability and fault-tolerance requirements must be defined.",
+      "severity": "Medium",
+      "requiredSections": ["non-functional requirements", "reliability", "availability"],
+      "requiredKeywords": [
+        "availability requirement",
+        "uptime requirement",
+        "fault tolerance",
+        "disaster recovery",
+        "reliability requirement",
+        "rto",
+        "rpo",
+        "recovery time objective"
+      ],
+      "optionalKeywords": [
+        "reliability",
+        "availability",
+        "recover",
+        "backup",
+        "failover"
+      ],
+      "evidenceHint": "Look for availability SLAs, uptime targets, fault tolerance, or RTO/RPO definitions.",
+      "recommendation": "Specify availability SLAs, fault tolerance mechanisms, and recovery objectives (RTO/RPO)."
+    },
+    {
+      "ruleId": "iso-usability",
+      "category": "Usability",
+      "title": "Usability",
+      "description": "Usability requirements and UX expectations must be documented.",
+      "severity": "Low",
+      "requiredSections": ["non-functional requirements", "usability", "ux"],
+      "requiredKeywords": [
+        "usability requirement",
+        "ux requirement",
+        "user experience requirement",
+        "ease of use requirement",
+        "onboarding requirement"
+      ],
+      "optionalKeywords": [
+        "usability",
+        "user experience",
+        "user-friendly",
+        "intuitive"
+      ],
+      "evidenceHint": "Look for usability requirements, UX guidelines, or target user definitions.",
+      "recommendation": "Document usability requirements, target users, and UX design guidelines."
+    },
+    {
+      "ruleId": "iso-security",
+      "category": "Security",
+      "title": "Security Requirements",
+      "description": "Security requirements including encryption and data protection must be documented.",
+      "severity": "High",
+      "requiredSections": ["non-functional requirements", "security"],
+      "requiredKeywords": [
+        "security requirement",
+        "encryption requirement",
+        "tls requirement",
+        "https requirement",
+        "data protection requirement",
+        "secure by default"
+      ],
+      "optionalKeywords": [
+        "security",
+        "authentication",
+        "authorization",
+        "encryption",
+        "data protection"
+      ],
+      "evidenceHint": "Look for security requirements, encryption standards, TLS requirements, or secure-by-default policies.",
+      "recommendation": "Document security requirements including encryption, data protection, and secure communications."
+    },
+    {
+      "ruleId": "iso-maintainability",
+      "category": "Maintainability",
+      "title": "Maintainability",
+      "description": "Code quality and maintainability expectations must be defined.",
+      "severity": "Low",
+      "requiredSections": ["non-functional requirements", "quality", "engineering"],
+      "requiredKeywords": [
+        "maintainability requirement",
+        "test coverage requirement",
+        "code quality standard",
+        "technical debt policy",
+        "modular architecture"
+      ],
+      "optionalKeywords": [
+        "maintainable",
+        "modular",
+        "testable",
+        "documentation standard"
+      ],
+      "evidenceHint": "Look for code quality standards, test coverage targets, or architectural guidelines.",
+      "recommendation": "Document code quality expectations, test coverage targets, and architectural guidelines."
+    },
+    {
+      "ruleId": "iso-compatibility",
+      "category": "Compatibility",
+      "title": "Compatibility & Integration",
+      "description": "Browser, device, and integration compatibility must be specified.",
+      "severity": "Medium",
+      "requiredSections": ["non-functional requirements", "compatibility", "integration"],
+      "requiredKeywords": [
+        "compatibility requirement",
+        "browser compatibility requirement",
+        "api compatibility",
+        "integration requirement",
+        "interoperability requirement"
+      ],
+      "optionalKeywords": [
+        "compatibility",
+        "browser support",
+        "device support",
+        "integration"
+      ],
+      "evidenceHint": "Look for browser/device compatibility requirements or external integration constraints.",
+      "recommendation": "Specify browser/device compatibility requirements and external integration constraints."
+    },
+    {
+      "ruleId": "iso-portability",
+      "category": "Portability",
+      "title": "Portability & Deployment",
+      "description": "Deployment targets and infrastructure requirements must be documented.",
+      "severity": "Low",
+      "requiredSections": ["non-functional requirements", "deployment", "infrastructure"],
+      "requiredKeywords": [
+        "deployment requirement",
+        "portability requirement",
+        "platform requirement",
+        "containerization",
+        "cloud deployment requirement"
+      ],
+      "optionalKeywords": [
+        "deploy",
+        "environment",
+        "hosting",
+        "cloud",
+        "infrastructure"
+      ],
+      "evidenceHint": "Look for deployment targets, infrastructure requirements, or containerization mentions.",
+      "recommendation": "Document deployment targets, infrastructure requirements, and portability constraints."
+    }
+  ]
+}

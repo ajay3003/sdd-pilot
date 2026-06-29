@@ -57,11 +57,16 @@ builder.Services.AddScoped<IScenarioExtractionService>(sp =>
 builder.Services.AddSingleton<ISpecComparisonService, SpecComparisonService>();
 builder.Services.AddSingleton<IConstitutionAnalysisService, ConstitutionAnalysisService>();
 builder.Services.AddSingleton<IPlanAnalysisService, PlanAnalysisService>();
+builder.Services.AddSingleton<IArtifactParserService, ArtifactParserService>();
 builder.Services.AddSingleton<IArtifactTraceabilityService, ArtifactTraceabilityService>();
 builder.Services.AddSingleton<IConstitutionComplianceService, ConstitutionComplianceService>();
 builder.Services.AddSingleton<IQAReadinessService, QAReadinessService>();
 builder.Services.AddSingleton<IQaAuditorService, QaAuditorService>();
 builder.Services.AddSingleton<IDeliveryReadinessAssessmentService, DeliveryReadinessService>();
+builder.Services.AddSingleton<IStandardsComplianceService>(_ =>
+    new StandardsComplianceService(
+        new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) }));
+builder.Services.AddSingleton<IQualityReviewService, QualityReviewService>();
 builder.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
 builder.Services.AddSingleton<IUIStructuralIntegrityAnalyzer, UIStructuralIntegrityAnalyzer>();

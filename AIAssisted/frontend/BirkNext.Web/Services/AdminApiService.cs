@@ -280,14 +280,11 @@ public class FeatureVisibilityDto
     [JsonPropertyName("blazorWasmPerformanceReview")]     public bool BlazorWasmPerformanceReview     { get; set; } = true;
     [JsonPropertyName("taskExplorer")]         public bool TaskExplorer         { get; set; } = true;
     [JsonPropertyName("aiChangeReview")]       public bool AiChangeReview       { get; set; } = true;
-    [JsonPropertyName("qaReadiness")]          public bool QaReadiness          { get; set; } = true;
     [JsonPropertyName("enableExtractionReview")] public bool EnableExtractionReview { get; set; } = false;
     [JsonPropertyName("enableArchitectureView")] public bool EnableArchitectureView { get; set; } = false;
     [JsonPropertyName("constitutionExplorer")]  public bool ConstitutionExplorer  { get; set; } = true;
     [JsonPropertyName("planExplorer")]              public bool PlanExplorer             { get; set; } = true;
     [JsonPropertyName("artifactTraceability")]        public bool ArtifactTraceability       { get; set; } = true;
-    [JsonPropertyName("constitutionCompliance")]      public bool ConstitutionCompliance     { get; set; } = true;
-    [JsonPropertyName("qaAuditor")]                   public bool QaAuditor                  { get; set; } = true;
-    [JsonPropertyName("deliveryReadiness")]           public bool DeliveryReadiness          { get; set; } = true;
     [JsonPropertyName("adminSystemSettings")]         public bool AdminSystemSettings        { get; set; } = true;
+    [JsonPropertyName("qualityReview")]               public bool QualityReview              { get; set; } = true;
 }

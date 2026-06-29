@@ -10,23 +10,19 @@
     <PageHeader Title="QA Artifact Library"
                 Description="Store, discover, reuse, and curate QA assets across specifications and projects." />
 
-    <div class="artifact-kpi-strip" aria-label="Asset summary">
+    <div class="metric-grid-4" aria-label="Asset summary">
         <MetricCard Value="@_scenarios.Count.ToString()" Label="Published Assets" />
         <MetricCard Value="@TestCount.ToString()" Label="Tests" />
         <MetricCard Value="@RequirementCount.ToString()" Label="Requirements" />
         <MetricCard Value="@ClarificationCount.ToString()" Label="Clarifications" />
     </div>
 
-    <!-- ── Traceability redirect note ─────────────────────────────────── -->
-    <div class="ql-traceability-redirect" role="note" data-testid="ql-traceability-redirect">
-        <span class="ql-redirect-icon" aria-hidden="true">ℹ</span>
-        <div>
-            <strong>Coverage analysis belongs in Traceability &amp; Coverage.</strong>
-            For coverage gaps, missing tests, orphan tests, and requirement coverage metrics, use
-            <a href="extract">Traceability &amp; Coverage</a> (available after specification analysis)
-            or the <a href="traceability">standalone Traceability page</a>.
-            This library is a repository of reusable QA assets.
-        </div>
+    <div class="notification notification-info mb-0" role="note" data-testid="ql-traceability-redirect">
+        <strong>Coverage analysis belongs in Traceability &amp; Coverage.</strong>
+        For coverage gaps, missing tests, orphan tests, and requirement coverage metrics, use
+        <a href="extract">Traceability &amp; Coverage</a> (available after specification analysis)
+        or the <a href="traceability">standalone Traceability page</a>.
+        This library is a repository of reusable QA assets.
     </div>
 
     <!-- ── Artifact list ──────────────────────────────────────────────── -->

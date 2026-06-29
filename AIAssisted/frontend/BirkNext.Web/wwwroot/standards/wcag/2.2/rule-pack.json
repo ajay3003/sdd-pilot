@@ -1,0 +1,142 @@
+{
+  "standardId": "WCAG22",
+  "standardName": "WCAG 2.2",
+  "standardVersion": "2.2",
+  "rulePackVersion": "1.0",
+  "lastUpdated": "2026-06-29",
+  "description": "Documentation coverage checks for WCAG 2.2 Web Content Accessibility Guidelines. Checks whether accessibility requirements are identified and described in the project artifacts.",
+  "rules": [
+    {
+      "ruleId": "wcag-keyboard",
+      "category": "Operable",
+      "title": "Keyboard Navigation",
+      "description": "All interactive functionality must be accessible via keyboard.",
+      "severity": "High",
+      "requiredSections": ["accessibility", "non-functional requirements", "usability"],
+      "requiredKeywords": [
+        "keyboard navigation",
+        "keyboard accessible",
+        "tab order",
+        "focus trap",
+        "keyboard shortcut",
+        "keystroke navigation"
+      ],
+      "optionalKeywords": [
+        "keyboard",
+        "tab key"
+      ],
+      "evidenceHint": "Look for keyboard navigation, tab order, focus management, or keyboard shortcut mentions.",
+      "recommendation": "Document keyboard navigation requirements, tab order, and any keyboard shortcuts or focus management."
+    },
+    {
+      "ruleId": "wcag-screen-reader",
+      "category": "Robust",
+      "title": "Screen Reader & Assistive Technology",
+      "description": "Content must be compatible with screen readers and assistive technology.",
+      "severity": "High",
+      "requiredSections": ["accessibility", "non-functional requirements"],
+      "requiredKeywords": [
+        "screen reader",
+        "aria-label",
+        "aria-describedby",
+        "aria-live",
+        "assistive technology",
+        "wcag"
+      ],
+      "optionalKeywords": [
+        "aria",
+        "accessible name",
+        "accessibility"
+      ],
+      "evidenceHint": "Look for screen reader support, ARIA landmark usage, or assistive technology compatibility.",
+      "recommendation": "Document screen reader support, ARIA landmark usage, and assistive technology compatibility requirements."
+    },
+    {
+      "ruleId": "wcag-alt-text",
+      "category": "Perceivable",
+      "title": "Alternative Text for Non-Text Content",
+      "description": "Images and media must provide text alternatives.",
+      "severity": "Medium",
+      "requiredSections": ["accessibility", "images", "media"],
+      "requiredKeywords": [
+        "alt text",
+        "alternative text",
+        "image description",
+        "media accessibility",
+        "caption"
+      ],
+      "optionalKeywords": [
+        "alt=",
+        "image alt",
+        "non-text content"
+      ],
+      "evidenceHint": "Look for alt text requirements, image descriptions, or media accessibility mentions.",
+      "recommendation": "Specify alt text requirements for images, videos, and other non-text content."
+    },
+    {
+      "ruleId": "wcag-color-contrast",
+      "category": "Perceivable",
+      "title": "Color Contrast",
+      "description": "Text and UI elements must meet minimum contrast ratio requirements.",
+      "severity": "Medium",
+      "requiredSections": ["accessibility", "design", "visual"],
+      "requiredKeywords": [
+        "color contrast",
+        "colour contrast",
+        "contrast ratio",
+        "wcag contrast"
+      ],
+      "optionalKeywords": [
+        "contrast",
+        "foreground color",
+        "background color"
+      ],
+      "evidenceHint": "Look for color contrast requirements, contrast ratio specifications, or WCAG AA/AAA mentions.",
+      "recommendation": "Document minimum contrast ratio requirements (WCAG AA: 4.5:1 for normal text, 3:1 for large text)."
+    },
+    {
+      "ruleId": "wcag-focus",
+      "category": "Operable",
+      "title": "Visible Focus Indicators",
+      "description": "All focusable elements must have a visible focus indicator.",
+      "severity": "Medium",
+      "requiredSections": ["accessibility", "ui", "interaction"],
+      "requiredKeywords": [
+        "focus state",
+        "focus indicator",
+        "focus visible",
+        "focus ring",
+        "focus management",
+        "focus outline"
+      ],
+      "optionalKeywords": [
+        "focus",
+        ":focus"
+      ],
+      "evidenceHint": "Look for focus state, focus ring, or focus indicator requirements.",
+      "recommendation": "Document visible focus indicator requirements for all interactive elements."
+    },
+    {
+      "ruleId": "wcag-error-messages",
+      "category": "Understandable",
+      "title": "Accessible Error Messages",
+      "description": "Error messages must be descriptive and accessible to assistive technology.",
+      "severity": "Medium",
+      "requiredSections": ["accessibility", "forms", "error handling"],
+      "requiredKeywords": [
+        "accessible error",
+        "error description",
+        "form error message",
+        "validation error message"
+      ],
+      "optionalKeywords": [
+        "error message",
+        "validation message",
+        "form validation",
+        "error handling"
+      ],
+      "evidenceHint": "Look for accessible error message requirements, ARIA error associations, or screen reader notifications.",
+      "recommendation": "Describe how error messages are communicated to screen reader users and keyboard navigators."
+    }
+  ]
+}
