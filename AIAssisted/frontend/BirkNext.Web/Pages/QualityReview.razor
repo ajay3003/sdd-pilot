@@ -126,6 +126,30 @@
                     }
                 </div>
 
+                <div class="artifact-card @(!string.IsNullOrEmpty(_dataModelText) ? "is-loaded" : "")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">🗄️</span>
+                        <span class="artifact-name">Data Model</span>
+                        <span class="artifact-status @(!string.IsNullOrEmpty(_dataModelText) ? "is-loaded" : "")">
+                            @(!string.IsNullOrEmpty(_dataModelText) ? "Loaded" : "Empty")
+                        </span>
+                    </div>
+                    <SpecificationImport @ref="_dataModelImport"
+                        InputId="qr-datamodel-import"
+                        OnFileImported="t => { _dataModelText = t; }"
+                        OnFileRemoved="() => { _dataModelText = string.Empty; }"
+                        IsDisabled="false" />
+                    <textarea class="artifact-textarea" placeholder="Or paste data-model.md here…"
+                              rows="3" @bind="_dataModelText" @bind:event="oninput"></textarea>
+                    @if (!string.IsNullOrEmpty(_dataModelText))
+                    {
+                        <div class="artifact-footer">
+                            <span>@_dataModelText.Split('\n').Length lines</span>
+                            <button class="artifact-clear" @onclick='() => { _dataModelText = string.Empty; _dataModelImport?.Reset(); }'>Clear</button>
+                        </div>
+                    }
+                </div>
+
             </div>
 
             <!-- ── Review pack selector ─────────────────────────────────── -->
@@ -367,11 +391,13 @@
     private string _specText         = string.Empty;
     private string _planText         = string.Empty;
     private string _taskText         = string.Empty;
+    private string _dataModelText    = string.Empty;
 
     private SpecificationImport? _constitutionImport;
     private SpecificationImport? _specImport;
     private SpecificationImport? _planImport;
     private SpecificationImport? _taskImport;
+    private SpecificationImport? _dataModelImport;
 
     private readonly HashSet<string> _selectedPacks = [];
     private readonly HashSet<string> _expanded      = [];
@@ -414,7 +440,8 @@
         !string.IsNullOrWhiteSpace(_constitutionText) ||
         !string.IsNullOrWhiteSpace(_specText)         ||
         !string.IsNullOrWhiteSpace(_planText)         ||
-        !string.IsNullOrWhiteSpace(_taskText);
+        !string.IsNullOrWhiteSpace(_taskText)         ||
+        !string.IsNullOrWhiteSpace(_dataModelText);
 
     private bool CannotRun => _running || _selectedPacks.Count == 0 || !AnyArtifactLoaded;
 
@@ -446,7 +473,7 @@
         {
             if (!AnyArtifactLoaded) return "Load at least one artifact to run a review";
             if (_selectedPacks.Count == 0) return "Select at least one review pack";
-            int loaded = new[] { _constitutionText, _specText, _planText, _taskText }
+            int loaded = new[] { _constitutionText, _specText, _planText, _taskText, _dataModelText }
                             .Count(t => !string.IsNullOrWhiteSpace(t));
             return $"{loaded} artifact{(loaded != 1 ? "s" : "")} loaded · {_selectedPacks.Count} pack{(_selectedPacks.Count != 1 ? "s" : "")} selected";
         }
@@ -461,6 +488,8 @@
             ? "Requires specification"
         : pack.PackId == "delivery-readiness" && !AnyArtifactLoaded
             ? "Requires artifacts"
+        : pack.PackId == "data-model-quality" && string.IsNullOrWhiteSpace(_dataModelText)
+            ? "Requires data-model.md"
         : null;
 
     // ── Actions ───────────────────────────────────────────────────────────────
@@ -476,6 +505,7 @@
                 string.IsNullOrWhiteSpace(_specText)         ? null : _specText,
                 string.IsNullOrWhiteSpace(_planText)         ? null : _planText,
                 string.IsNullOrWhiteSpace(_taskText)         ? null : _taskText,
+                string.IsNullOrWhiteSpace(_dataModelText)    ? null : _dataModelText,
                 _selectedPacks);
 
             // Publish readiness results so Dashboard can consume them.

@@ -1,0 +1,311 @@
+@page "/sample-projects"
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using Microsoft.JSInterop
+@inject SampleProjectsApiService ProjectsApi
+@inject ProjectDocumentApiService DocumentApi
+@inject IJSRuntime JS
+
+<div class="sp-page">
+    <div class="sp-page-header">
+        <h1 class="sp-page-title">Sample Projects</h1>
+        <p class="sp-page-desc">Browse M2LB project folders and load supported artifacts into BirkNext reviewers. Supported artifacts are ready to open; context-only files require no dedicated reviewer.</p>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="sp-loading">
+            <div class="sp-spinner" aria-label="Loading…"></div>
+            <span>Discovering sample projects…</span>
+        </div>
+    }
+    else if (_projects.Count == 0)
+    {
+        <div class="sp-empty">
+            <div class="sp-empty-icon" aria-hidden="true">📂</div>
+            <div class="sp-empty-title">No sample projects found</div>
+            <p class="sp-empty-hint">
+                Set <code>SampleProjects:BaseDirectory</code> in <code>appsettings.Local.json</code> to point to your M2LB folder (e.g. <code>../../m2lb</code>).
+                Each subdirectory becomes a project.
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="sp-project-list">
+            @foreach (var project in _projects)
+            {
+                var supported = project.Files.Where(f => f.IsSupported && f.Exists).ToList();
+                var missing   = project.Files.Where(f => f.IsSupported && !f.Exists).ToList();
+                var context   = project.Files.Where(f => f.IsContextOnly).ToList();
+
+                var loadState = _loadState.GetValueOrDefault(project.Slug);
+                var readmeOpen = _readmeOpen.Contains(project.Slug);
+                var allOpen    = _allFilesOpen.Contains(project.Slug);
+
+                <div class="sp-card">
+                    @* ── Card header ──────────────────────────────────────── *@
+                    <div class="sp-card-header">
+                        <div class="sp-card-title-row">
+                            <span class="sp-card-icon" aria-hidden="true">📁</span>
+                            <span class="sp-card-name">@project.Name</span>
+                            @if (!string.IsNullOrEmpty(project.Domain))
+                            {
+                                <span class="sp-domain-tag">@project.Domain</span>
+                            }
+                        </div>
+                        @if (!string.IsNullOrEmpty(project.Description))
+                        {
+                            <p class="sp-card-desc">@project.Description</p>
+                        }
+                    </div>
+
+                    @* ── Supported artifacts ──────────────────────────────── *@
+                    @if (supported.Count > 0)
+                    {
+                        <div class="sp-section">
+                            <div class="sp-section-label sp-section-supported">
+                                Supported Artifacts (@supported.Count)
+                            </div>
+                            @foreach (var f in supported)
+                            {
+                                <div class="sp-file-row">
+                                    <span class="sp-file-status sp-status-ok" aria-label="Available">✓</span>
+                                    <span class="sp-file-name">@f.Filename</span>
+                                    <span class="sp-file-arrow" aria-hidden="true">→</span>
+                                    <a class="sp-reviewer-link" href="@f.ReviewerRoute">@f.ReviewerName</a>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* ── Context-only files ───────────────────────────────── *@
+                    @if (context.Count > 0)
+                    {
+                        <div class="sp-section">
+                            <div class="sp-section-label sp-section-context">
+                                Context-Only (@context.Count)
+                            </div>
+                            @foreach (var f in context)
+                            {
+                                <div class="sp-file-row sp-file-row-context">
+                                    <span class="sp-file-status sp-status-ctx" aria-label="Context only">📄</span>
+                                    <span class="sp-file-name">@f.Filename</span>
+                                    <span class="sp-file-context-note">Available as context. No dedicated explorer yet.</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* ── Missing expected ─────────────────────────────────── *@
+                    @if (missing.Count > 0)
+                    {
+                        <div class="sp-section">
+                            <div class="sp-section-label sp-section-missing">
+                                Missing Expected (@missing.Count)
+                            </div>
+                            @foreach (var f in missing)
+                            {
+                                <div class="sp-file-row sp-file-row-missing">
+                                    <span class="sp-file-status sp-status-miss" aria-label="Missing">⚠</span>
+                                    <span class="sp-file-name">@f.Filename</span>
+                                    <span class="sp-file-arrow" aria-hidden="true">→</span>
+                                    <span class="sp-reviewer-name">@f.ReviewerName</span>
+                                    <span class="sp-file-missing-note">(not found)</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* ── Recommended pages ────────────────────────────────── *@
+                    @if (supported.Count > 0)
+                    {
+                        <div class="sp-section sp-section-rec">
+                            <div class="sp-section-label">Recommended Pages</div>
+                            <div class="sp-rec-links">
+                                @foreach (var f in supported)
+                                {
+                                    <a class="sp-rec-chip" href="@f.ReviewerRoute">@f.ReviewerName</a>
+                                }
+                                <a class="sp-rec-chip" href="quality-review">Quality Review</a>
+                            </div>
+                        </div>
+                    }
+
+                    @* ── Load result ──────────────────────────────────────── *@
+                    @if (loadState is not null)
+                    {
+                        <div class="sp-load-result @(loadState.HasError ? "is-error" : "is-ok")">
+                            @loadState.Message
+                        </div>
+                    }
+
+                    @* ── README viewer ────────────────────────────────────── *@
+                    @if (readmeOpen && _readmeContent.TryGetValue(project.Slug, out var readme))
+                    {
+                        <div class="sp-readme-box">
+                            <div class="sp-readme-header">
+                                <span>README.md</span>
+                                <button class="sp-readme-close" @onclick="() => CloseReadme(project.Slug)">×</button>
+                            </div>
+                            <pre class="sp-readme-content">@readme</pre>
+                        </div>
+                    }
+
+                    @* ── All files viewer ─────────────────────────────────── *@
+                    @if (allOpen)
+                    {
+                        var allFiles = project.Files.OrderBy(f => f.Filename).ToList();
+                        <div class="sp-all-files-box">
+                            <div class="sp-all-files-header">
+                                <span>All Files</span>
+                                <button class="sp-readme-close" @onclick="() => CloseAllFiles(project.Slug)">×</button>
+                            </div>
+                            @foreach (var f in allFiles)
+                            {
+                                <div class="sp-all-file-row">
+                                    <span class="sp-file-name">@f.Filename</span>
+                                    @if (f.IsSupported && f.Exists)
+                                    {
+                                        <span class="sp-file-type-badge sp-badge-supported">Supported → @f.ReviewerName</span>
+                                    }
+                                    else if (f.IsContextOnly)
+                                    {
+                                        <span class="sp-file-type-badge sp-badge-context">Context-only</span>
+                                    }
+                                    else if (f.IsSupported && !f.Exists)
+                                    {
+                                        <span class="sp-file-type-badge sp-badge-missing">Missing</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* ── Card actions ─────────────────────────────────────── *@
+                    <div class="sp-card-actions">
+                        <button class="sp-btn sp-btn-primary"
+                                disabled="@(supported.Count == 0 || _loadingSlug == project.Slug)"
+                                @onclick="() => LoadArtifacts(project)">
+                            @if (_loadingSlug == project.Slug)
+                            { <span class="sp-btn-spinner" aria-hidden="true"></span> }
+                            Load Supported Artifacts
+                        </button>
+                        <button class="sp-btn sp-btn-secondary" @onclick="() => ToggleAllFiles(project.Slug)">
+                            @(allOpen ? "Hide Files" : "View All Files")
+                        </button>
+                        @if (project.HasReadme)
+                        {
+                            <button class="sp-btn sp-btn-secondary" @onclick="() => ToggleReadme(project)">
+                                @(readmeOpen ? "Close README" : "README")
+                            </button>
+                        }
+                        <button class="sp-btn sp-btn-icon" title="Copy folder path"
+                                @onclick="() => CopyPath(project.AbsolutePath)">
+                            📋
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<SampleProjectDto> _projects = [];
+    private bool _loading = true;
+    private string? _loadingSlug;
+    private Dictionary<string, LoadResult> _loadState = [];
+    private HashSet<string> _readmeOpen = [];
+    private HashSet<string> _allFilesOpen = [];
+    private Dictionary<string, string> _readmeContent = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projects = await ProjectsApi.GetProjectsAsync();
+        _loading = false;
+    }
+
+    private async Task LoadArtifacts(SampleProjectDto project)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            $"Load supported artifacts from \"{project.Name}\"?\n\nThis will overwrite any currently loaded documents for these artifact types.");
+        if (!confirmed) return;
+
+        _loadingSlug = project.Slug;
+        _loadState.Remove(project.Slug);
+        StateHasChanged();
+
+        var supported = project.Files.Where(f => f.IsSupported && f.Exists).ToList();
+        var loaded = 0;
+        var skipped = new List<string>();
+
+        foreach (var file in supported)
+        {
+            var content = await ProjectsApi.GetFileAsync(project.Slug, file.Filename);
+            if (content is null)
+            {
+                skipped.Add(file.Filename);
+                continue;
+            }
+            await DocumentApi.SaveAsync(file.ArtifactKind!, content);
+            loaded++;
+        }
+
+        var missing = project.Files.Where(f => f.IsSupported && !f.Exists).Select(f => f.Filename).ToList();
+        var msg = $"✅ Loaded {loaded} artifact{(loaded != 1 ? "s" : "")}.";
+        var hasError = false;
+        if (skipped.Count > 0)
+        {
+            msg += $" ⚠ Failed to fetch: {string.Join(", ", skipped)}.";
+            hasError = true;
+        }
+        if (missing.Count > 0)
+        {
+            msg += $" Not found: {string.Join(", ", missing)}.";
+        }
+
+        _loadState[project.Slug] = new LoadResult(msg, hasError);
+        _loadingSlug = null;
+    }
+
+    private async Task ToggleReadme(SampleProjectDto project)
+    {
+        if (_readmeOpen.Contains(project.Slug))
+        {
+            CloseReadme(project.Slug);
+            return;
+        }
+
+        if (!_readmeContent.ContainsKey(project.Slug))
+        {
+            var content = await ProjectsApi.GetFileAsync(project.Slug, "README.md");
+            _readmeContent[project.Slug] = content ?? "(README could not be loaded)";
+        }
+        _readmeOpen.Add(project.Slug);
+    }
+
+    private void CloseReadme(string slug) => _readmeOpen.Remove(slug);
+
+    private void ToggleAllFiles(string slug)
+    {
+        if (!_allFilesOpen.Remove(slug))
+            _allFilesOpen.Add(slug);
+    }
+
+    private void CloseAllFiles(string slug) => _allFilesOpen.Remove(slug);
+
+    private async Task CopyPath(string path)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", path);
+        }
+        catch
+        {
+            // Clipboard API not available — silently ignore
+        }
+    }
+
+    private sealed record LoadResult(string Message, bool HasError);
+}

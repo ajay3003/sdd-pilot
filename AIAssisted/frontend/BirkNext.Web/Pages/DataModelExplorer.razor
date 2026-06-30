@@ -1,0 +1,75 @@
+@page "/data-model-explorer"
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+@inject BirkNext.Web.Services.ProjectDocumentApiService DocumentApi
+
+<PageTitle>Data Model Explorer — QA Review Studio</PageTitle>
+
+<div class="dme-page">
+
+    <PageHeader Title="Data Model Explorer"
+                Description="Review database entities, tables, relationships, constraints, indexes, and traceability from data-model.md." />
+
+    <div class="dme-page-body">
+        <DataModelExplorerPanel
+            DataModelText="@_initialText"
+            InitialView="@_initialView"
+            OnBuilt="OnDataModelBuilt" />
+    </div>
+
+</div>
+
+@code {
+    private string _initialText = string.Empty;
+    private string? _initialView;
+
+    private const string StorageKey = "dme-standalone-datamodel";
+
+    protected override void OnInitialized()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var view))
+            _initialView = view;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        string? content = null;
+        try { content = await DocumentApi.GetAsync("datamodel"); } catch { }
+
+        if (!string.IsNullOrWhiteSpace(content))
+        {
+            _initialText = content;
+            StateHasChanged();
+            return;
+        }
+
+        string? legacy = null;
+        try { legacy = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey); } catch { }
+
+        if (!string.IsNullOrWhiteSpace(legacy))
+        {
+            try
+            {
+                await DocumentApi.SaveAsync("datamodel", legacy);
+                await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey);
+            }
+            catch { }
+            _initialText = legacy;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnDataModelBuilt(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        try { await DocumentApi.SaveAsync("datamodel", text); } catch { }
+        try { await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey); } catch { }
+    }
+}

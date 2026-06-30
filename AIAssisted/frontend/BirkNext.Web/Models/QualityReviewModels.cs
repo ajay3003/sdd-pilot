@@ -36,6 +36,7 @@ public sealed class QualityReviewPackResult
     public StandardsComplianceReport?    Standards        { get; init; }
     public QAReadinessReport?            QaReadiness      { get; init; }
     public DeliveryReadinessReport?      DeliveryReadiness { get; init; }
+    public DataModelDocument?            DataModel         { get; init; }
 }
 
 // ── Aggregate report ──────────────────────────────────────────────────────────

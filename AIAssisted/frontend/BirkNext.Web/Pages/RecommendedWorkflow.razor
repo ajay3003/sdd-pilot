@@ -15,6 +15,7 @@
    ROUTES USED BY THIS PAGE (re-verify after any navigation change):
      extract                   /extract
      constitution-explorer     /constitution-explorer
+     data-model-explorer       /data-model-explorer
      plan-explorer             /plan-explorer
      task-explorer             /task-explorer
      scenarios                 /scenarios
@@ -106,12 +107,46 @@
 
         <div class="rw-phase-connector" aria-hidden="true">↓</div>
 
-        <!-- ── Step 3: Plan Explorer ───────────────────────── Optional ──── -->
-        <div class="rw-phase rw-phase-optional" style="--rw-phase-color: #6d28d9;">
+        <!-- ── Step 3: Data Model Explorer ───────────────── Optional ──── -->
+        <div class="rw-phase rw-phase-optional" style="--rw-phase-color: #065f46;">
             <div class="rw-phase-header">
                 <div class="rw-phase-num">3</div>
                 <div class="rw-phase-titles">
                     <div class="rw-phase-label">Step 3 — Optional</div>
+                    <div class="rw-phase-name">Data Model Explorer</div>
+                </div>
+            </div>
+            <div class="rw-phase-body">
+                <p class="rw-goal"><strong>Goal:</strong> Review the data model to validate database entities, tables, relationships, constraints, and indexes. Use when a feature changes database structure or introduces new persistent data.</p>
+                <p class="rw-rationale"><strong>Why here:</strong> Data model decisions directly inform the implementation plan — entity design affects plan phases, task decomposition, and eventually code traceability. Reviewing the data model before the plan surfaces structural mismatches early.</p>
+                <div class="rw-phase-columns">
+                    <div>
+                        <div class="rw-col-label">Activities</div>
+                        <ul class="rw-phase-actions">
+                            <li>Open Data Model Explorer and import <code>data-model.md</code></li>
+                            <li>Review entity and table definitions — columns, types, constraints</li>
+                            <li>Check relationships for every foreign key column</li>
+                            <li>Verify traceability links from entities to requirement IDs</li>
+                            <li>Review findings — missing primary keys, indexes, or traceability</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="rw-col-label">Outcome</div>
+                        <p class="rw-outcome-text">Confirmed data model structure with validated entity relationships, constraint coverage, and requirement traceability — ready to feed into the implementation plan.</p>
+                    </div>
+                </div>
+                <a href="data-model-explorer" class="rw-cta">Open Data Model Explorer →</a>
+            </div>
+        </div>
+
+        <div class="rw-phase-connector" aria-hidden="true">↓</div>
+
+        <!-- ── Step 4: Plan Explorer ───────────────────────── Optional ──── -->
+        <div class="rw-phase rw-phase-optional" style="--rw-phase-color: #6d28d9;">
+            <div class="rw-phase-header">
+                <div class="rw-phase-num">4</div>
+                <div class="rw-phase-titles">
+                    <div class="rw-phase-label">Step 4 — Optional</div>
                     <div class="rw-phase-name">Plan Explorer</div>
                 </div>
             </div>
@@ -140,12 +175,12 @@
 
         <div class="rw-phase-connector" aria-hidden="true">↓</div>
 
-        <!-- ── Step 4: Task Explorer ───────────────────────── Optional ──── -->
+        <!-- ── Step 5: Task Explorer ───────────────────────── Optional ──── -->
         <div class="rw-phase rw-phase-optional" style="--rw-phase-color: #b45309;">
             <div class="rw-phase-header">
-                <div class="rw-phase-num">4</div>
+                <div class="rw-phase-num">5</div>
                 <div class="rw-phase-titles">
-                    <div class="rw-phase-label">Step 4 — Optional</div>
+                    <div class="rw-phase-label">Step 5 — Optional</div>
                     <div class="rw-phase-name">Task Explorer</div>
                 </div>
             </div>
@@ -173,12 +208,12 @@
 
         <div class="rw-phase-connector" aria-hidden="true">↓</div>
 
-        <!-- ── Step 5: QA Artifact Library ────────────────── Optional ──── -->
+        <!-- ── Step 6: QA Artifact Library ────────────────── Optional ──── -->
         <div class="rw-phase rw-phase-optional" style="--rw-phase-color: #0e7490;">
             <div class="rw-phase-header">
-                <div class="rw-phase-num">5</div>
+                <div class="rw-phase-num">6</div>
                 <div class="rw-phase-titles">
-                    <div class="rw-phase-label">Step 5 — Optional</div>
+                    <div class="rw-phase-label">Step 6 — Optional</div>
                     <div class="rw-phase-name">QA Artifact Library</div>
                 </div>
             </div>
@@ -206,12 +241,12 @@
 
         <div class="rw-phase-connector" aria-hidden="true">↓</div>
 
-        <!-- ── Step 6: Quality Review ──────────────────────── Core ────── -->
+        <!-- ── Step 7: Quality Review ──────────────────────── Core ────── -->
         <div class="rw-phase rw-phase-central" style="--rw-phase-color: #be185d;">
             <div class="rw-phase-header">
-                <div class="rw-phase-num">6</div>
+                <div class="rw-phase-num">7</div>
                 <div class="rw-phase-titles">
-                    <div class="rw-phase-label">Step 6 — Core</div>
+                    <div class="rw-phase-label">Step 7 — Core</div>
                     <div class="rw-phase-name">Quality Review</div>
                 </div>
             </div>
@@ -227,6 +262,7 @@
                             <div class="rw-pack-group-title">Quality</div>
                             <ul class="rw-pack-group-items">
                                 <li class="rw-pack-group-item">QA Auditor — deterministic rule-based audit</li>
+                                <li class="rw-pack-group-item">Data Model Quality — schema structure, relationships, and traceability checks</li>
                             </ul>
                         </div>
                         <div class="rw-pack-group">
@@ -279,12 +315,12 @@
 
         <div class="rw-phase-connector" aria-hidden="true">↓</div>
 
-        <!-- ── Step 7: AI Change Review ────────────────────── Optional ──── -->
+        <!-- ── Step 8: AI Change Review ────────────────────── Optional ──── -->
         <div class="rw-phase rw-phase-optional" style="--rw-phase-color: #7c3aed;">
             <div class="rw-phase-header">
-                <div class="rw-phase-num">7</div>
+                <div class="rw-phase-num">8</div>
                 <div class="rw-phase-titles">
-                    <div class="rw-phase-label">Step 7 — Optional</div>
+                    <div class="rw-phase-label">Step 8 — Optional</div>
                     <div class="rw-phase-name">AI Change Review</div>
                 </div>
             </div>
@@ -313,12 +349,12 @@
 
         <div class="rw-phase-connector" aria-hidden="true">↓</div>
 
-        <!-- ── Step 8: Implementation Review ──────────────── Core ────── -->
+        <!-- ── Step 9: Implementation Review ──────────────── Core ────── -->
         <div class="rw-phase" style="--rw-phase-color: #c2410c;">
             <div class="rw-phase-header">
-                <div class="rw-phase-num">8</div>
+                <div class="rw-phase-num">9</div>
                 <div class="rw-phase-titles">
-                    <div class="rw-phase-label">Step 8 — Core</div>
+                    <div class="rw-phase-label">Step 9 — Core</div>
                     <div class="rw-phase-name">Implementation Review</div>
                 </div>
             </div>
@@ -348,12 +384,12 @@
 
         <div class="rw-phase-connector" aria-hidden="true">↓</div>
 
-        <!-- ── Step 9: Implementation Traceability ─────────── Core ────── -->
+        <!-- ── Step 10: Implementation Traceability ─────────── Core ────── -->
         <div class="rw-phase" style="--rw-phase-color: #475569;">
             <div class="rw-phase-header">
-                <div class="rw-phase-num">9</div>
+                <div class="rw-phase-num">10</div>
                 <div class="rw-phase-titles">
-                    <div class="rw-phase-label">Step 9 — Core</div>
+                    <div class="rw-phase-label">Step 10 — Core</div>
                     <div class="rw-phase-name">Implementation Traceability</div>
                 </div>
             </div>
@@ -398,13 +434,13 @@
         <ul class="rw-maintenance-rules">
             <li>When a page is added, removed, or renamed — update the corresponding step and its CTA href.</li>
             <li>When the recommended process changes — update step order, Core/Optional labels, and rationale text.</li>
-            <li>When Quality Review packs change — update the Review Packs grid in Step 6 to match <code>QualityReviewService.AvailablePacks</code>.</li>
+            <li>When Quality Review packs change — update the Review Packs grid in Step 7 to match <code>QualityReviewService.AvailablePacks</code>.</li>
             <li>After any change here — cross-check the SDD Workflow section in <a href="user-guide" class="rw-inline-link">User Guide</a>.</li>
         </ul>
         <div class="rw-maintenance-routes">
             <span class="rw-maintenance-routes-label">Active routes:</span>
-            <code>extract</code><code>constitution-explorer</code><code>plan-explorer</code>
-            <code>task-explorer</code><code>scenarios</code><code>quality-review</code>
+            <code>extract</code><code>constitution-explorer</code><code>data-model-explorer</code>
+            <code>plan-explorer</code><code>task-explorer</code><code>scenarios</code><code>quality-review</code>
             <code>ai-change-auditor</code><code>task-alignment</code><code>implementation-traceability</code>
         </div>
     </div>

@@ -27,6 +27,7 @@ public sealed class QualityReviewService : IQualityReviewService
     private readonly IStandardsComplianceService          _standards;
     private readonly IQAReadinessService                  _qaReadiness;
     private readonly IDeliveryReadinessAssessmentService  _delivery;
+    private readonly IDataModelAnalysisService            _dataModelAnalysis;
 
     private readonly List<IPackAdapter> _adapters = [];
     private bool _initialized;
@@ -40,20 +41,23 @@ public sealed class QualityReviewService : IQualityReviewService
         IConstitutionComplianceService      compliance,
         IStandardsComplianceService         standards,
         IQAReadinessService                 qaReadiness,
-        IDeliveryReadinessAssessmentService delivery)
+        IDeliveryReadinessAssessmentService delivery,
+        IDataModelAnalysisService           dataModelAnalysis)
     {
-        _parser      = parser;
-        _auditor     = auditor;
-        _compliance  = compliance;
-        _standards   = standards;
-        _qaReadiness = qaReadiness;
-        _delivery    = delivery;
+        _parser             = parser;
+        _auditor            = auditor;
+        _compliance         = compliance;
+        _standards          = standards;
+        _qaReadiness        = qaReadiness;
+        _delivery           = delivery;
+        _dataModelAnalysis  = dataModelAnalysis;
 
         // Static packs — always available, registered in display order.
         _adapters.Add(new QaAuditorAdapter(auditor));
         _adapters.Add(new ConstitutionComplianceAdapter(compliance));
         _adapters.Add(new QaReadinessAdapter(qaReadiness));
         _adapters.Add(new DeliveryReadinessAdapter(delivery));
+        _adapters.Add(new DataModelQualityAdapter(dataModelAnalysis));
     }
 
     // ── Initialisation ────────────────────────────────────────────────────────
@@ -76,21 +80,28 @@ public sealed class QualityReviewService : IQualityReviewService
         string? specText,
         string? planText,
         string? taskText,
+        string? dataModelText,
         IEnumerable<string> selectedPackIds)
     {
         // Parse all artifacts once — shared across every selected pack.
         var parsed = _parser.Parse(constitutionText, specText, planText, taskText);
 
+        // Build clean combined text from the shared engine's token stream.
+        // Used by keyword-based packs (WCAG, OWASP, GDPR, ISO 25010).
+        var combinedText = BuildCombinedText(constitutionText, specText, planText, taskText);
+
+        DataModelDocument? dataModel = null;
+        if (!string.IsNullOrWhiteSpace(dataModelText))
+            dataModel = _dataModelAnalysis.Parse(dataModelText);
+
         var ctx = new RunContext
         {
-            ConstitutionText = constitutionText,
-            SpecText         = specText,
-            PlanText         = planText,
-            TaskText         = taskText,
+            CombinedText     = combinedText,
             Constitution     = parsed.Constitution,
             Spec             = parsed.Spec,
             Plan             = parsed.Plan,
             Tasks            = parsed.Tasks,
+            DataModel        = dataModel,
         };
 
         var selected = selectedPackIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -130,18 +141,61 @@ public sealed class QualityReviewService : IQualityReviewService
         };
     }
 
+    // ── Combined-text builder ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Extracts clean searchable text from each artifact using the shared
+    /// Markdown Document Engine. Markdown syntax (##, -, |---|, etc.) is
+    /// stripped; only semantic content (headings, prose, bullets, table cells,
+    /// code lines) is retained. This is the single tokenisation pass for all
+    /// keyword-based packs — no pack re-parses the raw markdown.
+    /// </summary>
+    private static string BuildCombinedText(
+        string? constitutionText,
+        string? specText,
+        string? planText,
+        string? taskText)
+    {
+        var parts = new List<string>(4);
+
+        foreach (var text in new[] { constitutionText, specText, planText, taskText })
+        {
+            if (string.IsNullOrWhiteSpace(text)) continue;
+
+            var content = string.Join("\n",
+                MarkdownTokenizer.Tokenize(text)
+                    .Where(t => t.Kind is not (
+                        MarkdownTokenKind.Blank          or
+                        MarkdownTokenKind.FencedCodeStart or
+                        MarkdownTokenKind.FencedCodeEnd   or
+                        MarkdownTokenKind.TableSeparator  or
+                        MarkdownTokenKind.HorizontalRule))
+                    .Select(t => t.Kind == MarkdownTokenKind.TableRow
+                        ? string.Join(" ", t.TableCells ?? [])
+                        : t.Content)
+                    .Where(c => !string.IsNullOrWhiteSpace(c)));
+
+            if (!string.IsNullOrEmpty(content))
+                parts.Add(content);
+        }
+
+        return string.Join("\n", parts);
+    }
+
     // ── Internal execution context ────────────────────────────────────────────
 
     private sealed class RunContext
     {
-        public string? ConstitutionText { get; init; }
-        public string? SpecText         { get; init; }
-        public string? PlanText         { get; init; }
-        public string? TaskText         { get; init; }
+        // Clean text extracted from all artifacts by the shared Markdown Document Engine.
+        // Used by keyword-based packs (Standards group).
+        public string CombinedText { get; init; } = string.Empty;
+
+        // Parsed domain models — used by structural packs (Quality / Governance / Readiness).
         public ConstitutionDocument? Constitution { get; init; }
         public SpecTree?             Spec         { get; init; }
         public PlanDocument?         Plan         { get; init; }
         public TaskTree?             Tasks        { get; init; }
+        public DataModelDocument?    DataModel    { get; init; }
     }
 
     // ── Internal adapter interface ────────────────────────────────────────────
@@ -348,7 +402,7 @@ public sealed class QualityReviewService : IQualityReviewService
 
         public Task<QualityReviewPackResult> ExecuteAsync(RunContext ctx)
         {
-            if (string.IsNullOrWhiteSpace(ctx.SpecText))
+            if (string.IsNullOrWhiteSpace(ctx.CombinedText))
                 return Task.FromResult(new QualityReviewPackResult
                 {
                     PackId    = Descriptor.PackId,
@@ -358,10 +412,11 @@ public sealed class QualityReviewService : IQualityReviewService
                 });
 
             var report  = _standards.Assess(
-                ctx.ConstitutionText,
-                ctx.SpecText!,
-                ctx.PlanText,
-                ctx.TaskText,
+                ctx.CombinedText,
+                ctx.Constitution is not null,
+                ctx.Spec         is not null,
+                ctx.Plan         is not null,
+                ctx.Tasks        is not null,
                 [_entry.StandardId]);
 
             var summary = report.Summaries.FirstOrDefault();
@@ -382,6 +437,58 @@ public sealed class QualityReviewService : IQualityReviewService
                 Medium    = medium,
                 Low       = low,
                 Standards = report,
+            });
+        }
+    }
+
+    // ── Data Model Quality adapter ────────────────────────────────────────────
+
+    private sealed class DataModelQualityAdapter : IPackAdapter
+    {
+        private readonly IDataModelAnalysisService _dataModel;
+
+        public QualityReviewPackDescriptor Descriptor { get; } = new(
+            PackId:          "data-model-quality",
+            PackGroup:       "Quality",
+            PackName:        "Data Model Quality",
+            PackDescription: "Schema structure, relationships, and traceability checks",
+            IsDefault:       false);
+
+        public DataModelQualityAdapter(IDataModelAnalysisService dataModel) => _dataModel = dataModel;
+
+        public Task<QualityReviewPackResult> ExecuteAsync(RunContext ctx)
+        {
+            if (ctx.DataModel is null)
+                return Task.FromResult(new QualityReviewPackResult
+                {
+                    PackId    = Descriptor.PackId,
+                    PackName  = Descriptor.PackName,
+                    PackGroup = Descriptor.PackGroup,
+                    Error     = "Data model not loaded — load data-model.md to run this pack.",
+                });
+
+            var doc = ctx.DataModel;
+
+            int critical = doc.Findings.Count(f => f.Severity == DataModelSeverity.Critical);
+            int medium   = doc.Findings.Count(f => f.Severity == DataModelSeverity.Error);
+            int low      = doc.Findings.Count(f => f.Severity == DataModelSeverity.Warning);
+            int info     = doc.Findings.Count(f => f.Severity == DataModelSeverity.Info);
+
+            int totalPenalty = critical * 25 + medium * 10 + low * 3;
+            double score = doc.EntityCount == 0 ? 0 : Math.Max(0, 100 - totalPenalty);
+
+            return Task.FromResult(new QualityReviewPackResult
+            {
+                PackId    = Descriptor.PackId,
+                PackName  = Descriptor.PackName,
+                PackGroup = Descriptor.PackGroup,
+                Score     = score,
+                Critical  = critical,
+                High      = 0,
+                Medium    = medium,
+                Low       = low,
+                Info      = info,
+                DataModel = doc,
             });
         }
     }

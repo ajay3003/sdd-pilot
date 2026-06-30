@@ -8,6 +8,7 @@ public enum ArtifactType
     Specification,
     Plan,
     Task,
+    DataModel,
 }
 
 public enum TraceabilityStatus

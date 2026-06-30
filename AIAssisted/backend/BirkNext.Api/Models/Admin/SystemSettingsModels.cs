@@ -121,6 +121,7 @@ public class FeatureVisibilityInfo
     public bool Dashboard { get; set; } = true;
     public bool SpecificationReview { get; set; } = true;
     public bool QaArtifactLibrary { get; set; } = true;
+    public bool SampleProjects { get; set; } = true;
     public bool CreateTestScenario { get; set; } = true;
     public bool LegacyTraceabilityNavigationEnabled { get; set; } = false;
     public bool TraceabilityCoverage { get; set; } = true;
@@ -134,6 +135,7 @@ public class FeatureVisibilityInfo
     public bool ImplementationReview { get; set; } = true;
     public bool ImplementationTraceability { get; set; } = true;
     public bool ConstitutionExplorer { get; set; } = true;
+    public bool DataModelExplorer    { get; set; } = true;
     public bool PlanExplorer { get; set; } = true;
     public bool ArtifactTraceability { get; set; } = true;
     public bool BlazorWasmSecurityReview { get; set; } = true;

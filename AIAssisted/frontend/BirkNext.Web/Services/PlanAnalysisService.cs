@@ -136,7 +136,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
     public PlanDocument Parse(string markdown)
     {
-        var lines = markdown.Split('\n').Select(l => l.TrimEnd()).ToArray();
+        var tokens = MarkdownTokenizer.Tokenize(markdown);
 
         string title = string.Empty;
         string? featureName = null;
@@ -218,15 +218,14 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         bool titleFound = false;
         bool summaryExtracted = false;
 
-        for (int i = 0; i < lines.Length; i++)
+        for (int i = 0; i < tokens.Count; i++)
         {
-            var line = lines[i];
-            var hm = HeadingRe.Match(line);
+            var tok = tokens[i];
 
-            if (hm.Success)
+            if (tok.Kind == MarkdownTokenKind.Heading)
             {
-                var level = hm.Groups[1].Value.Length;
-                var rawTitle = hm.Groups[2].Value.Trim();
+                var level    = tok.HeadingLevel;
+                var rawTitle = tok.Content;
 
                 if (level == 1 && !titleFound)
                 {
@@ -268,12 +267,12 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 }
             }
 
-            if (inMetaBlock && i < 35)
+            if (inMetaBlock && tok.LineIndex < 35)
             {
                 bool matched = false;
                 foreach (var (key, re) in MetaPatterns)
                 {
-                    var m = re.Match(line);
+                    var m = re.Match(tok.RawLine);
                     if (!m.Success) continue;
                     var val = StripMarkdown(m.Groups[1].Value.Trim());
                     matched = true;
@@ -294,7 +293,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 if (matched) continue;
             }
 
-            sectionLines.Add(line);
+            sectionLines.Add(tok.RawLine);
         }
 
         FlushSection();
@@ -433,12 +432,11 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         if (string.IsNullOrWhiteSpace(heading) && string.IsNullOrWhiteSpace(raw)) return null;
 
         var blocks = new List<PlanSectionBlock>();
-        var lines = raw.Split('\n');
+        var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentHeading = null;
         var currentBullets = new List<string>();
         var paragraphSb = new StringBuilder();
         var codeSb = new StringBuilder();
-        bool inCode = false;
 
         void FlushBlock()
         {
@@ -468,42 +466,42 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             if (!string.IsNullOrEmpty(code))
                 blocks.Add(new PlanSectionBlock { SubHeading = currentHeading, CodeBlock = code });
             codeSb.Clear();
-            inCode = false;
             currentHeading = null;
         }
 
-        foreach (var line in lines)
+        foreach (var tok in tokens)
         {
-            if (CodeFenceRe.IsMatch(line))
+            switch (tok.Kind)
             {
-                if (inCode) { FlushCode(); continue; }
-                FlushBlock();
-                inCode = true;
-                continue;
+                case MarkdownTokenKind.FencedCodeStart:
+                    FlushBlock();
+                    break;
+                case MarkdownTokenKind.FencedCodeLine:
+                    codeSb.AppendLine(tok.RawLine);
+                    break;
+                case MarkdownTokenKind.FencedCodeEnd:
+                    FlushCode();
+                    break;
+                case MarkdownTokenKind.Heading when tok.HeadingLevel >= 3:
+                    FlushBlock();
+                    currentHeading = StripMarkdown(tok.Content);
+                    break;
+                case MarkdownTokenKind.BulletItem:
+                case MarkdownTokenKind.OrderedItem:
+                    currentBullets.Add(StripMarkdown(tok.Content));
+                    break;
+                case MarkdownTokenKind.Blank:
+                    if (paragraphSb.Length > 0 || currentBullets.Count > 0) FlushBlock();
+                    break;
+                default:
+                    var rawLine = tok.RawLine.Trim();
+                    if (!string.IsNullOrEmpty(rawLine))
+                        paragraphSb.AppendLine(StripMarkdown(rawLine));
+                    break;
             }
-            if (inCode) { codeSb.AppendLine(line); continue; }
-
-            var hm = HeadingRe.Match(line);
-            if (hm.Success && hm.Groups[1].Value.Length >= 3)
-            {
-                FlushBlock();
-                currentHeading = StripMarkdown(hm.Groups[2].Value.Trim());
-                continue;
-            }
-
-            var bm = BulletRe.Match(line);
-            if (bm.Success) { currentBullets.Add(StripMarkdown(bm.Groups[1].Value.Trim())); continue; }
-
-            var trimmed = line.Trim();
-            if (string.IsNullOrEmpty(trimmed))
-            {
-                if (paragraphSb.Length > 0 || currentBullets.Count > 0) FlushBlock();
-                continue;
-            }
-            paragraphSb.AppendLine(StripMarkdown(trimmed));
         }
 
-        if (inCode) FlushCode(); else FlushBlock();
+        if (codeSb.Length > 0) FlushCode(); else FlushBlock();
 
         return new PlanSection
         {
@@ -520,7 +518,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         List<PlanSection> sections,
         string sectionHeading)
     {
-        var lines = raw.Split('\n');
+        var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentH3 = null;
         var itemLines = new List<string>();
         var narrativeLines = new List<string>();
@@ -528,24 +526,22 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         void FlushItem()
         {
             if (currentH3 is null) return;
-            var body = string.Join("\n", itemLines);
-            var dec = ParseDecision(currentH3, body);
+            var dec = ParseDecision(currentH3, string.Join("\n", itemLines));
             if (dec is not null) decisions.Add(dec);
             itemLines.Clear();
             currentH3 = null;
         }
 
-        foreach (var line in lines)
+        foreach (var tok in tokens)
         {
-            var hm = HeadingRe.Match(line);
-            if (hm.Success && hm.Groups[1].Value.Length >= 3)
+            if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel >= 3)
             {
                 FlushItem();
-                currentH3 = hm.Groups[2].Value.Trim();
+                currentH3 = tok.Content;
                 continue;
             }
-            if (currentH3 is not null) itemLines.Add(line);
-            else narrativeLines.Add(line);
+            if (currentH3 is not null) itemLines.Add(tok.RawLine);
+            else narrativeLines.Add(tok.RawLine);
         }
         FlushItem();
 
@@ -574,47 +570,56 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         var consequences = new List<string>();
         string currentProp = string.Empty;
 
-        foreach (var line in body.Split('\n'))
+        foreach (var tok in MarkdownTokenizer.Tokenize(body))
         {
-            var trimmed = line.Trim();
-            if (string.IsNullOrEmpty(trimmed)) { currentProp = string.Empty; continue; }
-
-            var bm = BoldPropertyRe.Match(line);
-            if (bm.Success)
+            switch (tok.Kind)
             {
-                var prop = bm.Groups[1].Value.ToLowerInvariant();
-                var val  = bm.Groups[2].Value.Trim();
-                switch (prop)
+                case MarkdownTokenKind.Blank:
+                    currentProp = string.Empty;
+                    break;
+
+                case MarkdownTokenKind.BulletItem:
                 {
-                    case "context":   context.AppendLine(StripMarkdown(val));  currentProp = "context";  break;
-                    case "decision":  decision.AppendLine(StripMarkdown(val)); currentProp = "decision";  break;
-                    case "rationale": rationale.AppendLine(StripMarkdown(val)); currentProp = "rationale"; break;
-                    case "consequences": case "consequence": currentProp = "consequences"; break;
-                    default:
-                        if (currentProp == "context") context.AppendLine(StripMarkdown(trimmed));
-                        break;
+                    var c = StripMarkdown(tok.Content);
+                    if      (currentProp == "consequences") consequences.Add(c);
+                    else if (currentProp == "context")      context.AppendLine(c);
+                    else if (currentProp == "decision")     decision.AppendLine(c);
+                    else                                    decision.AppendLine(c);
+                    break;
                 }
-                continue;
-            }
 
-            var bullet = BulletRe.Match(line);
-            if (bullet.Success)
-            {
-                var c = StripMarkdown(bullet.Groups[1].Value.Trim());
-                if      (currentProp == "consequences") consequences.Add(c);
-                else if (currentProp == "context")      context.AppendLine(c);
-                else if (currentProp == "decision")     decision.AppendLine(c);
-                else                                    decision.AppendLine(c);
-                continue;
-            }
+                case MarkdownTokenKind.Heading:
+                    break; // sub-headings within a decision body are skipped
 
-            if (!trimmed.StartsWith("#") && !IsPropertyLine(trimmed))
-            {
-                var s = StripMarkdown(trimmed);
-                if      (currentProp == "context")   context.AppendLine(s);
-                else if (currentProp == "decision")  decision.AppendLine(s);
-                else if (currentProp == "rationale") rationale.AppendLine(s);
-                else                                 decision.AppendLine(s);
+                default:
+                {
+                    var bm = BoldPropertyRe.Match(tok.RawLine);
+                    if (bm.Success)
+                    {
+                        var prop = bm.Groups[1].Value.ToLowerInvariant();
+                        var val  = bm.Groups[2].Value.Trim();
+                        switch (prop)
+                        {
+                            case "context":   context.AppendLine(StripMarkdown(val));   currentProp = "context";   break;
+                            case "decision":  decision.AppendLine(StripMarkdown(val));  currentProp = "decision";  break;
+                            case "rationale": rationale.AppendLine(StripMarkdown(val)); currentProp = "rationale"; break;
+                            case "consequences": case "consequence": currentProp = "consequences"; break;
+                            default:
+                                if (currentProp == "context") context.AppendLine(StripMarkdown(tok.Content));
+                                break;
+                        }
+                        break;
+                    }
+                    if (!IsPropertyLine(tok.RawLine.TrimStart()))
+                    {
+                        var s = StripMarkdown(tok.Content);
+                        if      (currentProp == "context")   context.AppendLine(s);
+                        else if (currentProp == "decision")  decision.AppendLine(s);
+                        else if (currentProp == "rationale") rationale.AppendLine(s);
+                        else                                 decision.AppendLine(s);
+                    }
+                    break;
+                }
             }
         }
 
@@ -638,7 +643,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         List<PlanRisk> risks,
         List<PlanConstraint> constraints)
     {
-        var lines = raw.Split('\n');
+        var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentHeading = null;
         var itemLines = new List<string>();
 
@@ -657,22 +662,20 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             currentHeading = null;
         }
 
-        foreach (var line in lines)
+        foreach (var tok in tokens)
         {
-            var hm = HeadingRe.Match(line);
-            if (hm.Success && hm.Groups[1].Value.Length >= 3)
-            { Flush(); currentHeading = hm.Groups[2].Value.Trim(); continue; }
+            if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel >= 3)
+            { Flush(); currentHeading = tok.Content; continue; }
 
-            var bm = BulletRe.Match(line);
-            if (bm.Success && currentHeading is null)
+            if (tok.Kind == MarkdownTokenKind.BulletItem && currentHeading is null)
             {
-                var content = bm.Groups[1].Value.Trim();
+                var content = tok.Content;
                 if (IsConstraintLine(content)) ParseInlineConstraint(content, constraints);
                 else { var r = ParseInlineRisk(content); if (r is not null) risks.Add(r); }
                 continue;
             }
 
-            if (currentHeading is not null) itemLines.Add(line);
+            if (currentHeading is not null) itemLines.Add(tok.RawLine);
         }
         Flush();
 
@@ -681,7 +684,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
     private static void ParseConstraintsSection(string raw, List<PlanConstraint> constraints)
     {
-        var lines = raw.Split('\n');
+        var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentHeading = null;
         var itemLines = new List<string>();
 
@@ -692,17 +695,15 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             itemLines.Clear(); currentHeading = null;
         }
 
-        foreach (var line in lines)
+        foreach (var tok in tokens)
         {
-            var hm = HeadingRe.Match(line);
-            if (hm.Success && hm.Groups[1].Value.Length >= 3)
-            { Flush(); currentHeading = hm.Groups[2].Value.Trim(); continue; }
+            if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel >= 3)
+            { Flush(); currentHeading = tok.Content; continue; }
 
-            var bm = BulletRe.Match(line);
-            if (bm.Success && currentHeading is null)
-            { ParseInlineConstraint(bm.Groups[1].Value.Trim(), constraints); continue; }
+            if (tok.Kind == MarkdownTokenKind.BulletItem && currentHeading is null)
+            { ParseInlineConstraint(tok.Content, constraints); continue; }
 
-            if (currentHeading is not null) itemLines.Add(line);
+            if (currentHeading is not null) itemLines.Add(tok.RawLine);
         }
         Flush();
     }
@@ -879,7 +880,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     {
         if (TryParseComplexityTable(raw, items)) return;
 
-        var lines = raw.Split('\n');
+        var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentH3 = null;
         var itemLines = new List<string>();
 
@@ -891,17 +892,15 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             itemLines.Clear(); currentH3 = null;
         }
 
-        foreach (var line in lines)
+        foreach (var tok in tokens)
         {
-            var hm = HeadingRe.Match(line);
-            if (hm.Success && hm.Groups[1].Value.Length >= 3)
-            { Flush(); currentH3 = hm.Groups[2].Value.Trim(); continue; }
+            if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel >= 3)
+            { Flush(); currentH3 = tok.Content; continue; }
 
-            var bm = BulletRe.Match(line);
-            if (bm.Success && currentH3 is null)
-            { var i = ParseInlineComplexity(bm.Groups[1].Value.Trim()); if (i is not null) items.Add(i); continue; }
+            if (tok.Kind == MarkdownTokenKind.BulletItem && currentH3 is null)
+            { var item = ParseInlineComplexity(tok.Content); if (item is not null) items.Add(item); continue; }
 
-            if (currentH3 is not null) itemLines.Add(line);
+            if (currentH3 is not null) itemLines.Add(tok.RawLine);
         }
         Flush();
     }
@@ -1088,17 +1087,16 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
     private static void ParseDependenciesSection(string raw, List<PlanDependency> deps)
     {
-        var lines   = raw.Split('\n');
+        var tokens = MarkdownTokenizer.Tokenize(raw);
         bool extCtx = false;
 
-        foreach (var line in lines)
+        foreach (var tok in tokens)
         {
-            var hm = HeadingRe.Match(line);
-            if (hm.Success) { extCtx = hm.Groups[2].Value.ToLowerInvariant().Contains("external"); continue; }
+            if (tok.Kind == MarkdownTokenKind.Heading)
+            { extCtx = tok.Content.ToLowerInvariant().Contains("external"); continue; }
 
-            var bm = BulletRe.Match(line);
-            if (!bm.Success) continue;
-            var dep = ParseDependencyLine(bm.Groups[1].Value.Trim(), extCtx || !raw.Contains("Internal", StringComparison.OrdinalIgnoreCase));
+            if (tok.Kind != MarkdownTokenKind.BulletItem) continue;
+            var dep = ParseDependencyLine(tok.Content, extCtx || !raw.Contains("Internal", StringComparison.OrdinalIgnoreCase));
             if (dep is not null) deps.Add(dep);
         }
     }
@@ -1128,7 +1126,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
     private static void ParseMilestonesSection(string raw, List<PlanMilestone> milestones)
     {
-        var lines = raw.Split('\n');
+        var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentH3 = null;
         var itemLines = new List<string>();
 
@@ -1140,12 +1138,11 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             itemLines.Clear(); currentH3 = null;
         }
 
-        foreach (var line in lines)
+        foreach (var tok in tokens)
         {
-            var hm = HeadingRe.Match(line);
-            if (hm.Success && hm.Groups[1].Value.Length >= 3)
-            { Flush(); currentH3 = hm.Groups[2].Value.Trim(); continue; }
-            if (currentH3 is not null) itemLines.Add(line);
+            if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel >= 3)
+            { Flush(); currentH3 = tok.Content; continue; }
+            if (currentH3 is not null) itemLines.Add(tok.RawLine);
         }
         Flush();
     }
@@ -1198,35 +1195,33 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         List<PlanConstitutionCheckItem> checkItems,
         List<PlanGate> gates)
     {
-        // Parse gate tables first
         ParseGatesTable(raw, gates);
 
-        // Parse heading-based check items, skipping table lines
-        var lines = raw.Split('\n');
+        var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentH3 = null;
         var itemLines = new List<string>();
 
         void Flush()
         {
             if (currentH3 is null) return;
-            var body = string.Join("\n", itemLines);
-            var item = ParseConstitutionCheckItem(currentH3, body);
+            var item = ParseConstitutionCheckItem(currentH3, string.Join("\n", itemLines));
             if (item is not null) checkItems.Add(item);
             itemLines.Clear();
             currentH3 = null;
         }
 
         bool inTable = false;
-        foreach (var line in lines)
+        foreach (var tok in tokens)
         {
-            if (TableRowRe.IsMatch(line)) { inTable = true; continue; }
-            if (inTable && string.IsNullOrWhiteSpace(line)) { inTable = false; continue; }
+            if (tok.Kind is MarkdownTokenKind.TableRow or MarkdownTokenKind.TableSeparator)
+            { inTable = true; continue; }
+            if (inTable && tok.Kind == MarkdownTokenKind.Blank)
+            { inTable = false; continue; }
             if (inTable) continue;
 
-            var hm = HeadingRe.Match(line);
-            if (hm.Success && hm.Groups[1].Value.Length >= 3)
-            { Flush(); currentH3 = hm.Groups[2].Value.Trim(); continue; }
-            if (currentH3 is not null) itemLines.Add(line);
+            if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel >= 3)
+            { Flush(); currentH3 = tok.Content; continue; }
+            if (currentH3 is not null) itemLines.Add(tok.RawLine);
         }
         Flush();
     }
@@ -1380,7 +1375,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
     private static void ParseImplementationPhasesSection(string raw, List<PlanImplementationPhase> phases)
     {
-        var lines = raw.Split('\n');
+        var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentH3 = null;
         var itemLines = new List<string>();
 
@@ -1392,13 +1387,12 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             itemLines.Clear(); currentH3 = null;
         }
 
-        foreach (var line in lines)
+        foreach (var tok in tokens)
         {
-            var hm = HeadingRe.Match(line);
-            // Only treat H3 headings as new phases; H4+ are sub-sections within a phase body
-            if (hm.Success && hm.Groups[1].Value.Length == 3)
-            { Flush(); currentH3 = hm.Groups[2].Value.Trim(); continue; }
-            if (currentH3 is not null) itemLines.Add(line);
+            // Only H3 headings start new phases; H4+ are sub-sections within a phase body
+            if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel == 3)
+            { Flush(); currentH3 = tok.Content; continue; }
+            if (currentH3 is not null) itemLines.Add(tok.RawLine);
         }
         Flush();
         phases.Sort((a, b) => a.PhaseNumber.CompareTo(b.PhaseNumber));
@@ -1501,19 +1495,18 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         var gateRefs    = new List<string>();
         var blocks      = new List<PlanSectionBlock>();
 
-        var lines = raw.Split('\n');
+        var tokens    = MarkdownTokenizer.Tokenize(raw);
         string? currentH3 = null;
         var bulletAcc = new List<string>();
         var codeAcc   = new StringBuilder();
-        bool inCode   = false;
 
         void FlushBlock(bool flush)
         {
-            if (inCode && codeAcc.Length > 0)
+            if (codeAcc.Length > 0)
             {
                 ExtractTestPaths(codeAcc.ToString(), testFolders, testClasses);
                 blocks.Add(new PlanSectionBlock { SubHeading = currentH3, CodeBlock = codeAcc.ToString().TrimEnd() });
-                codeAcc.Clear(); inCode = false;
+                codeAcc.Clear();
             }
             else if (bulletAcc.Count > 0)
             {
@@ -1523,36 +1516,45 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             if (flush) currentH3 = null;
         }
 
-        foreach (var line in lines)
+        foreach (var tok in tokens)
         {
-            if (CodeFenceRe.IsMatch(line)) { if (inCode) FlushBlock(false); else { FlushBlock(false); inCode = true; } continue; }
-            if (inCode) { codeAcc.AppendLine(line); continue; }
-
-            var hm = HeadingRe.Match(line);
-            if (hm.Success && hm.Groups[1].Value.Length >= 3)
-            { FlushBlock(true); currentH3 = StripMarkdown(hm.Groups[2].Value.Trim()); continue; }
-
-            var bm = BulletRe.Match(line);
-            if (bm.Success)
+            switch (tok.Kind)
             {
-                var content = bm.Groups[1].Value.Trim();
-                foreach (var fw in TestingFrameworks)
-                    if (content.Contains(fw, StringComparison.OrdinalIgnoreCase) && !frameworks.Contains(fw, StringComparer.OrdinalIgnoreCase))
-                        frameworks.Add(fw);
-                foreach (Match m in RuleIdRe.Matches(content))
+                case MarkdownTokenKind.FencedCodeStart:
+                    FlushBlock(false);
+                    break;
+                case MarkdownTokenKind.FencedCodeLine:
+                    codeAcc.AppendLine(tok.RawLine);
+                    break;
+                case MarkdownTokenKind.FencedCodeEnd:
+                    FlushBlock(false);
+                    break;
+                case MarkdownTokenKind.Heading when tok.HeadingLevel >= 3:
+                    FlushBlock(true);
+                    currentH3 = StripMarkdown(tok.Content);
+                    break;
+                case MarkdownTokenKind.BulletItem:
                 {
-                    var rid = m.Groups[1].Value.ToUpperInvariant();
-                    if (!gateRefs.Contains(rid)) gateRefs.Add(rid);
+                    var content = tok.Content;
+                    foreach (var fw in TestingFrameworks)
+                        if (content.Contains(fw, StringComparison.OrdinalIgnoreCase) && !frameworks.Contains(fw, StringComparer.OrdinalIgnoreCase))
+                            frameworks.Add(fw);
+                    foreach (Match m in RuleIdRe.Matches(content))
+                    {
+                        var rid = m.Groups[1].Value.ToUpperInvariant();
+                        if (!gateRefs.Contains(rid)) gateRefs.Add(rid);
+                    }
+                    if (content.Contains("test", StringComparison.OrdinalIgnoreCase))
+                        ExtractTestPaths(content, testFolders, testClasses);
+                    bulletAcc.Add(StripMarkdown(content));
+                    break;
                 }
-                if (content.Contains("test", StringComparison.OrdinalIgnoreCase))
-                    ExtractTestPaths(content, testFolders, testClasses);
-                bulletAcc.Add(StripMarkdown(content));
-                continue;
+                default:
+                    foreach (var fw in TestingFrameworks)
+                        if (tok.RawLine.Contains(fw, StringComparison.OrdinalIgnoreCase) && !frameworks.Contains(fw, StringComparer.OrdinalIgnoreCase))
+                            frameworks.Add(fw);
+                    break;
             }
-
-            foreach (var fw in TestingFrameworks)
-                if (line.Contains(fw, StringComparison.OrdinalIgnoreCase) && !frameworks.Contains(fw, StringComparer.OrdinalIgnoreCase))
-                    frameworks.Add(fw);
         }
         FlushBlock(true);
 

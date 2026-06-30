@@ -7,9 +7,6 @@ public static class TaskExplorerService
 {
     // ── Regex patterns ────────────────────────────────────────────────────
 
-    private static readonly Regex HeadingRe = new(
-        @"^(#{1,6})\s+(.+)$", RegexOptions.Compiled);
-
     private static readonly Regex CheckboxTaskRe = new(
         @"^\s*[-*]\s+\[([xX ])\]\s+(.+)$", RegexOptions.Compiled);
 
@@ -47,9 +44,6 @@ public static class TaskExplorerService
         @"\b(?:security|authoris|kode[\s-]?[67]|permission|access[\s-]?control|gradert|sikkerhet|auth(?:orization|entication)?)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static readonly Regex TableRowRe = new(
-        @"^\|(.+)\|$", RegexOptions.Compiled);
-
     private static readonly Regex TableSepRe = new(
         @"^\|[\s\-\|:]+\|$", RegexOptions.Compiled);
 
@@ -67,7 +61,7 @@ public static class TaskExplorerService
 
     public static TaskTree Parse(string markdown)
     {
-        var lines = markdown.Split('\n').Select(l => l.TrimEnd()).ToArray();
+        var tokens = MarkdownTokenizer.Tokenize(markdown);
         var roots = new List<TaskNode>();
         var headingStack = new List<(int Level, TaskNode Node)>();
 
@@ -75,39 +69,31 @@ public static class TaskExplorerService
         var hTables = 0; var hRows = 0;
 
         var tableBuffer = new List<string>();
-        var i = 0;
 
-        while (i < lines.Length)
+        void FlushTable()
         {
-            var line = lines[i];
+            if (tableBuffer.Count == 0) return;
+            var tableNode = ParseTable(tableBuffer, ref hRows);
+            if (tableNode is not null) { hTables++; AddToParent(roots, headingStack, tableNode); }
+            tableBuffer.Clear();
+        }
 
-            // Flush any pending table when we hit a non-table line
-            if (tableBuffer.Count > 0 && !TableRowRe.IsMatch(line))
+        foreach (var tok in tokens)
+        {
+            // Table rows accumulate; flush when a non-table token arrives
+            if (tok.Kind is MarkdownTokenKind.TableRow or MarkdownTokenKind.TableSeparator)
             {
-                var tableNode = ParseTable(tableBuffer, ref hRows);
-                if (tableNode is not null)
-                {
-                    hTables++;
-                    AddToParent(roots, headingStack, tableNode);
-                }
-                tableBuffer.Clear();
-            }
-
-            // Collect table lines
-            if (TableRowRe.IsMatch(line))
-            {
-                tableBuffer.Add(line);
-                i++;
+                tableBuffer.Add(tok.RawLine);
                 continue;
             }
+            FlushTable();
 
             // Heading
-            var hm = HeadingRe.Match(line);
-            if (hm.Success)
+            if (tok.Kind == MarkdownTokenKind.Heading)
             {
-                var level = hm.Groups[1].Value.Length;
-                var rawTitle = hm.Groups[2].Value.Trim();
-                var title = StripMarkdown(rawTitle);
+                var level    = tok.HeadingLevel;
+                var rawTitle = tok.Content;
+                var title    = StripMarkdown(rawTitle);
                 var nodeType = ClassifyHeading(level, rawTitle);
 
                 if (nodeType == TaskNodeType.Phase) hPhases++;
@@ -122,17 +108,16 @@ public static class TaskExplorerService
                 else headingStack[^1].Node.Children.Add(node);
 
                 headingStack.Add((level, node));
-                i++;
                 continue;
             }
 
             // Checkbox task: - [ ] T001 ... or - [x] T002 ...
-            var cm = CheckboxTaskRe.Match(line);
+            var cm = CheckboxTaskRe.Match(tok.RawLine);
             if (cm.Success)
             {
                 var completed = cm.Groups[1].Value is "x" or "X";
                 var body = cm.Groups[2].Value.Trim();
-                var task = BuildTaskNode(body, completed, line);
+                var task = BuildTaskNode(body, completed, tok.RawLine);
                 if (task is not null)
                 {
                     hTasks++;
@@ -140,39 +125,27 @@ public static class TaskExplorerService
                     InjectContext(task, headingStack);
                     AddToParent(roots, headingStack, task);
                 }
-                i++;
                 continue;
             }
 
             // Bare task: T001 Description (not inside a checkbox pattern)
-            var bm = BareTaskRe.Match(line);
+            var bm = BareTaskRe.Match(tok.RawLine);
             if (bm.Success && headingStack.Count > 0)
             {
                 var body = $"T{bm.Groups[1].Value} {bm.Groups[2].Value}".Trim();
-                var task = BuildTaskNode(body, false, line);
+                var task = BuildTaskNode(body, false, tok.RawLine);
                 if (task is not null)
                 {
                     hTasks++;
                     InjectContext(task, headingStack);
                     AddToParent(roots, headingStack, task);
                 }
-                i++;
                 continue;
             }
-
-            i++;
         }
 
         // Flush final table buffer
-        if (tableBuffer.Count > 0)
-        {
-            var tableNode = ParseTable(tableBuffer, ref hRows);
-            if (tableNode is not null)
-            {
-                hTables++;
-                AddToParent(roots, headingStack, tableNode);
-            }
-        }
+        FlushTable();
 
         // Propagate descendant counts
         foreach (var root in roots)

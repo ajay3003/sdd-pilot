@@ -1342,13 +1342,13 @@ else if (_settings is not null)
     private static readonly HashSet<string> ReviewSectionKeys =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "SpecificationReview", "ConstitutionExplorer", "PlanExplorer", "TaskExplorer"
+            "SpecificationReview", "ConstitutionExplorer", "DataModelExplorer", "PlanExplorer", "TaskExplorer"
         };
 
     private static readonly HashSet<string> LibrarySectionKeys =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "QaArtifactLibrary", "CreateTestScenario"
+            "QaArtifactLibrary", "SampleProjects", "CreateTestScenario"
         };
 
     private static readonly HashSet<string> AnalysisSectionKeys =
@@ -1390,11 +1390,13 @@ else if (_settings is not null)
         ("Dashboard",               "Dashboard"),
         ("Specification Review",    "SpecificationReview"),
         ("Constitution Explorer",   "ConstitutionExplorer"),
+        ("Data Model Explorer",     "DataModelExplorer"),
         ("Plan Explorer",           "PlanExplorer"),
         ("Task Explorer",           "TaskExplorer"),
 
         // Library
         ("QA Artifact Library",     "QaArtifactLibrary"),
+        ("Sample Projects",         "SampleProjects"),
         ("Create Test Scenario",    "CreateTestScenario"),
 
         // Traceability (legacy — shown only when LegacyTraceabilityNavigationEnabled)
@@ -1737,8 +1739,8 @@ else if (_settings is not null)
     // All routes served by the application (one entry per @page directive).
     private static readonly HashSet<string> KnownRoutes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "/", "/dashboard", "/extract", "/constitution-explorer", "/plan-explorer",
-        "/task-explorer", "/scenarios", "/scenarios/new", "/traceability",
+        "/", "/dashboard", "/extract", "/constitution-explorer", "/data-model-explorer", "/plan-explorer",
+        "/task-explorer", "/scenarios", "/scenarios/new", "/sample-projects", "/traceability",
         "/traceability/suggestions", "/code-traceability", "/spec-drift",
         "/impact-analysis", "/artifact-traceability", "/task-alignment",
         "/implementation-traceability", "/quality-review", "/wasm-security-review",
@@ -1763,9 +1765,11 @@ else if (_settings is not null)
         ("Dashboard",                    "dashboard"),
         ("Specification Review",         "extract"),
         ("Constitution Explorer",        "constitution-explorer"),
+        ("Data Model Explorer",          "data-model-explorer"),
         ("Plan Explorer",                "plan-explorer"),
         ("Task Explorer",                "task-explorer"),
         ("QA Artifact Library",          "scenarios"),
+        ("Sample Projects",              "sample-projects"),
         ("Create Test Scenario",         "scenarios/new"),
         ("Traceability & Coverage",      "traceability"),
         ("Traceability Suggestions",     "traceability/suggestions"),
@@ -1787,8 +1791,9 @@ else if (_settings is not null)
     [
         // RecommendedWorkflow.razor
         ("Recommended Workflow", "constitution-explorer",       "Phase 1 CTA"),
-        ("Recommended Workflow", "extract",                     "Phase 2 CTA"),
-        ("Recommended Workflow", "plan-explorer",               "Phase 3 CTA"),
+        ("Recommended Workflow", "data-model-explorer",         "Phase 2 CTA"),
+        ("Recommended Workflow", "extract",                     "Phase 3 CTA"),
+        ("Recommended Workflow", "plan-explorer",               "Phase 4 CTA"),
         ("Recommended Workflow", "artifact-traceability",       "Phase 4 CTA"),
         ("Recommended Workflow", "quality-review",              "Phase 4 CTA (secondary)"),
         ("Recommended Workflow", "task-alignment",              "Phase 5 CTA"),
@@ -1800,6 +1805,7 @@ else if (_settings is not null)
         ("User Guide", "/ai-change-auditor",                    "AI Change Review feature link"),
         ("User Guide", "/quality-review",                       "Quality Review feature links"),
         ("User Guide", "/constitution-explorer",                "Constitution Explorer link"),
+        ("User Guide", "/data-model-explorer",                  "Data Model Explorer link"),
         ("User Guide", "/extract",                              "Specification Review link"),
         ("User Guide", "/plan-explorer",                        "Plan Explorer link"),
         ("User Guide", "/task-explorer",                        "Task Explorer link"),

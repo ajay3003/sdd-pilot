@@ -23,10 +23,15 @@ public interface IStandardsComplianceService
     /// </summary>
     Task InitializeAsync();
 
+    /// <summary>
+    /// Runs keyword-based standards checks against pre-extracted clean text
+    /// produced by the shared Markdown Document Engine.
+    /// </summary>
     StandardsComplianceReport Assess(
-        string? constitutionText,
-        string  specText,
-        string? planText,
-        string? taskText,
+        string              combinedText,
+        bool                hasConstitution,
+        bool                hasSpec,
+        bool                hasPlan,
+        bool                hasTasks,
         IEnumerable<string> selectedStandards);
 }

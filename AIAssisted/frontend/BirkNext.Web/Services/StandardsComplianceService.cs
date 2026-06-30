@@ -125,13 +125,14 @@ public sealed class StandardsComplianceService : IStandardsComplianceService
     // ── Public API ────────────────────────────────────────────────────────────
 
     public StandardsComplianceReport Assess(
-        string? constitutionText,
-        string  specText,
-        string? planText,
-        string? taskText,
+        string              combinedText,
+        bool                hasConstitution,
+        bool                hasSpec,
+        bool                hasPlan,
+        bool                hasTasks,
         IEnumerable<string> selectedStandards)
     {
-        var context  = BuildContext(constitutionText, specText, planText, taskText);
+        var context  = new RuleContext { CombinedText = combinedText };
         var selected = selectedStandards.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         // Preserve index.json order; skip packs that failed to load.
@@ -156,26 +157,15 @@ public sealed class StandardsComplianceService : IStandardsComplianceService
             Results          = results,
             Summaries        = summaries,
             OverallScore     = overallScore,
-            HasSpecification = !string.IsNullOrWhiteSpace(specText),
-            HasConstitution  = !string.IsNullOrWhiteSpace(constitutionText),
-            HasPlan          = !string.IsNullOrWhiteSpace(planText),
-            HasTasks         = !string.IsNullOrWhiteSpace(taskText),
+            HasSpecification = hasSpec,
+            HasConstitution  = hasConstitution,
+            HasPlan          = hasPlan,
+            HasTasks         = hasTasks,
             CheckedAt        = DateTimeOffset.UtcNow,
         };
     }
 
     // ── Context & mapping ─────────────────────────────────────────────────────
-
-    private static RuleContext BuildContext(
-        string? constitution, string spec, string? plan, string? tasks)
-    {
-        var parts = new List<string>(4);
-        if (!string.IsNullOrWhiteSpace(constitution)) parts.Add(constitution);
-        if (!string.IsNullOrWhiteSpace(spec))         parts.Add(spec);
-        if (!string.IsNullOrWhiteSpace(plan))         parts.Add(plan);
-        if (!string.IsNullOrWhiteSpace(tasks))        parts.Add(tasks);
-        return new RuleContext { CombinedText = string.Join("\n", parts) };
-    }
 
     private static StandardCheckResult MapToCheckResult(RuleFinding f)
     {

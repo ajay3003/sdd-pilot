@@ -57,6 +57,7 @@ builder.Services.AddScoped<IScenarioExtractionService>(sp =>
 builder.Services.AddSingleton<ISpecComparisonService, SpecComparisonService>();
 builder.Services.AddSingleton<IConstitutionAnalysisService, ConstitutionAnalysisService>();
 builder.Services.AddSingleton<IPlanAnalysisService, PlanAnalysisService>();
+builder.Services.AddSingleton<IDataModelAnalysisService, DataModelAnalysisService>();
 builder.Services.AddSingleton<IArtifactParserService, ArtifactParserService>();
 builder.Services.AddSingleton<IArtifactTraceabilityService, ArtifactTraceabilityService>();
 builder.Services.AddSingleton<IConstitutionComplianceService, ConstitutionComplianceService>();
@@ -86,6 +87,9 @@ builder.Services.AddHttpClient<IBlazorWasmPerformanceReviewService, BlazorWasmPe
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
 builder.Services.AddHttpClient<ProjectDocumentApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
+
+builder.Services.AddHttpClient<SampleProjectsApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
 await builder.Build().RunAsync();

@@ -26,5 +26,6 @@ public interface IQualityReviewService
         string? specText,
         string? planText,
         string? taskText,
+        string? dataModelText,
         IEnumerable<string> selectedPackIds);
 }

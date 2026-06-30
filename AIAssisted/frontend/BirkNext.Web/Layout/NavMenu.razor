@@ -61,6 +61,14 @@
                     </NavLink>
                 </div>
             }
+            @if (FeatureViz.DataModelExplorer)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="data-model-explorer" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-data-model-explorer" aria-hidden="true"></span> Data Model Explorer
+                    </NavLink>
+                </div>
+            }
             @if (FeatureViz.PlanExplorer)
             {
                 <div class="nav-item px-3">
@@ -95,6 +103,14 @@
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="scenarios/new">
                         <span class="nav-icon nav-icon-new-scenario" aria-hidden="true"></span> Create Test Scenario
+                    </NavLink>
+                </div>
+            }
+            @if (FeatureViz.SampleProjects)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="sample-projects" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-sample-projects" aria-hidden="true"></span> Sample Projects
                     </NavLink>
                 </div>
             }

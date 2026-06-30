@@ -34,6 +34,7 @@ public class FeatureVisibilityService
     public bool Dashboard            => _flags.Dashboard;
     public bool SpecificationReview  => _flags.SpecificationReview;
     public bool QaArtifactLibrary    => _flags.QaArtifactLibrary;
+    public bool SampleProjects       => _flags.SampleProjects;
     public bool CreateTestScenario   => _flags.CreateTestScenario;
     public bool LegacyTraceabilityNavigationEnabled => _flags.LegacyTraceabilityNavigationEnabled;
     public bool TraceabilityCoverage    => LegacyTraceabilityNavigationEnabled && _flags.TraceabilityCoverage;
@@ -50,6 +51,7 @@ public class FeatureVisibilityService
     public bool BlazorWasmPerformanceReview => _flags.BlazorWasmPerformanceReview;
     public bool TaskExplorer         => _flags.TaskExplorer;
     public bool ConstitutionExplorer => _flags.ConstitutionExplorer;
+    public bool DataModelExplorer    => _flags.DataModelExplorer;
     public bool PlanExplorer           => _flags.PlanExplorer;
     public bool ArtifactTraceability     => _flags.ArtifactTraceability;
     public bool AiChangeReview           => _flags.AiChangeReview;
@@ -60,8 +62,8 @@ public class FeatureVisibilityService
 
     // Section-level helpers: show the section header only if at least one child item is visible.
     public bool ShowSectionGettingStarted => RecommendedWorkflow || UserGuide;
-    public bool ShowSectionReview         => Dashboard || SpecificationReview || ConstitutionExplorer || PlanExplorer || TaskExplorer;
-    public bool ShowSectionLibrary        => QaArtifactLibrary || CreateTestScenario;
+    public bool ShowSectionReview         => Dashboard || SpecificationReview || ConstitutionExplorer || DataModelExplorer || PlanExplorer || TaskExplorer;
+    public bool ShowSectionLibrary        => QaArtifactLibrary || CreateTestScenario || SampleProjects;
     public bool ShowSectionTraceability   => LegacyTraceabilityNavigationEnabled
                                              && (TraceabilityCoverage || TraceabilitySuggestions || CodeTraceability);
     public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || ImplementationTraceability || ArtifactTraceability;

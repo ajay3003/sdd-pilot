@@ -264,6 +264,7 @@ public class FeatureVisibilityDto
     [JsonPropertyName("dashboard")]            public bool Dashboard            { get; set; } = true;
     [JsonPropertyName("specificationReview")]  public bool SpecificationReview  { get; set; } = true;
     [JsonPropertyName("qaArtifactLibrary")]    public bool QaArtifactLibrary    { get; set; } = true;
+    [JsonPropertyName("sampleProjects")]       public bool SampleProjects       { get; set; } = true;
     [JsonPropertyName("createTestScenario")]   public bool CreateTestScenario   { get; set; } = true;
     [JsonPropertyName("legacyTraceabilityNavigationEnabled")] public bool LegacyTraceabilityNavigationEnabled { get; set; } = false;
     [JsonPropertyName("traceabilityCoverage")]    public bool TraceabilityCoverage    { get; set; } = true;
@@ -283,6 +284,7 @@ public class FeatureVisibilityDto
     [JsonPropertyName("enableExtractionReview")] public bool EnableExtractionReview { get; set; } = false;
     [JsonPropertyName("enableArchitectureView")] public bool EnableArchitectureView { get; set; } = false;
     [JsonPropertyName("constitutionExplorer")]  public bool ConstitutionExplorer  { get; set; } = true;
+    [JsonPropertyName("dataModelExplorer")]     public bool DataModelExplorer     { get; set; } = true;
     [JsonPropertyName("planExplorer")]              public bool PlanExplorer             { get; set; } = true;
     [JsonPropertyName("artifactTraceability")]        public bool ArtifactTraceability       { get; set; } = true;
     [JsonPropertyName("adminSystemSettings")]         public bool AdminSystemSettings        { get; set; } = true;
