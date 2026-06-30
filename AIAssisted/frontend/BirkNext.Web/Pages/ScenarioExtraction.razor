@@ -3,6 +3,7 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @inject IExtractionSessionService SessionService
+@inject BirkNext.Web.Services.IWorkspaceSessionService Workspace
 
 <PageTitle>Analyze Specification</PageTitle>
 
@@ -10,7 +11,7 @@
     <PageHeader Title="Analyze Specification"
                 Description="Upload or paste a specification document and generate review candidates for QA analysis." />
 
-    <ExtractionInput OnExtractionCompleted="HandleExtractionCompleted" />
+    <ExtractionInput OnExtractionCompleted="HandleExtractionCompleted" InitialSpec="@_initialSpec" />
 
     <section class="review-results-panel" aria-label="Specification review results">
         <div class="review-results-header">
@@ -64,6 +65,7 @@
 @code {
     private ExtractionPipelineResult? _pipelineResult;
     private ExtractionSessionSnapshot? _sessionSnapshot;
+    private string? _initialSpec;
 
     private int RequirementMetric => _pipelineResult?.RequirementCount ?? 0;
     private int TestMetric => _pipelineResult?.TestCount ?? 0;
@@ -81,6 +83,11 @@
             _sessionSnapshot = session;
             _pipelineResult = ExtractionPipelineResult.Restore(session);
         }
+
+        // Pre-load spec from workspace so the user can run analysis without re-uploading.
+        var cached = Workspace.Get(WorkspaceArtifactKind.Specification);
+        if (cached is not null)
+            _initialSpec = cached.Text;
     }
 
     private void HandleExtractionCompleted(ExtractionPipelineResult result)

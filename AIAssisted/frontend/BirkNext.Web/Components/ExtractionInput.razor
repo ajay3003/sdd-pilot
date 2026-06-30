@@ -169,12 +169,20 @@
 
 @code {
     [Parameter] public EventCallback<ExtractionPipelineResult> OnExtractionCompleted { get; set; }
+    [Parameter] public string? InitialSpec { get; set; }
 
     private string _rawInput = string.Empty;
     private bool _isExtracting;
     private string? _validationMessage;
     private ExtractionProfile _profile = ExtractionProfile.Speckit;
     private bool _showReplaceConfirm;
+
+    protected override void OnParametersSet()
+    {
+        // Pre-populate textarea from workspace when the user hasn't typed anything yet.
+        if (!string.IsNullOrWhiteSpace(InitialSpec) && string.IsNullOrWhiteSpace(_rawInput))
+            _rawInput = InitialSpec;
+    }
 
     private void HandleFileImported(string content)
     {

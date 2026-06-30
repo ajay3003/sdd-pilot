@@ -281,6 +281,8 @@
                 skipped.Add(file.Filename);
                 continue;
             }
+            // Normalize to match what SpecificationImport produces on file upload.
+            content = NormalizeArtifactText(content);
             await DocumentApi.SaveAsync(file.ArtifactKind!, content);
             if (file.ArtifactKind is not null && _artifactKindMap.TryGetValue(file.ArtifactKind, out var kind))
                 Workspace.Set(kind, content, fileName: file.Filename, sourcePath: project.AbsolutePath);
@@ -343,4 +345,12 @@
     }
 
     private sealed record LoadResult(string Message, bool HasError);
+
+    private static string NormalizeArtifactText(string text)
+    {
+        // Strip UTF-8 BOM if present.
+        if (text.StartsWith('﻿')) text = text[1..];
+        // Normalize Windows / old-Mac line endings to LF.
+        return text.Replace("\r\n", "\n").Replace('\r', '\n');
+    }
 }
