@@ -3,6 +3,7 @@
 @using BirkNext.Web.Services
 @inject IBlazorWasmPerformanceReviewService ReviewService
 @inject IFrontendAnalysisContextFactory ContextFactory
+@inject RuntimeReviewSessionService RuntimeReviews
 
 <PageTitle>Blazor WASM Performance Review</PageTitle>
 
@@ -816,11 +817,7 @@
     {
         _context = await ContextFactory.GetActiveContextAsync();
 
-        var cached = ReviewService.GetCached();
-        if (cached is not null)
-        {
-            _report = cached;
-        }
+        _report = RuntimeReviews.PerformanceReview.Report;
     }
 
     private async Task RunReview()
@@ -829,6 +826,8 @@
 
         _running = true;
         _error   = null;
+        _report  = null;
+        RuntimeReviews.MarkPerformanceRunning(_context);
         StateHasChanged();
 
         try
@@ -837,16 +836,19 @@
             if (report.ErrorMessage is not null)
             {
                 _error = report.ErrorMessage;
+                RuntimeReviews.MarkPerformanceFailed(_context, _error);
             }
             else
             {
                 _report = report;
+                RuntimeReviews.SavePerformanceResult(report, _context);
                 _tab    = "overview";
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _error = "Review could not be completed. Check that the target URL is reachable.";
+            RuntimeReviews.MarkPerformanceFailed(_context, _error);
             _ = ex;
         }
         finally

@@ -6,7 +6,8 @@
 @inject IBirkNextClient Client
 @inject IDashboardMetricsService MetricsService
 @inject IDashboardSnapshotService Snapshot
-@inject IBlazorWasmPerformanceReviewService PerformanceService
+@inject RuntimeReviewSessionService RuntimeReviews
+@inject IWorkspaceSessionService Workspace
 @inject NavigationManager Navigation
 
 <PageTitle>Dashboard</PageTitle>
@@ -85,7 +86,7 @@ else
         }
         else
         {
-            <MetricCard Value="—" Label="Performance" Sublabel="Not Run" />
+            <MetricCard Value="—" Label="Performance" Sublabel="@RuntimeStatusLabel(RuntimeReviews.PerformanceReview.Status)" />
         }
     </div>
 
@@ -143,7 +144,8 @@ else
                 <div class="db-health-card">
                     <span class="db-health-label">Performance</span>
                     <span class="db-health-value db-val-empty">—</span>
-                    <StatusChip Status="neutral" Label="Not Run" />
+                    <StatusChip Status="@RuntimeStatusChip(RuntimeReviews.PerformanceReview.Status)"
+                                Label="@RuntimeStatusLabel(RuntimeReviews.PerformanceReview.Status)" />
                 </div>
             }
 
@@ -169,6 +171,14 @@ else
                         <span class="db-stat-pill">@Snapshot.ComplianceReport.Coverage.TotalItems rules</span>
                     </div>
                 }
+                else if (Workspace.Get(WorkspaceArtifactKind.Constitution) is { } wsConst)
+                {
+                    <div class="db-artifact-stats">
+                        @if (wsConst.FileName is not null)    { <span class="db-stat-pill">@wsConst.FileName</span> }
+                        @if (Workspace.ProjectName is not null) { <span class="db-stat-pill">@Workspace.ProjectName</span> }
+                        <span class="db-stat-pill">@wsConst.LoadedAt.ToString("HH:mm")</span>
+                    </div>
+                }
                 <div class="db-artifact-progress-track" aria-hidden="true">
                     <div class="db-artifact-progress-fill" style="width: @((_constitutionLoaded ? 50 : 0) + (_constitutionAnalyzed ? 50 : 0))%"></div>
                 </div>
@@ -191,6 +201,14 @@ else
                         <span class="db-stat-pill">@_metrics.ReviewedPercent% reviewed</span>
                     </div>
                 }
+                else if (Workspace.Get(WorkspaceArtifactKind.Specification) is { } wsSpec)
+                {
+                    <div class="db-artifact-stats">
+                        @if (wsSpec.FileName is not null)      { <span class="db-stat-pill">@wsSpec.FileName</span> }
+                        @if (Workspace.ProjectName is not null) { <span class="db-stat-pill">@Workspace.ProjectName</span> }
+                        <span class="db-stat-pill">@wsSpec.LoadedAt.ToString("HH:mm")</span>
+                    </div>
+                }
                 <div class="db-artifact-progress-track" aria-hidden="true">
                     <div class="db-artifact-progress-fill" style="width: @((_specLoaded ? 34 : 0) + (_metrics.ReviewedCount > 0 ? 33 : 0) + (_specAnalyzed ? 33 : 0))%"></div>
                 </div>
@@ -209,6 +227,14 @@ else
                 {
                     <div class="db-artifact-stats">
                         <span class="db-stat-pill">@Snapshot.TraceabilityReport.PlanCoverage.TotalItems items</span>
+                    </div>
+                }
+                else if (Workspace.Get(WorkspaceArtifactKind.Plan) is { } wsPlan)
+                {
+                    <div class="db-artifact-stats">
+                        @if (wsPlan.FileName is not null)      { <span class="db-stat-pill">@wsPlan.FileName</span> }
+                        @if (Workspace.ProjectName is not null) { <span class="db-stat-pill">@Workspace.ProjectName</span> }
+                        <span class="db-stat-pill">@wsPlan.LoadedAt.ToString("HH:mm")</span>
                     </div>
                 }
                 <div class="db-artifact-progress-track" aria-hidden="true">
@@ -231,6 +257,14 @@ else
                     <div class="db-artifact-stats">
                         <span class="db-stat-pill">@_metrics.TotalCandidates candidates</span>
                         <span class="db-stat-pill">@_metrics.ReviewedPercent% reviewed</span>
+                    </div>
+                }
+                else if (Workspace.Get(WorkspaceArtifactKind.Tasks) is { } wsTasks)
+                {
+                    <div class="db-artifact-stats">
+                        @if (wsTasks.FileName is not null)     { <span class="db-stat-pill">@wsTasks.FileName</span> }
+                        @if (Workspace.ProjectName is not null) { <span class="db-stat-pill">@Workspace.ProjectName</span> }
+                        <span class="db-stat-pill">@wsTasks.LoadedAt.ToString("HH:mm")</span>
                     </div>
                 }
                 <div class="db-artifact-progress-track" aria-hidden="true">
@@ -546,10 +580,36 @@ else
                     <span class="db-analysis-card-title">Security Review</span>
                     <a href="wasm-security-review" class="db-summary-open" aria-label="Open Security Review">Open →</a>
                 </div>
-                <div class="db-analysis-empty">
-                    Not run this session — analyse headers, authentication, configuration, and exposures.
-                    <a href="wasm-security-review" class="db-analysis-run-link">Run now →</a>
-                </div>
+                @if (_securityReport is { } securityCard)
+                {
+                    <div class="db-analysis-score @ScoreClass(securityCard.Health.Score)">@securityCard.Health.Score</div>
+                    <span class="db-analysis-status @KpiStatusClass(securityCard.Health.Score, true)">@KpiStatusLabel(securityCard.Health.Score, true)</span>
+                    @if (securityCard.Findings.OrderBy(f => f.Severity).FirstOrDefault() is { } topFinding)
+                    {
+                        <div class="db-analysis-finding">@topFinding.Title</div>
+                    }
+                    <div class="db-analysis-chips">
+                        @if (securityCard.Health.Critical > 0) { <span class="db-count-chip db-count-poor">@securityCard.Health.Critical critical</span> }
+                        @if (securityCard.Health.High > 0)     { <span class="db-count-chip db-count-poor">@securityCard.Health.High high</span> }
+                        @if (securityCard.Health.Critical == 0 && securityCard.Health.High == 0)
+                        { <span class="db-count-chip db-count-good">No critical findings</span> }
+                    </div>
+                }
+                else if (RuntimeReviews.SecurityReview.Status != RuntimeReviewStatus.NotRun)
+                {
+                    <span class="db-analysis-status @RuntimeStatusClass(RuntimeReviews.SecurityReview.Status)">@RuntimeStatusLabel(RuntimeReviews.SecurityReview.Status)</span>
+                    @if (RuntimeReviews.SecurityReview.ErrorMessage is not null)
+                    {
+                        <div class="db-analysis-finding">@RuntimeReviews.SecurityReview.ErrorMessage</div>
+                    }
+                }
+                else
+                {
+                    <div class="db-analysis-empty">
+                        Not run this session — analyse headers, authentication, configuration, and exposures.
+                        <a href="wasm-security-review" class="db-analysis-run-link">Run now →</a>
+                    </div>
+                }
             </div>
 
             @* Performance Review *@
@@ -576,6 +636,14 @@ else
                     <div class="db-analysis-empty" style="margin-top: 0.25rem">
                         Run a full Performance Review for readiness scoring.
                     </div>
+                }
+                else if (RuntimeReviews.PerformanceReview.Status != RuntimeReviewStatus.NotRun)
+                {
+                    <span class="db-analysis-status @RuntimeStatusClass(RuntimeReviews.PerformanceReview.Status)">@RuntimeStatusLabel(RuntimeReviews.PerformanceReview.Status)</span>
+                    @if (RuntimeReviews.PerformanceReview.ErrorMessage is not null)
+                    {
+                        <div class="db-analysis-finding">@RuntimeReviews.PerformanceReview.ErrorMessage</div>
+                    }
                 }
                 else
                 {
@@ -628,9 +696,10 @@ else
     private string? _loadError;
     private DashboardMetrics _metrics = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     private List<DashboardCandidate> _candidates = [];
-    // ── Performance cache ─────────────────────────────────────────────────────
+    // ── Runtime review session ────────────────────────────────────────────────
 
-    private WasmPerformanceReviewReport? _perfReport => PerformanceService.GetCached();
+    private WasmSecurityReviewReport? _securityReport => RuntimeReviews.SecurityReview.Report;
+    private WasmPerformanceReviewReport? _perfReport => RuntimeReviews.PerformanceReview.Report;
 
     // ── Snapshot aliases ──────────────────────────────────────────────────────
 
@@ -638,11 +707,14 @@ else
         Snapshot.TraceabilityReport is not null ||
         Snapshot.ComplianceReport   is not null ||
         Snapshot.AuditReport        is not null ||
-        Snapshot.DeliveryReport     is not null;
+        Snapshot.DeliveryReport     is not null ||
+        RuntimeReviews.SecurityReview.HasResult ||
+        RuntimeReviews.PerformanceReview.HasResult;
 
     // ── Artifact loaded / analyzed ────────────────────────────────────────────
 
     private bool _constitutionLoaded =>
+        Workspace.Has(WorkspaceArtifactKind.Constitution)   ||
         Snapshot.TraceabilityReport?.HasConstitution == true ||
         Snapshot.ComplianceReport?.HasConstitution   == true ||
         Snapshot.AuditReport?.HasConstitution        == true ||
@@ -652,15 +724,17 @@ else
         Snapshot.ComplianceReport?.HasConstitution == true;
 
     private bool _specLoaded =>
-        _metrics.RequirementCount > 0 ||
-        Snapshot.TraceabilityReport?.HasSpecification == true ||
-        Snapshot.ComplianceReport?.HasSpecification   == true ||
+        Workspace.Has(WorkspaceArtifactKind.Specification)    ||
+        _metrics.RequirementCount > 0                          ||
+        Snapshot.TraceabilityReport?.HasSpecification == true  ||
+        Snapshot.ComplianceReport?.HasSpecification   == true  ||
         Snapshot.AuditReport?.HasSpecification        == true;
 
     private bool _specAnalyzed =>
         Snapshot.AuditReport?.HasSpecification == true;
 
     private bool _planLoaded =>
+        Workspace.Has(WorkspaceArtifactKind.Plan)    ||
         Snapshot.TraceabilityReport?.HasPlan == true ||
         Snapshot.ComplianceReport?.HasPlan   == true ||
         Snapshot.AuditReport?.HasPlan        == true ||
@@ -670,7 +744,8 @@ else
         Snapshot.TraceabilityReport?.HasPlan == true;
 
     private bool _tasksLoaded =>
-        _metrics.TotalCandidates > 0 ||
+        Workspace.Has(WorkspaceArtifactKind.Tasks)    ||
+        _metrics.TotalCandidates > 0                  ||
         Snapshot.TraceabilityReport?.HasTasks == true ||
         Snapshot.AuditReport?.HasTasks        == true ||
         Snapshot.DeliveryReport?.HasTasks     == true;
@@ -708,6 +783,8 @@ else
             if (Snapshot.ComplianceReport is not null)   scores.Add(_complianceScore);
             if (Snapshot.AuditReport is not null)        scores.Add(_qaScore);
             if (Snapshot.DeliveryReport is not null)     scores.Add(_deliveryScore);
+            if (_securityReport is not null)             scores.Add(_securityReport.Health.Score);
+            if (_perfReport?.ReadinessReport is { HasData: true } perf) scores.Add(perf.OverallScore);
             return scores.Count > 0 ? scores.Average() : 0;
         }
     }
@@ -715,7 +792,8 @@ else
     private bool _hasAnyScore =>
         Snapshot.TraceabilityReport is not null || Snapshot.ComplianceReport is not null ||
         Snapshot.AuditReport is not null        || Snapshot.DeliveryReport is not null  ||
-        _metrics.TotalCandidates > 0;
+        _metrics.TotalCandidates > 0            || _securityReport is not null ||
+        _perfReport?.ReadinessReport is { HasData: true };
 
     private string _overallScoreLabel => _overallScore >= 80 ? "Healthy" : _overallScore >= 50 ? "Needs Attention" : "At Risk";
 
@@ -816,6 +894,30 @@ else
         !hasData ? "Not Run" :
         score >= 80 ? "Healthy" :
         score >= 50 ? "Warning" : "Critical";
+
+    private static string RuntimeStatusLabel(RuntimeReviewStatus status) => status switch
+    {
+        RuntimeReviewStatus.Running   => "Running",
+        RuntimeReviewStatus.Completed => "Completed",
+        RuntimeReviewStatus.Failed    => "Failed",
+        _                             => "Not Run",
+    };
+
+    private static string RuntimeStatusClass(RuntimeReviewStatus status) => status switch
+    {
+        RuntimeReviewStatus.Running   => "db-status-warning",
+        RuntimeReviewStatus.Completed => "db-status-healthy",
+        RuntimeReviewStatus.Failed    => "db-status-critical",
+        _                             => "db-status-notrun",
+    };
+
+    private static string RuntimeStatusChip(RuntimeReviewStatus status) => status switch
+    {
+        RuntimeReviewStatus.Running   => "warning",
+        RuntimeReviewStatus.Completed => "healthy",
+        RuntimeReviewStatus.Failed    => "critical",
+        _                             => "neutral",
+    };
 
     private static string ReadinessStatusClass(ReadinessState state) => state switch
     {

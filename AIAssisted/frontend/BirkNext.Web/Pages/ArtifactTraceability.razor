@@ -6,6 +6,7 @@
 @inject IPlanAnalysisService PlanService
 @inject IArtifactTraceabilityService TraceabilityService
 @inject IDashboardSnapshotService DashboardSnapshot
+@inject IWorkspaceSessionService Workspace
 
 <PageTitle>Artifact Traceability</PageTitle>
 
@@ -41,8 +42,8 @@
                     </div>
                     <SpecificationImport
                         InputId="at-const-import"
-                        OnFileImported="t => { _constitutionText = t; }"
-                        OnFileRemoved="() => { _constitutionText = string.Empty; }"
+                        OnFileImported="t => { _constitutionText = t; Workspace.Set(WorkspaceArtifactKind.Constitution, t); }"
+                        OnFileRemoved="() => { _constitutionText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Constitution); }"
                         IsDisabled="false" />
                     <textarea
                         class="artifact-textarea"
@@ -53,7 +54,7 @@
                     {
                         <div class="artifact-footer">
                             <span>@_constitutionText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => _constitutionText = string.Empty'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => { _constitutionText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Constitution); }'>Clear</button>
                         </div>
                     }
                 </div>
@@ -69,8 +70,8 @@
                     </div>
                     <SpecificationImport
                         InputId="at-spec-import"
-                        OnFileImported="t => { _specText = t; }"
-                        OnFileRemoved="() => { _specText = string.Empty; }"
+                        OnFileImported="t => { _specText = t; Workspace.Set(WorkspaceArtifactKind.Specification, t); }"
+                        OnFileRemoved="() => { _specText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Specification); }"
                         IsDisabled="false" />
                     <textarea
                         class="artifact-textarea"
@@ -81,7 +82,7 @@
                     {
                         <div class="artifact-footer">
                             <span>@_specText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => _specText = string.Empty'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => { _specText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Specification); }'>Clear</button>
                         </div>
                     }
                 </div>
@@ -97,8 +98,8 @@
                     </div>
                     <SpecificationImport
                         InputId="at-plan-import"
-                        OnFileImported="t => { _planText = t; }"
-                        OnFileRemoved="() => { _planText = string.Empty; }"
+                        OnFileImported="t => { _planText = t; Workspace.Set(WorkspaceArtifactKind.Plan, t); }"
+                        OnFileRemoved="() => { _planText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Plan); }"
                         IsDisabled="false" />
                     <textarea
                         class="artifact-textarea"
@@ -109,7 +110,7 @@
                     {
                         <div class="artifact-footer">
                             <span>@_planText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => _planText = string.Empty'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => { _planText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Plan); }'>Clear</button>
                         </div>
                     }
                 </div>
@@ -125,8 +126,8 @@
                     </div>
                     <SpecificationImport
                         InputId="at-task-import"
-                        OnFileImported="t => { _taskText = t; }"
-                        OnFileRemoved="() => { _taskText = string.Empty; }"
+                        OnFileImported="t => { _taskText = t; Workspace.Set(WorkspaceArtifactKind.Tasks, t); }"
+                        OnFileRemoved="() => { _taskText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Tasks); }"
                         IsDisabled="false" />
                     <textarea
                         class="artifact-textarea"
@@ -137,7 +138,7 @@
                     {
                         <div class="artifact-footer">
                             <span>@_taskText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => _taskText = string.Empty'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => { _taskText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Tasks); }'>Clear</button>
                         </div>
                     }
                 </div>
@@ -716,6 +717,24 @@
         "matrix"     => "Search matrix by rule, requirement, plan item, or task…",
         _            => "Search…",
     };
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────
+
+    protected override void OnInitialized()
+    {
+        var constitution = Workspace.Get(WorkspaceArtifactKind.Constitution);
+        var spec         = Workspace.Get(WorkspaceArtifactKind.Specification);
+        var plan         = Workspace.Get(WorkspaceArtifactKind.Plan);
+        var tasks        = Workspace.Get(WorkspaceArtifactKind.Tasks);
+
+        if (constitution is not null) _constitutionText = constitution.Text;
+        if (spec is not null)         _specText          = spec.Text;
+        if (plan is not null)         _planText          = plan.Text;
+        if (tasks is not null)        _taskText          = tasks.Text;
+
+        if (LoadedCount >= 2)
+            RunAnalysis();
+    }
 
     // ── Actions ───────────────────────────────────────────────────────────
 

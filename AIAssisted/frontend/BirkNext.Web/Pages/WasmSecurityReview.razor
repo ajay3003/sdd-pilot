@@ -3,6 +3,7 @@
 @using BirkNext.Web.Services
 @inject WasmSecurityApiService Scanner
 @inject IFrontendAnalysisContextFactory ContextFactory
+@inject RuntimeReviewSessionService RuntimeReviews
 
 <PageTitle>Blazor WASM Security Review</PageTitle>
 
@@ -761,7 +762,7 @@
     {
         _context = await ContextFactory.GetActiveContextAsync();
 
-        _report = Scanner.GetCached();
+        _report = RuntimeReviews.SecurityReview.Report;
     }
 
     // ── Actions ───────────────────────────────────────────────────────────────
@@ -772,6 +773,8 @@
 
         _scanning = true;
         _error    = null;
+        _report   = null;
+        RuntimeReviews.MarkSecurityRunning(_context);
         StateHasChanged();
 
         var request = BuildScanRequest(_context);
@@ -783,10 +786,15 @@
 
         if (_report is not null)
         {
+            RuntimeReviews.SaveSecurityResult(_report, _context);
             _tab = "overview";
             _expandedFindings.Clear();
             _findingSearch = null;
             _sevFilter     = null;
+        }
+        else if (_error is not null)
+        {
+            RuntimeReviews.MarkSecurityFailed(_context, _error);
         }
     }
 

@@ -2,6 +2,7 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
+@inject IWorkspaceSessionService Workspace
 
 <PageTitle>Implementation Review</PageTitle>
 
@@ -642,21 +643,51 @@
     private SpecificationImport? _specImport;
     private SpecificationImport? _tasksImport;
 
-    private void OnSpecFileImported(string content) => _specText = content;
-    private void OnSpecFileRemoved() => _specText = string.Empty;
-    private void OnTasksFileImported(string content) => _tasksText = content;
-    private void OnTasksFileRemoved() => _tasksText = string.Empty;
+    protected override void OnInitialized()
+    {
+        var spec  = Workspace.Get(WorkspaceArtifactKind.Specification);
+        var tasks = Workspace.Get(WorkspaceArtifactKind.Tasks);
+
+        if (spec  is not null) _specText   = spec.Text;
+        if (tasks is not null) _tasksText  = tasks.Text;
+    }
+
+    private void OnSpecFileImported(string content)
+    {
+        _specText = content;
+        Workspace.Set(WorkspaceArtifactKind.Specification, content);
+    }
+
+    private void OnSpecFileRemoved()
+    {
+        _specText = string.Empty;
+        Workspace.Clear(WorkspaceArtifactKind.Specification);
+    }
+
+    private void OnTasksFileImported(string content)
+    {
+        _tasksText = content;
+        Workspace.Set(WorkspaceArtifactKind.Tasks, content);
+    }
+
+    private void OnTasksFileRemoved()
+    {
+        _tasksText = string.Empty;
+        Workspace.Clear(WorkspaceArtifactKind.Tasks);
+    }
 
     private void ClearSpec()
     {
         _specText = string.Empty;
         _specImport?.Reset();
+        Workspace.Clear(WorkspaceArtifactKind.Specification);
     }
 
     private void ClearTasks()
     {
         _tasksText = string.Empty;
         _tasksImport?.Reset();
+        Workspace.Clear(WorkspaceArtifactKind.Tasks);
     }
 
     private void RunAnalysis()
