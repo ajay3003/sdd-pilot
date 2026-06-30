@@ -6,6 +6,8 @@
 @inject IDashboardSnapshotService DashboardSnapshot
 @inject IDeliveryReadinessAssessmentService DrService
 @inject IWorkspaceSessionService Workspace
+@inject IReportExportService ExportService
+@inject IJSRuntime JS
 
 <PageTitle>Quality Review</PageTitle>
 
@@ -205,6 +207,10 @@
     <!-- ── Results ───────────────────────────────────────────────────────── -->
     @if (_report is not null)
     {
+        <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
+            <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportHtml">Export HTML</button>
+        </div>
+
         <!-- ── Overall summary ────────────────────────────────────────── -->
         <div class="qr-overall">
             <div class="qr-score-ring-wrap @ScoreVariant(_report.OverallScore)">
@@ -539,6 +545,13 @@
 
     // ── Actions ───────────────────────────────────────────────────────────────
 
+    private async Task ExportHtml()
+    {
+        if (_report is null) return;
+        var html = ExportService.ExportQualityReview(_report, Workspace.ProjectName);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
+    }
+
     private async Task RunReview()
     {
         if (CannotRun) return;
@@ -553,7 +566,15 @@
                 string.IsNullOrWhiteSpace(_dataModelText)    ? null : _dataModelText,
                 _selectedPacks);
 
-            // Publish readiness results so Dashboard can consume them.
+            // Publish pack results so Dashboard can consume the shared quality session.
+            var complianceResult = _report.PackResults.FirstOrDefault(r => r.Compliance is not null);
+            if (complianceResult?.Compliance is not null)
+                DashboardSnapshot.Publish(complianceResult.Compliance);
+
+            var auditResult = _report.PackResults.FirstOrDefault(r => r.QaAudit is not null);
+            if (auditResult?.QaAudit is not null)
+                DashboardSnapshot.Publish(auditResult.QaAudit);
+
             var qaResult = _report.PackResults.FirstOrDefault(r => r.QaReadiness is not null);
             if (qaResult?.QaReadiness is not null)
                 DashboardSnapshot.Publish(qaResult.QaReadiness);

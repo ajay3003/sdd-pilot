@@ -1,19 +1,15 @@
 @page "/dashboard"
 @using BirkNext.Web.Components
-@using BirkNext.Web.GraphQL
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
-@inject IBirkNextClient Client
-@inject IDashboardMetricsService MetricsService
 @inject IDashboardSnapshotService Snapshot
 @inject RuntimeReviewSessionService RuntimeReviews
 @inject IWorkspaceSessionService Workspace
-@inject NavigationManager Navigation
 
 <PageTitle>Dashboard</PageTitle>
 
 @* ── Onboarding ───────────────────────────────────────────────────────────── *@
-@if (!_isLoading && _metrics.TotalCandidates == 0 && !_hasAnySnapshot)
+@if (!_hasAnyWorkspace && !_hasAnySnapshot)
 {
     <div class="dashboard-onboarding-card" data-testid="onboarding-card">
         <div class="dashboard-onboarding-text">
@@ -23,19 +19,6 @@
         <a href="getting-started" class="btn-primary dashboard-onboarding-btn">Start Recommended Workflow</a>
     </div>
 }
-
-@if (_isLoading)
-{
-    <p class="loading-state">Loading dashboard...</p>
-}
-else
-{
-    @if (_loadError is not null)
-    {
-        <div class="dashboard-load-error" role="alert" data-testid="dashboard-load-error">
-            @_loadError
-        </div>
-    }
 
     <PageHeader Title="SDD Governance Dashboard">
         <StatusChip Status="neutral" Label="@_projectPhase" />
@@ -190,15 +173,15 @@ else
                 <div class="db-artifact-name">Specification</div>
                 <div class="db-artifact-badges">
                     @if (_specLoaded)               { <span class="db-badge db-badge-loaded">Loaded</span> }
-                    @if (_metrics.ReviewedCount > 0) { <span class="db-badge db-badge-reviewed">Reviewed</span> }
+                    @if (_specAnalyzed) { <span class="db-badge db-badge-reviewed">Reviewed</span> }
                     @if (_specAnalyzed)              { <span class="db-badge db-badge-analyzed">Analyzed</span> }
-                    @if (!_specLoaded && _metrics.RequirementCount == 0) { <span class="db-badge db-badge-empty">Not loaded</span> }
+                    @if (!_specLoaded) { <span class="db-badge db-badge-empty">Not loaded</span> }
                 </div>
-                @if (_metrics.RequirementCount > 0)
+                @if (Snapshot.TraceabilityReport is { Health.TotalRequirements: > 0 } specTrace)
                 {
                     <div class="db-artifact-stats">
-                        <span class="db-stat-pill">@_metrics.RequirementCount requirements</span>
-                        <span class="db-stat-pill">@_metrics.ReviewedPercent% reviewed</span>
+                        <span class="db-stat-pill">@specTrace.Health.TotalRequirements requirements</span>
+                        <span class="db-stat-pill">@specTrace.SpecificationCoverage.CoveragePercentage.ToString("0")% coverage</span>
                     </div>
                 }
                 else if (Workspace.Get(WorkspaceArtifactKind.Specification) is { } wsSpec)
@@ -210,7 +193,7 @@ else
                     </div>
                 }
                 <div class="db-artifact-progress-track" aria-hidden="true">
-                    <div class="db-artifact-progress-fill" style="width: @((_specLoaded ? 34 : 0) + (_metrics.ReviewedCount > 0 ? 33 : 0) + (_specAnalyzed ? 33 : 0))%"></div>
+                    <div class="db-artifact-progress-fill" style="width: @((_specLoaded ? 50 : 0) + (_specAnalyzed ? 50 : 0))%"></div>
                 </div>
                 <a href="extract" class="db-artifact-action">Open Specification Review →</a>
             </div>
@@ -248,15 +231,14 @@ else
                 <div class="db-artifact-name">Tasks</div>
                 <div class="db-artifact-badges">
                     @if (_tasksLoaded) { <span class="db-badge db-badge-loaded">Loaded</span> }
-                    @if (_metrics.TotalCandidates > 0 && _metrics.ReviewedCount > 0) { <span class="db-badge db-badge-reviewed">Reviewed</span> }
                     @if (_tasksAnalyzed) { <span class="db-badge db-badge-analyzed">Analyzed</span> }
                     @if (!_tasksLoaded)  { <span class="db-badge db-badge-empty">Not loaded</span> }
                 </div>
-                @if (_metrics.TotalCandidates > 0)
+                @if (Snapshot.TraceabilityReport is { Health.TotalTasks: > 0 } taskTrace)
                 {
                     <div class="db-artifact-stats">
-                        <span class="db-stat-pill">@_metrics.TotalCandidates candidates</span>
-                        <span class="db-stat-pill">@_metrics.ReviewedPercent% reviewed</span>
+                        <span class="db-stat-pill">@taskTrace.Health.TotalTasks tasks</span>
+                        <span class="db-stat-pill">@taskTrace.TaskCoverage.CoveragePercentage.ToString("0")% coverage</span>
                     </div>
                 }
                 else if (Workspace.Get(WorkspaceArtifactKind.Tasks) is { } wsTasks)
@@ -268,7 +250,7 @@ else
                     </div>
                 }
                 <div class="db-artifact-progress-track" aria-hidden="true">
-                    <div class="db-artifact-progress-fill" style="width: @((_tasksLoaded ? 34 : 0) + (_metrics.ReviewedCount > 0 ? 33 : 0) + (_tasksAnalyzed ? 33 : 0))%"></div>
+                    <div class="db-artifact-progress-fill" style="width: @((_tasksLoaded ? 50 : 0) + (_tasksAnalyzed ? 50 : 0))%"></div>
                 </div>
                 <a href="task-explorer" class="db-artifact-action">Open Task Explorer →</a>
             </div>
@@ -688,14 +670,7 @@ else
         </div>
     </section>
 
-}
-
 @code {
-    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
-    private bool _isLoading;
-    private string? _loadError;
-    private DashboardMetrics _metrics = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-    private List<DashboardCandidate> _candidates = [];
     // ── Runtime review session ────────────────────────────────────────────────
 
     private WasmSecurityReviewReport? _securityReport => RuntimeReviews.SecurityReview.Report;
@@ -708,65 +683,71 @@ else
         Snapshot.ComplianceReport   is not null ||
         Snapshot.AuditReport        is not null ||
         Snapshot.DeliveryReport     is not null ||
+        Snapshot.ReadinessReport    is not null ||
         RuntimeReviews.SecurityReview.HasResult ||
         RuntimeReviews.PerformanceReview.HasResult;
+
+    private bool _hasAnyWorkspace =>
+        Workspace.Has(WorkspaceArtifactKind.Constitution) ||
+        Workspace.Has(WorkspaceArtifactKind.Specification) ||
+        Workspace.Has(WorkspaceArtifactKind.Plan) ||
+        Workspace.Has(WorkspaceArtifactKind.Tasks) ||
+        Workspace.Has(WorkspaceArtifactKind.DataModel);
 
     // ── Artifact loaded / analyzed ────────────────────────────────────────────
 
     private bool _constitutionLoaded =>
-        Workspace.Has(WorkspaceArtifactKind.Constitution)   ||
-        Snapshot.TraceabilityReport?.HasConstitution == true ||
-        Snapshot.ComplianceReport?.HasConstitution   == true ||
-        Snapshot.AuditReport?.HasConstitution        == true ||
-        Snapshot.DeliveryReport?.HasConstitution     == true;
+        Workspace.Has(WorkspaceArtifactKind.Constitution);
 
     private bool _constitutionAnalyzed =>
-        Snapshot.ComplianceReport?.HasConstitution == true;
+        Snapshot.TraceabilityReport?.HasConstitution == true ||
+        Snapshot.ComplianceReport?.HasConstitution == true ||
+        Snapshot.AuditReport?.HasConstitution == true ||
+        Snapshot.DeliveryReport?.HasConstitution == true ||
+        Snapshot.ReadinessReport?.HasConstitution == true;
 
     private bool _specLoaded =>
-        Workspace.Has(WorkspaceArtifactKind.Specification)    ||
-        _metrics.RequirementCount > 0                          ||
-        Snapshot.TraceabilityReport?.HasSpecification == true  ||
-        Snapshot.ComplianceReport?.HasSpecification   == true  ||
-        Snapshot.AuditReport?.HasSpecification        == true;
+        Workspace.Has(WorkspaceArtifactKind.Specification);
 
     private bool _specAnalyzed =>
-        Snapshot.AuditReport?.HasSpecification == true;
+        Snapshot.TraceabilityReport?.HasSpecification == true ||
+        Snapshot.ComplianceReport?.HasSpecification == true ||
+        Snapshot.AuditReport?.HasSpecification == true ||
+        Snapshot.ReadinessReport?.HasSpecification == true;
 
     private bool _planLoaded =>
-        Workspace.Has(WorkspaceArtifactKind.Plan)    ||
-        Snapshot.TraceabilityReport?.HasPlan == true ||
-        Snapshot.ComplianceReport?.HasPlan   == true ||
-        Snapshot.AuditReport?.HasPlan        == true ||
-        Snapshot.DeliveryReport?.HasPlan     == true;
+        Workspace.Has(WorkspaceArtifactKind.Plan);
 
     private bool _planAnalyzed =>
-        Snapshot.TraceabilityReport?.HasPlan == true;
+        Snapshot.TraceabilityReport?.HasPlan == true ||
+        Snapshot.ComplianceReport?.HasPlan == true ||
+        Snapshot.AuditReport?.HasPlan == true ||
+        Snapshot.DeliveryReport?.HasPlan == true ||
+        Snapshot.ReadinessReport?.HasPlan == true;
 
     private bool _tasksLoaded =>
-        Workspace.Has(WorkspaceArtifactKind.Tasks)    ||
-        _metrics.TotalCandidates > 0                  ||
-        Snapshot.TraceabilityReport?.HasTasks == true ||
-        Snapshot.AuditReport?.HasTasks        == true ||
-        Snapshot.DeliveryReport?.HasTasks     == true;
+        Workspace.Has(WorkspaceArtifactKind.Tasks);
 
     private bool _tasksAnalyzed =>
-        Snapshot.AuditReport?.HasTasks == true;
+        Snapshot.TraceabilityReport?.HasTasks == true ||
+        Snapshot.AuditReport?.HasTasks == true ||
+        Snapshot.DeliveryReport?.HasTasks == true ||
+        Snapshot.ReadinessReport?.HasTasks == true;
 
     // ── Pre-computed health scores (numeric) ──────────────────────────────────
 
-    private bool _traceabilityHasData => Snapshot.TraceabilityReport is not null || _metrics.TotalCandidates > 0;
+    private bool _traceabilityHasData => Snapshot.TraceabilityReport is not null;
     private double _traceabilityScore => Snapshot.TraceabilityReport is { } tr
         ? tr.Health.CoveragePercentage
-        : _metrics.TotalCandidates > 0 ? _metrics.TraceabilityPercent : 0;
+        : 0;
 
     private bool _complianceHasData => Snapshot.ComplianceReport is not null;
     private double _complianceScore => Snapshot.ComplianceReport?.Health.CompliancePercentage ?? 0;
 
-    private bool _qaHasData => Snapshot.AuditReport is not null || _metrics.TotalCandidates > 0;
+    private bool _qaHasData => Snapshot.AuditReport is not null || Snapshot.ReadinessReport is not null;
     private double _qaScore => Snapshot.AuditReport is { } ar
         ? ar.Health.AuditScore
-        : _metrics.TotalCandidates > 0 ? _metrics.QaHealthScore : 0;
+        : Snapshot.ReadinessReport?.OverallScore ?? 0;
 
     private bool _deliveryHasData => Snapshot.DeliveryReport is not null;
     private double _deliveryScore => Snapshot.DeliveryReport?.Health.OverallReadinessScore ?? 0;
@@ -779,9 +760,8 @@ else
         {
             var scores = new List<double>();
             if (Snapshot.TraceabilityReport is not null) scores.Add(_traceabilityScore);
-            else if (_metrics.TotalCandidates > 0)       scores.Add(_traceabilityScore);
             if (Snapshot.ComplianceReport is not null)   scores.Add(_complianceScore);
-            if (Snapshot.AuditReport is not null)        scores.Add(_qaScore);
+            if (_qaHasData)                              scores.Add(_qaScore);
             if (Snapshot.DeliveryReport is not null)     scores.Add(_deliveryScore);
             if (_securityReport is not null)             scores.Add(_securityReport.Health.Score);
             if (_perfReport?.ReadinessReport is { HasData: true } perf) scores.Add(perf.OverallScore);
@@ -792,7 +772,7 @@ else
     private bool _hasAnyScore =>
         Snapshot.TraceabilityReport is not null || Snapshot.ComplianceReport is not null ||
         Snapshot.AuditReport is not null        || Snapshot.DeliveryReport is not null  ||
-        _metrics.TotalCandidates > 0            || _securityReport is not null ||
+        Snapshot.ReadinessReport is not null    || _securityReport is not null ||
         _perfReport?.ReadinessReport is { HasData: true };
 
     private string _overallScoreLabel => _overallScore >= 80 ? "Healthy" : _overallScore >= 50 ? "Needs Attention" : "At Risk";
@@ -855,7 +835,7 @@ else
     private string TraceabilityHealthVal =>
         Snapshot.TraceabilityReport is { } tr
             ? $"{tr.Health.CoveragePercentage:0}%"
-            : _metrics.TotalCandidates > 0 ? $"{_metrics.TraceabilityPercent}%" : "—";
+            : "—";
 
     private string ComplianceHealthVal =>
         Snapshot.ComplianceReport is { } cr
@@ -865,7 +845,7 @@ else
     private string QaHealthVal =>
         Snapshot.AuditReport is { } ar
             ? $"{ar.Health.AuditScore:0}/100"
-            : _metrics.TotalCandidates > 0 ? $"{_metrics.QaHealthScore}/100" : "—";
+            : Snapshot.ReadinessReport is { } qr ? $"{qr.OverallScore:0}/100" : "—";
 
     private string DeliveryHealthVal =>
         Snapshot.DeliveryReport is { } dr
@@ -1001,94 +981,4 @@ else
 
     // ── Data loading ──────────────────────────────────────────────────────────
 
-    protected override async Task OnInitializedAsync()
-    {
-        if (IsPreviewMode)
-        {
-            _metrics = PreviewMetrics;
-            return;
-        }
-
-        _isLoading = true;
-        _loadError = null;
-
-        try
-        {
-            var candidatesResult = await Client.GetReviewedCandidates.ExecuteAsync(ProjectId, null);
-            var linksResult      = await Client.GetCandidateLinks.ExecuteAsync(ProjectId, null);
-
-            if (candidatesResult.Errors is { Count: > 0 } || linksResult.Errors is { Count: > 0 })
-            {
-                _loadError = "We couldn't load dashboard data right now. Please try again later.";
-                return;
-            }
-
-            _candidates = candidatesResult.Data?.ReviewedCandidates
-                .Select(c => new DashboardCandidate(c.Id, c.Classification, c.ReviewStatus, c.Title ?? ""))
-                .ToList() ?? [];
-
-            var links = linksResult.Data?.CandidateLinks
-                .Select(l => new DashboardCandidateLink(l.SourceCandidateRef, l.TargetCandidateRef, l.LinkType))
-                .ToList() ?? [];
-
-            _metrics = MetricsService.Calculate(_candidates, links);
-        }
-        catch (Exception)
-        {
-            _loadError = "We couldn't load dashboard data right now. Please try again later.";
-        }
-        finally
-        {
-            _isLoading = false;
-        }
-    }
-
-    private bool IsPreviewMode
-    {
-        get
-        {
-#if DEBUG
-            var query = Navigation.ToAbsoluteUri(Navigation.Uri).Query;
-            return query.Contains("demo=populated", StringComparison.OrdinalIgnoreCase)
-                || query.Contains("preview=populated", StringComparison.OrdinalIgnoreCase);
-#else
-            return false;
-#endif
-        }
-    }
-
-    private static DashboardMetrics PreviewMetrics => new(
-        TotalCandidates: 92,
-        RequirementCount: 24,
-        TestCount: 68,
-        ClarificationCount: 4,
-        ReviewedCount: 72,
-        ReviewedPercent: 78,
-        AcceptedCount: 74,
-        RejectedCount: 18,
-        NeedsReviewCount: 0,
-        UnreviewedCount: 0,
-        AcceptanceRatio: 80,
-        RejectionRatio: 20,
-        RequirementsWithTests: 22,
-        RequirementsWithoutTests: 3,
-        RequirementsCoveredPercent: 91,
-        RequirementsWithoutTestsPercent: 13,
-        TestsWithoutRequirements: 6,
-        TestsLinkedToRequirementsPercent: 88,
-        RequirementsWithUnresolvedClarifications: 2,
-        UnresolvedClarifications: 2,
-        ClarificationsWithoutRequirements: 0,
-        PendingRequirements: 3,
-        PendingTests: 0,
-        PendingClarifications: 2,
-        FunctionalTests: 30,
-        NegativeTests: 12,
-        EdgeCaseTests: 8,
-        PerformanceTests: 2,
-        SecurityTests: 1,
-        OtherTests: 5,
-        TraceabilityPercent: 87,
-        QaHealthScore: 82,
-        OpenRisksCount: 3);
 }

@@ -70,6 +70,7 @@ builder.Services.AddSingleton<IStandardsComplianceService>(_ =>
 builder.Services.AddSingleton<IQualityReviewService, QualityReviewService>();
 builder.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
+builder.Services.AddSingleton<IReportExportService, ReportExportService>();
 builder.Services.AddSingleton<IUIStructuralIntegrityAnalyzer, UIStructuralIntegrityAnalyzer>();
 builder.Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
 builder.Services.AddSingleton<WorkspaceArtifactRepository>();

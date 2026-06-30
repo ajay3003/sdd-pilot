@@ -4,6 +4,9 @@
 @inject WasmSecurityApiService Scanner
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject RuntimeReviewSessionService RuntimeReviews
+@inject IWorkspaceSessionService Workspace
+@inject IReportExportService ExportService
+@inject IJSRuntime JS
 
 <PageTitle>Blazor WASM Security Review</PageTitle>
 
@@ -178,6 +181,10 @@
     {
         var report = _report;
         var h = report.Health;
+
+        <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
+            <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportHtml">Export HTML</button>
+        </div>
 
         @* ── Scan Summary Strip ───────────────────────────────────────────── *@
         <div class="wsr-summary-strip" aria-label="Scan summary">
@@ -796,6 +803,13 @@
         {
             RuntimeReviews.MarkSecurityFailed(_context, _error);
         }
+    }
+
+    private async Task ExportHtml()
+    {
+        if (_report is null) return;
+        var html = ExportService.ExportSecurityReview(_report, Workspace.ProjectName);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"security-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
     private async Task RefreshContext()
