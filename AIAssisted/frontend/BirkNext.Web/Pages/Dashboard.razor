@@ -646,6 +646,46 @@
                 }
             </div>
 
+            @* Frontend Quality Review *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">Frontend Quality Review</span>
+                    <a href="frontend-quality-review" class="db-summary-open" aria-label="Open Frontend Quality Review">Open →</a>
+                </div>
+                @if (_fqrReport is { } fqrCard)
+                {
+                    <div class="db-analysis-score @ScoreClass(fqrCard.OverallScore)">@fqrCard.OverallScore</div>
+                    <span class="db-analysis-status @KpiStatusClass(fqrCard.OverallScore, true)">@KpiStatusLabel(fqrCard.OverallScore, true)</span>
+                    @if (fqrCard.Findings.OrderBy(f => f.Severity).FirstOrDefault() is { } topFqrFinding)
+                    {
+                        <div class="db-analysis-finding">@topFqrFinding.Title</div>
+                    }
+                    <div class="db-analysis-chips">
+                        @{ var fqrCritical = fqrCard.Findings.Count(f => f.Severity == FrontendQualitySeverity.Critical); }
+                        @{ var fqrHigh     = fqrCard.Findings.Count(f => f.Severity == FrontendQualitySeverity.High); }
+                        @if (fqrCritical > 0) { <span class="db-count-chip db-count-poor">@fqrCritical critical</span> }
+                        @if (fqrHigh > 0)     { <span class="db-count-chip db-count-poor">@fqrHigh high</span> }
+                        @if (fqrCritical == 0 && fqrHigh == 0)
+                        { <span class="db-count-chip db-count-good">No critical findings</span> }
+                    </div>
+                }
+                else if (RuntimeReviews.QualityReview.Status != RuntimeReviewStatus.NotRun)
+                {
+                    <span class="db-analysis-status @RuntimeStatusClass(RuntimeReviews.QualityReview.Status)">@RuntimeStatusLabel(RuntimeReviews.QualityReview.Status)</span>
+                    @if (RuntimeReviews.QualityReview.ErrorMessage is not null)
+                    {
+                        <div class="db-analysis-finding">@RuntimeReviews.QualityReview.ErrorMessage</div>
+                    }
+                }
+                else
+                {
+                    <div class="db-analysis-empty">
+                        Not run — analyse performance, security, accessibility, standards, and readiness in one review.
+                        <a href="frontend-quality-review" class="db-analysis-run-link">Run now →</a>
+                    </div>
+                }
+            </div>
+
         </div>
     </section>
 
@@ -667,8 +707,9 @@
                 <div class="db-qa-buttons">
                     <a href="artifact-traceability"   class="db-qa-btn">Artifact Traceability</a>
                     <a href="quality-review"          class="db-qa-btn">Quality Review</a>
-                    <a href="wasm-security-review"    class="db-qa-btn">Security Review</a>
-                    <a href="wasm-performance-review" class="db-qa-btn">Performance Review</a>
+                    <a href="frontend-quality-review"  class="db-qa-btn">Frontend Quality Review</a>
+                    <a href="wasm-security-review"     class="db-qa-btn">Security Review</a>
+                    <a href="wasm-performance-review"  class="db-qa-btn">Performance Review</a>
                 </div>
             </div>
             <div class="db-qa-group">
@@ -683,8 +724,9 @@
 @code {
     // ── Runtime review session ────────────────────────────────────────────────
 
-    private WasmSecurityReviewReport? _securityReport => RuntimeReviews.SecurityReview.Report;
-    private WasmPerformanceReviewReport? _perfReport => RuntimeReviews.PerformanceReview.Report;
+    private WasmSecurityReviewReport?    _securityReport => RuntimeReviews.SecurityReview.Report;
+    private WasmPerformanceReviewReport? _perfReport     => RuntimeReviews.PerformanceReview.Report;
+    private FrontendQualityReviewReport? _fqrReport      => RuntimeReviews.QualityReview.Report;
 
     // ── Snapshot aliases ──────────────────────────────────────────────────────
 
@@ -696,7 +738,8 @@
         Snapshot.ReadinessReport    is not null ||
         QualitySession.Status       != AnalysisSessionStatus.NotRun ||
         RuntimeReviews.SecurityReview.HasResult ||
-        RuntimeReviews.PerformanceReview.HasResult;
+        RuntimeReviews.PerformanceReview.HasResult ||
+        RuntimeReviews.QualityReview.HasResult;
 
     private bool _hasAnyWorkspace =>
         Workspace.Has(WorkspaceArtifactKind.Constitution) ||

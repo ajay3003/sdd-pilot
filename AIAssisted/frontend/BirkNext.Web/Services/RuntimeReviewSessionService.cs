@@ -74,8 +74,9 @@ public sealed class RuntimeReviewSessionState<TReport>
 
 public sealed class RuntimeReviewSessionService
 {
-    public RuntimeReviewSessionState<WasmSecurityReviewReport> SecurityReview { get; } = new();
-    public RuntimeReviewSessionState<WasmPerformanceReviewReport> PerformanceReview { get; } = new();
+    public RuntimeReviewSessionState<WasmSecurityReviewReport>     SecurityReview    { get; } = new();
+    public RuntimeReviewSessionState<WasmPerformanceReviewReport>  PerformanceReview { get; } = new();
+    public RuntimeReviewSessionState<FrontendQualityReviewReport>  QualityReview     { get; } = new();
 
     public void MarkSecurityRunning(FrontendAnalysisContext context) =>
         SecurityReview.MarkRunning(CreateSnapshot(context));
@@ -98,6 +99,17 @@ public sealed class RuntimeReviewSessionService
         PerformanceReview.Fail(CreateSnapshot(context), errorMessage);
 
     public void ClearPerformanceResult() => PerformanceReview.Clear();
+
+    public void MarkQualityRunning(FrontendAnalysisContext context) =>
+        QualityReview.MarkRunning(CreateSnapshot(context));
+
+    public void SaveQualityResult(FrontendQualityReviewReport report, FrontendAnalysisContext context) =>
+        QualityReview.Complete(report, CreateSnapshot(context), ToOffset(report.GeneratedAt));
+
+    public void MarkQualityFailed(FrontendAnalysisContext context, string errorMessage) =>
+        QualityReview.Fail(CreateSnapshot(context), errorMessage);
+
+    public void ClearQualityResult() => QualityReview.Clear();
 
     private static RuntimeReviewContextSnapshot CreateSnapshot(FrontendAnalysisContext context) =>
         new(

@@ -246,6 +246,73 @@ public sealed class ReportExportService : IReportExportService
         return BuildHtml("Quality Review Report", projectName, $"Run: {report.RunAt:yyyy-MM-dd HH:mm} UTC", sb.ToString());
     }
 
+    public string ExportFrontendQualityReview(FrontendQualityReviewReport report, string? projectName)
+    {
+        var sb = new StringBuilder();
+
+        sb.Append("<div class=\"kpi-row\">");
+        sb.Append(Kpi(report.OverallScore.ToString(),       "Overall Score"));
+        sb.Append(Kpi(report.PerformanceScore.ToString(),   "Performance"));
+        sb.Append(Kpi(report.SecurityScore.ToString(),      "Security"));
+        sb.Append(Kpi(report.AccessibilityScore.ToString(), "Accessibility"));
+        sb.Append(Kpi(report.StandardsScore.ToString(),     "Standards"));
+        sb.Append(Kpi(report.WasmScore.ToString(),          "Blazor WASM"));
+        sb.Append(Kpi(report.ReadinessScore.ToString(),     "Readiness"));
+        sb.Append("</div>\n");
+
+        // Per-category sections
+        var categories = Enum.GetValues<FrontendQualityCategory>();
+        foreach (var cat in categories)
+        {
+            var catFindings = report.Findings.Where(f => f.Category == cat).OrderBy(f => f.Severity).ToList();
+            if (catFindings.Count == 0) continue;
+
+            sb.Append($"<section class=\"block\">\n<h2>{Esc(CategoryLabel(cat))}</h2>\n");
+            sb.Append(Table(
+                ["Severity", "Title", "Description", "Recommendation"],
+                catFindings.Select(f => new[]
+                {
+                    Badge(f.Severity.ToString()),
+                    Esc(f.Title),
+                    Esc(f.Description),
+                    Esc(f.Recommendation)
+                })));
+            sb.Append("</section>\n");
+        }
+
+        if (report.Recommendations.Count > 0)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Recommendations</h2>\n");
+            sb.Append(RecommendationList(report.Recommendations));
+            sb.Append("</section>\n");
+        }
+
+        if (report.Limitations.Count > 0)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Limitations</h2>\n");
+            sb.Append("<ul style=\"margin-left:1.2rem;font-size:.85rem;color:#374151\">\n");
+            foreach (var l in report.Limitations)
+                sb.Append($"<li>{Esc(l)}</li>\n");
+            sb.Append("</ul>\n</section>\n");
+        }
+
+        var subtitle = string.IsNullOrWhiteSpace(report.TargetUrl)
+            ? null
+            : $"Target: {report.TargetUrl}  Generated: {report.GeneratedAt:yyyy-MM-dd HH:mm} UTC";
+        return BuildHtml("Frontend Quality Review Report", projectName, subtitle, sb.ToString());
+    }
+
+    private static string CategoryLabel(FrontendQualityCategory c) => c switch
+    {
+        FrontendQualityCategory.Performance   => "Performance",
+        FrontendQualityCategory.Security      => "Security",
+        FrontendQualityCategory.Accessibility => "Accessibility",
+        FrontendQualityCategory.Standards     => "Standards",
+        FrontendQualityCategory.BlazorWasm    => "Blazor WASM",
+        FrontendQualityCategory.Readiness     => "Readiness",
+        _                                     => c.ToString(),
+    };
+
     public string ExportSecurityReview(WasmSecurityReviewReport report, string? projectName)
     {
         var sb = new StringBuilder();
