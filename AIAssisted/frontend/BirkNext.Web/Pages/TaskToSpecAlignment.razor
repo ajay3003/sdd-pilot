@@ -3,6 +3,8 @@
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
 @inject IWorkspaceSessionService Workspace
+@inject IReportExportService ExportService
+@inject IJSRuntime JS
 
 <PageTitle>Implementation Review</PageTitle>
 
@@ -175,6 +177,10 @@
         }
         else
         {
+            <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
+                <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportHtml">Export HTML</button>
+            </div>
+
             @* ── Tab switcher ── *@
             <div class="align-page-tabs" role="tablist">
                 <button type="button"
@@ -700,6 +706,13 @@
         _activeImpactFilter = null;
         _activePageTab = "alignment";
         _expandedFindings.Clear();
+    }
+
+    private async Task ExportHtml()
+    {
+        if (_report is null) return;
+        var html = ExportService.ExportImplementationReview(_report, Workspace.ProjectName);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"implementation-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
     private void Reset()

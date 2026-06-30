@@ -7,6 +7,8 @@
 @inject NavigationManager NavigationManager
 @inject BirkNext.Web.Services.ProjectDocumentApiService DocumentApi
 @inject BirkNext.Web.Services.IWorkspaceSessionService Workspace
+@inject BirkNext.Web.Services.IReportExportService ExportService
+@inject BirkNext.Web.Services.IDataModelAnalysisService DataModelService
 
 <PageTitle>Data Model Explorer — QA Review Studio</PageTitle>
 
@@ -14,6 +16,13 @@
 
     <PageHeader Title="Data Model Explorer"
                 Description="Review database entities, tables, relationships, constraints, indexes, and traceability from data-model.md." />
+
+    @if (!string.IsNullOrWhiteSpace(_initialText))
+    {
+        <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
+            <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportHtml">Export HTML</button>
+        </div>
+    }
 
     <div class="dme-page-body">
         <DataModelExplorerPanel
@@ -72,6 +81,14 @@
             _initialText = legacy;
             StateHasChanged();
         }
+    }
+
+    private async Task ExportHtml()
+    {
+        if (string.IsNullOrWhiteSpace(_initialText)) return;
+        var document = DataModelService.Parse(_initialText);
+        var html = ExportService.ExportDataModel(document, Workspace.ProjectName);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"data-model-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
     private async Task OnDataModelBuilt(string text)

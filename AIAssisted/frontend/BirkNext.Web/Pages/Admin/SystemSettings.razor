@@ -6,7 +6,14 @@
 @inject ImplementationTraceabilityApiService AdoApi
 @inject ProjectDocumentApiService DocumentApi
 @inject IJSRuntime JS
-@inject IUIStructuralIntegrityAnalyzer UiIntegrityAnalyzer
+@inject IWorkspaceSessionService Workspace
+@inject RuntimeReviewSessionService RuntimeReviews
+@inject IDashboardSnapshotService AnalysisSessions
+@inject IExtractionSessionService ExtractionSession
+@inject IArtifactParserService MarkdownEngine
+@inject WasmSecurityApiService SecurityApi
+@inject IBlazorWasmPerformanceReviewService PerformanceApi
+@inject Microsoft.AspNetCore.Components.WebAssembly.Hosting.IWebAssemblyHostEnvironment HostEnvironment
 
 <PageTitle>System Settings — QA Review Studio</PageTitle>
 
@@ -133,7 +140,7 @@ else if (_settings is not null)
                 <div class="ss-nav-group-label">Developer</div>
                 @NavItem("diagnostics",        "Diagnostics")
                 @NavItem("doc-health",         "Documentation Health", _docHealthIssueCount)
-                @NavItem("ui-migration",       "UI Migration Health")
+                @NavItem("ui-migration",       "Runtime Diagnostics")
                 @NavItem("maintenance",        "Maintenance")
             </div>
         </nav>
@@ -1105,103 +1112,115 @@ else if (_settings is not null)
                 </div>
             }
 
-            @* ══ UI Migration Health ══════════════════════════════════════════════════ *@
+            @* Runtime Diagnostics *@
             @if (_activeSection == "ui-migration")
             {
                 <div class="settings-card settings-card-full-width">
-                    <div class="settings-card-title">UI Migration Health</div>
-                    <p class="settings-card-note">
-                        Developer diagnostic. Reports the current migration status of BirkNext UI components
-                        from legacy patterns to the Studio design system. Metrics are calculated from the
-                        internal migration registry and are intended for developers maintaining the Studio.
-                        They are not derived from project artifacts and are not release-quality indicators.
-                    </p>
+                    <div class="settings-card-title">Runtime Diagnostics</div>
+                    <p class="settings-card-note">Live runtime state for the current QA Review Studio session.</p>
 
-                    @if (!_uiMigrationComputed)
+                    @if (_runtimeActionMessage is not null)
                     {
-                        <div class="db-section-empty">Loading…</div>
+                        <div class="notification notification-success" role="status">@_runtimeActionMessage</div>
                     }
-                    else
-                    {
-                        <div class="fv-sync-stats">
-                            <div class="fv-sync-stat @(_uiMigration.StructuralRiskScore < 30 ? "fv-sync-stat-on" : "fv-sync-stat-off")">
-                                <span class="fv-sync-stat-value">@(100 - _uiMigration.StructuralRiskScore)</span>
-                                <span class="fv-sync-stat-label">Migration Score</span>
-                            </div>
-                            <div class="fv-sync-stat fv-sync-stat-on">
-                                <span class="fv-sync-stat-value">@_uiMigration.FullyConsistentSectionCount</span>
-                                <span class="fv-sync-stat-label">Migrated Sections</span>
-                            </div>
-                            @if (_uiMigration.HybridSectionCount > 0)
-                            {
-                                <div class="fv-sync-stat fv-sync-stat-off">
-                                    <span class="fv-sync-stat-value">@_uiMigration.HybridSectionCount</span>
-                                    <span class="fv-sync-stat-label">Hybrid Sections</span>
-                                </div>
-                            }
-                            @if (_uiMigration.PartiallyMigratedSectionCount > 0)
-                            {
-                                <div class="fv-sync-stat">
-                                    <span class="fv-sync-stat-value">@_uiMigration.PartiallyMigratedSectionCount</span>
-                                    <span class="fv-sync-stat-label">Partial Sections</span>
-                                </div>
-                            }
-                            @if (_uiMigration.LegacySectionCount > 0)
-                            {
-                                <div class="fv-sync-stat fv-sync-stat-off">
-                                    <span class="fv-sync-stat-value">@_uiMigration.LegacySectionCount</span>
-                                    <span class="fv-sync-stat-label">Legacy Sections</span>
-                                </div>
-                            }
-                            <div class="fv-sync-stat">
-                                <span class="fv-sync-stat-value">@_uiMigration.StructuralRiskScore<small>/100</small></span>
-                                <span class="fv-sync-stat-label">Risk Score</span>
-                            </div>
+
+                    <div class="dev-diag-subgrid">
+                        <div class="dev-diag-section">
+                            <div class="dev-diag-section-title">Workspace</div>
+                            <table class="dev-diag-table">
+                                <tbody>
+                                    <tr><td>Current project</td><td>@OrUnavailable(Workspace.CurrentProject)</td></tr>
+                                    <tr><td>Workspace status</td><td>@(WorkspaceArtifacts.Count > 0 ? "Loaded" : "Unavailable")</td></tr>
+                                    <tr><td>Loaded artifacts</td><td>@(WorkspaceArtifacts.Count > 0 ? "Ready" : "Unavailable")</td></tr>
+                                    <tr><td>Artifact count</td><td>@WorkspaceArtifacts.Count</td></tr>
+                                    <tr><td>Loaded artifact names</td><td>@ArtifactNamesText</td></tr>
+                                    <tr><td>Last loaded timestamp</td><td>@FormatTimestamp(LastWorkspaceLoad)</td></tr>
+                                </tbody>
+                            </table>
                         </div>
 
-                        @if (_uiMigration.PageResults.Count > 0)
-                        {
-                            <div class="dev-diag-subgrid" style="margin-top:1.5rem">
-                                @foreach (var pageResult in _uiMigration.PageResults)
+                        <div class="dev-diag-section">
+                            <div class="dev-diag-section-title">Markdown Engine</div>
+                            <table class="dev-diag-table">
+                                <tbody>
+                                    <tr><td>Engine initialized</td><td>@(MarkdownEngine is not null ? "Ready" : "Unavailable")</td></tr>
+                                    <tr><td>Parsed documents</td><td>@WorkspaceArtifacts.Count</td></tr>
+                                    <tr><td>Cache status</td><td>Unavailable</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="dev-diag-section">
+                            <div class="dev-diag-section-title">Runtime Services</div>
+                            <table class="dev-diag-table">
+                                <tbody>
+                                    @foreach (var service in RuntimeServiceRows)
+                                    {
+                                        <tr>
+                                            <td>@service.Name</td>
+                                            <td>
+                                                <span class="ss-health-sev @RuntimeHealthClass(service.Status)">@service.Status</span>
+                                                @if (!string.IsNullOrWhiteSpace(service.Detail))
+                                                {
+                                                    <span class="settings-card-note"> @service.Detail</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="dev-diag-section">
+                            <div class="dev-diag-section-title">Application</div>
+                            <table class="dev-diag-table">
+                                <tbody>
+                                    <tr><td>Build version</td><td>@OrUnavailable(_settings?.Application.Version)</td></tr>
+                                    <tr><td>Build number</td><td>@OrUnavailable(_settings?.Application.BuildNumber)</td></tr>
+                                    <tr><td>Environment</td><td>@OrUnavailable(_settings?.Application.Environment)</td></tr>
+                                    <tr><td>Host environment</td><td>@OrUnavailable(HostEnvironment.Environment)</td></tr>
+                                    <tr><td>Current project</td><td>@OrUnavailable(Workspace.CurrentProject)</td></tr>
+                                    <tr><td>Feature flags</td><td>@FeatureFlagSummary</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="settings-card" style="margin-top:1.5rem;background:var(--surface-subtle,#f8f9fa)">
+                        <div class="settings-card-title" style="font-size:0.95rem">Analysis Sessions</div>
+                        <table class="dev-diag-table">
+                            <thead>
+                                <tr>
+                                    <th>Session</th>
+                                    <th>Status</th>
+                                    <th>Last run</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var session in AnalysisSessionRows)
                                 {
-                                    <div class="dev-diag-section">
-                                        <div class="dev-diag-section-title">@pageResult.PageName</div>
-                                        @if (pageResult.Sections.Count == 0)
-                                        {
-                                            <p class="settings-card-note">No sections registered.</p>
-                                        }
-                                        else
-                                        {
-                                            @foreach (var uiSection in pageResult.Sections)
-                                            {
-                                                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.2rem 0;font-size:0.8rem">
-                                                    <span>@uiSection.SectionDisplayName</span>
-                                                    <span class="ss-health-sev @(uiSection.Status == UISectionStatus.Consistent ? "ss-health-sev-ok" :
-                                                                                   uiSection.Status == UISectionStatus.Hybrid    ? "ss-health-sev-error" :
-                                                                                   uiSection.Status == UISectionStatus.Legacy    ? "ss-health-sev-error" :
-                                                                                   "ss-health-sev-warn")">@uiSection.Status</span>
-                                                </div>
-                                            }
-                                        }
-                                    </div>
+                                    <tr>
+                                        <td>@session.Name</td>
+                                        <td><span class="ss-health-sev @SessionStatusClass(session.Status)">@session.Status</span></td>
+                                        <td>@FormatTimestamp(session.LastRun)</td>
+                                    </tr>
                                 }
-                            </div>
-                        }
+                            </tbody>
+                        </table>
+                    </div>
 
-                        <div class="settings-card" style="margin-top:1.5rem;background:var(--surface-subtle,#f8f9fa)">
-                            <div class="settings-card-title" style="font-size:0.85rem">Developer Notes</div>
-                            <ul class="settings-card-note" style="margin:0.5rem 0 0;padding-left:1.25rem;line-height:1.7">
-                                <li><strong>Registry location:</strong> <code>Services/UIStructuralIntegrityAnalyzer.cs</code> — <code>BuildRegistry()</code> method</li>
-                                <li><strong>Migration status</strong> is manually assigned per section using the <code>UISectionStatus</code> enum: <code>Consistent</code>, <code>Hybrid</code>, <code>PartiallyMigrated</code>, <code>Legacy</code></li>
-                                <li><strong>Risk score</strong> = Hybrid×10 + Legacy×5 + PartiallyMigrated×2, capped at 100 (lower is better)</li>
-                                <li><strong>To update:</strong> edit the relevant <code>P()</code> / <code>S()</code> call in <code>BuildRegistry()</code> and change the section's <code>UISectionStatus</code></li>
-                                <li><strong>To add a new page:</strong> add a <code>P("Page Name", S("Section", UISectionStatus.X), …)</code> entry to the registry</li>
-                            </ul>
+                    <div class="settings-card" style="margin-top:1.5rem;background:var(--surface-subtle,#f8f9fa)">
+                        <div class="settings-card-title" style="font-size:0.95rem">Developer Actions</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:.5rem">
+                            <SecondaryButton OnClick="ResetWorkspaceDiagnosticsAsync">Reset Workspace</SecondaryButton>
+                            <SecondaryButton OnClick="ClearRuntimeSessionsAsync">Clear Runtime Sessions</SecondaryButton>
+                            <SecondaryButton OnClick="ClearAnalysisSessionsAsync">Clear Analysis Sessions</SecondaryButton>
+                            <SecondaryButton OnClick="ClearRuntimeCachesAsync">Clear Caches</SecondaryButton>
+                            <PrimaryButton OnClick="ExportRuntimeDiagnosticsAsync">Export Diagnostics</PrimaryButton>
                         </div>
-                    }
+                    </div>
                 </div>
             }
-
             @* ══ Maintenance ══════════════════════════════════════════════════════════ *@
             @if (_activeSection == "maintenance")
             {
@@ -1305,9 +1324,10 @@ else if (_settings is not null)
     private List<DocHealthFinding> _docHealthFindings = [];
     private int _docHealthIssueCount => _docHealthFindings.Count;
 
-    // UI Migration Health
-    private UIStructuralIntegrityReport _uiMigration = new() { PageResults = [] };
-    private bool _uiMigrationComputed;
+    // Runtime Diagnostics
+    private ExtractionSessionSnapshot? _extractionSnapshot;
+    private bool _runtimeDiagnosticsLoaded;
+    private string? _runtimeActionMessage;
 
     // Azure DevOps connection test
     private bool _adoTestRunning;
@@ -1462,6 +1482,78 @@ else if (_settings is not null)
     private int AllHiddenCount     => AllEditableFeatures.Count(e => !e.Value);
     private List<(string Label, string Key)> UnflaggedList => UnflaggedMenuItems.ToList();
 
+    private IReadOnlyList<(WorkspaceArtifactKind Kind, string Label, WorkspaceArtifact Artifact)> WorkspaceArtifacts =>
+        Enum.GetValues<WorkspaceArtifactKind>()
+            .Select(kind => (Kind: kind, Label: ArtifactLabel(kind), Artifact: Workspace.Get(kind)))
+            .Where(item => item.Artifact is not null)
+            .Select(item => (item.Kind, item.Label, item.Artifact!))
+            .ToList();
+
+    private string ArtifactNamesText =>
+        WorkspaceArtifacts.Count == 0
+            ? "Unavailable"
+            : string.Join(", ", WorkspaceArtifacts.Select(item => item.Artifact.FileName ?? item.Label));
+
+    private DateTime? LastWorkspaceLoad =>
+        WorkspaceArtifacts.Count == 0
+            ? null
+            : WorkspaceArtifacts.Max(item => item.Artifact.LoadedAt);
+
+    private string FeatureFlagSummary =>
+        AllEditableFeatures.Any()
+            ? $"{AllVisibleCount} enabled / {AllConfiguredCount} configured"
+            : "Unavailable";
+
+    private IEnumerable<(string Name, string Status, DateTimeOffset? LastRun)> AnalysisSessionRows
+    {
+        get
+        {
+            yield return ("Artifact Traceability", AnalysisSessions.TraceabilityReport is null ? "Not Run" : "Completed", AnalysisSessions.TraceabilityRunAt);
+            yield return ("Quality Review", QualityReviewStatus, LastQualityReviewRun);
+            yield return ("WASM Security Review", RuntimeStatusLabel(RuntimeReviews.SecurityReview.Status), RuntimeReviews.SecurityReview.RunTimestamp);
+            yield return ("WASM Performance Review", RuntimeStatusLabel(RuntimeReviews.PerformanceReview.Status), RuntimeReviews.PerformanceReview.RunTimestamp);
+            yield return ("Implementation Review", AdoApi.GetCached() is null ? "Not Run" : "Completed", null);
+            yield return ("Impact Analysis", "Unavailable", null);
+            yield return ("Spec Drift", "Unavailable", null);
+        }
+    }
+
+    private string QualityReviewStatus =>
+        AnalysisSessions.ComplianceReport is not null ||
+        AnalysisSessions.AuditReport is not null ||
+        AnalysisSessions.DeliveryReport is not null ||
+        AnalysisSessions.ReadinessReport is not null
+            ? "Completed"
+            : "Not Run";
+
+    private DateTimeOffset? LastQualityReviewRun =>
+        new[]
+        {
+            AnalysisSessions.ComplianceRunAt,
+            AnalysisSessions.AuditRunAt,
+            AnalysisSessions.DeliveryRunAt,
+            AnalysisSessions.ReadinessRunAt
+        }.Where(value => value.HasValue).Max();
+
+    private IEnumerable<(string Name, string Status, string? Detail)> RuntimeServiceRows
+    {
+        get
+        {
+            yield return ("WorkspaceArtifactRepository", "Ready", $"{WorkspaceArtifacts.Count} artifacts loaded");
+            yield return ("RuntimeReviewSessionService", "Ready", $"{RuntimeReviewResultCount} runtime results");
+            yield return ("ExtractionSessionService", "Ready", _extractionSnapshot is null ? "No active extraction session" : $"Last saved {FormatTimestamp(_extractionSnapshot.Timestamp)}");
+            yield return ("Markdown Engine", MarkdownEngine is null ? "Error" : "Ready", "Cache status unavailable");
+            yield return ("Analysis Services", "Ready", $"{CompletedAnalysisCount} completed sessions");
+        }
+    }
+
+    private int RuntimeReviewResultCount =>
+        (RuntimeReviews.SecurityReview.HasResult ? 1 : 0) +
+        (RuntimeReviews.PerformanceReview.HasResult ? 1 : 0);
+
+    private int CompletedAnalysisCount =>
+        AnalysisSessionRows.Count(row => row.Status == "Completed");
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -1504,10 +1596,10 @@ else if (_settings is not null)
             StateHasChanged();
         }
 
-        if (_activeSection == "ui-migration" && !_uiMigrationComputed)
+        if (_activeSection == "ui-migration" && !_runtimeDiagnosticsLoaded)
         {
-            _uiMigrationComputed = true;
-            _uiMigration = UiIntegrityAnalyzer.Analyze();
+            _runtimeDiagnosticsLoaded = true;
+            _extractionSnapshot = await ExtractionSession.LoadAsync();
             StateHasChanged();
         }
     }
@@ -1633,6 +1725,123 @@ else if (_settings is not null)
         _adoTestResult  = await AdoApi.TestConnectionAsync();
         _adoTestRunning = false;
     }
+
+    private async Task ResetWorkspaceDiagnosticsAsync()
+    {
+        foreach (var kind in Enum.GetValues<WorkspaceArtifactKind>())
+            Workspace.Clear(kind);
+
+        Workspace.CurrentProject = null;
+        _runtimeActionMessage = "Workspace reset.";
+        await RefreshRuntimeDiagnosticsAsync();
+    }
+
+    private async Task ClearRuntimeSessionsAsync()
+    {
+        RuntimeReviews.ClearSecurityResult();
+        RuntimeReviews.ClearPerformanceResult();
+        _runtimeActionMessage = "Runtime sessions cleared.";
+        await RefreshRuntimeDiagnosticsAsync();
+    }
+
+    private async Task ClearAnalysisSessionsAsync()
+    {
+        AnalysisSessions.Clear();
+        AdoApi.ClearCache();
+        await ExtractionSession.ClearAsync();
+        _extractionSnapshot = null;
+        _runtimeActionMessage = "Analysis sessions cleared.";
+        StateHasChanged();
+    }
+
+    private async Task ClearRuntimeCachesAsync()
+    {
+        AdoApi.ClearCache();
+        SecurityApi.ClearCache();
+        PerformanceApi.ClearCache();
+        await ExtractionSession.ClearAsync();
+        _extractionSnapshot = null;
+        _runtimeActionMessage = "Runtime caches cleared where supported.";
+        StateHasChanged();
+    }
+
+    private async Task ExportRuntimeDiagnosticsAsync()
+    {
+        await CopyAsync(BuildRuntimeDiagnosticsExport());
+        _runtimeActionMessage = "Runtime diagnostics copied to clipboard.";
+        StateHasChanged();
+    }
+
+    private async Task RefreshRuntimeDiagnosticsAsync()
+    {
+        _extractionSnapshot = await ExtractionSession.LoadAsync();
+        StateHasChanged();
+    }
+
+    private string BuildRuntimeDiagnosticsExport()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("QA Review Studio - Runtime Diagnostics");
+        sb.AppendLine($"Current project: {OrUnavailable(Workspace.CurrentProject)}");
+        sb.AppendLine($"Workspace artifacts: {WorkspaceArtifacts.Count}");
+        sb.AppendLine($"Loaded artifact names: {ArtifactNamesText}");
+        sb.AppendLine($"Last workspace load: {FormatTimestamp(LastWorkspaceLoad)}");
+        sb.AppendLine();
+        sb.AppendLine("Analysis Sessions");
+        foreach (var session in AnalysisSessionRows)
+            sb.AppendLine($"- {session.Name}: {session.Status} ({FormatTimestamp(session.LastRun)})");
+        sb.AppendLine();
+        sb.AppendLine("Runtime Services");
+        foreach (var service in RuntimeServiceRows)
+            sb.AppendLine($"- {service.Name}: {service.Status} {service.Detail}");
+        return sb.ToString();
+    }
+
+    private static string ArtifactLabel(WorkspaceArtifactKind kind) => kind switch
+    {
+        WorkspaceArtifactKind.Constitution => "constitution.md",
+        WorkspaceArtifactKind.Specification => "spec.md",
+        WorkspaceArtifactKind.Plan => "plan.md",
+        WorkspaceArtifactKind.Tasks => "tasks.md",
+        WorkspaceArtifactKind.DataModel => "data-model.md",
+        WorkspaceArtifactKind.Research => "research.md",
+        _ => kind.ToString()
+    };
+
+    private static string RuntimeStatusLabel(RuntimeReviewStatus status) => status switch
+    {
+        RuntimeReviewStatus.NotRun => "Not Run",
+        RuntimeReviewStatus.Running => "Running",
+        RuntimeReviewStatus.Completed => "Completed",
+        RuntimeReviewStatus.Failed => "Failed",
+        _ => "Unavailable"
+    };
+
+    private static string SessionStatusClass(string status) => status switch
+    {
+        "Completed" => "ss-health-sev-ok",
+        "Running" => "ss-health-sev-warn",
+        "Failed" => "ss-health-sev-error",
+        "Unavailable" => "ss-health-sev-warn",
+        _ => ""
+    };
+
+    private static string RuntimeHealthClass(string status) => status switch
+    {
+        "Ready" => "ss-health-sev-ok",
+        "Warning" => "ss-health-sev-warn",
+        "Error" => "ss-health-sev-error",
+        _ => "ss-health-sev-warn"
+    };
+
+    private static string OrUnavailable(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "Unavailable" : value;
+
+    private static string FormatTimestamp(DateTime? value) =>
+        value.HasValue ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "Unavailable";
+
+    private static string FormatTimestamp(DateTimeOffset? value) =>
+        value.HasValue ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "Unavailable";
 
     private static string OrUnknown(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "Not configured" : value;

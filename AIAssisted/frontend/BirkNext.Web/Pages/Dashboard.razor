@@ -5,6 +5,8 @@
 @inject IDashboardSnapshotService Snapshot
 @inject RuntimeReviewSessionService RuntimeReviews
 @inject IWorkspaceSessionService Workspace
+@inject IReportExportService ExportService
+@inject IJSRuntime JS
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -32,6 +34,13 @@
             <StatusChip Status="neutral" Label="This session" />
         }
     </PageHeader>
+
+    @if (_hasAnySnapshot)
+    {
+        <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
+            <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportHtml">Export HTML</button>
+        </div>
+    }
 
     @* ══════════════════════════════════════════════════════════════════════════
        ZONE 1 · EXECUTIVE SUMMARY
@@ -978,6 +987,22 @@
             <a href="@href" class="db-readiness-link">Open →</a>
         </div>
     };
+
+    // ── Actions ───────────────────────────────────────────────────────────────
+
+    private async Task ExportHtml()
+    {
+        if (!_hasAnySnapshot) return;
+        var html = ExportService.ExportDashboardSummary(
+            Workspace.ProjectName,
+            Snapshot.TraceabilityReport,
+            Snapshot.ComplianceReport,
+            Snapshot.AuditReport,
+            Snapshot.DeliveryReport,
+            Snapshot.ReadinessReport,
+            _perfReport);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"dashboard-summary-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
+    }
 
     // ── Data loading ──────────────────────────────────────────────────────────
 

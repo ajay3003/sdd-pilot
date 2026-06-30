@@ -163,6 +163,10 @@
     <!-- ── Report view ────────────────────────────────────────────────────── -->
     @if (_report is not null)
     {
+        <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
+            <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportHtml">Export HTML</button>
+        </div>
+
         <!-- Health summary bar -->
         <div class="at-health-bar">
             <MetricCard Value="@(_report.ConstitutionCoverage.CoveragePercentage.ToString("0.#") + "%")" Label="Constitution Coverage"
@@ -773,6 +777,13 @@
     }
 
     private void ToggleInputPanel() => _inputExpanded = !_inputExpanded;
+
+    private async Task ExportHtml()
+    {
+        if (_report is null) return;
+        var html = ExportService.ExportArtifactTraceability(_report, Workspace.ProjectName);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"artifact-traceability-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
+    }
 
     // ── Renderers ─────────────────────────────────────────────────────────
 
