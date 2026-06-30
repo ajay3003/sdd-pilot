@@ -17,3 +17,8 @@ public sealed record SampleFileDto(
     string? ReviewerRoute,
     bool IsSupported,
     bool IsContextOnly);
+
+public sealed record SampleProjectsMetaDto(
+    string? ResolvedPath,
+    string Source,
+    bool Exists);

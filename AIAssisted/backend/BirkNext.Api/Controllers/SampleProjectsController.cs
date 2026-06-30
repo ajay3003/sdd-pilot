@@ -29,12 +29,8 @@ public class SampleProjectsController(IConfiguration config) : ControllerBase
     [HttpGet]
     public IActionResult GetProjects()
     {
-        var baseDir = config["SampleProjects:BaseDirectory"];
-        if (string.IsNullOrWhiteSpace(baseDir))
-            return Ok(Array.Empty<SampleProjectDto>());
-
-        var fullBase = SysPath.GetFullPath(baseDir, AppContext.BaseDirectory);
-        if (!SysDir.Exists(fullBase))
+        var (fullBase, _) = ResolveBaseDirectory();
+        if (fullBase is null)
             return Ok(Array.Empty<SampleProjectDto>());
 
         var projects = SysDir
@@ -44,6 +40,18 @@ public class SampleProjectsController(IConfiguration config) : ControllerBase
             .ToList();
 
         return Ok(projects);
+    }
+
+    // ── GET /api/sample-projects/meta ─────────────────────────────────────────
+
+    [HttpGet("meta")]
+    public IActionResult GetMeta()
+    {
+        var (path, source) = ResolveBaseDirectory();
+        return Ok(new SampleProjectsMetaDto(
+            ResolvedPath: path,
+            Source: source,
+            Exists: path is not null));
     }
 
     // ── GET /api/sample-projects/{slug}/file?filename=spec.md ─────────────────
@@ -74,6 +82,32 @@ public class SampleProjectsController(IConfiguration config) : ControllerBase
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Resolves the SampleData base directory.
+    /// Config override takes precedence; falls back to walking up the directory
+    /// tree from AppContext.BaseDirectory until a SampleData folder is found.
+    /// </summary>
+    private (string? Path, string Source) ResolveBaseDirectory()
+    {
+        var configured = config["SampleProjects:BaseDirectory"];
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            var full = SysPath.GetFullPath(configured, AppContext.BaseDirectory);
+            return (SysDir.Exists(full) ? full : null, "config");
+        }
+
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = SysPath.Combine(dir.FullName, "SampleData");
+            if (SysDir.Exists(candidate))
+                return (candidate, "auto");
+            dir = dir.Parent;
+        }
+
+        return (null, "auto");
+    }
 
     private SampleProjectDto BuildProject(string dir, string baseDir)
     {
@@ -135,11 +169,8 @@ public class SampleProjectsController(IConfiguration config) : ControllerBase
 
     private string? ResolveProjectDir(string slug)
     {
-        var baseDir = config["SampleProjects:BaseDirectory"];
-        if (string.IsNullOrWhiteSpace(baseDir)) return null;
-
-        var fullBase   = SysPath.GetFullPath(baseDir, AppContext.BaseDirectory);
-        if (!SysDir.Exists(fullBase)) return null;
+        var (fullBase, _) = ResolveBaseDirectory();
+        if (fullBase is null) return null;
 
         var projectDir = SysPath.GetFullPath(SysPath.Combine(fullBase, slug));
         if (!projectDir.StartsWith(fullBase + SysPath.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))

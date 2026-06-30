@@ -72,6 +72,7 @@ builder.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
 builder.Services.AddSingleton<IUIStructuralIntegrityAnalyzer, UIStructuralIntegrityAnalyzer>();
 builder.Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
+builder.Services.AddSingleton<IWorkspaceSessionService, WorkspaceSessionService>();
 
 builder.Services.AddHttpClient<ImplementationTraceabilityApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));

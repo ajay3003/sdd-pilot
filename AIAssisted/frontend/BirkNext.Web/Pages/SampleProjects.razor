@@ -25,13 +25,28 @@
             <div class="sp-empty-icon" aria-hidden="true">📂</div>
             <div class="sp-empty-title">No sample projects found</div>
             <p class="sp-empty-hint">
-                Set <code>SampleProjects:BaseDirectory</code> in <code>appsettings.Local.json</code> to point to your M2LB folder (e.g. <code>../../m2lb</code>).
-                Each subdirectory becomes a project.
+                @if (_meta?.Source == "config")
+                {
+                    <span>The configured path was not found. Check <code>SampleProjects:BaseDirectory</code> in <code>appsettings.Local.json</code>.</span>
+                }
+                else
+                {
+                    <span>No SampleData folder found. Expected location: <code>&lt;repo-root&gt;/SampleData</code>.</span>
+                    <br/>
+                    <span>To override, set <code>SampleProjects:BaseDirectory</code> in <code>appsettings.Local.json</code>.</span>
+                }
             </p>
         </div>
     }
     else
     {
+        @if (_meta is not null)
+        {
+            <div class="sp-meta-bar">
+                <span class="sp-meta-label">@(_meta.Source == "config" ? "Configured" : "Auto-discovered")</span>
+                <code class="sp-meta-path">@_meta.ResolvedPath</code>
+            </div>
+        }
         <div class="sp-project-list">
             @foreach (var project in _projects)
             {
@@ -213,6 +228,7 @@
 
 @code {
     private List<SampleProjectDto> _projects = [];
+    private SampleProjectsMetaDto? _meta;
     private bool _loading = true;
     private string? _loadingSlug;
     private Dictionary<string, LoadResult> _loadState = [];
@@ -222,8 +238,12 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _projects = await ProjectsApi.GetProjectsAsync();
-        _loading = false;
+        var projectsTask = ProjectsApi.GetProjectsAsync();
+        var metaTask     = ProjectsApi.GetMetaAsync();
+        await Task.WhenAll(projectsTask, metaTask);
+        _projects = projectsTask.Result;
+        _meta     = metaTask.Result;
+        _loading  = false;
     }
 
     private async Task LoadArtifacts(SampleProjectDto project)

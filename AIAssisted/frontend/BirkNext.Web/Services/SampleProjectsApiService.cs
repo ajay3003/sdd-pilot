@@ -18,6 +18,18 @@ public class SampleProjectsApiService(HttpClient client)
         }
     }
 
+    public async Task<SampleProjectsMetaDto?> GetMetaAsync()
+    {
+        try
+        {
+            return await client.GetFromJsonAsync<SampleProjectsMetaDto>("api/sample-projects/meta");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<string?> GetFileAsync(string slug, string filename)
     {
         try
