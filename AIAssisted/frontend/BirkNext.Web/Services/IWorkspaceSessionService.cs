@@ -6,22 +6,28 @@ public enum WorkspaceArtifactKind
     Specification,
     Plan,
     Tasks,
-    DataModel
+    DataModel,
+    Research
 }
 
-public sealed record WorkspaceArtifact(string Text, DateTime LoadedAt);
+public sealed record WorkspaceArtifact(
+    string Text,
+    DateTime LoadedAt,
+    string? FileName = null,
+    string? SourcePath = null,
+    DateTime? LastModified = null);
 
-public interface IWorkspaceSessionService
+public interface IWorkspaceSessionService : IWorkspaceArtifactRepository
 {
-    string? ProjectName { get; set; }
-
     WorkspaceArtifact? Constitution { get; }
     WorkspaceArtifact? Specification { get; }
     WorkspaceArtifact? Plan { get; }
     WorkspaceArtifact? Tasks { get; }
     WorkspaceArtifact? DataModel { get; }
 
-    void Set(WorkspaceArtifactKind kind, string text);
+    void Set(WorkspaceArtifactKind kind, string text,
+             string? fileName = null, string? sourcePath = null, DateTime? lastModified = null);
     WorkspaceArtifact? Get(WorkspaceArtifactKind kind);
     bool Has(WorkspaceArtifactKind kind);
+    void Clear(WorkspaceArtifactKind kind);
 }

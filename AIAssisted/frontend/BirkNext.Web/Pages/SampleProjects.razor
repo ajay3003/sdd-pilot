@@ -4,6 +4,7 @@
 @using Microsoft.JSInterop
 @inject SampleProjectsApiService ProjectsApi
 @inject ProjectDocumentApiService DocumentApi
+@inject IWorkspaceSessionService Workspace
 @inject IJSRuntime JS
 
 <div class="sp-page">
@@ -246,6 +247,16 @@
         _loading  = false;
     }
 
+    private static readonly IReadOnlyDictionary<string, WorkspaceArtifactKind> _artifactKindMap =
+        new Dictionary<string, WorkspaceArtifactKind>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["constitution"] = WorkspaceArtifactKind.Constitution,
+            ["spec"]         = WorkspaceArtifactKind.Specification,
+            ["plan"]         = WorkspaceArtifactKind.Plan,
+            ["tasks"]        = WorkspaceArtifactKind.Tasks,
+            ["datamodel"]    = WorkspaceArtifactKind.DataModel,
+        };
+
     private async Task LoadArtifacts(SampleProjectDto project)
     {
         var confirmed = await JS.InvokeAsync<bool>("confirm",
@@ -260,6 +271,8 @@
         var loaded = 0;
         var skipped = new List<string>();
 
+        Workspace.ProjectName = project.Name;
+
         foreach (var file in supported)
         {
             var content = await ProjectsApi.GetFileAsync(project.Slug, file.Filename);
@@ -269,6 +282,8 @@
                 continue;
             }
             await DocumentApi.SaveAsync(file.ArtifactKind!, content);
+            if (file.ArtifactKind is not null && _artifactKindMap.TryGetValue(file.ArtifactKind, out var kind))
+                Workspace.Set(kind, content, fileName: file.Filename, sourcePath: project.AbsolutePath);
             loaded++;
         }
 
