@@ -64,7 +64,7 @@
                 var missing   = project.Files.Where(f => f.IsSupported && !f.Exists).ToList();
                 var context   = project.Files.Where(f => f.IsContextOnly).ToList();
 
-                var loadState = _loadState.GetValueOrDefault(project.Slug);
+                var loadState = GetLoadResult(project);
                 var readmeOpen = _readmeOpen.Contains(project.Slug);
                 var allOpen    = _allFilesOpen.Contains(project.Slug);
 
@@ -287,6 +287,53 @@
         (Workspace.Has(WorkspaceArtifactKind.DataModel) ? 1 : 0) +
         (Workspace.Has(WorkspaceArtifactKind.Plan) ? 1 : 0) +
         (Workspace.Has(WorkspaceArtifactKind.Tasks) ? 1 : 0);
+
+    private LoadResult? GetLoadResult(SampleProjectDto project)
+    {
+        if (_loadState.TryGetValue(project.Slug, out var localState) && localState.HasError)
+            return localState;
+
+        if (!IsCurrentWorkspace(project) || LoadedWorkspaceArtifactCount == 0)
+            return null;
+
+        var loadedArtifacts = GetWorkspaceLoadedArtifactNames().ToList();
+        var contextOnly = project.Files
+            .Where(f => f.IsContextOnly && f.Exists)
+            .Select(f => f.Filename)
+            .ToList();
+
+        var message = $"Loaded {loadedArtifacts.Count} artifact{(loadedArtifacts.Count == 1 ? "" : "s")}.";
+        return new LoadResult(project.Name, message, false, loadedArtifacts, contextOnly);
+    }
+
+    private bool IsCurrentWorkspace(SampleProjectDto project) =>
+        string.Equals(Workspace.CurrentProject, project.Name, StringComparison.Ordinal);
+
+    private IEnumerable<string> GetWorkspaceLoadedArtifactNames()
+    {
+        foreach (var kind in new[]
+        {
+            WorkspaceArtifactKind.Constitution,
+            WorkspaceArtifactKind.Specification,
+            WorkspaceArtifactKind.DataModel,
+            WorkspaceArtifactKind.Plan,
+            WorkspaceArtifactKind.Tasks
+        })
+        {
+            if (Workspace.Get(kind) is { } artifact)
+                yield return artifact.FileName ?? DefaultArtifactFileName(kind);
+        }
+    }
+
+    private static string DefaultArtifactFileName(WorkspaceArtifactKind kind) => kind switch
+    {
+        WorkspaceArtifactKind.Constitution => "constitution.md",
+        WorkspaceArtifactKind.Specification => "spec.md",
+        WorkspaceArtifactKind.DataModel => "data-model.md",
+        WorkspaceArtifactKind.Plan => "plan.md",
+        WorkspaceArtifactKind.Tasks => "tasks.md",
+        _ => kind.ToString()
+    };
 
     private static readonly IReadOnlyList<NextActionLink> NextActions =
     [
