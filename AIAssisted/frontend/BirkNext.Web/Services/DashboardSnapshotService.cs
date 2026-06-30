@@ -20,6 +20,7 @@ public interface IDashboardSnapshotService
     void Publish(QaAuditReport report);
     void Publish(DeliveryReadinessReport report);
     void Publish(QAReadinessReport report);
+    void ClearQualityReview();
     void Clear();
 }
 
@@ -66,17 +67,22 @@ public sealed class DashboardSnapshotService : IDashboardSnapshotService
         ReadinessRunAt = DateTimeOffset.UtcNow;
     }
 
-    public void Clear()
+    public void ClearQualityReview()
     {
-        TraceabilityReport = null;
         ComplianceReport = null;
         AuditReport = null;
         DeliveryReport = null;
         ReadinessReport = null;
-        TraceabilityRunAt = null;
         ComplianceRunAt = null;
         AuditRunAt = null;
         DeliveryRunAt = null;
         ReadinessRunAt = null;
+    }
+
+    public void Clear()
+    {
+        TraceabilityReport = null;
+        TraceabilityRunAt = null;
+        ClearQualityReview();
     }
 }

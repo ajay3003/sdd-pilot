@@ -4,6 +4,7 @@
 @using BirkNext.Web.Services
 @inject IDashboardSnapshotService Snapshot
 @inject RuntimeReviewSessionService RuntimeReviews
+@inject QualityReviewSessionService QualitySession
 @inject IWorkspaceSessionService Workspace
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
@@ -693,6 +694,7 @@
         Snapshot.AuditReport        is not null ||
         Snapshot.DeliveryReport     is not null ||
         Snapshot.ReadinessReport    is not null ||
+        QualitySession.Status       != AnalysisSessionStatus.NotRun ||
         RuntimeReviews.SecurityReview.HasResult ||
         RuntimeReviews.PerformanceReview.HasResult;
 
@@ -753,10 +755,12 @@
     private bool _complianceHasData => Snapshot.ComplianceReport is not null;
     private double _complianceScore => Snapshot.ComplianceReport?.Health.CompliancePercentage ?? 0;
 
-    private bool _qaHasData => Snapshot.AuditReport is not null || Snapshot.ReadinessReport is not null;
-    private double _qaScore => Snapshot.AuditReport is { } ar
-        ? ar.Health.AuditScore
-        : Snapshot.ReadinessReport?.OverallScore ?? 0;
+    private bool _qaHasData => QualitySession.HasResult || Snapshot.AuditReport is not null || Snapshot.ReadinessReport is not null;
+    private double _qaScore => QualitySession.Report is { } report
+        ? report.OverallScore
+        : Snapshot.AuditReport is { } ar
+            ? ar.Health.AuditScore
+            : Snapshot.ReadinessReport?.OverallScore ?? 0;
 
     private bool _deliveryHasData => Snapshot.DeliveryReport is not null;
     private double _deliveryScore => Snapshot.DeliveryReport?.Health.OverallReadinessScore ?? 0;
@@ -781,6 +785,7 @@
     private bool _hasAnyScore =>
         Snapshot.TraceabilityReport is not null || Snapshot.ComplianceReport is not null ||
         Snapshot.AuditReport is not null        || Snapshot.DeliveryReport is not null  ||
+        QualitySession.HasResult                ||
         Snapshot.ReadinessReport is not null    || _securityReport is not null ||
         _perfReport?.ReadinessReport is { HasData: true };
 
@@ -852,10 +857,11 @@
             : "—";
 
     private string QaHealthVal =>
-        Snapshot.AuditReport is { } ar
-            ? $"{ar.Health.AuditScore:0}/100"
-            : Snapshot.ReadinessReport is { } qr ? $"{qr.OverallScore:0}/100" : "—";
-
+        QualitySession.Report is { } report
+            ? $"{report.OverallScore:0}/100"
+            : Snapshot.AuditReport is { } ar
+                ? $"{ar.Health.AuditScore:0}/100"
+                : Snapshot.ReadinessReport is { } qr ? $"{qr.OverallScore:0}/100" : "-";
     private string DeliveryHealthVal =>
         Snapshot.DeliveryReport is { } dr
             ? $"{dr.Health.OverallReadinessScore:0}%"

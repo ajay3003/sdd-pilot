@@ -76,6 +76,7 @@ builder.Services.AddSingleton<WorkspaceArtifactRepository>();
 builder.Services.AddSingleton<IWorkspaceArtifactRepository>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
 builder.Services.AddSingleton<IWorkspaceSessionService>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
 builder.Services.AddScoped<RuntimeReviewSessionService>();
+builder.Services.AddScoped<QualityReviewSessionService>();
 
 builder.Services.AddHttpClient<ImplementationTraceabilityApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));

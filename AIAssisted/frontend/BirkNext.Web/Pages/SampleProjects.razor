@@ -5,6 +5,8 @@
 @inject SampleProjectsApiService ProjectsApi
 @inject ProjectDocumentApiService DocumentApi
 @inject IWorkspaceSessionService Workspace
+@inject QualityReviewSessionService QualitySession
+@inject IDashboardSnapshotService DashboardSnapshot
 @inject IJSRuntime JS
 
 <div class="sp-page">
@@ -330,6 +332,8 @@
         var loaded = 0;
         var skipped = new List<string>();
 
+        QualitySession.Clear();
+        DashboardSnapshot.ClearQualityReview();
         Workspace.CurrentProject = project.Name;
 
         foreach (var file in supported)

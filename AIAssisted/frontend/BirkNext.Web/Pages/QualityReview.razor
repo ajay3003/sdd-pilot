@@ -6,6 +6,7 @@
 @inject IDashboardSnapshotService DashboardSnapshot
 @inject IDeliveryReadinessAssessmentService DrService
 @inject IWorkspaceSessionService Workspace
+@inject QualityReviewSessionService QualitySession
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
 
@@ -440,12 +441,22 @@
         foreach (var p in QrService.AvailablePacks.Where(p => p.IsDefault))
             _selectedPacks.Add(p.PackId);
 
+        if (QualitySession.SelectedPackIds.Count > 0)
+        {
+            _selectedPacks.Clear();
+            foreach (var packId in QualitySession.SelectedPackIds)
+                _selectedPacks.Add(packId);
+        }
+
         // Restore any artifacts already in the workspace from this session.
         _constitutionText = Workspace.Get(WorkspaceArtifactKind.Constitution)?.Text ?? string.Empty;
         _specText         = Workspace.Get(WorkspaceArtifactKind.Specification)?.Text ?? string.Empty;
         _planText         = Workspace.Get(WorkspaceArtifactKind.Plan)?.Text          ?? string.Empty;
         _taskText         = Workspace.Get(WorkspaceArtifactKind.Tasks)?.Text         ?? string.Empty;
         _dataModelText    = Workspace.Get(WorkspaceArtifactKind.DataModel)?.Text     ?? string.Empty;
+
+        if (QualitySession.HasResult && IsSessionForCurrentWorkspace())
+            RestoreReport(QualitySession.Report!);
     }
 
     // ── Workspace-syncing text setters ────────────────────────────────────────
@@ -558,6 +569,9 @@
         _running = true;
         try
         {
+            var artifactSnapshot = BuildArtifactSnapshot();
+            QualitySession.MarkRunning(_selectedPacks, Workspace.ProjectName, artifactSnapshot);
+
             _report = await QrService.RunAsync(
                 string.IsNullOrWhiteSpace(_constitutionText) ? null : _constitutionText,
                 string.IsNullOrWhiteSpace(_specText)         ? null : _specText,
@@ -565,6 +579,8 @@
                 string.IsNullOrWhiteSpace(_taskText)         ? null : _taskText,
                 string.IsNullOrWhiteSpace(_dataModelText)    ? null : _dataModelText,
                 _selectedPacks);
+
+            QualitySession.SaveResult(_report, _selectedPacks, Workspace.ProjectName, artifactSnapshot);
 
             // Publish pack results so Dashboard can consume the shared quality session.
             var complianceResult = _report.PackResults.FirstOrDefault(r => r.Compliance is not null);
@@ -599,6 +615,11 @@
             _drRecPhaseFilter        = null;
             _drRecSearch             = string.Empty;
         }
+        catch (Exception ex)
+        {
+            QualitySession.MarkFailed(_selectedPacks, Workspace.ProjectName, BuildArtifactSnapshot(), ex.Message);
+            throw;
+        }
         finally
         {
             _running = false;
@@ -631,6 +652,41 @@
     }
 
     // ── Top Issues ────────────────────────────────────────────────────────────
+
+    private IReadOnlyDictionary<WorkspaceArtifactKind, string> BuildArtifactSnapshot()
+    {
+        var snapshot = new Dictionary<WorkspaceArtifactKind, string>();
+        AddArtifact(snapshot, WorkspaceArtifactKind.Constitution, _constitutionText);
+        AddArtifact(snapshot, WorkspaceArtifactKind.Specification, _specText);
+        AddArtifact(snapshot, WorkspaceArtifactKind.Plan, _planText);
+        AddArtifact(snapshot, WorkspaceArtifactKind.Tasks, _taskText);
+        AddArtifact(snapshot, WorkspaceArtifactKind.DataModel, _dataModelText);
+        return snapshot;
+    }
+
+    private static void AddArtifact(Dictionary<WorkspaceArtifactKind, string> snapshot, WorkspaceArtifactKind kind, string text)
+    {
+        if (!string.IsNullOrWhiteSpace(text))
+            snapshot[kind] = text;
+    }
+
+    private bool IsSessionForCurrentWorkspace()
+    {
+        if (string.IsNullOrWhiteSpace(QualitySession.ProjectName))
+            return string.IsNullOrWhiteSpace(Workspace.ProjectName);
+
+        return string.Equals(QualitySession.ProjectName, Workspace.ProjectName, StringComparison.Ordinal);
+    }
+
+    private void RestoreReport(QualityReviewReport report)
+    {
+        _report = report;
+        _topIssues = GetTopIssues(5);
+        _inputExpanded = false;
+        _expanded.Clear();
+        foreach (var result in report.PackResults)
+            _expanded.Add(result.PackId);
+    }
 
     private record TopIssueItem(string PackName, string Title, string Severity, int SortKey, string? Detail = null);
 

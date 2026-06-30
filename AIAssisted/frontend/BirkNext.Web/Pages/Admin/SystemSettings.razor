@@ -8,6 +8,7 @@
 @inject IJSRuntime JS
 @inject IWorkspaceSessionService Workspace
 @inject RuntimeReviewSessionService RuntimeReviews
+@inject QualityReviewSessionService QualitySession
 @inject IDashboardSnapshotService AnalysisSessions
 @inject IExtractionSessionService ExtractionSession
 @inject IArtifactParserService MarkdownEngine
@@ -1509,7 +1510,7 @@ else if (_settings is not null)
         get
         {
             yield return ("Artifact Traceability", AnalysisSessions.TraceabilityReport is null ? "Not Run" : "Completed", AnalysisSessions.TraceabilityRunAt);
-            yield return ("Quality Review", QualityReviewStatus, LastQualityReviewRun);
+            yield return ("Quality Review", AnalysisStatusLabel(QualitySession.Status), QualitySession.RunTimestamp ?? LastQualityReviewRun);
             yield return ("WASM Security Review", RuntimeStatusLabel(RuntimeReviews.SecurityReview.Status), RuntimeReviews.SecurityReview.RunTimestamp);
             yield return ("WASM Performance Review", RuntimeStatusLabel(RuntimeReviews.PerformanceReview.Status), RuntimeReviews.PerformanceReview.RunTimestamp);
             yield return ("Implementation Review", AdoApi.GetCached() is null ? "Not Run" : "Completed", null);
@@ -1517,14 +1518,6 @@ else if (_settings is not null)
             yield return ("Spec Drift", "Unavailable", null);
         }
     }
-
-    private string QualityReviewStatus =>
-        AnalysisSessions.ComplianceReport is not null ||
-        AnalysisSessions.AuditReport is not null ||
-        AnalysisSessions.DeliveryReport is not null ||
-        AnalysisSessions.ReadinessReport is not null
-            ? "Completed"
-            : "Not Run";
 
     private DateTimeOffset? LastQualityReviewRun =>
         new[]
@@ -1747,6 +1740,7 @@ else if (_settings is not null)
     private async Task ClearAnalysisSessionsAsync()
     {
         AnalysisSessions.Clear();
+        QualitySession.Clear();
         AdoApi.ClearCache();
         await ExtractionSession.ClearAsync();
         _extractionSnapshot = null;
@@ -1814,6 +1808,15 @@ else if (_settings is not null)
         RuntimeReviewStatus.Running => "Running",
         RuntimeReviewStatus.Completed => "Completed",
         RuntimeReviewStatus.Failed => "Failed",
+        _ => "Unavailable"
+    };
+
+    private static string AnalysisStatusLabel(AnalysisSessionStatus status) => status switch
+    {
+        AnalysisSessionStatus.NotRun => "Not Run",
+        AnalysisSessionStatus.Running => "Running",
+        AnalysisSessionStatus.Completed => "Completed",
+        AnalysisSessionStatus.Failed => "Failed",
         _ => "Unavailable"
     };
 
