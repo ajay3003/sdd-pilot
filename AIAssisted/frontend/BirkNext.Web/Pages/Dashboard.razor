@@ -7,7 +7,6 @@
 @inject IDashboardMetricsService MetricsService
 @inject IDashboardSnapshotService Snapshot
 @inject IBlazorWasmPerformanceReviewService PerformanceService
-@inject IUIStructuralIntegrityAnalyzer UiIntegrityAnalyzer
 @inject NavigationManager Navigation
 
 <PageTitle>Dashboard</PageTitle>
@@ -587,34 +586,6 @@ else
                 }
             </div>
 
-            @* UI Integrity *@
-            <div class="db-analysis-card" data-testid="ui-integrity-section">
-                <div class="db-analysis-card-header">
-                    <span class="db-analysis-card-title">UI Integrity</span>
-                    <StatusChip Status="@(_uiIntegrity.StructuralRiskScore >= 60 ? "critical" : _uiIntegrity.StructuralRiskScore >= 30 ? "warning" : "healthy")"
-                                Label="@($"Risk {_uiIntegrity.StructuralRiskScore}/100")" />
-                </div>
-                <div class="db-analysis-score @ScoreClass(100 - _uiIntegrity.StructuralRiskScore)">@(100 - _uiIntegrity.StructuralRiskScore)</div>
-                <span class="db-analysis-status @(_uiIntegrity.StructuralRiskScore >= 60 ? "db-status-critical" : _uiIntegrity.StructuralRiskScore >= 30 ? "db-status-warning" : "db-status-healthy")">
-                    @(_uiIntegrity.StructuralRiskScore >= 60 ? "Critical" : _uiIntegrity.StructuralRiskScore >= 30 ? "Warning" : "Healthy")
-                </span>
-                @if (_topPatternFinding is not null)
-                {
-                    <div class="db-analysis-finding">@_topPatternFinding</div>
-                }
-                <div class="db-analysis-chips">
-                    <span class="db-count-chip db-count-good">@_uiIntegrity.FullyConsistentSectionCount consistent</span>
-                    @if (_uiIntegrity.HybridSectionCount > 0)
-                    {
-                        <span class="db-count-chip db-count-poor">@_uiIntegrity.HybridSectionCount hybrid</span>
-                    }
-                    @if (_uiIntegrity.PartiallyMigratedSectionCount > 0)
-                    {
-                        <span class="db-count-chip db-count-warn">@_uiIntegrity.PartiallyMigratedSectionCount partial</span>
-                    }
-                </div>
-            </div>
-
         </div>
     </section>
 
@@ -657,8 +628,6 @@ else
     private string? _loadError;
     private DashboardMetrics _metrics = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     private List<DashboardCandidate> _candidates = [];
-    private UIStructuralIntegrityReport _uiIntegrity = new() { PageResults = [] };
-
     // ── Performance cache ─────────────────────────────────────────────────────
 
     private WasmPerformanceReviewReport? _perfReport => PerformanceService.GetCached();
@@ -833,11 +802,6 @@ else
     private string? _topBlockerTitle =>
         Snapshot.DeliveryReport?.Blockers?.OrderBy(b => b.Severity).FirstOrDefault()?.Title;
 
-    private string? _topPatternFinding =>
-        _uiIntegrity.TopHybridPatterns?.FirstOrDefault() is { } p
-            ? $"{p.PageName} — {p.Description}"
-            : null;
-
     // ── Render helpers ────────────────────────────────────────────────────────
 
     private static string ScoreClass(double score) =>
@@ -942,8 +906,6 @@ else
             _metrics = PreviewMetrics;
             return;
         }
-
-        _uiIntegrity = UiIntegrityAnalyzer.Analyze();
 
         _isLoading = true;
         _loadError = null;

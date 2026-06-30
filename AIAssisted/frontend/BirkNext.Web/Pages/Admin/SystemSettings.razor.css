@@ -806,6 +806,12 @@
     color: var(--clr-warning);
 }
 
+.ss-health-sev-ok {
+    background: var(--clr-success-bg, #d4edda);
+    border: 1px solid var(--clr-success-border, #c3e6cb);
+    color: var(--clr-success, #155724);
+}
+
 .ss-health-body { flex: 1; }
 
 .ss-health-component {

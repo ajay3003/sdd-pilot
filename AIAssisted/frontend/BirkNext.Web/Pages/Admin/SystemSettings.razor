@@ -1,10 +1,12 @@
 @page "/admin/system-settings"
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
+@using BirkNext.Web.Models
 @inject AdminApiService AdminApi
 @inject ImplementationTraceabilityApiService AdoApi
 @inject ProjectDocumentApiService DocumentApi
 @inject IJSRuntime JS
+@inject IUIStructuralIntegrityAnalyzer UiIntegrityAnalyzer
 
 <PageTitle>System Settings — QA Review Studio</PageTitle>
 
@@ -131,6 +133,7 @@ else if (_settings is not null)
                 <div class="ss-nav-group-label">Developer</div>
                 @NavItem("diagnostics",        "Diagnostics")
                 @NavItem("doc-health",         "Documentation Health", _docHealthIssueCount)
+                @NavItem("ui-migration",       "UI Migration Health")
                 @NavItem("maintenance",        "Maintenance")
             </div>
         </nav>
@@ -1102,6 +1105,103 @@ else if (_settings is not null)
                 </div>
             }
 
+            @* ══ UI Migration Health ══════════════════════════════════════════════════ *@
+            @if (_activeSection == "ui-migration")
+            {
+                <div class="settings-card settings-card-full-width">
+                    <div class="settings-card-title">UI Migration Health</div>
+                    <p class="settings-card-note">
+                        Developer diagnostic. Reports the current migration status of BirkNext UI components
+                        from legacy patterns to the Studio design system. Metrics are calculated from the
+                        internal migration registry and are intended for developers maintaining the Studio.
+                        They are not derived from project artifacts and are not release-quality indicators.
+                    </p>
+
+                    @if (!_uiMigrationComputed)
+                    {
+                        <div class="db-section-empty">Loading…</div>
+                    }
+                    else
+                    {
+                        <div class="fv-sync-stats">
+                            <div class="fv-sync-stat @(_uiMigration.StructuralRiskScore < 30 ? "fv-sync-stat-on" : "fv-sync-stat-off")">
+                                <span class="fv-sync-stat-value">@(100 - _uiMigration.StructuralRiskScore)</span>
+                                <span class="fv-sync-stat-label">Migration Score</span>
+                            </div>
+                            <div class="fv-sync-stat fv-sync-stat-on">
+                                <span class="fv-sync-stat-value">@_uiMigration.FullyConsistentSectionCount</span>
+                                <span class="fv-sync-stat-label">Migrated Sections</span>
+                            </div>
+                            @if (_uiMigration.HybridSectionCount > 0)
+                            {
+                                <div class="fv-sync-stat fv-sync-stat-off">
+                                    <span class="fv-sync-stat-value">@_uiMigration.HybridSectionCount</span>
+                                    <span class="fv-sync-stat-label">Hybrid Sections</span>
+                                </div>
+                            }
+                            @if (_uiMigration.PartiallyMigratedSectionCount > 0)
+                            {
+                                <div class="fv-sync-stat">
+                                    <span class="fv-sync-stat-value">@_uiMigration.PartiallyMigratedSectionCount</span>
+                                    <span class="fv-sync-stat-label">Partial Sections</span>
+                                </div>
+                            }
+                            @if (_uiMigration.LegacySectionCount > 0)
+                            {
+                                <div class="fv-sync-stat fv-sync-stat-off">
+                                    <span class="fv-sync-stat-value">@_uiMigration.LegacySectionCount</span>
+                                    <span class="fv-sync-stat-label">Legacy Sections</span>
+                                </div>
+                            }
+                            <div class="fv-sync-stat">
+                                <span class="fv-sync-stat-value">@_uiMigration.StructuralRiskScore<small>/100</small></span>
+                                <span class="fv-sync-stat-label">Risk Score</span>
+                            </div>
+                        </div>
+
+                        @if (_uiMigration.PageResults.Count > 0)
+                        {
+                            <div class="dev-diag-subgrid" style="margin-top:1.5rem">
+                                @foreach (var pageResult in _uiMigration.PageResults)
+                                {
+                                    <div class="dev-diag-section">
+                                        <div class="dev-diag-section-title">@pageResult.PageName</div>
+                                        @if (pageResult.Sections.Count == 0)
+                                        {
+                                            <p class="settings-card-note">No sections registered.</p>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var uiSection in pageResult.Sections)
+                                            {
+                                                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.2rem 0;font-size:0.8rem">
+                                                    <span>@uiSection.SectionDisplayName</span>
+                                                    <span class="ss-health-sev @(uiSection.Status == UISectionStatus.Consistent ? "ss-health-sev-ok" :
+                                                                                   uiSection.Status == UISectionStatus.Hybrid    ? "ss-health-sev-error" :
+                                                                                   uiSection.Status == UISectionStatus.Legacy    ? "ss-health-sev-error" :
+                                                                                   "ss-health-sev-warn")">@uiSection.Status</span>
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <div class="settings-card" style="margin-top:1.5rem;background:var(--surface-subtle,#f8f9fa)">
+                            <div class="settings-card-title" style="font-size:0.85rem">Developer Notes</div>
+                            <ul class="settings-card-note" style="margin:0.5rem 0 0;padding-left:1.25rem;line-height:1.7">
+                                <li><strong>Registry location:</strong> <code>Services/UIStructuralIntegrityAnalyzer.cs</code> — <code>BuildRegistry()</code> method</li>
+                                <li><strong>Migration status</strong> is manually assigned per section using the <code>UISectionStatus</code> enum: <code>Consistent</code>, <code>Hybrid</code>, <code>PartiallyMigrated</code>, <code>Legacy</code></li>
+                                <li><strong>Risk score</strong> = Hybrid×10 + Legacy×5 + PartiallyMigrated×2, capped at 100 (lower is better)</li>
+                                <li><strong>To update:</strong> edit the relevant <code>P()</code> / <code>S()</code> call in <code>BuildRegistry()</code> and change the section's <code>UISectionStatus</code></li>
+                                <li><strong>To add a new page:</strong> add a <code>P("Page Name", S("Section", UISectionStatus.X), …)</code> entry to the registry</li>
+                            </ul>
+                        </div>
+                    }
+                </div>
+            }
+
             @* ══ Maintenance ══════════════════════════════════════════════════════════ *@
             @if (_activeSection == "maintenance")
             {
@@ -1204,6 +1304,10 @@ else if (_settings is not null)
     private bool _docHealthComputed;
     private List<DocHealthFinding> _docHealthFindings = [];
     private int _docHealthIssueCount => _docHealthFindings.Count;
+
+    // UI Migration Health
+    private UIStructuralIntegrityReport _uiMigration = new() { PageResults = [] };
+    private bool _uiMigrationComputed;
 
     // Azure DevOps connection test
     private bool _adoTestRunning;
@@ -1395,6 +1499,13 @@ else if (_settings is not null)
         {
             _docHealthComputed = true;
             _docHealthFindings = RunDocumentationHealthChecks();
+            StateHasChanged();
+        }
+
+        if (_activeSection == "ui-migration" && !_uiMigrationComputed)
+        {
+            _uiMigrationComputed = true;
+            _uiMigration = UiIntegrityAnalyzer.Analyze();
             StateHasChanged();
         }
     }
@@ -1736,9 +1847,9 @@ else if (_settings is not null)
         {
             var normalised = "/" + href.TrimStart('/');
             if (!KnownRoutes.Contains(normalised))
-                findings.Add(new("Error", "Navigation Link", $"NavMenu item "{label}" links to "{href}" which is not a known route.", $"Route checked: {normalised}"));
+                findings.Add(new("Error", "Navigation Link", $"NavMenu item \"{label}\" links to \"{href}\" which is not a known route.", $"Route checked: {normalised}"));
             if (RemovedRoutes.Contains(href) || RemovedRoutes.Contains(normalised))
-                findings.Add(new("Error", "Removed Route Reference", $"NavMenu item "{label}" links to a removed route: {href}"));
+                findings.Add(new("Error", "Removed Route Reference", $"NavMenu item \"{label}\" links to a removed route: {href}"));
         }
 
         // 2. Validate documentation page links are known routes.
@@ -1746,9 +1857,9 @@ else if (_settings is not null)
         {
             var normalised = href.StartsWith('/') ? href : "/" + href;
             if (!KnownRoutes.Contains(normalised))
-                findings.Add(new("Error", "Broken Documentation Link", $"{page} — "{ctx}" links to "{href}" which is not a known route.", $"Route checked: {normalised}"));
+                findings.Add(new("Error", "Broken Documentation Link", $"{page} — \"{ctx}\" links to \"{href}\" which is not a known route.", $"Route checked: {normalised}"));
             if (RemovedRoutes.Contains(href) || RemovedRoutes.Contains(normalised))
-                findings.Add(new("Error", "Removed Route Reference", $"{page} — "{ctx}" references a removed route: {href}"));
+                findings.Add(new("Error", "Removed Route Reference", $"{page} — \"{ctx}\" references a removed route: {href}"));
         }
 
         // 3. Menu synchronisation — check MenuItemRegistry hrefs are in KnownRoutes via DocNavLinks.
@@ -1759,7 +1870,7 @@ else if (_settings is not null)
             var matchingNav = DocNavLinks.FirstOrDefault(l =>
                 string.Equals(l.Label, menuLabel, StringComparison.OrdinalIgnoreCase));
             if (matchingNav == default)
-                findings.Add(new("Warning", "Menu Mismatch", $"MenuItemRegistry entry "{menuLabel}" has no matching DocNavLinks entry. If this menu item exists in NavMenu, add it to DocNavLinks."));
+                findings.Add(new("Warning", "Menu Mismatch", $"MenuItemRegistry entry \"{menuLabel}\" has no matching DocNavLinks entry. If this menu item exists in NavMenu, add it to DocNavLinks."));
         }
 
         // 4. Orphan documentation check — pages that exist but have no menu item.
