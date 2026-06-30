@@ -13,6 +13,7 @@ public enum WorkspaceArtifactType
 public interface IWorkspaceArtifactRepository
 {
     string? ProjectName { get; set; }
+    string? CurrentProject { get; set; }
 
     void Set(WorkspaceArtifactType type, string text,
              string? fileName = null, string? sourcePath = null, DateTime? lastModified = null);

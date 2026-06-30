@@ -24,6 +24,16 @@
     line-height: 1.5;
 }
 
+.sp-workspace-banner {
+    margin: 0 0 1rem;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid #bfdbfe;
+    border-radius: var(--radius-sm, 4px);
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-size: 0.84rem;
+}
+
 /* ── Loading / empty states ──────────────────────────────────────────────────── */
 
 .sp-loading {
@@ -206,6 +216,71 @@
 }
 .sp-load-result.is-ok    { background: #f0fdf4; color: #15803d; }
 .sp-load-result.is-error { background: #fff7ed; color: #c2410c; }
+
+.sp-confirm-panel {
+    padding: 0.75rem 1rem 0.9rem;
+    border-top: 1px solid #bbf7d0;
+    background: #f7fee7;
+}
+
+.sp-confirm-title {
+    font-size: 0.92rem;
+    font-weight: 800;
+    color: #14532d;
+    margin-bottom: 0.6rem;
+}
+
+.sp-confirm-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.sp-confirm-label {
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #3f6212;
+    margin-bottom: 0.25rem;
+}
+
+.sp-confirm-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.78rem;
+    color: #1f2937;
+    padding: 0.12rem 0;
+}
+
+.sp-confirm-ok { color: #16a34a; font-weight: 800; }
+.sp-confirm-context { color: #92400e; font-weight: 800; }
+.sp-confirm-muted { color: var(--text-muted, #777); font-size: 0.8rem; }
+
+.sp-confirm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.75rem;
+}
+
+.sp-confirm-link {
+    font-size: 0.75rem;
+    padding: 0.22rem 0.58rem;
+    border: 1px solid #bbf7d0;
+    border-radius: var(--radius-pill, 999px);
+    background: #fff;
+    color: #166534;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.sp-confirm-link:hover {
+    background: #ecfdf5;
+    text-decoration: none;
+}
 
 /* ── README viewer ───────────────────────────────────────────────────────────── */
 

@@ -13,6 +13,13 @@
         <p class="sp-page-desc">Browse M2LB project folders and load supported artifacts into BirkNext reviewers. Supported artifacts are ready to open; context-only files require no dedicated reviewer.</p>
     </div>
 
+    @if (!string.IsNullOrWhiteSpace(Workspace.CurrentProject))
+    {
+        <div class="sp-workspace-banner" role="status">
+            Current Workspace: <strong>@Workspace.CurrentProject</strong> · @LoadedWorkspaceArtifactCount artifact@(LoadedWorkspaceArtifactCount == 1 ? "" : "s") loaded
+        </div>
+    }
+
     @if (_loading)
     {
         <div class="sp-loading">
@@ -154,6 +161,41 @@
                         <div class="sp-load-result @(loadState.HasError ? "is-error" : "is-ok")">
                             @loadState.Message
                         </div>
+                        @if (!loadState.HasError)
+                        {
+                            <div class="sp-confirm-panel" role="status" aria-label="Loaded workspace confirmation">
+                                <div class="sp-confirm-title">Loaded workspace: @loadState.ProjectName</div>
+                                <div class="sp-confirm-grid">
+                                    <div class="sp-confirm-column">
+                                        <div class="sp-confirm-label">Loaded artifacts</div>
+                                        @foreach (var file in loadState.LoadedArtifacts)
+                                        {
+                                            <div class="sp-confirm-row"><span class="sp-confirm-ok" aria-hidden="true">✓</span><span>@file</span></div>
+                                        }
+                                    </div>
+                                    <div class="sp-confirm-column">
+                                        <div class="sp-confirm-label">Context-only files</div>
+                                        @if (loadState.ContextOnlyFiles.Count == 0)
+                                        {
+                                            <div class="sp-confirm-muted">None</div>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var file in loadState.ContextOnlyFiles)
+                                            {
+                                                <div class="sp-confirm-row"><span class="sp-confirm-context" aria-hidden="true">○</span><span>@file</span></div>
+                                            }
+                                        }
+                                    </div>
+                                </div>
+                                <div class="sp-confirm-actions" aria-label="Next actions">
+                                    @foreach (var action in NextActions)
+                                    {
+                                        <a class="sp-confirm-link" href="@action.Href">@action.Label</a>
+                                    }
+                                </div>
+                            </div>
+                        }
                     }
 
                     @* ── README viewer ────────────────────────────────────── *@
@@ -237,6 +279,23 @@
     private HashSet<string> _allFilesOpen = [];
     private Dictionary<string, string> _readmeContent = [];
 
+    private int LoadedWorkspaceArtifactCount =>
+        (Workspace.Has(WorkspaceArtifactKind.Constitution) ? 1 : 0) +
+        (Workspace.Has(WorkspaceArtifactKind.Specification) ? 1 : 0) +
+        (Workspace.Has(WorkspaceArtifactKind.DataModel) ? 1 : 0) +
+        (Workspace.Has(WorkspaceArtifactKind.Plan) ? 1 : 0) +
+        (Workspace.Has(WorkspaceArtifactKind.Tasks) ? 1 : 0);
+
+    private static readonly IReadOnlyList<NextActionLink> NextActions =
+    [
+        new("Open Specification Review", "extract"),
+        new("Open Data Model Explorer", "data-model-explorer"),
+        new("Open Plan Explorer", "plan-explorer"),
+        new("Open Task Explorer", "task-explorer"),
+        new("Open Quality Review", "quality-review"),
+        new("Open Dashboard", "dashboard"),
+    ];
+
     protected override async Task OnInitializedAsync()
     {
         var projectsTask = ProjectsApi.GetProjectsAsync();
@@ -271,7 +330,7 @@
         var loaded = 0;
         var skipped = new List<string>();
 
-        Workspace.ProjectName = project.Name;
+        Workspace.CurrentProject = project.Name;
 
         foreach (var file in supported)
         {
@@ -289,6 +348,14 @@
             loaded++;
         }
 
+        var loadedArtifacts = supported
+            .Where(f => !skipped.Contains(f.Filename))
+            .Select(f => f.Filename)
+            .ToList();
+        var contextOnly = project.Files
+            .Where(f => f.IsContextOnly && f.Exists)
+            .Select(f => f.Filename)
+            .ToList();
         var missing = project.Files.Where(f => f.IsSupported && !f.Exists).Select(f => f.Filename).ToList();
         var msg = $"✅ Loaded {loaded} artifact{(loaded != 1 ? "s" : "")}.";
         var hasError = false;
@@ -302,7 +369,7 @@
             msg += $" Not found: {string.Join(", ", missing)}.";
         }
 
-        _loadState[project.Slug] = new LoadResult(msg, hasError);
+        _loadState[project.Slug] = new LoadResult(project.Name, msg, hasError, loadedArtifacts, contextOnly);
         _loadingSlug = null;
     }
 
@@ -344,7 +411,14 @@
         }
     }
 
-    private sealed record LoadResult(string Message, bool HasError);
+    private sealed record LoadResult(
+        string ProjectName,
+        string Message,
+        bool HasError,
+        IReadOnlyList<string> LoadedArtifacts,
+        IReadOnlyList<string> ContextOnlyFiles);
+
+    private sealed record NextActionLink(string Label, string Href);
 
     private static string NormalizeArtifactText(string text)
     {

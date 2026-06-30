@@ -10,6 +10,11 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     private readonly Dictionary<WorkspaceArtifactType, WorkspaceArtifact> _artifacts = new();
 
     public string? ProjectName { get; set; }
+    public string? CurrentProject
+    {
+        get => ProjectName;
+        set => ProjectName = value;
+    }
 
     // ── IWorkspaceSessionService convenience properties ───────────────────────
 

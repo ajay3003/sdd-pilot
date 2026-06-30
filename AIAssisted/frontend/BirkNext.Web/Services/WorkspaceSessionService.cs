@@ -9,6 +9,11 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
     private readonly Dictionary<WorkspaceArtifactKind, WorkspaceArtifact> _artifacts = new();
 
     public string? ProjectName { get; set; }
+    public string? CurrentProject
+    {
+        get => ProjectName;
+        set => ProjectName = value;
+    }
 
     public WorkspaceArtifact? Constitution => Get(WorkspaceArtifactKind.Constitution);
     public WorkspaceArtifact? Specification => Get(WorkspaceArtifactKind.Specification);
