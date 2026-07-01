@@ -1,6 +1,7 @@
 @page "/frontend-quality-review"
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@using BirkNext.Web.Components
 @inject WasmSecurityApiService Scanner
 @inject IBlazorWasmPerformanceReviewService PerfService
 @inject IFrontendQualityReviewService QualityService
@@ -23,126 +24,27 @@
         }
     </PageHeader>
 
-    <div class="wsr-target-card fqr-target-card">
-        <div class="wsr-target-header">
-            <h2 class="wsr-target-title">Review Target</h2>
-            <div class="wsr-target-actions">
-                <a href="/admin/system-settings" class="btn-secondary wsr-settings-btn">
-                    Target Environments
-                </a>
-                @if (_report is not null)
-                {
-                    <SecondaryButton OnClick="RefreshContext">Refresh</SecondaryButton>
-                }
-                <PrimaryButton OnClick="RunReview"
-                               Disabled="@(_running || _context is null || !_context.HasTargetUrl)"
-                               aria-label="Run Frontend Quality Review">
-                    @if (_running) { <span class="wsr-spinner" aria-hidden="true">...</span> }
-                    @(_running ? "Analysing..." : "Run Frontend Quality Review")
-                </PrimaryButton>
-            </div>
-        </div>
+    @if (_report is null)
+    {
+        <ReviewLanding Title="Run a production-style frontend audit"
+                       Description="Review performance, security, accessibility, standards, Blazor WASM behavior, and QA readiness for the active target environment."
+                       PrimaryButtonText="@(_running ? "Analysing..." : "Run Frontend Quality Review")"
+                       PrimaryRun="RunReview"
+                       PrimaryDisabled="@(_running || _context is null || !_context.HasTargetUrl)"
+                       SecondaryActionText="Target Environments"
+                       SecondaryActionHref="/admin/system-settings"
+                       TargetFields="BuildFrontendTargetFields()"
+                       Configuration="BuildFrontendConfiguration()"
+                       AnalysisCards="FrontendAnalysisCards"
+                       Checks="FrontendChecks"
+                       Metadata="BuildFrontendMetadata()"
+                       EstimatedDuration="1-3 minutes" />
 
-        @if (_context is not null)
+        @if (_running)
         {
-            <div class="wsr-target-grid">
-                <div class="wsr-target-item">
-                    <span class="wsr-target-label">Profile</span>
-                    <div class="wsr-target-value">
-                        <span class="wsr-env-badge wsr-env-@(_context.ActiveProfile.EnvironmentType.ToString().ToLowerInvariant())">
-                            @_context.ActiveProfile.EnvironmentType
-                        </span>
-                        <span class="wsr-target-profile-name">@_context.ActiveProfile.Name</span>
-                    </div>
-                </div>
-                <div class="wsr-target-item">
-                    <span class="wsr-target-label">Target URL</span>
-                    <div class="wsr-target-value">
-                        @if (_context.HasTargetUrl)
-                        {
-                            <code class="wsr-target-url">@_context.TargetUrl</code>
-                        }
-                        else
-                        {
-                            <span class="wsr-target-missing">Not configured - <a href="/admin/system-settings">open settings</a></span>
-                        }
-                    </div>
-                </div>
-                <div class="wsr-target-item">
-                    <span class="wsr-target-label">Authentication</span>
-                    <div class="wsr-target-value">
-                        <span>@_context.AuthenticationType</span>
-                        @if (_context.RequiresAuthentication)
-                        {
-                            <span class="wsr-auth-tag">Required</span>
-                        }
-                    </div>
-                </div>
-                <div class="wsr-target-item">
-                    <span class="wsr-target-label">Auth Status</span>
-                    <div class="wsr-target-value">
-                        <StatusChip Status="@(_context.IsAuthenticatedSessionAvailable ? "healthy" : _context.RequiresAuthentication ? "warning" : "neutral")"
-                                    Label="@(_context.IsAuthenticatedSessionAvailable ? "Authenticated" : _context.RequiresAuthentication ? "Session unavailable" : "Not required")" />
-                    </div>
-                </div>
-                @if (_report is not null)
-                {
-                    <div class="wsr-target-item">
-                        <span class="wsr-target-label">Application</span>
-                        <div class="wsr-target-value">
-                            @if (_report.IsBlazorWasm)
-                            {
-                                <span class="wsr-detect-badge wsr-detect-blazor">Blazor WASM</span>
-                            }
-                            else
-                            {
-                                <span class="wsr-detect-none">Not Blazor WASM</span>
-                            }
-                        </div>
-                    </div>
-                    <div class="wsr-target-item">
-                        <span class="wsr-target-label">Last Review</span>
-                        <div class="wsr-target-value">
-                            <span class="wsr-scan-time">@_report.GeneratedAt.ToString("yyyy-MM-dd HH:mm") UTC</span>
-                        </div>
-                    </div>
-                }
-            </div>
-
-            @if (_running)
-            {
-                <p class="wsr-scan-progress" aria-live="polite">@_progressMessage</p>
-            }
-            @if (_context.HasValidationErrors)
-            {
-                <div class="wsr-banner wsr-banner-error" role="alert">
-                    <span aria-hidden="true">x</span>
-                    Profile has configuration errors: @string.Join(" | ", _context.ValidationErrors)
-                </div>
-            }
-            @if (_context.HasValidationWarnings)
-            {
-                <div class="wsr-banner wsr-banner-warn" role="status">
-                    <span aria-hidden="true">!</span>
-                    @string.Join(" | ", _context.ValidationWarnings)
-                </div>
-            }
-            @if (!_context.HasTargetUrl && !_running)
-            {
-                <div class="wsr-banner wsr-banner-warn" role="alert">
-                    <span aria-hidden="true">!</span>
-                    No target URL configured. <a href="/admin/system-settings">Open Target Environments</a> to set one.
-                </div>
-            }
+            <p class="wsr-scan-progress" aria-live="polite">@_progressMessage</p>
         }
-        else
-        {
-            <div class="wsr-banner wsr-banner-warn" role="status">
-                <span aria-hidden="true">!</span>
-                Loading frontend analysis profile...
-            </div>
-        }
-    </div>
+    }
 
     @if (_secError is not null)
     {
@@ -385,29 +287,38 @@
             </details>
         </section>
     }
-    else if (!_running)
-    {
-        <EmptyState Icon="Search" Title="Ready to review"
-                    Description="Run a Frontend Quality Review to analyse performance, security, accessibility, standards compliance, Blazor WASM specifics, and QA readiness for your deployed frontend.">
-            <PrimaryButton OnClick="RunReview"
-                           Disabled="@(_context is null || !_context?.HasTargetUrl == true)"
-                           aria-label="Run Frontend Quality Review">
-                Run Frontend Quality Review
-            </PrimaryButton>
-            @if (_context is not null && !_context.HasTargetUrl)
-            {
-                <p class="wsr-empty-note">
-                    Configure a target URL in <a href="/admin/system-settings">Target Environments</a>.
-                </p>
-            }
-        </EmptyState>
-    }
-
 </div>
 
 @code {
     private sealed record CategorySummary(int Total, int Critical, int High, int Medium, int Low);
     private sealed record RecommendationView(string Priority, string Title, string Description, string ExpectedBenefit);
+    private static readonly ReviewLanding.AnalysisCard[] FrontendAnalysisCards =
+    [
+        new("PF", "Performance", "Measures loading, rendering, caching, and runtime responsiveness."),
+        new("SC", "Security", "Reviews browser-exposed attack surface and security posture."),
+        new("AX", "Accessibility", "Checks user-facing accessibility signals and WCAG readiness."),
+        new("ST", "Standards Compliance", "Validates platform, policy, and delivery best-practice signals."),
+        new("BW", "Blazor WASM", "Inspects startup behavior and WebAssembly-specific runtime concerns."),
+        new("QA", "QA Readiness", "Summarizes release risk, testability, and operational review signals."),
+    ];
+
+    private static readonly string[] FrontendChecks =
+    [
+        "Core Web Vitals",
+        "WCAG 2.2",
+        "OWASP",
+        "Security Headers",
+        "CSP",
+        "CORS",
+        "Bundle Size",
+        "Lazy Loading",
+        "Compression",
+        "Cache Headers",
+        "Service Worker",
+        "Startup Waterfall",
+        "Testability",
+        "Observability",
+    ];
 
     private FrontendAnalysisContext? _context;
 
@@ -505,6 +416,85 @@
     private async Task RefreshContext()
     {
         _context = await ContextFactory.GetActiveContextAsync();
+    }
+
+    private IReadOnlyList<ReviewLanding.TargetField> BuildFrontendTargetFields()
+    {
+        if (_context is null)
+        {
+            return
+            [
+                new("Environment", "Loading...", ReviewLanding.FieldStatus.Informational),
+                new("Target URL", "Loading...", ReviewLanding.FieldStatus.Informational),
+                new("Authentication", "Loading...", ReviewLanding.FieldStatus.Informational),
+                new("Auth Status", "Loading...", ReviewLanding.FieldStatus.Informational),
+            ];
+        }
+
+        return
+        [
+            new("Environment", $"{_context.ActiveProfile.EnvironmentType} - {_context.ActiveProfile.Name}", ReviewLanding.FieldStatus.Configured),
+            new("Target URL", _context.HasTargetUrl ? _context.TargetUrl : "Not configured", _context.HasTargetUrl ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Missing),
+            new("Authentication", _context.AuthenticationType.ToString(), ReviewLanding.FieldStatus.Informational),
+            new("Auth Status", _context.IsAuthenticatedSessionAvailable ? "Authenticated" : _context.RequiresAuthentication ? "Session unavailable" : "Not required",
+                _context.IsAuthenticatedSessionAvailable || !_context.RequiresAuthentication ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Warning),
+        ];
+    }
+
+    private IReadOnlyList<ReviewLanding.MetadataItem> BuildFrontendMetadata()
+    {
+        if (_context is null) return [];
+        return
+        [
+            new("Environment", _context.ActiveProfile.EnvironmentType.ToString()),
+            new("Authentication", _context.AuthenticationType.ToString()),
+        ];
+    }
+
+    private ReviewLanding.ConfigurationState BuildFrontendConfiguration()
+    {
+        if (_context is null)
+        {
+            return new(
+                ReviewLanding.ConfigurationStatus.Warning,
+                "Loading target environment",
+                "The active frontend analysis profile is still loading.",
+                []);
+        }
+
+        var missing = new List<string>();
+        if (!_context.HasTargetUrl)
+            missing.Add("Frontend target URL");
+
+        missing.AddRange(_context.ValidationErrors);
+
+        if (missing.Count > 0)
+        {
+            return new(
+                ReviewLanding.ConfigurationStatus.Error,
+                "Configuration incomplete",
+                "Resolve the missing requirements before running the review.",
+                missing,
+                "Configure Target Environment",
+                "/admin/system-settings");
+        }
+
+        if (_context.HasValidationWarnings)
+        {
+            return new(
+                ReviewLanding.ConfigurationStatus.Warning,
+                "Configuration warnings",
+                string.Join(" | ", _context.ValidationWarnings),
+                [],
+                "Review Settings",
+                "/admin/system-settings");
+        }
+
+        return new(
+            ReviewLanding.ConfigurationStatus.Success,
+            "Ready to run",
+            "Frontend target configuration is sufficient for a quality review.",
+            []);
     }
 
     private static WasmScanRequest BuildScanRequest(FrontendAnalysisContext ctx)

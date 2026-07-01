@@ -3,10 +3,6 @@
     max-width: none;
 }
 
-.fqr-target-card {
-    margin-bottom: 1rem;
-}
-
 .fqr-summary-grid {
     display: grid;
     grid-template-columns: repeat(7, minmax(8.5rem, 1fr));

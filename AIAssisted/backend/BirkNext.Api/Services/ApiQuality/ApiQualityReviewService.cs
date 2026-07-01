@@ -27,24 +27,24 @@ public sealed class ApiQualityReviewService : IApiQualityReviewService
         var recommendations = new List<string>();
 
         // ── Phase 1: Connectivity ─────────────────────────────────────────────────
+        // Only probe API endpoints — the frontend URL is not an API target.
 
-        var frontendResult = await ProbeEndpointAsync(request.FrontendBaseUrl, "Frontend", ct);
         var restResult     = await ProbeEndpointAsync(request.RestBaseUrl,     "REST API", ct);
         var healthResult   = await ProbeEndpointAsync(request.HealthEndpoint,  "Health",   ct);
         var swaggerResult  = await ProbeEndpointAsync(request.SwaggerUrl,      "Swagger",  ct);
         var graphQlResult  = await ProbeEndpointAsync(request.GraphQlEndpoint, "GraphQL",  ct);
 
         var connectivityFindings = BuildConnectivityFindings(
-            frontendResult, restResult, healthResult, swaggerResult, graphQlResult);
+            restResult, healthResult, swaggerResult, graphQlResult);
         findings.AddRange(connectivityFindings);
 
         // ── Phase 2: Security ─────────────────────────────────────────────────────
 
-        // Pick primary endpoint for header analysis (health → rest → frontend)
-        var primaryResult = healthResult ?? restResult ?? frontendResult;
+        // Pick primary API endpoint for header analysis (health → rest)
+        var primaryResult = healthResult ?? restResult;
         if (primaryResult is not null)
         {
-            findings.AddRange(BuildSecurityFindings(primaryResult, restResult ?? frontendResult));
+            findings.AddRange(BuildSecurityFindings(primaryResult, restResult));
         }
 
         // ── Phase 3: OpenAPI ──────────────────────────────────────────────────────
@@ -96,11 +96,11 @@ public sealed class ApiQualityReviewService : IApiQualityReviewService
 
         // ── Phase 6: Performance ──────────────────────────────────────────────────
 
-        findings.AddRange(BuildPerformanceFindings(frontendResult, restResult, healthResult));
+        findings.AddRange(BuildPerformanceFindings(restResult, healthResult));
 
         // ── Phase 7: Readiness ────────────────────────────────────────────────────
 
-        if (healthResult is not null || restResult is not null || frontendResult is not null)
+        if (healthResult is not null || restResult is not null)
         {
             var readinessFindings = await BuildReadinessFindings(
                 healthResult, restResult, request.HealthEndpoint, ct);
@@ -110,7 +110,7 @@ public sealed class ApiQualityReviewService : IApiQualityReviewService
         // ── Scoring ───────────────────────────────────────────────────────────────
 
         var categoryScores = ComputeCategoryScores(findings,
-            frontendResult, restResult, healthResult, swaggerResult, graphQlResult);
+            restResult, healthResult, swaggerResult, graphQlResult);
 
         int overallScore = ComputeOverallScore(categoryScores);
         bool isReady     = overallScore >= 70 && !findings.Any(f => f.Severity == ApiQualitySeverity.Critical);
@@ -136,7 +136,6 @@ public sealed class ApiQualityReviewService : IApiQualityReviewService
             CategoryScores    = categoryScores,
             Recommendations   = recommendations,
             Limitations       = limitations,
-            FrontendResult    = frontendResult,
             RestResult        = restResult,
             HealthResult      = healthResult,
             SwaggerResult     = swaggerResult,

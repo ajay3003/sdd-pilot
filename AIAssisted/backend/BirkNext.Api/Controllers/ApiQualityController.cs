@@ -21,15 +21,14 @@ public class ApiQualityController : ControllerBase
     [HttpPost("analyze")]
     public async Task<IActionResult> Analyze([FromBody] ApiQualityReviewRequest request, CancellationToken ct)
     {
-        bool hasAnyUrl =
-            !string.IsNullOrWhiteSpace(request.RestBaseUrl)      ||
-            !string.IsNullOrWhiteSpace(request.HealthEndpoint)   ||
-            !string.IsNullOrWhiteSpace(request.SwaggerUrl)       ||
-            !string.IsNullOrWhiteSpace(request.GraphQlEndpoint)  ||
-            !string.IsNullOrWhiteSpace(request.FrontendBaseUrl);
+        bool hasAnyApiUrl =
+            !string.IsNullOrWhiteSpace(request.RestBaseUrl)     ||
+            !string.IsNullOrWhiteSpace(request.HealthEndpoint)  ||
+            !string.IsNullOrWhiteSpace(request.SwaggerUrl)      ||
+            !string.IsNullOrWhiteSpace(request.GraphQlEndpoint);
 
-        if (!hasAnyUrl)
-            return BadRequest(new { message = "At least one endpoint URL must be configured in the active Target Environment." });
+        if (!hasAnyApiUrl)
+            return BadRequest(new { message = "No API endpoints configured. Add a REST Base URL, Health Endpoint, Swagger URL, or GraphQL Endpoint to the active Target Environment." });
 
         var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault() ?? "unknown";
         _logger.LogInformation(
