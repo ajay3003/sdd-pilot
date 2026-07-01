@@ -1096,6 +1096,18 @@
             _checkFilter = null;
             _gateFilter = null;
         }
+        else if (!string.IsNullOrWhiteSpace(PlanText) && _plan is null)
+        {
+            _localText = PlanText;
+            var service = new PlanAnalysisService();
+            _plan = service.Parse(PlanText);
+            _expanded = [];
+            _search = string.Empty;
+            _riskFilter = null;
+            _complexityFilter = null;
+            _checkFilter = null;
+            _gateFilter = null;
+        }
 
         if (InitialView is not null && _plan is not null)
             _tab = InitialView;

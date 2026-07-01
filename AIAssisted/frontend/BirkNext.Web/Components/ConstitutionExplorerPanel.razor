@@ -886,7 +886,15 @@
     protected override void OnParametersSet()
     {
         if (ParsedDocument is not null)
+        {
             _document = ParsedDocument;
+        }
+        else if (!string.IsNullOrWhiteSpace(ConstitutionText) && _document is null)
+        {
+            _localText = ConstitutionText;
+            var service = new ConstitutionAnalysisService();
+            _document = service.Parse(ConstitutionText);
+        }
 
         if (InitialView is not null && _document is not null)
             _activeTab = InitialView;
