@@ -22,6 +22,32 @@ public enum TargetApiAuthType
     None, BearerToken, ApiKey, BasicAuth
 }
 
+public enum IntegrationType
+{
+    REST, GraphQL, EventHub, ServiceBus, Kafka, RabbitMQ, File, SOAP
+}
+
+public enum IntegrationAuthType
+{
+    None, ApiKey, BearerToken, BasicAuth, ManagedIdentity, ConnectionString, SasToken
+}
+
+public sealed class IntegrationConfig
+{
+    [JsonPropertyName("id")]            public string             Id          { get; set; } = "";
+    [JsonPropertyName("name")]          public string             Name        { get; set; } = "";
+    [JsonPropertyName("type")]          public IntegrationType    Type        { get; set; }
+    [JsonPropertyName("endpoint")]      public string?            Endpoint    { get; set; }
+    [JsonPropertyName("resource")]      public string?            Resource    { get; set; }
+    [JsonPropertyName("consumer")]      public string?            Consumer    { get; set; }
+    [JsonPropertyName("authType")]      public IntegrationAuthType AuthType   { get; set; }
+    [JsonPropertyName("healthUrl")]     public string?            HealthUrl   { get; set; }
+    [JsonPropertyName("workerUrl")]     public string?            WorkerUrl   { get; set; }
+    [JsonPropertyName("monitoringUrl")] public string?            MonitoringUrl { get; set; }
+    [JsonPropertyName("owner")]         public string?            Owner       { get; set; }
+    [JsonPropertyName("enabled")]       public bool               Enabled     { get; set; } = true;
+}
+
 public sealed class FrontendAnalysisSettings
 {
     [JsonPropertyName("profiles")]        public List<FrontendAnalysisProfile> Profiles        { get; set; } = [];
@@ -75,6 +101,8 @@ public sealed class FrontendAnalysisProfile
     [JsonPropertyName("coreWebVitals")]  public CoreWebVitalsThresholds        CoreWebVitals  { get; set; } = new();
     [JsonPropertyName("security")]       public FrontendSecuritySettings       Security       { get; set; } = new();
     [JsonPropertyName("features")]       public FrontendAnalysisFeatureToggles Features       { get; set; } = new();
+
+    [JsonPropertyName("integrations")]   public List<IntegrationConfig>        Integrations   { get; set; } = [];
 }
 
 public sealed class FrontendAuthenticationSettings

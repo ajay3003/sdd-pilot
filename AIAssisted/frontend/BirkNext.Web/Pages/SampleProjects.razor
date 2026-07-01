@@ -7,6 +7,9 @@
 @inject IWorkspaceSessionService Workspace
 @inject QualityReviewSessionService QualitySession
 @inject IDashboardSnapshotService DashboardSnapshot
+@inject ITargetEnvironmentHintExtractor TargetHintExtractor
+@inject IFrontendAnalysisSettingsService FrontendSettings
+@inject IIntegrationTargetRegistryService IntegrationRegistry
 @inject IJSRuntime JS
 
 <div class="sp-page">
@@ -198,6 +201,139 @@
                                 </div>
                             </div>
                         }
+                        @if (_hintState.TryGetValue(project.Slug, out var hints) && !_ignoredHints.Contains(project.Slug))
+                        {
+                            <div class="sp-hints-panel" aria-label="Detected Target Environment Hints">
+                                <div class="sp-hints-header">
+                                    <div>
+                                        <div class="sp-hints-title">Detected Target Environment Hints</div>
+                                        <p class="sp-hints-note">Review and edit deterministic detections before applying them to the active Target Environment.</p>
+                                    </div>
+                                    <button class="sp-btn sp-btn-secondary" @onclick="() => IgnoreHints(project.Slug)">Ignore</button>
+                                </div>
+
+                                @if (!hints.HasAny)
+                                {
+                                    <div class="sp-hints-empty">No runtime target hints were found in the loaded sample artifacts.</div>
+                                }
+                                else
+                                {
+                                    <div class="sp-hints-grid">
+                                        <label class="sp-hint-field">
+                                            <span>Environment</span>
+                                            <select value="@(hints.EnvironmentType?.ToString() ?? "")" @onchange="e => SetEnvironmentHint(hints, e)">
+                                                <option value="">Not detected</option>
+                                                @foreach (var env in Enum.GetValues<FrontendEnvironmentType>())
+                                                {
+                                                    <option value="@env">@env</option>
+                                                }
+                                            </select>
+                                        </label>
+                                        <label class="sp-hint-field">
+                                            <span>Frontend URL</span>
+                                            <input value="@hints.FrontendUrl" @oninput="e => hints.FrontendUrl = e.Value?.ToString()" />
+                                        </label>
+                                        <label class="sp-hint-field">
+                                            <span>REST Base URL</span>
+                                            <input value="@hints.RestBaseUrl" @oninput="e => hints.RestBaseUrl = e.Value?.ToString()" />
+                                        </label>
+                                        <label class="sp-hint-field">
+                                            <span>Health Endpoint</span>
+                                            <input value="@hints.HealthEndpoint" @oninput="e => hints.HealthEndpoint = e.Value?.ToString()" />
+                                        </label>
+                                        <label class="sp-hint-field">
+                                            <span>Swagger / OpenAPI URL</span>
+                                            <input value="@hints.SwaggerUrl" @oninput="e => hints.SwaggerUrl = e.Value?.ToString()" />
+                                        </label>
+                                        <label class="sp-hint-field">
+                                            <span>GraphQL Endpoint</span>
+                                            <input value="@hints.GraphQlEndpoint" @oninput="e => hints.GraphQlEndpoint = e.Value?.ToString()" />
+                                        </label>
+                                        <label class="sp-hint-field">
+                                            <span>API Authentication</span>
+                                            <select @bind="hints.AuthType">
+                                                @foreach (var auth in Enum.GetValues<TargetApiAuthType>())
+                                                {
+                                                    <option value="@auth">@auth</option>
+                                                }
+                                            </select>
+                                        </label>
+                                    </div>
+
+                                    @if (hints.Integrations.Count > 0)
+                                    {
+                                        <div class="sp-integration-hints">
+                                            <div class="sp-hints-subtitle">Integration registry entries</div>
+                                            @foreach (var integration in hints.Integrations)
+                                            {
+                                                <div class="sp-integration-card" @key="integration.Id">
+                                                    <div class="sp-integration-row">
+                                                        <label class="sp-hint-field">
+                                                            <span>Name</span>
+                                                            <input @bind="integration.Name" />
+                                                        </label>
+                                                        <label class="sp-hint-field">
+                                                            <span>Provider</span>
+                                                            <select @bind="integration.ProviderType">
+                                                                @foreach (var provider in IntegrationProviders)
+                                                                {
+                                                                    <option value="@provider">@provider</option>
+                                                                }
+                                                            </select>
+                                                        </label>
+                                                        <label class="sp-hint-field">
+                                                            <span>Endpoint</span>
+                                                            <input @bind="integration.Endpoint" />
+                                                        </label>
+                                                        <label class="sp-hint-field">
+                                                            <span>Namespace</span>
+                                                            <input @bind="integration.Namespace" />
+                                                        </label>
+                                                        <label class="sp-hint-field">
+                                                            <span>Topic</span>
+                                                            <input @bind="integration.Topic" />
+                                                        </label>
+                                                        <label class="sp-hint-field">
+                                                            <span>Queue</span>
+                                                            <input @bind="integration.Queue" />
+                                                        </label>
+                                                        <label class="sp-hint-field">
+                                                            <span>Consumer Group</span>
+                                                            <input @bind="integration.ConsumerGroup" />
+                                                        </label>
+                                                        <label class="sp-hint-field">
+                                                            <span>Subscription</span>
+                                                            <input @bind="integration.Subscription" />
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+
+                                    @if (hints.Evidence.Count > 0)
+                                    {
+                                        <div class="sp-hint-evidence">
+                                            <span>Evidence</span>
+                                            @foreach (var evidence in hints.Evidence)
+                                            {
+                                                <code>@evidence</code>
+                                            }
+                                        </div>
+                                    }
+
+                                    <div class="sp-hints-actions">
+                                        <button class="sp-btn sp-btn-primary" @onclick="() => ApplyHintsAsync(hints)">Apply to active Target Environment</button>
+                                        <a class="sp-btn sp-btn-secondary" href="admin/system-settings">Review Target Environments</a>
+                                    </div>
+                                }
+
+                                @if (_hintApplyMessages.TryGetValue(project.Slug, out var applyMessage))
+                                {
+                                    <div class="sp-hints-message" role="status">@applyMessage</div>
+                                }
+                            </div>
+                        }
                     }
 
                     @* ── README viewer ────────────────────────────────────── *@
@@ -277,9 +413,22 @@
     private bool _loading = true;
     private string? _loadingSlug;
     private Dictionary<string, LoadResult> _loadState = [];
+    private Dictionary<string, DetectedTargetEnvironmentHints> _hintState = [];
+    private Dictionary<string, string> _hintApplyMessages = [];
+    private HashSet<string> _ignoredHints = [];
     private HashSet<string> _readmeOpen = [];
     private HashSet<string> _allFilesOpen = [];
     private Dictionary<string, string> _readmeContent = [];
+
+    private static readonly IReadOnlyList<string> IntegrationProviders =
+    [
+        "REST",
+        "GraphQL",
+        "Event Hub",
+        "Service Bus",
+        "Kafka",
+        "RabbitMQ"
+    ];
 
     private int LoadedWorkspaceArtifactCount =>
         (Workspace.Has(WorkspaceArtifactKind.Constitution) ? 1 : 0) +
@@ -373,6 +522,9 @@
 
         _loadingSlug = project.Slug;
         _loadState.Remove(project.Slug);
+        _hintState.Remove(project.Slug);
+        _hintApplyMessages.Remove(project.Slug);
+        _ignoredHints.Remove(project.Slug);
         StateHasChanged();
 
         var supported = project.Files.Where(f => f.IsSupported && f.Exists).ToList();
@@ -421,7 +573,149 @@
         }
 
         _loadState[project.Slug] = new LoadResult(project.Name, msg, hasError, loadedArtifacts, contextOnly);
+        if (!hasError)
+            _hintState[project.Slug] = TargetHintExtractor.Extract(project, await FetchProjectTextsAsync(project));
         _loadingSlug = null;
+    }
+
+    private async Task<List<SampleProjectArtifactText>> FetchProjectTextsAsync(SampleProjectDto project)
+    {
+        var result = new List<SampleProjectArtifactText>();
+        foreach (var file in project.Files.Where(f => f.Exists))
+        {
+            var content = await ProjectsApi.GetFileAsync(project.Slug, file.Filename);
+            if (content is null) continue;
+            result.Add(new SampleProjectArtifactText
+            {
+                FileName = file.Filename,
+                Content = NormalizeArtifactText(content)
+            });
+        }
+
+        return result;
+    }
+
+    private async Task ApplyHintsAsync(DetectedTargetEnvironmentHints hints)
+    {
+        await FrontendSettings.LoadAsync(JS);
+        await IntegrationRegistry.LoadAsync(JS);
+
+        var profile = FrontendSettings.ActiveProfile ?? FrontendSettings.Settings.Profiles.FirstOrDefault();
+        if (profile is null)
+        {
+            profile = FrontendSettings.CreateProfile(hints.ProjectName, hints.EnvironmentType ?? FrontendEnvironmentType.Local);
+            FrontendSettings.SelectActiveProfile(profile.Id);
+        }
+
+        var frontendUrl = NormalizeAbsoluteUrl(hints.FrontendUrl);
+        var baseForRelative = FirstAbsolute(frontendUrl, profile.TargetUrl, hints.RestBaseUrl, profile.RestBaseUrl);
+        var restBaseUrl = ResolveEndpoint(hints.RestBaseUrl, baseForRelative);
+        var healthEndpoint = ResolveEndpoint(hints.HealthEndpoint, FirstAbsolute(restBaseUrl, baseForRelative));
+        var swaggerUrl = ResolveEndpoint(hints.SwaggerUrl, FirstAbsolute(restBaseUrl, baseForRelative));
+        var graphQlEndpoint = ResolveEndpoint(hints.GraphQlEndpoint, FirstAbsolute(restBaseUrl, baseForRelative));
+
+        var conflicts = new List<string>();
+        AddConflict(conflicts, "Frontend URL", profile.TargetUrl, frontendUrl);
+        AddConflict(conflicts, "REST Base URL", profile.RestBaseUrl, restBaseUrl);
+        AddConflict(conflicts, "Health Endpoint", profile.HealthEndpoint, healthEndpoint);
+        AddConflict(conflicts, "Swagger / OpenAPI URL", profile.SwaggerUrl, swaggerUrl);
+        AddConflict(conflicts, "GraphQL Endpoint", profile.GraphQlEndpoint, graphQlEndpoint);
+        if (hints.EnvironmentType is not null && profile.EnvironmentType != hints.EnvironmentType.Value)
+            conflicts.Add($"Environment: {profile.EnvironmentType} -> {hints.EnvironmentType.Value}");
+        if (hints.AuthType != TargetApiAuthType.None && profile.ApiAuth.AuthType != TargetApiAuthType.None && profile.ApiAuth.AuthType != hints.AuthType)
+            conflicts.Add($"API Authentication: {profile.ApiAuth.AuthType} -> {hints.AuthType}");
+
+        if (conflicts.Count > 0)
+        {
+            var confirm = await JS.InvokeAsync<bool>("confirm",
+                "Apply detected Target Environment hints?\n\nThe following existing settings will be overwritten:\n\n" +
+                string.Join("\n", conflicts));
+            if (!confirm) return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(frontendUrl)) profile.TargetUrl = frontendUrl;
+        if (!string.IsNullOrWhiteSpace(restBaseUrl)) profile.RestBaseUrl = restBaseUrl;
+        if (!string.IsNullOrWhiteSpace(healthEndpoint)) profile.HealthEndpoint = healthEndpoint;
+        if (!string.IsNullOrWhiteSpace(swaggerUrl)) profile.SwaggerUrl = swaggerUrl;
+        if (!string.IsNullOrWhiteSpace(graphQlEndpoint))
+        {
+            profile.GraphQlEndpoint = graphQlEndpoint;
+            if (!profile.AllowedGraphQlEndpoints.Contains(graphQlEndpoint, StringComparer.OrdinalIgnoreCase))
+                profile.AllowedGraphQlEndpoints.Add(graphQlEndpoint);
+        }
+        if (hints.EnvironmentType is not null) profile.EnvironmentType = hints.EnvironmentType.Value;
+        if (hints.AuthType != TargetApiAuthType.None) profile.ApiAuth.AuthType = hints.AuthType;
+
+        if (!string.IsNullOrWhiteSpace(restBaseUrl) &&
+            Uri.TryCreate(restBaseUrl, UriKind.Absolute, out var restUri) &&
+            !profile.AllowedRestHosts.Contains(restUri.Host, StringComparer.OrdinalIgnoreCase))
+            profile.AllowedRestHosts.Add(restUri.Host);
+
+        foreach (var integration in hints.Integrations)
+            integration.Endpoint = ResolveEndpoint(integration.Endpoint, FirstAbsolute(restBaseUrl, graphQlEndpoint, baseForRelative));
+
+        IntegrationRegistry.UpsertFromHints(hints.Integrations, hints.ProjectName);
+        FrontendSettings.UpdateProfile(profile);
+        await FrontendSettings.SaveAsync(JS);
+        await IntegrationRegistry.SaveAsync(JS);
+
+        _hintApplyMessages[hints.ProjectSlug] = $"Applied hints to Target Environment \"{profile.Name}\" and saved {hints.Integrations.Count} integration hint{(hints.Integrations.Count == 1 ? "" : "s")}.";
+    }
+
+    private static void AddConflict(List<string> conflicts, string label, string? currentValue, string? nextValue)
+    {
+        if (string.IsNullOrWhiteSpace(nextValue) ||
+            string.IsNullOrWhiteSpace(currentValue) ||
+            string.Equals(currentValue.Trim(), nextValue.Trim(), StringComparison.OrdinalIgnoreCase))
+            return;
+
+        conflicts.Add($"{label}: {currentValue} -> {nextValue}");
+    }
+
+    private static string? FirstAbsolute(params string?[] candidates) =>
+        candidates.FirstOrDefault(value =>
+            !string.IsNullOrWhiteSpace(value) &&
+            Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps));
+
+    private static string? NormalizeAbsoluteUrl(string? value)
+    {
+        value = value?.Trim();
+        return Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+               (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            ? uri.ToString()
+            : null;
+    }
+
+    private static string? ResolveEndpoint(string? value, string? baseUrl)
+    {
+        value = value?.Trim();
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (Uri.TryCreate(value, UriKind.Absolute, out var absolute) &&
+            (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
+            return absolute.ToString();
+
+        if (value.StartsWith('/') &&
+            Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri) &&
+            (baseUri.Scheme == Uri.UriSchemeHttp || baseUri.Scheme == Uri.UriSchemeHttps))
+        {
+            var origin = new Uri($"{baseUri.Scheme}://{baseUri.Authority}");
+            return new Uri(origin, value).ToString();
+        }
+
+        return value;
+    }
+
+    private static void SetEnvironmentHint(DetectedTargetEnvironmentHints hints, ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        hints.EnvironmentType = Enum.TryParse<FrontendEnvironmentType>(value, out var parsed) ? parsed : null;
+    }
+
+    private void IgnoreHints(string slug)
+    {
+        _ignoredHints.Add(slug);
+        _hintApplyMessages.Remove(slug);
     }
 
     private async Task ToggleReadme(SampleProjectDto project)

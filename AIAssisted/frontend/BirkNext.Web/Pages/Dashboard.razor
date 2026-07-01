@@ -264,7 +264,6 @@
                 </div>
                 <a href="task-explorer" class="db-artifact-action">Open Task Explorer →</a>
             </div>
-
         </div>
     </section>
 
@@ -604,6 +603,8 @@
                         <a href="frontend-quality-review" class="db-analysis-run-link">Run now →</a>
                     </div>
                 }
+            </div>
+
             @* API Quality Review *@
             <div class="db-analysis-card">
                 <div class="db-analysis-card-header">
@@ -644,9 +645,48 @@
                 }
             </div>
 
+            @* Integration Quality Review *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">Integration Quality Review</span>
+                    <a href="integration-quality-review" class="db-summary-open" aria-label="Open Integration Quality Review">Open â†’</a>
+                </div>
+                @if (_iqrReport is { } iqrCard)
+                {
+                    <div class="db-analysis-score @ScoreClass(iqrCard.OverallScore)">@iqrCard.OverallScore</div>
+                    <span class="db-analysis-status @KpiStatusClass(iqrCard.OverallScore, true)">@KpiStatusLabel(iqrCard.OverallScore, true)</span>
+                    @if (iqrCard.Findings.OrderBy(f => f.Severity).FirstOrDefault() is { } topIqrFinding)
+                    {
+                        <div class="db-analysis-finding">@topIqrFinding.Title</div>
+                    }
+                    <div class="db-analysis-chips">
+                        @{ var iqrCritical = iqrCard.Findings.Count(f => f.Severity == IntegrationFindingSeverity.Critical); }
+                        @{ var iqrHigh     = iqrCard.Findings.Count(f => f.Severity == IntegrationFindingSeverity.High); }
+                        @if (iqrCritical > 0) { <span class="db-count-chip db-count-poor">@iqrCritical critical</span> }
+                        @if (iqrHigh > 0)     { <span class="db-count-chip db-count-poor">@iqrHigh high</span> }
+                        @if (iqrCritical == 0 && iqrHigh == 0)
+                        { <span class="db-count-chip db-count-good">@(iqrCard.IsReadyForDeployment ? "Deployment Ready" : "No critical findings")</span> }
+                        <span class="db-count-chip">@iqrCard.EnabledCount/@iqrCard.IntegrationCount enabled</span>
+                    </div>
+                }
+                else if (RuntimeReviews.IntegrationQualityReview.Status != RuntimeReviewStatus.NotRun)
+                {
+                    <span class="db-analysis-status @RuntimeStatusClass(RuntimeReviews.IntegrationQualityReview.Status)">@RuntimeStatusLabel(RuntimeReviews.IntegrationQualityReview.Status)</span>
+                    @if (RuntimeReviews.IntegrationQualityReview.ErrorMessage is not null)
+                    {
+                        <div class="db-analysis-finding">@RuntimeReviews.IntegrationQualityReview.ErrorMessage</div>
+                    }
+                }
+                else
+                {
+                    <div class="db-analysis-empty">
+                        Not run â€” analyse configured service integrations, health checks, ownership, and readiness.
+                        <a href="integration-quality-review" class="db-analysis-run-link">Run now â†’</a>
+                    </div>
+                }
             </div>
 
-        </div>
+            </div>
     </section>
 
     @* ── Quick Actions ───────────────────────────────────────────────────────── *@
@@ -669,6 +709,7 @@
                     <a href="quality-review"          class="db-qa-btn">Quality Review</a>
                     <a href="frontend-quality-review"  class="db-qa-btn">Frontend Quality Review</a>
                     <a href="api-quality-review"       class="db-qa-btn">API Quality Review</a>
+                    <a href="integration-quality-review" class="db-qa-btn">Integration Quality Review</a>
                 </div>
             </div>
             <div class="db-qa-group">
@@ -687,6 +728,7 @@
     private WasmPerformanceReviewReport? _perfReport     => RuntimeReviews.PerformanceReview.Report;
     private FrontendQualityReviewReport? _fqrReport      => RuntimeReviews.QualityReview.Report;
     private ApiQualityReviewReport?      _aqrReport      => RuntimeReviews.ApiQualityReview.Report;
+    private IntegrationQualityReport?    _iqrReport      => RuntimeReviews.IntegrationQualityReview.Report;
 
     // ── Snapshot aliases ──────────────────────────────────────────────────────
 
@@ -700,7 +742,8 @@
         RuntimeReviews.SecurityReview.HasResult ||
         RuntimeReviews.PerformanceReview.HasResult ||
         RuntimeReviews.QualityReview.HasResult ||
-        RuntimeReviews.ApiQualityReview.HasResult;
+        RuntimeReviews.ApiQualityReview.HasResult ||
+        RuntimeReviews.IntegrationQualityReview.HasResult;
 
     private bool _hasAnyWorkspace =>
         Workspace.Has(WorkspaceArtifactKind.Constitution) ||
@@ -782,6 +825,7 @@
             if (Snapshot.DeliveryReport is not null)     scores.Add(_deliveryScore);
             if (_securityReport is not null)             scores.Add(_securityReport.Health.Score);
             if (_perfReport?.ReadinessReport is { HasData: true } perf) scores.Add(perf.OverallScore);
+            if (_iqrReport is not null)                  scores.Add(_iqrReport.OverallScore);
             return scores.Count > 0 ? scores.Average() : 0;
         }
     }
@@ -791,7 +835,7 @@
         Snapshot.AuditReport is not null        || Snapshot.DeliveryReport is not null  ||
         QualitySession.HasResult                ||
         Snapshot.ReadinessReport is not null    || _securityReport is not null ||
-        _perfReport?.ReadinessReport is { HasData: true };
+        _perfReport?.ReadinessReport is { HasData: true } || _iqrReport is not null;
 
     private string _overallScoreLabel => _overallScore >= 80 ? "Healthy" : _overallScore >= 50 ? "Needs Attention" : "At Risk";
 
@@ -1010,7 +1054,8 @@
             Snapshot.AuditReport,
             Snapshot.DeliveryReport,
             Snapshot.ReadinessReport,
-            _perfReport);
+            _perfReport,
+            _iqrReport);
         await JS.InvokeVoidAsync("downloadHtmlFile", $"dashboard-summary-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 

@@ -138,6 +138,9 @@ public class FeatureVisibilityInfo
     public bool DataModelExplorer    { get; set; } = true;
     public bool PlanExplorer { get; set; } = true;
     public bool ArtifactTraceability { get; set; } = true;
+    public bool FrontendQualityReview { get; set; } = true;
+    public bool ApiQualityReview { get; set; } = true;
+    public bool IntegrationQualityReview { get; set; } = true;
     public bool BlazorWasmSecurityReview { get; set; } = true;
     public bool BlazorWasmPerformanceReview { get; set; } = true;
     public bool TaskExplorer { get; set; } = true;

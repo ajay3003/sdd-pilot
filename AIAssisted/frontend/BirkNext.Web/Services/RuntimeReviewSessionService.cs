@@ -78,6 +78,7 @@ public sealed class RuntimeReviewSessionService
     public RuntimeReviewSessionState<WasmPerformanceReviewReport>  PerformanceReview { get; } = new();
     public RuntimeReviewSessionState<FrontendQualityReviewReport>  QualityReview     { get; } = new();
     public RuntimeReviewSessionState<ApiQualityReviewReport>       ApiQualityReview  { get; } = new();
+    public RuntimeReviewSessionState<IntegrationQualityReport>      IntegrationQualityReview { get; } = new();
 
     public void MarkSecurityRunning(FrontendAnalysisContext context) =>
         SecurityReview.MarkRunning(CreateSnapshot(context));
@@ -123,6 +124,17 @@ public sealed class RuntimeReviewSessionService
 
     public void ClearApiQualityResult() => ApiQualityReview.Clear();
 
+    public void MarkIntegrationQualityRunning(FrontendAnalysisContext context) =>
+        IntegrationQualityReview.MarkRunning(CreateIntegrationQualitySnapshot(context));
+
+    public void SaveIntegrationQualityResult(IntegrationQualityReport report, FrontendAnalysisContext context) =>
+        IntegrationQualityReview.Complete(report, CreateIntegrationQualitySnapshot(context), ToOffset(report.GeneratedAt));
+
+    public void MarkIntegrationQualityFailed(FrontendAnalysisContext context, string errorMessage) =>
+        IntegrationQualityReview.Fail(CreateIntegrationQualitySnapshot(context), errorMessage);
+
+    public void ClearIntegrationQualityResult() => IntegrationQualityReview.Clear();
+
     private static RuntimeReviewContextSnapshot CreateSnapshot(FrontendAnalysisContext context) =>
         new(
             context.TargetUrl,
@@ -132,6 +144,12 @@ public sealed class RuntimeReviewSessionService
     private static RuntimeReviewContextSnapshot CreateApiQualitySnapshot(FrontendAnalysisContext context) =>
         new(
             context.RestBaseUrl ?? context.TargetUrl,
+            context.ActiveProfile.Name,
+            context.ActiveProfile.EnvironmentType.ToString());
+
+    private static RuntimeReviewContextSnapshot CreateIntegrationQualitySnapshot(FrontendAnalysisContext context) =>
+        new(
+            $"{context.Integrations.Count(i => i.Enabled)}/{context.Integrations.Count} integrations",
             context.ActiveProfile.Name,
             context.ActiveProfile.EnvironmentType.ToString());
 

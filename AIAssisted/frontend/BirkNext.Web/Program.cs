@@ -88,6 +88,8 @@ builder.Services.AddHttpClient<WasmSecurityApiService>(client =>
 
 builder.Services.AddSingleton<IFrontendAnalysisSettingsService, FrontendAnalysisSettingsService>();
 builder.Services.AddSingleton<ITargetEnvironmentService, TargetEnvironmentService>();
+builder.Services.AddSingleton<ITargetEnvironmentHintExtractor, TargetEnvironmentHintExtractor>();
+builder.Services.AddSingleton<IIntegrationTargetRegistryService, IntegrationTargetRegistryService>();
 builder.Services.AddSingleton<IAuthenticatedBrowserSessionService, PlaceholderAuthenticatedBrowserSessionService>();
 builder.Services.AddSingleton<IFrontendAnalysisContextFactory, FrontendAnalysisContextFactory>();
 
@@ -101,6 +103,9 @@ builder.Services.AddHttpClient<SampleProjectsApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
 builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
+
+builder.Services.AddHttpClient<IIntegrationQualityReviewService, IntegrationQualityReviewService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
 await builder.Build().RunAsync();

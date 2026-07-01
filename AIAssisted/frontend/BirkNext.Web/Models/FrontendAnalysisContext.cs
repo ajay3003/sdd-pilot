@@ -37,6 +37,8 @@ public sealed class FrontendAnalysisContext
     public IReadOnlyList<string>             ValidationWarnings         { get; set; } = Array.Empty<string>();
     public IReadOnlyList<string>             ValidationErrors           { get; set; } = Array.Empty<string>();
 
+    public IReadOnlyList<IntegrationConfig> Integrations { get; set; } = Array.Empty<IntegrationConfig>();
+
     public bool HasTargetUrl           => !string.IsNullOrWhiteSpace(TargetUrl);
     public bool HasRestBaseUrl         => !string.IsNullOrWhiteSpace(RestBaseUrl);
     public bool HasGraphQlEndpoint     => !string.IsNullOrWhiteSpace(GraphQlEndpoint);

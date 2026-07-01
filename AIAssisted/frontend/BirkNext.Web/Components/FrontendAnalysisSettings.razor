@@ -806,6 +806,151 @@
                 </dl>
             }
 
+            @* ── Integrations ── *@
+            @if (_activeTab == "integrations")
+            {
+                @if (_isEditMode && _editProfile is not null)
+                {
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.65rem">
+                        <span class="fa-section-note" style="margin:0">Configure service integrations for this environment. Used by Integration Quality Review.</span>
+                        <SecondaryButton OnClick="AddIntegration" Class="fa-btn-sm">+ Add Integration</SecondaryButton>
+                    </div>
+
+                    @if (_editProfile.Integrations.Count == 0)
+                    {
+                        <div class="fa-empty-state" style="padding:.75rem;font-size:.85rem">
+                            No integrations configured. Click <strong>+ Add Integration</strong> to add one.
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var intg in _editProfile.Integrations)
+                        {
+                            var isExpanded = _editingIntegrationId == intg.Id;
+                            <div class="fa-integration-row" style="border:1px solid var(--clr-border);border-radius:var(--radius-md);margin-bottom:.5rem">
+                                <button class="fa-integration-toggle"
+                                        style="width:100%;background:var(--clr-surface);border:none;border-radius:var(--radius-md);cursor:pointer;display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;text-align:left"
+                                        @onclick="() => _editingIntegrationId = isExpanded ? null : intg.Id">
+                                    <span style="font-weight:700;font-size:.82rem;background:var(--clr-bg,#f1f5f9);border:1px solid var(--clr-border);border-radius:3px;padding:.1rem .4rem;min-width:4rem;text-align:center">@intg.Type</span>
+                                    <span style="flex:1;font-size:.88rem;color:var(--clr-text-heading)">@(string.IsNullOrWhiteSpace(intg.Name) ? "(unnamed)" : intg.Name)</span>
+                                    @if (!intg.Enabled)
+                                    { <span style="font-size:.74rem;color:var(--clr-text-subtle)">Disabled</span> }
+                                    <span style="font-size:.7rem;color:var(--clr-text-placeholder)">@(isExpanded ? "▲" : "▼")</span>
+                                    <button @onclick="() => RemoveIntegration(intg.Id)"
+                                            @onclick:stopPropagation="true"
+                                            style="background:none;border:none;color:var(--clr-danger);cursor:pointer;font-size:.8rem;padding:.1rem .3rem"
+                                            title="Remove integration">✕</button>
+                                </button>
+
+                                @if (isExpanded)
+                                {
+                                    <div class="fa-form-grid" style="padding:.65rem .75rem;border-top:1px solid var(--clr-border)">
+                                        <div class="form-field">
+                                            <label class="fa-label">Name <span class="wsr-required">*</span></label>
+                                            <input type="text" class="form-control" placeholder="e.g. Order Events" @bind="intg.Name" />
+                                        </div>
+                                        <div class="form-field">
+                                            <label class="fa-label">Type</label>
+                                            <select class="form-control" @bind="intg.Type">
+                                                @foreach (var t in Enum.GetValues<IntegrationType>())
+                                                { <option value="@t">@t</option> }
+                                            </select>
+                                        </div>
+                                        <div class="form-field fa-field-full">
+                                            <label class="fa-label">Endpoint / Namespace <span class="form-optional">(host or namespace)</span></label>
+                                            <input type="text" class="form-control" placeholder="e.g. myns.servicebus.windows.net or https://api.example.com" @bind="intg.Endpoint" />
+                                        </div>
+                                        <div class="form-field">
+                                            <label class="fa-label">Resource <span class="form-optional">(topic / queue / event hub)</span></label>
+                                            <input type="text" class="form-control" placeholder="e.g. orders-topic" @bind="intg.Resource" />
+                                        </div>
+                                        <div class="form-field">
+                                            <label class="fa-label">Consumer <span class="form-optional">(group / subscription)</span></label>
+                                            <input type="text" class="form-control" placeholder="e.g. orders-consumer-group" @bind="intg.Consumer" />
+                                        </div>
+                                        <div class="form-field">
+                                            <label class="fa-label">Authentication Type</label>
+                                            <select class="form-control" @bind="intg.AuthType">
+                                                @foreach (var t in Enum.GetValues<IntegrationAuthType>())
+                                                { <option value="@t">@t</option> }
+                                            </select>
+                                        </div>
+                                        <div class="form-field">
+                                            <label class="fa-label">Owner <span class="form-optional">(team or contact)</span></label>
+                                            <input type="text" class="form-control" placeholder="e.g. platform-team" @bind="intg.Owner" />
+                                        </div>
+                                        <div class="form-field fa-field-full">
+                                            <label class="fa-label">Health URL <span class="form-optional">(optional)</span></label>
+                                            <input type="url" class="form-control" placeholder="https://..." @bind="intg.HealthUrl" />
+                                        </div>
+                                        <div class="form-field fa-field-full">
+                                            <label class="fa-label">Worker URL <span class="form-optional">(optional)</span></label>
+                                            <input type="url" class="form-control" placeholder="https://..." @bind="intg.WorkerUrl" />
+                                        </div>
+                                        <div class="form-field fa-field-full">
+                                            <label class="fa-label">Monitoring URL <span class="form-optional">(runbook / dashboard)</span></label>
+                                            <input type="url" class="form-control" placeholder="https://..." @bind="intg.MonitoringUrl" />
+                                        </div>
+                                        <div class="form-field">
+                                            <label class="fa-label">
+                                                <input type="checkbox" @bind="intg.Enabled" style="margin-right:.4rem" />
+                                                Enabled
+                                            </label>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                }
+                else
+                {
+                    @if (profile.Integrations.Count == 0)
+                    {
+                        <div class="fa-empty-state" style="padding:.75rem;font-size:.85rem">
+                            No integrations configured. Switch to Edit mode to add integrations.
+                        </div>
+                    }
+                    else
+                    {
+                        <table style="width:100%;border-collapse:collapse;font-size:.83rem">
+                            <thead>
+                                <tr style="background:var(--clr-bg,#f8fafc);text-align:left">
+                                    <th style="padding:.45rem .65rem;border-bottom:1px solid var(--clr-border)">Name</th>
+                                    <th style="padding:.45rem .65rem;border-bottom:1px solid var(--clr-border)">Type</th>
+                                    <th style="padding:.45rem .65rem;border-bottom:1px solid var(--clr-border)">Endpoint</th>
+                                    <th style="padding:.45rem .65rem;border-bottom:1px solid var(--clr-border)">Resource</th>
+                                    <th style="padding:.45rem .65rem;border-bottom:1px solid var(--clr-border)">Consumer</th>
+                                    <th style="padding:.45rem .65rem;border-bottom:1px solid var(--clr-border)">Auth</th>
+                                    <th style="padding:.45rem .65rem;border-bottom:1px solid var(--clr-border)">Owner</th>
+                                    <th style="padding:.45rem .65rem;border-bottom:1px solid var(--clr-border)">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var intg in profile.Integrations)
+                                {
+                                    <tr style="border-bottom:1px solid var(--clr-border-subtle)">
+                                        <td style="padding:.4rem .65rem;font-weight:600;color:var(--clr-text-heading)">@intg.Name</td>
+                                        <td style="padding:.4rem .65rem;color:var(--clr-text-muted)">@intg.Type</td>
+                                        <td style="padding:.4rem .65rem;font-family:var(--font-mono);font-size:.76rem;color:var(--clr-text-subtle)">@(intg.Endpoint ?? "—")</td>
+                                        <td style="padding:.4rem .65rem;color:var(--clr-text-muted)">@(intg.Resource ?? "—")</td>
+                                        <td style="padding:.4rem .65rem;color:var(--clr-text-muted)">@(intg.Consumer ?? "—")</td>
+                                        <td style="padding:.4rem .65rem;color:var(--clr-text-muted)">@intg.AuthType</td>
+                                        <td style="padding:.4rem .65rem;color:var(--clr-text-muted)">@(intg.Owner ?? "—")</td>
+                                        <td style="padding:.4rem .65rem">
+                                            @if (intg.Enabled)
+                                            { <span style="color:var(--clr-success);font-weight:700;font-size:.78rem">Enabled</span> }
+                                            else
+                                            { <span style="color:var(--clr-text-subtle);font-size:.78rem">Disabled</span> }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                }
+            }
+
         </div>
 
         @* ── Reset entire profile ── *@
@@ -926,8 +1071,9 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         ("cwv",         "Core Web Vitals"),
         ("security",    "Security Expectations"),
         ("features",    "Feature Toggles"),
-        ("validation",  "Validation"),
-        ("diagnostics", "Diagnostics"),
+        ("validation",    "Validation"),
+        ("diagnostics",   "Diagnostics"),
+        ("integrations",  "Integrations"),
     ];
 
     // ── Computed ─────────────────────────────────────────────────────────────
@@ -1201,4 +1347,21 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         string.IsNullOrWhiteSpace(text)
             ? []
             : text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    // ── Integration helpers ────────────────────────────────────────────────────
+
+    private string? _editingIntegrationId;
+
+    private void AddIntegration()
+    {
+        var cfg = new IntegrationConfig { Id = NewIntegrationId(), Enabled = true };
+        _editProfile!.Integrations.Add(cfg);
+        _editingIntegrationId = cfg.Id;
+    }
+
+    private void RemoveIntegration(string id) =>
+        _editProfile!.Integrations.RemoveAll(i => i.Id == id);
+
+    private static string NewIntegrationId() =>
+        Guid.NewGuid().ToString("N")[..8];
 }

@@ -84,7 +84,8 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             AllowedCdnHosts             = allowedCdnHosts,
             IsAuthenticatedSessionAvailable = sessionStatus == AuthenticatedBrowserSessionStatus.Available,
             ValidationWarnings          = validation.Warnings,
-            ValidationErrors            = validation.Errors
+            ValidationErrors            = validation.Errors,
+            Integrations                = profile.Integrations.AsReadOnly()
         };
     }
 }

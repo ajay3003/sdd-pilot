@@ -49,6 +49,7 @@ public class FeatureVisibilityService
     public bool ImplementationTraceability  => _flags.ImplementationTraceability;
     public bool FrontendQualityReview      => _flags.FrontendQualityReview;
     public bool ApiQualityReview           => _flags.ApiQualityReview;
+    public bool IntegrationQualityReview   => _flags.IntegrationQualityReview;
     public bool BlazorWasmSecurityReview    => _flags.BlazorWasmSecurityReview;
     public bool BlazorWasmPerformanceReview => _flags.BlazorWasmPerformanceReview;
     public bool TaskExplorer         => _flags.TaskExplorer;
@@ -69,7 +70,7 @@ public class FeatureVisibilityService
     public bool ShowSectionTraceability   => LegacyTraceabilityNavigationEnabled
                                              && (TraceabilityCoverage || TraceabilitySuggestions || CodeTraceability);
     public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || ImplementationTraceability || ArtifactTraceability;
-    public bool ShowSectionQuality        => QualityReview || FrontendQualityReview || ApiQualityReview;
+    public bool ShowSectionQuality        => QualityReview || FrontendQualityReview || ApiQualityReview || IntegrationQualityReview;
     public bool ShowSectionAiReview       => AiChangeReview;
     public bool ShowSectionAdmin          => AdminSystemSettings;
 

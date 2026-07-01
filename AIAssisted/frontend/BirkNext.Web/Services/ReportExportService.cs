@@ -360,6 +360,75 @@ public sealed class ReportExportService : IReportExportService
         return BuildHtml("API Quality Review Report", projectName, subtitle, sb.ToString());
     }
 
+    public string ExportIntegrationQualityReview(IntegrationQualityReport report, string? projectName)
+    {
+        var sb = new StringBuilder();
+
+        sb.Append("<div class=\"kpi-row\">");
+        sb.Append(Kpi(report.OverallScore.ToString(), "Readiness Score"));
+        sb.Append(Kpi(report.IntegrationCount.ToString(), "Integrations"));
+        sb.Append(Kpi(report.EnabledCount.ToString(), "Enabled"));
+        sb.Append(Kpi(report.MissingConfigCount.ToString(), "Missing Config"));
+        sb.Append(Kpi(report.IsReadyForDeployment ? "Ready" : "Not Ready", "Deployment"));
+        sb.Append("</div>\n");
+
+        if (report.Statuses.Count > 0)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Configured Integrations</h2>\n");
+            sb.Append(Table(
+                ["Integration", "Type", "Enabled", "Score", "Health", "Worker", "Missing Fields"],
+                report.Statuses.Select(s => new[]
+                {
+                    Esc(s.Name),
+                    Esc(s.Type.ToString()),
+                    s.Enabled ? "Yes" : "No",
+                    s.Score.ToString(),
+                    Esc(StatusLabel(s.HealthReachable)),
+                    Esc(StatusLabel(s.WorkerReachable)),
+                    Esc(string.Join(", ", s.MissingFields))
+                })));
+            sb.Append("</section>\n");
+        }
+
+        if (report.Findings.Count > 0)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Findings</h2>\n");
+            sb.Append(Table(
+                ["Severity", "Integration", "Title", "Description", "Recommendation"],
+                report.Findings
+                    .OrderBy(f => f.Severity)
+                    .ThenBy(f => f.IntegrationName)
+                    .Select(f => new[]
+                    {
+                        Badge(f.Severity.ToString()),
+                        Esc(f.IntegrationName),
+                        Esc(f.Title),
+                        Esc(f.Description),
+                        Esc(f.Recommendation)
+                    })));
+            sb.Append("</section>\n");
+        }
+
+        if (report.Recommendations.Count > 0)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Recommendations</h2>\n");
+            sb.Append(RecommendationList(report.Recommendations));
+            sb.Append("</section>\n");
+        }
+
+        if (report.Limitations.Count > 0)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Limitations</h2>\n");
+            sb.Append("<ul style=\"margin-left:1.2rem;font-size:.85rem;color:#374151\">\n");
+            foreach (var l in report.Limitations)
+                sb.Append($"<li>{Esc(l)}</li>\n");
+            sb.Append("</ul>\n</section>\n");
+        }
+
+        var subtitle = $"Environment: {report.EnvironmentName}  Generated: {report.GeneratedAt:yyyy-MM-dd HH:mm} UTC";
+        return BuildHtml("Integration Quality Review Report", projectName, subtitle, sb.ToString());
+    }
+
     private static string AqrCategoryLabel(ApiQualityCategory c) => c switch
     {
         ApiQualityCategory.Connectivity => "Connectivity",
@@ -370,6 +439,13 @@ public sealed class ReportExportService : IReportExportService
         ApiQualityCategory.OpenApi      => "OpenAPI / Swagger",
         ApiQualityCategory.Readiness    => "Readiness",
         _                               => c.ToString(),
+    };
+
+    private static string StatusLabel(bool? value) => value switch
+    {
+        true => "Reachable",
+        false => "Unreachable",
+        null => "Not checked"
     };
 
     private static string CategoryLabel(FrontendQualityCategory c) => c switch
@@ -670,7 +746,8 @@ public sealed class ReportExportService : IReportExportService
         QaAuditReport? audit,
         DeliveryReadinessReport? delivery,
         QAReadinessReport? readiness,
-        WasmPerformanceReviewReport? performance)
+        WasmPerformanceReviewReport? performance,
+        IntegrationQualityReport? integrationQuality)
     {
         var sb = new StringBuilder();
 
@@ -688,6 +765,8 @@ public sealed class ReportExportService : IReportExportService
             sb.Append(Kpi($"{readiness.OverallScore:0.#}%", "QA Readiness"));
         if (performance?.ReadinessReport is { HasData: true } pr)
             sb.Append(Kpi(pr.OverallScore.ToString(), "Performance"));
+        if (integrationQuality is not null)
+            sb.Append(Kpi(integrationQuality.OverallScore.ToString(), "Integrations"));
         sb.Append("</div>\n");
 
         // Governance status
@@ -717,6 +796,9 @@ public sealed class ReportExportService : IReportExportService
         if (delivery is not null)      ran.Add($"Delivery Readiness — {delivery.Health.OverallReadinessScore:0.#}% overall");
         if (readiness is not null)     ran.Add($"QA Readiness — {readiness.OverallScore:0.#}%, {readiness.OverallStatus}");
         if (performance is not null)   ran.Add($"Performance Review — target {Esc(performance.TargetUrl)}");
+
+        if (integrationQuality is not null)
+            ran.Add($"Integration Quality Review - score {integrationQuality.OverallScore}, {integrationQuality.EnabledCount}/{integrationQuality.IntegrationCount} enabled integrations");
 
         if (ran.Count > 0)
         {
