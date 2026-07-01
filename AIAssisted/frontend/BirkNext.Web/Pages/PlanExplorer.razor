@@ -6,6 +6,7 @@
 @inject IJSRuntime JS
 @inject NavigationManager NavigationManager
 @inject BirkNext.Web.Services.ProjectDocumentApiService DocumentApi
+@inject BirkNext.Web.Services.IWorkspaceSessionService Workspace
 
 <PageTitle>Plan Explorer — QA Review Studio</PageTitle>
 
@@ -34,17 +35,23 @@
         var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
         if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var view))
             _initialView = view;
+
+        var cached = Workspace.Get(WorkspaceArtifactKind.Plan);
+        if (cached != null)
+            _initialText = cached.Text;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        if (!string.IsNullOrWhiteSpace(_initialText)) return;
 
         string? content = null;
         try { content = await DocumentApi.GetAsync("plan"); } catch { }
 
         if (!string.IsNullOrWhiteSpace(content))
         {
+            Workspace.Set(WorkspaceArtifactKind.Plan, content);
             _initialText = content;
             StateHasChanged();
             return;
@@ -61,6 +68,7 @@
                 await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey);
             }
             catch { }
+            Workspace.Set(WorkspaceArtifactKind.Plan, legacy);
             _initialText = legacy;
             StateHasChanged();
         }
@@ -69,6 +77,7 @@
     private async Task OnPlanBuilt(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
+        Workspace.Set(WorkspaceArtifactKind.Plan, text);
         try { await DocumentApi.SaveAsync("plan", text); } catch { }
         try { await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey); } catch { }
     }

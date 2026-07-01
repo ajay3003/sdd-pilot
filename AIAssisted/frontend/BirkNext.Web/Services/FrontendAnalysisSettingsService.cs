@@ -230,7 +230,25 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             errors.Add($"A profile named \"{profile.Name}\" already exists.");
 
         if (!string.IsNullOrWhiteSpace(profile.TargetUrl) && !IsValidUrl(profile.TargetUrl))
-            errors.Add("Target URL is not a valid absolute URL.");
+            errors.Add("Frontend Base URL is not a valid absolute URL.");
+
+        if (!string.IsNullOrWhiteSpace(profile.RestBaseUrl) && !IsValidUrl(profile.RestBaseUrl))
+            errors.Add("REST Base URL is not a valid absolute URL.");
+
+        if (!string.IsNullOrWhiteSpace(profile.HealthEndpoint) && !IsValidUrl(profile.HealthEndpoint))
+            errors.Add("Health Endpoint is not a valid absolute URL.");
+
+        if (!string.IsNullOrWhiteSpace(profile.SwaggerUrl) && !IsValidUrl(profile.SwaggerUrl))
+            errors.Add("Swagger / OpenAPI URL is not a valid absolute URL.");
+
+        if (!string.IsNullOrWhiteSpace(profile.GraphQlEndpoint) && !IsValidUrl(profile.GraphQlEndpoint))
+            errors.Add("GraphQL Endpoint is not a valid absolute URL.");
+
+        if (profile.RequestTimeoutSeconds <= 0)
+            errors.Add("Request timeout must be a positive value.");
+
+        if (profile.RetryCount < 0)
+            errors.Add("Retry count must be zero or greater.");
 
         if (!string.IsNullOrWhiteSpace(profile.Authentication.ExpectedAuthority) &&
             !IsValidUrl(profile.Authentication.ExpectedAuthority))

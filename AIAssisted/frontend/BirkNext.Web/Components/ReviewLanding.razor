@@ -1,0 +1,148 @@
+@namespace BirkNext.Web.Components
+
+<section class="review-landing" aria-label="@Title">
+    <div class="review-landing-hero">
+        <div class="review-landing-copy">
+            @if (!string.IsNullOrWhiteSpace(Eyebrow))
+            {
+                <span class="review-landing-eyebrow">@Eyebrow</span>
+            }
+            <h2>@Title</h2>
+            <p>@Description</p>
+        </div>
+        <div class="review-landing-actions">
+            <PrimaryButton OnClick="PrimaryRun" Disabled="@PrimaryDisabled" aria-label="@PrimaryButtonText">
+                @PrimaryButtonText
+            </PrimaryButton>
+            @if (!string.IsNullOrWhiteSpace(SecondaryActionText) && !string.IsNullOrWhiteSpace(SecondaryActionHref))
+            {
+                <a href="@SecondaryActionHref" class="btn-secondary">@SecondaryActionText</a>
+            }
+        </div>
+    </div>
+
+    <div class="review-landing-target">
+        <div class="review-landing-target-header">
+            <h2>Audit Target</h2>
+            @if (!string.IsNullOrWhiteSpace(EstimatedDuration))
+            {
+                <span>Estimated scan: @EstimatedDuration</span>
+            }
+        </div>
+
+        @if (Metadata.Count > 0)
+        {
+            <div class="review-landing-meta">
+                @foreach (var item in Metadata)
+                {
+                    <span>@item.Label: <strong>@item.Value</strong></span>
+                }
+            </div>
+        }
+
+        <div class="review-landing-fields">
+            @foreach (var field in TargetFields)
+            {
+                <div class="review-landing-field review-landing-field-@field.Status.ToString().ToLowerInvariant()">
+                    <span class="review-landing-field-label">@field.Label</span>
+                    <span class="review-landing-field-value">@field.Value</span>
+                </div>
+            }
+        </div>
+
+        @if (Configuration is not null)
+        {
+            <div class="review-landing-config review-landing-config-@Configuration.Status.ToString().ToLowerInvariant()" role="@ConfigRole">
+                <div>
+                    <strong>@Configuration.Title</strong>
+                    @if (!string.IsNullOrWhiteSpace(Configuration.Message))
+                    {
+                        <p>@Configuration.Message</p>
+                    }
+                    @if (Configuration.MissingRequirements.Count > 0)
+                    {
+                        <ul>
+                            @foreach (var requirement in Configuration.MissingRequirements)
+                            {
+                                <li>@requirement</li>
+                            }
+                        </ul>
+                    }
+                </div>
+                @if (!string.IsNullOrWhiteSpace(Configuration.ConfigureHref) && !string.IsNullOrWhiteSpace(Configuration.ConfigureText))
+                {
+                    <a href="@Configuration.ConfigureHref" class="btn-secondary">@Configuration.ConfigureText</a>
+                }
+            </div>
+        }
+    </div>
+
+    <section class="review-landing-section" aria-label="Analysis coverage">
+        <SectionHeader Title="What Will Be Analysed?" />
+        <div class="review-landing-card-grid">
+            @foreach (var card in AnalysisCards)
+            {
+                <article class="review-landing-card">
+                    <span class="review-landing-card-icon" aria-hidden="true">@card.Icon</span>
+                    <h3>@card.Title</h3>
+                    <p>@card.Description</p>
+                </article>
+            }
+        </div>
+    </section>
+
+    <section class="review-landing-section" aria-label="Included checks">
+        <SectionHeader Title="Checks Include" />
+        <div class="review-landing-checks">
+            @foreach (var check in Checks)
+            {
+                <span>@check</span>
+            }
+        </div>
+    </section>
+</section>
+
+@code {
+    public enum FieldStatus
+    {
+        Configured,
+        Missing,
+        Warning,
+        Informational,
+    }
+
+    public enum ConfigurationStatus
+    {
+        Success,
+        Warning,
+        Error,
+    }
+
+    public sealed record TargetField(string Label, string Value, FieldStatus Status = FieldStatus.Informational);
+    public sealed record MetadataItem(string Label, string Value);
+    public sealed record AnalysisCard(string Icon, string Title, string Description);
+    public sealed record ConfigurationState(
+        ConfigurationStatus Status,
+        string Title,
+        string Message,
+        IReadOnlyList<string> MissingRequirements,
+        string? ConfigureText = null,
+        string? ConfigureHref = null);
+
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Eyebrow { get; set; } = "Runtime QA audit";
+    [Parameter, EditorRequired] public string Description { get; set; } = "";
+    [Parameter, EditorRequired] public string PrimaryButtonText { get; set; } = "";
+    [Parameter, EditorRequired] public EventCallback PrimaryRun { get; set; }
+    [Parameter] public bool PrimaryDisabled { get; set; }
+    [Parameter] public string? SecondaryActionText { get; set; }
+    [Parameter] public string? SecondaryActionHref { get; set; }
+    [Parameter] public IReadOnlyList<TargetField> TargetFields { get; set; } = [];
+    [Parameter] public ConfigurationState? Configuration { get; set; }
+    [Parameter] public IReadOnlyList<AnalysisCard> AnalysisCards { get; set; } = [];
+    [Parameter] public IReadOnlyList<string> Checks { get; set; } = [];
+    [Parameter] public IReadOnlyList<MetadataItem> Metadata { get; set; } = [];
+    [Parameter] public string? EstimatedDuration { get; set; }
+
+    private string ConfigRole => Configuration?.Status == ConfigurationStatus.Error ? "alert" : "status";
+}

@@ -5,6 +5,7 @@
 <PageTitle>Impact Analysis</PageTitle>
 
 <div class="impact-page">
+
     <PageHeader Title="Impact Analysis"
                 Description="Understand what needs testing before you accept a change. Select a requirement to see its risk level and regression recommendation." />
 
@@ -18,181 +19,188 @@
     }
     else
     {
-        <div class="kpi-row" aria-label="Risk summary">
-            <div class="kpi-card impact-kpi-high @(_riskFilter == "High" ? "kpi-card-active" : "")"
-                 role="button" tabindex="0"
-                 @onclick='() => ToggleRiskFilter("High")'
-                 @onkeydown='async e => { if (e.Key == "Enter" || e.Key == " ") await ToggleRiskFilter("High"); }'>
-                <span class="kpi-marker" aria-hidden="true"></span>
-                <span class="kpi-value">@_summary.HighRiskCount</span>
-                <span class="kpi-label">High Risk</span>
-                <span class="kpi-hint">no tests linked</span>
-            </div>
-            <div class="kpi-card impact-kpi-medium @(_riskFilter == "Medium" ? "kpi-card-active" : "")"
-                 role="button" tabindex="0"
-                 @onclick='() => ToggleRiskFilter("Medium")'
-                 @onkeydown='async e => { if (e.Key == "Enter" || e.Key == " ") await ToggleRiskFilter("Medium"); }'>
-                <span class="kpi-marker" aria-hidden="true"></span>
-                <span class="kpi-value">@_summary.MediumRiskCount</span>
-                <span class="kpi-label">Medium Risk</span>
-                <span class="kpi-hint">one test linked</span>
-            </div>
-            <div class="kpi-card impact-kpi-low @(_riskFilter == "Low" ? "kpi-card-active" : "")"
-                 role="button" tabindex="0"
-                 @onclick='() => ToggleRiskFilter("Low")'
-                 @onkeydown='async e => { if (e.Key == "Enter" || e.Key == " ") await ToggleRiskFilter("Low"); }'>
-                <span class="kpi-marker" aria-hidden="true"></span>
-                <span class="kpi-value">@_summary.LowRiskCount</span>
-                <span class="kpi-label">Low Risk</span>
-                <span class="kpi-hint">2+ tests linked</span>
-            </div>
-            <div class="kpi-card kpi-card-traceability @(string.IsNullOrEmpty(_riskFilter) ? "kpi-card-active" : "")"
-                 role="button" tabindex="0"
-                 @onclick='() => ToggleRiskFilter("")'
-                 @onkeydown='async e => { if (e.Key == "Enter" || e.Key == " ") await ToggleRiskFilter(""); }'>
-                <span class="kpi-marker" aria-hidden="true"></span>
-                <span class="kpi-value">@_summary.TotalRequirements</span>
-                <span class="kpi-label">Total Requirements</span>
-                <span class="kpi-hint">show all</span>
-            </div>
+        @* ── Summary filter cards ────────────────────────────────────────────── *@
+        <div class="metric-grid-4" role="group" aria-label="Risk summary — click to filter">
+
+            <button class="ia-filter-btn @(_riskFilter == "High" ? "is-active" : "")"
+                    @onclick='() => ToggleRiskFilter("High")'
+                    aria-pressed="@(_riskFilter == "High" ? "true" : "false")">
+                <MetricCard Value="@_summary.HighRiskCount.ToString()"
+                            Label="High Risk"
+                            Sublabel="no tests linked"
+                            Variant="danger" />
+            </button>
+
+            <button class="ia-filter-btn @(_riskFilter == "Medium" ? "is-active" : "")"
+                    @onclick='() => ToggleRiskFilter("Medium")'
+                    aria-pressed="@(_riskFilter == "Medium" ? "true" : "false")">
+                <MetricCard Value="@_summary.MediumRiskCount.ToString()"
+                            Label="Medium Risk"
+                            Sublabel="one test linked"
+                            Variant="warning" />
+            </button>
+
+            <button class="ia-filter-btn @(_riskFilter == "Low" ? "is-active" : "")"
+                    @onclick='() => ToggleRiskFilter("Low")'
+                    aria-pressed="@(_riskFilter == "Low" ? "true" : "false")">
+                <MetricCard Value="@_summary.LowRiskCount.ToString()"
+                            Label="Low Risk"
+                            Sublabel="2+ tests linked"
+                            Variant="success" />
+            </button>
+
+            <button class="ia-filter-btn @(string.IsNullOrEmpty(_riskFilter) ? "is-active" : "")"
+                    @onclick='() => ToggleRiskFilter("")'
+                    aria-pressed="@(string.IsNullOrEmpty(_riskFilter) ? "true" : "false")">
+                <MetricCard Value="@_summary.TotalRequirements.ToString()"
+                            Label="Total Requirements"
+                            Sublabel="show all" />
+            </button>
+
         </div>
 
+        @* ── Master–detail layout ─────────────────────────────────────────────── *@
         <div class="impact-layout">
+
+            @* ── Left: requirement list ── *@
             <Card NoPadding="true">
                 <Header>
                     <SectionHeader Title="Requirements by Risk"
                                    Description="Click a requirement to analyse it">
-                        <Actions><span>@FilteredRequirements.Count shown</span></Actions>
+                        <Actions><span class="ia-count-label">@FilteredRequirements.Count shown</span></Actions>
                     </SectionHeader>
                 </Header>
                 <ChildContent>
-                @if (_summary.TotalRequirements == 0)
-                {
-                    <EmptyState Title="No requirements yet"
-                                Description="Add requirement scenarios to the library to see their risk profile here."
-                                Dashed="true">
-                        <a href="/scenarios">Go to QA Artifact Library</a>
-                    </EmptyState>
-                }
-                else if (FilteredRequirements.Count == 0)
-                {
-                    <div class="mapping-empty">No requirements match the current risk filter.</div>
-                }
-                else
-                {
-                    <div class="impact-requirement-list">
-                        @foreach (var item in FilteredRequirements)
-                        {
-                            var label = ReqLabel(item.Id);
-                            var isSelected = _selectedRequirementId == item.Id;
-                            <button type="button"
-                                    class="impact-req-row @RiskClass(item.RiskLevel) @(isSelected ? "impact-req-row-selected" : "")"
-                                    @onclick="() => SelectRequirementAsync(item.Id)"
-                                    aria-selected="@isSelected"
-                                    aria-label="Analyse @label — @item.Title">
-                                <div class="impact-req-left">
-                                    <span class="artifact-display-label">@label</span>
-                                    <span class="impact-req-title">@item.Title</span>
-                                </div>
-                                <div class="impact-req-right">
-                                    <StatusChip Status="@(item.RiskLevel.ToLower() switch { "high" => "critical", "medium" => "warning", _ => "ready" })"
-                                                Label="@RiskLabel(item.RiskLevel)" />
-                                    <span class="impact-test-count">@item.LinkedTestCount test@(Plural(item.LinkedTestCount))</span>
-                                </div>
-                            </button>
-                        }
-                    </div>
-                }
-                </ChildContent>
-            </Card>
-
-            <section aria-label="Requirement impact detail" aria-live="polite">
-            <Card NoPadding="true">
-                @if (_isLoadingDetail)
-                {
-                    <p class="loading-state">Loading impact detail...</p>
-                }
-                else if (_detailError is not null)
-                {
-                    <div class="notification notification-error" role="alert">@_detailError</div>
-                }
-                else if (_detail is null)
-                {
                     @if (_summary.TotalRequirements == 0)
                     {
                         <EmptyState Title="No requirements yet"
-                                    Description="Add requirement scenarios to the QA Artifact Library to begin impact analysis." />
+                                    Description="Add requirement scenarios to the library to see their risk profile here."
+                                    Dashed="true">
+                            <a href="/scenarios">Go to QA Artifact Library</a>
+                        </EmptyState>
+                    }
+                    else if (FilteredRequirements.Count == 0)
+                    {
+                        <EmptyState Title="No requirements match this filter."
+                                    Description="Try a different risk level or clear the filter to show all." />
                     }
                     else
                     {
-                        <p class="loading-state">Loading analysis&hellip;</p>
+                        <div class="impact-requirement-list">
+                            @foreach (var item in FilteredRequirements)
+                            {
+                                var label = ReqLabel(item.Id);
+                                var isSelected = _selectedRequirementId == item.Id;
+                                <button type="button"
+                                        class="impact-req-row @RiskClass(item.RiskLevel) @(isSelected ? "impact-req-row-selected" : "")"
+                                        @onclick="() => SelectRequirementAsync(item.Id)"
+                                        aria-selected="@isSelected"
+                                        aria-label="Analyse @label — @item.Title">
+                                    <div class="impact-req-left">
+                                        <span class="artifact-display-label">@label</span>
+                                        <span class="impact-req-title">@item.Title</span>
+                                    </div>
+                                    <div class="impact-req-right">
+                                        <StatusChip Status="@(item.RiskLevel.ToLower() switch { "high" => "critical", "medium" => "warning", _ => "healthy" })"
+                                                    Label="@RiskLabel(item.RiskLevel)" />
+                                        <span class="impact-test-count">@item.LinkedTestCount test@(Plural(item.LinkedTestCount))</span>
+                                    </div>
+                                </button>
+                            }
+                        </div>
                     }
-                }
-                else
-                {
-                    var reqLabel = ReqLabel(_detail.RequirementId);
-                    <div class="impact-detail-content">
-                        <div class="impact-detail-header">
-                            <span class="artifact-display-label">@reqLabel</span>
-                            <span class="badge badge-requirement">Requirement</span>
-                            <StatusChip Status="@(_detail.RiskLevel.ToLower() switch { "high" => "critical", "medium" => "warning", _ => "ready" })"
-                                        Label="@RiskLabel(_detail.RiskLevel)" />
-                        </div>
-                        <h2 class="impact-detail-title">@_detail.RequirementTitle</h2>
-                        @if (!string.IsNullOrWhiteSpace(_detail.RequirementDescription))
-                        {
-                            <p class="impact-detail-desc">@_detail.RequirementDescription</p>
-                        }
-
-                        <div class="metric-grid-3" aria-label="Impact metrics">
-                            <MetricCard Value="@_detail.TotalLinkedTests.ToString()"
-                                        Label="Linked Tests"
-                                        Variant="@(_detail.TotalLinkedTests > 0 ? "success" : "danger")" />
-                            <MetricCard Value="@_detail.AcceptedTests.ToString()"
-                                        Label="Accepted Tests"
-                                        Variant="success" />
-                            <MetricCard Value="@_detail.MissingCoverage.ToString()"
-                                        Label="Missing Coverage"
-                                        Variant="@(_detail.MissingCoverage > 0 ? "danger" : null)" />
-                        </div>
-
-                        <div class="impact-regression-section">
-                            <SectionHeader Title="Regression Recommendation"
-                                           Description="Deterministic — no AI involved" />
-                            @if (_detail.RegressionItems.Count == 0)
-                            {
-                                <div class="impact-regression-empty">
-                                    <StatusChip Status="critical" Label="High Risk" />
-                                    <p>No tests are linked to this requirement.</p>
-                                    <p>Manual testing is required before accepting any change to this requirement.</p>
-                                    <a href="/traceability" class="btn-primary">Go to Traceability &amp; Coverage to add tests</a>
-                                </div>
-                            }
-                            else
-                            {
-                                <ul class="impact-regression-list" aria-label="Tests to run for regression">
-                                    @foreach (var item in _detail.RegressionItems)
-                                    {
-                                        var testLabel = TestLabel(item.TestId);
-                                        <li class="impact-regression-item">
-                                            <div class="impact-regression-item-header">
-                                                <span class="impact-check" aria-hidden="true">✓</span>
-                                                <span class="artifact-display-label">@testLabel</span>
-                                                <span class="badge badge-test">Test</span>
-                                                <strong>@item.TestTitle</strong>
-                                            </div>
-                                            <p class="impact-regression-reason">@item.Reason</p>
-                                        </li>
-                                    }
-                                </ul>
-                            }
-                        </div>
-                    </div>
-                }
+                </ChildContent>
             </Card>
+
+            @* ── Right: impact detail ── *@
+            <section aria-label="Requirement impact detail" aria-live="polite">
+                <Card NoPadding="true">
+                    @if (_isLoadingDetail)
+                    {
+                        <div class="ia-panel-placeholder">
+                            <p class="loading-state">Loading impact detail...</p>
+                        </div>
+                    }
+                    else if (_detailError is not null)
+                    {
+                        <div class="ia-panel-placeholder">
+                            <div class="notification notification-error" role="alert">@_detailError</div>
+                        </div>
+                    }
+                    else if (_detail is null)
+                    {
+                        <div class="ia-panel-placeholder">
+                            <EmptyState Title="Select a requirement"
+                                        Description="Click any requirement in the list to view its impact analysis and regression recommendation." />
+                        </div>
+                    }
+                    else
+                    {
+                        var reqLabel = ReqLabel(_detail.RequirementId);
+                        <div class="impact-detail-content">
+                            <div class="impact-detail-header">
+                                <span class="artifact-display-label">@reqLabel</span>
+                                <span class="badge badge-requirement">Requirement</span>
+                                <StatusChip Status="@(_detail.RiskLevel.ToLower() switch { "high" => "critical", "medium" => "warning", _ => "healthy" })"
+                                            Label="@RiskLabel(_detail.RiskLevel)" />
+                            </div>
+                            <h2 class="impact-detail-title">@_detail.RequirementTitle</h2>
+                            @if (!string.IsNullOrWhiteSpace(_detail.RequirementDescription))
+                            {
+                                <p class="impact-detail-desc">@_detail.RequirementDescription</p>
+                            }
+
+                            <div class="metric-grid-3" aria-label="Impact metrics">
+                                <MetricCard Value="@_detail.TotalLinkedTests.ToString()"
+                                            Label="Linked Tests"
+                                            Variant="@(_detail.TotalLinkedTests > 0 ? "success" : "danger")" />
+                                <MetricCard Value="@_detail.AcceptedTests.ToString()"
+                                            Label="Accepted Tests"
+                                            Variant="success" />
+                                <MetricCard Value="@_detail.MissingCoverage.ToString()"
+                                            Label="Missing Coverage"
+                                            Variant="@(_detail.MissingCoverage > 0 ? "danger" : null)" />
+                            </div>
+
+                            <div class="impact-regression-section">
+                                <SectionHeader Title="Regression Recommendation"
+                                               Description="Deterministic — no AI involved" />
+                                @if (_detail.RegressionItems.Count == 0)
+                                {
+                                    <div class="impact-regression-empty">
+                                        <StatusChip Status="critical" Label="High Risk" />
+                                        <p>No tests are linked to this requirement.</p>
+                                        <p>Manual testing is required before accepting any change to this requirement.</p>
+                                        <a href="/traceability" class="btn-primary">Go to Traceability &amp; Coverage to add tests</a>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <ul class="impact-regression-list" aria-label="Tests to run for regression">
+                                        @foreach (var item in _detail.RegressionItems)
+                                        {
+                                            var testLabel = TestLabel(item.TestId);
+                                            <li class="impact-regression-item">
+                                                <div class="impact-regression-item-header">
+                                                    <span class="impact-check" aria-hidden="true">✓</span>
+                                                    <span class="artifact-display-label">@testLabel</span>
+                                                    <span class="badge badge-test">Test</span>
+                                                    <strong>@item.TestTitle</strong>
+                                                </div>
+                                                <p class="impact-regression-reason">@item.Reason</p>
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            </div>
+                        </div>
+                    }
+                </Card>
             </section>
+
         </div>
     }
+
 </div>
 
 @code {

@@ -264,6 +264,7 @@ public class FeatureVisibilityDto
     [JsonPropertyName("dashboard")]            public bool Dashboard            { get; set; } = true;
     [JsonPropertyName("specificationReview")]  public bool SpecificationReview  { get; set; } = true;
     [JsonPropertyName("qaArtifactLibrary")]    public bool QaArtifactLibrary    { get; set; } = true;
+    [JsonPropertyName("sampleProjects")]       public bool SampleProjects       { get; set; } = true;
     [JsonPropertyName("createTestScenario")]   public bool CreateTestScenario   { get; set; } = true;
     [JsonPropertyName("legacyTraceabilityNavigationEnabled")] public bool LegacyTraceabilityNavigationEnabled { get; set; } = false;
     [JsonPropertyName("traceabilityCoverage")]    public bool TraceabilityCoverage    { get; set; } = true;
@@ -276,18 +277,19 @@ public class FeatureVisibilityDto
     [JsonPropertyName("specDrift")]            public bool SpecDrift            { get; set; } = true;
     [JsonPropertyName("implementationReview")]       public bool ImplementationReview       { get; set; } = true;
     [JsonPropertyName("implementationTraceability")] public bool ImplementationTraceability { get; set; } = true;
+    [JsonPropertyName("frontendQualityReview")]            public bool FrontendQualityReview           { get; set; } = true;
+    [JsonPropertyName("apiQualityReview")]                 public bool ApiQualityReview                 { get; set; } = true;
+    [JsonPropertyName("integrationQualityReview")]         public bool IntegrationQualityReview         { get; set; } = true;
     [JsonPropertyName("blazorWasmSecurityReview")]        public bool BlazorWasmSecurityReview        { get; set; } = true;
     [JsonPropertyName("blazorWasmPerformanceReview")]     public bool BlazorWasmPerformanceReview     { get; set; } = true;
     [JsonPropertyName("taskExplorer")]         public bool TaskExplorer         { get; set; } = true;
     [JsonPropertyName("aiChangeReview")]       public bool AiChangeReview       { get; set; } = true;
-    [JsonPropertyName("qaReadiness")]          public bool QaReadiness          { get; set; } = true;
     [JsonPropertyName("enableExtractionReview")] public bool EnableExtractionReview { get; set; } = false;
     [JsonPropertyName("enableArchitectureView")] public bool EnableArchitectureView { get; set; } = false;
     [JsonPropertyName("constitutionExplorer")]  public bool ConstitutionExplorer  { get; set; } = true;
+    [JsonPropertyName("dataModelExplorer")]     public bool DataModelExplorer     { get; set; } = true;
     [JsonPropertyName("planExplorer")]              public bool PlanExplorer             { get; set; } = true;
     [JsonPropertyName("artifactTraceability")]        public bool ArtifactTraceability       { get; set; } = true;
-    [JsonPropertyName("constitutionCompliance")]      public bool ConstitutionCompliance     { get; set; } = true;
-    [JsonPropertyName("qaAuditor")]                   public bool QaAuditor                  { get; set; } = true;
-    [JsonPropertyName("deliveryReadiness")]           public bool DeliveryReadiness          { get; set; } = true;
     [JsonPropertyName("adminSystemSettings")]         public bool AdminSystemSettings        { get; set; } = true;
+    [JsonPropertyName("qualityReview")]               public bool QualityReview              { get; set; } = true;
 }

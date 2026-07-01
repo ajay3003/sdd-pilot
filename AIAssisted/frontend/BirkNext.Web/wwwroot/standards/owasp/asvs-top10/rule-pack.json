@@ -1,0 +1,179 @@
+{
+  "standardId": "OWASP",
+  "standardName": "OWASP ASVS / Top 10",
+  "standardVersion": "asvs-top10",
+  "rulePackVersion": "1.0",
+  "lastUpdated": "2026-06-29",
+  "description": "Documentation coverage checks for OWASP Application Security Verification Standard (ASVS) and OWASP Top 10. Checks whether security requirements are identified and described in the project artifacts.",
+  "rules": [
+    {
+      "ruleId": "owasp-auth",
+      "category": "Authentication",
+      "title": "Authentication Requirements",
+      "description": "Authentication mechanisms must be documented and secured.",
+      "severity": "High",
+      "requiredSections": ["security", "authentication", "non-functional requirements"],
+      "requiredKeywords": [
+        "authentication",
+        "multi-factor authentication",
+        "mfa",
+        "2fa",
+        "two-factor",
+        "password policy"
+      ],
+      "optionalKeywords": [
+        "login",
+        "sign in",
+        "password",
+        "credentials"
+      ],
+      "evidenceHint": "Look for authentication requirements, MFA, password policies, or session handling.",
+      "recommendation": "Document authentication requirements including password policies, MFA, and session handling."
+    },
+    {
+      "ruleId": "owasp-authz",
+      "category": "Authorization",
+      "title": "Authorization & Access Control",
+      "description": "Authorization model and role-based access must be defined.",
+      "severity": "High",
+      "requiredSections": ["security", "authorization", "roles"],
+      "requiredKeywords": [
+        "authorization",
+        "role-based access",
+        "rbac",
+        "permission model",
+        "access control",
+        "least privilege"
+      ],
+      "optionalKeywords": [
+        "role",
+        "permission",
+        "user role",
+        "admin access"
+      ],
+      "evidenceHint": "Look for authorization model, RBAC, permission definitions, or access control rules.",
+      "recommendation": "Define authorization model, user roles, and access control rules."
+    },
+    {
+      "ruleId": "owasp-input-validation",
+      "category": "Input Handling",
+      "title": "Input Validation",
+      "description": "All user input must be validated and sanitized.",
+      "severity": "High",
+      "requiredSections": ["security", "input handling", "validation"],
+      "requiredKeywords": [
+        "input validation",
+        "sanitization",
+        "sanitise",
+        "injection prevention",
+        "xss prevention",
+        "sql injection",
+        "validate input"
+      ],
+      "optionalKeywords": [
+        "sanitize",
+        "validate user input",
+        "form input",
+        "user-supplied"
+      ],
+      "evidenceHint": "Look for input validation strategy, sanitization, XSS prevention, or injection prevention.",
+      "recommendation": "Document input validation strategy including server-side validation, sanitization, and injection prevention."
+    },
+    {
+      "ruleId": "owasp-logging",
+      "category": "Logging & Monitoring",
+      "title": "Security Audit Logging",
+      "description": "Security-relevant events must be logged for audit and incident response.",
+      "severity": "Medium",
+      "requiredSections": ["security", "logging", "monitoring"],
+      "requiredKeywords": [
+        "audit log",
+        "audit trail",
+        "security event",
+        "security log",
+        "access log"
+      ],
+      "optionalKeywords": [
+        "logging",
+        "log events",
+        "event log",
+        "monitoring"
+      ],
+      "evidenceHint": "Look for audit logging requirements, security event logging, or monitoring specifications.",
+      "recommendation": "Specify what security events must be logged, retention period, and alerting rules."
+    },
+    {
+      "ruleId": "owasp-error-handling",
+      "category": "Error Handling",
+      "title": "Secure Error Handling",
+      "description": "Error responses must not expose sensitive internal details.",
+      "severity": "Medium",
+      "requiredSections": ["security", "error handling"],
+      "requiredKeywords": [
+        "secure error handling",
+        "error disclosure",
+        "stack trace exposure",
+        "sensitive error information",
+        "error response format"
+      ],
+      "optionalKeywords": [
+        "error handling",
+        "exception handling",
+        "error message",
+        "error response"
+      ],
+      "evidenceHint": "Look for secure error handling requirements or restrictions on error information disclosure.",
+      "recommendation": "Document secure error handling to prevent leaking sensitive stack traces or system information."
+    },
+    {
+      "ruleId": "owasp-session",
+      "category": "Session Management",
+      "title": "Session & Token Management",
+      "description": "Session lifecycle and token security must be defined.",
+      "severity": "High",
+      "requiredSections": ["security", "session management", "authentication"],
+      "requiredKeywords": [
+        "session management",
+        "token expiry",
+        "jwt expiry",
+        "csrf protection",
+        "session timeout",
+        "session invalidation",
+        "refresh token"
+      ],
+      "optionalKeywords": [
+        "session",
+        "jwt",
+        "cookie",
+        "bearer token",
+        "token management"
+      ],
+      "evidenceHint": "Look for session lifecycle, token expiration, CSRF protection, or cookie security requirements.",
+      "recommendation": "Define session lifecycle, token expiration, CSRF protection, and secure cookie requirements."
+    },
+    {
+      "ruleId": "owasp-security-testing",
+      "category": "Security Testing",
+      "title": "Security Testing Requirements",
+      "description": "Security testing must be part of the quality process.",
+      "severity": "Medium",
+      "requiredSections": ["security", "testing", "quality"],
+      "requiredKeywords": [
+        "security testing",
+        "penetration testing",
+        "pen test",
+        "vulnerability scan",
+        "owasp zap",
+        "security review requirements"
+      ],
+      "optionalKeywords": [
+        "security check",
+        "security audit",
+        "security requirement",
+        "owasp"
+      ],
+      "evidenceHint": "Look for penetration testing scope, vulnerability scanning tools, or security acceptance criteria.",
+      "recommendation": "Include security testing requirements such as penetration testing scope, tools, and acceptance criteria."
+    }
+  ]
+}

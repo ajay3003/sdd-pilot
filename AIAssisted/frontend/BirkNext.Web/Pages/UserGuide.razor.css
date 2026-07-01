@@ -13,7 +13,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.25rem 0;
+    gap: 0.35rem 0.45rem;
     margin-bottom: 2rem;
     padding: 0.65rem 1rem;
     background: var(--clr-bg-card);
@@ -25,10 +25,11 @@
 .ug-toc-link {
     color: rgba(99, 102, 241, 0.85);
     text-decoration: none;
-    padding: 0.15rem 0.4rem;
+    padding: 0.18rem 0.45rem;
     border-radius: 0.25rem;
     transition: background 0.12s, color 0.12s;
     white-space: nowrap;
+    line-height: 1.35;
 }
 
 .ug-toc-link:hover {
@@ -37,10 +38,7 @@
 }
 
 .ug-toc-sep {
-    color: var(--clr-text-subtle);
-    opacity: 0.4;
-    padding: 0 0.1rem;
-    user-select: none;
+    display: none;
 }
 
 /* ── Section scaffolding ─────────────────────────────────────────────────── */

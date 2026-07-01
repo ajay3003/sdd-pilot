@@ -1,0 +1,619 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IDataModelAnalysisService AnalysisService
+
+@* ── Empty state ──────────────────────────────────────────────────────────────── *@
+@if (_document is null)
+{
+    <div class="dme-empty-state">
+        <div class="dme-empty-icon" aria-hidden="true">🗄️</div>
+        <h3 class="dme-empty-title">Data Model Explorer</h3>
+        <p class="dme-empty-desc">Parse and explore database entities, tables, relationships, constraints, indexes, and traceability from your data-model.md file.</p>
+
+        <div class="dme-input-area">
+            <div class="dme-input-header">
+                <span class="dme-input-label">data-model.md</span>
+                <span class="dme-input-hint">Supports .md and .txt</span>
+            </div>
+            <SpecificationImport
+                @ref="_importRef"
+                InputId="dme-file-input"
+                OnFileImported="OnFileImported"
+                OnFileRemoved="OnFileRemoved"
+                IsDisabled="false" />
+            <textarea class="dme-textarea"
+                      placeholder="Or paste data-model.md content here…"
+                      rows="12"
+                      @bind="_localText"
+                      @bind:event="oninput"></textarea>
+            @if (!string.IsNullOrWhiteSpace(_localText))
+            {
+                <div class="dme-input-footer">
+                    <span class="dme-input-stat">@(_localText.Split('\n').Length) lines · @_localText.Length chars</span>
+                    <button class="dme-clear-btn" @onclick="ClearInput">Clear</button>
+                </div>
+            }
+        </div>
+
+        <button class="dme-build-btn" disabled="@(!CanBuild)" @onclick="Build">
+            Build Data Model Explorer
+        </button>
+    </div>
+}
+else
+{
+    @* ── Explorer header ──────────────────────────────────────────────────────── *@
+    <div class="dme-header">
+        <div class="dme-header-left">
+            <span class="dme-header-title">@_document.Title</span>
+            @if (_document.ErrorCount > 0)
+            {
+                <span class="dme-header-badge dme-badge-warn">@_document.ErrorCount issue@(_document.ErrorCount != 1 ? "s" : "")</span>
+            }
+        </div>
+        <div class="dme-header-right">
+            <div class="dme-tab-bar" role="tablist">
+                <button class="dme-tab @(_activeTab == "overview" ? "is-active" : "")"
+                        role="tab" aria-selected="@(_activeTab == "overview")"
+                        @onclick='() => SetTab("overview")'>Overview</button>
+                <button class="dme-tab @(_activeTab == "design" ? "is-active" : "")"
+                        role="tab" aria-selected="@(_activeTab == "design")"
+                        @onclick='() => SetTab("design")'>
+                    DB Design @if (_document.EntityCount > 0) { <span class="dme-tab-count">@_document.EntityCount</span> }
+                </button>
+                <button class="dme-tab @(_activeTab == "relationships" ? "is-active" : "")"
+                        role="tab" aria-selected="@(_activeTab == "relationships")"
+                        @onclick='() => SetTab("relationships")'>
+                    Relationships @if (_document.RelationshipCount > 0) { <span class="dme-tab-count">@_document.RelationshipCount</span> }
+                </button>
+                <button class="dme-tab @(_activeTab == "indexes" ? "is-active" : "")"
+                        role="tab" aria-selected="@(_activeTab == "indexes")"
+                        @onclick='() => SetTab("indexes")'>
+                    Indexes &amp; Constraints @if (_document.IndexCount > 0) { <span class="dme-tab-count">@_document.IndexCount</span> }
+                </button>
+                <button class="dme-tab @(_activeTab == "traceability" ? "is-active" : "")"
+                        role="tab" aria-selected="@(_activeTab == "traceability")"
+                        @onclick='() => SetTab("traceability")'>Traceability</button>
+                <button class="dme-tab @(_activeTab == "findings" ? "is-active" : "")"
+                        role="tab" aria-selected="@(_activeTab == "findings")"
+                        @onclick='() => SetTab("findings")'>
+                    Findings @if (_document.FindingCount > 0) { <span class="dme-tab-count @(_document.ErrorCount > 0 ? "dme-tab-count-warn" : "")">@_document.FindingCount</span> }
+                </button>
+            </div>
+            <button class="dme-reset-btn" @onclick="Reset">← New Model</button>
+        </div>
+    </div>
+
+    @* ── Search bar (entity/relationship/index tabs) ───────────────────────────── *@
+    @if (_activeTab is "relationships" or "indexes")
+    {
+        <div class="dme-search-bar">
+            <input type="search" class="dme-search"
+                   placeholder="@SearchPlaceholder"
+                   value="@_searchQuery"
+                   @oninput="HandleSearch"
+                   aria-label="Search" />
+            @if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                <button class="dme-search-clear" @onclick="ClearSearch" title="Clear">×</button>
+                <span class="dme-search-count">@SearchResultCount result@(SearchResultCount != 1 ? "s" : "")</span>
+            }
+        </div>
+    }
+
+    @* ── Tab body ──────────────────────────────────────────────────────────────── *@
+    <div class="dme-tab-body">
+
+        @* ── Overview ────────────────────────────────────────────────────────── *@
+        @if (_activeTab == "overview")
+        {
+            <div class="dme-overview">
+                <div class="dme-stat-row">
+                    <div class="dme-stat">
+                        <span class="dme-stat-value">@_document.EntityCount</span>
+                        <span class="dme-stat-label">Entities / Tables</span>
+                    </div>
+                    <div class="dme-stat">
+                        <span class="dme-stat-value">@_document.ColumnCount</span>
+                        <span class="dme-stat-label">Columns</span>
+                    </div>
+                    <div class="dme-stat">
+                        <span class="dme-stat-value">@_document.RelationshipCount</span>
+                        <span class="dme-stat-label">Relationships</span>
+                    </div>
+                    <div class="dme-stat">
+                        <span class="dme-stat-value">@_document.IndexCount</span>
+                        <span class="dme-stat-label">Indexes</span>
+                    </div>
+                    <div class="dme-stat @(_document.ErrorCount > 0 ? "dme-stat-warn" : "")">
+                        <span class="dme-stat-value">@_document.FindingCount</span>
+                        <span class="dme-stat-label">Findings</span>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_document.Overview))
+                {
+                    <div class="dme-overview-text">
+                        <div class="dme-section-label">Overview</div>
+                        <p>@_document.Overview</p>
+                    </div>
+                }
+
+                @if (_document.Findings.Count > 0)
+                {
+                    <div class="dme-findings-summary">
+                        <div class="dme-section-label">Top Findings</div>
+                        @foreach (var f in _document.Findings.OrderBy(f => f.Severity).Take(5))
+                        {
+                            <div class="dme-finding-row">
+                                <span class="dme-sev dme-sev-@f.Severity.ToString().ToLowerInvariant()">@f.Severity</span>
+                                <span class="dme-finding-cat">@f.Category</span>
+                                <span class="dme-finding-desc">
+                                    @if (!string.IsNullOrEmpty(f.EntityName)) { <strong>@f.EntityName:</strong> @(string.Empty) }
+                                    @f.Description
+                                </span>
+                            </div>
+                        }
+                        @if (_document.Findings.Count > 5)
+                        {
+                            <button class="dme-show-all-btn" @onclick='() => SetTab("findings")'>
+                                View all @_document.FindingCount findings →
+                            </button>
+                        }
+                    </div>
+                }
+
+                @if (_document.Enums.Count > 0)
+                {
+                    <div class="dme-overview-enums">
+                        <div class="dme-section-label">Enums (@_document.Enums.Count)</div>
+                        <div class="dme-enum-chips">
+                            @foreach (var e in _document.Enums)
+                            {
+                                <div class="dme-enum-chip" title="@string.Join(", ", e.Values)">
+                                    <strong>@e.Name</strong>
+                                    <span class="dme-enum-count">@e.Values.Count values</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        @* ── DB Design ────────────────────────────────────────────────────────── *@
+        @if (_activeTab == "design")
+        {
+            @if (_document.Entities.Count == 0)
+            {
+                <div class="dme-empty-tab">No entities or tables to display.</div>
+            }
+            else
+            {
+                <div class="dme-design-canvas">
+                    <div class="dme-design-legend">
+                        <span class="dme-db-badge dme-db-pk">PK</span> <span>Primary Key</span>
+                        <span class="dme-db-badge dme-db-fk">FK</span> <span>Foreign Key</span>
+                        <span class="dme-db-badge dme-db-uq">UQ</span> <span>Unique</span>
+                        <span class="dme-db-badge dme-db-idx">IDX</span> <span>Indexed</span>
+                        <span class="dme-db-badge dme-db-req">REQ</span> <span>Required</span>
+                        <span class="dme-db-badge dme-db-sens">SENS</span> <span>Sensitive</span>
+                    </div>
+
+                    <div class="dme-design-grid">
+                        @foreach (var entity in _document.Entities)
+                        {
+                            var eFindings  = GetEntityFindings(entity.Name);
+                            var hasWarn    = eFindings.Any(f => f.Severity == DataModelSeverity.Warning);
+                            var hasError   = eFindings.Any(f => f.Severity is DataModelSeverity.Error or DataModelSeverity.Critical);
+                            var cardMod    = hasError ? "has-error" : hasWarn ? "has-warning" : "";
+                            var entityRels = GetEntityRelationships(entity.Name);
+
+                            <div class="dme-dc @cardMod">
+                                <div class="dme-dc-header">
+                                    <span class="dme-dc-kind">@(entity.IsTable ? "TABLE" : "ENTITY")</span>
+                                    <span class="dme-dc-name">@entity.Name</span>
+                                    @if (eFindings.Count > 0)
+                                    {
+                                        <span class="dme-dc-issue-count @(hasError ? "is-error" : "is-warn")">@eFindings.Count</span>
+                                    }
+                                </div>
+
+                                @if (entity.Columns.Count > 0)
+                                {
+                                    <div class="dme-dc-cols">
+                                        @foreach (var col in entity.Columns)
+                                        {
+                                            var indexed = IsColumnIndexed(entity, col);
+                                            var isSens  = AnalysisService.IsSensitiveColumn(col);
+                                            <div class="dme-dc-col @(col.IsPrimaryKey ? "is-pk" : col.IsForeignKey ? "is-fk" : "")">
+                                                <span class="dme-dc-col-name">@col.Name</span>
+                                                <div class="dme-dc-badges">
+                                                    @if (col.IsPrimaryKey)                           { <span class="dme-db-badge dme-db-pk">PK</span> }
+                                                    @if (col.IsForeignKey)                           { <span class="dme-db-badge dme-db-fk">FK</span> }
+                                                    @if (col.IsUnique && !col.IsPrimaryKey)          { <span class="dme-db-badge dme-db-uq">UQ</span> }
+                                                    @if (indexed && !col.IsPrimaryKey)               { <span class="dme-db-badge dme-db-idx">IDX</span> }
+                                                    @if (col.Nullable == false && !col.IsPrimaryKey) { <span class="dme-db-badge dme-db-req">REQ</span> }
+                                                    @if (isSens)                                     { <span class="dme-db-badge dme-db-sens">SENS</span> }
+                                                </div>
+                                                @if (!string.IsNullOrEmpty(col.Type))
+                                                {
+                                                    <span class="dme-dc-col-type">@col.Type</span>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="dme-dc-no-cols">no columns defined</div>
+                                }
+
+                                @if (entity.TraceabilityIds.Count > 0 || entityRels.Count > 0 || eFindings.Count > 0)
+                                {
+                                    <div class="dme-dc-footer">
+                                        @if (entity.TraceabilityIds.Count > 0)
+                                        {
+                                            <span class="dme-dc-fc">@entity.TraceabilityIds.Count req</span>
+                                        }
+                                        @if (entityRels.Count > 0)
+                                        {
+                                            <span class="dme-dc-fc">@entityRels.Count rel@(entityRels.Count != 1 ? "s" : "")</span>
+                                        }
+                                        @if (eFindings.Count > 0)
+                                        {
+                                            <span class="dme-dc-fc dme-dc-fc-issues @(hasError ? "is-error" : "is-warn")">
+                                                ⚠ @eFindings.Count issue@(eFindings.Count != 1 ? "s" : "")
+                                            </span>
+                                        }
+                                    </div>
+                                }
+
+                                @if (eFindings.Count > 0)
+                                {
+                                    <div class="dme-dc-issue-list">
+                                        @foreach (var f in eFindings.OrderByDescending(f => f.Severity))
+                                        {
+                                            <div class="dme-dc-issue dme-sev-@f.Severity.ToString().ToLowerInvariant()">
+                                                @f.Description
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @if (_document.Relationships.Count > 0)
+                    {
+                        <div class="dme-design-rels">
+                            <div class="dme-section-label">Relationships (@_document.RelationshipCount)</div>
+                            <div class="dme-rel-list" role="list">
+                                @foreach (var rel in _document.Relationships)
+                                {
+                                    <div class="dme-rel-row" role="listitem">
+                                        <div class="dme-rel-source">
+                                            <span class="dme-rel-entity">@rel.SourceEntity</span>
+                                            @if (!string.IsNullOrEmpty(rel.SourceColumn))
+                                            { <span class="dme-rel-column">.@rel.SourceColumn</span> }
+                                        </div>
+                                        <span class="dme-rel-arrow" aria-hidden="true">→</span>
+                                        <div class="dme-rel-target">
+                                            <span class="dme-rel-entity">@rel.TargetEntity</span>
+                                            @if (!string.IsNullOrEmpty(rel.TargetColumn))
+                                            { <span class="dme-rel-column">.@rel.TargetColumn</span> }
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(rel.RelationshipType))
+                                        {
+                                            <span class="dme-rel-type">@rel.RelationshipType</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+
+        @* ── Relationships ────────────────────────────────────────────────────── *@
+        @if (_activeTab == "relationships")
+        {
+            var visible = AnalysisService.FilterRelationships(_document.Relationships, _searchQuery).ToList();
+
+            @if (visible.Count == 0)
+            {
+                <div class="dme-empty-tab">
+                    @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                    { <span>No relationships match "<strong>@_searchQuery</strong>"</span> }
+                    else
+                    { <span>No relationships defined in the document.</span> }
+                </div>
+            }
+            else
+            {
+                <div class="dme-rel-list" role="list">
+                    @foreach (var rel in visible)
+                    {
+                        <div class="dme-rel-row" role="listitem">
+                            <div class="dme-rel-source">
+                                <span class="dme-rel-entity">@rel.SourceEntity</span>
+                                @if (!string.IsNullOrEmpty(rel.SourceColumn))
+                                { <span class="dme-rel-column">.@rel.SourceColumn</span> }
+                            </div>
+                            <span class="dme-rel-arrow" aria-hidden="true">→</span>
+                            <div class="dme-rel-target">
+                                <span class="dme-rel-entity">@rel.TargetEntity</span>
+                                @if (!string.IsNullOrEmpty(rel.TargetColumn))
+                                { <span class="dme-rel-column">.@rel.TargetColumn</span> }
+                            </div>
+                            @if (!string.IsNullOrEmpty(rel.RelationshipType))
+                            {
+                                <span class="dme-rel-type">@rel.RelationshipType</span>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+
+        @* ── Indexes & Constraints ────────────────────────────────────────────── *@
+        @if (_activeTab == "indexes")
+        {
+            var visibleIdx = AnalysisService.FilterIndexes(_document.Indexes, _searchQuery).ToList();
+
+            <div class="dme-idx-section">
+                <div class="dme-section-label">Indexes (@_document.Indexes.Count)</div>
+                @if (visibleIdx.Count == 0)
+                {
+                    <div class="dme-empty-tab" style="padding:0.5rem 0">
+                        @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                        { <span>No indexes match "<strong>@_searchQuery</strong>"</span> }
+                        else
+                        { <span>No indexes defined.</span> }
+                    </div>
+                }
+                else
+                {
+                    <div class="dme-idx-list" role="list">
+                        @foreach (var idx in visibleIdx)
+                        {
+                            <div class="dme-idx-row" role="listitem">
+                                <span class="dme-idx-name">@idx.Name</span>
+                                @if (!string.IsNullOrEmpty(idx.EntityName))
+                                { <span class="dme-idx-entity">@idx.EntityName</span> }
+                                @if (idx.Columns.Count > 0)
+                                { <span class="dme-idx-cols">on @string.Join(", ", idx.Columns)</span> }
+                                @if (idx.IsUnique)
+                                { <span class="dme-idx-unique">UNIQUE</span> }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            @if (_document.Constraints.Count > 0)
+            {
+                <div class="dme-idx-section" style="margin-top:1.5rem">
+                    <div class="dme-section-label">Constraints (@_document.Constraints.Count)</div>
+                    <div class="dme-idx-list" role="list">
+                        @foreach (var con in _document.Constraints)
+                        {
+                            <div class="dme-idx-row" role="listitem">
+                                <span class="dme-con-type dme-con-@con.ConstraintType.ToLowerInvariant()">@con.ConstraintType</span>
+                                <span class="dme-idx-name">@con.Name</span>
+                                @if (!string.IsNullOrEmpty(con.EntityName))
+                                { <span class="dme-idx-entity">@con.EntityName</span> }
+                                @if (!string.IsNullOrEmpty(con.Definition))
+                                { <span class="dme-idx-cols">@con.Definition</span> }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+
+        @* ── Traceability ─────────────────────────────────────────────────────── *@
+        @if (_activeTab == "traceability")
+        {
+            var linked   = _document.Entities.Where(e => e.TraceabilityIds.Count > 0).ToList();
+            var unlinked = _document.Entities.Where(e => e.TraceabilityIds.Count == 0).ToList();
+            var allIds   = _document.Entities.SelectMany(e => e.TraceabilityIds)
+                                             .Distinct(StringComparer.OrdinalIgnoreCase)
+                                             .OrderBy(x => x)
+                                             .ToList();
+
+            <div class="dme-trace-summary">
+                <div class="dme-stat-row">
+                    <div class="dme-stat">
+                        <span class="dme-stat-value">@allIds.Count</span>
+                        <span class="dme-stat-label">Unique Requirement IDs</span>
+                    </div>
+                    <div class="dme-stat @(linked.Count < _document.EntityCount ? "dme-stat-warn" : "")">
+                        <span class="dme-stat-value">@linked.Count</span>
+                        <span class="dme-stat-label">Entities Linked</span>
+                    </div>
+                    <div class="dme-stat @(unlinked.Count > 0 ? "dme-stat-warn" : "")">
+                        <span class="dme-stat-value">@unlinked.Count</span>
+                        <span class="dme-stat-label">Entities Without Links</span>
+                    </div>
+                </div>
+            </div>
+
+            @if (linked.Count > 0)
+            {
+                <div class="dme-section-label" style="margin-top:1.5rem">Linked Entities</div>
+                @foreach (var entity in linked)
+                {
+                    <div class="dme-trace-entity-row">
+                        <span class="dme-entity-kind-sm">@(entity.IsTable ? "TABLE" : "ENTITY")</span>
+                        <span class="dme-entity-name">@entity.Name</span>
+                        <div class="dme-trace-chips">
+                            @foreach (var id in entity.TraceabilityIds)
+                            {
+                                <span class="dme-trace-chip">@id</span>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+
+            @if (unlinked.Count > 0)
+            {
+                <div class="dme-section-label dme-section-label-warn" style="margin-top:1.5rem">
+                    Entities Without Requirement Links (@unlinked.Count)
+                </div>
+                @foreach (var entity in unlinked)
+                {
+                    <div class="dme-trace-entity-row dme-trace-unlinked">
+                        <span class="dme-entity-kind-sm">@(entity.IsTable ? "TABLE" : "ENTITY")</span>
+                        <span class="dme-entity-name">@entity.Name</span>
+                        <span class="dme-trace-missing">no traceability</span>
+                    </div>
+                }
+            }
+        }
+
+        @* ── Findings ─────────────────────────────────────────────────────────── *@
+        @if (_activeTab == "findings")
+        {
+            @if (_document.Findings.Count == 0)
+            {
+                <div class="dme-empty-tab">
+                    <span>✓ No findings — the data model looks clean.</span>
+                </div>
+            }
+            else
+            {
+                @foreach (var group in _document.Findings
+                    .GroupBy(f => f.Category)
+                    .OrderBy(g => g.Key))
+                {
+                    <div class="dme-finding-group">
+                        <div class="dme-section-label">@group.Key</div>
+                        @foreach (var f in group.OrderBy(f => f.Severity))
+                        {
+                            <div class="dme-finding-row">
+                                <span class="dme-sev dme-sev-@f.Severity.ToString().ToLowerInvariant()">@f.Severity</span>
+                                @if (!string.IsNullOrEmpty(f.EntityName))
+                                {
+                                    <span class="dme-finding-entity">@f.EntityName</span>
+                                }
+                                <span class="dme-finding-desc">@f.Description</span>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        }
+
+    </div>
+}
+
+@code {
+    [Parameter] public string              DataModelText { get; set; } = string.Empty;
+    [Parameter] public string?             InitialView   { get; set; }
+    [Parameter] public EventCallback<string> OnBuilt     { get; set; }
+
+    private DataModelDocument? _document;
+    private string             _localText   = string.Empty;
+    private string             _activeTab   = "overview";
+    private string             _searchQuery = string.Empty;
+    private HashSet<string>    _expanded    = [];
+    private SpecificationImport? _importRef;
+
+    private bool CanBuild => !string.IsNullOrWhiteSpace(_localText);
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrWhiteSpace(DataModelText) && _document is null)
+        {
+            _localText = DataModelText;
+            Build();
+        }
+        if (InitialView is not null && _document is not null)
+            _activeTab = InitialView;
+    }
+
+    // ── Actions ──────────────────────────────────────────────────────────────
+
+    private void Build()
+    {
+        if (string.IsNullOrWhiteSpace(_localText)) return;
+        _document    = AnalysisService.Parse(_localText);
+        _activeTab   = InitialView ?? "overview";
+        _searchQuery = string.Empty;
+        _expanded    = [];
+        _ = OnBuilt.InvokeAsync(_localText);
+    }
+
+    private void Reset()
+    {
+        _document    = null;
+        _localText   = string.Empty;
+        _activeTab   = "overview";
+        _searchQuery = string.Empty;
+        _expanded    = [];
+        _importRef?.Reset();
+    }
+
+    private void ClearInput()
+    {
+        _localText = string.Empty;
+        _importRef?.Reset();
+    }
+
+    private void SetTab(string tab)
+    {
+        _activeTab   = tab;
+        _searchQuery = string.Empty;
+    }
+
+    private void ToggleExpanded(string id)
+    {
+        if (!_expanded.Add(id))
+            _expanded.Remove(id);
+    }
+
+    private void HandleSearch(ChangeEventArgs e) =>
+        _searchQuery = e.Value?.ToString() ?? string.Empty;
+
+    private void ClearSearch() => _searchQuery = string.Empty;
+
+    private void OnFileImported(string text) => _localText = text;
+    private void OnFileRemoved()             => _localText = string.Empty;
+
+    // ── Computed ─────────────────────────────────────────────────────────────
+
+    private string SearchPlaceholder => _activeTab switch
+    {
+        "relationships" => "Search source, target, type…",
+        "indexes"       => "Search index names, columns…",
+        _               => "Search…",
+    };
+
+    private int SearchResultCount => _activeTab switch
+    {
+        "relationships" => _document is null ? 0 : AnalysisService.FilterRelationships(_document.Relationships, _searchQuery).Count(),
+        "indexes"       => _document is null ? 0 : AnalysisService.FilterIndexes(_document.Indexes, _searchQuery).Count(),
+        _               => 0,
+    };
+
+    private List<DataModelFinding> GetEntityFindings(string entityName) =>
+        _document?.Findings
+            .Where(f => f.EntityName?.Equals(entityName, StringComparison.OrdinalIgnoreCase) == true)
+            .ToList() ?? [];
+
+    private bool IsColumnIndexed(DataEntity entity, DataColumn col) =>
+        _document?.Indexes.Any(idx =>
+            idx.EntityName.Equals(entity.Name, StringComparison.OrdinalIgnoreCase) &&
+            idx.Columns.Any(c => c.Equals(col.Name, StringComparison.OrdinalIgnoreCase))) == true;
+
+    private List<DataRelationship> GetEntityRelationships(string entityName) =>
+        _document?.Relationships.Where(r =>
+            r.SourceEntity.Equals(entityName, StringComparison.OrdinalIgnoreCase) ||
+            r.TargetEntity.Equals(entityName, StringComparison.OrdinalIgnoreCase))
+        .ToList() ?? [];
+}

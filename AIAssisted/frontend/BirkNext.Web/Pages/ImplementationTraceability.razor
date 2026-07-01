@@ -5,77 +5,86 @@
 
 <PageTitle>Implementation Traceability</PageTitle>
 
-<div>
+<div class="it-page">
 
     <PageHeader Title="Implementation Traceability"
                 Description="Retrieve deterministic implementation evidence from Azure DevOps: Work Item → Pull Request → Commit → Changed Files." />
 
-    @* ── Status banner ─────────────────────────────────────────────────── *@
+    @* ── ADO status banner ─────────────────────────────────────────────────── *@
     @if (_status is not null)
     {
-        <div role="status">
-            <span aria-hidden="true">@(_status.UsingMock ? "ℹ" : "✓")</span>
-            <span>@_status.Message</span>
+        <div class="notification @(_status.UsingMock ? "notification-warning" : "notification-success")"
+             role="status">
+            @_status.Message
         </div>
     }
 
-    @* ── Input panel ───────────────────────────────────────────────────── *@
-    <div>
-        <div>
-            <span>Load Evidence from Azure DevOps</span>
+    @* ── Input card ────────────────────────────────────────────────────────── *@
+    <div class="it-input-card">
+        <div class="it-input-header">
+            <h2 class="it-input-title">Load Evidence from Azure DevOps</h2>
             @if (_report is not null)
             {
-                <button @onclick="ToggleInputPanel">
-                    @(_inputExpanded ? "▾ Collapse" : "▸ Expand")
+                <button class="it-collapse-btn"
+                        @onclick="ToggleInputPanel"
+                        aria-expanded="@_inputExpanded">
+                    @(_inputExpanded ? "Collapse" : "Expand")
                 </button>
             }
         </div>
 
         @if (_inputExpanded)
         {
-            <div>
+            <div class="it-form-body">
 
-                <div>
-                    <label for="it-workitem-ids">
+                <div class="form-field">
+                    <label class="it-form-label" for="it-workitem-ids">
                         Work Item IDs
-                        <span>(comma-separated)</span>
+                        <span class="form-optional">(comma-separated)</span>
                     </label>
                     <input id="it-workitem-ids"
+                           class="form-control"
                            type="text"
                            placeholder="e.g. 1234, 5678, 9012"
                            @bind="_workItemInput"
                            @bind:event="oninput" />
                     @if (_fetchAttempted && string.IsNullOrWhiteSpace(_workItemInput))
                     {
-                        <p role="alert">Enter at least one work item ID.</p>
+                        <p class="form-support-ref it-validation-msg" role="alert">
+                            Enter at least one work item ID.
+                        </p>
                     }
                 </div>
 
-                <div>
-                    <label for="it-repo-id">
-                        Repository ID
-                        <span>(optional — uses default from config)</span>
-                    </label>
-                    <input id="it-repo-id"
-                           type="text"
-                           placeholder="e.g. my-repo or GUID"
-                           @bind="_repositoryId" />
-                </div>
+                <div class="it-form-row">
+                    <div class="form-field">
+                        <label class="it-form-label" for="it-repo-id">
+                            Repository ID
+                            <span class="form-optional">(optional — uses default from config)</span>
+                        </label>
+                        <input id="it-repo-id"
+                               class="form-control"
+                               type="text"
+                               placeholder="e.g. my-repo or GUID"
+                               @bind="_repositoryId" />
+                    </div>
 
-                <div>
-                    <label for="it-branch">
-                        Branch
-                        <span>(optional)</span>
-                    </label>
-                    <input id="it-branch"
-                           type="text"
-                           placeholder="e.g. main"
-                           @bind="_branch" />
+                    <div class="form-field">
+                        <label class="it-form-label" for="it-branch">
+                            Branch
+                            <span class="form-optional">(optional)</span>
+                        </label>
+                        <input id="it-branch"
+                               class="form-control"
+                               type="text"
+                               placeholder="e.g. main"
+                               @bind="_branch" />
+                    </div>
                 </div>
 
             </div>
 
-            <div>
+            <div class="it-form-actions">
                 <PrimaryButton OnClick="FetchEvidence" Disabled="@_loading">
                     @if (_loading) { <span aria-hidden="true">⟳</span> }
                     Load from Azure DevOps
@@ -88,355 +97,371 @@
 
             @if (_errorMessage is not null)
             {
-                <div role="alert">
-                    <span aria-hidden="true">✗</span>
-                    <span>@_errorMessage</span>
+                <div class="notification notification-error" role="alert">
+                    @_errorMessage
                 </div>
             }
         }
     </div>
 
-    @* ── Report ────────────────────────────────────────────────────────── *@
+    @* ── Report ────────────────────────────────────────────────────────────── *@
     @if (_report is not null)
     {
         var report = _report;
 
-        @* ── KPI row ── *@
-        <div class="metric-grid-4" role="region" aria-label="Evidence summary">
-            <MetricCard Value="@report.Tasks.Count.ToString()"
-                        Label="Work Items"
-                        Sublabel="@report.Source" />
-            <MetricCard Value="@report.Tasks.Sum(t => t.PullRequests.Count).ToString()"
-                        Label="Pull Requests"
-                        Sublabel="linked"
-                        Variant="@(report.Tasks.Sum(t => t.PullRequests.Count) > 0 ? "success" : null)" />
-            <MetricCard Value="@AllChangedFiles(report).Count().ToString()"
-                        Label="Changed Files"
-                        Sublabel="across all PRs" />
-            <MetricCard Value="@GapCount(report).ToString()"
-                        Label="Gaps"
-                        Sublabel="missing evidence"
-                        Variant="@(GapCount(report) > 0 ? "warning" : "success")" />
-        </div>
+        <div class="it-report">
 
-        @* ── Tab bar ── *@
-        <div role="tablist">
-            <button @onclick='() => _tab = "overview"'  role="tab" aria-selected="@(_tab == "overview")">Overview</button>
-            <button @onclick='() => _tab = "tasks"'     role="tab" aria-selected="@(_tab == "tasks")">
-                Task → PRs (@report.Tasks.Count)
-            </button>
-            <button @onclick='() => _tab = "files"'     role="tab" aria-selected="@(_tab == "files")">
-                PR → Files (@AllChangedFiles(report).Count())
-            </button>
-            <button @onclick='() => _tab = "unmapped"'  role="tab" aria-selected="@(_tab == "unmapped")">
-                Unmapped Changes (@report.UnmappedChanges.Count)
-            </button>
-            <button @onclick='() => _tab = "tests"'     role="tab" aria-selected="@(_tab == "tests")">
-                Test Evidence (@report.TestEvidence.Count)
-            </button>
-            <button @onclick='() => _tab = "gaps"'      role="tab" aria-selected="@(_tab == "gaps")">
-                Gaps
-                @if (GapCount(report) > 0)
-                { <span>(@GapCount(report))</span> }
-            </button>
-        </div>
+            @* ── KPI row ── *@
+            <div class="metric-grid-4" role="region" aria-label="Evidence summary">
+                <MetricCard Value="@report.Tasks.Count.ToString()"
+                            Label="Work Items"
+                            Sublabel="@report.Source" />
+                <MetricCard Value="@report.Tasks.Sum(t => t.PullRequests.Count).ToString()"
+                            Label="Pull Requests"
+                            Sublabel="linked"
+                            Variant="@(report.Tasks.Sum(t => t.PullRequests.Count) > 0 ? "success" : null)" />
+                <MetricCard Value="@AllChangedFiles(report).Count().ToString()"
+                            Label="Changed Files"
+                            Sublabel="across all PRs" />
+                <MetricCard Value="@GapCount(report).ToString()"
+                            Label="Gaps"
+                            Sublabel="missing evidence"
+                            Variant="@(GapCount(report) > 0 ? "warning" : "success")" />
+            </div>
 
-        <div>
+            @* ── Tab bar ── *@
+            <div class="tab-bar" role="tablist">
+                <button class="tab-btn @(_tab == "overview"  ? "is-active" : "")"
+                        @onclick='() => _tab = "overview"'
+                        role="tab" aria-selected="@(_tab == "overview")">
+                    Overview
+                </button>
+                <button class="tab-btn @(_tab == "tasks" ? "is-active" : "")"
+                        @onclick='() => _tab = "tasks"'
+                        role="tab" aria-selected="@(_tab == "tasks")">
+                    Task → PRs (@report.Tasks.Count)
+                </button>
+                <button class="tab-btn @(_tab == "files" ? "is-active" : "")"
+                        @onclick='() => _tab = "files"'
+                        role="tab" aria-selected="@(_tab == "files")">
+                    PR → Files (@AllChangedFiles(report).Count())
+                </button>
+                <button class="tab-btn @(_tab == "unmapped" ? "is-active" : "")"
+                        @onclick='() => _tab = "unmapped"'
+                        role="tab" aria-selected="@(_tab == "unmapped")">
+                    Unmapped (@report.UnmappedChanges.Count)
+                </button>
+                <button class="tab-btn @(_tab == "tests" ? "is-active" : "")"
+                        @onclick='() => _tab = "tests"'
+                        role="tab" aria-selected="@(_tab == "tests")">
+                    Test Evidence (@report.TestEvidence.Count)
+                </button>
+                <button class="tab-btn @(_tab == "gaps" ? "is-active" : "")"
+                        @onclick='() => _tab = "gaps"'
+                        role="tab" aria-selected="@(_tab == "gaps")">
+                    Gaps@(GapCount(report) > 0 ? $" ({GapCount(report)})" : "")
+                </button>
+            </div>
 
-            @* ── Overview ── *@
-            @if (_tab == "overview")
-            {
-                <div>
-                    <div>
-                        <p>Evidence loaded from <strong>@report.Source</strong>.</p>
-                        @if (!string.IsNullOrEmpty(report.StatusMessage))
+            @* ── Tab panels ── *@
+            <div class="it-tab-content">
+
+                @* ── Overview ── *@
+                @if (_tab == "overview")
+                {
+                    <div class="it-overview">
+                        <p class="it-section-note">
+                            Evidence loaded from <strong>@report.Source</strong>.
+                            @if (!string.IsNullOrEmpty(report.StatusMessage))
+                            { <span>@report.StatusMessage</span> }
+                        </p>
+
+                        @foreach (var task in report.Tasks)
                         {
-                            <p>@report.StatusMessage</p>
-                        }
-                    </div>
-
-                    @foreach (var task in report.Tasks)
-                    {
-                        <div>
-                            <div>
-                                <span>@task.ExternalId</span>
-                                <span>@task.DisplayTitle</span>
-                                <span>@ConfidenceLabel(task.Confidence)</span>
-                                @if (task.SourceUrl is not null)
-                                {
-                                    <a href="@task.SourceUrl" target="_blank" rel="noopener noreferrer">↗ ADO</a>
-                                }
-                            </div>
-                            <div>
-                                @if (!string.IsNullOrEmpty(task.WorkItemType)) { <span>@task.WorkItemType</span> }
-                                @if (!string.IsNullOrEmpty(task.State)) { <span>@task.State</span> }
-                                @if (!string.IsNullOrEmpty(task.AssignedTo)) { <span>@task.AssignedTo</span> }
-                            </div>
-                            @if (task.PullRequests.Count > 0)
-                            {
-                                <div>
-                                    @foreach (var pr in task.PullRequests)
+                            <div class="it-overview-task">
+                                <div class="it-overview-task-header">
+                                    <span class="it-task-id">@task.ExternalId</span>
+                                    <span class="it-task-title">@task.DisplayTitle</span>
+                                    <span class="it-confidence-chip">@ConfidenceLabel(task.Confidence)</span>
+                                    @if (task.SourceUrl is not null)
                                     {
-                                        <div>
-                                            <span>@pr.ExternalId</span>
-                                            <span>@pr.DisplayTitle</span>
-                                            <span>@pr.Status</span>
-                                            <span>@pr.SourceBranch → @pr.TargetBranch</span>
-                                            <span>@LinkReasonLabel(pr.LinkReason)</span>
-                                            @if (pr.SourceUrl is not null)
-                                            {
-                                                <a href="@pr.SourceUrl" target="_blank" rel="noopener noreferrer">↗</a>
-                                            }
-                                        </div>
+                                        <a href="@task.SourceUrl" target="_blank" rel="noopener noreferrer" class="it-ext-link">↗ ADO</a>
                                     }
                                 </div>
-                            }
-                            else
-                            {
-                                <p>No pull requests found for this work item.</p>
-                            }
-                        </div>
-                    }
-                </div>
-            }
 
-            @* ── Task → PRs ── *@
-            @if (_tab == "tasks")
-            {
-                @if (report.Tasks.Count == 0)
-                {
-                    <EmptyState Title="No work items loaded" />
-                }
-                else
-                {
-                    <div>
-                        <table aria-label="Work items to pull requests">
-                            <thead>
-                                <tr>
-                                    <th>Work Item</th>
-                                    <th>Title</th>
-                                    <th>Type / State</th>
-                                    <th>Pull Requests</th>
-                                    <th>Confidence</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var task in report.Tasks)
-                                {
-                                    <tr>
-                                        <td>
-                                            @if (task.SourceUrl is not null)
-                                            { <a href="@task.SourceUrl" target="_blank" rel="noopener noreferrer">@task.ExternalId ↗</a> }
-                                            else
-                                            { <span>@task.ExternalId</span> }
-                                        </td>
-                                        <td>@task.DisplayTitle</td>
-                                        <td>
-                                            @if (!string.IsNullOrEmpty(task.WorkItemType))
-                                            { <span>@task.WorkItemType</span> }
-                                            @if (!string.IsNullOrEmpty(task.State))
-                                            { <span>@task.State</span> }
-                                        </td>
-                                        <td>
-                                            @if (task.PullRequests.Count > 0)
-                                            {
-                                                <div>
-                                                    @foreach (var pr in task.PullRequests.Take(5))
-                                                    {
-                                                        @if (pr.SourceUrl is not null)
-                                                        { <a href="@pr.SourceUrl" target="_blank" rel="noopener noreferrer">@pr.ExternalId</a> }
-                                                        else
-                                                        { <span>@pr.ExternalId</span> }
-                                                    }
-                                                    @if (task.PullRequests.Count > 5)
-                                                    { <span>+@(task.PullRequests.Count - 5) more</span> }
-                                                </div>
-                                            }
-                                            else
-                                            { <span>—</span> }
-                                        </td>
-                                        <td>
-                                            <span>@ConfidenceLabel(task.Confidence)</span>
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                }
-            }
-
-            @* ── PR → Files ── *@
-            @if (_tab == "files")
-            {
-                var allPrs = report.Tasks.SelectMany(t => t.PullRequests).ToList();
-                @if (allPrs.Count == 0)
-                {
-                    <EmptyState Title="No pull requests found" />
-                }
-                else
-                {
-                    @foreach (var pr in allPrs)
-                    {
-                        var isExpanded = _expandedPrs.Contains(pr.ExternalId);
-                        <div>
-                            <button @onclick="() => TogglePr(pr.ExternalId)"
-                                    aria-expanded="@isExpanded">
-                                <span>@pr.ExternalId</span>
-                                <span>@pr.DisplayTitle</span>
-                                <span>@pr.Status</span>
-                                <span>@pr.ChangedFiles.Count files</span>
-                                <span aria-hidden="true">@(isExpanded ? "▲" : "▼")</span>
-                            </button>
-
-                            @if (isExpanded)
-                            {
-                                <div>
-                                    <table aria-label="Files changed in @pr.ExternalId">
-                                        <thead>
-                                            <tr>
-                                                <th>Path</th>
-                                                <th>Change</th>
-                                                <th>Category</th>
-                                                <th>Test Evidence</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @foreach (var file in pr.ChangedFiles.OrderBy(f => f.Path))
-                                            {
-                                                <tr>
-                                                    <td>@file.Path</td>
-                                                    <td><span>@file.ChangeType</span></td>
-                                                    <td><span>@file.Category</span></td>
-                                                    <td>
-                                                        @if (file.Category == FileCategory.Source)
-                                                        {
-                                                            @if (file.HasTestEvidence)
-                                                            { <span>✓ tested</span> }
-                                                            else
-                                                            { <span>✗ no test</span> }
-                                                        }
-                                                        else
-                                                        { <span>—</span> }
-                                                    </td>
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
+                                <div class="it-overview-task-meta">
+                                    @if (!string.IsNullOrEmpty(task.WorkItemType)) { <span class="it-meta-chip">@task.WorkItemType</span> }
+                                    @if (!string.IsNullOrEmpty(task.State)) { <span class="it-meta-chip">@task.State</span> }
+                                    @if (!string.IsNullOrEmpty(task.AssignedTo)) { <span class="it-meta-chip">@task.AssignedTo</span> }
                                 </div>
-                            }
-                        </div>
-                    }
-                }
-            }
 
-            @* ── Unmapped Changes ── *@
-            @if (_tab == "unmapped")
-            {
-                @if (report.UnmappedChanges.Count == 0)
-                {
-                    <EmptyState Icon="✓" Title="All clear"
-                                Description="All changed files are mapped to a pull request." />
-                }
-                else
-                {
-                    <p>These files were changed but are not associated with any of the loaded pull requests.</p>
-                    <div>
-                        <table aria-label="Unmapped changed files">
-                            <thead>
-                                <tr>
-                                    <th>Path</th>
-                                    <th>Change</th>
-                                    <th>Category</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var file in report.UnmappedChanges.OrderBy(f => f.Path))
+                                @if (task.PullRequests.Count > 0)
                                 {
-                                    <tr>
-                                        <td>@file.Path</td>
-                                        <td><span>@file.ChangeType</span></td>
-                                        <td><span>@file.Category</span></td>
-                                    </tr>
+                                    <div class="it-overview-prs">
+                                        @foreach (var pr in task.PullRequests)
+                                        {
+                                            <div class="it-overview-pr">
+                                                <span class="it-pr-id">@pr.ExternalId</span>
+                                                <span class="it-pr-title">@pr.DisplayTitle</span>
+                                                <span class="it-meta-chip">@pr.Status</span>
+                                                <span class="it-pr-branch">@pr.SourceBranch → @pr.TargetBranch</span>
+                                                <span class="it-meta-chip">@LinkReasonLabel(pr.LinkReason)</span>
+                                                @if (pr.SourceUrl is not null)
+                                                {
+                                                    <a href="@pr.SourceUrl" target="_blank" rel="noopener noreferrer" class="it-ext-link">↗</a>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
                                 }
-                            </tbody>
-                        </table>
-                    </div>
-                }
-            }
-
-            @* ── Test Evidence ── *@
-            @if (_tab == "tests")
-            {
-                @if (report.TestEvidence.Count == 0)
-                {
-                    <EmptyState Title="No source files"
-                                Description="No source files found to check for test evidence." />
-                }
-                else
-                {
-                    var tested   = report.TestEvidence.Count(e => e.HasTest);
-                    var untested = report.TestEvidence.Count(e => !e.HasTest);
-                    <div>
-                        <span>@tested tested</span>
-                        <span>@untested without tests</span>
-                    </div>
-                    <div>
-                        <table aria-label="Test evidence per source file">
-                            <thead>
-                                <tr>
-                                    <th>Source File</th>
-                                    <th>Expected Test</th>
-                                    <th>Test Coverage</th>
-                                    <th>PR</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var ev in report.TestEvidence.OrderBy(e => e.HasTest).ThenBy(e => e.SourceFile))
+                                else
                                 {
-                                    <tr>
-                                        <td>@ev.SourceFile</td>
-                                        <td>@(ev.ExpectedTestFile ?? "—")</td>
-                                        <td>
-                                            @if (ev.HasTest)
-                                            { <span>✓ Found</span> }
-                                            else
-                                            { <span>✗ Missing</span> }
-                                        </td>
-                                        <td>@(ev.PullRequestId ?? "—")</td>
-                                    </tr>
+                                    <p class="it-no-prs">No pull requests found for this work item.</p>
                                 }
-                            </tbody>
-                        </table>
+                            </div>
+                        }
                     </div>
                 }
-            }
 
-            @* ── Gaps ── *@
-            @if (_tab == "gaps")
-            {
-                @if (report.Gaps.Count == 0)
+                @* ── Task → PRs ── *@
+                @if (_tab == "tasks")
                 {
-                    <EmptyState Icon="✓" Title="No gaps detected"
-                                Description="All traceability checks passed." />
-                }
-                else
-                {
-                    <p>@report.Gaps.Count gap@(report.Gaps.Count == 1 ? "" : "s") detected.</p>
-                    @foreach (var gap in report.Gaps)
+                    @if (report.Tasks.Count == 0)
                     {
-                        <div>
-                            <div>@GapKindLabel(gap.GapKind)</div>
-                            <p>@gap.Description</p>
-                            @if (!string.IsNullOrEmpty(gap.RelatedExternalId))
-                            {
-                                <span>Ref: @gap.RelatedExternalId</span>
-                            }
+                        <EmptyState Title="No work items loaded" />
+                    }
+                    else
+                    {
+                        <div class="it-table-wrap">
+                            <table class="it-table" aria-label="Work items to pull requests">
+                                <thead>
+                                    <tr>
+                                        <th>Work Item</th>
+                                        <th>Title</th>
+                                        <th>Type / State</th>
+                                        <th>Pull Requests</th>
+                                        <th>Confidence</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var task in report.Tasks)
+                                    {
+                                        <tr>
+                                            <td>
+                                                @if (task.SourceUrl is not null)
+                                                { <a href="@task.SourceUrl" target="_blank" rel="noopener noreferrer">@task.ExternalId ↗</a> }
+                                                else
+                                                { <span>@task.ExternalId</span> }
+                                            </td>
+                                            <td>@task.DisplayTitle</td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(task.WorkItemType))
+                                                { <span class="it-meta-chip">@task.WorkItemType</span> }
+                                                @if (!string.IsNullOrEmpty(task.State))
+                                                { <span class="it-meta-chip">@task.State</span> }
+                                            </td>
+                                            <td>
+                                                @if (task.PullRequests.Count > 0)
+                                                {
+                                                    <div class="it-pr-list">
+                                                        @foreach (var pr in task.PullRequests.Take(5))
+                                                        {
+                                                            @if (pr.SourceUrl is not null)
+                                                            { <a href="@pr.SourceUrl" target="_blank" rel="noopener noreferrer">@pr.ExternalId</a> }
+                                                            else
+                                                            { <span>@pr.ExternalId</span> }
+                                                        }
+                                                        @if (task.PullRequests.Count > 5)
+                                                        { <span class="it-more-badge">+@(task.PullRequests.Count - 5) more</span> }
+                                                    </div>
+                                                }
+                                                else
+                                                { <span class="it-none">—</span> }
+                                            </td>
+                                            <td>
+                                                <span class="it-confidence-chip">@ConfidenceLabel(task.Confidence)</span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
                         </div>
                     }
                 }
-            }
 
+                @* ── PR → Files ── *@
+                @if (_tab == "files")
+                {
+                    var allPrs = report.Tasks.SelectMany(t => t.PullRequests).ToList();
+                    @if (allPrs.Count == 0)
+                    {
+                        <EmptyState Title="No pull requests found" />
+                    }
+                    else
+                    {
+                        @foreach (var pr in allPrs)
+                        {
+                            var isExpanded = _expandedPrs.Contains(pr.ExternalId);
+                            <div class="it-pr-accordion">
+                                <button class="it-pr-accordion-btn"
+                                        @onclick="() => TogglePr(pr.ExternalId)"
+                                        aria-expanded="@isExpanded">
+                                    <span class="it-pr-id">@pr.ExternalId</span>
+                                    <span class="it-pr-title">@pr.DisplayTitle</span>
+                                    <span class="it-meta-chip">@pr.Status</span>
+                                    <span class="it-pr-file-count">@pr.ChangedFiles.Count files</span>
+                                    <span class="it-accordion-chevron" aria-hidden="true">@(isExpanded ? "▲" : "▼")</span>
+                                </button>
+
+                                @if (isExpanded)
+                                {
+                                    <div class="it-table-wrap it-table-nested">
+                                        <table class="it-table" aria-label="Files changed in @pr.ExternalId">
+                                            <thead>
+                                                <tr>
+                                                    <th>Path</th>
+                                                    <th>Change</th>
+                                                    <th>Category</th>
+                                                    <th>Test Evidence</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var file in pr.ChangedFiles.OrderBy(f => f.Path))
+                                                {
+                                                    <tr>
+                                                        <td class="it-file-path">@file.Path</td>
+                                                        <td><span class="it-meta-chip">@file.ChangeType</span></td>
+                                                        <td><span class="it-meta-chip">@file.Category</span></td>
+                                                        <td>
+                                                            @if (file.Category == FileCategory.Source)
+                                                            {
+                                                                @if (file.HasTestEvidence)
+                                                                { <span class="it-evidence-ok">✓ tested</span> }
+                                                                else
+                                                                { <span class="it-evidence-missing">✗ no test</span> }
+                                                            }
+                                                            else
+                                                            { <span class="it-none">—</span> }
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                }
+
+                @* ── Unmapped Changes ── *@
+                @if (_tab == "unmapped")
+                {
+                    @if (report.UnmappedChanges.Count == 0)
+                    {
+                        <EmptyState Icon="✓" Title="All clear"
+                                    Description="All changed files are mapped to a pull request." />
+                    }
+                    else
+                    {
+                        <p class="it-section-note">These files were changed but are not associated with any of the loaded pull requests.</p>
+                        <div class="it-table-wrap">
+                            <table class="it-table" aria-label="Unmapped changed files">
+                                <thead>
+                                    <tr>
+                                        <th>Path</th>
+                                        <th>Change</th>
+                                        <th>Category</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var file in report.UnmappedChanges.OrderBy(f => f.Path))
+                                    {
+                                        <tr>
+                                            <td class="it-file-path">@file.Path</td>
+                                            <td><span class="it-meta-chip">@file.ChangeType</span></td>
+                                            <td><span class="it-meta-chip">@file.Category</span></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+
+                @* ── Test Evidence ── *@
+                @if (_tab == "tests")
+                {
+                    @if (report.TestEvidence.Count == 0)
+                    {
+                        <EmptyState Title="No source files"
+                                    Description="No source files found to check for test evidence." />
+                    }
+                    else
+                    {
+                        var tested   = report.TestEvidence.Count(e => e.HasTest);
+                        var untested = report.TestEvidence.Count(e => !e.HasTest);
+                        <div class="it-test-summary">
+                            <span class="it-evidence-ok">@tested tested</span>
+                            <span class="it-evidence-missing">@untested without tests</span>
+                        </div>
+                        <div class="it-table-wrap">
+                            <table class="it-table" aria-label="Test evidence per source file">
+                                <thead>
+                                    <tr>
+                                        <th>Source File</th>
+                                        <th>Expected Test</th>
+                                        <th>Test Coverage</th>
+                                        <th>PR</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var ev in report.TestEvidence.OrderBy(e => e.HasTest).ThenBy(e => e.SourceFile))
+                                    {
+                                        <tr>
+                                            <td class="it-file-path">@ev.SourceFile</td>
+                                            <td class="it-file-path">@(ev.ExpectedTestFile ?? "—")</td>
+                                            <td>
+                                                @if (ev.HasTest)
+                                                { <span class="it-evidence-ok">✓ Found</span> }
+                                                else
+                                                { <span class="it-evidence-missing">✗ Missing</span> }
+                                            </td>
+                                            <td>@(ev.PullRequestId ?? "—")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+
+                @* ── Gaps ── *@
+                @if (_tab == "gaps")
+                {
+                    @if (report.Gaps.Count == 0)
+                    {
+                        <EmptyState Icon="✓" Title="No gaps detected"
+                                    Description="All traceability checks passed." />
+                    }
+                    else
+                    {
+                        <p class="it-section-note">@report.Gaps.Count gap@(report.Gaps.Count == 1 ? "" : "s") detected.</p>
+                        @foreach (var gap in report.Gaps)
+                        {
+                            <div class="it-gap-card">
+                                <div class="it-gap-kind">@GapKindLabel(gap.GapKind)</div>
+                                <p class="it-gap-desc">@gap.Description</p>
+                                @if (!string.IsNullOrEmpty(gap.RelatedExternalId))
+                                {
+                                    <span class="it-gap-ref">Ref: @gap.RelatedExternalId</span>
+                                }
+                            </div>
+                        }
+                    }
+                }
+
+            </div>
         </div>
     }
 

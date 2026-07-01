@@ -57,15 +57,28 @@ builder.Services.AddScoped<IScenarioExtractionService>(sp =>
 builder.Services.AddSingleton<ISpecComparisonService, SpecComparisonService>();
 builder.Services.AddSingleton<IConstitutionAnalysisService, ConstitutionAnalysisService>();
 builder.Services.AddSingleton<IPlanAnalysisService, PlanAnalysisService>();
+builder.Services.AddSingleton<IDataModelAnalysisService, DataModelAnalysisService>();
+builder.Services.AddSingleton<IArtifactParserService, ArtifactParserService>();
 builder.Services.AddSingleton<IArtifactTraceabilityService, ArtifactTraceabilityService>();
 builder.Services.AddSingleton<IConstitutionComplianceService, ConstitutionComplianceService>();
 builder.Services.AddSingleton<IQAReadinessService, QAReadinessService>();
 builder.Services.AddSingleton<IQaAuditorService, QaAuditorService>();
 builder.Services.AddSingleton<IDeliveryReadinessAssessmentService, DeliveryReadinessService>();
+builder.Services.AddSingleton<IStandardsComplianceService>(_ =>
+    new StandardsComplianceService(
+        new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) }));
+builder.Services.AddSingleton<IQualityReviewService, QualityReviewService>();
 builder.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
-builder.Services.AddSingleton<IUIStructuralIntegrityAnalyzer, UIStructuralIntegrityAnalyzer>();
+builder.Services.AddSingleton<IReportExportService, ReportExportService>();
+builder.Services.AddSingleton<IFrontendQualityReviewService, FrontendQualityReviewService>();
 builder.Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
+builder.Services.AddSingleton<WorkspaceArtifactRepository>();
+builder.Services.AddSingleton<IWorkspaceArtifactRepository>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
+builder.Services.AddSingleton<IWorkspaceSessionService>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
+builder.Services.AddScoped<RuntimeReviewSessionService>();
+builder.Services.AddScoped<QualityReviewSessionService>();
+builder.Services.AddScoped<TaskAlignmentSessionService>();
 
 builder.Services.AddHttpClient<ImplementationTraceabilityApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
@@ -74,6 +87,9 @@ builder.Services.AddHttpClient<WasmSecurityApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
 builder.Services.AddSingleton<IFrontendAnalysisSettingsService, FrontendAnalysisSettingsService>();
+builder.Services.AddSingleton<ITargetEnvironmentService, TargetEnvironmentService>();
+builder.Services.AddSingleton<ITargetEnvironmentHintExtractor, TargetEnvironmentHintExtractor>();
+builder.Services.AddSingleton<IIntegrationTargetRegistryService, IntegrationTargetRegistryService>();
 builder.Services.AddSingleton<IAuthenticatedBrowserSessionService, PlaceholderAuthenticatedBrowserSessionService>();
 builder.Services.AddSingleton<IFrontendAnalysisContextFactory, FrontendAnalysisContextFactory>();
 
@@ -81,6 +97,15 @@ builder.Services.AddHttpClient<IBlazorWasmPerformanceReviewService, BlazorWasmPe
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
 builder.Services.AddHttpClient<ProjectDocumentApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
+
+builder.Services.AddHttpClient<SampleProjectsApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
+
+builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
+
+builder.Services.AddHttpClient<IIntegrationQualityReviewService, IntegrationQualityReviewService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
 await builder.Build().RunAsync();

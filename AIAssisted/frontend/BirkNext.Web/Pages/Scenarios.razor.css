@@ -1,11 +1,29 @@
 .artifact-library-shell {
     display: flex;
-    width: min(100%, 1680px);
-    margin: 0 auto;
     flex-direction: column;
     gap: 0.9rem;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding-bottom: 2rem;
 }
 
+/* ── Info notification variant (uses design-token info palette) ── */
+.notification-info {
+    background: var(--clr-info-bg-light, #eff6ff);
+    color: var(--clr-info, #1d4ed8);
+    border-color: var(--clr-info-border, #bfdbfe);
+}
+
+.notification-info a {
+    color: var(--clr-info, #1d4ed8);
+    font-weight: 500;
+}
+
+.notification-info a:hover {
+    text-decoration: underline;
+}
+
+/* ── Artifact list section ── */
 .scenarios-section {
     padding: 1rem 1.08rem;
     border: 1px solid var(--clr-border, #e2e8f0);
@@ -15,7 +33,7 @@
 }
 
 .knowledge-toolbar {
-    margin-bottom: 0.72rem;
+    margin-bottom: 0.5rem;
 }
 
 .filter-bar {
@@ -47,16 +65,13 @@
     box-shadow: 0 0 0 3px var(--clr-primary-ring, rgba(59, 130, 246, 0.1));
 }
 
+/* ── Filter chips — flat row, no detached box ── */
 .filter-chip-grid {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 0.45rem;
     margin-bottom: 1rem;
-    padding: 0.25rem;
-    border: 1px solid var(--clr-border-subtle, #f1f5f9);
-    border-radius: var(--radius-lg, 8px);
-    background: var(--clr-surface, #f8fafc);
 }
 
 .library-filter-chip {
@@ -112,6 +127,7 @@
     color: #92400e;
 }
 
+/* ── Empty state overrides ── */
 .empty-state h3 {
     margin: 0 0 0.65rem;
     color: var(--clr-text-heading, #0f172a);
@@ -141,6 +157,7 @@
     text-decoration: none;
 }
 
+/* ── Status / error messages ── */
 .relationship-load-note {
     margin: 0 0 0.85rem;
     padding: 0.6rem 0.72rem;
@@ -172,6 +189,7 @@
     font-style: italic;
 }
 
+/* ── Artifact groups ── */
 .artifact-group {
     margin-bottom: 1.3rem;
 }

@@ -9,9 +9,6 @@ public static class SpecExplorerService
 {
     // ── Regexes ───────────────────────────────────────────────────────────────
 
-    private static readonly Regex HeadingRe = new(
-        @"^(#{1,6})\s+(.+)$", RegexOptions.Compiled);
-
     // Spec item anchored to line start — prevents mid-sentence reference matches.
     // Matches: "**FR-001**:", "FR-001:", "- FR-001:", "- **SC-002**:"
     private static readonly Regex SpecItemStartRe = new(
@@ -82,16 +79,9 @@ public static class SpecExplorerService
     // ISO-date heading: "2026-03-06" — marks a Q/A decision session, not a user-story lane
     private static readonly Regex DateHeadingRe = new(@"^\d{4}-\d{2}-\d{2}\b", RegexOptions.Compiled);
 
-    // Bullet item start
-    private static readonly Regex BulletStartRe = new(
-        @"^[-*]\s+(.+)$", RegexOptions.Compiled);
-
     // Continuation line (2+ leading spaces)
     private static readonly Regex ContinuationRe = new(
         @"^\s{2,}", RegexOptions.Compiled);
-
-    private static readonly Regex TableRowRe = new(
-        @"^\|(.+)\|$", RegexOptions.Compiled);
 
     private static readonly Regex TableSepRe = new(
         @"^\|[\s\-\|:]+\|$", RegexOptions.Compiled);
@@ -100,7 +90,7 @@ public static class SpecExplorerService
 
     public static SpecTree Parse(string markdown)
     {
-        var lines = markdown.Split('\n').Select(l => l.TrimEnd()).ToArray();
+        var tokens = MarkdownTokenizer.Tokenize(markdown);
         var roots = new List<SpecNode>();
         var headingStack = new List<(int Level, SpecNode Node, SectionSemantics Semantics)>();
 
@@ -313,15 +303,16 @@ public static class SpecExplorerService
 
         // ── Main parse loop ───────────────────────────────────────────────────
 
-        foreach (var line in lines)
+        foreach (var tok in tokens)
         {
+            var line = tok.RawLine;
+
             // ── Heading ───────────────────────────────────────────────────────
-            var hm = HeadingRe.Match(line);
-            if (hm.Success)
+            if (tok.Kind == MarkdownTokenKind.Heading)
             {
                 FlushAll();
-                var level = hm.Groups[1].Value.Length;
-                var rawTitle = hm.Groups[2].Value.Trim();
+                var level = tok.HeadingLevel;
+                var rawTitle = tok.Content;
                 var title = StripMarkdown(rawTitle);
                 var semantics = DetectSemantics(title);
                 var nodeType = semantics == SectionSemantics.UserStory ? SpecNodeType.UserStory
@@ -347,20 +338,20 @@ public static class SpecExplorerService
             }
 
             // ── Table ─────────────────────────────────────────────────────────
-            if (TableRowRe.IsMatch(line))
+            if (tok.Kind is MarkdownTokenKind.TableRow or MarkdownTokenKind.TableSeparator)
             {
                 CommitPending();
                 CommitInlineBdd();
                 FlushQaPair();
                 FlushBddScenario();
-                tableBuffer.Add(line);
+                tableBuffer.Add(tok.RawLine);
                 continue;
             }
             if (tableBuffer.Count > 0)
                 FlushTableBuffer(tableBuffer, headingStack, roots, ref hTables);
 
             // ── Blank line ────────────────────────────────────────────────────
-            if (string.IsNullOrWhiteSpace(line))
+            if (tok.Kind == MarkdownTokenKind.Blank)
             {
                 // Blank line terminates pending FR/SC spec items.
                 if (pendingItem != null &&
@@ -592,11 +583,10 @@ public static class SpecExplorerService
             // ── Assumptions context: bullet items ─────────────────────────────
             if (InAssumptionsContext())
             {
-                var bm = BulletStartRe.Match(line);
-                if (bm.Success)
+                if (tok.Kind == MarkdownTokenKind.BulletItem)
                 {
                     CommitPending();
-                    var bulletText = bm.Groups[1].Value.Trim();
+                    var bulletText = tok.Content;
                     var titleText = StripMarkdown(bulletText);
                     if (titleText.Length > 200) titleText = titleText[..200];
                     pendingItem = new SpecNode
@@ -621,11 +611,10 @@ public static class SpecExplorerService
             // ── Edge Cases context: bullet items ──────────────────────────────
             if (InEdgeCasesContext())
             {
-                var bm = BulletStartRe.Match(line);
-                if (bm.Success)
+                if (tok.Kind == MarkdownTokenKind.BulletItem)
                 {
                     CommitPending();
-                    var bulletText = bm.Groups[1].Value.Trim();
+                    var bulletText = tok.Content;
                     var titleText = StripMarkdown(bulletText);
                     if (titleText.Length > 200) titleText = titleText[..200];
                     pendingItem = new SpecNode
@@ -650,11 +639,10 @@ public static class SpecExplorerService
             // ── API Surface context: bullet items ─────────────────────────────
             if (InApiSurfaceContext())
             {
-                var bm = BulletStartRe.Match(line);
-                if (bm.Success)
+                if (tok.Kind == MarkdownTokenKind.BulletItem)
                 {
                     CommitPending();
-                    var bulletText = bm.Groups[1].Value.Trim();
+                    var bulletText = tok.Content;
                     var titleText = StripMarkdown(bulletText);
                     if (titleText.Length > 200) titleText = titleText[..200];
                     pendingItem = new SpecNode

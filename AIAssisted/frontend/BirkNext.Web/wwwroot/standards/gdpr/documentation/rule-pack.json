@@ -1,0 +1,215 @@
+{
+  "standardId": "GDPR",
+  "standardName": "GDPR Coverage",
+  "standardVersion": "documentation",
+  "rulePackVersion": "1.0",
+  "lastUpdated": "2026-06-29",
+  "description": "Documentation coverage checks for GDPR data protection requirements. Checks whether data protection and privacy requirements are identified and described in the project artifacts. These checks assess documentation coverage only — they do not determine GDPR compliance.",
+  "rules": [
+    {
+      "ruleId": "gdpr-personal-data",
+      "category": "Data Categories",
+      "title": "Personal Data Categories",
+      "description": "All personal data categories processed must be identified and documented.",
+      "severity": "High",
+      "requiredSections": ["data protection", "privacy", "personal data"],
+      "requiredKeywords": [
+        "personal data",
+        "personally identifiable information",
+        "pii",
+        "sensitive data category",
+        "special category data"
+      ],
+      "optionalKeywords": [
+        "user data",
+        "customer data",
+        "data category",
+        "user information"
+      ],
+      "evidenceHint": "Look for personal data categories, PII definitions, or sensitive data classifications.",
+      "recommendation": "Identify and document all personal data categories processed by this feature."
+    },
+    {
+      "ruleId": "gdpr-purpose",
+      "category": "Processing Purpose",
+      "title": "Purpose of Processing",
+      "description": "The purpose of each data processing activity must be documented.",
+      "severity": "High",
+      "requiredSections": ["data protection", "privacy", "processing"],
+      "requiredKeywords": [
+        "purpose of processing",
+        "data processing purpose",
+        "legal basis for processing",
+        "processing purpose"
+      ],
+      "optionalKeywords": [
+        "data processing",
+        "process personal data",
+        "use of data"
+      ],
+      "evidenceHint": "Look for documented purposes for each data processing activity.",
+      "recommendation": "Clearly document the purpose for each category of personal data processed."
+    },
+    {
+      "ruleId": "gdpr-lawful-basis",
+      "category": "Lawful Basis",
+      "title": "Lawful Basis for Processing",
+      "description": "A lawful basis must be identified for each processing activity.",
+      "severity": "High",
+      "requiredSections": ["data protection", "legal", "compliance"],
+      "requiredKeywords": [
+        "lawful basis",
+        "legal basis",
+        "legitimate interest",
+        "data subject consent",
+        "contractual necessity"
+      ],
+      "optionalKeywords": [
+        "consent",
+        "gdpr",
+        "legal ground"
+      ],
+      "evidenceHint": "Look for lawful basis statements, consent mechanisms, or legitimate interest assessments.",
+      "recommendation": "State the lawful basis for each processing activity (e.g., consent, legitimate interest, contractual)."
+    },
+    {
+      "ruleId": "gdpr-retention",
+      "category": "Data Retention",
+      "title": "Data Retention Periods",
+      "description": "Data retention periods must be defined and enforced.",
+      "severity": "Medium",
+      "requiredSections": ["data protection", "retention", "data lifecycle"],
+      "requiredKeywords": [
+        "data retention",
+        "retention period",
+        "retention policy",
+        "data deletion schedule",
+        "storage limitation"
+      ],
+      "optionalKeywords": [
+        "retain data",
+        "delete data",
+        "archive data",
+        "data lifecycle"
+      ],
+      "evidenceHint": "Look for retention period definitions, deletion schedules, or storage limitation policies.",
+      "recommendation": "Define data retention periods and deletion schedules for all personal data."
+    },
+    {
+      "ruleId": "gdpr-access-control",
+      "category": "Access Control",
+      "title": "Personal Data Access Control",
+      "description": "Access to personal data must be documented and restricted.",
+      "severity": "Medium",
+      "requiredSections": ["data protection", "access control", "security"],
+      "requiredKeywords": [
+        "data access control",
+        "access restriction",
+        "who has access to",
+        "access to personal data",
+        "need-to-know"
+      ],
+      "optionalKeywords": [
+        "access control",
+        "restrict access",
+        "authorized user"
+      ],
+      "evidenceHint": "Look for access restriction requirements, need-to-know policies, or personal data access controls.",
+      "recommendation": "Document which roles or systems have access to personal data and under what conditions."
+    },
+    {
+      "ruleId": "gdpr-audit-logging",
+      "category": "Audit",
+      "title": "Data Access Audit Logging",
+      "description": "Logging of personal data access and processing must be specified.",
+      "severity": "Medium",
+      "requiredSections": ["data protection", "logging", "audit"],
+      "requiredKeywords": [
+        "data access log",
+        "gdpr audit log",
+        "personal data access record",
+        "data processing record"
+      ],
+      "optionalKeywords": [
+        "audit trail",
+        "audit log",
+        "activity log",
+        "log access"
+      ],
+      "evidenceHint": "Look for data access logging requirements or personal data processing records.",
+      "recommendation": "Specify logging requirements for personal data access and processing events."
+    },
+    {
+      "ruleId": "gdpr-subject-rights",
+      "category": "Data Subject Rights",
+      "title": "Data Subject Rights",
+      "description": "How data subject rights will be handled must be documented.",
+      "severity": "High",
+      "requiredSections": ["data protection", "privacy", "rights"],
+      "requiredKeywords": [
+        "right to erasure",
+        "right of access",
+        "data subject right",
+        "right to portability",
+        "right to rectification",
+        "right to object"
+      ],
+      "optionalKeywords": [
+        "subject request",
+        "data request",
+        "delete my data",
+        "gdpr rights"
+      ],
+      "evidenceHint": "Look for data subject rights handling, erasure requests, or portability requirements.",
+      "recommendation": "Document how data subject rights (access, erasure, portability, rectification) are handled."
+    },
+    {
+      "ruleId": "gdpr-third-party",
+      "category": "Third-Party Sharing",
+      "title": "Third-Party Data Sharing",
+      "description": "Third-party services receiving personal data must be documented.",
+      "severity": "Medium",
+      "requiredSections": ["data protection", "third parties", "integrations"],
+      "requiredKeywords": [
+        "third-party sharing",
+        "data transfer",
+        "data processor agreement",
+        "data sharing agreement",
+        "third party integration"
+      ],
+      "optionalKeywords": [
+        "third party",
+        "external service",
+        "third-party vendor",
+        "data sharing"
+      ],
+      "evidenceHint": "Look for third-party data sharing, data processor agreements, or external data transfers.",
+      "recommendation": "Document any third-party services receiving personal data, along with data sharing agreements."
+    },
+    {
+      "ruleId": "gdpr-privacy-by-design",
+      "category": "Privacy by Design",
+      "title": "Privacy by Design & Default",
+      "description": "Privacy-by-design principles must be applied and documented.",
+      "severity": "Medium",
+      "requiredSections": ["data protection", "privacy", "design"],
+      "requiredKeywords": [
+        "privacy by design",
+        "privacy by default",
+        "data minimization",
+        "data minimisation",
+        "privacy impact assessment",
+        "dpia"
+      ],
+      "optionalKeywords": [
+        "privacy",
+        "data protection",
+        "pseudonymization",
+        "anonymization",
+        "minimal data"
+      ],
+      "evidenceHint": "Look for privacy-by-design principles, data minimization, or DPIA mentions.",
+      "recommendation": "Describe how privacy-by-design principles (data minimization, privacy defaults) are applied."
+    }
+  ]
+}

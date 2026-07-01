@@ -8,9 +8,6 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 {
     // ── Regex patterns ─────────────────────────────────────────────────────
 
-    private static readonly Regex HeadingRe = new(
-        @"^(#{1,6})\s+(.+)$", RegexOptions.Compiled);
-
     private static readonly Regex MetaVersionRe = new(
         @"^\s*[Vv]ersion\s*[:=]\s*(.+)$", RegexOptions.Compiled);
 
@@ -41,9 +38,6 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
     private static readonly Regex AnyRuleIdRe = new(
         @"\b(PP-\d+|PS-\d+|GL-\d+|FP-\d+|MC-\d+|AC-\d+|FC-\d+|GV-\d+|SC-C\d+)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    private static readonly Regex BulletRe = new(
-        @"^\s*[-*+]\s+(.+)$", RegexOptions.Compiled);
 
     private static readonly Regex VersionEntryRe = new(
         @"^v?(\d+[\.\d]*)\s*[-–:]\s*(.+)$", RegexOptions.Compiled);
@@ -88,7 +82,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
     public ConstitutionDocument Parse(string markdown)
     {
-        var lines = markdown.Split('\n').Select(l => l.TrimEnd()).ToArray();
+        var tokens = MarkdownTokenizer.Tokenize(markdown);
 
         string title = string.Empty;
         string version = string.Empty;
@@ -143,15 +137,14 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         bool inMetaBlock = false;
         bool titleFound = false;
 
-        for (int i = 0; i < lines.Length; i++)
+        foreach (var tok in tokens)
         {
-            var line = lines[i];
+            var line = tok.RawLine;
 
-            var hm = HeadingRe.Match(line);
-            if (hm.Success)
+            if (tok.Kind == MarkdownTokenKind.Heading)
             {
-                var level = hm.Groups[1].Value.Length;
-                var rawTitle = hm.Groups[2].Value.Trim();
+                var level = tok.HeadingLevel;
+                var rawTitle = tok.Content;
 
                 if (level == 1 && !titleFound)
                 {
@@ -178,7 +171,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 }
             }
 
-            if (inMetaBlock || (i < 20 && !string.IsNullOrWhiteSpace(title)))
+            if (inMetaBlock || (tok.LineIndex < 20 && !string.IsNullOrWhiteSpace(title)))
             {
                 var vm = MetaVersionRe.Match(line);
                 if (vm.Success && string.IsNullOrEmpty(version))
@@ -549,17 +542,16 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             title = StripMarkdown(heading);
         }
 
-        var lines = body.Split('\n');
         var description = new StringBuilder();
         var guidelines = new List<string>();
         var referencedStandards = new List<string>();
         bool inGuidelines = false;
         bool inStandards = false;
 
-        foreach (var line in lines)
+        foreach (var tok in MarkdownTokenizer.Tokenize(body))
         {
-            var trimmed = line.Trim();
-            if (string.IsNullOrEmpty(trimmed)) { inGuidelines = false; inStandards = false; continue; }
+            var trimmed = tok.RawLine.Trim();
+            if (tok.Kind == MarkdownTokenKind.Blank) { inGuidelines = false; inStandards = false; continue; }
 
             if (trimmed.StartsWith("**Related Guidelines", StringComparison.OrdinalIgnoreCase) ||
                 trimmed.StartsWith("Related Guidelines", StringComparison.OrdinalIgnoreCase))
@@ -569,17 +561,16 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 trimmed.StartsWith("Referenced Standards", StringComparison.OrdinalIgnoreCase))
             { inStandards = true; inGuidelines = false; continue; }
 
-            var bulletMatch = BulletRe.Match(line);
-            if (bulletMatch.Success)
+            if (tok.Kind == MarkdownTokenKind.BulletItem)
             {
-                var content = StripMarkdown(bulletMatch.Groups[1].Value.Trim());
+                var content = StripMarkdown(tok.Content);
                 if (inGuidelines) guidelines.Add(content);
                 else if (inStandards) referencedStandards.Add(content);
                 else description.AppendLine(content);
                 continue;
             }
 
-            if (!inGuidelines && !inStandards && !trimmed.StartsWith("#"))
+            if (!inGuidelines && !inStandards && tok.Kind != MarkdownTokenKind.Heading)
                 description.AppendLine(StripMarkdown(trimmed));
         }
 
@@ -617,21 +608,18 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             ? "Development"
             : InferStandardCategory(heading);
 
-        var lines = body.Split('\n');
         var description = new StringBuilder();
         var rules = new List<string>();
 
-        foreach (var line in lines)
+        foreach (var tok in MarkdownTokenizer.Tokenize(body))
         {
-            var trimmed = line.Trim();
-            if (string.IsNullOrEmpty(trimmed)) continue;
+            if (tok.Kind == MarkdownTokenKind.Blank) continue;
 
-            var bulletMatch = BulletRe.Match(line);
-            if (bulletMatch.Success)
-            { rules.Add(StripMarkdown(bulletMatch.Groups[1].Value.Trim())); continue; }
+            if (tok.Kind == MarkdownTokenKind.BulletItem)
+            { rules.Add(StripMarkdown(tok.Content)); continue; }
 
-            if (!trimmed.StartsWith("#"))
-                description.AppendLine(StripMarkdown(trimmed));
+            if (tok.Kind != MarkdownTokenKind.Heading)
+                description.AppendLine(StripMarkdown(tok.RawLine.Trim()));
         }
 
         return new ConstitutionStandard
@@ -670,21 +658,18 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         var scope = InferConstraintScope(heading);
 
-        var lines = body.Split('\n');
         var description = new StringBuilder();
         var rules = new List<string>();
 
-        foreach (var line in lines)
+        foreach (var tok in MarkdownTokenizer.Tokenize(body))
         {
-            var trimmed = line.Trim();
-            if (string.IsNullOrEmpty(trimmed)) continue;
+            if (tok.Kind == MarkdownTokenKind.Blank) continue;
 
-            var bulletMatch = BulletRe.Match(line);
-            if (bulletMatch.Success)
-            { rules.Add(StripMarkdown(bulletMatch.Groups[1].Value.Trim())); continue; }
+            if (tok.Kind == MarkdownTokenKind.BulletItem)
+            { rules.Add(StripMarkdown(tok.Content)); continue; }
 
-            if (!trimmed.StartsWith("#"))
-                description.AppendLine(StripMarkdown(trimmed));
+            if (tok.Kind != MarkdownTokenKind.Heading)
+                description.AppendLine(StripMarkdown(tok.RawLine.Trim()));
         }
 
         return new ConstitutionConstraint
@@ -706,21 +691,18 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         var title = StripMarkdown(heading);
         var type = ClassifyGovernanceType(heading);
 
-        var lines = body.Split('\n');
         var description = new StringBuilder();
         var points = new List<string>();
 
-        foreach (var line in lines)
+        foreach (var tok in MarkdownTokenizer.Tokenize(body))
         {
-            var trimmed = line.Trim();
-            if (string.IsNullOrEmpty(trimmed)) continue;
+            if (tok.Kind == MarkdownTokenKind.Blank) continue;
 
-            var bulletMatch = BulletRe.Match(line);
-            if (bulletMatch.Success)
-            { points.Add(StripMarkdown(bulletMatch.Groups[1].Value.Trim())); continue; }
+            if (tok.Kind == MarkdownTokenKind.BulletItem)
+            { points.Add(StripMarkdown(tok.Content)); continue; }
 
-            if (!trimmed.StartsWith("#"))
-                description.AppendLine(StripMarkdown(trimmed));
+            if (tok.Kind != MarkdownTokenKind.Heading)
+                description.AppendLine(StripMarkdown(tok.RawLine.Trim()));
         }
 
         return new ConstitutionGovernanceItem
@@ -747,10 +729,10 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         if (byIdx > 0) { date = dateRaw[..byIdx].Trim(); author = dateRaw[(byIdx + 4)..].Trim(); }
 
         var changes = new List<string>();
-        foreach (var line in body.Split('\n'))
+        foreach (var tok in MarkdownTokenizer.Tokenize(body))
         {
-            var bm = BulletRe.Match(line);
-            if (bm.Success) changes.Add(StripMarkdown(bm.Groups[1].Value.Trim()));
+            if (tok.Kind == MarkdownTokenKind.BulletItem)
+                changes.Add(StripMarkdown(tok.Content));
         }
 
         return new ConstitutionVersion { Version = ver, Date = date, Author = author, Changes = changes };

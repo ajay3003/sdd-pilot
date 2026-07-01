@@ -17,10 +17,51 @@ public enum FrontendThresholdMode
     Default, Strict, Custom
 }
 
+public enum TargetApiAuthType
+{
+    None, BearerToken, ApiKey, BasicAuth
+}
+
+public enum IntegrationType
+{
+    REST, GraphQL, EventHub, ServiceBus, Kafka, RabbitMQ, File, SOAP
+}
+
+public enum IntegrationAuthType
+{
+    None, ApiKey, BearerToken, BasicAuth, ManagedIdentity, ConnectionString, SasToken
+}
+
+public sealed class IntegrationConfig
+{
+    [JsonPropertyName("id")]            public string             Id          { get; set; } = "";
+    [JsonPropertyName("name")]          public string             Name        { get; set; } = "";
+    [JsonPropertyName("type")]          public IntegrationType    Type        { get; set; }
+    [JsonPropertyName("endpoint")]      public string?            Endpoint    { get; set; }
+    [JsonPropertyName("resource")]      public string?            Resource    { get; set; }
+    [JsonPropertyName("consumer")]      public string?            Consumer    { get; set; }
+    [JsonPropertyName("authType")]      public IntegrationAuthType AuthType   { get; set; }
+    [JsonPropertyName("healthUrl")]     public string?            HealthUrl   { get; set; }
+    [JsonPropertyName("workerUrl")]     public string?            WorkerUrl   { get; set; }
+    [JsonPropertyName("monitoringUrl")] public string?            MonitoringUrl { get; set; }
+    [JsonPropertyName("owner")]         public string?            Owner       { get; set; }
+    [JsonPropertyName("enabled")]       public bool               Enabled     { get; set; } = true;
+}
+
 public sealed class FrontendAnalysisSettings
 {
     [JsonPropertyName("profiles")]        public List<FrontendAnalysisProfile> Profiles        { get; set; } = [];
     [JsonPropertyName("activeProfileId")] public string?                       ActiveProfileId { get; set; }
+}
+
+public sealed class TargetApiCredentials
+{
+    [JsonPropertyName("authType")]         public TargetApiAuthType AuthType         { get; set; } = TargetApiAuthType.None;
+    [JsonPropertyName("bearerToken")]      public string?           BearerToken      { get; set; }
+    [JsonPropertyName("apiKey")]           public string?           ApiKey           { get; set; }
+    [JsonPropertyName("apiKeyHeaderName")] public string?           ApiKeyHeaderName { get; set; }
+    [JsonPropertyName("basicUsername")]    public string?           BasicUsername    { get; set; }
+    [JsonPropertyName("basicPassword")]    public string?           BasicPassword    { get; set; }
 }
 
 public sealed class FrontendAnalysisProfile
@@ -31,8 +72,25 @@ public sealed class FrontendAnalysisProfile
     [JsonPropertyName("description")]     public string?                   Description     { get; set; }
     [JsonPropertyName("notes")]           public string?                   Notes           { get; set; }
 
-    // Target Application
+    // Frontend
     [JsonPropertyName("targetUrl")]               public string?       TargetUrl               { get; set; }
+
+    // REST API
+    [JsonPropertyName("restBaseUrl")]      public string? RestBaseUrl      { get; set; }
+    [JsonPropertyName("healthEndpoint")]   public string? HealthEndpoint   { get; set; }
+    [JsonPropertyName("swaggerUrl")]       public string? SwaggerUrl       { get; set; }
+
+    // GraphQL
+    [JsonPropertyName("graphQlEndpoint")] public string? GraphQlEndpoint  { get; set; }
+
+    // API Authentication (for review tool calls to REST/GraphQL APIs)
+    [JsonPropertyName("apiAuth")] public TargetApiCredentials ApiAuth { get; set; } = new();
+
+    // Request settings
+    [JsonPropertyName("requestTimeoutSeconds")] public int RequestTimeoutSeconds { get; set; } = 30;
+    [JsonPropertyName("retryCount")]            public int RetryCount            { get; set; } = 3;
+
+    // Legacy / advanced target fields
     [JsonPropertyName("expectedApiGateway")]      public string?       ExpectedApiGateway      { get; set; }
     [JsonPropertyName("allowedRestHosts")]        public List<string>  AllowedRestHosts        { get; set; } = [];
     [JsonPropertyName("allowedGraphQlEndpoints")] public List<string>  AllowedGraphQlEndpoints { get; set; } = [];
@@ -43,6 +101,8 @@ public sealed class FrontendAnalysisProfile
     [JsonPropertyName("coreWebVitals")]  public CoreWebVitalsThresholds        CoreWebVitals  { get; set; } = new();
     [JsonPropertyName("security")]       public FrontendSecuritySettings       Security       { get; set; } = new();
     [JsonPropertyName("features")]       public FrontendAnalysisFeatureToggles Features       { get; set; } = new();
+
+    [JsonPropertyName("integrations")]   public List<IntegrationConfig>        Integrations   { get; set; } = [];
 }
 
 public sealed class FrontendAuthenticationSettings
