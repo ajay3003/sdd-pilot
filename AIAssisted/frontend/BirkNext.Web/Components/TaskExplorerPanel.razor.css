@@ -1191,3 +1191,323 @@ button.te-ref-chip:hover {
     font-weight: 700;
     cursor: pointer;
 }
+
+/* ── KPI Sections (Simplified) ───────────────────────────────────────── */
+
+.te-kpi-sections {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.te-kpi-group {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+}
+
+.te-kpi-header {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-subtle);
+    margin-bottom: 0.5rem;
+}
+
+.te-kpi-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+/* ── Phase Dashboard ────────────────────────────────────────────────── */
+
+.te-phase-dashboard {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.te-phase-dashboard-header {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-subtle);
+    margin-bottom: 0.5rem;
+}
+
+.te-phase-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.5rem;
+}
+
+.te-phase-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.3rem;
+    padding: 0.5rem;
+}
+
+.te-phase-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.35rem;
+}
+
+.te-phase-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--clr-text-primary);
+    flex: 1;
+    word-break: break-word;
+}
+
+.te-phase-status {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.15rem 0.35rem;
+    border-radius: 0.2rem;
+    white-space: nowrap;
+    text-transform: uppercase;
+    margin-left: 0.4rem;
+}
+
+.te-phase-status-complete {
+    background: rgba(74, 222, 128, 0.15);
+    color: #4ade80;
+}
+
+.te-phase-status-in-progress {
+    background: rgba(45, 212, 191, 0.15);
+    color: #2dd4bf;
+}
+
+.te-phase-status-not-started {
+    background: rgba(148, 163, 184, 0.15);
+    color: #94a3b8;
+}
+
+.te-phase-counts {
+    font-size: 0.72rem;
+    color: var(--clr-text-subtle);
+    margin-bottom: 0.3rem;
+}
+
+.te-phase-bar {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 0.25rem;
+}
+
+.te-phase-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, rgba(45, 212, 191, 0.7), rgba(74, 222, 128, 0.7));
+    transition: width 0.3s ease;
+}
+
+.te-phase-pct {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgba(45, 212, 191, 0.8);
+    text-align: right;
+}
+
+/* ── Filter Groups ──────────────────────────────────────────────────── */
+
+.te-filter-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.te-filter-group {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.375rem;
+    padding: 0.5rem;
+}
+
+.te-filter-group-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-subtle);
+    margin-bottom: 0.35rem;
+}
+
+.te-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+/* ── Dependencies View ──────────────────────────────────────────────── */
+
+.te-dependencies-view {
+    border: 1px solid var(--clr-border);
+    border-radius: 0.5rem;
+    background: var(--clr-bg-card);
+    padding: 1rem;
+    max-height: 620px;
+    overflow: auto;
+}
+
+.te-dependencies-header {
+    margin-bottom: 1rem;
+}
+
+.te-dependencies-header h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--clr-text-primary);
+}
+
+.te-dependencies-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.te-dependency-item {
+    display: grid;
+    grid-template-columns: 100px 1fr 1fr;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 0.3rem;
+    font-size: 0.8rem;
+}
+
+.te-dep-type {
+    font-weight: 600;
+    color: rgba(45, 212, 191, 0.8);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.te-dep-source {
+    color: var(--clr-text-primary);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.te-dep-note {
+    color: var(--clr-text-subtle);
+    font-size: 0.75rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Parallel Work View ────────────────────────────────────────────── */
+
+.te-parallel-view {
+    border: 1px solid var(--clr-border);
+    border-radius: 0.5rem;
+    background: var(--clr-bg-card);
+    padding: 1rem;
+    max-height: 620px;
+    overflow: auto;
+}
+
+.te-parallel-header {
+    margin-bottom: 1rem;
+}
+
+.te-parallel-header h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--clr-text-primary);
+}
+
+.te-parallel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.te-parallel-group {
+    border-left: 3px solid rgba(251, 191, 36, 0.3);
+    padding-left: 0.75rem;
+}
+
+.te-parallel-group-title {
+    margin: 0 0 0.4rem 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: rgba(251, 191, 36, 0.9);
+}
+
+.te-parallel-task {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 0.25rem;
+    font-size: 0.8rem;
+}
+
+.te-ptask-id {
+    font-weight: 700;
+    color: rgba(45, 212, 191, 0.8);
+    min-width: 45px;
+}
+
+.te-ptask-title {
+    flex: 1;
+    color: var(--clr-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.te-ptask-story {
+    font-size: 0.7rem;
+    color: rgba(148, 163, 184, 0.8);
+    white-space: nowrap;
+}
+
+.te-empty-message {
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--clr-text-subtle);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+/* ── Phase Badge ────────────────────────────────────────────────────── */
+
+.te-phase-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.2rem;
+    white-space: nowrap;
+}
+
+.te-phase-badge-complete {
+    background: rgba(74, 222, 128, 0.15);
+    color: #4ade80;
+}
+
+.te-phase-badge-in-progress {
+    background: rgba(45, 212, 191, 0.15);
+    color: #2dd4bf;
+}

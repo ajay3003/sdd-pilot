@@ -60,6 +60,11 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         "architecture notes", "architecture overview", "architecture and design",
         "technical decisions", "decision records", "decisions",
         "architecture design", "system architecture", "solution design",
+        "technical context", "project structure",  // Can detect architecture from structure sections
+        "structure decision", "repository layout", "architecture decisions",
+        "adr references", "repository structure", "folder structure",
+        "infrastructure", "deployment architecture", "system boundaries",
+        "integration points", "external interfaces", "api design",
     };
 
     private static readonly HashSet<string> ProjectStructureKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -71,13 +76,20 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     private static readonly HashSet<string> RiskKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
         "risks", "risk", "risk assessment", "risk analysis", "risks & mitigations",
-        "risks and mitigations", "risk register",
+        "risks and mitigations", "risk register", "open items", "outstanding issues",
+        "blockers", "unresolved items", "issues", "open issues", "pending issues",
+        "open questions", "unresolved questions", "unknowns", "dependencies",
+        "constraints", "limitations", "threats",
     };
 
     private static readonly HashSet<string> ComplexityKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
         "complexity", "complexity tracking", "complexity analysis", "complexity assessment",
-        "technical complexity",
+        "technical complexity", "constraints", "performance goals", "scale", "scaling",
+        "non-functional requirements", "nfr", "distributed systems", "messaging",
+        "event hub", "service bus", "retries", "checkpoints", "managed identity",
+        "blob storage", "sql", "database", "large datasets", "performance",
+        "reliability", "availability", "scalability", "maintainability",
     };
 
     private static readonly HashSet<string> DependencyKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -95,10 +107,12 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     {
         "constitution check", "compliance check", "constitution compliance",
         "governance check", "rule compliance", "constitutional review",
-        "constitution gate", "gates", "gate review",
+        "constitution gate", "gates", "gate review", "architecture gates",
         "gate check", "pp gates", "ps gates", "principle gates", "standard gates",
         "compliance gates", "rule gates", "constitution gates", "compliance review",
-        "gate summary", "rule check",
+        "gate summary", "rule check", "governance", "compliance", "governance review",
+        "principle check", "architecture review", "design review", "decision gates",
+        "quality gates", "approval gates", "release gates",
     };
 
     private static readonly HashSet<string> ImplementationKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -111,7 +125,10 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     private static readonly HashSet<string> TestingKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
         "testing", "test strategy", "test plan", "quality assurance", "qa strategy",
-        "testing strategy", "test approach", "testing approach",
+        "testing strategy", "test approach", "testing approach", "verification",
+        "validation", "qa plan", "test suite", "unit test", "integration test",
+        "e2e test", "end-to-end test", "acceptance test", "performance test",
+        "testcontainers", "xunit", "nsubstitute", "test framework",
     };
 
     private static readonly HashSet<string> ConstraintKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -300,6 +317,10 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         if (string.IsNullOrEmpty(createdDate) && !string.IsNullOrEmpty(date))
             createdDate = date;
+
+        // Detect phases from any section if not already found
+        if (phases.Count == 0)
+            ExtractPhasesFromSections(sections, phases);
 
         // Auto-generate complexity items when no dedicated Complexity section exists
         if (complexityItems.Count == 0)
@@ -1056,9 +1077,71 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             });
         }
 
-        // Migration / schema change / event sourcing keywords in section content
+        // Detect distributed systems, messaging, event hubs, etc. from content
+        var allText = string.Join(" ", sections.Select(s => s.Title + " " + s.RawContent)).ToLowerInvariant();
+
+        var distributedKeywords = new[] { "distributed", "microservice", "event driven", "asynchronous", "async", "resilient", "eventual consistency" };
+        if (distributedKeywords.Any(kw => allText.Contains(kw, StringComparison.OrdinalIgnoreCase)))
+        {
+            items.Add(new PlanComplexityItem
+            {
+                Area    = "Distributed Systems",
+                Level   = ComplexityLevel.High,
+                Notes   = "Plan involves distributed system design patterns",
+                Factors = ["Distributed architecture complexity", "Eventual consistency concerns"],
+            });
+        }
+
+        var messagingKeywords = new[] { "event hub", "service bus", "message queue", "kafka", "rabbitmq", "messaging", "events", "pub/sub", "pubsub" };
+        if (messagingKeywords.Any(kw => allText.Contains(kw, StringComparison.OrdinalIgnoreCase)))
+        {
+            items.Add(new PlanComplexityItem
+            {
+                Area    = "Message Processing & Streaming",
+                Level   = ComplexityLevel.High,
+                Notes   = "Plan uses message queuing or event streaming",
+                Factors = ["Message processing", "Event ordering", "Backpressure handling", "Retry logic"],
+            });
+        }
+
+        var storageKeywords = new[] { "blob storage", "sql server", "database", "persistence", "caching", "redis", "relational" };
+        if (storageKeywords.Any(kw => allText.Contains(kw, StringComparison.OrdinalIgnoreCase)))
+        {
+            items.Add(new PlanComplexityItem
+            {
+                Area    = "Data Storage & Persistence",
+                Level   = ComplexityLevel.Medium,
+                Notes   = "Plan includes data storage strategy",
+                Factors = ["Schema design", "Performance tuning", "Backup/recovery", "Data migration"],
+            });
+        }
+
+        // Authentication & Identity
+        if (allText.Contains("managed identity") || allText.Contains("azure ad") || allText.Contains("oauth") || allText.Contains("authentication"))
+        {
+            items.Add(new PlanComplexityItem
+            {
+                Area    = "Authentication & Authorization",
+                Level   = ComplexityLevel.Medium,
+                Notes   = "Plan includes identity and authentication strategy",
+                Factors = ["Managed Identity integration", "Token management", "Access control"],
+            });
+        }
+
+        // Checkpoints & State Management
+        if (allText.Contains("checkpoint") || allText.Contains("state") || allText.Contains("resumable"))
+        {
+            items.Add(new PlanComplexityItem
+            {
+                Area    = "Checkpointing & State Management",
+                Level   = ComplexityLevel.High,
+                Notes   = "Plan requires checkpoint/state recovery logic",
+                Factors = ["Fault recovery", "Idempotency", "Stateless design"],
+            });
+        }
+
+        // Migration / schema change / event sourcing keywords
         var migrationKeywords = new[] { "migrat", "schema change", "event sour", "replay", "backfill" };
-        var allText = string.Join(" ", sections.Select(s => s.Title + " " + s.RawContent));
         if (migrationKeywords.Any(kw => allText.Contains(kw, StringComparison.OrdinalIgnoreCase)))
         {
             items.Add(new PlanComplexityItem
@@ -1066,7 +1149,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 Area    = "Data Migration / Schema Evolution",
                 Level   = ComplexityLevel.High,
                 Notes   = "Plan involves migration or schema evolution work",
-                Factors = ["Migration/schema complexity detected from plan content"],
+                Factors = ["Migration strategy", "Backward compatibility", "Data validation"],
             });
         }
 
@@ -1485,6 +1568,52 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         };
     }
 
+    // ── Phase extraction from any section ────────────────────────────────────
+
+    private static void ExtractPhasesFromSections(List<PlanSection> sections, List<PlanImplementationPhase> phases)
+    {
+        // Scan all sections for phase references (Phase 0, Phase 1, etc.)
+        // This allows phases to be detected even in Project Structure or other sections
+        var phaseMatches = new Dictionary<int, PlanImplementationPhase>();
+
+        foreach (var section in sections)
+        {
+            var tokens = MarkdownTokenizer.Tokenize(section.RawContent);
+            foreach (var tok in tokens)
+            {
+                if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel >= 3)
+                {
+                    var heading = tok.Content;
+                    var numMatch = PhaseNumberRe.Match(heading);
+                    if (numMatch.Success)
+                    {
+                        if (int.TryParse(numMatch.Groups[1].Value, out var phaseNum))
+                        {
+                            var title = StripMarkdown(heading[(numMatch.Index + numMatch.Length)..].TrimStart(':', '-', '–', ' ').Trim());
+                            if (string.IsNullOrEmpty(title)) title = $"Phase {phaseNum}";
+
+                            if (!phaseMatches.ContainsKey(phaseNum))
+                            {
+                                phaseMatches[phaseNum] = new PlanImplementationPhase
+                                {
+                                    PhaseNumber = phaseNum,
+                                    Title = title,
+                                    Tasks = [],
+                                    Checks = [],
+                                    Blocks = [],
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add detected phases to the list, sorted by phase number
+        foreach (var phase in phaseMatches.Values.OrderBy(p => p.PhaseNumber))
+            phases.Add(phase);
+    }
+
     // ── Testing ──────────────────────────────────────────────────────────────
 
     private static PlanTestingInfo ParseTestingSection(string raw)
@@ -1737,19 +1866,60 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     private static PlanSectionType ClassifySection(string heading)
     {
         var lower = heading.ToLowerInvariant();
-        // Check TechContext before Architecture (both may contain "context")
-        if (TechContextKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))     return PlanSectionType.TechnicalContext;
-        // ConstitutionCheck before Architecture (avoid "gate" matching "design")
-        if (ConstitutionCheckKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return PlanSectionType.ConstitutionCheck;
-        if (ArchitectureKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))    return PlanSectionType.Architecture;
-        if (ProjectStructureKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return PlanSectionType.ProjectStructure;
-        if (ImplementationKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))  return PlanSectionType.ImplementationPhases;
-        if (TestingKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))         return PlanSectionType.Testing;
-        if (RiskKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))            return PlanSectionType.Risks;
-        if (ConstraintKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))      return PlanSectionType.Constraints;
-        if (ComplexityKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))      return PlanSectionType.Complexity;
-        if (DependencyKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))      return PlanSectionType.Dependencies;
-        if (MilestoneKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))       return PlanSectionType.Milestones;
+
+        // Explicit matches take highest priority to avoid false positives
+        // Structure Decision → Architecture (not Project Structure)
+        if (lower.Contains("structure decision") || lower.Contains("decision record") || lower.Contains("adr "))
+            return PlanSectionType.Architecture;
+
+        // Open Items / Blockers → Risks (not generic Project Structure)
+        if (lower.Contains("open item") || lower.Contains("outstanding issue") || lower.Contains("blocker"))
+            return PlanSectionType.Risks;
+
+        // Constitution Check (high priority — avoid "architecture gate" being classified as Architecture)
+        if (ConstitutionCheckKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
+            return PlanSectionType.ConstitutionCheck;
+
+        // Technical Context (before Architecture/Structure — both may contain "context")
+        if (TechContextKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
+            return PlanSectionType.TechnicalContext;
+
+        // Architecture (includes structure decisions, ADR refs, etc.)
+        if (ArchitectureKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
+            return PlanSectionType.Architecture;
+
+        // Implementation/Phases (before generic ProjectStructure to catch "Phase X" labels)
+        if (ImplementationKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
+            return PlanSectionType.ImplementationPhases;
+
+        // Project Structure (after Architecture to avoid "structure" keyword collision)
+        if (ProjectStructureKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
+            return PlanSectionType.ProjectStructure;
+
+        // Testing
+        if (TestingKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
+            return PlanSectionType.Testing;
+
+        // Risks (with "open" prefix to avoid matching generic "risks" in other contexts)
+        if (RiskKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
+            return PlanSectionType.Risks;
+
+        // Constraints / Performance Goals
+        if (ConstraintKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
+            return PlanSectionType.Constraints;
+
+        // Complexity
+        if (ComplexityKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
+            return PlanSectionType.Complexity;
+
+        // Dependencies
+        if (DependencyKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
+            return PlanSectionType.Dependencies;
+
+        // Milestones
+        if (MilestoneKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
+            return PlanSectionType.Milestones;
+
         return PlanSectionType.Other;
     }
 
