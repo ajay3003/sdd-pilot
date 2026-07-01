@@ -553,6 +553,7 @@
     [Parameter] public IReadOnlyList<ExtractionCandidate> Candidates { get; set; } = [];
     [Parameter] public IReadOnlyList<CandidateLinkEntry> Links { get; set; } = [];
     [Parameter] public SpecificationSemanticModel? SemanticModel { get; set; }
+    [Parameter] public ReviewContext? ReviewContext { get; set; }
 
     private FlowModel? _model;
     private string? _lastSpec;
@@ -616,27 +617,33 @@
         }
     }
 
-    // Metrics from semantic model (single source of truth)
+    // Metrics from ReviewContext (canonical source) or SemanticModel (fallback)
     private int GetTotalRequirements() =>
-        SemanticModel?.TotalRequirements ?? 0;
+        ReviewContext?.Specification.TotalRequirements ?? SemanticModel?.TotalRequirements ?? 0;
 
     private int GetTotalSuccessCriteria() =>
-        SemanticModel?.TotalSuccessCriteria ?? 0;
+        ReviewContext?.Specification.TotalSuccessCriteria ?? SemanticModel?.TotalSuccessCriteria ?? 0;
 
     private int GetTotalTests() =>
-        SemanticModel?.TotalAcceptanceScenarios ?? 0;
+        ReviewContext?.Specification.TotalAcceptanceScenarios ?? SemanticModel?.TotalAcceptanceScenarios ?? 0;
 
     private int GetCoveragePercent()
     {
+        if (ReviewContext != null)
+        {
+            if (ReviewContext.Specification.TotalRequirements == 0) return 0;
+            return ReviewContext.Coverage.SpecificationCompleteness;
+        }
+
         if (SemanticModel == null || SemanticModel.TotalRequirements == 0) return 0;
         return (SemanticModel.RequirementsWithTests * 100) / SemanticModel.TotalRequirements;
     }
 
     private int GetMissingTests() =>
-        SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithTests : 0;
+        ReviewContext?.MissingTests ?? (SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithTests : 0);
 
     private int GetMissingSuccessCriteria() =>
-        SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithSuccessCriteria : 0;
+        ReviewContext?.MissingSuccessCriteria ?? (SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithSuccessCriteria : 0);
 
     private void ToggleLane(string key) =>
         _expanded[key] = !_expanded.GetValueOrDefault(key);

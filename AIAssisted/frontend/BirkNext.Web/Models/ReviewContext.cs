@@ -24,6 +24,15 @@ public sealed class ReviewContext
     public Dictionary<string, List<string>> SpecToDataModel { get; init; } = [];     // FR/SC to Data Entities
     public Dictionary<string, List<string>> PlanToTasks { get; init; } = [];         // Plan Phases to Tasks
     public Dictionary<string, List<string>> ConstitutionToTasks { get; init; } = []; // Constitution Rules to Tasks
+
+    // ── Derived Metrics (Convenience Properties) ────────────────────────────
+    // These are helper properties that avoid code duplication in pages.
+    // They derive from semantic models or coverage metrics above.
+
+    public int RequirementsWithTests => Specification.RequirementsWithTests;
+    public int RequirementsWithSuccessCriteria => Specification.RequirementsWithSuccessCriteria;
+    public int MissingTests => Specification.TotalRequirements - RequirementsWithTests;
+    public int MissingSuccessCriteria => Specification.TotalRequirements - RequirementsWithSuccessCriteria;
 }
 
 /// <summary>
