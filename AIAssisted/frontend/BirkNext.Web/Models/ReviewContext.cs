@@ -33,6 +33,101 @@ public sealed class ReviewContext
     public int RequirementsWithSuccessCriteria => Specification.RequirementsWithSuccessCriteria;
     public int MissingTests => Specification.TotalRequirements - RequirementsWithTests;
     public int MissingSuccessCriteria => Specification.TotalRequirements - RequirementsWithSuccessCriteria;
+
+    // ── Navigation API (Single Source of Truth for Queries) ───────────────────
+    // Pages should use these methods instead of directly traversing semantic models.
+
+    // Core collections
+    public IReadOnlyList<SemanticRequirement> GetRequirements() => Specification.Requirements;
+    public SemanticRequirement? GetRequirement(string id) => Specification.Requirements.FirstOrDefault(r => r.Id == id);
+    public IReadOnlyList<SemanticUserStory> GetUserStories() => Specification.UserStories;
+    public IReadOnlyList<SemanticSuccessCriterion> GetSuccessCriteria() => Specification.SuccessCriteria;
+    public IReadOnlyList<SemanticAcceptanceScenario> GetTests() => Specification.AcceptanceScenarios;
+    public IReadOnlyList<SemanticClarification> GetClarifications() => Specification.Clarifications;
+    public IReadOnlyList<SemanticConstitutionRule> GetConstitutionRules() => Constitution.Rules;
+    public IReadOnlyList<TaskItem> GetTasks() => Tasks.AllTasks;
+    public IReadOnlyList<SemanticDataEntity> GetDataEntities() => DataModel.Entities;
+
+    // Related items by ID
+    public IReadOnlyList<SemanticAcceptanceScenario> GetTests(string requirementId) =>
+        GetRequirement(requirementId)?.LinkedAcceptanceScenarios ?? [];
+
+    public IReadOnlyList<SemanticSuccessCriterion> GetSuccessCriteria(string requirementId) =>
+        GetRequirement(requirementId)?.LinkedSuccessCriteria ?? [];
+
+    public IReadOnlyList<SemanticUserStory> GetUserStories(string requirementId) =>
+        GetRequirement(requirementId)?.LinkedUserStories ?? [];
+
+    public IReadOnlyList<string> GetLinkedConstitutionRules(string requirementId) =>
+        SpecToConstitution.TryGetValue(requirementId, out var rules) ? rules : [];
+
+    public IReadOnlyList<string> GetLinkedTasks(string requirementId) =>
+        SpecToTasks.TryGetValue(requirementId, out var tasks) ? tasks : [];
+
+    public IReadOnlyList<string> GetLinkedPlans(string requirementId) =>
+        SpecToPlan.TryGetValue(requirementId, out var plans) ? plans : [];
+
+    public IReadOnlyList<string> GetLinkedDataEntities(string requirementId) =>
+        SpecToDataModel.TryGetValue(requirementId, out var entities) ? entities : [];
+
+    // Filtered collections
+    public IEnumerable<SemanticRequirement> GetRequirementsWithTests() =>
+        Specification.Requirements.Where(r => r.LinkedAcceptanceScenarios.Count > 0);
+
+    public IEnumerable<SemanticRequirement> GetRequirementsWithoutTests() =>
+        Specification.Requirements.Where(r => r.LinkedAcceptanceScenarios.Count == 0);
+
+    public IEnumerable<SemanticRequirement> GetRequirementsWithSuccessCriteria() =>
+        Specification.Requirements.Where(r => r.LinkedSuccessCriteria.Count > 0);
+
+    public IEnumerable<SemanticRequirement> GetRequirementsWithoutSuccessCriteria() =>
+        Specification.Requirements.Where(r => r.LinkedSuccessCriteria.Count == 0);
+
+    public IEnumerable<SemanticRequirement> GetRequirementsWithUserStories() =>
+        Specification.Requirements.Where(r => r.LinkedUserStories.Count > 0);
+
+    public IEnumerable<SemanticRequirement> GetRequirementsWithoutUserStories() =>
+        Specification.Requirements.Where(r => r.LinkedUserStories.Count == 0);
+
+    public IEnumerable<SemanticSuccessCriterion> GetSuccessCriteriaWithoutRequirements() =>
+        Specification.SuccessCriteria.Where(s => s.LinkedRequirements.Count == 0);
+
+    public IEnumerable<SemanticSuccessCriterion> GetSuccessCriteriaWithoutTests() =>
+        Specification.SuccessCriteria.Where(s => s.LinkedRequirements.All(r => r.LinkedAcceptanceScenarios.Count == 0));
+
+    public IEnumerable<SemanticAcceptanceScenario> GetTestsWithoutRequirements() =>
+        Specification.AcceptanceScenarios.Where(a => a.LinkedRequirements.Count == 0);
+
+    // Gap analysis
+    public int GetOrphanedTestCount() => GetTestsWithoutRequirements().Count();
+    public int GetOrphanedSuccessCriteriaCount() => GetSuccessCriteriaWithoutRequirements().Count();
+    public int GetRequirementsWithoutCoverageCount() => GetRequirementsWithoutTests().Count();
+    public int GetRequirementsWithoutSuccessCriteriaCount() => GetRequirementsWithoutSuccessCriteria().Count();
+
+    // Relationship queries
+    public bool IsLinkedToConstitution(string requirementId) => SpecToConstitution.ContainsKey(requirementId);
+    public bool IsLinkedToTasks(string requirementId) => SpecToTasks.ContainsKey(requirementId);
+    public bool IsLinkedToPlans(string requirementId) => SpecToPlan.ContainsKey(requirementId);
+    public bool IsLinkedToDataModel(string requirementId) => SpecToDataModel.ContainsKey(requirementId);
+
+    // Coverage state for a single requirement
+    public bool HasTestCoverage(string requirementId)
+    {
+        var req = GetRequirement(requirementId);
+        return req != null && req.LinkedAcceptanceScenarios.Count > 0;
+    }
+
+    public bool HasSuccessCriteria(string requirementId)
+    {
+        var req = GetRequirement(requirementId);
+        return req != null && req.LinkedSuccessCriteria.Count > 0;
+    }
+
+    public bool HasUserStoryLink(string requirementId)
+    {
+        var req = GetRequirement(requirementId);
+        return req != null && req.LinkedUserStories.Count > 0;
+    }
 }
 
 /// <summary>
