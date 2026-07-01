@@ -6,7 +6,7 @@
 
 <div class="traceability-page">
     <PageHeader Title="Traceability &amp; Coverage"
-                Description="Coverage helps you see which requirements are tested and where QA risk exists." />
+                Description="Track requirements across Constitution, Specification, Plan, and Tasks to identify coverage gaps." />
 
     @if (_isLoading)
     {
@@ -18,68 +18,357 @@
     }
     else
     {
-        <div class="kpi-row" aria-label="Coverage metrics">
-            <button type="button" class="kpi-card kpi-card-traceability @(_activeTab == "requirements" && _filter == "" ? "kpi-card-active" : "")"
-                    @onclick='() => SetTab("requirements")' aria-label="@_summary.TotalRequirements requirements — open requirements view">
-                <span class="kpi-marker" aria-hidden="true"></span>
-                <span class="kpi-value">@_summary.TotalRequirements</span>
-                <span class="kpi-label">Requirements</span>
-                <span class="kpi-hint">in scope</span>
-            </button>
-            <button type="button" class="kpi-card kpi-card-coverage @(_activeTab == "requirements" && _filter == "Covered" ? "kpi-card-active" : "")"
-                    @onclick='() => SetTab("requirements", "Covered")' aria-label="@_summary.CoveredRequirements covered — show covered requirements">
-                <span class="kpi-marker" aria-hidden="true"></span>
-                <span class="kpi-value">@_summary.CoveredRequirements</span>
-                <span class="kpi-label">Covered</span>
-                <span class="kpi-hint">requirements with tests</span>
-            </button>
-            <button type="button" class="kpi-card @(_summary.NotCoveredRequirements > 0 ? "kpi-card-risks" : "kpi-card-coverage") @(_activeTab == "gaps" ? "kpi-card-active" : "")"
-                    @onclick='() => SetTab("gaps")' aria-label="@_summary.NotCoveredRequirements without tests — open coverage gaps">
-                <span class="kpi-marker" aria-hidden="true"></span>
-                <span class="kpi-value">@_summary.NotCoveredRequirements</span>
-                <span class="kpi-label">Missing Tests</span>
-                <span class="kpi-hint">requirements without tests</span>
-            </button>
+        <!-- KPI Summary Section -->
+        <div class="trace-kpi-sections" aria-label="Traceability metrics">
+            <div class="trace-kpi-group">
+                <h3 class="kpi-group-title">Coverage Health</h3>
+                <button type="button" class="kpi-card kpi-card-coverage @(_activeTab == "overview" ? "kpi-card-active" : "")"
+                        @onclick='() => SetTab("overview")' aria-label="@_summary.CoveragePercent% overall coverage">
+                    <span class="kpi-value">@_summary.CoveragePercent%</span>
+                    <span class="kpi-label">Overall Coverage</span>
+                    <span class="kpi-hint">@_summary.CoveredRequirements of @_summary.TotalRequirements</span>
+                </button>
+                <div class="kpi-card kpi-card-info">
+                    <span class="kpi-value">@CalculateHealthScore()</span>
+                    <span class="kpi-label">Traceability Health</span>
+                    <span class="kpi-hint">Requirements linked to tests</span>
+                </div>
+            </div>
+
+            <div class="trace-kpi-group">
+                <h3 class="kpi-group-title">Gaps &amp; Issues</h3>
+                <button type="button" class="kpi-card @(_summary.NotCoveredRequirements > 0 ? "kpi-card-risks" : "kpi-card-coverage") @(_activeTab == "gaps" ? "kpi-card-active" : "")"
+                        @onclick='() => SetTab("gaps")' aria-label="@_summary.NotCoveredRequirements requirements without tests">
+                    <span class="kpi-value">@_summary.NotCoveredRequirements</span>
+                    <span class="kpi-label">Missing Tests</span>
+                    <span class="kpi-hint">requirements without coverage</span>
+                </button>
+                <button type="button" class="kpi-card @(_summary.OrphanTests > 0 ? "kpi-card-risks" : "kpi-card-coverage") @(_activeTab == "gaps" ? "kpi-card-active" : "")"
+                        @onclick='() => SetTab("gaps")' aria-label="@_summary.OrphanTests orphan tasks">
+                    <span class="kpi-value">@_summary.OrphanTests</span>
+                    <span class="kpi-label">Orphan Tasks</span>
+                    <span class="kpi-hint">tests not linked to requirements</span>
+                </button>
+            </div>
         </div>
 
         @if (_summary.SuggestedCoverageRequirements > 0)
         {
-            <div class="coverage-compare-row" aria-label="Confirmed vs suggested coverage">
-                <div class="kpi-card kpi-card-coverage coverage-compare-card">
-                    <span class="kpi-marker" aria-hidden="true"></span>
-                    <span class="kpi-value">@_summary.CoveragePercent%</span>
-                    <span class="kpi-label">Confirmed Coverage</span>
-                    <span class="kpi-hint">@_summary.CoveredRequirements of @_summary.TotalRequirements requirements with confirmed test links</span>
+            <div class="trace-suggestions-cta" aria-label="Pending coverage suggestions">
+                <div class="trace-cta-content">
+                    <h4>Pending Coverage Suggestions</h4>
+                    <p>@_summary.SuggestedCoverageRequirements additional requirement@(_summary.SuggestedCoverageRequirements == 1 ? "" : "s") have AI-suggested test links.</p>
+                    <p>Confirming could bring coverage to <strong>@SuggestedCoveragePercent%</strong>.</p>
                 </div>
-                <div class="kpi-card kpi-card-progress coverage-compare-card">
-                    <span class="kpi-marker" aria-hidden="true"></span>
-                    <span class="kpi-value">@SuggestedCoveragePercent%</span>
-                    <span class="kpi-label">Suggested Coverage</span>
-                    <span class="kpi-hint">@_summary.SuggestedCoverageRequirements additional requirement@(_summary.SuggestedCoverageRequirements == 1 ? "" : "s") have pending AI-suggested links</span>
-                </div>
-                <div class="coverage-compare-cta">
-                    <p>Confirming pending suggestions could bring coverage to <strong>@SuggestedCoveragePercent%</strong>.</p>
-                    <a href="traceability/suggestions" class="btn-primary btn-sm">Review @_summary.PendingSuggestionCount Suggestion@(_summary.PendingSuggestionCount == 1 ? "" : "s") →</a>
-                </div>
+                <a href="traceability/suggestions" class="btn-primary btn-sm">Review @_summary.PendingSuggestionCount Suggestion@(_summary.PendingSuggestionCount == 1 ? "" : "s") →</a>
             </div>
         }
 
+        <!-- Top Issues Panel -->
+        <section class="trace-top-issues" aria-labelledby="issues-heading">
+            <h3 id="issues-heading" class="section-heading">Top Issues</h3>
+            <div class="trace-issues-grid">
+                @if (_summary.NotCoveredRequirements > 0)
+                {
+                    <div class="trace-issue-item trace-issue-high">
+                        <div class="issue-icon">⚠</div>
+                        <div class="issue-content">
+                            <h4>@_summary.NotCoveredRequirements Requirements Without Tests</h4>
+                            <p>These requirements lack test coverage and should be prioritized.</p>
+                            <button class="trace-issue-link" @onclick='() => SetTab("gaps")'>View Requirements →</button>
+                        </div>
+                    </div>
+                }
+                @if (_summary.OrphanTests > 0)
+                {
+                    <div class="trace-issue-item trace-issue-medium">
+                        <div class="issue-icon">●</div>
+                        <div class="issue-content">
+                            <h4>@_summary.OrphanTests Tests Without Links</h4>
+                            <p>These tests are not linked to any requirement and should be reviewed.</p>
+                            <button class="trace-issue-link" @onclick='() => SetTab("gaps")'>Link Tests →</button>
+                        </div>
+                    </div>
+                }
+                @if (_summary.NotCoveredRequirements == 0 && _summary.OrphanTests == 0)
+                {
+                    <div class="trace-issue-item trace-issue-good">
+                        <div class="issue-icon">✓</div>
+                        <div class="issue-content">
+                            <h4>No Major Issues</h4>
+                            <p>All requirements have tests and all tests are linked to requirements.</p>
+                        </div>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <!-- Tab Navigation -->
         <div class="trace-tab-bar" role="tablist">
+            <button type="button" role="tab" class="trace-tab @(_activeTab == "overview" ? "is-active" : "")"
+                    @onclick='() => SetTab("overview")' aria-selected='@(_activeTab == "overview")'>
+                Overview
+            </button>
+            <button type="button" role="tab" class="trace-tab @(_activeTab == "pipeline" ? "is-active" : "")"
+                    @onclick='() => SetTab("pipeline")' aria-selected='@(_activeTab == "pipeline")'>
+                Pipeline
+            </button>
+            <button type="button" role="tab" class="trace-tab @(_activeTab == "matrix" ? "is-active" : "")"
+                    @onclick='() => SetTab("matrix")' aria-selected='@(_activeTab == "matrix")'>
+                Matrix
+            </button>
             <button type="button" role="tab" class="trace-tab @(_activeTab == "gaps" ? "is-active" : "")"
                     @onclick='() => SetTab("gaps")' aria-selected='@(_activeTab == "gaps")'>
-                Coverage Gaps
+                Gaps
                 @if (_summary.NotCoveredRequirements + _summary.OrphanTests > 0)
                 {
                     <span class="trace-tab-badge trace-tab-badge-risk">@(_summary.NotCoveredRequirements + _summary.OrphanTests)</span>
                 }
             </button>
-            <button type="button" role="tab" class="trace-tab @(_activeTab == "requirements" ? "is-active" : "")"
-                    @onclick='() => SetTab("requirements")' aria-selected='@(_activeTab == "requirements")'>
-                Requirements
+            <button type="button" role="tab" class="trace-tab @(_activeTab == "coverage" ? "is-active" : "")"
+                    @onclick='() => SetTab("coverage")' aria-selected='@(_activeTab == "coverage")'>
+                Coverage
                 <span class="trace-tab-badge">@_summary.TotalRequirements</span>
             </button>
         </div>
 
+        <!-- Overview Tab -->
+        @if (_activeTab == "overview")
+        {
+            <section class="trace-overview-section" aria-label="Traceability overview">
+                <SectionHeader Title="Traceability Pipeline"
+                               Description="Visual flow from Constitution principles through Specification requirements to Plan and Tasks">
+                </SectionHeader>
+                <div class="trace-pipeline" aria-label="Traceability pipeline visualization">
+                    <div class="pipeline-stage">
+                        <h4 class="pipeline-stage-title">Constitution</h4>
+                        <div class="pipeline-metrics">
+                            <div class="pipeline-number">0</div>
+                            <div class="pipeline-label">Rules</div>
+                        </div>
+                        <div class="pipeline-coverage">0% traced</div>
+                    </div>
+                    <div class="pipeline-arrow">→</div>
+                    <div class="pipeline-stage">
+                        <h4 class="pipeline-stage-title">Specification</h4>
+                        <div class="pipeline-metrics">
+                            <div class="pipeline-number">@_summary.TotalRequirements</div>
+                            <div class="pipeline-label">Requirements</div>
+                        </div>
+                        <div class="pipeline-coverage">@_summary.CoveragePercent% tested</div>
+                    </div>
+                    <div class="pipeline-arrow">→</div>
+                    <div class="pipeline-stage">
+                        <h4 class="pipeline-stage-title">Plan</h4>
+                        <div class="pipeline-metrics">
+                            <div class="pipeline-number">0</div>
+                            <div class="pipeline-label">Decisions</div>
+                        </div>
+                        <div class="pipeline-coverage">0% reviewed</div>
+                    </div>
+                    <div class="pipeline-arrow">→</div>
+                    <div class="pipeline-stage">
+                        <h4 class="pipeline-stage-title">Tasks</h4>
+                        <div class="pipeline-metrics">
+                            <div class="pipeline-number">@_matrix.Count</div>
+                            <div class="pipeline-label">Linked</div>
+                        </div>
+                        <div class="pipeline-coverage">@CoveredCount of @_summary.TotalRequirements</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="trace-summary-grid" aria-label="Coverage summary by status">
+                <SectionHeader Title="Coverage by Status"
+                               Description="Requirements organized by traceability status">
+                </SectionHeader>
+                <div class="coverage-status-cards">
+                    <div class="coverage-status-card coverage-covered">
+                        <h4>Covered</h4>
+                        <div class="coverage-stat">@CoveredCount</div>
+                        <p>Requirements with test coverage</p>
+                    </div>
+                    <div class="coverage-status-card coverage-missing">
+                        <h4>Missing Coverage</h4>
+                        <div class="coverage-stat">@NotCoveredCount</div>
+                        <p>Requirements without tests</p>
+                    </div>
+                    <div class="coverage-status-card coverage-orphan">
+                        <h4>Orphan Tests</h4>
+                        <div class="coverage-stat">@_summary.OrphanTests</div>
+                        <p>Tests not linked to requirements</p>
+                    </div>
+                    <div class="coverage-status-card coverage-total">
+                        <h4>Total</h4>
+                        <div class="coverage-stat">@_summary.TotalRequirements</div>
+                        <p>Total requirements in scope</p>
+                    </div>
+                </div>
+            </section>
+        }
+
+        <!-- Pipeline Tab -->
+        @if (_activeTab == "pipeline")
+        {
+            <section aria-label="Detailed traceability pipeline">
+                <SectionHeader Title="Traceability Pipeline Details"
+                               Description="Detailed view of how requirements flow through Constitution, Plan, and Tasks">
+                </SectionHeader>
+                <div class="trace-pipeline-details">
+                    <p class="trace-placeholder">Pipeline details coming soon. This view will show the flow from Constitution rules through Specification requirements to Plan decisions and Tasks.</p>
+                </div>
+            </section>
+        }
+
+        <!-- Matrix Tab -->
+        @if (_activeTab == "matrix")
+        {
+            <div class="filter-chip-grid" aria-label="Requirements filter">
+                <button type="button" class="library-filter-chip @(_filter == "" ? "is-active" : "")" @onclick='() => _filter = ""'>
+                    All <span>@_matrix.Count</span>
+                </button>
+                <button type="button" class="library-filter-chip @(_filter == "Covered" ? "is-active" : "")" @onclick='() => _filter = "Covered"'>
+                    Covered <span>@CoveredCount</span>
+                </button>
+                <button type="button" class="library-filter-chip @(_filter == "NotCovered" ? "is-active" : "")" @onclick='() => _filter = "NotCovered"'>
+                    Missing Tests <span>@NotCoveredCount</span>
+                </button>
+            </div>
+
+            <section aria-label="Requirement to test coverage matrix">
+                <SectionHeader Title="Coverage Matrix"
+                               Description="Requirement-to-test traceability mapping">
+                    <Actions><span>@FilteredMatrix.Count shown</span></Actions>
+                </SectionHeader>
+
+                @if (FilteredMatrix.Count == 0 && _matrix.Count == 0)
+                {
+                    <EmptyState Title="No requirements yet"
+                                Description="Add requirement scenarios to the library to see their coverage status here."
+                                Dashed="true">
+                        <a href="/scenarios">Go to QA Artifact Library</a>
+                    </EmptyState>
+                }
+                else if (FilteredMatrix.Count == 0)
+                {
+                    <div class="mapping-empty">No requirements match the current filter.</div>
+                }
+                else
+                {
+                    <div class="trace-table-wrapper">
+                        <table class="trace-table" aria-label="Requirement coverage matrix">
+                            <thead>
+                                <tr>
+                                    <th class="trace-col-id">ID</th>
+                                    <th class="trace-col-title">Requirement</th>
+                                    <th class="trace-col-coverage">Coverage</th>
+                                    <th class="trace-col-count">Tests</th>
+                                    <th class="trace-col-risk">Risk</th>
+                                    <th class="trace-col-actions">Linked Tests &amp; Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in FilteredMatrix)
+                                {
+                                    var reqLabel = ReqLabel(row.Id);
+                                    var isLinking = _linkingRequirementId == row.Id;
+                                    var isExpanded = _expandedRows.Contains(row.Id);
+                                    var needsTruncate = row.Title.Length > TitleLimit;
+                                    <tr class="trace-row trace-row--@(row.CoverageStatus == "Covered" ? "covered" : "missing")">
+                                        <td class="trace-col-id">
+                                            <span class="artifact-display-label">@reqLabel</span>
+                                        </td>
+                                        <td class="trace-col-title">
+                                            @if (needsTruncate && !isExpanded)
+                                            {
+                                                <span>@(row.Title[..TitleLimit])</span><span class="trace-ellipsis">&hellip;</span>
+                                                <button class="trace-show-more" @onclick="() => ToggleExpand(row.Id)">Show more</button>
+                                            }
+                                            else
+                                            {
+                                                <span>@row.Title</span>
+                                                @if (needsTruncate)
+                                                {
+                                                    <button class="trace-show-more" @onclick="() => ToggleExpand(row.Id)">Show less</button>
+                                                }
+                                            }
+                                        </td>
+                                        <td class="trace-col-coverage">
+                                            <StatusChip Status="@(row.CoverageStatus == "Covered" ? "ready" : "critical")"
+                                                        Label="@(row.CoverageStatus == "Covered" ? "Covered" : "Missing Coverage")" />
+                                        </td>
+                                        <td class="trace-col-count">@row.LinkedTests.Count</td>
+                                        <td class="trace-col-risk">
+                                            <StatusChip Status="@(RiskClass(row) switch { "high" => "critical", "medium" => "warning", _ => "ready" })"
+                                                        Label="@RiskLabel(row)" />
+                                        </td>
+                                        <td class="trace-col-actions">
+                                            @if (row.LinkedTests.Count == 0 && !isLinking)
+                                            {
+                                                <span class="mapping-test-empty">No tests linked</span>
+                                            }
+                                            else
+                                            {
+                                                @foreach (var linked in row.LinkedTests)
+                                                {
+                                                    <span class="mapping-test-pill">
+                                                        <span class="test-pill-label">@(TestLabel(linked.TestId))</span>
+                                                        @linked.TestTitle
+                                                        <button class="trace-unlink-btn"
+                                                                title="Remove link to @linked.TestTitle"
+                                                                disabled="@(_unlinkingId == linked.LinkId)"
+                                                                @onclick="() => HandleUnlinkAsync(linked.LinkId)"
+                                                                aria-label="Remove link between @reqLabel and @(TestLabel(linked.TestId))">
+                                                            @if (_unlinkingId == linked.LinkId) {<span>…</span>} else {<span aria-hidden="true">×</span>}
+                                                        </button>
+                                                    </span>
+                                                    @if (_unlinkErrors.TryGetValue(linked.LinkId, out var unlinkErr))
+                                                    {
+                                                        <span class="trace-inline-error">@unlinkErr</span>
+                                                    }
+                                                }
+                                            }
+
+                                            @if (!isLinking)
+                                            {
+                                                <button class="trace-matrix-action" @onclick="() => BeginLinking(row.Id)"
+                                                        aria-label="Link a test to @reqLabel">
+                                                    + Link Test
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <div class="link-select-row">
+                                                    <select class="trace-test-select" @bind="_selectedTestId"
+                                                            aria-label="Select a test to link to @reqLabel">
+                                                        <option value="">— select a test —</option>
+                                                        @foreach (var t in AvailableTestsFor(row))
+                                                        {
+                                                            <option value="@t.Id">@(TestLabel(t.Id)) — @t.Title</option>
+                                                        }
+                                                    </select>
+                                                    <PrimaryButton Disabled="@(string.IsNullOrEmpty(_selectedTestId) || _isLinking)"
+                                                                   OnClick="() => HandleLinkAsync(row.Id)">
+                                                        @if (_isLinking) {<span>Linking…</span>} else {<span>Link</span>}
+                                                    </PrimaryButton>
+                                                    <SecondaryButton OnClick="CancelLinking">Cancel</SecondaryButton>
+                                                </div>
+                                                @if (_linkError is not null)
+                                                {
+                                                    <span class="trace-inline-error">@_linkError</span>
+                                                }
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+        }
+
+        <!-- Gaps Tab -->
         @if (_activeTab == "gaps")
         {
             var notCovered = _matrix.Where(r => r.CoverageStatus == "NotCovered").ToList();
@@ -210,150 +499,26 @@
                 }
             </section>
         }
-        else
+
+        <!-- Coverage Tab -->
+        @if (_activeTab == "coverage")
         {
-            <div class="filter-chip-grid" aria-label="Requirements filter">
-                <button type="button" class="library-filter-chip @(_filter == "" ? "is-active" : "")" @onclick='() => _filter = ""'>
-                    All <span>@_matrix.Count</span>
-                </button>
-                <button type="button" class="library-filter-chip @(_filter == "Covered" ? "is-active" : "")" @onclick='() => _filter = "Covered"'>
-                    Covered <span>@CoveredCount</span>
-                </button>
-                <button type="button" class="library-filter-chip @(_filter == "NotCovered" ? "is-active" : "")" @onclick='() => _filter = "NotCovered"'>
-                    Missing Coverage <span>@NotCoveredCount</span>
-                </button>
-            </div>
-
-            <section aria-label="Requirement to test coverage matrix">
-                <SectionHeader Title="Coverage Matrix"
-                               Description="Requirement → Test Traceability">
-                    <Actions><span>@FilteredMatrix.Count requirement@(Plural(FilteredMatrix.Count)) shown</span></Actions>
+            <section aria-label="Detailed coverage analysis">
+                <SectionHeader Title="Coverage Analysis"
+                               Description="Detailed breakdown of requirement coverage by status">
                 </SectionHeader>
-
-                @if (FilteredMatrix.Count == 0 && _matrix.Count == 0)
-                {
-                    <EmptyState Title="No requirements yet"
-                                Description="Add requirement scenarios to the library to see their coverage status here."
-                                Dashed="true">
-                        <a href="/scenarios">Go to QA Artifact Library</a>
-                    </EmptyState>
-                }
-                else if (FilteredMatrix.Count == 0)
-                {
-                    <div class="mapping-empty">No requirements match the current filter.</div>
-                }
-                else
-                {
-                    <div class="trace-table-wrapper">
-                        <table class="trace-table" aria-label="Requirement coverage matrix">
-                            <thead>
-                                <tr>
-                                    <th class="trace-col-id">ID</th>
-                                    <th class="trace-col-title">Requirement</th>
-                                    <th class="trace-col-coverage">Coverage</th>
-                                    <th class="trace-col-count">Tests</th>
-                                    <th class="trace-col-risk">Risk</th>
-                                    <th class="trace-col-actions">Linked Tests &amp; Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var row in FilteredMatrix)
-                                {
-                                    var reqLabel = ReqLabel(row.Id);
-                                    var isLinking = _linkingRequirementId == row.Id;
-                                    var isExpanded = _expandedRows.Contains(row.Id);
-                                    var needsTruncate = row.Title.Length > TitleLimit;
-                                    <tr class="trace-row trace-row--@(row.CoverageStatus == "Covered" ? "covered" : "missing")">
-                                        <td class="trace-col-id">
-                                            <span class="artifact-display-label">@reqLabel</span>
-                                        </td>
-                                        <td class="trace-col-title">
-                                            @if (needsTruncate && !isExpanded)
-                                            {
-                                                <span>@(row.Title[..TitleLimit])</span><span class="trace-ellipsis">&hellip;</span>
-                                                <button class="trace-show-more" @onclick="() => ToggleExpand(row.Id)">Show more</button>
-                                            }
-                                            else
-                                            {
-                                                <span>@row.Title</span>
-                                                @if (needsTruncate)
-                                                {
-                                                    <button class="trace-show-more" @onclick="() => ToggleExpand(row.Id)">Show less</button>
-                                                }
-                                            }
-                                        </td>
-                                        <td class="trace-col-coverage">
-                                            <StatusChip Status="@(row.CoverageStatus == "Covered" ? "ready" : "critical")"
-                                                        Label="@(row.CoverageStatus == "Covered" ? "Covered" : "Missing Coverage")" />
-                                        </td>
-                                        <td class="trace-col-count">@row.LinkedTests.Count</td>
-                                        <td class="trace-col-risk">
-                                            <StatusChip Status="@(RiskClass(row) switch { "high" => "critical", "medium" => "warning", _ => "ready" })"
-                                                        Label="@RiskLabel(row)" />
-                                        </td>
-                                        <td class="trace-col-actions">
-                                            @if (row.LinkedTests.Count == 0 && !isLinking)
-                                            {
-                                                <span class="mapping-test-empty">No tests linked</span>
-                                            }
-                                            else
-                                            {
-                                                @foreach (var linked in row.LinkedTests)
-                                                {
-                                                    <span class="mapping-test-pill">
-                                                        <span class="test-pill-label">@(TestLabel(linked.TestId))</span>
-                                                        @linked.TestTitle
-                                                        <button class="trace-unlink-btn"
-                                                                title="Remove link to @linked.TestTitle"
-                                                                disabled="@(_unlinkingId == linked.LinkId)"
-                                                                @onclick="() => HandleUnlinkAsync(linked.LinkId)"
-                                                                aria-label="Remove link between @reqLabel and @(TestLabel(linked.TestId))">
-                                                            @if (_unlinkingId == linked.LinkId) {<span>…</span>} else {<span aria-hidden="true">×</span>}
-                                                        </button>
-                                                    </span>
-                                                    @if (_unlinkErrors.TryGetValue(linked.LinkId, out var unlinkErr))
-                                                    {
-                                                        <span class="trace-inline-error">@unlinkErr</span>
-                                                    }
-                                                }
-                                            }
-
-                                            @if (!isLinking)
-                                            {
-                                                <button class="trace-matrix-action" @onclick="() => BeginLinking(row.Id)"
-                                                        aria-label="Link a test to @reqLabel">
-                                                    + Link Test
-                                                </button>
-                                            }
-                                            else
-                                            {
-                                                <div class="link-select-row">
-                                                    <select class="trace-test-select" @bind="_selectedTestId"
-                                                            aria-label="Select a test to link to @reqLabel">
-                                                        <option value="">— select a test —</option>
-                                                        @foreach (var t in AvailableTestsFor(row))
-                                                        {
-                                                            <option value="@t.Id">@(TestLabel(t.Id)) — @t.Title</option>
-                                                        }
-                                                    </select>
-                                                    <PrimaryButton Disabled="@(string.IsNullOrEmpty(_selectedTestId) || _isLinking)"
-                                                                   OnClick="() => HandleLinkAsync(row.Id)">
-                                                        @if (_isLinking) {<span>Linking…</span>} else {<span>Link</span>}
-                                                    </PrimaryButton>
-                                                    <SecondaryButton OnClick="CancelLinking">Cancel</SecondaryButton>
-                                                </div>
-                                                @if (_linkError is not null)
-                                                {
-                                                    <span class="trace-inline-error">@_linkError</span>
-                                                }
-                                            }
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                }
+                <div class="filter-chip-grid" aria-label="Coverage filter">
+                    <button type="button" class="library-filter-chip @(_coverageFilter == "All" ? "is-active" : "")" @onclick='() => _coverageFilter = "All"'>
+                        All <span>@_matrix.Count</span>
+                    </button>
+                    <button type="button" class="library-filter-chip @(_coverageFilter == "Covered" ? "is-active" : "")" @onclick='() => _coverageFilter = "Covered"'>
+                        Covered <span>@CoveredCount</span>
+                    </button>
+                    <button type="button" class="library-filter-chip @(_coverageFilter == "NotCovered" ? "is-active" : "")" @onclick='() => _coverageFilter = "NotCovered"'>
+                        Missing <span>@NotCoveredCount</span>
+                    </button>
+                </div>
+                <p class="trace-placeholder">Coverage details and statistics will be displayed here.</p>
             </section>
         }
     }
@@ -368,7 +533,8 @@
     private SummaryData _summary = new();
     private IReadOnlyList<TestScenarioItem> _allTests = [];
     private string _filter = string.Empty;
-    private string _activeTab = "gaps";
+    private string _coverageFilter = "All";
+    private string _activeTab = "overview";
 
     // Display labels (REQ-001, TEST-001 etc. — UI only, not persisted)
     private Dictionary<string, string> _requirementLabels = new();
@@ -410,6 +576,13 @@
     private int NotCoveredCount => _matrix.Count(r => r.CoverageStatus == "NotCovered");
     private int SuggestedCoveragePercent => _summary.TotalRequirements == 0 ? 0
         : (int)Math.Round((_summary.CoveredRequirements + _summary.SuggestedCoverageRequirements) * 100.0 / _summary.TotalRequirements);
+
+    private string CalculateHealthScore()
+    {
+        if (_summary.TotalRequirements == 0) return "N/A";
+        var healthPercent = (int)Math.Round(_summary.CoveredRequirements * 100.0 / _summary.TotalRequirements);
+        return $"{healthPercent}%";
+    }
 
     private IReadOnlyList<RequirementRow> FilteredMatrix => _filter switch
     {

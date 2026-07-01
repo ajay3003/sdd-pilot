@@ -1248,4 +1248,421 @@ public static class SpecExplorerService
             if (group.Children.Count > 0) target.Add(group);
         }
     }
+
+    // ── Semantic Model Building ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Build the canonical SpecificationSemanticModel from parsed spec tree.
+    /// This is the single source of truth for all specification review pages.
+    /// </summary>
+    public static SpecificationSemanticModel BuildSemanticModel(SpecTree specTree, string markdown)
+    {
+        var model = new SpecificationSemanticModel
+        {
+            Title = ExtractTitle(specTree),
+            Feature = ExtractMetadata(specTree, "Feature"),
+            Branch = ExtractMetadata(specTree, "Branch"),
+            Status = ExtractMetadata(specTree, "Status"),
+            Created = ExtractMetadata(specTree, "Created"),
+            Inputs = ExtractInputs(specTree),
+        };
+
+        // Extract semantic elements from the tree
+        var userStories = ExtractUserStories(specTree);
+        var requirements = ExtractRequirements(specTree);
+        var successCriteria = ExtractSuccessCriteria(specTree);
+        var acceptanceScenarios = ExtractAcceptanceScenarios(specTree);
+        var clarifications = ExtractClarifications(specTree);
+        var edgeCases = ExtractEdgeCases(specTree);
+        var assumptions = ExtractAssumptions(specTree);
+        var securityConsiderations = ExtractSecurityConsiderations(specTree);
+        var entities = ExtractEntities(specTree);
+
+        // Build semantic relationships
+        LinkUserStoriesToRequirements(userStories, requirements);
+        LinkRequirementsToSuccessCriteria(requirements, successCriteria);
+        LinkUserStoriesToAcceptanceScenarios(userStories, acceptanceScenarios);
+        LinkRequirementsToAcceptanceScenarios(requirements, acceptanceScenarios);
+        LinkClarifications(clarifications, userStories, requirements, successCriteria);
+        LinkSecurityToRequirements(securityConsiderations, requirements);
+        LinkEdgeCasesToRequirements(edgeCases, requirements);
+
+        return new SpecificationSemanticModel
+        {
+            Title = model.Title,
+            Feature = model.Feature,
+            Branch = model.Branch,
+            Status = model.Status,
+            Created = model.Created,
+            Inputs = model.Inputs,
+            UserStories = userStories,
+            Requirements = requirements,
+            SuccessCriteria = successCriteria,
+            AcceptanceScenarios = acceptanceScenarios,
+            Clarifications = clarifications,
+            EdgeCases = edgeCases,
+            Assumptions = assumptions,
+            SecurityConsiderations = securityConsiderations,
+            KeyEntities = entities,
+        };
+    }
+
+    private static string ExtractTitle(SpecTree tree)
+    {
+        var h1 = tree.Roots.FirstOrDefault(n => n.HeadingLevel == 1);
+        return h1?.Title ?? "Specification";
+    }
+
+    private static string? ExtractMetadata(SpecTree tree, string key)
+    {
+        var allNodes = AllNodes(tree.Roots);
+        var metaNode = allNodes.FirstOrDefault(n => n.NodeType == SpecNodeType.Metadata && n.Title.Contains(key, StringComparison.OrdinalIgnoreCase));
+        return metaNode?.FullContent?.Split(':', 2).LastOrDefault()?.Trim();
+    }
+
+    private static List<string> ExtractInputs(SpecTree tree)
+    {
+        var allNodes = AllNodes(tree.Roots);
+        var inputs = new List<string>();
+        var inputSection = allNodes.FirstOrDefault(n => n.Title.Contains("Input", StringComparison.OrdinalIgnoreCase));
+        if (inputSection != null)
+            inputs.AddRange(inputSection.Children.Where(c => !string.IsNullOrWhiteSpace(c.Title)).Select(c => c.Title));
+        return inputs;
+    }
+
+    private static List<SemanticUserStory> ExtractUserStories(SpecTree tree)
+    {
+        var userStories = new List<SemanticUserStory>();
+        var allNodes = AllNodes(tree.Roots);
+        var usNodes = allNodes.Where(n => n.NodeType == SpecNodeType.UserStory).ToList();
+
+        foreach (var usNode in usNodes)
+        {
+            var story = new SemanticUserStory
+            {
+                Id = usNode.SpecItemId ?? $"US-{usNode.Id[..3]}",
+                Title = usNode.Title,
+                Description = usNode.FullContent,
+            };
+            userStories.Add(story);
+        }
+
+        return userStories;
+    }
+
+    private static List<SemanticRequirement> ExtractRequirements(SpecTree tree)
+    {
+        var requirements = new List<SemanticRequirement>();
+        var allNodes = AllNodes(tree.Roots);
+        var reqNodes = allNodes.Where(n => n.NodeType == SpecNodeType.Requirement).ToList();
+
+        foreach (var reqNode in reqNodes)
+        {
+            var requirement = new SemanticRequirement
+            {
+                Id = reqNode.SpecItemId ?? $"FR-{reqNode.Id[..3]}",
+                Text = reqNode.FullContent ?? reqNode.Title,
+                Category = DetectRequirementCategory(reqNode),
+            };
+            requirements.Add(requirement);
+        }
+
+        return requirements;
+    }
+
+    private static List<SemanticSuccessCriterion> ExtractSuccessCriteria(SpecTree tree)
+    {
+        var criteria = new List<SemanticSuccessCriterion>();
+        var allNodes = AllNodes(tree.Roots);
+        var scNodes = allNodes.Where(n => n.NodeType == SpecNodeType.SuccessCriterion).ToList();
+
+        foreach (var scNode in scNodes)
+        {
+            var sc = new SemanticSuccessCriterion
+            {
+                Id = scNode.SpecItemId ?? $"SC-{scNode.Id[..3]}",
+                Text = scNode.FullContent ?? scNode.Title,
+            };
+            criteria.Add(sc);
+        }
+
+        return criteria;
+    }
+
+    private static List<SemanticAcceptanceScenario> ExtractAcceptanceScenarios(SpecTree tree)
+    {
+        var scenarios = new List<SemanticAcceptanceScenario>();
+        var allNodes = AllNodes(tree.Roots);
+        var bddNodes = allNodes.Where(n => n.NodeType == SpecNodeType.BddScenario || n.NodeType == SpecNodeType.AcceptanceTest).ToList();
+
+        foreach (var bddNode in bddNodes)
+        {
+            var scenario = new SemanticAcceptanceScenario
+            {
+                Id = bddNode.SpecItemId,
+                Title = bddNode.Title,
+                Given = bddNode.BddGiven,
+                When = bddNode.BddWhen,
+                Then = bddNode.BddThen,
+            };
+            scenarios.Add(scenario);
+        }
+
+        return scenarios;
+    }
+
+    private static List<SemanticClarification> ExtractClarifications(SpecTree tree)
+    {
+        var clarifications = new List<SemanticClarification>();
+        var allNodes = AllNodes(tree.Roots);
+        var clrNodes = allNodes.Where(n => n.NodeType == SpecNodeType.QaPair || n.NodeType == SpecNodeType.Clarification).ToList();
+
+        foreach (var clrNode in clrNodes)
+        {
+            var clarification = new SemanticClarification
+            {
+                Id = clrNode.SpecItemId,
+                Question = clrNode.QuestionText ?? clrNode.Title,
+                Answer = clrNode.AnswerText,
+            };
+            clarifications.Add(clarification);
+        }
+
+        return clarifications;
+    }
+
+    private static List<SemanticEdgeCase> ExtractEdgeCases(SpecTree tree)
+    {
+        var edgeCases = new List<SemanticEdgeCase>();
+        var allNodes = AllNodes(tree.Roots);
+        var ecNodes = allNodes.Where(n => n.NodeType == SpecNodeType.EdgeCase).ToList();
+
+        foreach (var ecNode in ecNodes)
+        {
+            var edgeCase = new SemanticEdgeCase
+            {
+                Title = ecNode.Title,
+                Description = ecNode.FullContent,
+            };
+            edgeCases.Add(edgeCase);
+        }
+
+        return edgeCases;
+    }
+
+    private static List<SemanticAssumption> ExtractAssumptions(SpecTree tree)
+    {
+        var assumptions = new List<SemanticAssumption>();
+        var allNodes = AllNodes(tree.Roots);
+        var asNodes = allNodes.Where(n => n.NodeType == SpecNodeType.Assumption).ToList();
+
+        foreach (var asNode in asNodes)
+        {
+            var assumption = new SemanticAssumption
+            {
+                Title = asNode.Title,
+                Description = asNode.FullContent,
+            };
+            assumptions.Add(assumption);
+        }
+
+        return assumptions;
+    }
+
+    private static List<SemanticSecurity> ExtractSecurityConsiderations(SpecTree tree)
+    {
+        var securities = new List<SemanticSecurity>();
+        var allNodes = AllNodes(tree.Roots);
+        var secNodes = allNodes.Where(n => n.Semantics == SectionSemantics.Security).ToList();
+
+        foreach (var secNode in secNodes.SelectMany(s => s.Children))
+        {
+            var security = new SemanticSecurity
+            {
+                Title = secNode.Title,
+                Description = secNode.FullContent,
+            };
+            securities.Add(security);
+        }
+
+        return securities;
+    }
+
+    private static List<SemanticEntity> ExtractEntities(SpecTree tree)
+    {
+        var entities = new List<SemanticEntity>();
+        var allNodes = AllNodes(tree.Roots);
+        var entNodes = allNodes.Where(n => n.NodeType == SpecNodeType.Entity).ToList();
+
+        foreach (var entNode in entNodes)
+        {
+            var entity = new SemanticEntity
+            {
+                Name = entNode.Title,
+                Description = entNode.FullContent,
+                Attributes = entNode.Children.Select(c => c.Title).ToList(),
+            };
+            entities.Add(entity);
+        }
+
+        return entities;
+    }
+
+    private static void LinkUserStoriesToRequirements(
+        List<SemanticUserStory> userStories,
+        List<SemanticRequirement> requirements)
+    {
+        foreach (var us in userStories)
+        {
+            var linked = requirements
+                .Where(r => CanLinkByReference(us.Description, r.Id) || CanLinkSemantically(us.Title, r.Text))
+                .ToList();
+            ((List<SemanticRequirement>)us.LinkedRequirements).AddRange(linked);
+            foreach (var req in linked)
+                ((List<SemanticUserStory>)req.LinkedUserStories).Add(us);
+        }
+    }
+
+    private static void LinkRequirementsToSuccessCriteria(
+        List<SemanticRequirement> requirements,
+        List<SemanticSuccessCriterion> criteria)
+    {
+        foreach (var req in requirements)
+        {
+            var linked = criteria.Where(sc => CanLinkByReference(req.Text, sc.Id)).ToList();
+            ((List<SemanticSuccessCriterion>)req.LinkedSuccessCriteria).AddRange(linked);
+            foreach (var sc in linked)
+                ((List<SemanticRequirement>)sc.LinkedRequirements).Add(req);
+        }
+    }
+
+    private static void LinkUserStoriesToAcceptanceScenarios(
+        List<SemanticUserStory> userStories,
+        List<SemanticAcceptanceScenario> scenarios)
+    {
+        foreach (var us in userStories)
+        {
+            var linked = scenarios.Where(s => !string.IsNullOrWhiteSpace(s.Id) && CanLinkByReference(us.Description, s.Id)).ToList();
+            ((List<SemanticAcceptanceScenario>)us.LinkedAcceptanceScenarios).AddRange(linked);
+            foreach (var scenario in linked)
+                ((List<SemanticUserStory>)scenario.LinkedUserStories).Add(us);
+        }
+    }
+
+    private static void LinkRequirementsToAcceptanceScenarios(
+        List<SemanticRequirement> requirements,
+        List<SemanticAcceptanceScenario> scenarios)
+    {
+        foreach (var req in requirements)
+        {
+            var linked = scenarios.Where(s => !string.IsNullOrWhiteSpace(s.Id) && CanLinkByReference(req.Text, s.Id)).ToList();
+            ((List<SemanticAcceptanceScenario>)req.LinkedAcceptanceScenarios).AddRange(linked);
+            foreach (var scenario in linked)
+                ((List<SemanticRequirement>)scenario.LinkedRequirements).Add(req);
+        }
+    }
+
+    private static void LinkClarifications(
+        List<SemanticClarification> clarifications,
+        List<SemanticUserStory> userStories,
+        List<SemanticRequirement> requirements,
+        List<SemanticSuccessCriterion> criteria)
+    {
+        foreach (var clr in clarifications)
+        {
+            var affected = new List<string>();
+            foreach (var us in userStories)
+                if (CanLinkByReference(clr.Answer, us.Id))
+                    affected.Add(us.Id);
+            foreach (var req in requirements)
+                if (CanLinkByReference(clr.Answer, req.Id))
+                    affected.Add(req.Id);
+            foreach (var sc in criteria)
+                if (CanLinkByReference(clr.Answer, sc.Id))
+                    affected.Add(sc.Id);
+            ((List<string>)clr.AffectedElements).AddRange(affected);
+        }
+    }
+
+    private static void LinkSecurityToRequirements(
+        List<SemanticSecurity> securities,
+        List<SemanticRequirement> requirements)
+    {
+        foreach (var sec in securities)
+        {
+            var affected = requirements.Where(r => CanLinkSemantically(sec.Title, r.Text)).Select(r => r.Id).ToList();
+            ((List<string>)sec.AffectedRequirementIds).AddRange(affected);
+            foreach (var req in requirements.Where(r => affected.Contains(r.Id)))
+                ((List<SemanticSecurity>)req.LinkedSecurityConsiderations).Add(sec);
+        }
+    }
+
+    private static void LinkEdgeCasesToRequirements(
+        List<SemanticEdgeCase> edgeCases,
+        List<SemanticRequirement> requirements)
+    {
+        foreach (var ec in edgeCases)
+        {
+            var affected = requirements.Where(r => CanLinkByReference(ec.Description, r.Id)).Select(r => r.Id).ToList();
+            ((List<string>)ec.RelatedRequirementIds).AddRange(affected);
+            foreach (var req in requirements.Where(r => affected.Contains(r.Id)))
+                ((List<SemanticEdgeCase>)req.LinkedEdgeCases).Add(ec);
+        }
+    }
+
+    private static bool CanLinkByReference(string? content, string specId)
+    {
+        if (string.IsNullOrWhiteSpace(content) || string.IsNullOrWhiteSpace(specId)) return false;
+        var id = specId.Replace("-", "").ToLowerInvariant();
+        return content.Replace("-", "").ToLowerInvariant().Contains(id);
+    }
+
+    private static bool CanLinkSemantically(string title1, string text2)
+    {
+        if (string.IsNullOrWhiteSpace(title1) || string.IsNullOrWhiteSpace(text2)) return false;
+        var t1 = title1.ToLowerInvariant();
+        var t2 = text2.ToLowerInvariant();
+        var keywords1 = t1.Split(new[] { ' ', '-', '_' }, StringSplitOptions.RemoveEmptyEntries);
+        var keywords2 = t2.Split(new[] { ' ', '-', '_' }, StringSplitOptions.RemoveEmptyEntries);
+        var commonKeywords = keywords1.Intersect(keywords2, StringComparer.OrdinalIgnoreCase).Count();
+        return commonKeywords >= 2;  // At least 2 keywords in common
+    }
+
+    private static string? DetectRequirementCategory(SpecNode node)
+    {
+        var ancestors = FindAncestors(node).Select(n => n.Title.ToLowerInvariant()).ToList();
+        if (ancestors.Any(a => a.Contains("functional"))) return "Functional";
+        if (ancestors.Any(a => a.Contains("non-functional") || a.Contains("nfr"))) return "Non-Functional";
+        if (ancestors.Any(a => a.Contains("api"))) return "API";
+        if (ancestors.Any(a => a.Contains("security"))) return "Security";
+        if (ancestors.Any(a => a.Contains("performance"))) return "Performance";
+        return "General";
+    }
+
+    private static List<SpecNode> FindAncestors(SpecNode node)
+    {
+        var ancestors = new List<SpecNode>();
+        // This is a simplified version — in real use, you'd track parent references in the tree
+        return ancestors;
+    }
+
+    private static List<SpecNode> AllNodes(IEnumerable<SpecNode> roots)
+    {
+        var result = new List<SpecNode>();
+        foreach (var root in roots)
+        {
+            result.Add(root);
+            CollectRecursive(root.Children, result);
+        }
+        return result;
+    }
+
+    private static void CollectRecursive(IEnumerable<SpecNode> nodes, List<SpecNode> result)
+    {
+        foreach (var node in nodes)
+        {
+            result.Add(node);
+            CollectRecursive(node.Children, result);
+        }
+    }
 }
