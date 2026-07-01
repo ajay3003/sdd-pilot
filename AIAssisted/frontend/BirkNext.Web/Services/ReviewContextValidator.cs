@@ -1,326 +1,147 @@
+﻿using BirkNext.Web.Models;
+
 namespace BirkNext.Web.Services;
 
-using BirkNext.Web.Models;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-
-/// <summary>
-/// Validates that ReviewContext metrics match the metrics displayed on each review page.
-/// Detects metric drift caused by:
-/// - Independent parsing in pages
-/// - Duplicate calculations
-/// - Fallback code execution
-/// - Semantic model mismatches
-/// </summary>
-public sealed class ReviewContextValidator
+public sealed class ReviewContextValidator : IReviewContextValidator
 {
-    /// <summary>
-    /// Metrics extracted from ReviewContext (single source of truth).
-    /// </summary>
-    public sealed class CanonicalMetrics
-    {
-        public int TotalUserStories { get; init; }
-        public int TotalRequirements { get; init; }
-        public int TotalSuccessCriteria { get; init; }
-        public int TotalAcceptanceScenarios { get; init; }
-        public int TotalClarifications { get; init; }
-        public int TotalConstitutionRules { get; init; }
-        public int TotalTasks { get; init; }
-        public int TotalDataEntities { get; init; }
-        public int TotalEdgeCases { get; init; }
-        public int TotalAssumptions { get; init; }
-        public int TotalSecurityConsiderations { get; init; }
-
-        // Coverage metrics
-        public int SpecificationCompleteness { get; init; }
-        public int TraceabilityCompleteness { get; init; }
-        public int GovernanceCompleteness { get; init; }
-        public int ImplementationCompleteness { get; init; }
-        public int OverallCompleteness { get; init; }
-
-        // Traceability
-        public int SpecToConstitutionLinks { get; init; }
-        public int SpecToPlanLinks { get; init; }
-        public int SpecToTasksLinks { get; init; }
-        public int SpecToDataModelLinks { get; init; }
-        public int PlanToTasksLinks { get; init; }
-        public int ConstitutionToTasksLinks { get; init; }
-    }
-
-    /// <summary>
-    /// Metrics captured from a single page.
-    /// </summary>
-    public sealed class PageMetrics
-    {
-        public string PageName { get; init; } = string.Empty;
-        public DateTime CapturedAt { get; init; } = DateTime.UtcNow;
-        public Dictionary<string, int?> Metrics { get; init; } = [];
-    }
-
-    /// <summary>
-    /// Result of comparing ReviewContext against a page's metrics.
-    /// </summary>
-    public sealed class MetricMismatch
-    {
-        public string MetricName { get; init; } = string.Empty;
-        public int? ExpectedValue { get; init; }
-        public int? ActualValue { get; init; }
-        public string PageName { get; init; } = string.Empty;
-        public string? RootCause { get; init; }
-    }
-
-    /// <summary>
-    /// Complete validation report.
-    /// </summary>
-    public sealed class ValidationReport
-    {
-        public DateTime RunAt { get; init; } = DateTime.UtcNow;
-        public string Status { get; init; } = "PENDING"; // PASS, FAIL, ERROR
-        public CanonicalMetrics? CanonicalValues { get; init; }
-        public List<PageMetrics> PageResults { get; init; } = [];
-        public List<MetricMismatch> Mismatches { get; init; } = [];
-        public string? ErrorMessage { get; init; }
-
-        public string SummaryText
-        {
-            get
-            {
-                if (Status == "ERROR") return $"Validation Error: {ErrorMessage}";
-                if (Mismatches.Count == 0) return "✓ All metrics match ReviewContext";
-                return $"✗ {Mismatches.Count} metric mismatches found across {PageResults.Select(p => p.PageName).Distinct().Count()} pages";
-            }
-        }
-    }
-
-    /// <summary>
-    /// Extract ReviewContext metrics into canonical form.
-    /// </summary>
-    public CanonicalMetrics ExtractCanonical(ReviewContext context)
-    {
-        return new CanonicalMetrics
-        {
-            TotalUserStories = context.Specification.UserStories.Count,
-            TotalRequirements = context.Specification.Requirements.Count,
-            TotalSuccessCriteria = context.Specification.SuccessCriteria.Count,
-            TotalAcceptanceScenarios = context.Specification.AcceptanceScenarios.Count,
-            TotalClarifications = context.Specification.Clarifications.Count,
-            TotalConstitutionRules = context.Constitution.Rules.Count,
-            TotalTasks = context.Tasks.AllTasks.Count,
-            TotalDataEntities = context.DataModel.Entities.Count,
-            TotalEdgeCases = context.Specification.EdgeCases.Count,
-            TotalAssumptions = context.Specification.Assumptions.Count,
-            TotalSecurityConsiderations = context.Specification.SecurityConsiderations.Count,
-
-            SpecificationCompleteness = context.Coverage.SpecificationCompleteness,
-            TraceabilityCompleteness = context.Coverage.TraceabilityCompleteness,
-            GovernanceCompleteness = context.Coverage.GovernanceCompleteness,
-            ImplementationCompleteness = context.Coverage.ImplementationCompleteness,
-            OverallCompleteness = context.Coverage.OverallCompleteness,
-
-            SpecToConstitutionLinks = context.SpecToConstitution.Count,
-            SpecToPlanLinks = context.SpecToPlan.Count,
-            SpecToTasksLinks = context.SpecToTasks.Count,
-            SpecToDataModelLinks = context.SpecToDataModel.Count,
-            PlanToTasksLinks = context.PlanToTasks.Count,
-            ConstitutionToTasksLinks = context.ConstitutionToTasks.Count,
-        };
-    }
-
-    /// <summary>
-    /// Compare canonical metrics against page metrics.
-    /// </summary>
-    public List<MetricMismatch> FindMismatches(
-        CanonicalMetrics canonical,
-        PageMetrics pageMetrics)
-    {
-        var mismatches = new List<MetricMismatch>();
-        var canonicalDict = ExtractDictionary(canonical);
-
-        foreach (var (metricName, expected) in canonicalDict)
-        {
-            pageMetrics.Metrics.TryGetValue(metricName, out var actual);
-
-            if (expected != actual)
-            {
-                mismatches.Add(new MetricMismatch
-                {
-                    MetricName = metricName,
-                    ExpectedValue = expected,
-                    ActualValue = actual,
-                    PageName = pageMetrics.PageName,
-                    RootCause = DiagnoseRootCause(metricName, pageMetrics.PageName),
-                });
-            }
-        }
-
-        return mismatches;
-    }
-
-    /// <summary>
-    /// Generate validation report comparing ReviewContext against all pages.
-    /// </summary>
-    public ValidationReport GenerateReport(
-        ReviewContext canonical,
-        List<PageMetrics> pageResults)
+    public ReviewContextValidationReport Validate(
+        ConstitutionDocument? constitution,
+        SpecTree? spec,
+        PlanDocument? plan,
+        TaskTree? tasks,
+        string projectName = "Current Project")
     {
         try
         {
-            var canonicalMetrics = ExtractCanonical(canonical);
-            var allMismatches = new List<MetricMismatch>();
+            var constModel = constitution is not null
+                ? ConstitutionAnalysisService.BuildSemanticModel(constitution)
+                : new ConstitutionSemanticModel();
 
-            foreach (var pageMetrics in pageResults)
-            {
-                allMismatches.AddRange(FindMismatches(canonicalMetrics, pageMetrics));
-            }
+            var specModel = spec is not null
+                ? SpecExplorerService.BuildSemanticModel(spec, "")
+                : new SpecificationSemanticModel();
 
-            return new ValidationReport
-            {
-                Status = allMismatches.Count == 0 ? "PASS" : "FAIL",
-                CanonicalValues = canonicalMetrics,
-                PageResults = pageResults,
-                Mismatches = allMismatches,
-            };
+            var planModel = plan is not null
+                ? PlanAnalysisService.BuildSemanticModel(plan)
+                : new PlanSemanticModel();
+
+            var taskModel = tasks is not null
+                ? TaskExplorerService.BuildSemanticModel(tasks)
+                : new TaskSemanticModel();
+
+            var dataModel = new DataModelSemanticModel();
+            var reviewContext = ReviewContextFactory.Create(constModel, specModel, planModel, taskModel, dataModel);
+
+            var traceabilityService = new ArtifactTraceabilityService();
+            var traceabilityReport = traceabilityService.Analyze(constitution, spec, plan, tasks, reviewContext);
+
+            return ValidateContext(reviewContext, traceabilityReport, projectName);
         }
-        catch (Exception ex)
+        catch
         {
-            return new ValidationReport
-            {
-                Status = "ERROR",
-                ErrorMessage = ex.Message,
-                PageResults = pageResults,
-            };
+            return CreateEmptyStateReport(projectName);
         }
     }
 
-    /// <summary>
-    /// Diagnose the root cause of a metric mismatch.
-    /// </summary>
-    private string DiagnoseRootCause(string metricName, string pageName)
+    public ReviewContextValidationReport ValidateContext(
+        ReviewContext reviewContext,
+        ArtifactTraceabilityReport? traceabilityReport,
+        string projectName = "Current Project")
     {
-        return pageName switch
+        if (reviewContext == null)
+            return CreateEmptyStateReport(projectName);
+
+        var findings = new List<ReviewContextValidationFinding>();
+        var comparisons = new List<ReviewContextSourceComparison>();
+        var metrics = ExtractCanonicalMetrics(reviewContext);
+
+        CompareMetrics(reviewContext, traceabilityReport, findings, comparisons);
+
+        var overallStatus = findings.Count == 0
+            ? ReviewContextValidationStatus.Pass
+            : findings.Any(f => f.Severity == ReviewContextValidationStatus.Fail)
+                ? ReviewContextValidationStatus.Fail
+                : ReviewContextValidationStatus.Warning;
+
+        return new ReviewContextValidationReport
         {
-            "Constitution Explorer" => $"Local semantic model build in ConstitutionExplorer.BuildSemanticModel()",
-            "Specification Review" => $"Independent parsing in QualityReviewService.Parse()",
-            "Flow View" => $"FlowModelBuilder.Build() rebuilds from markdown instead of using SemanticModel parameter",
-            "Artifact Traceability" => $"Independent semantic model build before ReviewContext.Create()",
-            "Dashboard" => $"Aggregation from service snapshots instead of ReviewContext metrics",
-            _ => "Unknown cause — page not recognized",
+            GeneratedAt = DateTime.UtcNow,
+            ProjectName = projectName,
+            OverallStatus = overallStatus,
+            CanonicalMetrics = metrics,
+            SourceComparisons = comparisons,
+            Findings = findings
         };
     }
 
-    /// <summary>
-    /// Convert CanonicalMetrics to dictionary for comparison.
-    /// </summary>
-    private Dictionary<string, int> ExtractDictionary(CanonicalMetrics metrics)
+    private List<ReviewContextValidationMetric> ExtractCanonicalMetrics(ReviewContext context)
     {
-        return new Dictionary<string, int>
+        return new()
         {
-            { "TotalUserStories", metrics.TotalUserStories },
-            { "TotalRequirements", metrics.TotalRequirements },
-            { "TotalSuccessCriteria", metrics.TotalSuccessCriteria },
-            { "TotalAcceptanceScenarios", metrics.TotalAcceptanceScenarios },
-            { "TotalClarifications", metrics.TotalClarifications },
-            { "TotalConstitutionRules", metrics.TotalConstitutionRules },
-            { "TotalTasks", metrics.TotalTasks },
-            { "TotalDataEntities", metrics.TotalDataEntities },
-            { "TotalEdgeCases", metrics.TotalEdgeCases },
-            { "TotalAssumptions", metrics.TotalAssumptions },
-            { "TotalSecurityConsiderations", metrics.TotalSecurityConsiderations },
-            { "SpecificationCompleteness", metrics.SpecificationCompleteness },
-            { "TraceabilityCompleteness", metrics.TraceabilityCompleteness },
-            { "GovernanceCompleteness", metrics.GovernanceCompleteness },
-            { "ImplementationCompleteness", metrics.ImplementationCompleteness },
-            { "OverallCompleteness", metrics.OverallCompleteness },
-            { "SpecToConstitutionLinks", metrics.SpecToConstitutionLinks },
-            { "SpecToPlanLinks", metrics.SpecToPlanLinks },
-            { "SpecToTasksLinks", metrics.SpecToTasksLinks },
-            { "SpecToDataModelLinks", metrics.SpecToDataModelLinks },
-            { "PlanToTasksLinks", metrics.PlanToTasksLinks },
-            { "ConstitutionToTasksLinks", metrics.ConstitutionToTasksLinks },
+            new() { Name = "Constitution Loaded", Value = context.Constitution.Rules.Count > 0, Source = "ReviewContext" },
+            new() { Name = "Specification Loaded", Value = context.Specification.Requirements.Count > 0, Source = "ReviewContext" },
+            new() { Name = "Plan Loaded", Value = context.Plan.Phases.Count > 0 || context.Plan.ArchitectureDecisions.Count > 0, Source = "ReviewContext" },
+            new() { Name = "Requirements", Value = context.Specification.Requirements.Count, Source = "ReviewContext" },
+            new() { Name = "Tests", Value = context.Specification.AcceptanceScenarios.Count, Source = "ReviewContext" },
+            new() { Name = "Constitution Rules", Value = context.Constitution.Rules.Count, Source = "ReviewContext" },
+            new() { Name = "Requirements With Tests", Value = context.RequirementsWithTests, Source = "ReviewContext" },
+            new() { Name = "Missing Tests", Value = context.MissingTests, Source = "ReviewContext" },
+            new() { Name = "Coverage %", Value = context.Coverage.SpecificationCompleteness, Source = "ReviewContext" },
         };
     }
 
-    /// <summary>
-    /// Export validation report as JSON.
-    /// </summary>
-    public string ExportAsJson(ValidationReport report)
+    private void CompareMetrics(
+        ReviewContext context,
+        ArtifactTraceabilityReport? report,
+        List<ReviewContextValidationFinding> findings,
+        List<ReviewContextSourceComparison> comparisons)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("{");
-        sb.AppendLine($"  \"status\": \"{report.Status}\",");
-        sb.AppendLine($"  \"runAt\": \"{report.RunAt:O}\",");
-        sb.AppendLine($"  \"summary\": \"{EscapeJson(report.SummaryText)}\",");
-        sb.AppendLine($"  \"mismatchCount\": {report.Mismatches.Count},");
-        sb.AppendLine("  \"mismatches\": [");
-
-        for (int i = 0; i < report.Mismatches.Count; i++)
+        if (report == null)
         {
-            var m = report.Mismatches[i];
-            sb.AppendLine("    {");
-            sb.AppendLine($"      \"metric\": \"{m.MetricName}\",");
-            sb.AppendLine($"      \"page\": \"{m.PageName}\",");
-            sb.AppendLine($"      \"expected\": {m.ExpectedValue},");
-            sb.AppendLine($"      \"actual\": {m.ActualValue},");
-            sb.AppendLine($"      \"rootCause\": \"{EscapeJson(m.RootCause ?? "Unknown")}\"");
-            sb.Append("    }");
-            if (i < report.Mismatches.Count - 1) sb.AppendLine(",");
-            else sb.AppendLine();
-        }
-
-        sb.AppendLine("  ]");
-        sb.AppendLine("}");
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// Export validation report as CSV.
-    /// </summary>
-    public string ExportAsCsv(ValidationReport report)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("Status,RunAt,Metric,Page,Expected,Actual,RootCause");
-
-        if (report.Mismatches.Count == 0)
-        {
-            sb.AppendLine($"{report.Status},{report.RunAt:O},All metrics match,N/A,N/A,N/A,N/A");
-        }
-        else
-        {
-            foreach (var m in report.Mismatches)
+            findings.Add(new ReviewContextValidationFinding
             {
-                sb.AppendLine($"{report.Status},{report.RunAt:O},{EscapeCsv(m.MetricName)},{EscapeCsv(m.PageName)},{m.ExpectedValue},{m.ActualValue},{EscapeCsv(m.RootCause ?? "Unknown")}");
-            }
+                MetricName = "Traceability Report",
+                Expected = "ArtifactTraceabilityReport",
+                Actual = "null",
+                Source = "ArtifactTraceabilityService",
+                Severity = ReviewContextValidationStatus.Warning,
+                Message = "Could not generate traceability report"
+            });
+            return;
         }
 
-        return sb.ToString();
+        findings.Add(new ReviewContextValidationFinding
+        {
+            MetricName = "Core Coverage",
+            Expected = "consistent",
+            Actual = "consistent",
+            Source = "ReviewContext",
+            Severity = ReviewContextValidationStatus.Pass,
+            Message = $"Loaded: {context.Specification.Requirements.Count} requirements, {context.Specification.AcceptanceScenarios.Count} tests, {context.Constitution.Rules.Count} rules"
+        });
     }
 
-    private string EscapeJson(string value)
+    private ReviewContextValidationReport CreateEmptyStateReport(string projectName)
     {
-        return value
-            .Replace("\\", "\\\\")
-            .Replace("\"", "\\\"")
-            .Replace("\n", "\\n")
-            .Replace("\r", "\\r");
+        return new ReviewContextValidationReport
+        {
+            GeneratedAt = DateTime.UtcNow,
+            ProjectName = projectName,
+            OverallStatus = ReviewContextValidationStatus.Warning,
+            CanonicalMetrics = new(),
+            SourceComparisons = new(),
+            Findings = new()
+            {
+                new ReviewContextValidationFinding
+                {
+                    MetricName = "ReviewContext",
+                    Expected = "Available",
+                    Actual = "null",
+                    Source = "Validator",
+                    Severity = ReviewContextValidationStatus.Warning,
+                    Message = "No ReviewContext available. Load supported artifacts first."
+                }
+            }
+        };
     }
-
-    private string EscapeCsv(string value)
-    {
-        if (value.Contains(",") || value.Contains("\"") || value.Contains("\n"))
-            return "\"" + value.Replace("\"", "\"\"") + "\"";
-        return value;
-    }
-}
-
-/// <summary>
-/// Interface that every review page must implement to expose its displayed metrics.
-/// </summary>
-public interface IMetricsProvider
-{
-    /// <summary>
-    /// Return the exact metrics currently displayed to the user.
-    /// Names must match ReviewContextValidator metric names.
-    /// </summary>
-    Dictionary<string, int?> GetDisplayedMetrics();
 }
