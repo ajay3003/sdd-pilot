@@ -30,7 +30,14 @@ public sealed class DeliveryReadinessService : IDeliveryReadinessAssessmentServi
         PlanDocument? plan,
         TaskTree? tasks)
     {
-        var traceReport    = _traceability.Analyze(constitution, spec, plan, tasks);
+        var reviewContext = ReviewContextFactory.Create(
+            ConstitutionAnalysisService.BuildSemanticModel(constitution ?? new()),
+            SpecExplorerService.BuildSemanticModel(spec ?? new(), ""),
+            PlanAnalysisService.BuildSemanticModel(plan ?? new()),
+            TaskExplorerService.BuildSemanticModel(tasks ?? new()),
+            new DataModelSemanticModel());
+
+        var traceReport    = _traceability.Analyze(constitution, spec, plan, tasks, reviewContext);
         var compReport     = _compliance.Analyze(constitution, spec, plan, tasks);
         var readinessReport = _readiness.Assess(constitution, spec, plan, tasks);
         var auditReport     = _auditor.Audit(constitution, spec, plan, tasks);

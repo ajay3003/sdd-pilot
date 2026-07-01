@@ -29,9 +29,9 @@ public class ReviewContextRuntimeValidationTest
         var dataModelText = LoadArtifact("data-model.md");
 
         // Parse artifacts
-        var constitution = ConstitutionAnalysisService.Parse(constitutionText);
+        var constitution = new ConstitutionAnalysisService().Parse(constitutionText);
         var spec = SpecExplorerService.Parse(specText);
-        var plan = PlanAnalysisService.Parse(planText);
+        var plan = new PlanAnalysisService().Parse(planText);
         var tasks = TaskExplorerService.Parse(tasksText);
 
         // Build semantic models

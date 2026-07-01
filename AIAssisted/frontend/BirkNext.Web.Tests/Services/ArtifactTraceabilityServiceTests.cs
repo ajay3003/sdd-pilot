@@ -80,12 +80,42 @@ public sealed class ArtifactTraceabilityServiceTests
             This requirement mentions nothing about constitution rules.
             """);
 
+    // ── Helper to build ReviewContext for tests ────────────────────────────────
+
+    private static ReviewContext BuildContext(
+        ConstitutionDocument? constitution,
+        SpecTree? spec,
+        PlanDocument? plan,
+        TaskTree? tasks)
+    {
+        var constModel = constitution is not null
+            ? ConstitutionAnalysisService.BuildSemanticModel(constitution)
+            : new ConstitutionSemanticModel();
+
+        var specModel = spec is not null
+            ? SpecExplorerService.BuildSemanticModel(spec, "")
+            : new SpecificationSemanticModel();
+
+        var planModel = plan is not null
+            ? PlanAnalysisService.BuildSemanticModel(plan)
+            : new PlanSemanticModel();
+
+        var taskModel = tasks is not null
+            ? TaskExplorerService.BuildSemanticModel(tasks)
+            : new TaskSemanticModel();
+
+        var dataModel = new DataModelSemanticModel();
+
+        return ReviewContextFactory.Create(constModel, specModel, planModel, taskModel, dataModel);
+    }
+
     // ── 1: Constitution → Spec coverage ──────────────────────────────────────
 
     [Fact]
     public void ConstitutionCoverage_CoveredWhenSpecReferencesRule()
     {
-        var report = _svc.Analyze(Constitution(), Spec(), null, null);
+        var context = BuildContext(Constitution(), Spec(), null, null);
+        var report = _svc.Analyze(Constitution(), Spec(), null, null, context);
 
         var pp01Entry = report.ConstitutionToSpec.FirstOrDefault(c => c.ItemId == "PP-01");
         pp01Entry.Should().NotBeNull("PP-01 is mentioned in FR-001 content");
@@ -96,7 +126,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void ConstitutionCoverage_MissingWhenNoSpecReference()
     {
-        var report = _svc.Analyze(Constitution(), SpecWithNoRuleRefs(), null, null);
+        var context = BuildContext(Constitution(), SpecWithNoRuleRefs(), null, null);
+        var report = _svc.Analyze(Constitution(), SpecWithNoRuleRefs(), null, null, context);
 
         report.ConstitutionToSpec.Should().NotBeEmpty();
         var missing = report.ConstitutionToSpec.Where(c => c.Status == TraceabilityStatus.Missing).ToList();
@@ -106,7 +137,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void ConstitutionCoverage_ReturnsOneEntryPerRule()
     {
-        var report = _svc.Analyze(Constitution(), Spec(), null, null);
+        var context = BuildContext(Constitution(), Spec(), null, null);
+        var report = _svc.Analyze(Constitution(), Spec(), null, null, context);
 
         report.ConstitutionToSpec.Should()
             .HaveCount(Constitution().RuleCatalog.Count,
@@ -116,7 +148,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void ConstitutionCoverage_StatsMatchChainEntries()
     {
-        var report = _svc.Analyze(Constitution(), Spec(), null, null);
+        var context = BuildContext(Constitution(), Spec(), null, null);
+        var report = _svc.Analyze(Constitution(), Spec(), null, null, context);
 
         report.ConstitutionCoverage.TotalItems.Should().Be(report.ConstitutionToSpec.Count);
         report.ConstitutionCoverage.CoveredItems.Should().Be(
@@ -130,7 +163,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void SpecCoverage_CoveredWhenPlanMentionsFR()
     {
-        var report = _svc.Analyze(null, Spec(), Plan(), null);
+        var context = BuildContext(null, Spec(), Plan(), null);
+        var report = _svc.Analyze(null, Spec(), Plan(), null, context);
 
         var fr001 = report.SpecToPlan.FirstOrDefault(s => s.ItemId.Equals("FR-001", StringComparison.OrdinalIgnoreCase));
         fr001.Should().NotBeNull("FR-001 is mentioned in the plan architecture section");
@@ -140,7 +174,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void SpecCoverage_MissingWhenPlanOmitsFR()
     {
-        var report = _svc.Analyze(null, Spec(), Plan(), null);
+        var context = BuildContext(null, Spec(), Plan(), null);
+        var report = _svc.Analyze(null, Spec(), Plan(), null, context);
 
         // FR-003 is not mentioned in the plan
         var fr003 = report.SpecToPlan.FirstOrDefault(s => s.ItemId.Equals("FR-003", StringComparison.OrdinalIgnoreCase));
@@ -152,7 +187,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void SpecCoverage_StatsMatchChainEntries()
     {
-        var report = _svc.Analyze(null, Spec(), Plan(), null);
+        var context = BuildContext(null, Spec(), Plan(), null);
+        var report = _svc.Analyze(null, Spec(), Plan(), null, context);
 
         report.SpecificationCoverage.TotalItems.Should().Be(report.SpecToPlan.Count);
     }
@@ -162,7 +198,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void PlanCoverage_CoveredWhenTaskReferencesFR()
     {
-        var report = _svc.Analyze(null, null, Plan(), Tasks());
+        var context = BuildContext(null, null, Plan(), Tasks());
+        var report = _svc.Analyze(null, null, Plan(), Tasks(), context);
 
         var covered = report.PlanToTask.Where(p => p.Status == TraceabilityStatus.Covered).ToList();
         covered.Should().NotBeEmpty("tasks T001 and T002 reference FR-001 which is in the plan");
@@ -171,7 +208,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void PlanCoverage_PlanToTaskEntriesCreated()
     {
-        var report = _svc.Analyze(null, null, Plan(), Tasks());
+        var context = BuildContext(null, null, Plan(), Tasks());
+        var report = _svc.Analyze(null, null, Plan(), Tasks(), context);
 
         report.PlanToTask.Should().NotBeEmpty("plan has ADRs and phases");
     }
@@ -181,7 +219,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void OrphanTask_DetectedWhenNoFrOrScRefs()
     {
-        var report = _svc.Analyze(null, null, null, Tasks());
+        var context = BuildContext(null, null, null, Tasks());
+        var report = _svc.Analyze(null, null, null, Tasks(), context);
 
         // T004 "Fix button spacing on dashboard" has no FR/SC refs
         var orphanGaps = report.Gaps
@@ -193,7 +232,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void OrphanTask_TaskCoverageStatsCountsOrphans()
     {
-        var report = _svc.Analyze(null, null, null, Tasks());
+        var context = BuildContext(null, null, null, Tasks());
+        var report = _svc.Analyze(null, null, null, Tasks(), context);
 
         report.TaskCoverage.OrphanedItems.Should().BeGreaterThan(0,
             "at least one orphan task expected");
@@ -205,7 +245,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void GapDetection_IncludesMissingRules()
     {
-        var report = _svc.Analyze(Constitution(), SpecWithNoRuleRefs(), null, null);
+        var context = BuildContext(Constitution(), SpecWithNoRuleRefs(), null, null);
+        var report = _svc.Analyze(Constitution(), SpecWithNoRuleRefs(), null, null, context);
 
         var constitutionGaps = report.Gaps
             .Where(g => g.GapIn == ArtifactType.Constitution && g.Status == TraceabilityStatus.Missing)
@@ -216,7 +257,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void GapDetection_IncludesOrphanTasks()
     {
-        var report = _svc.Analyze(null, null, null, Tasks());
+        var context = BuildContext(null, null, null, Tasks());
+        var report = _svc.Analyze(null, null, null, Tasks(), context);
 
         var taskGaps = report.Gaps
             .Where(g => g.GapIn == ArtifactType.Task && g.Status == TraceabilityStatus.Orphaned)
@@ -227,7 +269,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void GapDetection_IncludesMissingSpecRequirements()
     {
-        var report = _svc.Analyze(null, Spec(), Plan(), null);
+        var context = BuildContext(null, Spec(), Plan(), null);
+        var report = _svc.Analyze(null, Spec(), Plan(), null, context);
 
         var specGaps = report.Gaps
             .Where(g => g.GapIn == ArtifactType.Specification && g.Status == TraceabilityStatus.Missing)
@@ -241,7 +284,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void Matrix_ContainsRowsWhenConstitutionLoaded()
     {
-        var report = _svc.Analyze(Constitution(), Spec(), null, null);
+        var context = BuildContext(Constitution(), Spec(), null, null);
+        var report = _svc.Analyze(Constitution(), Spec(), null, null, context);
 
         report.Matrix.Should().NotBeEmpty("constitution rules generate matrix rows");
     }
@@ -249,7 +293,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void Matrix_ContainsMissingRowForUncoveredRule()
     {
-        var report = _svc.Analyze(Constitution(), SpecWithNoRuleRefs(), null, null);
+        var context = BuildContext(Constitution(), SpecWithNoRuleRefs(), null, null);
+        var report = _svc.Analyze(Constitution(), SpecWithNoRuleRefs(), null, null, context);
 
         var missingRows = report.Matrix.Where(r => r.Status == TraceabilityStatus.Missing).ToList();
         missingRows.Should().NotBeEmpty("rules without spec coverage → Missing rows");
@@ -260,7 +305,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void Matrix_ContainsFullChainRowWhenAllArtifactsLoaded()
     {
-        var report = _svc.Analyze(Constitution(), Spec(), Plan(), Tasks());
+        var context = BuildContext(Constitution(), Spec(), Plan(), Tasks());
+        var report = _svc.Analyze(Constitution(), Spec(), Plan(), Tasks(), context);
 
         // A fully covered row has all four columns filled
         var coveredRows = report.Matrix.Where(r => r.Status == TraceabilityStatus.Covered).ToList();
@@ -278,7 +324,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void FilterGapsByArtifact_ReturnsOnlyMatching()
     {
-        var report = _svc.Analyze(Constitution(), SpecWithNoRuleRefs(), null, Tasks());
+        var context = BuildContext(Constitution(), SpecWithNoRuleRefs(), null, Tasks());
+        var report = _svc.Analyze(Constitution(), SpecWithNoRuleRefs(), null, Tasks(), context);
 
         var constGaps = _svc.FilterGapsByArtifact(report.Gaps, ArtifactType.Constitution).ToList();
         constGaps.Should().NotBeEmpty();
@@ -288,7 +335,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void SearchMatrix_FindsByRuleId()
     {
-        var report = _svc.Analyze(Constitution(), Spec(), null, null);
+        var context = BuildContext(Constitution(), Spec(), null, null);
+        var report = _svc.Analyze(Constitution(), Spec(), null, null, context);
 
         var results = _svc.SearchMatrix(report.Matrix, "PP-01").ToList();
         results.Should().NotBeEmpty();
@@ -298,7 +346,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void FilterMatrixByStatus_ReturnsOnlyMatching()
     {
-        var report = _svc.Analyze(Constitution(), Spec(), null, null);
+        var context = BuildContext(Constitution(), Spec(), null, null);
+        var report = _svc.Analyze(Constitution(), Spec(), null, null, context);
 
         var covered = _svc.FilterMatrixByStatus(report.Matrix, TraceabilityStatus.Covered).ToList();
         covered.Should().OnlyContain(r => r.Status == TraceabilityStatus.Covered);
@@ -310,7 +359,8 @@ public sealed class ArtifactTraceabilityServiceTests
     public void Health_TotalCountsMatchInputs()
     {
         var constitution = Constitution();
-        var report       = _svc.Analyze(constitution, Spec(), Plan(), Tasks());
+        var context = BuildContext(constitution, Spec(), Plan(), Tasks());
+        var report = _svc.Analyze(constitution, Spec(), Plan(), Tasks(), context);
 
         report.Health.TotalRules.Should().Be(constitution.RuleCatalog.Count);
         report.Health.TotalRules.Should().BeGreaterThan(0);
@@ -321,10 +371,9 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void NullArtifacts_ProduceEmptyReportWithoutCrash()
     {
-        var act = () => _svc.Analyze(null, null, null, null);
-        act.Should().NotThrow("all-null inputs must not throw");
+        var context = BuildContext(null, null, null, null);
+        var report = _svc.Analyze(null, null, null, null, context);
 
-        var report = act();
         report.Should().NotBeNull();
         report.ConstitutionToSpec.Should().BeEmpty();
         report.SpecToPlan.Should().BeEmpty();
@@ -336,10 +385,9 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void PartialAnalysis_ConstitutionOnlyDoesNotCrash()
     {
-        var act = () => _svc.Analyze(Constitution(), null, null, null);
-        act.Should().NotThrow();
+        var context = BuildContext(Constitution(), null, null, null);
+        var report = _svc.Analyze(Constitution(), null, null, null, context);
 
-        var report = act();
         report.ConstitutionToSpec.Should().BeEmpty("no spec to analyze against");
         report.Matrix.Should().NotBeEmpty("constitution rules generate matrix rows even without spec");
     }
