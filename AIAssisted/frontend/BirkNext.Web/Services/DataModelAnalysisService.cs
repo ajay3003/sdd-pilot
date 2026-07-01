@@ -37,6 +37,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         string?         currentEnumDesc           = null;
         var             currentEnumValues         = new List<string>();
         var             currentSection            = string.Empty;
+        var             currentEntitySectionKind = string.Empty; // "persistent", "runtime", etc.
         var             globalRelationships       = new List<DataRelationship>();
         var             globalIndexes             = new List<DataIndex>();
         var             globalConstraints         = new List<DataConstraint>();
@@ -112,46 +113,67 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         currentEntityName    = h2[7..].Trim();
                         currentEntityIsTable = false;
                         currentSection       = string.Empty;
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.StartsWith("Table:", StringComparison.OrdinalIgnoreCase))
                     {
                         currentEntityName    = h2[6..].Trim();
                         currentEntityIsTable = true;
                         currentSection       = string.Empty;
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.StartsWith("Enum:", StringComparison.OrdinalIgnoreCase))
                     {
                         currentEnumName = h2[5..].Trim();
                         currentSection  = "enum";
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.Equals("Overview", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "overview";
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.StartsWith("Migration", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "migration";
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.StartsWith("Retention", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "retention";
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.Equals("Relationships", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "relationships";
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.Equals("Indexes", StringComparison.OrdinalIgnoreCase) ||
                              h2.Equals("Indices", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "indexes";
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.Equals("Constraints", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "constraints";
+                        currentEntitySectionKind = string.Empty;
+                    }
+                    else if (h2.Equals("Persistent Entities", StringComparison.OrdinalIgnoreCase) ||
+                             h2.Equals("Entities", StringComparison.OrdinalIgnoreCase))
+                    {
+                        currentSection = "entity-section";
+                        currentEntitySectionKind = "persistent";
+                    }
+                    else if (h2.Equals("Runtime Models", StringComparison.OrdinalIgnoreCase))
+                    {
+                        currentSection = "entity-section";
+                        currentEntitySectionKind = "runtime";
                     }
                     else
                     {
                         currentSection = string.Empty;
+                        currentEntitySectionKind = string.Empty;
                     }
                     continue;
                 }
@@ -160,7 +182,35 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                 {
                     var h3 = token.Content;
 
-                    if (h3.Equals("Columns", StringComparison.OrdinalIgnoreCase))
+                    // Check if this is an entity name within a persistent-entities or runtime-models section
+                    // Do this check BEFORE subsection name checks so entity names take precedence
+                    if (!string.IsNullOrEmpty(currentEntitySectionKind) &&
+                        !h3.Equals("Columns", StringComparison.OrdinalIgnoreCase) &&
+                        !h3.Equals("Relationships", StringComparison.OrdinalIgnoreCase) &&
+                        !h3.Equals("Indexes", StringComparison.OrdinalIgnoreCase) &&
+                        !h3.Equals("Indices", StringComparison.OrdinalIgnoreCase) &&
+                        !h3.Equals("Constraints", StringComparison.OrdinalIgnoreCase) &&
+                        !h3.Equals("Traceability", StringComparison.OrdinalIgnoreCase) &&
+                        !h3.Equals("Open Questions", StringComparison.OrdinalIgnoreCase) &&
+                        !NumericH3Re.IsMatch(h3))
+                    {
+                        // Handle H3 entities in "Persistent Entities" or "Runtime Models" sections
+                        // Pattern: "### EntityName" or "### EntityName — tableName description"
+                        FlushEntity();
+                        FlushEnum();
+
+                        var (entityName, tableName) = ExtractEntityAndTableName(h3);
+                        currentEntityName    = entityName;
+                        currentEntityIsTable = !string.IsNullOrEmpty(tableName);
+
+                        // If a table name was extracted, set it as a description hint
+                        if (!string.IsNullOrEmpty(tableName))
+                            currentEntityDesc = $"Table: {tableName}";
+
+                        // Continue processing subsections
+                        currentSection = string.Empty;
+                    }
+                    else if (h3.Equals("Columns", StringComparison.OrdinalIgnoreCase))
                         currentSection = "columns";
                     else if (h3.Equals("Relationships", StringComparison.OrdinalIgnoreCase))
                         currentSection = "relationships";
@@ -181,6 +231,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         currentEntityName    = StripNumericPrefix(h3);
                         currentEntityIsTable = false;
                         currentSection       = string.Empty;
+                        currentEntitySectionKind = string.Empty;
                     }
                     else
                         currentSection = string.Empty;
@@ -553,6 +604,39 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         i = s.IndexOf(" - ");
         if (i > 0) s = s[..i].Trim();
         return s;
+    }
+
+    // Extracts entity name and table name from H3 format like "### EntityName" or "### EntityName — tableName description"
+    private static (string EntityName, string? TableName) ExtractEntityAndTableName(string heading)
+    {
+        var s = heading.Trim();
+
+        // Check for "EntityName — tableName" pattern
+        var emdashIdx = s.IndexOf(" — "); // " — "
+        if (emdashIdx > 0)
+        {
+            var entityName = s[..emdashIdx].Trim();
+            var rest = s[(emdashIdx + 3)..].Trim();
+
+            // Extract table name — it's typically the first word(s) before "table" keyword or space
+            // Pattern: "### FaultQueueEntry — feilkoe table" → table name is "feilkoe"
+            var tableName = rest;
+            var tableKeywordIdx = rest.IndexOf(" table", StringComparison.OrdinalIgnoreCase);
+            if (tableKeywordIdx > 0)
+                tableName = rest[..tableKeywordIdx].Trim();
+            else
+            {
+                // No "table" keyword, take first word
+                var spaceIdx = rest.IndexOf(' ');
+                if (spaceIdx > 0)
+                    tableName = rest[..spaceIdx].Trim();
+            }
+
+            return (entityName, tableName);
+        }
+
+        // No table name, just entity name
+        return (s, null);
     }
 
     // ── Findings ───────────────────────────────────────────────────────────────

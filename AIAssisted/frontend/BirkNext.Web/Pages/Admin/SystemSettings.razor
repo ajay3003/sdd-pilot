@@ -1428,7 +1428,7 @@ else if (_settings is not null)
         // Analysis
         ("Spec Drift",              "SpecDrift"),
         ("Impact Analysis",         "ImpactAnalysis"),
-        ("Artifact Traceability",   "ArtifactTraceability"),
+        ("Requirements Traceability",   "ArtifactTraceability"),
         ("Implementation Review",   "ImplementationReview"),
         ("Implementation Traceability", "ImplementationTraceability"),
 
@@ -1509,7 +1509,7 @@ else if (_settings is not null)
     {
         get
         {
-            yield return ("Artifact Traceability", AnalysisSessions.TraceabilityReport is null ? "Not Run" : "Completed", AnalysisSessions.TraceabilityRunAt);
+            yield return ("Requirements Traceability", AnalysisSessions.TraceabilityReport is null ? "Not Run" : "Completed", AnalysisSessions.TraceabilityRunAt);
             yield return ("Quality Review", AnalysisStatusLabel(QualitySession.Status), QualitySession.RunTimestamp ?? LastQualityReviewRun);
             yield return ("WASM Security Review", RuntimeStatusLabel(RuntimeReviews.SecurityReview.Status), RuntimeReviews.SecurityReview.RunTimestamp);
             yield return ("WASM Performance Review", RuntimeStatusLabel(RuntimeReviews.PerformanceReview.Status), RuntimeReviews.PerformanceReview.RunTimestamp);
@@ -1988,7 +1988,7 @@ else if (_settings is not null)
         ("Code Traceability",            "code-traceability"),
         ("Spec Drift",                   "spec-drift"),
         ("Impact Analysis",              "impact-analysis"),
-        ("Artifact Traceability",        "artifact-traceability"),
+        ("Requirements Traceability",        "artifact-traceability"),
         ("Implementation Review",        "task-alignment"),
         ("Implementation Traceability",  "implementation-traceability"),
         ("Quality Review",               "quality-review"),
@@ -2025,7 +2025,7 @@ else if (_settings is not null)
         ("User Guide", "/scenarios/new",                        "Create Test Scenario link"),
         ("User Guide", "/spec-drift",                           "Spec Drift link"),
         ("User Guide", "/impact-analysis",                      "Impact Analysis link"),
-        ("User Guide", "/artifact-traceability",                "Artifact Traceability link"),
+        ("User Guide", "/artifact-traceability",                "Requirements Traceability link"),
         ("User Guide", "/task-alignment",                       "Implementation Review link"),
         ("User Guide", "/implementation-traceability",          "Implementation Traceability link"),
         ("User Guide", "/traceability",                         "Traceability & Coverage link"),

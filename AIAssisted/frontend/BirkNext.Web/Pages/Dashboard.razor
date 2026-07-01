@@ -392,7 +392,7 @@
                     <div class="db-tl-entry">
                         <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
                         <div class="db-tl-body">
-                            <span class="db-tl-action">Artifact Traceability completed</span>
+                            <span class="db-tl-action">Requirements Traceability completed</span>
                             <span class="db-tl-meta">@Snapshot.TraceabilityReport.Health.CoveragePercentage.ToString("0")% coverage</span>
                         </div>
                     </div>
@@ -454,11 +454,11 @@
         <SectionHeader Title="Analysis Summary" Description="Run each analysis to populate" />
         <div class="db-analysis-grid">
 
-            @* Artifact Traceability *@
+            @* Requirements Traceability *@
             <div class="db-analysis-card">
                 <div class="db-analysis-card-header">
-                    <span class="db-analysis-card-title">Artifact Traceability</span>
-                    <a href="artifact-traceability" class="db-summary-open" aria-label="Open Artifact Traceability">Open →</a>
+                    <span class="db-analysis-card-title">Requirements Traceability</span>
+                    <a href="artifact-traceability" class="db-summary-open" aria-label="Open Requirements Traceability">Open →</a>
                 </div>
                 @if (Snapshot.TraceabilityReport is { } tr)
                 {
@@ -473,7 +473,7 @@
                 else
                 {
                     <div class="db-analysis-empty">
-                        Not run — populate by running Artifact Traceability.
+                        Not run — populate by running Requirements Traceability.
                         <a href="artifact-traceability" class="db-analysis-run-link">Run now →</a>
                     </div>
                 }
@@ -649,7 +649,7 @@
             <div class="db-analysis-card">
                 <div class="db-analysis-card-header">
                     <span class="db-analysis-card-title">Integration Quality Review</span>
-                    <a href="integration-quality-review" class="db-summary-open" aria-label="Open Integration Quality Review">Open â†’</a>
+                    <a href="integration-quality-review" class="db-summary-open" aria-label="Open Integration Quality Review">Open →</a>
                 </div>
                 @if (_iqrReport is { } iqrCard)
                 {
@@ -680,8 +680,8 @@
                 else
                 {
                     <div class="db-analysis-empty">
-                        Not run â€” analyse configured service integrations, health checks, ownership, and readiness.
-                        <a href="integration-quality-review" class="db-analysis-run-link">Run now â†’</a>
+                        Not run — analyse configured service integrations, health checks, ownership, and readiness.
+                        <a href="integration-quality-review" class="db-analysis-run-link">Run now →</a>
                     </div>
                 }
             </div>
@@ -705,7 +705,7 @@
             <div class="db-qa-group">
                 <div class="db-qa-group-label">Analysis</div>
                 <div class="db-qa-buttons">
-                    <a href="artifact-traceability"   class="db-qa-btn">Artifact Traceability</a>
+                    <a href="artifact-traceability"   class="db-qa-btn">Requirements Traceability</a>
                     <a href="quality-review"          class="db-qa-btn">Quality Review</a>
                     <a href="frontend-quality-review"  class="db-qa-btn">Frontend Quality Review</a>
                     <a href="api-quality-review"       class="db-qa-btn">API Quality Review</a>

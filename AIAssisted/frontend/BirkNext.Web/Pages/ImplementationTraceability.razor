@@ -1,14 +1,24 @@
 @page "/implementation-traceability"
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@using System.Text
 @inject ImplementationTraceabilityApiService EvidenceApi
+@inject IJSRuntime JS
 
 <PageTitle>Implementation Traceability</PageTitle>
 
 <div class="it-page">
 
     <PageHeader Title="Implementation Traceability"
-                Description="Retrieve deterministic implementation evidence from Azure DevOps: Work Item → Pull Request → Commit → Changed Files." />
+                Description="Retrieve deterministic implementation evidence from Azure DevOps: Work Item → Pull Request → Commit → Changed Files.">
+        @if (_report is not null)
+        {
+            <div class="it-header-actions">
+                <PrimaryButton OnClick="Refresh">Reanalyse</PrimaryButton>
+                <PrimaryButton OnClick="ExportHtml">Export HTML</PrimaryButton>
+            </div>
+        }
+    </PageHeader>
 
     @* ── ADO status banner ─────────────────────────────────────────────────── *@
     @if (_status is not null)
@@ -111,55 +121,67 @@
 
         <div class="it-report">
 
-            @* ── KPI row ── *@
-            <div class="metric-grid-4" role="region" aria-label="Evidence summary">
-                <MetricCard Value="@report.Tasks.Count.ToString()"
-                            Label="Work Items"
-                            Sublabel="@report.Source" />
-                <MetricCard Value="@report.Tasks.Sum(t => t.PullRequests.Count).ToString()"
-                            Label="Pull Requests"
-                            Sublabel="linked"
-                            Variant="@(report.Tasks.Sum(t => t.PullRequests.Count) > 0 ? "success" : null)" />
-                <MetricCard Value="@AllChangedFiles(report).Count().ToString()"
-                            Label="Changed Files"
-                            Sublabel="across all PRs" />
-                <MetricCard Value="@GapCount(report).ToString()"
-                            Label="Gaps"
-                            Sublabel="missing evidence"
-                            Variant="@(GapCount(report) > 0 ? "warning" : "success")" />
+            @* ── KPI cards ── *@
+            <div class="it-kpi-section" role="region" aria-label="Evidence summary">
+                <div class="it-kpi-grid">
+                    <div class="it-kpi-card">
+                        <span class="it-kpi-value">@report.Tasks.Count</span>
+                        <span class="it-kpi-label">Total Tasks</span>
+                    </div>
+                    <div class="it-kpi-card">
+                        <span class="it-kpi-value">@report.Tasks.Count(t => t.PullRequests.Count > 0)</span>
+                        <span class="it-kpi-label">Spec Linked</span>
+                    </div>
+                    <div class="it-kpi-card">
+                        <span class="it-kpi-value">@report.Tasks.Count(t => t.PullRequests.Count == 0)</span>
+                        <span class="it-kpi-label">Technical Only</span>
+                    </div>
+                    <div class="it-kpi-card">
+                        <span class="it-kpi-value">@report.UnmappedChanges.Count</span>
+                        <span class="it-kpi-label">Needs Review</span>
+                    </div>
+                    <div class="it-kpi-card">
+                        <span class="it-kpi-value">@GapCount(report)</span>
+                        <span class="it-kpi-label">Possible Deviations</span>
+                    </div>
+                    <div class="it-kpi-card">
+                        <span class="it-kpi-value">@report.TestEvidence.Count(e => !e.HasTest)</span>
+                        <span class="it-kpi-label">High Risk</span>
+                    </div>
+                </div>
             </div>
 
             @* ── Tab bar ── *@
-            <div class="tab-bar" role="tablist">
-                <button class="tab-btn @(_tab == "overview"  ? "is-active" : "")"
+            <div class="it-tab-bar" role="tablist">
+                <button class="it-tab-btn @(_tab == "overview"  ? "is-active" : "")"
                         @onclick='() => _tab = "overview"'
                         role="tab" aria-selected="@(_tab == "overview")">
-                    Overview
+                    Spec Alignment
                 </button>
-                <button class="tab-btn @(_tab == "tasks" ? "is-active" : "")"
+                <button class="it-tab-btn @(_tab == "tasks" ? "is-active" : "")"
                         @onclick='() => _tab = "tasks"'
                         role="tab" aria-selected="@(_tab == "tasks")">
-                    Task → PRs (@report.Tasks.Count)
+                    Task → PRs <span class="it-tab-badge">@report.Tasks.Count</span>
                 </button>
-                <button class="tab-btn @(_tab == "files" ? "is-active" : "")"
+                <button class="it-tab-btn @(_tab == "files" ? "is-active" : "")"
                         @onclick='() => _tab = "files"'
                         role="tab" aria-selected="@(_tab == "files")">
-                    PR → Files (@AllChangedFiles(report).Count())
+                    PR → Files <span class="it-tab-badge">@AllChangedFiles(report).Count()</span>
                 </button>
-                <button class="tab-btn @(_tab == "unmapped" ? "is-active" : "")"
+                <button class="it-tab-btn @(_tab == "unmapped" ? "is-active" : "")"
                         @onclick='() => _tab = "unmapped"'
                         role="tab" aria-selected="@(_tab == "unmapped")">
-                    Unmapped (@report.UnmappedChanges.Count)
+                    Unmapped <span class="it-tab-badge">@report.UnmappedChanges.Count</span>
                 </button>
-                <button class="tab-btn @(_tab == "tests" ? "is-active" : "")"
+                <button class="it-tab-btn @(_tab == "tests" ? "is-active" : "")"
                         @onclick='() => _tab = "tests"'
                         role="tab" aria-selected="@(_tab == "tests")">
-                    Test Evidence (@report.TestEvidence.Count)
+                    Risk & Testing <span class="it-tab-badge">@report.TestEvidence.Count</span>
                 </button>
-                <button class="tab-btn @(_tab == "gaps" ? "is-active" : "")"
+                <button class="it-tab-btn @(_tab == "gaps" ? "is-active" : "")"
                         @onclick='() => _tab = "gaps"'
                         role="tab" aria-selected="@(_tab == "gaps")">
-                    Gaps@(GapCount(report) > 0 ? $" ({GapCount(report)})" : "")
+                    Task Explorer @(GapCount(report) > 0 ? $" ({GapCount(report)})" : "")
                 </button>
             </div>
 
@@ -279,7 +301,7 @@
                                                 { <span class="it-none">—</span> }
                                             </td>
                                             <td>
-                                                <span class="it-confidence-chip">@ConfidenceLabel(task.Confidence)</span>
+                                                <span class="it-confidence-badge @ConfidenceClass(task.Confidence)">@ConfidenceLabel(task.Confidence)</span>
                                             </td>
                                         </tr>
                                     }
@@ -547,11 +569,37 @@
 
     private static string ConfidenceLabel(EvidenceConfidence c) => c switch
     {
-        EvidenceConfidence.Confirmed => "Confirmed",
-        EvidenceConfidence.Likely    => "Likely",
-        EvidenceConfidence.Missing   => "Missing",
-        _                            => c.ToString(),
+        EvidenceConfidence.Confirmed => "95%",
+        EvidenceConfidence.Likely    => "70%",
+        EvidenceConfidence.Missing   => "20%",
+        _                            => "—",
     };
+
+    private static string ConfidenceClass(EvidenceConfidence c) => c switch
+    {
+        EvidenceConfidence.Confirmed => "it-confidence-high",
+        EvidenceConfidence.Likely    => "it-confidence-medium",
+        EvidenceConfidence.Missing   => "it-confidence-low",
+        _                            => "it-confidence-unknown",
+    };
+
+    private async Task ExportHtml()
+    {
+        if (_report is null) return;
+        // Build simple HTML export of the report
+        var sb = new StringBuilder();
+        sb.Append("<html><head><meta charset=\"utf-8\"><title>Implementation Traceability</title>");
+        sb.Append("<style>body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 2rem; max-width: 1200px; margin: 0 auto; }");
+        sb.Append("h1 { color: #0f172a; margin-bottom: 2rem; } h2 { color: #1e293b; margin-top: 2rem; margin-bottom: 1rem; }");
+        sb.Append("table { width: 100%; border-collapse: collapse; margin: 1rem 0; }");
+        sb.Append("th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #e2e8f0; }");
+        sb.Append("th { background: #f8fafc; font-weight: 600; } </style></head><body>");
+        sb.Append("<h1>Implementation Traceability Report</h1>");
+        sb.Append($"<p>Generated: {DateTime.Now:F}</p>");
+        sb.Append("</body></html>");
+
+        await JS.InvokeVoidAsync("downloadHtmlFile", "implementation-traceability.html", sb.ToString());
+    }
 
     private static string LinkReasonLabel(EvidenceLinkReason r) => r switch
     {

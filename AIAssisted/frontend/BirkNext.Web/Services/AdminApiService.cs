@@ -283,7 +283,7 @@ public class FeatureVisibilityDto
     [JsonPropertyName("blazorWasmSecurityReview")]        public bool BlazorWasmSecurityReview        { get; set; } = true;
     [JsonPropertyName("blazorWasmPerformanceReview")]     public bool BlazorWasmPerformanceReview     { get; set; } = true;
     [JsonPropertyName("taskExplorer")]         public bool TaskExplorer         { get; set; } = true;
-    [JsonPropertyName("aiChangeReview")]       public bool AiChangeReview       { get; set; } = true;
+    [JsonPropertyName("aiChangeReview")]       public bool AiChangeReview       { get; set; } = false;
     [JsonPropertyName("enableExtractionReview")] public bool EnableExtractionReview { get; set; } = false;
     [JsonPropertyName("enableArchitectureView")] public bool EnableArchitectureView { get; set; } = false;
     [JsonPropertyName("constitutionExplorer")]  public bool ConstitutionExplorer  { get; set; } = true;

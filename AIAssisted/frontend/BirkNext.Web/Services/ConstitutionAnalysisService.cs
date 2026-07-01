@@ -58,6 +58,9 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
     {
         "platform standards", "standards", "technical standards", "development standards",
         "coding standards", "api standards", "service standards",
+        "security", "authentication", "managed identity", "network isolation",
+        "repository", "code structure", "internal structure", "repository convention",
+        "inherited platform rules", "platform rules",
     };
 
     private static readonly HashSet<string> ConstraintKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -95,9 +98,15 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         var governanceItems = new List<ConstitutionGovernanceItem>();
         var changelog = new List<ConstitutionVersion>();
 
+        // Extract metadata from HTML comments at the beginning (Sync Impact Report, etc.)
+        var metadataVersion = ExtractVersionFromMetadata(markdown);
+        if (!string.IsNullOrEmpty(metadataVersion))
+            changelog.Add(new ConstitutionVersion { Version = metadataVersion, Date = string.Empty, Author = string.Empty, Changes = [] });
+
         ConstitutionSectionType currentSection = ConstitutionSectionType.Other;
         var itemLines = new List<string>();
         string? currentItemHeading = null;
+        string? implicitSectionHeading = null; // For sections with content but no level-3 headings
 
         void FlushItem()
         {
@@ -160,6 +169,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                     inMetaBlock = false;
                     currentSection = ClassifySection(rawTitle);
                     currentItemHeading = null;
+                    implicitSectionHeading = currentSection != ConstitutionSectionType.Other ? rawTitle : null;
                     continue;
                 }
 
@@ -167,6 +177,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 {
                     FlushItem();
                     currentItemHeading = rawTitle;
+                    implicitSectionHeading = null; // We have explicit level-3 heading, don't use implicit
                     continue;
                 }
             }
@@ -184,6 +195,16 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 var am = MetaAmendedRe.Match(line);
                 if (am.Success && lastAmendedDate is null)
                 { lastAmendedDate = am.Groups[1].Value.Trim(); continue; }
+            }
+
+            // If we have content but no explicit item heading, use the implicit section heading
+            // This handles sections like "## Governance" that have no level-3 subsections
+            if (currentItemHeading is null && implicitSectionHeading is not null &&
+                (tok.Kind == MarkdownTokenKind.BulletItem ||
+                 (tok.Kind != MarkdownTokenKind.Blank && tok.Kind != MarkdownTokenKind.Heading)))
+            {
+                currentItemHeading = implicitSectionHeading;
+                implicitSectionHeading = null;
             }
 
             if (currentItemHeading is not null)
@@ -806,13 +827,15 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 Level = HealthIndicatorLevel.Warning,
             });
 
-        if (governance.Count == 0)
+        // Only warn if governance section is truly missing (not just if items are unparsed)
+        if (governance.Count == 0 && standards.Count > 2) // Only warn if we have substantial other sections
             indicators.Add(new ConstitutionHealthIndicator
             {
                 Icon = "⚠", Message = "No governance section found",
                 Level = HealthIndicatorLevel.Warning,
             });
 
+        // Warn about missing changelog unless explicitly found
         if (changelog.Count == 0)
             indicators.Add(new ConstitutionHealthIndicator
             {
@@ -851,10 +874,13 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         if (PrincipleKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return ConstitutionSectionType.CorePrinciples;
         if (ChangelogKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return ConstitutionSectionType.Changelog;
         if (GovernanceKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return ConstitutionSectionType.Governance;
+
+        // Check StandardKeywords BEFORE generic "security" to classify "Security & Authentication" as Standards
+        if (StandardKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return ConstitutionSectionType.PlatformStandards;
+
         if (lower.Contains("security") || lower.Contains("compliance")) return ConstitutionSectionType.SecurityCompliance;
         if (ConstraintKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return ConstitutionSectionType.ModuleConstraints;
         if (lower.Contains("development")) return ConstitutionSectionType.DevelopmentStandards;
-        if (StandardKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return ConstitutionSectionType.PlatformStandards;
         return ConstitutionSectionType.Other;
     }
 
@@ -952,4 +978,17 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
     private static string StripMarkdown(string s) =>
         Regex.Replace(s, @"[*_`#\[\]]", "").Trim();
+
+    // Extract version from HTML metadata comment at the beginning (Sync Impact Report)
+    private static string? ExtractVersionFromMetadata(string markdown)
+    {
+        var commentMatch = Regex.Match(markdown, @"<!--\s*Sync Impact Report.*?Version change:\s*([^→\n]+)\s*→\s*([^<\n]+)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        if (commentMatch.Success)
+        {
+            var newVersion = commentMatch.Groups[2].Value.Trim();
+            if (!string.IsNullOrEmpty(newVersion))
+                return newVersion;
+        }
+        return null;
+    }
 }
