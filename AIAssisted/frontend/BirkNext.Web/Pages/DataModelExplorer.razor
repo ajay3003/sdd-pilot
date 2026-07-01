@@ -27,8 +27,10 @@
     <div class="dme-page-body">
         <DataModelExplorerPanel
             DataModelText="@_initialText"
+            ParsedDataModel="@_parsedDataModel"
+            SemanticModel="@_semanticModel"
             InitialView="@_initialView"
-            OnBuilt="OnDataModelBuilt" />
+            OnTextChanged="OnPanelTextChanged" />
     </div>
 
 </div>
@@ -36,6 +38,8 @@
 @code {
     private string _initialText = string.Empty;
     private string? _initialView;
+    private DataModelDocument? _parsedDataModel;
+    private DataModelSemanticModel? _semanticModel;
 
     private const string StorageKey = "dme-standalone-datamodel";
 
@@ -62,6 +66,7 @@
         {
             Workspace.Set(WorkspaceArtifactKind.DataModel, content);
             _initialText = content;
+            BuildSemanticModel(content);
             StateHasChanged();
             return;
         }
@@ -79,21 +84,34 @@
             catch { }
             Workspace.Set(WorkspaceArtifactKind.DataModel, legacy);
             _initialText = legacy;
+            BuildSemanticModel(legacy);
             StateHasChanged();
         }
     }
 
+    private void BuildSemanticModel(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _semanticModel = null;
+            _parsedDataModel = null;
+            return;
+        }
+        _parsedDataModel = DataModelService.Parse(text);
+        _semanticModel = DataModelAnalysisService.BuildSemanticModel(_parsedDataModel);
+    }
+
     private async Task ExportHtml()
     {
-        if (string.IsNullOrWhiteSpace(_initialText)) return;
-        var document = DataModelService.Parse(_initialText);
-        var html = ExportService.ExportDataModel(document, Workspace.ProjectName);
+        if (_parsedDataModel is null) return;
+        var html = ExportService.ExportDataModel(_parsedDataModel, Workspace.ProjectName);
         await JS.InvokeVoidAsync("downloadHtmlFile", $"data-model-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
-    private async Task OnDataModelBuilt(string text)
+    private async Task OnPanelTextChanged(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
+        BuildSemanticModel(text);
         Workspace.Set(WorkspaceArtifactKind.DataModel, text);
         try { await DocumentApi.SaveAsync("datamodel", text); } catch { }
         try { await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey); } catch { }

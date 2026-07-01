@@ -40,7 +40,7 @@
             <button
                 class="te-build-btn"
                 disabled="@(!CanBuild)"
-                @onclick="BuildTree">
+                @onclick="BuildTreeAsync">
                 Build Task Explorer
             </button>
         </div>
@@ -927,8 +927,10 @@
 
 @code {
     [Parameter] public string TasksText { get; set; } = string.Empty;
+    [Parameter] public TaskTree? ParsedTasks { get; set; }
+    [Parameter] public TaskSemanticModel? SemanticModel { get; set; }
     [Parameter] public AlignmentReport? Report { get; set; }
-    [Parameter] public EventCallback<string> OnBuilt { get; set; }
+    [Parameter] public EventCallback<string> OnTextChanged { get; set; }
     [Parameter] public string? InitialView { get; set; }
 
     private SpecificationImport? _importRef;
@@ -956,11 +958,31 @@
 
     protected override void OnParametersSet()
     {
-        var text = EffectiveText;
-        if (!string.IsNullOrWhiteSpace(text) && text != _lastBuiltText && string.IsNullOrEmpty(_localTasksText))
-            RebuildTree(text);
-        else if (_tree is not null && Report is not null)
-            RefreshEnrichment();
+        if (ParsedTasks is not null)
+        {
+            _tree = ParsedTasks;
+            if (Report is not null)
+                TaskExplorerService.EnrichWithReport(_tree, Report);
+            _health = TaskExplorerService.ComputeEnrichedHealth(_tree);
+            _tableLinkedTaskIds = TaskExplorerService.BuildTableLinkedTaskIds(_tree.Roots);
+            _expandedIds = TaskExplorerService.GetDefaultExpanded(_tree.Roots);
+            _selectedNodeId = null;
+            _searchQuery = string.Empty;
+            _activeFilter = null;
+            _isMapView = false;
+            _isImpactView = false;
+            _isChangesView = false;
+            _coverage = BuildImplementationCoverage(_tree);
+            RefreshFlatCache();
+        }
+        else
+        {
+            var text = EffectiveText;
+            if (!string.IsNullOrWhiteSpace(text) && text != _lastBuiltText && string.IsNullOrEmpty(_localTasksText))
+                RebuildTree(text);
+            else if (_tree is not null && Report is not null)
+                RefreshEnrichment();
+        }
 
         if (_tree is not null && InitialView is not null)
         {
@@ -998,10 +1020,10 @@
         _importRef?.Reset();
     }
 
-    private void BuildTree()
+    private async Task BuildTreeAsync()
     {
         if (!CanBuild) return;
-        RebuildTree(EffectiveText);
+        await OnTextChanged.InvokeAsync(EffectiveText);
     }
 
     private void RebuildTree(string text)
@@ -1021,8 +1043,6 @@
         _isChangesView = false;
         _coverage = BuildImplementationCoverage(_tree);
         RefreshFlatCache();
-        if (OnBuilt.HasDelegate)
-            _ = OnBuilt.InvokeAsync(text);
     }
 
     private void RefreshEnrichment()

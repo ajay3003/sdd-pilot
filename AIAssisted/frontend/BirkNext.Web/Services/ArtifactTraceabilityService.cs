@@ -21,13 +21,14 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         ConstitutionDocument? constitution,
         SpecTree? spec,
         PlanDocument? plan,
-        TaskTree? tasks)
+        TaskTree? tasks,
+        ReviewContext? reviewContext = null)
     {
-        // Flatten all nodes
+        // Flatten all nodes (used for matrix and gap detection)
         var allSpecNodes  = spec  is not null ? FlattenSpec(spec.Roots)   : [];
         var allTaskNodes  = tasks is not null ? FlattenTasks(tasks.Roots)  : [];
 
-        // Build lookup caches
+        // Build lookup caches (for backward compatibility with text-based scanning)
         var specNodesByFrId = BuildSpecNodesByFrId(allSpecNodes);
         var taskNodesByFrId = BuildTaskNodesByFrId(allTaskNodes);
         var planRuleIds     = BuildPlanRuleIds(plan);
@@ -36,17 +37,39 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         // Plan items list (reused in multiple chain steps)
         var planItems = BuildPlanItems(plan);
 
-        // Per-chain analysis
-        var constToSpec = BuildConstitutionToSpec(constitution, allSpecNodes, planRuleIds);
-        var specToPlan  = BuildSpecToPlan(specNodesByFrId, planTextFrIds, planItems);
-        var planToTask  = BuildPlanToTask(plan, taskNodesByFrId);
+        // When ReviewContext is available, use semantic links for chain building
+        // Otherwise fall back to legacy text-scanning approach
+        List<ChainCoverage> constToSpec, specToPlan, planToTask;
+        if (reviewContext is not null)
+        {
+            constToSpec = BuildConstitutionToSpecFromContext(reviewContext, constitution, plan);
+            specToPlan  = BuildSpecToPlanFromContext(reviewContext, plan);
+            planToTask  = BuildPlanToTaskFromContext(reviewContext, plan);
+        }
+        else
+        {
+            constToSpec = BuildConstitutionToSpec(constitution, allSpecNodes, planRuleIds);
+            specToPlan  = BuildSpecToPlan(specNodesByFrId, planTextFrIds, planItems);
+            planToTask  = BuildPlanToTask(plan, taskNodesByFrId);
+        }
 
         var orphanTasks = FindOrphanTasks(allTaskNodes);
 
-        // Coverage stats
-        var constCoverage = ComputeStats(constToSpec);
-        var specCoverage  = ComputeStats(specToPlan);
-        var planCoverage  = ComputeStats(planToTask);
+        // Coverage stats from semantic model when available, else legacy
+        TraceabilityCoverageStats constCoverage, specCoverage, planCoverage;
+        if (reviewContext is not null)
+        {
+            constCoverage = ComputeConstCoverageFromContext(reviewContext);
+            specCoverage  = ComputeSpecCoverageFromContext(reviewContext);
+            planCoverage  = ComputePlanCoverageFromContext(reviewContext);
+        }
+        else
+        {
+            constCoverage = ComputeStats(constToSpec);
+            specCoverage  = ComputeStats(specToPlan);
+            planCoverage  = ComputeStats(planToTask);
+        }
+
         var taskCoverage  = ComputeTaskCoverage(allTaskNodes, orphanTasks);
 
         // Gaps (sorted by severity desc)
@@ -78,6 +101,233 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             HasSpecification      = spec is not null,
             HasPlan               = plan is not null,
             HasTasks              = tasks is not null,
+        };
+    }
+
+    // ── Semantic Model Chain Builders ─────────────────────────────────────────
+
+    private static List<ChainCoverage> BuildConstitutionToSpecFromContext(
+        ReviewContext context,
+        ConstitutionDocument? constitution,
+        PlanDocument? plan)
+    {
+        if (constitution is null) return [];
+        if (context.Specification.Requirements.Count == 0 && plan is null) return [];
+
+        var result = new List<ChainCoverage>();
+        var specToConstLinks = context.SpecToConstitution;
+
+        // Reverse map: constitution rule → spec requirements that link to it
+        var ruleToReqs = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (specId, ruleIds) in specToConstLinks)
+        {
+            foreach (var ruleId in ruleIds)
+            {
+                if (!ruleToReqs.TryGetValue(ruleId, out var list))
+                    ruleToReqs[ruleId] = list = [];
+                list.Add(specId);
+            }
+        }
+
+        foreach (var rule in constitution.RuleCatalog)
+        {
+            var allIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rule.RuleId };
+            foreach (var alias in rule.Aliases) allIds.Add(alias);
+
+            var links = new List<TraceabilityLink>();
+            bool hasReqCoverage = false;
+            bool hasOtherCoverage = false;
+
+            foreach (var id in allIds)
+            {
+                if (!ruleToReqs.TryGetValue(id.ToUpperInvariant(), out var reqIds)) continue;
+
+                var reqNodes = context.Specification.Requirements
+                    .Where(r => reqIds.Contains(r.Id))
+                    .ToList();
+
+                foreach (var req in reqNodes)
+                {
+                    links.Add(new TraceabilityLink
+                    {
+                        SourceId    = rule.RuleId,
+                        SourceType  = ArtifactType.Constitution,
+                        TargetId    = req.Id,
+                        TargetType  = ArtifactType.Specification,
+                        SourceTitle = rule.Title,
+                        TargetTitle = req.Text,
+                    });
+                    hasReqCoverage = true;
+                }
+            }
+
+            // Plan-level gates also provide partial evidence
+            if (links.Count == 0 && plan is not null)
+            {
+                var planMentions = plan.Gates.Where(g => allIds.Contains(g.RuleId)).Any();
+                if (planMentions) hasOtherCoverage = true;
+            }
+
+            var status = hasReqCoverage
+                ? TraceabilityStatus.Covered
+                : (hasOtherCoverage ? TraceabilityStatus.Partial : TraceabilityStatus.Missing);
+
+            result.Add(new ChainCoverage
+            {
+                ItemId      = rule.RuleId,
+                ItemTitle   = rule.Title,
+                ItemType    = ArtifactType.Constitution,
+                ItemSubType = rule.RuleType.ToString(),
+                Status      = status,
+                Links       = links,
+            });
+        }
+
+        return result;
+    }
+
+    private static List<ChainCoverage> BuildSpecToPlanFromContext(
+        ReviewContext context,
+        PlanDocument? plan)
+    {
+        var result = new List<ChainCoverage>();
+        var specToPlanLinks = context.SpecToPlan;
+
+        foreach (var requirement in context.Specification.Requirements)
+        {
+            if (!specToPlanLinks.TryGetValue(requirement.Id, out var planIds))
+                planIds = [];
+
+            var links = new List<TraceabilityLink>();
+            foreach (var planId in planIds)
+            {
+                var planItem = context.Plan.ArchitectureDecisions
+                    .FirstOrDefault(d => d.Id == planId);
+
+                if (planItem is not null)
+                {
+                    links.Add(new TraceabilityLink
+                    {
+                        SourceId    = requirement.Id,
+                        SourceType  = ArtifactType.Specification,
+                        TargetId    = planId,
+                        TargetType  = ArtifactType.Plan,
+                        SourceTitle = requirement.Text,
+                        TargetTitle = planItem.Title,
+                    });
+                }
+            }
+
+            var status = links.Count > 0
+                ? TraceabilityStatus.Covered
+                : TraceabilityStatus.Missing;
+
+            result.Add(new ChainCoverage
+            {
+                ItemId      = requirement.Id,
+                ItemTitle   = requirement.Text,
+                ItemType    = ArtifactType.Specification,
+                Status      = status,
+                Links       = links,
+            });
+        }
+
+        return result;
+    }
+
+    private static List<ChainCoverage> BuildPlanToTaskFromContext(
+        ReviewContext context,
+        PlanDocument? plan)
+    {
+        if (plan is null) return [];
+
+        var result = new List<ChainCoverage>();
+        var planToTaskLinks = context.PlanToTasks;
+
+        foreach (var decision in context.Plan.ArchitectureDecisions)
+        {
+            if (!planToTaskLinks.TryGetValue(decision.Id, out var taskIds))
+                taskIds = [];
+
+            var links = new List<TraceabilityLink>();
+            foreach (var taskId in taskIds)
+            {
+                var task = context.Tasks.AllTasks
+                    .FirstOrDefault(t => t.Id == taskId);
+
+                if (task is not null)
+                {
+                    links.Add(new TraceabilityLink
+                    {
+                        SourceId    = decision.Id,
+                        SourceType  = ArtifactType.Plan,
+                        TargetId    = taskId,
+                        TargetType  = ArtifactType.Task,
+                        SourceTitle = decision.Title,
+                        TargetTitle = task.Title,
+                    });
+                }
+            }
+
+            var status = links.Count > 0
+                ? TraceabilityStatus.Covered
+                : TraceabilityStatus.Missing;
+
+            result.Add(new ChainCoverage
+            {
+                ItemId      = decision.Id,
+                ItemTitle   = decision.Title,
+                ItemType    = ArtifactType.Plan,
+                Status      = status,
+                Links       = links,
+            });
+        }
+
+        return result;
+    }
+
+    private static TraceabilityCoverageStats ComputeConstCoverageFromContext(ReviewContext context)
+    {
+        var totalRules = context.Constitution.Rules.Count;
+        var coveredRules = context.SpecToConstitution.Values.SelectMany(x => x).Distinct().Count();
+
+        return new TraceabilityCoverageStats
+        {
+            TotalItems   = totalRules,
+            CoveredItems = Math.Min(coveredRules, totalRules),
+            PartialItems = 0,
+            MissingItems = Math.Max(0, totalRules - coveredRules),
+            OrphanedItems = 0,
+        };
+    }
+
+    private static TraceabilityCoverageStats ComputeSpecCoverageFromContext(ReviewContext context)
+    {
+        var totalReqs = context.Specification.Requirements.Count;
+        var coveredReqs = context.SpecToPlan.Keys.Count;
+
+        return new TraceabilityCoverageStats
+        {
+            TotalItems   = totalReqs,
+            CoveredItems = coveredReqs,
+            PartialItems = 0,
+            MissingItems = Math.Max(0, totalReqs - coveredReqs),
+            OrphanedItems = 0,
+        };
+    }
+
+    private static TraceabilityCoverageStats ComputePlanCoverageFromContext(ReviewContext context)
+    {
+        var totalItems = context.Plan.ArchitectureDecisions.Count;
+        var linkedItems = context.PlanToTasks.Keys.Count;
+
+        return new TraceabilityCoverageStats
+        {
+            TotalItems   = totalItems,
+            CoveredItems = linkedItems,
+            PartialItems = 0,
+            MissingItems = Math.Max(0, totalItems - linkedItems),
+            OrphanedItems = 0,
         };
     }
 

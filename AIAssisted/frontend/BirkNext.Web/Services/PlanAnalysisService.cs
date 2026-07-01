@@ -2025,4 +2025,135 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
     private static string StripMarkdown(string s) =>
         Regex.Replace(s, @"[*_`#\[\]]", "").Trim();
+
+    // ── Build Semantic Model ───────────────────────────────────────────────
+
+    public static PlanSemanticModel BuildSemanticModel(PlanDocument document)
+    {
+        var architectureDecisions = document.ArchitectureDecisions
+            .Select(d => new SemanticPlanArchitectureDecision
+            {
+                Id = d.Id,
+                Title = d.Title,
+                Context = d.Context,
+                Decision = d.Decision,
+                Rationale = d.Rationale,
+                Consequences = d.Consequences,
+                RelatedRequirementIds = [],
+            })
+            .ToList();
+
+        var risks = document.Risks
+            .Select(r => new SemanticPlanRiskItem
+            {
+                Title = r.Title,
+                Description = r.Description,
+                Severity = r.Severity.ToString(),
+                Mitigation = r.Mitigation,
+                Area = r.Area,
+            })
+            .ToList();
+
+        var constraints = document.Constraints
+            .Select(c => new SemanticPlanConstraint
+            {
+                Title = c.Title,
+                Description = c.Description,
+                Type = c.ConstraintType.ToString(),
+            })
+            .ToList();
+
+        var complexityFactors = document.ComplexityItems
+            .GroupBy(ci => ci.Area ?? "General")
+            .Select(g => new SemanticPlanComplexityFactor
+            {
+                Area = g.Key,
+                Level = g.FirstOrDefault()?.Level.ToString() ?? "Medium",
+                Factors = g.SelectMany(ci => ci.Factors).ToList(),
+            })
+            .ToList();
+
+        var dependencies = document.Dependencies
+            .Select(d => new SemanticPlanDependency
+            {
+                Name = d.Name,
+                Version = d.Version,
+                Description = d.Description,
+                IsExternal = d.IsExternal,
+            })
+            .ToList();
+
+        var phases = document.Phases
+            .Select(p => new SemanticPlanPhase
+            {
+                PhaseNumber = p.PhaseNumber,
+                Title = p.Title,
+                Description = p.Description,
+                TaskIds = p.Tasks,
+                Checks = p.Checks,
+            })
+            .ToList();
+
+        var milestones = document.Milestones
+            .Select(m => new SemanticPlanMilestone
+            {
+                Title = m.Title,
+                TargetDate = m.TargetDate,
+                Description = m.Description,
+                Deliverables = m.Deliverables,
+            })
+            .ToList();
+
+        var testingStrategies = new List<SemanticPlanTestingStrategy>();
+        if (document.TestingInfo != null)
+        {
+            testingStrategies.Add(new SemanticPlanTestingStrategy
+            {
+                Title = "Testing",
+                Description = $"Frameworks: {string.Join(", ", document.TestingInfo.Frameworks)}",
+            });
+        }
+
+        var constitutionGates = document.Gates
+            .Select(g => new SemanticPlanConstitutionGate
+            {
+                Gate = g.Gate,
+                RuleId = g.RuleId,
+                Principle = g.Principle,
+                Status = g.Status.ToString(),
+                Evidence = g.Evidence,
+                Notes = g.Notes,
+            })
+            .ToList();
+
+        return new PlanSemanticModel
+        {
+            Title = document.Title,
+            FeatureName = document.FeatureName,
+            Branch = document.Branch,
+            Status = document.Status,
+            CreatedDate = document.CreatedDate,
+            LastUpdated = document.LastUpdated,
+            Author = document.Author,
+            Summary = document.Summary,
+            ArchitectureDecisions = architectureDecisions,
+            Risks = risks,
+            Constraints = constraints,
+            ComplexityFactors = complexityFactors,
+            Dependencies = dependencies,
+            Phases = phases,
+            Milestones = milestones,
+            TestingStrategies = testingStrategies,
+            ConstitutionGates = constitutionGates,
+            HasTechnicalContext = document.Sections.Any(s => s.SectionType == PlanSectionType.TechnicalContext),
+            HasProjectStructure = document.Sections.Any(s => s.SectionType == PlanSectionType.ProjectStructure),
+            HasTestingStrategy = document.TestingInfo != null && document.TestingInfo.Frameworks.Count > 0,
+            HasArchitectureDecisions = document.ArchitectureDecisions.Count > 0,
+            HasImplementationPhases = document.Phases.Count > 0,
+            HasRiskAssessment = document.Risks.Count > 0,
+            DecisionToRequirements = [],
+            RiskToRequirements = [],
+            PhaseToTasks = phases.ToDictionary(p => $"Phase{p.PhaseNumber}", p => p.TaskIds),
+        };
+    }
 }

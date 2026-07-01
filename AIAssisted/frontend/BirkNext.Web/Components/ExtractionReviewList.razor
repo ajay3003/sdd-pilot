@@ -489,7 +489,8 @@ else
         {
             <FlowView SpecMarkdown="@SpecMarkdown"
                       Candidates="@(PipelineResult?.Candidates ?? [])"
-                      Links="@_links" />
+                      Links="@_links"
+                      SemanticModel="@_semanticModel" />
         }
 
         @if (_activeViewMode == ExtractionViewMode.Traceability)
@@ -497,6 +498,7 @@ else
             <TraceabilityView SpecMarkdown="@SpecMarkdown"
                               Candidates="@(PipelineResult?.Candidates ?? [])"
                               Links="@_links"
+                              SemanticModel="@_semanticModel"
                               OnOpenInTaskExplorer="@HandleOpenInTaskExplorer" />
         }
 
@@ -644,6 +646,9 @@ else
     private SavedTypeSummary? _savedSummary;
     private int _alreadySavedCount;
 
+    private SpecificationSemanticModel? _semanticModel;
+    private string? _lastSpecMarkdown;
+
     // ── Selection context helpers ─────────────────────────────────────────────
     private IReadOnlyList<ExtractionCandidate> SelectedCandidates =>
         PipelineResult?.Candidates.Where(c => _selectedIds.Contains(c.CandidateId)).ToList()
@@ -688,6 +693,21 @@ else
 
     protected override void OnParametersSet()
     {
+        // Build semantic model from SpecMarkdown
+        if (!ReferenceEquals(SpecMarkdown, _lastSpecMarkdown))
+        {
+            _lastSpecMarkdown = SpecMarkdown;
+            if (!string.IsNullOrWhiteSpace(SpecMarkdown))
+            {
+                var tree = SpecExplorerService.Parse(SpecMarkdown);
+                _semanticModel = SpecExplorerService.BuildSemanticModel(tree, SpecMarkdown);
+            }
+            else
+            {
+                _semanticModel = null;
+            }
+        }
+
         if (!ReferenceEquals(PipelineResult, _previousPipelineResult))
         {
             _previousPipelineResult = PipelineResult;

@@ -19,29 +19,34 @@ else
 
     @* ── Health summary cards ────────────────────────────────────────── *@
     @{
-        var missingUsCount  = _model.Requirements.Count(r => r.IsEligible && string.IsNullOrWhiteSpace(r.UserStoryId));
-        var missingScCount  = _model.Requirements.Count(r => r.IsEligible && r.LinkedScIds.Count == 0);
+        var reqCount = GetRequirementCount();
+        var coveredCount = GetCoveredCount();
+        var missingTestsCount = GetMissingTestsCount();
+        var missingUsCount = GetMissingUserStoriesCount();
+        var missingScCount = GetMissingScCount();
+        var coveragePercent = GetCoveragePercent();
+        var orphanTestsCount = GetOrphanTestsCount();
     }
     <div class="tv-health" data-testid="traceability-health-dashboard" aria-label="Traceability health summary">
         <button type="button" class="tv-health-item tv-health-clickable"
                 data-testid="health-requirements"
                 title="Coverage Requirements are requirements included in coverage calculations. Clarifications, Decisions, Assumptions, and Architecture Notes are excluded."
                 @onclick="NavigateToRequirements">
-            <span>Requirements</span><strong>@_model.EligibleCount</strong>
+            <span>Requirements</span><strong>@reqCount</strong>
         </button>
-        <button type="button" class="tv-health-item tv-health-clickable @(_model.CoveragePercent >= 80 ? "tv-health-good" : _model.CoveragePercent >= 50 ? "" : "tv-health-warn")"
+        <button type="button" class="tv-health-item tv-health-clickable @(coveragePercent >= 80 ? "tv-health-good" : coveragePercent >= 50 ? "" : "tv-health-warn")"
                 data-testid="health-coverage"
                 title="Covered: requirements with at least one linked acceptance test."
                 @onclick="NavigateToRequirements">
             <span>Covered</span>
-            <strong>@_model.CoveredCount</strong>
-            <span class="tv-health-sub">@_model.CoveragePercent%</span>
+            <strong>@coveredCount</strong>
+            <span class="tv-health-sub">@coveragePercent%</span>
         </button>
-        <button type="button" class="tv-health-item tv-health-clickable @(_model.MissingTestsCount > 0 ? "tv-health-warn" : "")"
+        <button type="button" class="tv-health-item tv-health-clickable @(missingTestsCount > 0 ? "tv-health-warn" : "")"
                 data-testid="health-missing-tests"
                 title="Missing Tests: requirements with no linked acceptance tests. Click to open in Gaps tab."
                 @onclick='() => NavigateToGap("reqs-no-tests")'>
-            <span>Missing Tests</span><strong>@_model.MissingTestsCount</strong>
+            <span>Missing Tests</span><strong>@missingTestsCount</strong>
         </button>
         <button type="button" class="tv-health-item tv-health-clickable @(missingUsCount > 0 ? "tv-health-warn" : "")"
                 data-testid="health-missing-us"
@@ -55,11 +60,11 @@ else
                 @onclick='() => NavigateToGap("reqs-no-sc")'>
             <span>Missing SC</span><strong>@missingScCount</strong>
         </button>
-        <button type="button" class="tv-health-item tv-health-clickable @(_model.OrphanTestCount > 0 ? "tv-health-warn" : "")"
+        <button type="button" class="tv-health-item tv-health-clickable @(orphanTestsCount > 0 ? "tv-health-warn" : "")"
                 data-testid="health-orphan-tests"
                 title="Orphan Tests: tests not linked to any coverage requirement. Click to open this gap."
                 @onclick='() => NavigateToGap("orphan-tests")'>
-            <span>Orphan Tests</span><strong>@_model.OrphanTestCount</strong>
+            <span>Orphan Tests</span><strong>@orphanTestsCount</strong>
         </button>
     </div>
 
@@ -462,6 +467,7 @@ else
     [Parameter] public string? SpecMarkdown { get; set; }
     [Parameter] public IReadOnlyList<ExtractionCandidate> Candidates { get; set; } = [];
     [Parameter] public IReadOnlyList<CandidateLinkEntry> Links { get; set; } = [];
+    [Parameter] public SpecificationSemanticModel? SemanticModel { get; set; }
     [Parameter] public EventCallback<string> OnOpenInTaskExplorer { get; set; }
 
     private enum TvSubView { Requirements, Gaps }
@@ -473,6 +479,7 @@ else
     private string? _lastSpec;
     private IReadOnlyList<ExtractionCandidate>? _lastCandidates;
     private IReadOnlyList<CandidateLinkEntry>? _lastLinks;
+    private SpecificationSemanticModel? _lastSemanticModel;
 
     // Requirements sub-view
     private string _reqSearch = string.Empty;
@@ -496,18 +503,45 @@ else
     {
         bool changed = !ReferenceEquals(SpecMarkdown, _lastSpec)
             || !ReferenceEquals(Candidates, _lastCandidates)
-            || !ReferenceEquals(Links, _lastLinks);
+            || !ReferenceEquals(Links, _lastLinks)
+            || !ReferenceEquals(SemanticModel, _lastSemanticModel);
 
         if (!changed) return;
 
-        _lastSpec       = SpecMarkdown;
-        _lastCandidates = Candidates;
-        _lastLinks      = Links;
-        _selectedReqId  = null;
-        _gapFocus       = null;
+        _lastSpec           = SpecMarkdown;
+        _lastCandidates     = Candidates;
+        _lastLinks          = Links;
+        _lastSemanticModel  = SemanticModel;
+        _selectedReqId      = null;
+        _gapFocus           = null;
 
         _model = TraceabilityModelBuilder.Build(SpecMarkdown, Candidates, Links);
     }
+
+    // Metrics from semantic model (single source of truth)
+    private int GetRequirementCount() =>
+        SemanticModel?.TotalRequirements ?? 0;
+
+    private int GetCoveredCount() =>
+        SemanticModel?.RequirementsWithTests ?? 0;
+
+    private int GetMissingTestsCount() =>
+        SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithTests : 0;
+
+    private int GetMissingUserStoriesCount() =>
+        SemanticModel != null ? (SemanticModel.UserStoriesWithRequirements > 0 ? 0 : SemanticModel.TotalRequirements) : 0;
+
+    private int GetMissingScCount() =>
+        SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithSuccessCriteria : 0;
+
+    private int GetCoveragePercent()
+    {
+        if (SemanticModel == null || SemanticModel.TotalRequirements == 0) return 0;
+        return (SemanticModel.RequirementsWithTests * 100) / SemanticModel.TotalRequirements;
+    }
+
+    private int GetOrphanTestsCount() =>
+        SemanticModel?.TotalAcceptanceScenarios ?? 0;
 
     // ── Computed properties ─────────────────────────────────────────────────
 

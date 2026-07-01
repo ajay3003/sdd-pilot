@@ -895,4 +895,101 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             i.EntityName.ToLowerInvariant().Contains(q) ||
             i.Columns.Any(c => c.ToLowerInvariant().Contains(q)));
     }
+
+    // ── Build Semantic Model ───────────────────────────────────────────────
+
+    public static DataModelSemanticModel BuildSemanticModel(DataModelDocument document)
+    {
+        var entities = document.Entities
+            .Select(e => new SemanticDataEntity
+            {
+                Id = e.Name,
+                Name = e.Name,
+                Description = e.Description,
+                Attributes = e.Columns
+                    .Select(c => new SemanticDataAttribute
+                    {
+                        Name = c.Name,
+                        Type = c.Type ?? "Unknown",
+                        IsRequired = !(c.Nullable ?? true),
+                        IsIdentifier = c.IsPrimaryKey,
+                        Description = c.Description,
+                        Constraint = c.IsForeignKey ? "ForeignKey" : (c.IsUnique ? "Unique" : null),
+                    })
+                    .ToList(),
+                IdentifierFields = e.Columns
+                    .Where(c => c.IsPrimaryKey)
+                    .Select(c => c.Name)
+                    .ToList(),
+                ValidationRules = e.Columns
+                    .Where(c => !string.IsNullOrEmpty(c.Description))
+                    .Select(c => $"{c.Name}: {c.Description}")
+                    .ToList(),
+                Methods = [],
+                Lifecycle = null,
+                RelatedRequirementIds = e.TraceabilityIds,
+                RelationshipIds = document.Relationships
+                    .Where(r => r.SourceEntity == e.Name || r.TargetEntity == e.Name)
+                    .Select(r => $"{r.Source}->{r.Target}")
+                    .ToList(),
+            })
+            .ToList();
+
+        var relationships = document.Relationships
+            .Select((r, idx) => new SemanticDataRelationship
+            {
+                Id = $"Rel-{idx + 1}",
+                SourceEntityId = r.SourceEntity,
+                TargetEntityId = r.TargetEntity,
+                Type = r.RelationshipType ?? "Unknown",
+                Cardinality = null,
+                IsBidirectional = false,
+                Description = $"{r.Source} -> {r.Target}",
+            })
+            .ToList();
+
+        var enumerations = document.Enums
+            .Select(e => new SemanticDataEnumeration
+            {
+                Id = e.Name,
+                Name = e.Name,
+                Description = e.Description,
+                Values = e.Values
+                    .Select((v, idx) => new SemanticDataEnumerationValue
+                    {
+                        Name = v,
+                        Value = idx.ToString(),
+                        Description = null,
+                    })
+                    .ToList(),
+                UsedByEntityIds = [],
+            })
+            .ToList();
+
+        return new DataModelSemanticModel
+        {
+            Title = document.Title,
+            Version = null,
+            Description = document.Overview,
+            CreatedDate = null,
+            LastUpdated = null,
+            Entities = entities,
+            Relationships = relationships,
+            Enumerations = enumerations,
+            ValueObjects = [],
+            AggregateRoots = [],
+            EntityToRequirements = BuildEntityToRequirementsMap(entities),
+        };
+    }
+
+    private static Dictionary<string, List<string>> BuildEntityToRequirementsMap(List<SemanticDataEntity> entities)
+    {
+        var map = new Dictionary<string, List<string>>();
+        foreach (var entity in entities)
+        {
+            if (entity.RelatedRequirementIds.Count > 0)
+                map[entity.Id] = entity.RelatedRequirementIds;
+        }
+        return map;
+    }
 }

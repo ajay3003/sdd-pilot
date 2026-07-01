@@ -552,11 +552,13 @@
     [Parameter] public string? SpecMarkdown { get; set; }
     [Parameter] public IReadOnlyList<ExtractionCandidate> Candidates { get; set; } = [];
     [Parameter] public IReadOnlyList<CandidateLinkEntry> Links { get; set; } = [];
+    [Parameter] public SpecificationSemanticModel? SemanticModel { get; set; }
 
     private FlowModel? _model;
     private string? _lastSpec;
     private IReadOnlyList<ExtractionCandidate>? _lastCandidates;
     private IReadOnlyList<CandidateLinkEntry>? _lastLinks;
+    private SpecificationSemanticModel? _lastSemanticModel;
 
     private readonly Dictionary<string, bool> _expanded      = [];
     private readonly Dictionary<string, bool> _expandedItems = [];
@@ -594,12 +596,14 @@
     {
         if (ReferenceEquals(_lastSpec, SpecMarkdown) &&
             ReferenceEquals(_lastCandidates, Candidates) &&
-            ReferenceEquals(_lastLinks, Links))
+            ReferenceEquals(_lastLinks, Links) &&
+            ReferenceEquals(_lastSemanticModel, SemanticModel))
             return;
 
-        _lastSpec       = SpecMarkdown;
-        _lastCandidates = Candidates;
-        _lastLinks      = Links;
+        _lastSpec           = SpecMarkdown;
+        _lastCandidates     = Candidates;
+        _lastLinks          = Links;
+        _lastSemanticModel  = SemanticModel;
 
         _model = FlowModelBuilder.Build(SpecMarkdown, Candidates, Links);
         _expanded.Clear();
@@ -611,6 +615,28 @@
             _expanded[story.Key] = true;
         }
     }
+
+    // Metrics from semantic model (single source of truth)
+    private int GetTotalRequirements() =>
+        SemanticModel?.TotalRequirements ?? 0;
+
+    private int GetTotalSuccessCriteria() =>
+        SemanticModel?.TotalSuccessCriteria ?? 0;
+
+    private int GetTotalTests() =>
+        SemanticModel?.TotalAcceptanceScenarios ?? 0;
+
+    private int GetCoveragePercent()
+    {
+        if (SemanticModel == null || SemanticModel.TotalRequirements == 0) return 0;
+        return (SemanticModel.RequirementsWithTests * 100) / SemanticModel.TotalRequirements;
+    }
+
+    private int GetMissingTests() =>
+        SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithTests : 0;
+
+    private int GetMissingSuccessCriteria() =>
+        SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithSuccessCriteria : 0;
 
     private void ToggleLane(string key) =>
         _expanded[key] = !_expanded.GetValueOrDefault(key);

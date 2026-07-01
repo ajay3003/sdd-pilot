@@ -38,7 +38,7 @@
                 }
             </div>
 
-            <button class="pe-build-btn" disabled="@(!CanBuild)" @onclick="BuildPlan">
+            <button class="pe-build-btn" disabled="@(!CanBuild)" @onclick="BuildPlanAsync">
                 Build Plan Explorer
             </button>
         </div>
@@ -983,8 +983,10 @@
 
 @code {
     [Parameter] public string PlanText { get; set; } = string.Empty;
+    [Parameter] public PlanDocument? ParsedPlan { get; set; }
+    [Parameter] public PlanSemanticModel? SemanticModel { get; set; }
     [Parameter] public string? InitialView { get; set; }
-    [Parameter] public EventCallback<string> OnBuilt { get; set; }
+    [Parameter] public EventCallback<string> OnTextChanged { get; set; }
 
     private PlanDocument? _plan;
     private string _localText = string.Empty;
@@ -1084,27 +1086,25 @@
 
     protected override void OnParametersSet()
     {
-        if (!string.IsNullOrWhiteSpace(PlanText) && _plan is null)
+        if (ParsedPlan is not null)
         {
-            _localText = PlanText;
-            BuildPlan();
+            _plan = ParsedPlan;
+            _expanded = [];
+            _search = string.Empty;
+            _riskFilter = null;
+            _complexityFilter = null;
+            _checkFilter = null;
+            _gateFilter = null;
         }
+
         if (InitialView is not null && _plan is not null)
             _tab = InitialView;
     }
 
-    private void BuildPlan()
+    private async Task BuildPlanAsync()
     {
         if (string.IsNullOrWhiteSpace(_localText)) return;
-        _plan = AnalysisService.Parse(_localText);
-        _expanded = [];
-        _search = string.Empty;
-        _riskFilter = null;
-        _complexityFilter = null;
-        _checkFilter = null;
-        _gateFilter = null;
-        _tab = InitialView ?? "overview";
-        _ = OnBuilt.InvokeAsync(_localText);
+        await OnTextChanged.InvokeAsync(_localText);
     }
 
     private void Reset()

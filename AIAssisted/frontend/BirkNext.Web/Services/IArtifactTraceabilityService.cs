@@ -5,11 +5,13 @@ namespace BirkNext.Web.Services;
 public interface IArtifactTraceabilityService
 {
     // Any document may be null — partial analysis is performed gracefully.
+    // reviewContext: optional aggregated semantic models; provides cross-artifact links
     ArtifactTraceabilityReport Analyze(
         ConstitutionDocument? constitution,
         SpecTree? spec,
         PlanDocument? plan,
-        TaskTree? tasks);
+        TaskTree? tasks,
+        ReviewContext? reviewContext = null);
 
     // Search and filter helpers for the UI
     IEnumerable<TraceabilityMatrixRow> SearchMatrix(IEnumerable<TraceabilityMatrixRow> rows, string query);

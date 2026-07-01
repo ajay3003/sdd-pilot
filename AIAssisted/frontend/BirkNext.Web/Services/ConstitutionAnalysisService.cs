@@ -991,4 +991,70 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         }
         return null;
     }
+
+    // ── Build Semantic Model ───────────────────────────────────────────────
+
+    public static ConstitutionSemanticModel BuildSemanticModel(ConstitutionDocument document)
+    {
+        var principles = document.Principles
+            .Select(p => new SemanticConstitutionPrinciple
+            {
+                Id = p.Id,
+                Title = p.Title,
+                Description = p.Description,
+                RelatedRuleIds = ExtractRuleIds(p.Description ?? "")
+                    .Where(id => !id.StartsWith("PP-", StringComparison.OrdinalIgnoreCase))
+                    .ToList(),
+            })
+            .ToList();
+
+        var rules = document.RuleCatalog
+            .Select(r => new SemanticConstitutionRule
+            {
+                Id = r.RuleId,
+                Title = r.Title,
+                Description = r.Description,
+                Category = r.RuleType.ToString(),
+                RelatedPrincipleIds = document.Principles
+                    .Where(p => p.Guidelines.Any(g => g.Contains(r.RuleId, StringComparison.OrdinalIgnoreCase)))
+                    .Select(p => p.Id)
+                    .ToList(),
+                ApplicableRequirementIds = [],
+            })
+            .ToList();
+
+        var gates = document.RuleCatalog
+            .Where(r => r.RuleType == ConstitutionRuleType.Governance)
+            .Select(r => new SemanticConstitutionGate
+            {
+                Id = r.RuleId,
+                Title = r.Title,
+                Status = "NotApplicable",
+                LinkedRuleIds = [r.RuleId],
+            })
+            .ToList();
+
+        var complianceChecks = document.RuleCatalog
+            .Select(r => new SemanticConstitutionComplianceCheckItem
+            {
+                RuleId = r.RuleId,
+                RuleTitle = r.Title,
+                Status = "NeedsReview",
+            })
+            .ToList();
+
+        return new ConstitutionSemanticModel
+        {
+            Title = document.Title,
+            Version = document.Version,
+            CreatedDate = document.RatifiedDate,
+            LastUpdated = document.LastAmendedDate,
+            Principles = principles,
+            Rules = rules,
+            Gates = gates,
+            ComplianceChecks = complianceChecks,
+            RuleToRequirements = [],
+            GateToRequirements = [],
+        };
+    }
 }

@@ -750,6 +750,7 @@
         SpecTree?             spec         = null;
         PlanDocument?         plan         = null;
         TaskTree?             tasks        = null;
+        DataModelDocument?    dataModel    = null;
 
         if (!string.IsNullOrWhiteSpace(_constitutionText))
             constitution = ConstitutionService.Parse(_constitutionText);
@@ -760,7 +761,29 @@
         if (!string.IsNullOrWhiteSpace(_taskText))
             tasks = TaskExplorerService.Parse(_taskText);
 
-        _report         = TraceabilityService.Analyze(constitution, spec, plan, tasks);
+        // Build semantic models and ReviewContext
+        var constitutionSemanticModel = constitution is not null
+            ? ConstitutionAnalysisService.BuildSemanticModel(constitution)
+            : new ConstitutionSemanticModel();
+        var specSemanticModel = spec is not null
+            ? SpecExplorerService.BuildSemanticModel(spec, _specText)
+            : new SpecificationSemanticModel();
+        var planSemanticModel = plan is not null
+            ? PlanAnalysisService.BuildSemanticModel(plan)
+            : new PlanSemanticModel();
+        var taskSemanticModel = tasks is not null
+            ? TaskExplorerService.BuildSemanticModel(tasks)
+            : new TaskSemanticModel();
+        var dataModelSemanticModel = new DataModelSemanticModel();
+
+        var reviewContext = ReviewContextFactory.Create(
+            constitutionSemanticModel,
+            specSemanticModel,
+            planSemanticModel,
+            taskSemanticModel,
+            dataModelSemanticModel);
+
+        _report         = TraceabilityService.Analyze(constitution, spec, plan, tasks, reviewContext);
         DashboardSnapshot.Publish(_report);
         _tab            = "overview";
         _search         = string.Empty;
