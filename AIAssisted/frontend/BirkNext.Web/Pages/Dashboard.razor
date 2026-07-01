@@ -566,86 +566,6 @@
                 }
             </div>
 
-            @* Security Review *@
-            <div class="db-analysis-card">
-                <div class="db-analysis-card-header">
-                    <span class="db-analysis-card-title">Security Review</span>
-                    <a href="wasm-security-review" class="db-summary-open" aria-label="Open Security Review">Open →</a>
-                </div>
-                @if (_securityReport is { } securityCard)
-                {
-                    <div class="db-analysis-score @ScoreClass(securityCard.Health.Score)">@securityCard.Health.Score</div>
-                    <span class="db-analysis-status @KpiStatusClass(securityCard.Health.Score, true)">@KpiStatusLabel(securityCard.Health.Score, true)</span>
-                    @if (securityCard.Findings.OrderBy(f => f.Severity).FirstOrDefault() is { } topFinding)
-                    {
-                        <div class="db-analysis-finding">@topFinding.Title</div>
-                    }
-                    <div class="db-analysis-chips">
-                        @if (securityCard.Health.Critical > 0) { <span class="db-count-chip db-count-poor">@securityCard.Health.Critical critical</span> }
-                        @if (securityCard.Health.High > 0)     { <span class="db-count-chip db-count-poor">@securityCard.Health.High high</span> }
-                        @if (securityCard.Health.Critical == 0 && securityCard.Health.High == 0)
-                        { <span class="db-count-chip db-count-good">No critical findings</span> }
-                    </div>
-                }
-                else if (RuntimeReviews.SecurityReview.Status != RuntimeReviewStatus.NotRun)
-                {
-                    <span class="db-analysis-status @RuntimeStatusClass(RuntimeReviews.SecurityReview.Status)">@RuntimeStatusLabel(RuntimeReviews.SecurityReview.Status)</span>
-                    @if (RuntimeReviews.SecurityReview.ErrorMessage is not null)
-                    {
-                        <div class="db-analysis-finding">@RuntimeReviews.SecurityReview.ErrorMessage</div>
-                    }
-                }
-                else
-                {
-                    <div class="db-analysis-empty">
-                        Not run this session — analyse headers, authentication, configuration, and exposures.
-                        <a href="wasm-security-review" class="db-analysis-run-link">Run now →</a>
-                    </div>
-                }
-            </div>
-
-            @* Performance Review *@
-            <div class="db-analysis-card">
-                <div class="db-analysis-card-header">
-                    <span class="db-analysis-card-title">Performance Review</span>
-                    <a href="wasm-performance-review" class="db-summary-open" aria-label="Open Performance Review">Open →</a>
-                </div>
-                @if (_perfReport?.ReadinessReport is { HasData: true } perfCard)
-                {
-                    <div class="db-analysis-score @ScoreClass(perfCard.OverallScore)">@perfCard.OverallScore</div>
-                    <span class="db-analysis-status @PerformanceStatusClass(perfCard.OverallState)">@ReadinessStateLabel(perfCard.OverallState)</span>
-                    <div class="db-analysis-chips">
-                        @if (perfCard.Health.CriticalFindings > 0) { <span class="db-count-chip db-count-poor">@perfCard.Health.CriticalFindings critical</span> }
-                        @if (perfCard.Health.HighFindings > 0)     { <span class="db-count-chip db-count-poor">@perfCard.Health.HighFindings high</span> }
-                        @if (perfCard.Health.CriticalFindings == 0 && perfCard.Health.HighFindings == 0)
-                        { <span class="db-count-chip db-count-good">No critical findings</span> }
-                    </div>
-                }
-                else if (_perfReport is not null)
-                {
-                    <div class="db-analysis-score db-val-empty">@_perfReport.Assets.Count</div>
-                    <span class="db-analysis-status db-status-notrun">Assets discovered</span>
-                    <div class="db-analysis-empty" style="margin-top: 0.25rem">
-                        Run a full Performance Review for readiness scoring.
-                    </div>
-                }
-                else if (RuntimeReviews.PerformanceReview.Status != RuntimeReviewStatus.NotRun)
-                {
-                    <span class="db-analysis-status @RuntimeStatusClass(RuntimeReviews.PerformanceReview.Status)">@RuntimeStatusLabel(RuntimeReviews.PerformanceReview.Status)</span>
-                    @if (RuntimeReviews.PerformanceReview.ErrorMessage is not null)
-                    {
-                        <div class="db-analysis-finding">@RuntimeReviews.PerformanceReview.ErrorMessage</div>
-                    }
-                }
-                else
-                {
-                    <div class="db-analysis-empty">
-                        Not run — analyse startup, caching, compression, and API.
-                        <a href="wasm-performance-review" class="db-analysis-run-link">Run now →</a>
-                    </div>
-                }
-            </div>
-
             @* Frontend Quality Review *@
             <div class="db-analysis-card">
                 <div class="db-analysis-card-header">
@@ -684,6 +604,46 @@
                         <a href="frontend-quality-review" class="db-analysis-run-link">Run now →</a>
                     </div>
                 }
+            @* API Quality Review *@
+            <div class="db-analysis-card">
+                <div class="db-analysis-card-header">
+                    <span class="db-analysis-card-title">API Quality Review</span>
+                    <a href="api-quality-review" class="db-summary-open" aria-label="Open API Quality Review">Open →</a>
+                </div>
+                @if (_aqrReport is { } aqrCard)
+                {
+                    <div class="db-analysis-score @ScoreClass(aqrCard.OverallScore)">@aqrCard.OverallScore</div>
+                    <span class="db-analysis-status @KpiStatusClass(aqrCard.OverallScore, true)">@KpiStatusLabel(aqrCard.OverallScore, true)</span>
+                    @if (aqrCard.Findings.OrderBy(f => f.Severity).FirstOrDefault() is { } topAqrFinding)
+                    {
+                        <div class="db-analysis-finding">@topAqrFinding.Title</div>
+                    }
+                    <div class="db-analysis-chips">
+                        @{ var aqrCritical = aqrCard.Findings.Count(f => f.Severity == ApiQualitySeverity.Critical); }
+                        @{ var aqrHigh     = aqrCard.Findings.Count(f => f.Severity == ApiQualitySeverity.High); }
+                        @if (aqrCritical > 0) { <span class="db-count-chip db-count-poor">@aqrCritical critical</span> }
+                        @if (aqrHigh > 0)     { <span class="db-count-chip db-count-poor">@aqrHigh high</span> }
+                        @if (aqrCritical == 0 && aqrHigh == 0)
+                        { <span class="db-count-chip db-count-good">@(aqrCard.IsDeploymentReady ? "Deployment Ready" : "No critical findings")</span> }
+                    </div>
+                }
+                else if (RuntimeReviews.ApiQualityReview.Status != RuntimeReviewStatus.NotRun)
+                {
+                    <span class="db-analysis-status @RuntimeStatusClass(RuntimeReviews.ApiQualityReview.Status)">@RuntimeStatusLabel(RuntimeReviews.ApiQualityReview.Status)</span>
+                    @if (RuntimeReviews.ApiQualityReview.ErrorMessage is not null)
+                    {
+                        <div class="db-analysis-finding">@RuntimeReviews.ApiQualityReview.ErrorMessage</div>
+                    }
+                }
+                else
+                {
+                    <div class="db-analysis-empty">
+                        Not run — analyse connectivity, security, performance, REST, GraphQL, OpenAPI, and readiness.
+                        <a href="api-quality-review" class="db-analysis-run-link">Run now →</a>
+                    </div>
+                }
+            </div>
+
             </div>
 
         </div>
@@ -708,8 +668,7 @@
                     <a href="artifact-traceability"   class="db-qa-btn">Artifact Traceability</a>
                     <a href="quality-review"          class="db-qa-btn">Quality Review</a>
                     <a href="frontend-quality-review"  class="db-qa-btn">Frontend Quality Review</a>
-                    <a href="wasm-security-review"     class="db-qa-btn">Security Review</a>
-                    <a href="wasm-performance-review"  class="db-qa-btn">Performance Review</a>
+                    <a href="api-quality-review"       class="db-qa-btn">API Quality Review</a>
                 </div>
             </div>
             <div class="db-qa-group">
@@ -727,6 +686,7 @@
     private WasmSecurityReviewReport?    _securityReport => RuntimeReviews.SecurityReview.Report;
     private WasmPerformanceReviewReport? _perfReport     => RuntimeReviews.PerformanceReview.Report;
     private FrontendQualityReviewReport? _fqrReport      => RuntimeReviews.QualityReview.Report;
+    private ApiQualityReviewReport?      _aqrReport      => RuntimeReviews.ApiQualityReview.Report;
 
     // ── Snapshot aliases ──────────────────────────────────────────────────────
 
@@ -739,7 +699,8 @@
         QualitySession.Status       != AnalysisSessionStatus.NotRun ||
         RuntimeReviews.SecurityReview.HasResult ||
         RuntimeReviews.PerformanceReview.HasResult ||
-        RuntimeReviews.QualityReview.HasResult;
+        RuntimeReviews.QualityReview.HasResult ||
+        RuntimeReviews.ApiQualityReview.HasResult;
 
     private bool _hasAnyWorkspace =>
         Workspace.Has(WorkspaceArtifactKind.Constitution) ||

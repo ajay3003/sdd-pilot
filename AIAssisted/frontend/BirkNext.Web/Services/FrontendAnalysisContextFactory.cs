@@ -45,8 +45,8 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
                 return new FrontendAnalysisContext
                 {
                     ValidationWarnings = [
-                        "No active Frontend Analysis profile is configured. " +
-                        "Open System Settings → Frontend Analysis to create and activate a profile."
+                        "No active Target Environment is configured. " +
+                        "Open System Settings → Target Environments to create and activate an environment."
                     ]
                 };
             }
@@ -63,6 +63,13 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
         {
             ActiveProfile               = profile,
             TargetUrl                   = profile.TargetUrl?.Trim() ?? "",
+            RestBaseUrl                 = profile.RestBaseUrl?.Trim(),
+            HealthEndpoint              = profile.HealthEndpoint?.Trim(),
+            SwaggerUrl                  = profile.SwaggerUrl?.Trim(),
+            GraphQlEndpoint             = profile.GraphQlEndpoint?.Trim(),
+            ApiAuth                     = profile.ApiAuth,
+            RequestTimeoutSeconds       = profile.RequestTimeoutSeconds,
+            RetryCount                  = profile.RetryCount,
             AuthenticationType          = profile.Authentication.AuthenticationType,
             RequiresAuthentication      = profile.Authentication.RequiresAuthentication,
             UseExistingBrowserSession   = profile.Authentication.UseExistingBrowserSession,

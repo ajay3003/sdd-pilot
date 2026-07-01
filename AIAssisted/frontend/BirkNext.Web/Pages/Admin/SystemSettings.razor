@@ -134,7 +134,7 @@ else if (_settings is not null)
             </div>
             <div class="ss-nav-group">
                 <div class="ss-nav-group-label">Analysis</div>
-                @NavItem("frontend-analysis",  "Frontend Analysis")
+                @NavItem("target-environments", "Target Environments")
                 @NavItem("ai",                 "AI")
             </div>
             <div class="ss-nav-group">
@@ -690,13 +690,13 @@ else if (_settings is not null)
                 </div>
             }
 
-            @* ══ Frontend Analysis ════════════════════════════════════════════════════ *@
-            @if (_activeSection == "frontend-analysis")
+            @* ══ Target Environments ══════════════════════════════════════════════════ *@
+            @if (_activeSection == "target-environments")
             {
                 <div class="settings-card settings-card-full-width">
-                    <div class="settings-card-title">Frontend Analysis</div>
+                    <div class="settings-card-title">Target Environments</div>
                     <p class="settings-card-note">
-                        Centralized configuration shared by Blazor WASM Security Review, Performance Review, and all future frontend analysis capabilities. The active profile is the single source of truth for all frontend analysis features.
+                        Configure one or more target environments. Each environment defines the Frontend URL, REST API, GraphQL endpoint, API authentication, and request settings used by all runtime reviews. The active environment is the single source of truth for Frontend Quality Review and future API and end-to-end reviews.
                     </p>
                     <FrontendAnalysisSettings />
                 </div>

@@ -17,10 +17,25 @@ public enum FrontendThresholdMode
     Default, Strict, Custom
 }
 
+public enum TargetApiAuthType
+{
+    None, BearerToken, ApiKey, BasicAuth
+}
+
 public sealed class FrontendAnalysisSettings
 {
     [JsonPropertyName("profiles")]        public List<FrontendAnalysisProfile> Profiles        { get; set; } = [];
     [JsonPropertyName("activeProfileId")] public string?                       ActiveProfileId { get; set; }
+}
+
+public sealed class TargetApiCredentials
+{
+    [JsonPropertyName("authType")]         public TargetApiAuthType AuthType         { get; set; } = TargetApiAuthType.None;
+    [JsonPropertyName("bearerToken")]      public string?           BearerToken      { get; set; }
+    [JsonPropertyName("apiKey")]           public string?           ApiKey           { get; set; }
+    [JsonPropertyName("apiKeyHeaderName")] public string?           ApiKeyHeaderName { get; set; }
+    [JsonPropertyName("basicUsername")]    public string?           BasicUsername    { get; set; }
+    [JsonPropertyName("basicPassword")]    public string?           BasicPassword    { get; set; }
 }
 
 public sealed class FrontendAnalysisProfile
@@ -31,8 +46,25 @@ public sealed class FrontendAnalysisProfile
     [JsonPropertyName("description")]     public string?                   Description     { get; set; }
     [JsonPropertyName("notes")]           public string?                   Notes           { get; set; }
 
-    // Target Application
+    // Frontend
     [JsonPropertyName("targetUrl")]               public string?       TargetUrl               { get; set; }
+
+    // REST API
+    [JsonPropertyName("restBaseUrl")]      public string? RestBaseUrl      { get; set; }
+    [JsonPropertyName("healthEndpoint")]   public string? HealthEndpoint   { get; set; }
+    [JsonPropertyName("swaggerUrl")]       public string? SwaggerUrl       { get; set; }
+
+    // GraphQL
+    [JsonPropertyName("graphQlEndpoint")] public string? GraphQlEndpoint  { get; set; }
+
+    // API Authentication (for review tool calls to REST/GraphQL APIs)
+    [JsonPropertyName("apiAuth")] public TargetApiCredentials ApiAuth { get; set; } = new();
+
+    // Request settings
+    [JsonPropertyName("requestTimeoutSeconds")] public int RequestTimeoutSeconds { get; set; } = 30;
+    [JsonPropertyName("retryCount")]            public int RetryCount            { get; set; } = 3;
+
+    // Legacy / advanced target fields
     [JsonPropertyName("expectedApiGateway")]      public string?       ExpectedApiGateway      { get; set; }
     [JsonPropertyName("allowedRestHosts")]        public List<string>  AllowedRestHosts        { get; set; } = [];
     [JsonPropertyName("allowedGraphQlEndpoints")] public List<string>  AllowedGraphQlEndpoints { get; set; } = [];

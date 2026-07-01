@@ -6,7 +6,7 @@
 @* ── Load state ───────────────────────────────────────────────────────────── *@
 @if (!FaSettings.IsLoaded)
 {
-    <p class="loading-state">Loading frontend analysis settings…</p>
+    <p class="loading-state">Loading target environments…</p>
     return;
 }
 
@@ -28,14 +28,28 @@
             <div class="fa-active-card-left">
                 <span class="fa-env-badge fa-env-badge-@ap.EnvironmentType.ToString().ToLowerInvariant()">@ap.EnvironmentType</span>
                 <span class="fa-active-card-name">@ap.Name</span>
-                <span class="fa-active-badge">Active Profile</span>
+                <span class="fa-active-badge">Active Environment</span>
             </div>
         </div>
         <div class="fa-active-card-grid">
             <div class="fa-active-stat">
-                <span class="fa-active-stat-label">Target URL</span>
+                <span class="fa-active-stat-label">Frontend URL</span>
                 <span class="fa-active-stat-value fa-active-stat-mono">@(ap.TargetUrl ?? "—")</span>
             </div>
+            @if (!string.IsNullOrWhiteSpace(ap.RestBaseUrl))
+            {
+                <div class="fa-active-stat">
+                    <span class="fa-active-stat-label">REST API URL</span>
+                    <span class="fa-active-stat-value fa-active-stat-mono">@ap.RestBaseUrl</span>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(ap.GraphQlEndpoint))
+            {
+                <div class="fa-active-stat">
+                    <span class="fa-active-stat-label">GraphQL Endpoint</span>
+                    <span class="fa-active-stat-value fa-active-stat-mono">@ap.GraphQlEndpoint</span>
+                </div>
+            }
             <div class="fa-active-stat">
                 <span class="fa-active-stat-label">Authentication</span>
                 <span class="fa-active-stat-value">@ap.Authentication.AuthenticationType</span>
@@ -55,7 +69,7 @@
     }
     else
     {
-        <p class="fa-active-bar-none">No active profile selected. Select a profile below and click Set as Active.</p>
+        <p class="fa-active-bar-none">No active environment selected. Select an environment below and click Set as Active Environment.</p>
     }
 </div>
 
@@ -75,7 +89,7 @@
             </button>
         }
     </div>
-    <SecondaryButton OnClick="OpenCreateDialog" Class="fa-btn-create">+ Create Profile</SecondaryButton>
+    <SecondaryButton OnClick="OpenCreateDialog" Class="fa-btn-create">+ Add Environment</SecondaryButton>
 </div>
 
 @* ── Profile detail ───────────────────────────────────────────────────────── *@
@@ -90,7 +104,7 @@
                 <span class="fa-detail-name">@profile.Name</span>
                 @if (profile.Id == FaSettings.Settings.ActiveProfileId)
                 {
-                    <span class="fa-active-badge fa-active-badge-lg">Active</span>
+                    <span class="fa-active-badge fa-active-badge-lg">Active Environment</span>
                 }
             </div>
             <div class="fa-detail-header-actions">
@@ -98,17 +112,17 @@
                 {
                     <SecondaryButton OnClick="CancelEdit" Disabled="@_isSaving">Cancel</SecondaryButton>
                     <PrimaryButton OnClick="SaveProfileAsync" Disabled="@_isSaving">
-                        @(_isSaving ? "Saving…" : "Save Profile")
+                        @(_isSaving ? "Saving…" : "Save Environment")
                     </PrimaryButton>
                 }
                 else
                 {
                     @if (profile.Id != FaSettings.Settings.ActiveProfileId)
                     {
-                        <SecondaryButton OnClick="SetActiveProfileAsync">Set as Active</SecondaryButton>
+                        <SecondaryButton OnClick="SetActiveProfileAsync">Set as Active Environment</SecondaryButton>
                     }
                     <SecondaryButton OnClick="DuplicateProfileAsync">Duplicate</SecondaryButton>
-                    <SecondaryButton OnClick="EnterEditMode">Edit Profile</SecondaryButton>
+                    <SecondaryButton OnClick="EnterEditMode">Edit Environment</SecondaryButton>
                     <DangerButton OnClick="@(() => _showDeleteConfirm = true)"
                                   Disabled="@(FaSettings.Settings.Profiles.Count <= 1)">Delete</DangerButton>
                 }
@@ -138,7 +152,7 @@
                 {
                     <div class="fa-form-grid">
                         <div class="form-field">
-                            <label class="fa-label">Profile Name <span class="wsr-required">*</span></label>
+                            <label class="fa-label">Environment Name <span class="wsr-required">*</span></label>
                             <input type="text" class="form-control" @bind="_editProfile.Name" />
                         </div>
                         <div class="form-field">
@@ -163,7 +177,7 @@
                 else
                 {
                     <dl class="fa-detail-list">
-                        <div class="fa-dl-row"><dt>Profile Name</dt><dd>@profile.Name</dd></div>
+                        <div class="fa-dl-row"><dt>Environment Name</dt><dd>@profile.Name</dd></div>
                         <div class="fa-dl-row"><dt>Environment Type</dt><dd>@profile.EnvironmentType</dd></div>
                         <div class="fa-dl-row"><dt>Description</dt><dd>@(profile.Description ?? "No description")</dd></div>
                         <div class="fa-dl-row"><dt>Notes</dt><dd>@(profile.Notes ?? "No notes")</dd></div>
@@ -177,10 +191,87 @@
                 @if (_isEditMode && _editProfile is not null)
                 {
                     <div class="fa-form-grid">
+                        <div class="fa-threshold-group-title fa-field-full">Frontend</div>
                         <div class="form-field fa-field-full">
-                            <label class="fa-label">Target URL</label>
+                            <label class="fa-label">Frontend Base URL</label>
                             <input type="url" class="form-control" placeholder="https://myapp.example.com" @bind="_editProfile.TargetUrl" />
                         </div>
+
+                        <div class="fa-threshold-group-title fa-field-full">REST API</div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">REST Base URL <span class="form-optional">(optional)</span></label>
+                            <input type="url" class="form-control" placeholder="https://api.example.com" @bind="_editProfile.RestBaseUrl" />
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Health Endpoint <span class="form-optional">(optional)</span></label>
+                            <input type="url" class="form-control" placeholder="https://api.example.com/health" @bind="_editProfile.HealthEndpoint" />
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Swagger / OpenAPI URL <span class="form-optional">(optional)</span></label>
+                            <input type="url" class="form-control" placeholder="https://api.example.com/swagger/v1/swagger.json" @bind="_editProfile.SwaggerUrl" />
+                        </div>
+
+                        <div class="fa-threshold-group-title fa-field-full">GraphQL</div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">GraphQL Endpoint <span class="form-optional">(optional)</span></label>
+                            <input type="url" class="form-control" placeholder="https://api.example.com/graphql" @bind="_editProfile.GraphQlEndpoint" />
+                        </div>
+
+                        <div class="fa-threshold-group-title fa-field-full">API Authentication</div>
+                        <p class="fa-section-note fa-field-full" style="margin-top:0">Credentials used by review tools to call REST/GraphQL APIs. Stored in browser local storage only — never sent to the BirkNext backend.</p>
+                        <div class="form-field">
+                            <label class="fa-label">Authentication Type</label>
+                            <select class="form-control" @bind="_editProfile.ApiAuth.AuthType">
+                                @foreach (var t in Enum.GetValues<TargetApiAuthType>())
+                                {
+                                    <option value="@t">@t</option>
+                                }
+                            </select>
+                        </div>
+                        @if (_editProfile.ApiAuth.AuthType == TargetApiAuthType.BearerToken)
+                        {
+                            <div class="form-field fa-field-full">
+                                <label class="fa-label">Bearer Token</label>
+                                <input type="password" class="form-control" autocomplete="off" @bind="_editProfile.ApiAuth.BearerToken" />
+                            </div>
+                        }
+                        @if (_editProfile.ApiAuth.AuthType == TargetApiAuthType.ApiKey)
+                        {
+                            <div class="form-field">
+                                <label class="fa-label">API Key</label>
+                                <input type="password" class="form-control" autocomplete="off" @bind="_editProfile.ApiAuth.ApiKey" />
+                            </div>
+                            <div class="form-field">
+                                <label class="fa-label">Header Name <span class="form-optional">(default: X-Api-Key)</span></label>
+                                <input type="text" class="form-control" placeholder="X-Api-Key" @bind="_editProfile.ApiAuth.ApiKeyHeaderName" />
+                            </div>
+                        }
+                        @if (_editProfile.ApiAuth.AuthType == TargetApiAuthType.BasicAuth)
+                        {
+                            <div class="form-field">
+                                <label class="fa-label">Username</label>
+                                <input type="text" class="form-control" autocomplete="off" @bind="_editProfile.ApiAuth.BasicUsername" />
+                            </div>
+                            <div class="form-field">
+                                <label class="fa-label">Password</label>
+                                <input type="password" class="form-control" autocomplete="off" @bind="_editProfile.ApiAuth.BasicPassword" />
+                            </div>
+                        }
+
+                        <div class="fa-threshold-group-title fa-field-full">Request Settings</div>
+                        <div class="form-field">
+                            <label class="fa-label">Request Timeout</label>
+                            <div style="display:flex;align-items:center;gap:.5rem">
+                                <input type="number" class="form-control fa-threshold-input" min="1" max="300" @bind="_editProfile.RequestTimeoutSeconds" />
+                                <span class="fa-threshold-unit">seconds</span>
+                            </div>
+                        </div>
+                        <div class="form-field">
+                            <label class="fa-label">Retry Count</label>
+                            <input type="number" class="form-control fa-threshold-input" min="0" max="10" @bind="_editProfile.RetryCount" />
+                        </div>
+
+                        <div class="fa-threshold-group-title fa-field-full">Advanced</div>
                         <div class="form-field fa-field-full">
                             <label class="fa-label">Expected API Gateway <span class="form-optional">(optional)</span></label>
                             <input type="url" class="form-control" placeholder="https://apim.example.com" @bind="_editProfile.ExpectedApiGateway" />
@@ -206,7 +297,34 @@
                 else
                 {
                     <dl class="fa-detail-list">
-                        <div class="fa-dl-row"><dt>Target URL</dt><dd>@(profile.TargetUrl ?? "—")</dd></div>
+                        <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">Frontend</dt></div>
+                        <div class="fa-dl-row"><dt>Frontend Base URL</dt><dd>@(profile.TargetUrl ?? "—")</dd></div>
+                        <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">REST API</dt></div>
+                        <div class="fa-dl-row"><dt>REST Base URL</dt><dd>@(profile.RestBaseUrl ?? "—")</dd></div>
+                        <div class="fa-dl-row"><dt>Health Endpoint</dt><dd>@(profile.HealthEndpoint ?? "—")</dd></div>
+                        <div class="fa-dl-row"><dt>Swagger / OpenAPI URL</dt><dd>@(profile.SwaggerUrl ?? "—")</dd></div>
+                        <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">GraphQL</dt></div>
+                        <div class="fa-dl-row"><dt>GraphQL Endpoint</dt><dd>@(profile.GraphQlEndpoint ?? "—")</dd></div>
+                        <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">API Authentication</dt></div>
+                        <div class="fa-dl-row"><dt>Authentication Type</dt><dd>@profile.ApiAuth.AuthType</dd></div>
+                        @if (profile.ApiAuth.AuthType == TargetApiAuthType.BearerToken)
+                        {
+                            <div class="fa-dl-row"><dt>Bearer Token</dt><dd>@(string.IsNullOrWhiteSpace(profile.ApiAuth.BearerToken) ? "—" : "Configured")</dd></div>
+                        }
+                        @if (profile.ApiAuth.AuthType == TargetApiAuthType.ApiKey)
+                        {
+                            <div class="fa-dl-row"><dt>API Key</dt><dd>@(string.IsNullOrWhiteSpace(profile.ApiAuth.ApiKey) ? "—" : "Configured")</dd></div>
+                            <div class="fa-dl-row"><dt>Header Name</dt><dd>@(profile.ApiAuth.ApiKeyHeaderName ?? "X-Api-Key")</dd></div>
+                        }
+                        @if (profile.ApiAuth.AuthType == TargetApiAuthType.BasicAuth)
+                        {
+                            <div class="fa-dl-row"><dt>Username</dt><dd>@(string.IsNullOrWhiteSpace(profile.ApiAuth.BasicUsername) ? "—" : "Configured")</dd></div>
+                            <div class="fa-dl-row"><dt>Password</dt><dd>@(string.IsNullOrWhiteSpace(profile.ApiAuth.BasicPassword) ? "—" : "Configured")</dd></div>
+                        }
+                        <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">Request Settings</dt></div>
+                        <div class="fa-dl-row"><dt>Request Timeout</dt><dd>@profile.RequestTimeoutSeconds s</dd></div>
+                        <div class="fa-dl-row"><dt>Retry Count</dt><dd>@profile.RetryCount</dd></div>
+                        <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">Advanced</dt></div>
                         <div class="fa-dl-row"><dt>Expected API Gateway</dt><dd>@(profile.ExpectedApiGateway ?? "—")</dd></div>
                         <div class="fa-dl-row"><dt>Expected CDN</dt><dd>@(profile.ExpectedCdn ?? "—")</dd></div>
                         <div class="fa-dl-row"><dt>Allowed REST Hosts</dt><dd>@HostList(profile.AllowedRestHosts)</dd></div>
@@ -704,7 +822,7 @@
 else if (FaSettings.Settings.Profiles.Count == 0)
 {
     <div class="fa-empty-state">
-        No profiles found. Create a profile to get started.
+        No environments found. Add an environment to get started.
     </div>
 }
 
@@ -713,10 +831,10 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 {
     <div class="modal-backdrop" @onclick="() => _showCreateDialog = false" role="dialog" aria-modal="true" aria-labelledby="fa-create-title">
         <div class="modal-panel" @onclick:stopPropagation="true">
-            <h2 id="fa-create-title" class="modal-title">Create Profile</h2>
+            <h2 id="fa-create-title" class="modal-title">Add Environment</h2>
             <div class="fa-form-grid">
                 <div class="form-field fa-field-full">
-                    <label class="fa-label">Profile Name <span class="wsr-required">*</span></label>
+                    <label class="fa-label">Environment Name <span class="wsr-required">*</span></label>
                     <input type="text" class="form-control" @bind="_newProfileName" placeholder="e.g. Staging" autofocus />
                 </div>
                 <div class="form-field fa-field-full">
@@ -732,7 +850,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             <div class="modal-actions">
                 <SecondaryButton OnClick="@(() => _showCreateDialog = false)">Cancel</SecondaryButton>
                 <PrimaryButton OnClick="CreateProfileAsync"
-                               Disabled="@string.IsNullOrWhiteSpace(_newProfileName)">Create Profile</PrimaryButton>
+                               Disabled="@string.IsNullOrWhiteSpace(_newProfileName)">Add Environment</PrimaryButton>
             </div>
         </div>
     </div>
@@ -743,14 +861,14 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 {
     <div class="modal-backdrop" @onclick="() => _showDeleteConfirm = false" role="dialog" aria-modal="true" aria-labelledby="fa-delete-title">
         <div class="modal-panel" @onclick:stopPropagation="true">
-            <h2 id="fa-delete-title" class="modal-title">Delete Profile</h2>
+            <h2 id="fa-delete-title" class="modal-title">Delete Environment</h2>
             <div class="notification notification-warning">
-                This will permanently delete the profile <strong>@SelectedProfile?.Name</strong> and all its settings.
+                This will permanently delete the environment <strong>@SelectedProfile?.Name</strong> and all its settings.
             </div>
             <div class="modal-actions">
                 <SecondaryButton OnClick="@(() => _showDeleteConfirm = false)" Disabled="@_isDeleting">Cancel</SecondaryButton>
                 <DangerButton OnClick="ExecuteDeleteAsync" Disabled="@_isDeleting">
-                    @(_isDeleting ? "Deleting…" : "Delete Profile")
+                    @(_isDeleting ? "Deleting…" : "Delete Environment")
                 </DangerButton>
             </div>
         </div>
@@ -876,7 +994,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             _selectedProfileId = _editProfile.Id;
             _isEditMode        = false;
             _editProfile       = null;
-            _saveSuccess       = "Profile saved.";
+            _saveSuccess       = "Environment saved.";
             StateHasChanged();
             await Task.Delay(4000);
             _saveSuccess = null;

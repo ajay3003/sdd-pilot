@@ -6,6 +6,7 @@ public interface IReportExportService
 {
     string ExportQualityReview(QualityReviewReport report, string? projectName);
     string ExportFrontendQualityReview(FrontendQualityReviewReport report, string? projectName);
+    string ExportApiQualityReview(ApiQualityReviewReport report, string? projectName);
     string ExportSecurityReview(WasmSecurityReviewReport report, string? projectName);
     string ExportPerformanceReview(WasmPerformanceReviewReport report, string? projectName);
     string ExportArtifactTraceability(ArtifactTraceabilityReport report, string? projectName);

@@ -302,6 +302,76 @@ public sealed class ReportExportService : IReportExportService
         return BuildHtml("Frontend Quality Review Report", projectName, subtitle, sb.ToString());
     }
 
+    public string ExportApiQualityReview(ApiQualityReviewReport report, string? projectName)
+    {
+        var sb = new StringBuilder();
+
+        sb.Append("<div class=\"kpi-row\">");
+        sb.Append(Kpi(report.OverallScore.ToString(),      "Overall Score"));
+        sb.Append(Kpi(report.ConnectivityScore.ToString(), "Connectivity"));
+        sb.Append(Kpi(report.SecurityScore.ToString(),     "Security"));
+        sb.Append(Kpi(report.PerformanceScore.ToString(),  "Performance"));
+        sb.Append(Kpi(report.RestScore.ToString(),         "REST"));
+        sb.Append(Kpi(report.GraphQlScore.ToString(),      "GraphQL"));
+        sb.Append(Kpi(report.OpenApiScore.ToString(),      "OpenAPI"));
+        sb.Append(Kpi(report.ReadinessScore.ToString(),    "Readiness"));
+        sb.Append("</div>\n");
+
+        // Deployment readiness badge
+        var readyLabel = report.IsDeploymentReady ? "Deployment Ready" : "Not Ready";
+        sb.Append($"<p><strong>Status:</strong> {Badge(readyLabel)}</p>\n");
+
+        // Per-category sections
+        foreach (var cat in Enum.GetValues<ApiQualityCategory>())
+        {
+            var catFindings = report.Findings.Where(f => f.Category == cat).OrderBy(f => f.Severity).ToList();
+            if (catFindings.Count == 0) continue;
+
+            sb.Append($"<section class=\"block\">\n<h2>{Esc(AqrCategoryLabel(cat))}</h2>\n");
+            sb.Append(Table(
+                ["Severity", "Title", "Description", "Recommendation"],
+                catFindings.Select(f => new[]
+                {
+                    Badge(f.Severity.ToString()),
+                    Esc(f.Title),
+                    Esc(f.Description),
+                    Esc(f.Recommendation)
+                })));
+            sb.Append("</section>\n");
+        }
+
+        if (report.Recommendations.Count > 0)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Recommendations</h2>\n");
+            sb.Append(RecommendationList(report.Recommendations));
+            sb.Append("</section>\n");
+        }
+
+        if (report.Limitations.Count > 0)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Limitations</h2>\n");
+            sb.Append("<ul style=\"margin-left:1.2rem;font-size:.85rem;color:#374151\">\n");
+            foreach (var l in report.Limitations)
+                sb.Append($"<li>{Esc(l)}</li>\n");
+            sb.Append("</ul>\n</section>\n");
+        }
+
+        var subtitle = $"Environment: {report.EnvironmentName}  Generated: {report.GeneratedAt:yyyy-MM-dd HH:mm} UTC";
+        return BuildHtml("API Quality Review Report", projectName, subtitle, sb.ToString());
+    }
+
+    private static string AqrCategoryLabel(ApiQualityCategory c) => c switch
+    {
+        ApiQualityCategory.Connectivity => "Connectivity",
+        ApiQualityCategory.Performance  => "Performance",
+        ApiQualityCategory.Security     => "Security",
+        ApiQualityCategory.Rest         => "REST API",
+        ApiQualityCategory.GraphQL      => "GraphQL",
+        ApiQualityCategory.OpenApi      => "OpenAPI / Swagger",
+        ApiQualityCategory.Readiness    => "Readiness",
+        _                               => c.ToString(),
+    };
+
     private static string CategoryLabel(FrontendQualityCategory c) => c switch
     {
         FrontendQualityCategory.Performance   => "Performance",

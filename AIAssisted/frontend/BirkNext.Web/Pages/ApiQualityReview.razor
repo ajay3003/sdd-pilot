@@ -1,0 +1,607 @@
+@page "/api-quality-review"
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IApiQualityReviewService ReviewService
+@inject IFrontendAnalysisContextFactory ContextFactory
+@inject RuntimeReviewSessionService RuntimeReviews
+@inject IWorkspaceSessionService Workspace
+@inject IReportExportService ExportService
+@inject IJSRuntime JS
+
+<PageTitle>API Quality Review</PageTitle>
+
+<div class="wsr-page">
+
+    <PageHeader Title="API Quality Review"
+                Description="Deterministic quality, security, performance, and readiness analysis of a deployed REST and/or GraphQL API using the active Target Environment." />
+
+    @* ── Review Target card ────────────────────────────────────────────────────── *@
+    <div class="wsr-target-card">
+        <div class="wsr-target-header">
+            <h2 class="wsr-target-title">Review Target</h2>
+            <div class="wsr-target-actions">
+                <a href="/admin/system-settings" class="btn-secondary wsr-settings-btn">
+                    Target Environments
+                </a>
+                @if (_report is not null)
+                {
+                    <SecondaryButton OnClick="RefreshContext">Refresh</SecondaryButton>
+                }
+                <PrimaryButton OnClick="RunReview"
+                               Disabled="@(_running || _context is null || !_hasAnyEndpoint)"
+                               aria-label="Run API Quality Review">
+                    @if (_running) { <span class="wsr-spinner" aria-hidden="true">⟳</span> }
+                    @(_running ? "Analysing…" : "Run API Quality Review")
+                </PrimaryButton>
+            </div>
+        </div>
+
+        @if (_context is not null)
+        {
+            <div class="wsr-target-grid">
+                <div class="wsr-target-item">
+                    <span class="wsr-target-label">Environment</span>
+                    <div class="wsr-target-value">
+                        <span class="wsr-env-badge wsr-env-@(_context.ActiveProfile.EnvironmentType.ToString().ToLowerInvariant())">
+                            @_context.ActiveProfile.EnvironmentType
+                        </span>
+                        <span class="wsr-target-profile-name">@_context.ActiveProfile.Name</span>
+                    </div>
+                </div>
+                @if (_context.HasTargetUrl)
+                {
+                    <div class="wsr-target-item">
+                        <span class="wsr-target-label">Frontend URL</span>
+                        <div class="wsr-target-value">
+                            <code class="wsr-target-url">@_context.TargetUrl</code>
+                        </div>
+                    </div>
+                }
+                @if (_context.HasRestBaseUrl)
+                {
+                    <div class="wsr-target-item">
+                        <span class="wsr-target-label">REST Base URL</span>
+                        <div class="wsr-target-value">
+                            <code class="wsr-target-url">@_context.RestBaseUrl</code>
+                        </div>
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(_context.HealthEndpoint))
+                {
+                    <div class="wsr-target-item">
+                        <span class="wsr-target-label">Health Endpoint</span>
+                        <div class="wsr-target-value">
+                            <code class="wsr-target-url">@_context.HealthEndpoint</code>
+                        </div>
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(_context.SwaggerUrl))
+                {
+                    <div class="wsr-target-item">
+                        <span class="wsr-target-label">Swagger / OpenAPI URL</span>
+                        <div class="wsr-target-value">
+                            <code class="wsr-target-url">@_context.SwaggerUrl</code>
+                        </div>
+                    </div>
+                }
+                @if (_context.HasGraphQlEndpoint)
+                {
+                    <div class="wsr-target-item">
+                        <span class="wsr-target-label">GraphQL Endpoint</span>
+                        <div class="wsr-target-value">
+                            <code class="wsr-target-url">@_context.GraphQlEndpoint</code>
+                        </div>
+                    </div>
+                }
+                @if (_report is not null)
+                {
+                    <div class="wsr-target-item">
+                        <span class="wsr-target-label">Last Review</span>
+                        <div class="wsr-target-value">
+                            <span class="wsr-scan-time">@_report.GeneratedAt.ToString("yyyy-MM-dd HH:mm") UTC</span>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @if (_running)
+            {
+                <p class="wsr-scan-progress" aria-live="polite">@_progressMessage</p>
+            }
+
+            @if (!_hasAnyEndpoint && !_running)
+            {
+                <div class="wsr-banner wsr-banner-warn" role="alert">
+                    <span aria-hidden="true">⚠</span>
+                    No endpoint URLs are configured. <a href="/admin/system-settings">Open Target Environments</a>
+                    and add a REST Base URL, Health Endpoint, Swagger URL, or GraphQL Endpoint.
+                </div>
+            }
+        }
+        else
+        {
+            <div class="wsr-banner wsr-banner-warn" role="status">
+                <span aria-hidden="true">⚠</span>
+                Loading target environment…
+            </div>
+        }
+    </div>
+
+    @* ── Error banner ─────────────────────────────────────────────────────────── *@
+    @if (_errorMessage is not null)
+    {
+        <div class="wsr-banner wsr-banner-warn wsr-banner-standalone" role="alert">
+            <span aria-hidden="true">⚠</span> @_errorMessage
+        </div>
+    }
+
+    @* ── Results ──────────────────────────────────────────────────────────────── *@
+    @if (_report is not null)
+    {
+        var report = _report;
+
+        <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
+            <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportHtml">Export HTML</button>
+        </div>
+
+        @* ── Overall score bar ────────────────────────────────────────────────── *@
+        <div class="wsr-readiness-dashboard">
+            <div class="wsr-readiness-card @ScoreClass(report.OverallScore)"
+                 aria-label="Overall API quality score: @report.OverallScore out of 100">
+                <div class="wsr-readiness-left">
+                    <div class="wsr-readiness-score">@report.OverallScore</div>
+                    <div class="wsr-readiness-label">@QualityLabel(report.OverallScore)</div>
+                    <div class="wsr-readiness-sub">out of 100</div>
+                </div>
+                <div class="wsr-readiness-counts" aria-label="Finding counts by severity">
+                    @{ var critical = report.Findings.Count(f => f.Severity == ApiQualitySeverity.Critical); }
+                    @{ var high     = report.Findings.Count(f => f.Severity == ApiQualitySeverity.High); }
+                    @{ var medium   = report.Findings.Count(f => f.Severity == ApiQualitySeverity.Medium); }
+                    @{ var low      = report.Findings.Count(f => f.Severity == ApiQualitySeverity.Low); }
+                    @{ var info     = report.Findings.Count(f => f.Severity == ApiQualitySeverity.Info); }
+                    @if (critical > 0) { <div class="wsr-count-pill wsr-count-critical"><span class="wsr-count-value">@critical</span><span class="wsr-count-label">Critical</span></div> }
+                    @if (high > 0)     { <div class="wsr-count-pill wsr-count-high"><span class="wsr-count-value">@high</span><span class="wsr-count-label">High</span></div> }
+                    @if (medium > 0)   { <div class="wsr-count-pill wsr-count-medium"><span class="wsr-count-value">@medium</span><span class="wsr-count-label">Medium</span></div> }
+                    @if (low > 0)      { <div class="wsr-count-pill wsr-count-low"><span class="wsr-count-value">@low</span><span class="wsr-count-label">Low</span></div> }
+                    @if (info > 0)     { <div class="wsr-count-pill wsr-count-info"><span class="wsr-count-value">@info</span><span class="wsr-count-label">Info</span></div> }
+                    @if (critical == 0 && high == 0 && medium == 0 && low == 0 && info == 0)
+                    { <span class="wsr-all-clear">No findings — all checks passed</span> }
+                </div>
+                <div style="margin-left:auto;display:flex;align-items:center">
+                    <span class="wsr-env-badge @(report.IsDeploymentReady ? "wsr-detect-badge" : "wsr-sev-badge wsr-sev-high")"
+                          style="font-size:.8rem;padding:.25rem .6rem">
+                        @(report.IsDeploymentReady ? "Deployment Ready" : "Not Ready")
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        @* ── Category Score Cards ─────────────────────────────────────────────── *@
+        <SectionHeader Title="Category Scores" />
+        <div class="wsr-category-score-grid" role="list" aria-label="API quality category scores">
+            @foreach (var cs in report.CategoryScores)
+            {
+                var worstSeverity = report.Findings
+                    .Where(f => f.Category == cs.Category && f.Severity != ApiQualitySeverity.Info)
+                    .Select(f => (ApiQualitySeverity?)f.Severity)
+                    .OrderBy(s => s)
+                    .FirstOrDefault();
+
+                <button class="wsr-cat-card @CatCardClass(worstSeverity, cs.Assessed)"
+                        role="listitem"
+                        @onclick='() => SetCategoryFilter(cs.Category)'
+                        title="View @CategoryLabel(cs.Category) findings"
+                        aria-label="@CategoryLabel(cs.Category): @(cs.Assessed ? cs.Score.ToString() : "not assessed")">
+                    <div class="wsr-cat-name">@CategoryLabel(cs.Category)</div>
+                    <div class="wsr-cat-score @(cs.Assessed ? "" : "wsr-cat-score-na")">
+                        @(cs.Assessed ? cs.Score.ToString() : "—")
+                    </div>
+                    <div class="wsr-cat-status">@(cs.Assessed ? CatStatusLabel(worstSeverity) : "Not assessed")</div>
+                    <div class="wsr-cat-findings">
+                        @if (!cs.Assessed) { <span>Not assessed</span> }
+                        else if (cs.FindingCount == 0) { <span>No issues</span> }
+                        else { <span>@cs.FindingCount finding@(cs.FindingCount != 1 ? "s" : "")</span> }
+                    </div>
+                </button>
+            }
+        </div>
+
+        @* ── Connectivity ─────────────────────────────────────────────────────── *@
+        <SectionHeader Title="Connectivity" />
+        <div class="wsr-findings-list">
+            <table style="width:100%;border-collapse:collapse;font-size:.83rem">
+                <thead>
+                    <tr style="background:#f1f5f9;text-align:left">
+                        <th style="padding:.5rem .75rem;border-bottom:1px solid #e2e8f0">Endpoint</th>
+                        <th style="padding:.5rem .75rem;border-bottom:1px solid #e2e8f0">Status</th>
+                        <th style="padding:.5rem .75rem;border-bottom:1px solid #e2e8f0">TLS</th>
+                        <th style="padding:.5rem .75rem;border-bottom:1px solid #e2e8f0">Response Time</th>
+                        <th style="padding:.5rem .75rem;border-bottom:1px solid #e2e8f0">HTTP Code</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @ConnectivityRow("Frontend", report.FrontendResult)
+                    @ConnectivityRow("REST API", report.RestResult)
+                    @ConnectivityRow("Health", report.HealthResult)
+                    @ConnectivityRow("Swagger / OpenAPI", report.SwaggerResult)
+                    @ConnectivityRow("GraphQL", report.GraphQlResult)
+                </tbody>
+            </table>
+        </div>
+
+        @* ── Top Risks ────────────────────────────────────────────────────────── *@
+        var topRisks = report.Findings
+            .Where(f => f.Severity is ApiQualitySeverity.Critical or ApiQualitySeverity.High)
+            .OrderBy(f => f.Severity)
+            .Take(3)
+            .ToList();
+        @if (topRisks.Count > 0)
+        {
+            <SectionHeader Title="Top Risks" />
+            <div class="issue-cards">
+                @foreach (var risk in topRisks)
+                {
+                    <IssueCard Severity="@risk.Severity.ToString()"
+                               Component="@CategoryLabel(risk.Category)"
+                               Description="@(string.IsNullOrEmpty(risk.Description) ? risk.Title : $"{risk.Title} — {risk.Description}")"
+                               SuggestedFix="@risk.Recommendation" />
+                }
+            </div>
+        }
+
+        @* ── Findings ─────────────────────────────────────────────────────────── *@
+        <SectionHeader Title="Findings" />
+        <div class="wsr-findings-toolbar" role="group" aria-label="Filter findings">
+            <input type="search"
+                   class="form-control wsr-search"
+                   placeholder="Search findings…"
+                   aria-label="Search findings"
+                   value="@_findingSearch"
+                   @oninput="e => _findingSearch = e.Value?.ToString() ?? string.Empty" />
+
+            <div class="wsr-filter-chips">
+                @foreach (var sev in Enum.GetValues<ApiQualitySeverity>())
+                {
+                    var count = report.Findings.Count(f => f.Severity == sev);
+                    if (count == 0) continue;
+                    <button class="wsr-filter-chip wsr-filter-sev-@sev.ToString().ToLowerInvariant() @(_sevFilter == sev ? "is-active" : "")"
+                            @onclick="() => ToggleSev(sev)"
+                            aria-pressed="@(_sevFilter == sev)">
+                        @sev <span class="wsr-chip-count">@count</span>
+                    </button>
+                }
+                @if (_sevFilter is not null || _catFilter is not null || !string.IsNullOrEmpty(_findingSearch))
+                {
+                    <button class="wsr-filter-chip" @onclick="ClearFilters">Clear ×</button>
+                }
+            </div>
+
+            <div class="wsr-filter-chips wsr-filter-chips-cat" aria-label="Filter by category">
+                @foreach (var cat in Enum.GetValues<ApiQualityCategory>())
+                {
+                    var count = report.Findings.Count(f => f.Category == cat);
+                    if (count == 0) continue;
+                    <button class="wsr-filter-chip @(_catFilter == cat ? "wsr-filter-cat-active" : "")"
+                            @onclick="() => SetCategoryFilter(cat)"
+                            aria-pressed="@(_catFilter == cat)">
+                        @CategoryLabel(cat) <span class="wsr-chip-count">@count</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        var filteredFindings = FilteredFindings(report.Findings).ToList();
+        @if (filteredFindings.Count == 0)
+        {
+            <div class="wsr-empty-tab">No findings match the current filter.</div>
+        }
+        else
+        {
+            <section class="wsr-findings-list" aria-label="API quality findings">
+                @foreach (var f in filteredFindings)
+                {
+                    @FindingCard(f)
+                }
+            </section>
+        }
+
+        @* ── Recommendations ──────────────────────────────────────────────────── *@
+        @if (report.Recommendations.Count > 0)
+        {
+            <SectionHeader Title="Recommendations" />
+            <ol class="wsr-rec-list">
+                @{ int rIdx = 0; }
+                @foreach (var rec in report.Recommendations)
+                {
+                    rIdx++;
+                    <li class="wsr-rec-item">
+                        <div class="wsr-rec-num" aria-hidden="true">@rIdx</div>
+                        <div class="wsr-rec-body">@rec</div>
+                    </li>
+                }
+            </ol>
+        }
+
+        @* ── Limitations ──────────────────────────────────────────────────────── *@
+        @if (report.Limitations.Count > 0)
+        {
+            <SectionHeader Title="Review Limitations" />
+            <ul class="wsr-limitations-list">
+                @foreach (var l in report.Limitations) { <li>@l</li> }
+            </ul>
+        }
+    }
+    else if (!_running)
+    {
+        @* ── Empty state ──────────────────────────────────────────────────────── *@
+        <EmptyState Icon="🔍" Title="Ready to review"
+                    Description="Run an API Quality Review to analyse connectivity, security, performance, REST, GraphQL, OpenAPI completeness, and deployment readiness for your active Target Environment.">
+            <PrimaryButton OnClick="RunReview"
+                           Disabled="@(_context is null || !_hasAnyEndpoint)"
+                           aria-label="Run API Quality Review">
+                Run API Quality Review
+            </PrimaryButton>
+            @if (_context is not null && !_hasAnyEndpoint)
+            {
+                <p class="wsr-empty-note">
+                    Configure endpoint URLs in <a href="/admin/system-settings">Target Environments</a>.
+                </p>
+            }
+        </EmptyState>
+    }
+
+</div>
+
+@code {
+    private FrontendAnalysisContext? _context;
+
+    private bool    _running;
+    private string  _progressMessage = "";
+    private string? _errorMessage;
+
+    private ApiQualityReviewReport? _report;
+
+    private string?               _findingSearch;
+    private ApiQualitySeverity?   _sevFilter;
+    private ApiQualityCategory?   _catFilter;
+    private readonly HashSet<string> _expandedFindings = [];
+
+    private bool _hasAnyEndpoint =>
+        _context is not null &&
+        (_context.HasTargetUrl || _context.HasRestBaseUrl || _context.HasGraphQlEndpoint ||
+         !string.IsNullOrWhiteSpace(_context.HealthEndpoint) ||
+         !string.IsNullOrWhiteSpace(_context.SwaggerUrl));
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        _context = await ContextFactory.GetActiveContextAsync();
+        _report  = RuntimeReviews.ApiQualityReview.Report;
+    }
+
+    // ── Actions ───────────────────────────────────────────────────────────────
+
+    private async Task RunReview()
+    {
+        if (_context is null || !_hasAnyEndpoint) return;
+
+        _running         = true;
+        _errorMessage    = null;
+        _report          = null;
+        _progressMessage = "Analysing API endpoints…";
+        RuntimeReviews.MarkApiQualityRunning(_context);
+        StateHasChanged();
+
+        try
+        {
+            var request = BuildRequest(_context);
+            var (report, error) = await ReviewService.AnalyzeAsync(request);
+
+            if (error is not null)
+            {
+                _errorMessage = error;
+                RuntimeReviews.MarkApiQualityFailed(_context, error);
+            }
+            else if (report is not null)
+            {
+                _report = report;
+                RuntimeReviews.SaveApiQualityResult(_report, _context);
+                _expandedFindings.Clear();
+                _findingSearch = null;
+                _sevFilter     = null;
+                _catFilter     = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Review failed: " + ex.Message;
+            RuntimeReviews.MarkApiQualityFailed(_context, _errorMessage);
+        }
+        finally
+        {
+            _running = false;
+        }
+    }
+
+    private async Task ExportHtml()
+    {
+        if (_report is null) return;
+        var html = ExportService.ExportApiQualityReview(_report, Workspace.ProjectName);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"api-quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
+    }
+
+    private async Task RefreshContext()
+    {
+        _context = await ContextFactory.GetActiveContextAsync();
+    }
+
+    // ── Request builder ───────────────────────────────────────────────────────
+
+    private static ApiQualityReviewRequest BuildRequest(FrontendAnalysisContext ctx) => new()
+    {
+        FrontendBaseUrl   = ctx.TargetUrl,
+        RestBaseUrl       = ctx.RestBaseUrl,
+        HealthEndpoint    = ctx.HealthEndpoint,
+        SwaggerUrl        = ctx.SwaggerUrl,
+        GraphQlEndpoint   = ctx.GraphQlEndpoint,
+        TimeoutSeconds    = ctx.RequestTimeoutSeconds,
+        RetryCount        = ctx.RetryCount,
+        EnvironmentName   = ctx.ActiveProfile.Name,
+    };
+
+    // ── Filters ───────────────────────────────────────────────────────────────
+
+    private void SetCategoryFilter(ApiQualityCategory cat)
+    {
+        _catFilter     = _catFilter == cat ? null : cat;
+        _findingSearch = null;
+        _sevFilter     = null;
+    }
+
+    private void ToggleSev(ApiQualitySeverity sev) =>
+        _sevFilter = _sevFilter == sev ? null : sev;
+
+    private void ClearFilters()
+    {
+        _sevFilter     = null;
+        _catFilter     = null;
+        _findingSearch = null;
+    }
+
+    private IEnumerable<ApiQualityFinding> FilteredFindings(IReadOnlyList<ApiQualityFinding> all)
+    {
+        IEnumerable<ApiQualityFinding> q = all.OrderBy(f => f.Severity).ThenBy(f => f.Category);
+        if (_sevFilter.HasValue) q = q.Where(f => f.Severity == _sevFilter.Value);
+        if (_catFilter.HasValue) q = q.Where(f => f.Category == _catFilter.Value);
+        if (!string.IsNullOrWhiteSpace(_findingSearch))
+        {
+            var term = _findingSearch.Trim();
+            q = q.Where(f =>
+                f.Title.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                f.Description.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                CategoryLabel(f.Category).Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+        return q;
+    }
+
+    // ── Finding card ──────────────────────────────────────────────────────────
+
+    private RenderFragment<ApiQualityFinding> FindingCard => f => __builder =>
+    {
+        var expanded = _expandedFindings.Contains(f.Id);
+        var sevCls   = f.Severity.ToString().ToLowerInvariant();
+        <div class="wsr-finding wsr-finding-@sevCls">
+            <button class="wsr-finding-toggle"
+                    @onclick="() => ToggleFinding(f.Id)"
+                    aria-expanded="@expanded.ToString().ToLowerInvariant()">
+                <span class="wsr-sev-badge wsr-sev-@sevCls">@f.Severity</span>
+                <span class="wsr-finding-title">@f.Title</span>
+                <span class="wsr-cat-chip">@CategoryLabel(f.Category)</span>
+                <span class="wsr-chevron" aria-hidden="true">@(expanded ? "▲" : "▼")</span>
+            </button>
+            @if (expanded)
+            {
+                <div class="wsr-finding-body">
+                    <div class="wsr-detail-row">
+                        <span class="wsr-detail-label">Description</span>
+                        <p class="wsr-detail-text">@f.Description</p>
+                    </div>
+                    <div class="wsr-detail-row">
+                        <span class="wsr-detail-label">Recommendation</span>
+                        <p class="wsr-detail-text wsr-detail-action">@f.Recommendation</p>
+                    </div>
+                    @if (f.Evidence.Count > 0)
+                    {
+                        <div class="wsr-detail-row">
+                            <span class="wsr-detail-label">Evidence</span>
+                            <ul class="wsr-limitations-list">
+                                @foreach (var ev in f.Evidence) { <li class="wsr-mono">@ev</li> }
+                            </ul>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    };
+
+    private void ToggleFinding(string id)
+    {
+        if (!_expandedFindings.Remove(id))
+            _expandedFindings.Add(id);
+    }
+
+    // ── Connectivity row ──────────────────────────────────────────────────────
+
+    private RenderFragment ConnectivityRow(string label, ApiQualityEndpointResult? r) => __builder =>
+    {
+        if (r is null) return;
+        var statusColor = r.Reachable && r.StatusCode < 400 ? "#16a34a" : "#dc2626";
+        var statusText  = r.Reachable
+            ? (r.StatusCode < 400 ? "Reachable" : $"HTTP {r.StatusCode}")
+            : (r.Error is not null ? "Unreachable" : $"HTTP {r.StatusCode}");
+        <tr style="border-bottom:1px solid #f1f5f9">
+            <td style="padding:.45rem .75rem;color:#374151;font-weight:500">@label</td>
+            <td style="padding:.45rem .75rem;color:@statusColor;font-weight:600">@statusText</td>
+            <td style="padding:.45rem .75rem">
+                @if (r.IsHttps)
+                { <span style="color:#16a34a">✓ HTTPS</span> }
+                else
+                { <span style="color:#dc2626">✗ HTTP</span> }
+            </td>
+            <td style="padding:.45rem .75rem;color:#6b7280">@r.ResponseTimeMs ms</td>
+            <td style="padding:.45rem .75rem;color:#374151">
+                @if (r.StatusCode > 0) { @r.StatusCode.ToString() }
+                else { <span style="color:#6b7280">—</span> }
+            </td>
+        </tr>
+    };
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static string CategoryLabel(ApiQualityCategory c) => c switch
+    {
+        ApiQualityCategory.Connectivity => "Connectivity",
+        ApiQualityCategory.Performance  => "Performance",
+        ApiQualityCategory.Security     => "Security",
+        ApiQualityCategory.Rest         => "REST API",
+        ApiQualityCategory.GraphQL      => "GraphQL",
+        ApiQualityCategory.OpenApi      => "OpenAPI",
+        ApiQualityCategory.Readiness    => "Readiness",
+        _                               => c.ToString(),
+    };
+
+    private static string ScoreClass(int score) =>
+        score >= 80 ? "wsr-rdy-good" : score >= 50 ? "wsr-rdy-warning" : "wsr-rdy-poor";
+
+    private static string QualityLabel(int score) =>
+        score >= 90 ? "Excellent" :
+        score >= 80 ? "Good" :
+        score >= 65 ? "Needs Attention" :
+        score >= 50 ? "At Risk" : "Critical";
+
+    private static string CatCardClass(ApiQualitySeverity? worst, bool assessed)
+    {
+        if (!assessed) return "wsr-cat-unknown";
+        return worst switch
+        {
+            ApiQualitySeverity.Critical => "wsr-cat-critical",
+            ApiQualitySeverity.High     => "wsr-cat-high",
+            ApiQualitySeverity.Medium   => "wsr-cat-medium",
+            ApiQualitySeverity.Low      => "wsr-cat-low",
+            null                        => "wsr-cat-good",
+            _                           => "wsr-cat-low",
+        };
+    }
+
+    private static string CatStatusLabel(ApiQualitySeverity? worst) =>
+        worst switch
+        {
+            ApiQualitySeverity.Critical => "Critical",
+            ApiQualitySeverity.High     => "High Risk",
+            ApiQualitySeverity.Medium   => "Warning",
+            ApiQualitySeverity.Low      => "Low Risk",
+            null                        => "Passed",
+            _                           => "Info",
+        };
+}

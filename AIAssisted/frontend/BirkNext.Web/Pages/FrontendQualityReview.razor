@@ -12,18 +12,23 @@
 
 <PageTitle>Frontend Quality Review</PageTitle>
 
-<div class="wsr-page">
+<div class="wsr-page fqr-page">
 
     <PageHeader Title="Frontend Quality Review"
-                Description="Analyse a deployed frontend for performance, security, accessibility, standards compliance, Blazor WASM-specific checks, and QA readiness in a single unified review." />
+                Description="Analyse a deployed frontend for performance, security, accessibility, standards compliance, Blazor WASM-specific checks, and QA readiness in a single unified review.">
+        @if (_report is not null)
+        {
+            <button type="button" class="btn-secondary" @onclick="ExportHtml">Export HTML</button>
+            <button type="button" class="btn-secondary" @onclick="ExportPdf">Export PDF</button>
+        }
+    </PageHeader>
 
-    @* ── Review Target card ────────────────────────────────────────────────────── *@
-    <div class="wsr-target-card">
+    <div class="wsr-target-card fqr-target-card">
         <div class="wsr-target-header">
             <h2 class="wsr-target-title">Review Target</h2>
             <div class="wsr-target-actions">
                 <a href="/admin/system-settings" class="btn-secondary wsr-settings-btn">
-                    Frontend Analysis Settings
+                    Target Environments
                 </a>
                 @if (_report is not null)
                 {
@@ -32,8 +37,8 @@
                 <PrimaryButton OnClick="RunReview"
                                Disabled="@(_running || _context is null || !_context.HasTargetUrl)"
                                aria-label="Run Frontend Quality Review">
-                    @if (_running) { <span class="wsr-spinner" aria-hidden="true">⟳</span> }
-                    @(_running ? "Analysing…" : "Run Frontend Quality Review")
+                    @if (_running) { <span class="wsr-spinner" aria-hidden="true">...</span> }
+                    @(_running ? "Analysing..." : "Run Frontend Quality Review")
                 </PrimaryButton>
             </div>
         </div>
@@ -59,7 +64,7 @@
                         }
                         else
                         {
-                            <span class="wsr-target-missing">Not configured — <a href="/admin/system-settings">open settings</a></span>
+                            <span class="wsr-target-missing">Not configured - <a href="/admin/system-settings">open settings</a></span>
                         }
                     </div>
                 </div>
@@ -68,7 +73,9 @@
                     <div class="wsr-target-value">
                         <span>@_context.AuthenticationType</span>
                         @if (_context.RequiresAuthentication)
-                        { <span class="wsr-auth-tag">Required</span> }
+                        {
+                            <span class="wsr-auth-tag">Required</span>
+                        }
                     </div>
                 </div>
                 <div class="wsr-target-item">
@@ -84,9 +91,13 @@
                         <span class="wsr-target-label">Application</span>
                         <div class="wsr-target-value">
                             @if (_report.IsBlazorWasm)
-                            { <span class="wsr-detect-badge wsr-detect-blazor">Blazor WASM</span> }
+                            {
+                                <span class="wsr-detect-badge wsr-detect-blazor">Blazor WASM</span>
+                            }
                             else
-                            { <span class="wsr-detect-none">Not Blazor WASM</span> }
+                            {
+                                <span class="wsr-detect-none">Not Blazor WASM</span>
+                            }
                         </div>
                     </div>
                     <div class="wsr-target-item">
@@ -100,226 +111,283 @@
 
             @if (_running)
             {
-                <p class="wsr-scan-progress" aria-live="polite">
-                    @_progressMessage
-                </p>
+                <p class="wsr-scan-progress" aria-live="polite">@_progressMessage</p>
             }
             @if (_context.HasValidationErrors)
             {
                 <div class="wsr-banner wsr-banner-error" role="alert">
-                    <span aria-hidden="true">✗</span>
+                    <span aria-hidden="true">x</span>
                     Profile has configuration errors: @string.Join(" | ", _context.ValidationErrors)
                 </div>
             }
             @if (_context.HasValidationWarnings)
             {
                 <div class="wsr-banner wsr-banner-warn" role="status">
-                    <span aria-hidden="true">⚠</span>
+                    <span aria-hidden="true">!</span>
                     @string.Join(" | ", _context.ValidationWarnings)
                 </div>
             }
             @if (!_context.HasTargetUrl && !_running)
             {
                 <div class="wsr-banner wsr-banner-warn" role="alert">
-                    <span aria-hidden="true">⚠</span>
-                    No target URL configured. <a href="/admin/system-settings">Open Frontend Analysis Settings</a> to set one.
+                    <span aria-hidden="true">!</span>
+                    No target URL configured. <a href="/admin/system-settings">Open Target Environments</a> to set one.
                 </div>
             }
         }
         else
         {
             <div class="wsr-banner wsr-banner-warn" role="status">
-                <span aria-hidden="true">⚠</span>
-                Loading frontend analysis profile…
+                <span aria-hidden="true">!</span>
+                Loading frontend analysis profile...
             </div>
         }
     </div>
 
-    @* ── Error banners ────────────────────────────────────────────────────────── *@
     @if (_secError is not null)
     {
         <div class="wsr-banner wsr-banner-warn wsr-banner-standalone" role="status">
-            <span aria-hidden="true">⚠</span> Security scan: @_secError — security findings will be incomplete.
+            <span aria-hidden="true">!</span> Security scan: @_secError - security findings will be incomplete.
         </div>
     }
     @if (_perfError is not null)
     {
         <div class="wsr-banner wsr-banner-warn wsr-banner-standalone" role="status">
-            <span aria-hidden="true">⚠</span> Performance scan: @_perfError — performance findings will be incomplete.
+            <span aria-hidden="true">!</span> Performance scan: @_perfError - performance findings will be incomplete.
         </div>
     }
 
-    @* ── Results ─────────────────────────────────────────────────────────────── *@
     @if (_report is not null)
     {
         var report = _report;
-
-        <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
-            <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportHtml">Export HTML</button>
-        </div>
-
-        @* ── Overall score bar ────────────────────────────────────────────────── *@
-        <div class="wsr-readiness-dashboard">
-            <div class="wsr-readiness-card @ScoreClass(report.OverallScore)"
-                 aria-label="Overall quality score: @report.OverallScore out of 100">
-                <div class="wsr-readiness-left">
-                    <div class="wsr-readiness-score">@report.OverallScore</div>
-                    <div class="wsr-readiness-label">@QualityLabel(report.OverallScore)</div>
-                    <div class="wsr-readiness-sub">out of 100</div>
-                </div>
-                <div class="wsr-readiness-counts" aria-label="Finding counts by severity">
-                    @{ var critical = report.Findings.Count(f => f.Severity == FrontendQualitySeverity.Critical); }
-                    @{ var high     = report.Findings.Count(f => f.Severity == FrontendQualitySeverity.High); }
-                    @{ var medium   = report.Findings.Count(f => f.Severity == FrontendQualitySeverity.Medium); }
-                    @{ var low      = report.Findings.Count(f => f.Severity == FrontendQualitySeverity.Low); }
-                    @{ var info     = report.Findings.Count(f => f.Severity == FrontendQualitySeverity.Info); }
-                    @if (critical > 0) { <div class="wsr-count-pill wsr-count-critical"><span class="wsr-count-value">@critical</span><span class="wsr-count-label">Critical</span></div> }
-                    @if (high > 0)     { <div class="wsr-count-pill wsr-count-high"><span class="wsr-count-value">@high</span><span class="wsr-count-label">High</span></div> }
-                    @if (medium > 0)   { <div class="wsr-count-pill wsr-count-medium"><span class="wsr-count-value">@medium</span><span class="wsr-count-label">Medium</span></div> }
-                    @if (low > 0)      { <div class="wsr-count-pill wsr-count-low"><span class="wsr-count-value">@low</span><span class="wsr-count-label">Low</span></div> }
-                    @if (info > 0)     { <div class="wsr-count-pill wsr-count-info"><span class="wsr-count-value">@info</span><span class="wsr-count-label">Info</span></div> }
-                    @if (critical == 0 && high == 0 && medium == 0 && low == 0 && info == 0)
-                    { <span class="wsr-all-clear">No findings — all checks passed</span> }
-                </div>
-            </div>
-        </div>
-
-        @* ── Domain Score Cards ───────────────────────────────────────────────── *@
-        <SectionHeader Title="Domain Scores" />
-        <div class="wsr-category-score-grid" role="list" aria-label="Quality domain scores">
-            @foreach (var cs in report.CategoryScores)
-            {
-                var worstSeverity = report.Findings
-                    .Where(f => f.Category == cs.Category && f.Severity != FrontendQualitySeverity.Info)
-                    .Select(f => (FrontendQualitySeverity?)f.Severity)
-                    .OrderBy(s => s)
-                    .FirstOrDefault();
-
-                <button class="wsr-cat-card @CatCardClass(worstSeverity, cs.Assessed)"
-                        role="listitem"
-                        @onclick='() => SetCategoryFilter(cs.Category)'
-                        title="View @CategoryLabel(cs.Category) findings"
-                        aria-label="@CategoryLabel(cs.Category): @(cs.Assessed ? cs.Score.ToString() : "not assessed")">
-                    <div class="wsr-cat-name">@CategoryLabel(cs.Category)</div>
-                    <div class="wsr-cat-score @(cs.Assessed ? "" : "wsr-cat-score-na")">
-                        @(cs.Assessed ? cs.Score.ToString() : "—")
-                    </div>
-                    <div class="wsr-cat-status">@(cs.Assessed ? CatStatusLabel(worstSeverity) : "Not assessed")</div>
-                    <div class="wsr-cat-findings">
-                        @if (!cs.Assessed) { <span>Not assessed</span> }
-                        else if (cs.FindingCount == 0) { <span>No issues</span> }
-                        else { <span>@cs.FindingCount finding@(cs.FindingCount != 1 ? "s" : "")</span> }
-                    </div>
-                </button>
-            }
-        </div>
-
-        @* ── Top Risks ────────────────────────────────────────────────────────── *@
         var topRisks = report.Findings
             .Where(f => f.Severity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High)
             .OrderBy(f => f.Severity)
-            .Take(3)
+            .ThenBy(f => f.Category)
+            .ThenBy(f => f.Title)
             .ToList();
-        @if (topRisks.Count > 0)
-        {
-            <SectionHeader Title="Top Risks" />
-            <div class="issue-cards">
-                @foreach (var risk in topRisks)
-                {
-                    <IssueCard Severity="@risk.Severity.ToString()"
-                               Component="@CategoryLabel(risk.Category)"
-                               Description="@(string.IsNullOrEmpty(risk.Description) ? risk.Title : $"{risk.Title} — {risk.Description}")"
-                               SuggestedFix="@risk.Recommendation" />
-                }
-            </div>
-        }
-
-        @* ── Findings ─────────────────────────────────────────────────────────── *@
-        <SectionHeader Title="Findings" />
-        <div class="wsr-findings-toolbar" role="group" aria-label="Filter findings">
-            <input type="search"
-                   class="form-control wsr-search"
-                   placeholder="Search findings…"
-                   aria-label="Search findings"
-                   value="@_findingSearch"
-                   @oninput="e => _findingSearch = e.Value?.ToString() ?? string.Empty" />
-
-            <div class="wsr-filter-chips">
-                @foreach (var sev in Enum.GetValues<FrontendQualitySeverity>())
-                {
-                    var count = report.Findings.Count(f => f.Severity == sev);
-                    if (count == 0) continue;
-                    <button class="wsr-filter-chip wsr-filter-sev-@sev.ToString().ToLowerInvariant() @(_sevFilter == sev ? "is-active" : "")"
-                            @onclick="() => ToggleSev(sev)"
-                            aria-pressed="@(_sevFilter == sev)">
-                        @sev <span class="wsr-chip-count">@count</span>
-                    </button>
-                }
-                @if (_sevFilter is not null || _catFilter is not null || !string.IsNullOrEmpty(_findingSearch))
-                {
-                    <button class="wsr-filter-chip" @onclick="ClearFilters">Clear ×</button>
-                }
-            </div>
-
-            <div class="wsr-filter-chips wsr-filter-chips-cat" aria-label="Filter by category">
-                @foreach (var cat in Enum.GetValues<FrontendQualityCategory>())
-                {
-                    var count = report.Findings.Count(f => f.Category == cat);
-                    if (count == 0) continue;
-                    <button class="wsr-filter-chip @(_catFilter == cat ? "wsr-filter-cat-active" : "")"
-                            @onclick="() => SetCategoryFilter(cat)"
-                            aria-pressed="@(_catFilter == cat)">
-                        @CategoryLabel(cat) <span class="wsr-chip-count">@count</span>
-                    </button>
-                }
-            </div>
-        </div>
-
         var filtered = FilteredFindings(report.Findings).ToList();
-        @if (filtered.Count == 0)
-        {
-            <div class="wsr-empty-tab">No findings match the current filter.</div>
-        }
-        else
-        {
-            <section class="wsr-findings-list" aria-label="Quality findings">
-                @foreach (var f in filtered)
+        var recommendations = BuildRecommendationCards(report).ToList();
+
+        <section class="fqr-summary-grid" aria-label="Frontend quality score summary">
+            <MetricCard Value="@report.OverallScore.ToString()" Label="Overall Score" Sublabel="@QualityLabel(report.OverallScore)" Variant="@ScoreVariant(report.OverallScore)" />
+            <MetricCard Value="@report.PerformanceScore.ToString()" Label="Performance" Sublabel="@QualityLabel(report.PerformanceScore)" Variant="@ScoreVariant(report.PerformanceScore)" />
+            <MetricCard Value="@report.SecurityScore.ToString()" Label="Security" Sublabel="@QualityLabel(report.SecurityScore)" Variant="@ScoreVariant(report.SecurityScore)" />
+            <MetricCard Value="@report.AccessibilityScore.ToString()" Label="Accessibility" Sublabel="@QualityLabel(report.AccessibilityScore)" Variant="@ScoreVariant(report.AccessibilityScore)" />
+            <MetricCard Value="@report.StandardsScore.ToString()" Label="Standards" Sublabel="@QualityLabel(report.StandardsScore)" Variant="@ScoreVariant(report.StandardsScore)" />
+            <MetricCard Value="@report.WasmScore.ToString()" Label="Blazor WASM" Sublabel="@(report.IsBlazorWasm ? QualityLabel(report.WasmScore) : "Not detected")" Variant="@ScoreVariant(report.WasmScore)" />
+            <MetricCard Value="@report.ReadinessScore.ToString()" Label="QA Readiness" Sublabel="@QualityLabel(report.ReadinessScore)" Variant="@ScoreVariant(report.ReadinessScore)" />
+        </section>
+
+        <section class="fqr-section" aria-label="Top risks">
+            <SectionHeader Title="Top Risks" />
+            @if (topRisks.Count == 0)
+            {
+                <div class="fqr-empty-panel">No critical or high findings were detected.</div>
+            }
+            else
+            {
+                <div class="fqr-risk-grid">
+                    @foreach (var risk in topRisks)
+                    {
+                        <article class="fqr-risk-card fqr-risk-@risk.Severity.ToString().ToLowerInvariant()">
+                            <div class="fqr-risk-meta">
+                                <span class="fqr-severity fqr-severity-@risk.Severity.ToString().ToLowerInvariant()">@risk.Severity</span>
+                                <span class="fqr-risk-category">@CategoryLabel(risk.Category)</span>
+                            </div>
+                            <h3>@risk.Title</h3>
+                            <div class="fqr-risk-detail">
+                                <span>Risk</span>
+                                <p>@risk.Description</p>
+                            </div>
+                            <div class="fqr-risk-detail">
+                                <span>Recommendation</span>
+                                <p>@risk.Recommendation</p>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="fqr-section" aria-label="Category summary">
+            <SectionHeader Title="Category Summary" />
+            <div class="fqr-category-grid">
+                @foreach (var category in Enum.GetValues<FrontendQualityCategory>())
                 {
-                    @FindingCard(f)
+                    var summary = GetCategorySummary(report, category);
+                    <button type="button"
+                            class="fqr-category-card @(_catFilter == category ? "is-active" : "")"
+                            @onclick="() => SetCategoryFilter(category)"
+                            aria-pressed="@(_catFilter == category)"
+                            aria-label="Filter findings by @CategoryLabel(category)">
+                        <span class="fqr-category-title">@CategoryLabel(category)</span>
+                        <strong>@summary.Total</strong>
+                        <span class="fqr-category-sub">total findings</span>
+                        <dl class="fqr-category-counts">
+                            <div><dt>Critical</dt><dd>@summary.Critical</dd></div>
+                            <div><dt>High</dt><dd>@summary.High</dd></div>
+                            <div><dt>Medium</dt><dd>@summary.Medium</dd></div>
+                            <div><dt>Low</dt><dd>@summary.Low</dd></div>
+                        </dl>
+                    </button>
                 }
+            </div>
+        </section>
+
+        <section class="fqr-section" aria-label="Detailed findings">
+            <SectionHeader Title="Detailed Findings" />
+            <div class="fqr-findings-toolbar" role="group" aria-label="Filter findings">
+                <input type="search"
+                       class="form-control fqr-search"
+                       placeholder="Search findings..."
+                       aria-label="Search findings"
+                       value="@_findingSearch"
+                       @oninput="e => _findingSearch = e.Value?.ToString() ?? string.Empty" />
+
+                <select class="form-control fqr-select" @bind="_severityFilterValue" @bind:after="ApplySeverityFilter" aria-label="Filter by severity">
+                    <option value="">All severities</option>
+                    @foreach (var sev in Enum.GetValues<FrontendQualitySeverity>())
+                    {
+                        <option value="@sev.ToString()">@sev</option>
+                    }
+                </select>
+
+                <select class="form-control fqr-select" @bind="_categoryFilterValue" @bind:after="ApplyCategoryFilter" aria-label="Filter by category">
+                    <option value="">All categories</option>
+                    @foreach (var cat in Enum.GetValues<FrontendQualityCategory>())
+                    {
+                        <option value="@cat.ToString()">@CategoryLabel(cat)</option>
+                    }
+                </select>
+
+                @if (_sevFilter is not null || _catFilter is not null || !string.IsNullOrWhiteSpace(_findingSearch))
+                {
+                    <button type="button" class="btn-secondary" @onclick="ClearFilters">Clear</button>
+                }
+            </div>
+
+            @if (filtered.Count == 0)
+            {
+                <div class="fqr-empty-panel">No findings match the current filter.</div>
+            }
+            else
+            {
+                <div class="fqr-table-wrap">
+                    <table class="fqr-findings-table">
+                        <thead>
+                            <tr>
+                                <th><button type="button" @onclick='() => SortBy("severity")'>Severity @SortGlyph("severity")</button></th>
+                                <th><button type="button" @onclick='() => SortBy("category")'>Category @SortGlyph("category")</button></th>
+                                <th><button type="button" @onclick='() => SortBy("title")'>Title @SortGlyph("title")</button></th>
+                                <th>Description</th>
+                                <th>Recommendation</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var finding in filtered)
+                            {
+                                <tr>
+                                    <td><span class="fqr-severity fqr-severity-@finding.Severity.ToString().ToLowerInvariant()">@finding.Severity</span></td>
+                                    <td>@CategoryLabel(finding.Category)</td>
+                                    <td>
+                                        <strong>@finding.Title</strong>
+                                        @if (!string.IsNullOrWhiteSpace(finding.SourceSystem))
+                                        {
+                                            <span class="fqr-source">@finding.SourceSystem</span>
+                                        }
+                                    </td>
+                                    <td>@finding.Description</td>
+                                    <td>@finding.Recommendation</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        @if (recommendations.Count > 0)
+        {
+            <section class="fqr-section" aria-label="Recommendations">
+                <SectionHeader Title="Recommendations" />
+                <div class="fqr-recommendation-grid">
+                    @foreach (var rec in recommendations)
+                    {
+                        <article class="fqr-recommendation-card fqr-recommendation-@rec.Priority.ToLowerInvariant()">
+                            <div class="fqr-recommendation-priority">@rec.Priority Priority</div>
+                            <h3>@rec.Title</h3>
+                            <p>@rec.Description</p>
+                            <div class="fqr-recommendation-benefit">
+                                <span>Expected benefit</span>
+                                <p>@rec.ExpectedBenefit</p>
+                            </div>
+                        </article>
+                    }
+                </div>
             </section>
         }
 
-        @* ── Recommendations ──────────────────────────────────────────────────── *@
-        @if (report.Recommendations.Count > 0)
-        {
-            <SectionHeader Title="Recommendations" />
-            <ol class="wsr-rec-list">
-                @{ int rIdx = 0; }
-                @foreach (var rec in report.Recommendations)
-                {
-                    rIdx++;
-                    <li class="wsr-rec-item">
-                        <div class="wsr-rec-num" aria-hidden="true">@rIdx</div>
-                        <div class="wsr-rec-body">@rec</div>
-                    </li>
-                }
-            </ol>
-        }
-
-        @* ── Limitations ──────────────────────────────────────────────────────── *@
-        @if (report.Limitations.Count > 0)
-        {
-            <SectionHeader Title="Scanner Limitations" />
-            <ul class="wsr-limitations-list">
-                @foreach (var l in report.Limitations) { <li>@l</li> }
-            </ul>
-        }
+        <section class="fqr-section" aria-label="Technical details">
+            <details class="fqr-technical-details">
+                <summary>Technical Details</summary>
+                <div class="fqr-technical-grid">
+                    <InfoRow Label="Target URL">@report.TargetUrl</InfoRow>
+                    <InfoRow Label="Generated">@report.GeneratedAt.ToString("yyyy-MM-dd HH:mm") UTC</InfoRow>
+                    <InfoRow Label="Application">@(report.IsBlazorWasm ? "Blazor WASM detected" : "Blazor WASM not detected")</InfoRow>
+                    @if (!string.IsNullOrWhiteSpace(report.ErrorMessage))
+                    {
+                        <InfoRow Label="Error">@report.ErrorMessage</InfoRow>
+                    }
+                    @if (report.Risks.Count > 0)
+                    {
+                        <div class="fqr-technical-list">
+                            <h3>Risks</h3>
+                            <ul>
+                                @foreach (var risk in report.Risks)
+                                {
+                                    <li>@risk</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                    @if (report.Limitations.Count > 0)
+                    {
+                        <div class="fqr-technical-list">
+                            <h3>Scanner Limitations</h3>
+                            <ul>
+                                @foreach (var limitation in report.Limitations)
+                                {
+                                    <li>@limitation</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                    @if (report.Findings.Any(f => f.Evidence.Count > 0))
+                    {
+                        <div class="fqr-technical-list fqr-technical-evidence">
+                            <h3>Evidence</h3>
+                            @foreach (var finding in report.Findings.Where(f => f.Evidence.Count > 0))
+                            {
+                                <div class="fqr-evidence-group">
+                                    <strong>@finding.Title</strong>
+                                    <ul>
+                                        @foreach (var evidence in finding.Evidence)
+                                        {
+                                            <li><code>@evidence</code></li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </details>
+        </section>
     }
     else if (!_running)
     {
-        @* ── Empty state ──────────────────────────────────────────────────────── *@
-        <EmptyState Icon="🔍" Title="Ready to review"
+        <EmptyState Icon="Search" Title="Ready to review"
                     Description="Run a Frontend Quality Review to analyse performance, security, accessibility, standards compliance, Blazor WASM specifics, and QA readiness for your deployed frontend.">
             <PrimaryButton OnClick="RunReview"
                            Disabled="@(_context is null || !_context?.HasTargetUrl == true)"
@@ -329,7 +397,7 @@
             @if (_context is not null && !_context.HasTargetUrl)
             {
                 <p class="wsr-empty-note">
-                    Configure a target URL in <a href="/admin/system-settings">Frontend Analysis Settings</a>.
+                    Configure a target URL in <a href="/admin/system-settings">Target Environments</a>.
                 </p>
             }
         </EmptyState>
@@ -338,6 +406,9 @@
 </div>
 
 @code {
+    private sealed record CategorySummary(int Total, int Critical, int High, int Medium, int Low);
+    private sealed record RecommendationView(string Priority, string Title, string Description, string ExpectedBenefit);
+
     private FrontendAnalysisContext? _context;
 
     private bool    _running;
@@ -347,20 +418,19 @@
 
     private FrontendQualityReviewReport? _report;
 
-    private string?                _findingSearch;
+    private string? _findingSearch;
     private FrontendQualitySeverity? _sevFilter;
     private FrontendQualityCategory? _catFilter;
-    private readonly HashSet<string>  _expandedFindings = [];
-
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    private string _severityFilterValue = "";
+    private string _categoryFilterValue = "";
+    private string _sortColumn = "severity";
+    private bool _sortDescending;
 
     protected override async Task OnInitializedAsync()
     {
         _context = await ContextFactory.GetActiveContextAsync();
         _report  = RuntimeReviews.QualityReview.Report;
     }
-
-    // ── Actions ───────────────────────────────────────────────────────────────
 
     private async Task RunReview()
     {
@@ -376,8 +446,7 @@
         WasmSecurityReviewReport?    secReport  = null;
         WasmPerformanceReviewReport? perfReport = null;
 
-        // Step 1: Security scan
-        _progressMessage = "Running security scan…";
+        _progressMessage = "Running security scan...";
         StateHasChanged();
         try
         {
@@ -391,8 +460,7 @@
             _secError = ex.Message;
         }
 
-        // Step 2: Performance scan
-        _progressMessage = "Running performance scan…";
+        _progressMessage = "Running performance scan...";
         StateHasChanged();
         try
         {
@@ -403,14 +471,13 @@
             _perfError = ex.Message;
         }
 
-        // Step 3: Build unified quality report
-        _progressMessage = "Building quality report…";
+        _progressMessage = "Building quality report...";
         StateHasChanged();
 
         if (secReport is null && perfReport is null)
         {
             _running = false;
-            var errorMsg = "Both security and performance scans failed — unable to produce a quality report.";
+            var errorMsg = "Both security and performance scans failed - unable to produce a quality report.";
             RuntimeReviews.MarkQualityFailed(_context, errorMsg);
             StateHasChanged();
             return;
@@ -420,10 +487,7 @@
         _report  = qualityReport;
         _running = false;
         RuntimeReviews.SaveQualityResult(_report, _context);
-        _expandedFindings.Clear();
-        _findingSearch = null;
-        _sevFilter     = null;
-        _catFilter     = null;
+        ClearFilters();
     }
 
     private async Task ExportHtml()
@@ -433,12 +497,15 @@
         await JS.InvokeVoidAsync("downloadHtmlFile", $"frontend-quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
+    private async Task ExportPdf()
+    {
+        await JS.InvokeVoidAsync("print");
+    }
+
     private async Task RefreshContext()
     {
         _context = await ContextFactory.GetActiveContextAsync();
     }
-
-    // ── Scan request (same as WASM Security Review) ───────────────────────────
 
     private static WasmScanRequest BuildScanRequest(FrontendAnalysisContext ctx)
     {
@@ -467,90 +534,141 @@
         };
     }
 
-    // ── Filters ───────────────────────────────────────────────────────────────
-
     private void SetCategoryFilter(FrontendQualityCategory cat)
     {
-        _catFilter     = _catFilter == cat ? null : cat;
-        _findingSearch = null;
-        _sevFilter     = null;
+        _catFilter = _catFilter == cat ? null : cat;
+        _categoryFilterValue = _catFilter?.ToString() ?? "";
     }
 
-    private void ToggleSev(FrontendQualitySeverity sev) =>
-        _sevFilter = _sevFilter == sev ? null : sev;
+    private void ApplySeverityFilter()
+    {
+        _sevFilter = Enum.TryParse<FrontendQualitySeverity>(_severityFilterValue, out var sev) ? sev : null;
+    }
+
+    private void ApplyCategoryFilter()
+    {
+        _catFilter = Enum.TryParse<FrontendQualityCategory>(_categoryFilterValue, out var cat) ? cat : null;
+    }
 
     private void ClearFilters()
     {
-        _sevFilter     = null;
-        _catFilter     = null;
+        _sevFilter = null;
+        _catFilter = null;
         _findingSearch = null;
+        _severityFilterValue = "";
+        _categoryFilterValue = "";
     }
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column)
+        {
+            _sortDescending = !_sortDescending;
+            return;
+        }
+
+        _sortColumn = column;
+        _sortDescending = false;
+    }
+
+    private string SortGlyph(string column) =>
+        _sortColumn != column ? "" : _sortDescending ? "v" : "^";
 
     private IEnumerable<FrontendQualityFinding> FilteredFindings(IReadOnlyList<FrontendQualityFinding> all)
     {
-        IEnumerable<FrontendQualityFinding> q = all.OrderBy(f => f.Severity).ThenBy(f => f.Category);
+        IEnumerable<FrontendQualityFinding> q = all;
         if (_sevFilter.HasValue) q = q.Where(f => f.Severity == _sevFilter.Value);
-        if (_catFilter.HasValue)  q = q.Where(f => f.Category == _catFilter.Value);
+        if (_catFilter.HasValue) q = q.Where(f => f.Category == _catFilter.Value);
         if (!string.IsNullOrWhiteSpace(_findingSearch))
         {
             var term = _findingSearch.Trim();
             q = q.Where(f =>
                 f.Title.Contains(term, StringComparison.OrdinalIgnoreCase) ||
                 f.Description.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                CategoryLabel(f.Category).Contains(term, StringComparison.OrdinalIgnoreCase));
+                f.Recommendation.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                CategoryLabel(f.Category).Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                f.Severity.ToString().Contains(term, StringComparison.OrdinalIgnoreCase));
         }
+
+        q = _sortColumn switch
+        {
+            "category" => _sortDescending
+                ? q.OrderByDescending(f => CategoryLabel(f.Category)).ThenBy(f => f.Severity).ThenBy(f => f.Title)
+                : q.OrderBy(f => CategoryLabel(f.Category)).ThenBy(f => f.Severity).ThenBy(f => f.Title),
+            "title" => _sortDescending
+                ? q.OrderByDescending(f => f.Title).ThenBy(f => f.Severity)
+                : q.OrderBy(f => f.Title).ThenBy(f => f.Severity),
+            _ => _sortDescending
+                ? q.OrderByDescending(f => f.Severity).ThenBy(f => f.Category).ThenBy(f => f.Title)
+                : q.OrderBy(f => f.Severity).ThenBy(f => f.Category).ThenBy(f => f.Title),
+        };
+
         return q;
     }
 
-    // ── Finding card ──────────────────────────────────────────────────────────
-
-    private RenderFragment<FrontendQualityFinding> FindingCard => f => __builder =>
+    private static CategorySummary GetCategorySummary(FrontendQualityReviewReport report, FrontendQualityCategory category)
     {
-        var expanded = _expandedFindings.Contains(f.Id);
-        var sevCls   = f.Severity.ToString().ToLowerInvariant();
-        <div class="wsr-finding wsr-finding-@sevCls">
-            <button class="wsr-finding-toggle"
-                    @onclick="() => ToggleFinding(f.Id)"
-                    aria-expanded="@expanded.ToString().ToLowerInvariant()">
-                <span class="wsr-sev-badge wsr-sev-@sevCls">@f.Severity</span>
-                <span class="wsr-finding-title">@f.Title</span>
-                <span class="wsr-cat-chip">@CategoryLabel(f.Category)</span>
-                @if (!string.IsNullOrEmpty(f.SourceSystem))
-                { <span class="wsr-rule-chip">@f.SourceSystem</span> }
-                <span class="wsr-chevron" aria-hidden="true">@(expanded ? "▲" : "▼")</span>
-            </button>
-            @if (expanded)
-            {
-                <div class="wsr-finding-body">
-                    <div class="wsr-detail-row">
-                        <span class="wsr-detail-label">Description</span>
-                        <p class="wsr-detail-text">@f.Description</p>
-                    </div>
-                    <div class="wsr-detail-row">
-                        <span class="wsr-detail-label">Recommendation</span>
-                        <p class="wsr-detail-text wsr-detail-action">@f.Recommendation</p>
-                    </div>
-                    @if (f.Evidence.Count > 0)
-                    {
-                        <div class="wsr-detail-row">
-                            <span class="wsr-detail-label">Evidence</span>
-                            <ul class="wsr-limitations-list">
-                                @foreach (var ev in f.Evidence) { <li class="wsr-mono">@ev</li> }
-                            </ul>
-                        </div>
-                    }
-                </div>
-            }
-        </div>
-    };
-
-    private void ToggleFinding(string id)
-    {
-        if (!_expandedFindings.Remove(id))
-            _expandedFindings.Add(id);
+        var findings = report.Findings.Where(f => f.Category == category).ToList();
+        return new CategorySummary(
+            findings.Count,
+            findings.Count(f => f.Severity == FrontendQualitySeverity.Critical),
+            findings.Count(f => f.Severity == FrontendQualitySeverity.High),
+            findings.Count(f => f.Severity == FrontendQualitySeverity.Medium),
+            findings.Count(f => f.Severity == FrontendQualitySeverity.Low));
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    private static IEnumerable<RecommendationView> BuildRecommendationCards(FrontendQualityReviewReport report)
+    {
+        foreach (var finding in report.Findings
+            .Where(f => f.Severity is not FrontendQualitySeverity.Info && !string.IsNullOrWhiteSpace(f.Recommendation))
+            .OrderBy(f => f.Severity)
+            .ThenBy(f => f.Category)
+            .ThenBy(f => f.Title))
+        {
+            yield return new RecommendationView(
+                RecommendationPriority(finding.Severity),
+                finding.Title,
+                finding.Recommendation,
+                ExpectedBenefit(finding));
+        }
+
+        foreach (var recommendation in report.Recommendations)
+        {
+            yield return new RecommendationView(
+                "Low",
+                ShortTitle(recommendation),
+                recommendation,
+                "Improves review completeness and keeps follow-up work visible.");
+        }
+    }
+
+    private static string RecommendationPriority(FrontendQualitySeverity severity) => severity switch
+    {
+        FrontendQualitySeverity.Critical => "Critical",
+        FrontendQualitySeverity.High     => "High",
+        FrontendQualitySeverity.Medium   => "Medium",
+        _                                => "Low",
+    };
+
+    private static string ExpectedBenefit(FrontendQualityFinding finding) => finding.Category switch
+    {
+        FrontendQualityCategory.Security      => "Reduces exploitable frontend risk and strengthens deployment confidence.",
+        FrontendQualityCategory.Performance   => "Improves load behavior, responsiveness, and user-perceived stability.",
+        FrontendQualityCategory.Accessibility => "Improves usability for assistive technologies and reduces compliance risk.",
+        FrontendQualityCategory.Standards     => "Improves standards compliance and makes future audits easier to pass.",
+        FrontendQualityCategory.BlazorWasm    => "Improves Blazor WASM reliability, startup behavior, and operational readiness.",
+        FrontendQualityCategory.Readiness     => "Improves release confidence and clarifies go/no-go decision inputs.",
+        _                                     => "Improves frontend quality and audit readiness.",
+    };
+
+    private static string ShortTitle(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "Recommendation";
+        var trimmed = text.Trim();
+        var stop = trimmed.IndexOfAny(['.', ':', '-']);
+        if (stop > 12) trimmed = trimmed[..stop];
+        return trimmed.Length <= 72 ? trimmed : $"{trimmed[..69]}...";
+    }
 
     private static string CategoryLabel(FrontendQualityCategory c) => c switch
     {
@@ -563,37 +681,12 @@
         _                                     => c.ToString(),
     };
 
-    private static string ScoreClass(int score) =>
-        score >= 80 ? "wsr-rdy-good" : score >= 50 ? "wsr-rdy-warning" : "wsr-rdy-poor";
+    private static string ScoreVariant(int score) =>
+        score >= 80 ? "success" : score >= 50 ? "warning" : "danger";
 
     private static string QualityLabel(int score) =>
         score >= 90 ? "Excellent" :
         score >= 80 ? "Good" :
         score >= 65 ? "Needs Attention" :
         score >= 50 ? "At Risk" : "Critical";
-
-    private static string CatCardClass(FrontendQualitySeverity? worst, bool assessed)
-    {
-        if (!assessed) return "wsr-cat-unknown";
-        return worst switch
-        {
-            FrontendQualitySeverity.Critical => "wsr-cat-critical",
-            FrontendQualitySeverity.High     => "wsr-cat-high",
-            FrontendQualitySeverity.Medium   => "wsr-cat-medium",
-            FrontendQualitySeverity.Low      => "wsr-cat-low",
-            null                             => "wsr-cat-good",
-            _                                => "wsr-cat-low",
-        };
-    }
-
-    private static string CatStatusLabel(FrontendQualitySeverity? worst) =>
-        worst switch
-        {
-            FrontendQualitySeverity.Critical => "Critical",
-            FrontendQualitySeverity.High     => "High Risk",
-            FrontendQualitySeverity.Medium   => "Warning",
-            FrontendQualitySeverity.Low      => "Low Risk",
-            null                             => "Passed",
-            _                                => "Info",
-        };
 }

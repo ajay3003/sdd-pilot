@@ -4,6 +4,7 @@ using BirkNext.Api.GraphQL;
 using BirkNext.Api.Middleware;
 using BirkNext.Api.Services;
 using BirkNext.Api.Services.ImplementationTraceability;
+using BirkNext.Api.Services.ApiQuality;
 using BirkNext.Api.Services.WasmPerformance;
 using BirkNext.Api.Services.WasmSecurity;
 using HotChocolate.AspNetCore;
@@ -123,6 +124,13 @@ builder.Services.AddHttpClient<IWasmApiAnalysisService, WasmApiAnalysisService>(
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-WasmPerfScanner/1.0");
 });
 builder.Services.AddSingleton<IWasmPerformanceReadinessService, WasmPerformanceReadinessService>();
+
+// API Quality Review
+builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ApiQualityScanner/1.0");
+});
 
 builder.Services.AddHttpClient("Anthropic", client =>
 {

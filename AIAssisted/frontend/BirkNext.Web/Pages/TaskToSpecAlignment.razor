@@ -3,6 +3,7 @@
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
 @inject IWorkspaceSessionService Workspace
+@inject TaskAlignmentSessionService AlignmentSession
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
 
@@ -76,6 +77,8 @@
                               placeholder="Or paste spec.md content here…&#10;Include FR-01, US-1, acceptance scenarios, success criteria…"
                               rows="10"
                               @bind="_specText"
+                              @bind:event="oninput"
+                              @bind:after="OnSpecTextChanged"
                               aria-required="true"
                               aria-describedby="spec-meta spec-err"></textarea>
                     <div class="align-input-footer">
@@ -118,6 +121,8 @@
                               placeholder="Or paste tasks.md content here…&#10;Supports T001 - Title format or - [ ] checkbox format."
                               rows="10"
                               @bind="_tasksText"
+                              @bind:event="oninput"
+                              @bind:after="OnTasksTextChanged"
                               aria-required="true"
                               aria-describedby="tasks-meta tasks-err"></textarea>
                     <div class="align-input-footer">
@@ -656,30 +661,56 @@
 
         if (spec  is not null) _specText   = spec.Text;
         if (tasks is not null) _tasksText  = tasks.Text;
+
+        RestoreOrRunAnalysis();
     }
 
     private void OnSpecFileImported(string content)
     {
         _specText = content;
         Workspace.Set(WorkspaceArtifactKind.Specification, content);
+        AlignmentSession.Clear();
     }
 
     private void OnSpecFileRemoved()
     {
         _specText = string.Empty;
         Workspace.Clear(WorkspaceArtifactKind.Specification);
+        AlignmentSession.Clear();
     }
 
     private void OnTasksFileImported(string content)
     {
         _tasksText = content;
         Workspace.Set(WorkspaceArtifactKind.Tasks, content);
+        AlignmentSession.Clear();
     }
 
     private void OnTasksFileRemoved()
     {
         _tasksText = string.Empty;
         Workspace.Clear(WorkspaceArtifactKind.Tasks);
+        AlignmentSession.Clear();
+    }
+
+    private void OnSpecTextChanged()
+    {
+        if (string.IsNullOrWhiteSpace(_specText))
+            Workspace.Clear(WorkspaceArtifactKind.Specification);
+        else
+            Workspace.Set(WorkspaceArtifactKind.Specification, _specText);
+
+        AlignmentSession.Clear();
+    }
+
+    private void OnTasksTextChanged()
+    {
+        if (string.IsNullOrWhiteSpace(_tasksText))
+            Workspace.Clear(WorkspaceArtifactKind.Tasks);
+        else
+            Workspace.Set(WorkspaceArtifactKind.Tasks, _tasksText);
+
+        AlignmentSession.Clear();
     }
 
     private void ClearSpec()
@@ -687,6 +718,7 @@
         _specText = string.Empty;
         _specImport?.Reset();
         Workspace.Clear(WorkspaceArtifactKind.Specification);
+        AlignmentSession.Clear();
     }
 
     private void ClearTasks()
@@ -694,6 +726,24 @@
         _tasksText = string.Empty;
         _tasksImport?.Reset();
         Workspace.Clear(WorkspaceArtifactKind.Tasks);
+        AlignmentSession.Clear();
+    }
+
+    private void RestoreOrRunAnalysis()
+    {
+        if (string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))
+        {
+            _report = null;
+            return;
+        }
+
+        if (AlignmentSession.HasCurrentResult(Workspace.ProjectName, _specText, _tasksText))
+        {
+            _report = AlignmentSession.Report;
+            return;
+        }
+
+        RunAnalysis();
     }
 
     private void RunAnalysis()
@@ -702,6 +752,7 @@
         if (string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))
             return;
         _report = TaskSpecAlignmentService.Analyse(_specText, _tasksText);
+        AlignmentSession.SaveResult(_report, Workspace.ProjectName, _specText, _tasksText);
         _activeFilter = null;
         _activeImpactFilter = null;
         _activePageTab = "alignment";

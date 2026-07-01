@@ -77,6 +77,7 @@ public sealed class RuntimeReviewSessionService
     public RuntimeReviewSessionState<WasmSecurityReviewReport>     SecurityReview    { get; } = new();
     public RuntimeReviewSessionState<WasmPerformanceReviewReport>  PerformanceReview { get; } = new();
     public RuntimeReviewSessionState<FrontendQualityReviewReport>  QualityReview     { get; } = new();
+    public RuntimeReviewSessionState<ApiQualityReviewReport>       ApiQualityReview  { get; } = new();
 
     public void MarkSecurityRunning(FrontendAnalysisContext context) =>
         SecurityReview.MarkRunning(CreateSnapshot(context));
@@ -111,9 +112,26 @@ public sealed class RuntimeReviewSessionService
 
     public void ClearQualityResult() => QualityReview.Clear();
 
+    public void MarkApiQualityRunning(FrontendAnalysisContext context) =>
+        ApiQualityReview.MarkRunning(CreateApiQualitySnapshot(context));
+
+    public void SaveApiQualityResult(ApiQualityReviewReport report, FrontendAnalysisContext context) =>
+        ApiQualityReview.Complete(report, CreateApiQualitySnapshot(context), ToOffset(report.GeneratedAt));
+
+    public void MarkApiQualityFailed(FrontendAnalysisContext context, string errorMessage) =>
+        ApiQualityReview.Fail(CreateApiQualitySnapshot(context), errorMessage);
+
+    public void ClearApiQualityResult() => ApiQualityReview.Clear();
+
     private static RuntimeReviewContextSnapshot CreateSnapshot(FrontendAnalysisContext context) =>
         new(
             context.TargetUrl,
+            context.ActiveProfile.Name,
+            context.ActiveProfile.EnvironmentType.ToString());
+
+    private static RuntimeReviewContextSnapshot CreateApiQualitySnapshot(FrontendAnalysisContext context) =>
+        new(
+            context.RestBaseUrl ?? context.TargetUrl,
             context.ActiveProfile.Name,
             context.ActiveProfile.EnvironmentType.ToString());
 
