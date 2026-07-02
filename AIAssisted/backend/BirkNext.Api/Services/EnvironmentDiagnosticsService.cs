@@ -324,12 +324,12 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             try
             {
                 var exists = await _db.Database.SqlQueryRaw<bool>(
-                    $"""
+                    """
                     SELECT EXISTS(
                         SELECT 1 FROM information_schema.tables
-                        WHERE table_schema = 'public' AND table_name = '{table}'
+                        WHERE table_schema = 'public' AND table_name = {0}
                     )
-                    """).FirstOrDefaultAsync();
+                    """, table).FirstOrDefaultAsync();
 
                 if (!exists)
                 {
@@ -374,13 +374,13 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 try
                 {
                     var exists = await _db.Database.SqlQueryRaw<bool>(
-                        $"""
+                        """
                         SELECT EXISTS(
                             SELECT 1 FROM information_schema.columns
-                            WHERE table_schema = 'public' AND table_name = '{table}'
-                            AND column_name = '{column}'
+                            WHERE table_schema = 'public' AND table_name = {0}
+                            AND column_name = {1}
                         )
-                        """).FirstOrDefaultAsync();
+                        """, table, column).FirstOrDefaultAsync();
 
                     if (!exists)
                     {
