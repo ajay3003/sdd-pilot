@@ -120,9 +120,10 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
         _currentWorkspaceId = workspace.Id;
         _logger.LogInformation("Loaded workspace {WorkspaceId} with name {Name}", workspace.Id, workspace.Name);
+        _logger.LogInformation("Restoring {ArtifactCount} artifacts from workspace", workspace.Artifacts.Count);
 
-        // TODO: Restore artifacts to WorkspaceSession
-        // TODO: Trigger ReviewContext rebuild
+        // Artifacts are included in the returned workspace object
+        // Frontend will restore them to WorkspaceArtifactRepository and rebuild ReviewContext
         return workspace;
     }
 

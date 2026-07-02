@@ -62,6 +62,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<IEnvironmentDiagnosticsService, EnvironmentDiagnosticsService>();
+builder.Services.AddScoped<IWorkspacePersistenceService, WorkspacePersistenceService>();
 builder.Services.AddScoped<ScenarioService>();
 builder.Services.AddScoped<ReviewedCandidateService>();
 builder.Services.AddScoped<CandidateLinkService>();
