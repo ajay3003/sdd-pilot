@@ -6,6 +6,203 @@
     margin: 0 auto;
 }
 
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+
+.rw-empty-state {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.5rem;
+    background: linear-gradient(135deg, #fef3c7 0%, #fef9e7 100%);
+    border: 1px solid #fcd34d;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem 2rem;
+    margin-bottom: 2rem;
+}
+
+.rw-empty-icon {
+    flex: 0 0 2.5rem;
+    font-size: 2.5rem;
+    line-height: 1;
+}
+
+.rw-empty-content {
+    flex: 1;
+}
+
+.rw-empty-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #92400e;
+    margin-bottom: 0.5rem;
+}
+
+.rw-empty-text {
+    font-size: 0.875rem;
+    color: #b45309;
+    margin-bottom: 0.75rem;
+}
+
+.rw-empty-action {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #fff;
+    background: #b45309;
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    transition: opacity var(--transition);
+}
+
+.rw-empty-action:hover {
+    opacity: 0.9;
+}
+
+/* ── Workspace artifact status ───────────────────────────────────────────── */
+
+.rw-workspace-status {
+    background: linear-gradient(135deg, #f0fdf4 0%, #f3f4f6 100%);
+    border: 1px solid #d1e7dd;
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+/* ── Next Recommended Action ──────────────────────────────────────────────── */
+
+.rw-next-action {
+    background: linear-gradient(135deg, #dbeafe 0%, #e0f2fe 100%);
+    border: 2px solid #0284c7;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem 2rem;
+    margin-bottom: 2rem;
+}
+
+.rw-next-action-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.875rem;
+}
+
+.rw-next-action-icon {
+    flex: 0 0 1.5rem;
+    font-size: 1rem;
+    color: #0284c7;
+    font-weight: bold;
+    margin-top: 0.2rem;
+}
+
+.rw-next-action-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #0284c7;
+    opacity: 0.85;
+}
+
+.rw-next-action-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #0c4a6e;
+    letter-spacing: -0.01em;
+}
+
+.rw-next-action-desc {
+    font-size: 0.875rem;
+    color: #0c4a6e;
+    margin: 0 0 1rem;
+    line-height: 1.5;
+}
+
+.rw-next-action-btn {
+    display: inline-block;
+    padding: 0.6rem 1.25rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #fff;
+    background: #0284c7;
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    transition: opacity var(--transition), box-shadow var(--transition);
+    letter-spacing: 0.01em;
+    border: 0;
+}
+
+.rw-next-action-btn:hover {
+    opacity: 0.9;
+    box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
+}
+
+.rw-next-action-btn.is-disabled {
+    cursor: not-allowed;
+    background: #e5e7eb;
+    color: #6b7280;
+    box-shadow: none;
+}
+
+.rw-status-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #1f2937;
+}
+
+.rw-project-badge {
+    display: inline-block;
+    background: #dcfce7;
+    color: #166534;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.rw-artifact-count {
+    color: #4b5563;
+    font-size: 0.9rem;
+}
+
+.rw-status-indicators {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.rw-artifact-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all var(--transition);
+}
+
+.rw-artifact-badge.is-loaded {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.rw-artifact-badge.is-missing {
+    background: #f3f4f6;
+    color: #6b7280;
+    border: 1px solid #e5e7eb;
+}
+
+.rw-badge-icon {
+    display: inline-block;
+    width: 1rem;
+    text-align: center;
+    font-weight: bold;
+}
+
 /* ── Phase list ──────────────────────────────────────────────────────────── */
 
 .rw-phases {
@@ -33,17 +230,49 @@
     border-left: 4px solid var(--rw-phase-color, #2563eb);
     border-radius: var(--radius-lg);
     padding: 1.25rem 1.5rem;
-    transition: box-shadow var(--transition);
+    transition: box-shadow var(--transition), opacity var(--transition);
 }
 
 .rw-phase:hover {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
 }
 
+.rw-phase.is-complete {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+}
+
+.rw-phase.is-current {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.rw-phase.is-disabled,
+.rw-phase.is-future {
+    opacity: 0.68;
+}
+
+/* Locked phases are visually disabled */
+.rw-phase.is-locked {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.rw-phase.is-locked .rw-cta {
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
 /* Optional phases are visually softer */
 .rw-phase-optional {
     border-left-style: dashed;
     opacity: 0.92;
+}
+
+.rw-phase-optional.is-locked {
+    opacity: 0.55;
 }
 
 /* The central Quality Review phase gets a subtle emphasis ring */
@@ -58,6 +287,47 @@
     align-items: center;
     gap: 1rem;
     margin-bottom: 1rem;
+    justify-content: space-between;
+}
+
+/* ── Step status badge ──────────────────────────────────────────────────── */
+
+.rw-step-badge {
+    display: inline-block;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    transition: background-color var(--transition), color var(--transition);
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.rw-step-badge.is-locked {
+    background: #f3f4f6;
+    color: #9ca3af;
+}
+
+.rw-step-badge.is-available {
+    background: #dbeafe;
+    color: #0c4a6e;
+}
+
+.rw-step-badge.is-complete {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.rw-step-badge.is-current {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.rw-step-badge.is-future {
+    background: #f3f4f6;
+    color: #6b7280;
 }
 
 .rw-phase-num {
@@ -79,6 +349,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.1rem;
+    flex: 1;
 }
 
 .rw-phase-label {
@@ -227,12 +498,26 @@
     text-decoration: none;
     transition: opacity var(--transition), box-shadow var(--transition);
     letter-spacing: 0.01em;
+    border: 0;
 }
 
 .rw-cta:hover {
     opacity: 0.88;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
     color: #fff;
+}
+
+.rw-cta.is-disabled {
+    cursor: not-allowed;
+    background: #e5e7eb;
+    color: #6b7280;
+    box-shadow: none;
+}
+
+.rw-cta.is-disabled:hover {
+    opacity: 1;
+    color: #6b7280;
+    box-shadow: none;
 }
 
 .rw-cta-secondary {

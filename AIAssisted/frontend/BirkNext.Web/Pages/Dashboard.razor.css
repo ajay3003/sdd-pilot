@@ -12,6 +12,148 @@
 }
 
 
+/* ══ Workspace Status Panel ════════════════════════════════════════════════════ */
+
+.db-workspace-panel {
+    background: linear-gradient(135deg, #f0fdf4 0%, #f3f4f6 100%);
+    border: 1px solid #d1e7dd;
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.75rem;
+}
+
+.db-workspace-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.db-workspace-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.db-workspace-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.db-workspace-empty {
+    padding: 0.75rem 0;
+    text-align: center;
+}
+
+.db-workspace-message {
+    color: #6b7280;
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+}
+
+.db-workspace-action {
+    display: inline-block;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    cursor: pointer;
+    transition: background var(--transition);
+}
+
+.db-workspace-action:hover {
+    background: #2563eb;
+}
+
+.db-workspace-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #1f2937;
+}
+
+.db-workspace-project {
+    display: inline-block;
+    background: #dcfce7;
+    color: #166534;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+}
+
+.db-workspace-count {
+    color: #4b5563;
+}
+
+.db-workspace-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.db-artifact-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all var(--transition);
+}
+
+.db-artifact-badge.is-loaded {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.db-artifact-badge.is-missing {
+    background: #f3f4f6;
+    color: #6b7280;
+    border: 1px solid #e5e7eb;
+}
+
+.db-workspace-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.db-workspace-status-label {
+    font-size: 0.9rem;
+}
+
+.db-status-badge {
+    display: inline-block;
+    padding: 0.3rem 0.7rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.db-status-ready {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.db-status-partial {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.db-status-empty {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+
 /* ══ 1 · KPI Strip ═══════════════════════════════════════════════════════════ */
 
 .db-kpi-strip {
