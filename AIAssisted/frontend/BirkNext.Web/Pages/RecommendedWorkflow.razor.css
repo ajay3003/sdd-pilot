@@ -16,13 +16,86 @@
     margin-bottom: 2rem;
 }
 
+.rw-workspace-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
 .rw-workspace-actions-header {
     font-size: 0.875rem;
     font-weight: 700;
     color: #1e40af;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-bottom: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.rw-workspace-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.rw-workspace-menu {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.rw-workspace-menu-trigger {
+    list-style: none;
+    user-select: none;
+}
+
+.rw-workspace-menu-trigger::-webkit-details-marker {
+    display: none;
+}
+
+.rw-workspace-menu-trigger::after {
+    content: " v";
+    font-size: 0.75rem;
+}
+
+.rw-workspace-menu-list {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.35rem);
+    z-index: 5;
+    min-width: 11rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.4rem;
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.14);
+}
+
+.rw-workspace-menu-list button {
+    width: 100%;
+    padding: 0.45rem 0.6rem;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--clr-text-body);
+    font-size: 0.85rem;
+    text-align: left;
+}
+
+.rw-workspace-menu-list button:hover:not(:disabled) {
+    background: var(--clr-surface);
+}
+
+.rw-workspace-menu-list button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.rw-workspace-menu-list button.is-danger {
+    color: #b91c1c;
 }
 
 .rw-workspace-info {
@@ -178,12 +251,44 @@
 
 /* ── Workspace artifact status ───────────────────────────────────────────── */
 
+.rw-summary {
+    margin-bottom: 1.5rem;
+}
+
+.rw-summary .metric-card {
+    flex: 1 1 12rem;
+}
+
 .rw-workspace-status {
-    background: linear-gradient(135deg, #f0fdf4 0%, #f3f4f6 100%);
-    border: 1px solid #d1e7dd;
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
     border-radius: var(--radius-lg);
     padding: 1rem 1.25rem;
     margin-bottom: 1.5rem;
+}
+
+.rw-section-label {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--clr-text-subtle);
+}
+
+.rw-manual-review-note {
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-left: 4px solid #64748b;
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.rw-manual-review-note p {
+    margin: 0.35rem 0 0;
+    color: var(--clr-text-muted);
+    font-size: 0.875rem;
+    line-height: 1.5;
 }
 
 /* ── Next Recommended Action ──────────────────────────────────────────────── */
@@ -302,10 +407,11 @@
     transition: all var(--transition);
 }
 
-.rw-artifact-badge.is-loaded {
-    background: #d1fae5;
-    color: #065f46;
-    border: 1px solid #a7f3d0;
+.rw-artifact-badge.is-loaded,
+.rw-artifact-badge.is-detected {
+    background: #e0f2fe;
+    color: #075985;
+    border: 1px solid #bae6fd;
 }
 
 .rw-artifact-badge.is-missing {
@@ -358,6 +464,16 @@
 .rw-phase.is-complete {
     background: #f0fdf4;
     border-color: #bbf7d0;
+}
+
+.rw-phase.is-approved {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+}
+
+.rw-phase.is-reviewed {
+    background: #fffbeb;
+    border-color: #fde68a;
 }
 
 .rw-phase.is-current {
@@ -444,6 +560,33 @@
 }
 
 .rw-step-badge.is-future {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.rw-step-badge.rw-badge-approved {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.rw-step-badge.rw-badge-available,
+.rw-step-badge.rw-badge-in-review {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.rw-step-badge.rw-badge-reviewed,
+.rw-step-badge.rw-badge-pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.rw-step-badge.rw-badge-needs-changes {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.rw-step-badge.rw-badge-locked {
     background: #f3f4f6;
     color: #6b7280;
 }
@@ -655,6 +798,13 @@
     gap: 0.5rem;
     margin-top: 0.75rem;
     flex-wrap: wrap;
+}
+
+.rw-approval-buttons .btn-primary,
+.rw-approval-buttons .btn-secondary,
+.rw-approval-buttons .btn-danger {
+    font-size: 0.8rem;
+    padding: 0.4rem 0.85rem;
 }
 
 .rw-btn-review,

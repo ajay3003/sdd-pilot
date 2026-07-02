@@ -19,27 +19,6 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
     private readonly IMigrationIntegrityValidator _migrationValidator;
     private readonly ILogger<EnvironmentDiagnosticsService> _logger;
 
-    // All created by EF Core migrations - required for platform infrastructure
-    private static readonly string[] RequiredTables =
-    [
-        "project_documents",
-        "scenarios",
-        "reviewed_candidates",
-        "candidate_links",
-        "qa_delta_reviews",
-        "trace_links",
-        "traceability_suggestions",
-        "code_files",
-        "code_links"
-    ];
-
-    // Tables whose data indicates workspace readiness (empty = fresh workspace)
-    private static readonly string[] WorkspaceIndicatorTables =
-    [
-        "project_documents",
-        "scenarios"
-    ];
-
     public EnvironmentDiagnosticsService(
         IConfiguration config,
         IWebHostEnvironment env,
@@ -175,19 +154,26 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         var pendingCheck = await CheckPendingMigrationsAsync();
         checks.Add(pendingCheck);
 
-        // 9. Schema up to date
+        // 9. EF Core Migration Integrity
+        var integrityCheck = await CheckMigrationIntegrityAsync();
+        checks.Add(integrityCheck);
+
+        // 10. Schema up to date
+        var schemaIsCurrent =
+            pendingCheck.Status == EnvironmentDiagnosticStatus.Pass &&
+            tablesCheck.Status == EnvironmentDiagnosticStatus.Pass &&
+            integrityCheck.Status != EnvironmentDiagnosticStatus.Fail;
+
         var schemaCheck = new EnvironmentDiagnosticCheck
         {
             Name = "Schema Up to Date",
-            Status = pendingCheck.Status == EnvironmentDiagnosticStatus.Pass ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Warning,
-            Details = pendingCheck.Status == EnvironmentDiagnosticStatus.Pass ? "Schema is current" : "Pending migrations exist",
-            Recommendation = pendingCheck.Status == EnvironmentDiagnosticStatus.Pass ? "" : "Run pending migrations: dotnet ef database update"
+            Status = schemaIsCurrent ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Fail,
+            Details = schemaIsCurrent
+                ? "Schema is current"
+                : "Schema is not current: required tables, pending migrations, or migration integrity checks did not pass",
+            Recommendation = schemaIsCurrent ? "" : "Review failing database diagnostics before using the application"
         };
         checks.Add(schemaCheck);
-
-        // 10. EF Core Migration Integrity
-        var integrityCheck = await CheckMigrationIntegrityAsync();
-        checks.Add(integrityCheck);
 
         return checks;
     }
@@ -495,9 +481,10 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
 
     private async Task<EnvironmentDiagnosticCheck> CheckRequiredTablesExistAsync()
     {
+        var requiredTables = GetRequiredTablesFromModel();
         var missingTables = new List<string>();
 
-        foreach (var table in RequiredTables)
+        foreach (var table in requiredTables)
         {
             try
             {
@@ -505,19 +492,19 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                     """
                     SELECT EXISTS(
                         SELECT 1 FROM information_schema.tables
-                        WHERE table_schema = 'public' AND table_name = {0}
+                        WHERE table_schema = {0} AND table_name = {1}
                     )
-                    """, table).FirstOrDefaultAsync();
+                    """, table.Schema, table.Name).FirstOrDefaultAsync();
 
                 if (!exists)
                 {
-                    missingTables.Add(table);
+                    missingTables.Add(table.DisplayName);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to check table {Table}", table);
-                missingTables.Add(table);
+                _logger.LogWarning(ex, "Failed to check table {Schema}.{Table}", table.Schema, table.Name);
+                missingTables.Add(table.DisplayName);
             }
         }
 
@@ -527,7 +514,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             {
                 Name = "Required Tables Exist",
                 Status = EnvironmentDiagnosticStatus.Pass,
-                Details = $"All {RequiredTables.Length} schema tables verified",
+                Details = $"All {requiredTables.Count} DbContext schema tables verified",
                 Recommendation = ""
             };
         }
@@ -539,6 +526,22 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             Details = $"Missing schema tables: {string.Join(", ", missingTables)}",
             Recommendation = "Migrations did not complete successfully. Run: dotnet ef database update"
         };
+    }
+
+    private List<RequiredTable> GetRequiredTablesFromModel()
+    {
+        return _db.Model.GetEntityTypes()
+            .Select(entityType => new
+            {
+                Name = entityType.GetTableName(),
+                Schema = entityType.GetSchema() ?? "public"
+            })
+            .Where(table => !string.IsNullOrWhiteSpace(table.Name))
+            .Select(table => new RequiredTable(table.Name!, table.Schema))
+            .Distinct()
+            .OrderBy(table => table.Schema)
+            .ThenBy(table => table.Name)
+            .ToList();
     }
 
     private async Task<bool> CheckIfWorkspaceHasDataAsync()
@@ -645,7 +648,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 {
                     Name = "EF Migration Integrity",
                     Status = EnvironmentDiagnosticStatus.Pass,
-                    Details = $"{report.AppliedMigrationCount} migrations applied, 0 issues detected",
+                    Details = $"{report.AppliedMigrationCount} migrations applied, snapshot {report.SnapshotName} detected, 0 issues detected",
                     Recommendation = ""
                 };
             }
@@ -653,21 +656,15 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             var criticalIssues = report.Issues.Where(i => i.Severity == MigrationIssueSeverity.Critical).ToList();
             var warningIssues = report.Issues.Where(i => i.Severity == MigrationIssueSeverity.Warning).ToList();
 
-            var details = $"Issues found:\n";
-            foreach (var issue in criticalIssues)
-            {
-                details += $"  ❌ {issue.Issue}\n";
-            }
-            foreach (var issue in warningIssues)
-            {
-                details += $"  ⚠️  {issue.Issue}\n";
-            }
+            var detailLines = new List<string> { "Issues found:" };
+            detailLines.AddRange(criticalIssues.Select(issue => $"  FAIL: {issue.Issue}"));
+            detailLines.AddRange(warningIssues.Select(issue => $"  WARN: {issue.Issue}"));
 
             return new EnvironmentDiagnosticCheck
             {
                 Name = "EF Migration Integrity",
                 Status = criticalIssues.Any() ? EnvironmentDiagnosticStatus.Fail : EnvironmentDiagnosticStatus.Warning,
-                Details = details.TrimEnd(),
+                Details = string.Join('\n', detailLines),
                 Recommendation = criticalIssues.Any()
                     ? "Fix migration files: ensure all .cs files have matching .Designer.cs files. Run: dotnet ef migrations list"
                     : "Review warnings and consider fixing orphaned files"
@@ -684,5 +681,10 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 Recommendation = "Verify migration files are in Migrations directory and properly formatted"
             };
         }
+    }
+
+    private sealed record RequiredTable(string Name, string Schema)
+    {
+        public string DisplayName => $"{Schema}.{Name}";
     }
 }

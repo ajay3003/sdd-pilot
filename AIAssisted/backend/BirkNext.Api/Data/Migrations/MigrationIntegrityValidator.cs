@@ -1,5 +1,6 @@
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace BirkNext.Api.Data.Migrations;
@@ -21,7 +22,6 @@ public class MigrationIntegrityValidator : IMigrationIntegrityValidator
         // Find the actual source directory of the BirkNext.Api project
         // by looking for the Migrations folder relative to AppDbContext
         var dbContextType = typeof(AppDbContext);
-        var projectNamespace = dbContextType.Namespace;
 
         // Search up directory tree from any known location to find the project root
         var currentDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -77,7 +77,8 @@ public class MigrationIntegrityValidator : IMigrationIntegrityValidator
     {
         if (!Directory.Exists(_migrationsPath))
         {
-            report.AddIssue("Migrations directory not found", MigrationIssueSeverity.Critical);
+            report.MigrationFilesComplete = true;
+            report.DesignerFilesPresent = true;
             return;
         }
 
@@ -136,35 +137,35 @@ public class MigrationIntegrityValidator : IMigrationIntegrityValidator
     {
         try
         {
+            var modelMigrations = dbContext.Database.GetMigrations().ToHashSet();
             var appliedMigrations = (await dbContext.Database.GetAppliedMigrationsAsync()).ToHashSet();
             var pendingMigrations = (await dbContext.Database.GetPendingMigrationsAsync()).ToHashSet();
-            var allMigrations = appliedMigrations.Union(pendingMigrations).ToHashSet();
 
-            // Check that .cs migration files are in EF's migration list
-            var csFiles = Directory.GetFiles(_migrationsPath, "*.cs")
-                .Where(f =>
-                {
-                    var fileName = System.IO.Path.GetFileName(f);
-                    // Only include files matching migration pattern
-                    return !fileName.EndsWith(".Designer.cs")
-                        && !fileName.Contains("ModelSnapshot")
-                        && !fileName.Contains("Validator")
-                        && !fileName.Contains("Report")
-                        && !fileName.Contains("Severity")
-                        && !fileName.Contains("Issue")
-                        && char.IsDigit(fileName[0])
-                        && fileName.Length > 18;
-                })
-                .ToList();
-
-            foreach (var csFile in csFiles)
+            foreach (var appliedMigration in appliedMigrations)
             {
-                var migrationClass = ExtractMigrationName(csFile);
-                if (migrationClass != null && !allMigrations.Contains(migrationClass))
+                if (!modelMigrations.Contains(appliedMigration))
                 {
                     report.AddIssue(
-                        $"Migration file exists but not tracked by EF: {migrationClass}",
+                        $"Database has applied migration not present in application assembly: {appliedMigration}",
                         MigrationIssueSeverity.Critical);
+                }
+            }
+
+            if (Directory.Exists(_migrationsPath))
+            {
+                var csFiles = Directory.GetFiles(_migrationsPath, "*.cs")
+                    .Where(IsMigrationSourceFile)
+                    .ToList();
+
+                foreach (var csFile in csFiles)
+                {
+                    var migrationClass = ExtractMigrationName(csFile);
+                    if (migrationClass != null && !modelMigrations.Contains(migrationClass))
+                    {
+                        report.AddIssue(
+                            $"Migration file exists but is not compiled into EF migrations: {migrationClass}",
+                            MigrationIssueSeverity.Critical);
+                    }
                 }
             }
 
@@ -210,24 +211,48 @@ public class MigrationIntegrityValidator : IMigrationIntegrityValidator
 
     private void CheckModelSnapshot(MigrationIntegrityReport report)
     {
-        var snapshotPath = System.IO.Path.Combine(_migrationsPath, "AppDbContextModelSnapshot.cs");
-        if (!File.Exists(snapshotPath))
+        try
         {
-            report.AddIssue(
-                "DbContextModelSnapshot.cs missing",
-                MigrationIssueSeverity.Critical);
-            return;
-        }
+            var snapshotTypes = typeof(AppDbContext).Assembly.GetTypes()
+                .Where(t => t.IsClass && !t.IsAbstract && typeof(ModelSnapshot).IsAssignableFrom(t))
+                .ToList();
 
-        var content = File.ReadAllText(snapshotPath);
-        if (!content.Contains("AppDbContextModelSnapshot") || !content.Contains("BuildModel"))
+            var snapshotType = snapshotTypes.SingleOrDefault(IsSnapshotForAppDbContext);
+            if (snapshotType is null)
+            {
+                report.AddIssue(
+                    $"No compiled ModelSnapshot found for {nameof(AppDbContext)}",
+                    MigrationIssueSeverity.Critical);
+                return;
+            }
+
+            report.SnapshotName = snapshotType.Name;
+            report.SnapshotCurrent = true;
+        }
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Could not check model snapshot");
             report.AddIssue(
-                "DbContextModelSnapshot.cs appears corrupted",
+                $"Could not inspect compiled ModelSnapshot: {ex.Message}",
                 MigrationIssueSeverity.Warning);
         }
+    }
 
-        report.SnapshotCurrent = true;
+    private static bool IsMigrationSourceFile(string filePath)
+    {
+        var fileName = System.IO.Path.GetFileName(filePath);
+        return !fileName.EndsWith(".Designer.cs")
+            && !fileName.Contains("ModelSnapshot")
+            && fileName.Length > 18
+            && fileName.Take(14).All(char.IsDigit)
+            && fileName[14] == '_';
+    }
+
+    private static bool IsSnapshotForAppDbContext(Type snapshotType)
+    {
+        var dbContextAttribute = snapshotType.GetCustomAttribute<DbContextAttribute>();
+        return dbContextAttribute?.ContextType == typeof(AppDbContext)
+            || snapshotType.Name.Equals($"{nameof(AppDbContext)}ModelSnapshot", StringComparison.Ordinal);
     }
 
     private string? ExtractMigrationName(string filePath)
@@ -253,6 +278,7 @@ public class MigrationIntegrityReport
     public int AppliedMigrationCount { get; set; }
     public int PendingMigrationCount { get; set; }
     public List<string> PendingMigrations { get; set; } = new();
+    public string? SnapshotName { get; set; }
 
     public List<MigrationIssue> Issues { get; set; } = new();
 
