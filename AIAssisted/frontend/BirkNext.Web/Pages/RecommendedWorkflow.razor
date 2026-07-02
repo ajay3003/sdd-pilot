@@ -344,6 +344,11 @@
 
     private RenderFragment RenderAction(WorkflowStepViewModel step, string cssClass) => builder =>
     {
+        if (IsLoadWorkspaceStep(step) && _readiness?.WorkspaceLoaded == true)
+        {
+            return;
+        }
+
         if (step.CanOpen)
         {
             builder.OpenElement(0, "a");
