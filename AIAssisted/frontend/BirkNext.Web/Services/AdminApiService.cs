@@ -78,6 +78,19 @@ public class AdminApiService
             return (false, $"Request failed: {ex.Message}");
         }
     }
+
+    public async Task<EnvironmentDiagnosticsReportDto?> GetEnvironmentDiagnosticsAsync()
+    {
+        try
+        {
+            var response = await _client.PostAsJsonAsync("api/admin/environment-diagnostics", new { });
+            return await response.Content.ReadFromJsonAsync<EnvironmentDiagnosticsReportDto>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
 
 public class SystemSettingsDto
@@ -292,4 +305,25 @@ public class FeatureVisibilityDto
     [JsonPropertyName("artifactTraceability")]        public bool ArtifactTraceability       { get; set; } = true;
     [JsonPropertyName("adminSystemSettings")]         public bool AdminSystemSettings        { get; set; } = true;
     [JsonPropertyName("qualityReview")]               public bool QualityReview              { get; set; } = true;
+}
+
+public class EnvironmentDiagnosticsReportDto
+{
+    [JsonPropertyName("generatedAt")] public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
+    [JsonPropertyName("environment")] public string Environment { get; set; } = "";
+    [JsonPropertyName("databaseChecks")] public List<EnvironmentDiagnosticCheckDto> DatabaseChecks { get; set; } = [];
+    [JsonPropertyName("backendApiChecks")] public List<EnvironmentDiagnosticCheckDto> BackendApiChecks { get; set; } = [];
+    [JsonPropertyName("workspaceChecks")] public List<EnvironmentDiagnosticCheckDto> WorkspaceChecks { get; set; } = [];
+    [JsonPropertyName("reviewContextChecks")] public List<EnvironmentDiagnosticCheckDto> ReviewContextChecks { get; set; } = [];
+    [JsonPropertyName("exportChecks")] public List<EnvironmentDiagnosticCheckDto> ExportChecks { get; set; } = [];
+    [JsonPropertyName("overallStatus")] public string OverallStatus { get; set; } = "Pass";
+}
+
+public class EnvironmentDiagnosticCheckDto
+{
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("status")] public string Status { get; set; } = "";
+    [JsonPropertyName("details")] public string Details { get; set; } = "";
+    [JsonPropertyName("recommendation")] public string Recommendation { get; set; } = "";
+    [JsonPropertyName("technicalDetails")] public string? TechnicalDetails { get; set; }
 }

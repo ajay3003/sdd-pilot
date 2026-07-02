@@ -9,10 +9,12 @@ namespace BirkNext.Api.Controllers;
 public class AdminController : ControllerBase
 {
     private readonly AdminService _adminService;
+    private readonly IEnvironmentDiagnosticsService _diagnosticsService;
 
-    public AdminController(AdminService adminService)
+    public AdminController(AdminService adminService, IEnvironmentDiagnosticsService diagnosticsService)
     {
         _adminService = adminService;
+        _diagnosticsService = diagnosticsService;
     }
 
     [HttpGet("system-settings")]
@@ -78,5 +80,15 @@ public class AdminController : ControllerBase
             return BadRequest(new ResetDatabaseResponse { Success = false, Message = message });
 
         return Ok(new ResetDatabaseResponse { Success = true, Message = message });
+    }
+
+    [HttpPost("environment-diagnostics")]
+    public async Task<IActionResult> RunEnvironmentDiagnostics()
+    {
+        if (!_adminService.IsEnabled)
+            return NotFound();
+
+        var report = await _diagnosticsService.RunDiagnosticsAsync();
+        return Ok(report);
     }
 }

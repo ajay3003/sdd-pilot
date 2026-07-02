@@ -34,12 +34,7 @@ public sealed class ExtractionCandidateMetricsServiceTests
     private static List<CandidateLinkEntry> CreateLinks(params (Guid source, Guid target, CandidateLinkType type)[] items)
     {
         return items
-            .Select(item => new CandidateLinkEntry
-            {
-                SourceId = item.source,
-                TargetId = item.target,
-                LinkType = item.type,
-            })
+            .Select(item => new CandidateLinkEntry(item.source, item.target, item.type))
             .ToList();
     }
 
