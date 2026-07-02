@@ -17,26 +17,35 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
     private static readonly Regex MetaAmendedRe = new(
         @"^\s*[Ll]ast[\s_][Aa]mended\s*[:=]\s*(.+)$", RegexOptions.Compiled);
 
-    // Matches PP-NN at start of heading
+    // Matches PP-NN at start of heading (Platform Principles)
     private static readonly Regex PrincipleIdRe = new(
         @"^(PP-\d+)\b\s*[:\-–]?\s*(.*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    // Matches PS-NN at start of heading
+    // Matches PS-NN at start of heading (Platform Standards)
     private static readonly Regex StandardIdRe = new(
         @"^(PS-\d+)\b\s*[:\-–]?\s*(.*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    // Matches module/service principle IDs: MP-NN, H-NN, P-NN, FP-NN
+    private static readonly Regex ModulePrincipleIdRe = new(
+        @"^([MH]P|FP|P)-(\d+)\b\s*[:\-–]?\s*(.*)$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     // Matches constraint prefix IDs at start of heading
     private static readonly Regex ConstraintIdRe = new(
         @"^(MC-\d+|AC-\d+|FC-\d+|SC-C\d+)\b\s*[:\-–]?\s*(.*)$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    // Matches GV-NN at start of heading
+    // Matches GV-NN at start of heading (Governance)
     private static readonly Regex GovernanceIdRe = new(
         @"^(GV-\d+)\b\s*[:\-–]?\s*(.*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    // Matches roman numeral principles: "I.", "II.", "III.", etc.
+    private static readonly Regex RomanNumeralPrincipleRe = new(
+        @"^([IVX]+)\.\s+(.+)$", RegexOptions.Compiled);
+
     // Matches any recognized rule ID anywhere in text
     private static readonly Regex AnyRuleIdRe = new(
-        @"\b(PP-\d+|PS-\d+|GL-\d+|FP-\d+|MC-\d+|AC-\d+|FC-\d+|GV-\d+|SC-C\d+)\b",
+        @"\b(PP-\d+|PS-\d+|GL-\d+|MP-\d+|HP-\d+|FP-\d+|MC-\d+|AC-\d+|FC-\d+|GV-\d+|SC-C\d+|H-\d+|P-\d+)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex VersionEntryRe = new(
@@ -51,7 +60,8 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
     private static readonly HashSet<string> PrincipleKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
         "core principles", "principles", "design principles", "architectural principles",
-        "fundamental principles", "guiding principles",
+        "fundamental principles", "guiding principles", "platform principles", "module principles",
+        "service principles", "authorization module principles",
     };
 
     private static readonly HashSet<string> StandardKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -67,7 +77,8 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
     {
         "module constraints", "constraints", "rules", "module rules",
         "platform constraints", "authorization constraints", "frontend constraints",
-        "service constraints",
+        "service constraints", "security constraints", "regulatory constraints",
+        "technology stack", "domain boundary", "operational standards",
     };
 
     private static readonly HashSet<string> GovernanceKeywords = new(StringComparer.OrdinalIgnoreCase)

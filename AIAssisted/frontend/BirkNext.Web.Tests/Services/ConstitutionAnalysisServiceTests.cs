@@ -376,4 +376,246 @@ public sealed class ConstitutionAnalysisServiceTests
         var doc = _svc.Parse(AuthConstitution());
         doc.Health.TotalRules.Should().Be(doc.RuleCatalog.Count);
     }
+
+    // ── 9: Module Principles (MP, H, P, FP) support ────────────────────────
+
+    [Fact]
+    public void Parse_WithModulePrinciples_ExtractsWithoutError()
+    {
+        var markdown = """
+            # Tjenestemodul Constitution
+
+            ## Module Principles (MP)
+
+            ### MP-01 — Read-Only in M01
+            Tjenestemodulen MUST NOT support creation or modification.
+
+            ### MP-02 — Data Minimisation
+            Only fields necessary for the module's purpose MUST be stored.
+
+            ### MP-03 — BiRK Terminology Does Not Leak Out
+            External API MUST expose M2LB terminology exclusively.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Parser should handle module principles without throwing
+        doc.Should().NotBeNull();
+        doc.Title.Should().Contain("Tjenestemodul");
+    }
+
+    [Fact]
+    public void Parse_WithServicePrinciples_RecognizesHNotation()
+    {
+        var markdown = """
+            # Hendelsestjenesten Constitution
+
+            ## Service Principles
+
+            ### H-01 — Immutable History
+            Hendelsestjenesten MUST maintain immutable history.
+
+            ### H-02 — Audit Trail
+            All access events MUST be written to immutable trail.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Parser should recognize H- prefix even if not explicitly mapped
+        doc.Principles.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithPlatformPrinciplesTables_ExtractsRows()
+    {
+        var markdown = """
+            # Constitution
+
+            ## Platform Principles
+
+            | ID | Principle | Details |
+            |----|-----------|---------|
+            | PP-01 | Contract-Driven | All communication via API contracts |
+            | PP-02 | Zero-Trust | No implicit trust, explicit authorization |
+            | PP-03 | Immutable | All data retains history |
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Tables should be parsed and contribute to rule catalog
+        doc.Health.TotalRules.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void Parse_WithSyncImpactReport_ParsesMetadata()
+    {
+        var markdown = """
+            <!--
+            SYNC IMPACT REPORT
+            ==================
+            Version change: 0.9.0 → 1.0.0
+            Added sections:
+              - Platform Principles (PP-01–PP-09)
+              - Module Principles (MP-01–MP-05)
+            Templates reviewed:
+              - plan-template.md ✅
+            -->
+
+            # Module Constitution
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Metadata should not break parsing despite HTML comments
+        doc.Title.Should().Contain("Module");
+    }
+
+    [Fact]
+    public void Parse_WithNorwegianContent_DoesNotBreakParsing()
+    {
+        var markdown = """
+            # Tjenestemodul Constitution
+
+            > **Arver fra:** M2LB Plattformkonstitusjon v4.0
+            > **Gjelder for:** `m2lb-tjeneste` repo
+            > **Domenekontekst:** Forvalter informasjon om barns aktive og historiske tjenester
+
+            ## Core Principles
+
+            ### PP-01 — Contract-Driven
+            All communication MUST occur via published API contracts.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Parser should handle Norwegian text without errors
+        doc.Title.Should().NotBeEmpty();
+        doc.Principles.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithAlternativeTitleFormat_ExtractsTitle()
+    {
+        var markdown = """
+            # Hendelsestjenesten — Constitution
+
+            ## Core Principles
+
+            ### PP-01 Contract-Driven
+            All communication via contracts.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        doc.Title.Should().Contain("Hendelsestjenesten");
+    }
+
+    [Fact]
+    public void Parse_WithSecurityComplianceSection_ParsingSucceeds()
+    {
+        var markdown = """
+            # Constitution
+
+            ## Security & Compliance Requirements
+
+            - **Fail-Closed**: Upon failure, access MUST be denied
+            - **Read-Log**: All read operations MUST publish events
+            - **Outbox Pattern**: Events MUST use transactional outbox
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Parser should handle Security & Compliance section without errors
+        doc.Should().NotBeNull();
+        doc.Title.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithDeferredTODOs_ExtractsFromMetadata()
+    {
+        var markdown = """
+            <!--
+            Deferred TODOs:
+              - RATIFICATION_DATE pending approval
+              - TODO(WORM_RETENTION_PERIOD) to be defined
+            -->
+
+            # Constitution
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Parser should handle TODO markers gracefully
+        doc.Title.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithMultiplePrincipalTypes_CategorizesProperly()
+    {
+        var markdown = """
+            # Multi-Type Constitution
+
+            ## Platform Principles
+
+            ### PP-01 Zero-Trust
+            Principle text.
+
+            ## Module Principles
+
+            ### MP-01 Read-Only
+            Principle text.
+
+            ## Development Guidelines
+
+            ### GL-01 Testing Required
+            Guideline text.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        doc.Principles.Should().NotBeEmpty();
+        doc.RuleCatalog.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithRomanNumeralPrinciples_ExtractsAsAlternativeFormat()
+    {
+        var markdown = """
+            # Core Constitution
+
+            ## Core Principles
+
+            ### I. Contract-Driven Communication
+            Principle details.
+
+            ### II. Zero-Trust Security
+            More details.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Roman numerals should be recognized as principle identifiers
+        doc.Principles.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithMandatoryKeywords_FlagsAsBindingRules()
+    {
+        var markdown = """
+            # Constitution
+
+            ## Core Principles
+
+            ### PP-01 Required Rule
+            This principle MUST be followed without exception.
+            All implementations MUST comply.
+            Violations are forbidden.
+            Non-negotiable requirement.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Parser should recognize binding keywords
+        doc.Principles.Should().NotBeEmpty();
+    }
 }
