@@ -4,6 +4,8 @@
 @using BirkNext.Web.Components
 @inject IWorkspaceSessionService Workspace
 @inject TaskAlignmentSessionService AlignmentSession
+@inject IArtifactParserService MarkdownEngine
+@inject TaskSpecAlignmentService ImplementationReview
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
 
@@ -751,7 +753,8 @@
         _analyseAttempted = true;
         if (string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))
             return;
-        _report = TaskSpecAlignmentService.Analyse(_specText, _tasksText);
+        var reviewContext = BuildReviewContext();
+        _report = ImplementationReview.Analyse(reviewContext);
         AlignmentSession.SaveResult(_report, Workspace.ProjectName, _specText, _tasksText);
         _activeFilter = null;
         _activeImpactFilter = null;
@@ -764,6 +767,38 @@
         if (_report is null) return;
         var html = ExportService.ExportImplementationReview(_report, Workspace.ProjectName);
         await JS.InvokeVoidAsync("downloadHtmlFile", $"implementation-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
+    }
+
+    private ReviewContext BuildReviewContext()
+    {
+        var parsed = MarkdownEngine.Parse(
+            Workspace.Get(WorkspaceArtifactKind.Constitution)?.Text,
+            _specText,
+            Workspace.Get(WorkspaceArtifactKind.Plan)?.Text,
+            _tasksText);
+
+        var constitutionSemanticModel = parsed.Constitution is not null
+            ? ConstitutionAnalysisService.BuildSemanticModel(parsed.Constitution)
+            : new ConstitutionSemanticModel();
+
+        var specSemanticModel = parsed.Spec is not null
+            ? SpecExplorerService.BuildSemanticModel(parsed.Spec, _specText)
+            : new SpecificationSemanticModel();
+
+        var planSemanticModel = parsed.Plan is not null
+            ? PlanAnalysisService.BuildSemanticModel(parsed.Plan)
+            : new PlanSemanticModel();
+
+        var taskSemanticModel = parsed.Tasks is not null
+            ? TaskExplorerService.BuildSemanticModel(parsed.Tasks)
+            : new TaskSemanticModel();
+
+        return ReviewContextFactory.Create(
+            constitutionSemanticModel,
+            specSemanticModel,
+            planSemanticModel,
+            taskSemanticModel,
+            new DataModelSemanticModel());
     }
 
     private void Reset()

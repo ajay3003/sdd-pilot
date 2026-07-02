@@ -383,3 +383,329 @@
 .library-filter-chip.is-active span {
     background: rgba(255, 255, 255, 0.2);
 }
+
+/* ─── KPI Sections (grouped layout) ────────────────────────────────────── */
+
+.trace-kpi-sections {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.trace-kpi-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.kpi-group-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-muted, #64748b);
+    margin: 0;
+    padding: 0 0.25rem;
+}
+
+/* ─── Suggestions CTA ──────────────────────────────────────────────────── */
+
+.trace-suggestions-cta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 1.25rem 1.5rem;
+    border: 1px solid #bfdbfe;
+    border-radius: var(--radius-lg, 8px);
+    background: #eff6ff;
+    margin-bottom: 1.5rem;
+}
+
+.trace-cta-content h4 {
+    margin: 0 0 0.25rem 0;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--clr-text-heading, #0f172a);
+}
+
+.trace-cta-content p {
+    margin: 0;
+    font-size: 0.84rem;
+    color: var(--clr-text-body, #1e293b);
+}
+
+/* ─── Top Issues Section ──────────────────────────────────────────────── */
+
+.trace-top-issues {
+    margin-bottom: 2rem;
+    padding: 1.5rem 0;
+}
+
+.section-heading {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--clr-text-heading, #0f172a);
+    margin: 0 0 1rem 0;
+}
+
+.trace-issues-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+.trace-issue-item {
+    display: flex;
+    gap: 1rem;
+    padding: 1.25rem;
+    border: 1px solid #e2e8f0;
+    border-radius: var(--radius-lg, 8px);
+    background: #fff;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.trace-issue-item:hover {
+    border-color: var(--clr-border-hover, #94a3b8);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.trace-issue-high {
+    border-color: #fca5a5;
+    background: #fffbfb;
+}
+
+.trace-issue-medium {
+    border-color: #fbbf24;
+    background: #fffbf0;
+}
+
+.trace-issue-good {
+    border-color: #86efac;
+    background: #f0fdf4;
+}
+
+.issue-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    flex-shrink: 0;
+    border-radius: var(--radius-md, 6px);
+    font-size: 1.25rem;
+}
+
+.trace-issue-high .issue-icon {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.trace-issue-medium .issue-icon {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.trace-issue-good .issue-icon {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.issue-content h4 {
+    margin: 0 0 0.35rem 0;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--clr-text-heading, #0f172a);
+}
+
+.issue-content p {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.82rem;
+    color: var(--clr-text-muted, #475569);
+    line-height: 1.4;
+}
+
+.trace-issue-link {
+    display: inline-block;
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--clr-primary, #2563eb);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.trace-issue-link:hover {
+    color: #1d4ed8;
+}
+
+/* ─── Pipeline Visualization ──────────────────────────────────────────── */
+
+.trace-pipeline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 1.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: var(--radius-lg, 8px);
+    background: #fafbfc;
+    overflow-x: auto;
+    margin-bottom: 1.5rem;
+}
+
+.pipeline-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    padding: 1rem;
+    min-width: 140px;
+    border: 1px solid #e2e8f0;
+    border-radius: var(--radius-md, 6px);
+    background: #fff;
+    text-align: center;
+}
+
+.pipeline-stage-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--clr-text-heading, #0f172a);
+    margin: 0;
+}
+
+.pipeline-metrics {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.pipeline-number {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--clr-primary, #2563eb);
+}
+
+.pipeline-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--clr-text-muted, #64748b);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.pipeline-coverage {
+    font-size: 0.75rem;
+    color: var(--clr-text-muted, #64748b);
+    font-weight: 500;
+}
+
+.pipeline-arrow {
+    font-size: 1.5rem;
+    color: var(--clr-text-muted, #64748b);
+    flex-shrink: 0;
+}
+
+/* ─── Overview Section ────────────────────────────────────────────────── */
+
+.trace-overview-section {
+    margin-bottom: 1.5rem;
+}
+
+/* ─── Coverage Status Cards ───────────────────────────────────────────── */
+
+.coverage-status-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.coverage-status-card {
+    padding: 1.25rem;
+    border: 1px solid #e2e8f0;
+    border-radius: var(--radius-lg, 8px);
+    background: #fff;
+    text-align: center;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.coverage-status-card:hover {
+    border-color: var(--clr-border-hover, #94a3b8);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.coverage-status-card h4 {
+    margin: 0 0 0.75rem 0;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--clr-text-muted, #64748b);
+}
+
+.coverage-stat {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--clr-primary, #2563eb);
+    margin-bottom: 0.5rem;
+}
+
+.coverage-status-card p {
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--clr-text-muted, #475569);
+    line-height: 1.4;
+}
+
+.coverage-covered {
+    border-color: #86efac;
+    background: #f0fdf4;
+}
+
+.coverage-covered .coverage-stat {
+    color: #16a34a;
+}
+
+.coverage-missing {
+    border-color: #fca5a5;
+    background: #fffbfb;
+}
+
+.coverage-missing .coverage-stat {
+    color: #dc2626;
+}
+
+.coverage-orphan {
+    border-color: #fbbf24;
+    background: #fffbf0;
+}
+
+.coverage-orphan .coverage-stat {
+    color: #d97706;
+}
+
+.coverage-total {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+}
+
+.coverage-total .coverage-stat {
+    color: #2563eb;
+}
+
+/* ─── Placeholder content ──────────────────────────────────────────────── */
+
+.trace-placeholder {
+    padding: 2rem 1.5rem;
+    text-align: center;
+    color: var(--clr-text-muted, #64748b);
+    font-size: 0.9rem;
+    border: 1px dashed #e2e8f0;
+    border-radius: var(--radius-lg, 8px);
+    background: #fafbfc;
+}

@@ -17,26 +17,35 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
     private static readonly Regex MetaAmendedRe = new(
         @"^\s*[Ll]ast[\s_][Aa]mended\s*[:=]\s*(.+)$", RegexOptions.Compiled);
 
-    // Matches PP-NN at start of heading
+    // Matches PP-NN at start of heading (Platform Principles)
     private static readonly Regex PrincipleIdRe = new(
         @"^(PP-\d+)\b\s*[:\-–]?\s*(.*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    // Matches PS-NN at start of heading
+    // Matches PS-NN at start of heading (Platform Standards)
     private static readonly Regex StandardIdRe = new(
         @"^(PS-\d+)\b\s*[:\-–]?\s*(.*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    // Matches module/service principle IDs: MP-NN, H-NN, P-NN, FP-NN
+    private static readonly Regex ModulePrincipleIdRe = new(
+        @"^([MH]P|FP|P)-(\d+)\b\s*[:\-–]?\s*(.*)$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     // Matches constraint prefix IDs at start of heading
     private static readonly Regex ConstraintIdRe = new(
         @"^(MC-\d+|AC-\d+|FC-\d+|SC-C\d+)\b\s*[:\-–]?\s*(.*)$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    // Matches GV-NN at start of heading
+    // Matches GV-NN at start of heading (Governance)
     private static readonly Regex GovernanceIdRe = new(
         @"^(GV-\d+)\b\s*[:\-–]?\s*(.*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    // Matches roman numeral principles: "I.", "II.", "III.", etc.
+    private static readonly Regex RomanNumeralPrincipleRe = new(
+        @"^([IVX]+)\.\s+(.+)$", RegexOptions.Compiled);
+
     // Matches any recognized rule ID anywhere in text
     private static readonly Regex AnyRuleIdRe = new(
-        @"\b(PP-\d+|PS-\d+|GL-\d+|FP-\d+|MC-\d+|AC-\d+|FC-\d+|GV-\d+|SC-C\d+)\b",
+        @"\b(PP-\d+|PS-\d+|GL-\d+|MP-\d+|HP-\d+|FP-\d+|MC-\d+|AC-\d+|FC-\d+|GV-\d+|SC-C\d+|H-\d+|P-\d+)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex VersionEntryRe = new(
@@ -51,20 +60,25 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
     private static readonly HashSet<string> PrincipleKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
         "core principles", "principles", "design principles", "architectural principles",
-        "fundamental principles", "guiding principles",
+        "fundamental principles", "guiding principles", "platform principles", "module principles",
+        "service principles", "authorization module principles",
     };
 
     private static readonly HashSet<string> StandardKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
         "platform standards", "standards", "technical standards", "development standards",
         "coding standards", "api standards", "service standards",
+        "security", "authentication", "managed identity", "network isolation",
+        "repository", "code structure", "internal structure", "repository convention",
+        "inherited platform rules", "platform rules",
     };
 
     private static readonly HashSet<string> ConstraintKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
         "module constraints", "constraints", "rules", "module rules",
         "platform constraints", "authorization constraints", "frontend constraints",
-        "service constraints",
+        "service constraints", "security constraints", "regulatory constraints",
+        "technology stack", "domain boundary", "operational standards",
     };
 
     private static readonly HashSet<string> GovernanceKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -95,9 +109,15 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         var governanceItems = new List<ConstitutionGovernanceItem>();
         var changelog = new List<ConstitutionVersion>();
 
+        // Extract metadata from HTML comments at the beginning (Sync Impact Report, etc.)
+        var metadataVersion = ExtractVersionFromMetadata(markdown);
+        if (!string.IsNullOrEmpty(metadataVersion))
+            changelog.Add(new ConstitutionVersion { Version = metadataVersion, Date = string.Empty, Author = string.Empty, Changes = [] });
+
         ConstitutionSectionType currentSection = ConstitutionSectionType.Other;
         var itemLines = new List<string>();
         string? currentItemHeading = null;
+        string? implicitSectionHeading = null; // For sections with content but no level-3 headings
 
         void FlushItem()
         {
@@ -160,6 +180,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                     inMetaBlock = false;
                     currentSection = ClassifySection(rawTitle);
                     currentItemHeading = null;
+                    implicitSectionHeading = currentSection != ConstitutionSectionType.Other ? rawTitle : null;
                     continue;
                 }
 
@@ -167,6 +188,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 {
                     FlushItem();
                     currentItemHeading = rawTitle;
+                    implicitSectionHeading = null; // We have explicit level-3 heading, don't use implicit
                     continue;
                 }
             }
@@ -184,6 +206,16 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 var am = MetaAmendedRe.Match(line);
                 if (am.Success && lastAmendedDate is null)
                 { lastAmendedDate = am.Groups[1].Value.Trim(); continue; }
+            }
+
+            // If we have content but no explicit item heading, use the implicit section heading
+            // This handles sections like "## Governance" that have no level-3 subsections
+            if (currentItemHeading is null && implicitSectionHeading is not null &&
+                (tok.Kind == MarkdownTokenKind.BulletItem ||
+                 (tok.Kind != MarkdownTokenKind.Blank && tok.Kind != MarkdownTokenKind.Heading)))
+            {
+                currentItemHeading = implicitSectionHeading;
+                implicitSectionHeading = null;
             }
 
             if (currentItemHeading is not null)
@@ -806,13 +838,15 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 Level = HealthIndicatorLevel.Warning,
             });
 
-        if (governance.Count == 0)
+        // Only warn if governance section is truly missing (not just if items are unparsed)
+        if (governance.Count == 0 && standards.Count > 2) // Only warn if we have substantial other sections
             indicators.Add(new ConstitutionHealthIndicator
             {
                 Icon = "⚠", Message = "No governance section found",
                 Level = HealthIndicatorLevel.Warning,
             });
 
+        // Warn about missing changelog unless explicitly found
         if (changelog.Count == 0)
             indicators.Add(new ConstitutionHealthIndicator
             {
@@ -851,10 +885,13 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         if (PrincipleKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return ConstitutionSectionType.CorePrinciples;
         if (ChangelogKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return ConstitutionSectionType.Changelog;
         if (GovernanceKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return ConstitutionSectionType.Governance;
+
+        // Check StandardKeywords BEFORE generic "security" to classify "Security & Authentication" as Standards
+        if (StandardKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return ConstitutionSectionType.PlatformStandards;
+
         if (lower.Contains("security") || lower.Contains("compliance")) return ConstitutionSectionType.SecurityCompliance;
         if (ConstraintKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return ConstitutionSectionType.ModuleConstraints;
         if (lower.Contains("development")) return ConstitutionSectionType.DevelopmentStandards;
-        if (StandardKeywords.Any(k => lower.Contains(k.ToLowerInvariant()))) return ConstitutionSectionType.PlatformStandards;
         return ConstitutionSectionType.Other;
     }
 
@@ -952,4 +989,83 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
     private static string StripMarkdown(string s) =>
         Regex.Replace(s, @"[*_`#\[\]]", "").Trim();
+
+    // Extract version from HTML metadata comment at the beginning (Sync Impact Report)
+    private static string? ExtractVersionFromMetadata(string markdown)
+    {
+        var commentMatch = Regex.Match(markdown, @"<!--\s*Sync Impact Report.*?Version change:\s*([^→\n]+)\s*→\s*([^<\n]+)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        if (commentMatch.Success)
+        {
+            var newVersion = commentMatch.Groups[2].Value.Trim();
+            if (!string.IsNullOrEmpty(newVersion))
+                return newVersion;
+        }
+        return null;
+    }
+
+    // ── Build Semantic Model ───────────────────────────────────────────────
+
+    public static ConstitutionSemanticModel BuildSemanticModel(ConstitutionDocument document)
+    {
+        var principles = document.Principles
+            .Select(p => new SemanticConstitutionPrinciple
+            {
+                Id = p.Id,
+                Title = p.Title,
+                Description = p.Description,
+                RelatedRuleIds = ExtractRuleIds(p.Description ?? "")
+                    .Where(id => !id.StartsWith("PP-", StringComparison.OrdinalIgnoreCase))
+                    .ToList(),
+            })
+            .ToList();
+
+        var rules = document.RuleCatalog
+            .Select(r => new SemanticConstitutionRule
+            {
+                Id = r.RuleId,
+                Title = r.Title,
+                Description = r.Description,
+                Category = r.RuleType.ToString(),
+                RelatedPrincipleIds = document.Principles
+                    .Where(p => p.Guidelines.Any(g => g.Contains(r.RuleId, StringComparison.OrdinalIgnoreCase)))
+                    .Select(p => p.Id)
+                    .ToList(),
+                ApplicableRequirementIds = [],
+            })
+            .ToList();
+
+        var gates = document.RuleCatalog
+            .Where(r => r.RuleType == ConstitutionRuleType.Governance)
+            .Select(r => new SemanticConstitutionGate
+            {
+                Id = r.RuleId,
+                Title = r.Title,
+                Status = "NotApplicable",
+                LinkedRuleIds = [r.RuleId],
+            })
+            .ToList();
+
+        var complianceChecks = document.RuleCatalog
+            .Select(r => new SemanticConstitutionComplianceCheckItem
+            {
+                RuleId = r.RuleId,
+                RuleTitle = r.Title,
+                Status = "NeedsReview",
+            })
+            .ToList();
+
+        return new ConstitutionSemanticModel
+        {
+            Title = document.Title,
+            Version = document.Version,
+            CreatedDate = document.RatifiedDate,
+            LastUpdated = document.LastAmendedDate,
+            Principles = principles,
+            Rules = rules,
+            Gates = gates,
+            ComplianceChecks = complianceChecks,
+            RuleToRequirements = [],
+            GateToRequirements = [],
+        };
+    }
 }

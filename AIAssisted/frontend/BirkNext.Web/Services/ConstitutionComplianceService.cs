@@ -17,7 +17,8 @@ public sealed class ConstitutionComplianceService : IConstitutionComplianceServi
         ConstitutionDocument? constitution,
         SpecTree?             spec,
         PlanDocument?         plan,
-        TaskTree?             tasks)
+        TaskTree?             tasks,
+        ReviewContext?        context = null)
     {
         if (constitution is null)
         {

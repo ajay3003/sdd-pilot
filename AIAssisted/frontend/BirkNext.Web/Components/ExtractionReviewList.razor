@@ -10,6 +10,7 @@
 @inject ILogger<ExtractionReviewList> Logger
 @inject IExtractionSessionService SessionService
 @inject FeatureVisibilityService FeatureViz
+@inject IExtractionCandidateMetricsService MetricsService
 
 @if (PipelineResult is null)
 {
@@ -63,20 +64,20 @@ else
             var reviewedPct = Percent(reviewedCount, totalCandidates);
             var acceptedRatio = Percent(rAcceptedCount, totalCandidates);
             var rejectedRatio = Percent(rRejectedCount, totalCandidates);
-            var requirementsWithTests = CountRequirementsWithTests();
-            var requirementsWithoutTests = CountRequirementsWithoutTests();
-            var requirementsWithClarifications = CountRequirementsWithClarifications();
-            var requirementsWithUnresolvedClarifications = CountRequirementsWithUnresolvedClarifications();
-            var testsWithoutRequirements = CountTestsWithoutRequirements();
-            var clarificationsWithoutRequirements = CountClarificationsWithoutRequirements();
-            var unresolvedClarifications = CountUnresolvedClarifications();
+            var requirementsWithTests = MetricsService.CountRequirementsWithTests(PipelineResult.Candidates, _links);
+            var requirementsWithoutTests = MetricsService.CountRequirementsWithoutTests(PipelineResult.Candidates, _links);
+            var requirementsWithClarifications = MetricsService.CountRequirementsWithClarifications(PipelineResult.Candidates, _links);
+            var requirementsWithUnresolvedClarifications = MetricsService.CountRequirementsWithUnresolvedClarifications(PipelineResult.Candidates, _links);
+            var testsWithoutRequirements = MetricsService.CountTestsWithoutRequirements(PipelineResult.Candidates, _links);
+            var clarificationsWithoutRequirements = MetricsService.CountClarificationsWithoutRequirements(PipelineResult.Candidates, _links);
+            var unresolvedClarifications = MetricsService.CountUnresolvedClarifications(PipelineResult.Candidates);
             var requirementsCoveredPct = Percent(requirementsWithTests, PipelineResult.RequirementCount);
             var requirementsWithoutTestsPct = Percent(requirementsWithoutTests, PipelineResult.RequirementCount);
             var testsWithRequirements = PipelineResult.TestCount - testsWithoutRequirements;
             var testsLinkedToRequirementsPct = Percent(testsWithRequirements, PipelineResult.TestCount);
-            var pendingRequirements = CountPending(ScenarioKind.Requirement);
-            var pendingTests = CountPending(ScenarioKind.Test);
-            var pendingClarifications = CountPending(ScenarioKind.NeedsClarification);
+            var pendingRequirements = MetricsService.CountPending(PipelineResult.Candidates, ScenarioKind.Requirement);
+            var pendingTests = MetricsService.CountPending(PipelineResult.Candidates, ScenarioKind.Test);
+            var pendingClarifications = MetricsService.CountPending(PipelineResult.Candidates, ScenarioKind.NeedsClarification);
         }
 
         @if (_showRestoreNotice)
@@ -320,19 +321,19 @@ else
                             class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithoutTests ? "is-active" : "")"
                             @onclick="() => HandleSetLinkFilter(LinkFilter.RequirementsWithoutTests)"
                             aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithoutTests)">
-                        Requirements without tests <span class="chip-count">@CountRequirementsWithoutTests()</span>
+                        Requirements without tests <span class="chip-count">@MetricsService.CountRequirementsWithoutTests(PipelineResult!.Candidates, _links)</span>
                     </button>
                     <button type="button"
                             class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithTests ? "is-active" : "")"
                             @onclick="() => HandleSetLinkFilter(LinkFilter.RequirementsWithTests)"
                             aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithTests)">
-                        Requirements with tests <span class="chip-count">@CountRequirementsWithTests()</span>
+                        Requirements with tests <span class="chip-count">@MetricsService.CountRequirementsWithTests(PipelineResult!.Candidates, _links)</span>
                     </button>
                     <button type="button"
                             class="filter-chip @(_activeLinkFilter == LinkFilter.RequirementsWithClarifications ? "is-active" : "")"
                             @onclick="() => HandleSetLinkFilter(LinkFilter.RequirementsWithClarifications)"
                             aria-pressed="@(_activeLinkFilter == LinkFilter.RequirementsWithClarifications)">
-                        Requirements with clarifications <span class="chip-count">@CountRequirementsWithClarifications()</span>
+                        Requirements with clarifications <span class="chip-count">@MetricsService.CountRequirementsWithClarifications(PipelineResult!.Candidates, _links)</span>
                     </button>
                 }
                 @if (PipelineResult.TestCount > 0)
@@ -341,7 +342,7 @@ else
                             class="filter-chip @(_activeLinkFilter == LinkFilter.TestsWithoutRequirements ? "is-active" : "")"
                             @onclick="() => HandleSetLinkFilter(LinkFilter.TestsWithoutRequirements)"
                             aria-pressed="@(_activeLinkFilter == LinkFilter.TestsWithoutRequirements)">
-                        Tests without requirements <span class="chip-count">@CountTestsWithoutRequirements()</span>
+                        Tests without requirements <span class="chip-count">@MetricsService.CountTestsWithoutRequirements(PipelineResult!.Candidates, _links)</span>
                     </button>
                 }
                 @if (PipelineResult.NeedsClarificationCount > 0)
@@ -350,7 +351,7 @@ else
                             class="filter-chip @(_activeLinkFilter == LinkFilter.ClarificationsWithoutRequirements ? "is-active" : "")"
                             @onclick="() => HandleSetLinkFilter(LinkFilter.ClarificationsWithoutRequirements)"
                             aria-pressed="@(_activeLinkFilter == LinkFilter.ClarificationsWithoutRequirements)">
-                        Clarifications without requirements <span class="chip-count">@CountClarificationsWithoutRequirements()</span>
+                        Clarifications without requirements <span class="chip-count">@MetricsService.CountClarificationsWithoutRequirements(PipelineResult!.Candidates, _links)</span>
                     </button>
                 }
             </div>
@@ -489,7 +490,8 @@ else
         {
             <FlowView SpecMarkdown="@SpecMarkdown"
                       Candidates="@(PipelineResult?.Candidates ?? [])"
-                      Links="@_links" />
+                      Links="@_links"
+                      SemanticModel="@_semanticModel" />
         }
 
         @if (_activeViewMode == ExtractionViewMode.Traceability)
@@ -497,6 +499,7 @@ else
             <TraceabilityView SpecMarkdown="@SpecMarkdown"
                               Candidates="@(PipelineResult?.Candidates ?? [])"
                               Links="@_links"
+                              SemanticModel="@_semanticModel"
                               OnOpenInTaskExplorer="@HandleOpenInTaskExplorer" />
         }
 
@@ -644,6 +647,9 @@ else
     private SavedTypeSummary? _savedSummary;
     private int _alreadySavedCount;
 
+    private SpecificationSemanticModel? _semanticModel;
+    private string? _lastSpecMarkdown;
+
     // ── Selection context helpers ─────────────────────────────────────────────
     private IReadOnlyList<ExtractionCandidate> SelectedCandidates =>
         PipelineResult?.Candidates.Where(c => _selectedIds.Contains(c.CandidateId)).ToList()
@@ -688,6 +694,21 @@ else
 
     protected override void OnParametersSet()
     {
+        // Build semantic model from SpecMarkdown
+        if (!ReferenceEquals(SpecMarkdown, _lastSpecMarkdown))
+        {
+            _lastSpecMarkdown = SpecMarkdown;
+            if (!string.IsNullOrWhiteSpace(SpecMarkdown))
+            {
+                var tree = SpecExplorerService.Parse(SpecMarkdown);
+                _semanticModel = SpecExplorerService.BuildSemanticModel(tree, SpecMarkdown);
+            }
+            else
+            {
+                _semanticModel = null;
+            }
+        }
+
         if (!ReferenceEquals(PipelineResult, _previousPipelineResult))
         {
             _previousPipelineResult = PipelineResult;
@@ -967,41 +988,6 @@ else
         _links.Count(l => (l.LinkType == CandidateLinkType.RequirementTest ||
                            l.LinkType == CandidateLinkType.RequirementClarification) &&
                           (l.SourceId == c.CandidateId || l.TargetId == c.CandidateId));
-
-    private int CountRequirementsWithoutTests() =>
-        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.Requirement && GetLinkTestCount(c) == 0);
-
-    private int CountRequirementsWithTests() =>
-        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.Requirement && GetLinkTestCount(c) > 0);
-
-    private int CountRequirementsWithClarifications() =>
-        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.Requirement && GetLinkClrCount(c) > 0);
-
-    private int CountTestsWithoutRequirements() =>
-        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.Test && GetLinkRequirementCount(c) == 0);
-
-    private int CountClarificationsWithoutRequirements() =>
-        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification && GetLinkRequirementCount(c) == 0);
-
-    private int CountUnresolvedClarifications() =>
-        PipelineResult!.Candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification && IsUnresolved(c));
-
-    private int CountRequirementsWithUnresolvedClarifications()
-    {
-        var unresolvedClarificationIds = PipelineResult!.Candidates
-            .Where(c => c.Classification == ScenarioKind.NeedsClarification && IsUnresolved(c))
-            .Select(c => c.CandidateId)
-            .ToHashSet();
-
-        return PipelineResult.Candidates.Count(c =>
-            c.Classification == ScenarioKind.Requirement &&
-            _links.Any(l => l.LinkType == CandidateLinkType.RequirementClarification &&
-                            (l.SourceId == c.CandidateId && unresolvedClarificationIds.Contains(l.TargetId) ||
-                             l.TargetId == c.CandidateId && unresolvedClarificationIds.Contains(l.SourceId))));
-    }
-
-    private int CountPending(ScenarioKind kind) =>
-        PipelineResult!.Candidates.Count(c => c.Classification == kind && IsUnresolved(c));
 
     private static bool IsUnresolved(ExtractionCandidate c) =>
         c.ReviewStatus is CandidateReviewStatus.New or CandidateReviewStatus.NeedsReview;

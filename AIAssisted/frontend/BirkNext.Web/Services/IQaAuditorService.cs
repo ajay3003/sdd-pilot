@@ -12,7 +12,8 @@ public interface IQaAuditorService
         ConstitutionDocument? constitution,
         SpecTree?             spec,
         PlanDocument?         plan,
-        TaskTree?             tasks);
+        TaskTree?             tasks,
+        ReviewContext?        context = null);
 
     IEnumerable<QaFinding>        SearchFindings(IEnumerable<QaFinding> findings, string query);
     IEnumerable<QaFinding>        FilterFindingsBySeverity(IEnumerable<QaFinding> findings, QaSeverity? severity);

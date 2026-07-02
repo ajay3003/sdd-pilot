@@ -45,16 +45,26 @@ public sealed class QaAuditorService : IQaAuditorService
         ConstitutionDocument? constitution,
         SpecTree?             spec,
         PlanDocument?         plan,
-        TaskTree?             tasks)
+        TaskTree?             tasks,
+        ReviewContext?        context = null)
     {
-        // Pre-compute sub-reports once. All rule packs share them via RuleContext —
-        // no pack triggers duplicate sub-analysis.
-        var traceReport = _traceability.Analyze(constitution, spec, plan, tasks);
+        // Use pre-built ReviewContext if provided (consumer pattern),
+        // otherwise build it here (producer pattern).
+        // All rule packs share the same ReviewContext via RuleContext —
+        // no pack triggers duplicate semantic model building.
+        var reviewContext = context ?? ReviewContextFactory.Create(
+            ConstitutionAnalysisService.BuildSemanticModel(constitution ?? new()),
+            SpecExplorerService.BuildSemanticModel(spec ?? new(), ""),
+            PlanAnalysisService.BuildSemanticModel(plan ?? new()),
+            TaskExplorerService.BuildSemanticModel(tasks ?? new()),
+            new DataModelSemanticModel());
+
+        var traceReport = _traceability.Analyze(constitution, spec, plan, tasks, reviewContext);
         var compReport  = constitution is not null
             ? _compliance.Analyze(constitution, spec, plan, tasks)
             : new ConstitutionComplianceReport { HasConstitution = false };
 
-        var context = new RuleContext
+        var ruleContext = new RuleContext
         {
             Constitution     = constitution,
             Spec             = spec,
@@ -64,7 +74,7 @@ public sealed class QaAuditorService : IQaAuditorService
             ComplianceReport = compReport,
         };
 
-        var packResults = _engine.Run(context, _rulePacks);
+        var packResults = _engine.Run(ruleContext, _rulePacks);
 
         var rawFindings = packResults.SelectMany(pr => pr.Findings).ToList();
         var rawGaps     = packResults.SelectMany(pr => pr.Gaps).ToList();

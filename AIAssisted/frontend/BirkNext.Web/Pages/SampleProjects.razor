@@ -5,6 +5,7 @@
 @inject SampleProjectsApiService ProjectsApi
 @inject ProjectDocumentApiService DocumentApi
 @inject IWorkspaceSessionService Workspace
+@inject IWorkspaceArtifactStatusService ArtifactStatus
 @inject QualityReviewSessionService QualitySession
 @inject IDashboardSnapshotService DashboardSnapshot
 @inject ITargetEnvironmentHintExtractor TargetHintExtractor
@@ -431,11 +432,7 @@
     ];
 
     private int LoadedWorkspaceArtifactCount =>
-        (Workspace.Has(WorkspaceArtifactKind.Constitution) ? 1 : 0) +
-        (Workspace.Has(WorkspaceArtifactKind.Specification) ? 1 : 0) +
-        (Workspace.Has(WorkspaceArtifactKind.DataModel) ? 1 : 0) +
-        (Workspace.Has(WorkspaceArtifactKind.Plan) ? 1 : 0) +
-        (Workspace.Has(WorkspaceArtifactKind.Tasks) ? 1 : 0);
+        ArtifactStatus.GetStatus().ArtifactCount;
 
     private LoadResult? GetLoadResult(SampleProjectDto project)
     {

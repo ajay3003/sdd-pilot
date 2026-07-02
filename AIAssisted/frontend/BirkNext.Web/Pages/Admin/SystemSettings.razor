@@ -3,15 +3,18 @@
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models
 @inject AdminApiService AdminApi
+@inject FeatureVisibilityService FeatureViz
 @inject ImplementationTraceabilityApiService AdoApi
 @inject ProjectDocumentApiService DocumentApi
 @inject IJSRuntime JS
 @inject IWorkspaceSessionService Workspace
+@inject IWorkspaceArtifactStatusService ArtifactStatus
 @inject RuntimeReviewSessionService RuntimeReviews
 @inject QualityReviewSessionService QualitySession
 @inject IDashboardSnapshotService AnalysisSessions
 @inject IExtractionSessionService ExtractionSession
 @inject IArtifactParserService MarkdownEngine
+@inject IReviewContextValidator ReviewContextValidator
 @inject WasmSecurityApiService SecurityApi
 @inject IBlazorWasmPerformanceReviewService PerformanceApi
 @inject Microsoft.AspNetCore.Components.WebAssembly.Hosting.IWebAssemblyHostEnvironment HostEnvironment
@@ -139,8 +142,13 @@ else if (_settings is not null)
             </div>
             <div class="ss-nav-group">
                 <div class="ss-nav-group-label">Developer</div>
-                @NavItem("diagnostics",        "Diagnostics")
+                @NavItem("environment-diagnostics", "Environment Diagnostics")
+                @NavItem("diagnostics",        "System Diagnostics")
                 @NavItem("doc-health",         "Documentation Health", _docHealthIssueCount)
+                @if (IsDeveloperDiagnosticsVisible)
+                {
+                    @NavItem("review-context-validation", "ReviewContext Validation")
+                }
                 @NavItem("ui-migration",       "Runtime Diagnostics")
                 @NavItem("maintenance",        "Maintenance")
             </div>
@@ -1222,7 +1230,312 @@ else if (_settings is not null)
                     </div>
                 </div>
             }
+            @* ══ Environment Diagnostics ══════════════════════════════════════════════ *@
+            @if (_activeSection == "environment-diagnostics")
+            {
+                <div class="settings-card settings-card-full-width">
+                    <div class="settings-card-title">Environment Diagnostics</div>
+                    <p class="settings-card-note">Comprehensive system health check: database connectivity, migrations, required tables/columns, backend API status, workspace artifacts, and ReviewContext availability.</p>
+
+                    @if (_envDiagMessage is not null)
+                    {
+                        <div class="notification notification-success" role="status">@_envDiagMessage</div>
+                    }
+
+                    <div class="settings-card" style="margin-bottom:1.5rem;background:var(--surface-subtle,#f8f9fa)">
+                        <div class="settings-card-title" style="font-size:0.95rem">Run Diagnostics</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:.5rem">
+                            <PrimaryButton OnClick="RunEnvironmentDiagnosticsAsync" Disabled="@_envDiagRunning">
+                                @(_envDiagRunning ? "Running…" : "Run Diagnostics")
+                            </PrimaryButton>
+                            <SecondaryButton OnClick="ExportEnvironmentDiagnosticsJsonAsync" Disabled="@(_envDiagReport is null)">Export JSON</SecondaryButton>
+                            <SecondaryButton OnClick="ExportEnvironmentDiagnosticsHtmlAsync" Disabled="@(_envDiagReport is null)">Export HTML</SecondaryButton>
+                        </div>
+                    </div>
+
+                    @if (_envDiagErrorDetails is not null)
+                    {
+                        <div style="margin-bottom:1.5rem;padding:1rem;background:#fee2e2;border:1px solid #fecaca;border-radius:var(--radius-default)">
+                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+                                <span style="font-weight:600;color:#991b1b">⚠️ Diagnostics Failed</span>
+                            </div>
+                            <div style="font-size:0.9rem;color:#7c2d12;font-family:monospace;white-space:pre-wrap;word-break:break-word;margin-bottom:0.75rem">@_envDiagErrorDetails</div>
+                            @if (!string.IsNullOrWhiteSpace(_envDiagStackTrace))
+                            {
+                                <button class="btn-text" style="color:#991b1b;font-size:0.85rem;padding:0;margin-top:0.5rem"
+                                        @onclick='() => _envDiagShowStackTrace = !_envDiagShowStackTrace'>
+                                    @(_envDiagShowStackTrace ? "▼ Hide Stack Trace" : "▶ Show Stack Trace")
+                                </button>
+                                @if (_envDiagShowStackTrace)
+                                {
+                                    <div style="font-size:0.8rem;color:#7c2d12;font-family:monospace;white-space:pre-wrap;word-break:break-word;margin-top:0.5rem;padding:0.5rem;background:#fee2e2;border-radius:0.25rem;max-height:400px;overflow-y:auto">@_envDiagStackTrace</div>
+                                }
+                            }
+                        </div>
+                    }
+
+                    @if (_envDiagReport is not null)
+                    {
+                        <div class="ss-status-bar" style="margin-bottom:1.5rem">
+                            <span class="ss-status-pill ss-status-pill-ok">
+                                <span class="ss-status-label">Overall Status</span>
+                                <span class="ss-status-value">@GetDiagnosticStatusBadge(_envDiagReport.OverallStatus)</span>
+                            </span>
+                            <span class="ss-status-pill">
+                                <span class="ss-status-label">Generated</span>
+                                <span class="ss-status-value">@_envDiagReport.GeneratedAt:MMM dd, yyyy HH:mm:ss</span>
+                            </span>
+                            <span class="ss-status-pill">
+                                <span class="ss-status-label">Environment</span>
+                                <span class="ss-status-value">@_envDiagReport.Environment</span>
+                            </span>
+                        </div>
+
+                        <div class="dev-diag-subgrid">
+                            <!-- Database Checks -->
+                            @if (_envDiagReport.DatabaseChecks.Count > 0)
+                            {
+                                <div class="dev-diag-section">
+                                    <div class="dev-diag-section-title">Database</div>
+                                    @foreach (var check in _envDiagReport.DatabaseChecks)
+                                    {
+                                        <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface-subtle);border-radius:var(--radius-default)">
+                                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">
+                                                <span style="font-weight:600;flex:1">@check.Name</span>
+                                                <span class="ss-health-sev @GetCheckStatusClass(check.Status)">@check.Status</span>
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(check.Details))
+                                            {
+                                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@check.Details</p>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(check.Recommendation))
+                                            {
+                                                <p style="font-size:0.85rem;color:var(--clr-text-placeholder);margin:0.25rem 0 0">→ @check.Recommendation</p>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            <!-- Backend/API Checks -->
+                            @if (_envDiagReport.BackendApiChecks.Count > 0)
+                            {
+                                <div class="dev-diag-section">
+                                    <div class="dev-diag-section-title">Backend / API</div>
+                                    @foreach (var check in _envDiagReport.BackendApiChecks)
+                                    {
+                                        <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface-subtle);border-radius:var(--radius-default)">
+                                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">
+                                                <span style="font-weight:600;flex:1">@check.Name</span>
+                                                <span class="ss-health-sev @GetCheckStatusClass(check.Status)">@check.Status</span>
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(check.Details))
+                                            {
+                                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@check.Details</p>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            <!-- Workspace Checks -->
+                            @if (_envDiagReport.WorkspaceChecks.Count > 0)
+                            {
+                                <div class="dev-diag-section">
+                                    <div class="dev-diag-section-title">Workspace</div>
+                                    @foreach (var check in _envDiagReport.WorkspaceChecks)
+                                    {
+                                        <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface-subtle);border-radius:var(--radius-default)">
+                                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">
+                                                <span style="font-weight:600;flex:1">@check.Name</span>
+                                                <span class="ss-health-sev @GetCheckStatusClass(check.Status)">@check.Status</span>
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(check.Details))
+                                            {
+                                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@check.Details</p>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            <!-- ReviewContext Checks -->
+                            @if (_envDiagReport.ReviewContextChecks.Count > 0)
+                            {
+                                <div class="dev-diag-section">
+                                    <div class="dev-diag-section-title">ReviewContext</div>
+                                    @foreach (var check in _envDiagReport.ReviewContextChecks)
+                                    {
+                                        <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface-subtle);border-radius:var(--radius-default)">
+                                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">
+                                                <span style="font-weight:600;flex:1">@check.Name</span>
+                                                <span class="ss-health-sev @GetCheckStatusClass(check.Status)">@check.Status</span>
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(check.Details))
+                                            {
+                                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@check.Details</p>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            <!-- Export Checks -->
+                            @if (_envDiagReport.ExportChecks.Count > 0)
+                            {
+                                <div class="dev-diag-section">
+                                    <div class="dev-diag-section-title">Export</div>
+                                    @foreach (var check in _envDiagReport.ExportChecks)
+                                    {
+                                        <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface-subtle);border-radius:var(--radius-default)">
+                                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">
+                                                <span style="font-weight:600;flex:1">@check.Name</span>
+                                                <span class="ss-health-sev @GetCheckStatusClass(check.Status)">@check.Status</span>
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(check.Details))
+                                            {
+                                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@check.Details</p>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (!_envDiagRunning)
+                    {
+                        <div class="db-section-empty">Click "Run Diagnostics" to start the health check.</div>
+                    }
+                </div>
+            }
+
             @* ══ Maintenance ══════════════════════════════════════════════════════════ *@
+            @if (_activeSection == "review-context-validation" && IsDeveloperDiagnosticsVisible)
+            {
+                <div class="settings-card settings-card-full-width">
+                    <div class="settings-card-title">ReviewContext Validation</div>
+                    <p class="settings-card-note">Developer-only diagnostic for validating ReviewContext as the canonical source of truth against downstream review models.</p>
+
+                    @if (_reviewContextValidationMessage is not null)
+                    {
+                        <div class="notification notification-success" role="status">@_reviewContextValidationMessage</div>
+                    }
+
+                    @if (WorkspaceArtifacts.Count == 0)
+                    {
+                        <div class="db-section-empty" role="status">
+                            No workspace artifacts are loaded. Load constitution.md, spec.md, plan.md, or tasks.md from a workspace before running ReviewContext validation.
+                        </div>
+                    }
+
+                    <div class="settings-card" style="margin-top:1rem;background:var(--surface-subtle,#f8f9fa)">
+                        <div class="settings-card-title" style="font-size:0.95rem">Run Validation</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:.5rem">
+                            <PrimaryButton OnClick="RunReviewContextValidationAsync">Run Validation</PrimaryButton>
+                            <SecondaryButton OnClick="ExportReviewContextValidationJsonAsync" Disabled="@(_reviewContextReport is null)">Export JSON</SecondaryButton>
+                            <SecondaryButton OnClick="ExportReviewContextValidationHtmlAsync" Disabled="@(_reviewContextReport is null)">Export HTML</SecondaryButton>
+                        </div>
+                    </div>
+
+                    <div class="dev-diag-subgrid" style="margin-top:1.5rem">
+                        <div class="dev-diag-section">
+                            <div class="dev-diag-section-title">Loaded Artifacts</div>
+                            <table class="dev-diag-table">
+                                <thead>
+                                    <tr>
+                                        <th>Artifact</th>
+                                        <th>Status</th>
+                                        <th>Loaded</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in ReviewContextArtifactRows)
+                                    {
+                                        <tr>
+                                            <td>@row.Label</td>
+                                            <td><span class="ss-health-sev @(row.Loaded ? "ss-health-sev-ok" : "ss-health-sev-warn")">@(row.Loaded ? "Loaded" : "Missing")</span></td>
+                                            <td>@FormatTimestamp(row.LoadedAt)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="dev-diag-section">
+                            <div class="dev-diag-section-title">Canonical Metrics</div>
+                            @if (_reviewContextReport?.CanonicalMetrics.Count > 0)
+                            {
+                                <table class="dev-diag-table">
+                                    <tbody>
+                                        @foreach (var metric in _reviewContextReport.CanonicalMetrics)
+                                        {
+                                            <tr><td>@metric.Name</td><td>@DisplayValue(metric.Value)</td></tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                            else
+                            {
+                                <div class="db-section-empty">Run validation to populate canonical metrics.</div>
+                            }
+                        </div>
+
+                        <div class="dev-diag-section">
+                            <div class="dev-diag-section-title">Source Comparisons</div>
+                            @if (_reviewContextReport?.SourceComparisons.Count > 0)
+                            {
+                                <table class="dev-diag-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Metric</th>
+                                            <th>ReviewContext</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var comparison in _reviewContextReport.SourceComparisons)
+                                        {
+                                            <tr>
+                                                <td>@comparison.Metric</td>
+                                                <td>@DisplayValue(comparison.ReviewContextValue)</td>
+                                                <td><span class="ss-health-sev @(comparison.AllMatch ? "ss-health-sev-ok" : "ss-health-sev-warn")">@(comparison.AllMatch ? "Match" : "Mismatch")</span></td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                            else
+                            {
+                                <div class="db-section-empty">No source comparisons available yet.</div>
+                            }
+                        </div>
+
+                        <div class="dev-diag-section">
+                            <div class="dev-diag-section-title">Findings</div>
+                            @if (_reviewContextReport?.Findings.Count > 0)
+                            {
+                                <div class="ss-health-cards" role="list">
+                                    @foreach (var finding in _reviewContextReport.Findings)
+                                    {
+                                        <div class="ss-health-card" role="listitem">
+                                            <span class="ss-health-sev @ReviewContextSeverityClass(finding.Severity)">@finding.Severity</span>
+                                            <div class="ss-health-body">
+                                                <div class="ss-health-component">@finding.Source - @finding.MetricName</div>
+                                                <p class="ss-health-desc">@finding.Message</p>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="db-section-empty">Run validation to populate findings.</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+
             @if (_activeSection == "maintenance")
             {
                 <div class="settings-card settings-card-full-width">
@@ -1330,6 +1643,18 @@ else if (_settings is not null)
     private bool _runtimeDiagnosticsLoaded;
     private string? _runtimeActionMessage;
 
+    // ReviewContext Validation
+    private ReviewContextValidationReport? _reviewContextReport;
+    private string? _reviewContextValidationMessage;
+
+    // Environment Diagnostics
+    private EnvironmentDiagnosticsReportDto? _envDiagReport;
+    private bool _envDiagRunning;
+    private string? _envDiagMessage;
+    private string? _envDiagErrorDetails;
+    private string? _envDiagStackTrace;
+    private bool _envDiagShowStackTrace;
+
     // Azure DevOps connection test
     private bool _adoTestRunning;
     private AzureDevOpsConnectionTestResultDto? _adoTestResult;
@@ -1338,6 +1663,9 @@ else if (_settings is not null)
 
     private string _activeSection = "general";
     private string _navSearch     = "";
+
+    private bool IsDeveloperDiagnosticsVisible =>
+        string.Equals(HostEnvironment.Environment, "Development", StringComparison.OrdinalIgnoreCase);
 
     private int _configHealthIssueCount =>
         (UnflaggedList.Count > 0 ? 1 : 0) +
@@ -1428,7 +1756,7 @@ else if (_settings is not null)
         // Analysis
         ("Spec Drift",              "SpecDrift"),
         ("Impact Analysis",         "ImpactAnalysis"),
-        ("Artifact Traceability",   "ArtifactTraceability"),
+        ("Requirements Traceability",   "ArtifactTraceability"),
         ("Implementation Review",   "ImplementationReview"),
         ("Implementation Traceability", "ImplementationTraceability"),
 
@@ -1484,21 +1812,33 @@ else if (_settings is not null)
     private List<(string Label, string Key)> UnflaggedList => UnflaggedMenuItems.ToList();
 
     private IReadOnlyList<(WorkspaceArtifactKind Kind, string Label, WorkspaceArtifact Artifact)> WorkspaceArtifacts =>
-        Enum.GetValues<WorkspaceArtifactKind>()
-            .Select(kind => (Kind: kind, Label: ArtifactLabel(kind), Artifact: Workspace.Get(kind)))
+        ArtifactStatus.GetStatus().Availability
+            .Where(kvp => kvp.Value)
+            .Select(kvp => (Kind: kvp.Key, Label: ArtifactLabel(kvp.Key), Artifact: Workspace.Get(kvp.Key)))
             .Where(item => item.Artifact is not null)
             .Select(item => (item.Kind, item.Label, item.Artifact!))
             .ToList();
 
     private string ArtifactNamesText =>
-        WorkspaceArtifacts.Count == 0
+        ArtifactStatus.GetStatus().ArtifactCount == 0
             ? "Unavailable"
             : string.Join(", ", WorkspaceArtifacts.Select(item => item.Artifact.FileName ?? item.Label));
 
     private DateTime? LastWorkspaceLoad =>
-        WorkspaceArtifacts.Count == 0
+        ArtifactStatus.GetStatus().ArtifactCount == 0
             ? null
             : WorkspaceArtifacts.Max(item => item.Artifact.LoadedAt);
+
+    private IEnumerable<(string Label, bool Loaded, DateTime? LoadedAt)> ReviewContextArtifactRows =>
+        Enum.GetValues<WorkspaceArtifactKind>()
+            .Where(kind => kind != WorkspaceArtifactKind.Research)
+            .Select(kind =>
+            {
+                var status = ArtifactStatus.GetStatus();
+                var isLoaded = status.Availability.GetValueOrDefault(kind, false);
+                var artifact = Workspace.Get(kind);
+                return (ArtifactLabel(kind), isLoaded, artifact?.LoadedAt);
+            });
 
     private string FeatureFlagSummary =>
         AllEditableFeatures.Any()
@@ -1509,7 +1849,7 @@ else if (_settings is not null)
     {
         get
         {
-            yield return ("Artifact Traceability", AnalysisSessions.TraceabilityReport is null ? "Not Run" : "Completed", AnalysisSessions.TraceabilityRunAt);
+            yield return ("Requirements Traceability", AnalysisSessions.TraceabilityReport is null ? "Not Run" : "Completed", AnalysisSessions.TraceabilityRunAt);
             yield return ("Quality Review", AnalysisStatusLabel(QualitySession.Status), QualitySession.RunTimestamp ?? LastQualityReviewRun);
             yield return ("WASM Security Review", RuntimeStatusLabel(RuntimeReviews.SecurityReview.Status), RuntimeReviews.SecurityReview.RunTimestamp);
             yield return ("WASM Performance Review", RuntimeStatusLabel(RuntimeReviews.PerformanceReview.Status), RuntimeReviews.PerformanceReview.RunTimestamp);
@@ -1674,6 +2014,9 @@ else if (_settings is not null)
             if (success)
             {
                 await RefreshAfterSaveAsync();
+                if (_settings?.FeatureVisibility is not null)
+                    FeatureViz.ApplyLocalFlags(_settings.FeatureVisibility);
+
                 _isEditMode  = false;
                 _saveSuccess = message;
                 StateHasChanged();
@@ -1790,6 +2133,268 @@ else if (_settings is not null)
             sb.AppendLine($"- {service.Name}: {service.Status} {service.Detail}");
         return sb.ToString();
     }
+
+    private Task RunReviewContextValidationAsync()
+    {
+        if (WorkspaceArtifacts.Count == 0)
+        {
+            _reviewContextReport = ReviewContextValidator.Validate(null, null, null, null, OrUnavailable(Workspace.CurrentProject));
+            _reviewContextValidationMessage = "No workspace artifacts are loaded.";
+            StateHasChanged();
+            return Task.CompletedTask;
+        }
+
+        var parsed = MarkdownEngine.Parse(
+            Workspace.Constitution?.Text,
+            Workspace.Specification?.Text,
+            Workspace.Plan?.Text,
+            Workspace.Tasks?.Text);
+
+        _reviewContextReport = ReviewContextValidator.Validate(
+            parsed.Constitution,
+            parsed.Spec,
+            parsed.Plan,
+            parsed.Tasks,
+            OrUnavailable(Workspace.CurrentProject));
+
+        _reviewContextValidationMessage = $"Validation complete: {_reviewContextReport.Summary}.";
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task ExportReviewContextValidationJsonAsync()
+    {
+        if (_reviewContextReport is null) return;
+
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            _reviewContextReport,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        await CopyAsync(json);
+        _reviewContextValidationMessage = "ReviewContext validation JSON copied to clipboard.";
+        StateHasChanged();
+    }
+
+    private async Task ExportReviewContextValidationHtmlAsync()
+    {
+        if (_reviewContextReport is null) return;
+
+        await CopyAsync(BuildReviewContextValidationHtml(_reviewContextReport));
+        _reviewContextValidationMessage = "ReviewContext validation HTML copied to clipboard.";
+        StateHasChanged();
+    }
+
+    private static string BuildReviewContextValidationHtml(ReviewContextValidationReport report)
+    {
+        static string E(object? value) => System.Net.WebUtility.HtmlEncode(DisplayValue(value));
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("<!doctype html><html><head><meta charset=\"utf-8\"><title>ReviewContext Validation</title>");
+        sb.AppendLine("<style>body{font-family:system-ui,sans-serif;margin:2rem;color:#1f2937}table{border-collapse:collapse;width:100%;margin:1rem 0}th,td{border:1px solid #d1d5db;padding:.5rem;text-align:left}th{background:#f3f4f6}.finding{border:1px solid #d1d5db;padding:.75rem;margin:.5rem 0}</style></head><body>");
+        sb.AppendLine($"<h1>ReviewContext Validation</h1><p>Project: {E(report.ProjectName)}<br>Status: {E(report.OverallStatus)}<br>Generated: {E(report.GeneratedAt.ToString("u"))}</p>");
+        sb.AppendLine("<h2>Canonical Metrics</h2><table><thead><tr><th>Name</th><th>Value</th><th>Source</th></tr></thead><tbody>");
+        foreach (var metric in report.CanonicalMetrics)
+            sb.AppendLine($"<tr><td>{E(metric.Name)}</td><td>{E(metric.Value)}</td><td>{E(metric.Source)}</td></tr>");
+        sb.AppendLine("</tbody></table><h2>Source Comparisons</h2><table><thead><tr><th>Metric</th><th>ReviewContext</th><th>All Match</th></tr></thead><tbody>");
+        foreach (var comparison in report.SourceComparisons)
+            sb.AppendLine($"<tr><td>{E(comparison.Metric)}</td><td>{E(comparison.ReviewContextValue)}</td><td>{E(comparison.AllMatch)}</td></tr>");
+        sb.AppendLine("</tbody></table><h2>Findings</h2>");
+        foreach (var finding in report.Findings)
+            sb.AppendLine($"<div class=\"finding\"><strong>{E(finding.Severity)} - {E(finding.MetricName)}</strong><br>{E(finding.Message)}<br><small>{E(finding.Source)}</small></div>");
+        sb.AppendLine("</body></html>");
+        return sb.ToString();
+    }
+
+    private async Task RunEnvironmentDiagnosticsAsync()
+    {
+        if (_envDiagRunning) return;
+        _envDiagRunning = true;
+        _envDiagMessage = null;
+        _envDiagErrorDetails = null;
+        _envDiagStackTrace = null;
+        StateHasChanged();
+
+        try
+        {
+            var (report, errorMessage, errorStack) = await AdminApi.GetEnvironmentDiagnosticsWithErrorDetailsAsync();
+
+            if (report is not null)
+            {
+                _envDiagReport = report;
+                _envDiagErrorDetails = null;
+                _envDiagStackTrace = null;
+                _envDiagMessage = $"Diagnostics complete: {_envDiagReport.OverallStatus} — {_envDiagReport.DatabaseChecks.Count} database, {_envDiagReport.BackendApiChecks.Count} backend, {_envDiagReport.WorkspaceChecks.Count} workspace checks run.";
+            }
+            else
+            {
+                // Diagnostics failed - show detailed error
+                _envDiagReport = null;
+                _envDiagErrorDetails = errorMessage ?? "Unknown error occurred";
+                _envDiagStackTrace = errorStack;
+                _envDiagMessage = "Diagnostics failed — see details below.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _envDiagReport = null;
+            _envDiagErrorDetails = $"{ex.GetType().Name}: {ex.Message}";
+            _envDiagStackTrace = ex.StackTrace ?? "No stack trace available";
+            _envDiagMessage = "Diagnostics failed with exception.";
+        }
+        finally
+        {
+            _envDiagRunning = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportEnvironmentDiagnosticsJsonAsync()
+    {
+        if (_envDiagReport is null) return;
+        var json = System.Text.Json.JsonSerializer.Serialize(_envDiagReport, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        await CopyAsync(json);
+        _envDiagMessage = "Environment diagnostics JSON copied to clipboard.";
+        StateHasChanged();
+    }
+
+    private async Task ExportEnvironmentDiagnosticsHtmlAsync()
+    {
+        if (_envDiagReport is null) return;
+        await CopyAsync(BuildEnvironmentDiagnosticsHtml(_envDiagReport));
+        _envDiagMessage = "Environment diagnostics HTML copied to clipboard.";
+        StateHasChanged();
+    }
+
+    private static string BuildEnvironmentDiagnosticsHtml(EnvironmentDiagnosticsReportDto report)
+    {
+        static string E(object? value) => System.Net.WebUtility.HtmlEncode(value?.ToString() ?? "");
+        static string StatusBadge(string status) => status switch
+        {
+            "Pass" => "<span style=\"background:#d1fae5;color:#065f46;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Pass</span>",
+            "Warning" => "<span style=\"background:#fef08a;color:#854d0e;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Warning</span>",
+            "Fail" => "<span style=\"background:#fee2e2;color:#991b1b;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Fail</span>",
+            _ => "<span style=\"background:#f3f4f6;color:#6b7280;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">NotAvailable</span>"
+        };
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("<!doctype html><html><head><meta charset=\"utf-8\"><title>Environment Diagnostics</title>");
+        sb.AppendLine("<style>body{font-family:system-ui,sans-serif;margin:2rem;color:#1f2937}h2{border-top:2px solid #d1d5db;padding-top:1rem;margin-top:1.5rem}.check{display:flex;align-items:flex-start;gap:1rem;margin:.75rem 0;padding:.75rem;background:#f9fafb;border-radius:.5rem}.check-status{flex-shrink:0;font-weight:600;min-width:80px}.check-body{flex:1}.check-name{font-weight:600;margin-bottom:.25rem}.check-detail{font-size:.85rem;color:#6b7280;margin:0}.check-rec{font-size:.85rem;color:#6b7280;margin:.25rem 0 0;font-style:italic}</style></head><body>");
+        sb.AppendLine($"<h1>Environment Diagnostics</h1>");
+        sb.AppendLine($"<p>Environment: {E(report.Environment)}<br>Generated: {E(report.GeneratedAt.ToString("u"))}<br>Overall Status: {StatusBadge(report.OverallStatus)}</p>");
+
+        if (report.DatabaseChecks.Count > 0)
+        {
+            sb.AppendLine("<h2>Database</h2>");
+            foreach (var check in report.DatabaseChecks)
+            {
+                sb.AppendLine($"<div class=\"check\">");
+                sb.AppendLine($"<div class=\"check-status\">{StatusBadge(check.Status)}</div>");
+                sb.AppendLine($"<div class=\"check-body\">");
+                sb.AppendLine($"<div class=\"check-name\">{E(check.Name)}</div>");
+                if (!string.IsNullOrWhiteSpace(check.Details))
+                    sb.AppendLine($"<p class=\"check-detail\">{E(check.Details)}</p>");
+                if (!string.IsNullOrWhiteSpace(check.Recommendation))
+                    sb.AppendLine($"<p class=\"check-rec\">→ {E(check.Recommendation)}</p>");
+                sb.AppendLine("</div></div>");
+            }
+        }
+
+        if (report.BackendApiChecks.Count > 0)
+        {
+            sb.AppendLine("<h2>Backend / API</h2>");
+            foreach (var check in report.BackendApiChecks)
+            {
+                sb.AppendLine($"<div class=\"check\">");
+                sb.AppendLine($"<div class=\"check-status\">{StatusBadge(check.Status)}</div>");
+                sb.AppendLine($"<div class=\"check-body\">");
+                sb.AppendLine($"<div class=\"check-name\">{E(check.Name)}</div>");
+                if (!string.IsNullOrWhiteSpace(check.Details))
+                    sb.AppendLine($"<p class=\"check-detail\">{E(check.Details)}</p>");
+                sb.AppendLine("</div></div>");
+            }
+        }
+
+        if (report.WorkspaceChecks.Count > 0)
+        {
+            sb.AppendLine("<h2>Workspace</h2>");
+            foreach (var check in report.WorkspaceChecks)
+            {
+                sb.AppendLine($"<div class=\"check\">");
+                sb.AppendLine($"<div class=\"check-status\">{StatusBadge(check.Status)}</div>");
+                sb.AppendLine($"<div class=\"check-body\">");
+                sb.AppendLine($"<div class=\"check-name\">{E(check.Name)}</div>");
+                if (!string.IsNullOrWhiteSpace(check.Details))
+                    sb.AppendLine($"<p class=\"check-detail\">{E(check.Details)}</p>");
+                sb.AppendLine("</div></div>");
+            }
+        }
+
+        if (report.ReviewContextChecks.Count > 0)
+        {
+            sb.AppendLine("<h2>ReviewContext</h2>");
+            foreach (var check in report.ReviewContextChecks)
+            {
+                sb.AppendLine($"<div class=\"check\">");
+                sb.AppendLine($"<div class=\"check-status\">{StatusBadge(check.Status)}</div>");
+                sb.AppendLine($"<div class=\"check-body\">");
+                sb.AppendLine($"<div class=\"check-name\">{E(check.Name)}</div>");
+                if (!string.IsNullOrWhiteSpace(check.Details))
+                    sb.AppendLine($"<p class=\"check-detail\">{E(check.Details)}</p>");
+                sb.AppendLine("</div></div>");
+            }
+        }
+
+        if (report.ExportChecks.Count > 0)
+        {
+            sb.AppendLine("<h2>Export</h2>");
+            foreach (var check in report.ExportChecks)
+            {
+                sb.AppendLine($"<div class=\"check\">");
+                sb.AppendLine($"<div class=\"check-status\">{StatusBadge(check.Status)}</div>");
+                sb.AppendLine($"<div class=\"check-body\">");
+                sb.AppendLine($"<div class=\"check-name\">{E(check.Name)}</div>");
+                if (!string.IsNullOrWhiteSpace(check.Details))
+                    sb.AppendLine($"<p class=\"check-detail\">{E(check.Details)}</p>");
+                sb.AppendLine("</div></div>");
+            }
+        }
+
+        sb.AppendLine("</body></html>");
+        return sb.ToString();
+    }
+
+    private static string ReviewContextSeverityClass(ReviewContextValidationStatus status) => status switch
+    {
+        ReviewContextValidationStatus.Pass => "ss-health-sev-ok",
+        ReviewContextValidationStatus.Fail => "ss-health-sev-error",
+        _ => "ss-health-sev-warn"
+    };
+
+    private static string GetCheckStatusClass(string status) => status switch
+    {
+        "Pass" => "ss-health-sev-ok",
+        "Warning" => "ss-health-sev-warn",
+        "Fail" => "ss-health-sev-error",
+        "NotAvailable" => "ss-health-sev-warn",
+        _ => "ss-health-sev-warn"
+    };
+
+    private static string GetDiagnosticStatusBadge(string status) => status switch
+    {
+        "Pass" => "Pass",
+        "Warning" => "Warning",
+        "Fail" => "Fail",
+        _ => "NotAvailable"
+    };
+
+    private static string DisplayValue(object? value) =>
+        value switch
+        {
+            null => "Unavailable",
+            DateTime dt => dt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
+            DateTimeOffset dto => dto.ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
+            bool b => b ? "Yes" : "No",
+            _ => value.ToString() ?? "Unavailable"
+        };
 
     private static string ArtifactLabel(WorkspaceArtifactKind kind) => kind switch
     {
@@ -1988,7 +2593,7 @@ else if (_settings is not null)
         ("Code Traceability",            "code-traceability"),
         ("Spec Drift",                   "spec-drift"),
         ("Impact Analysis",              "impact-analysis"),
-        ("Artifact Traceability",        "artifact-traceability"),
+        ("Requirements Traceability",        "artifact-traceability"),
         ("Implementation Review",        "task-alignment"),
         ("Implementation Traceability",  "implementation-traceability"),
         ("Quality Review",               "quality-review"),
@@ -2025,7 +2630,7 @@ else if (_settings is not null)
         ("User Guide", "/scenarios/new",                        "Create Test Scenario link"),
         ("User Guide", "/spec-drift",                           "Spec Drift link"),
         ("User Guide", "/impact-analysis",                      "Impact Analysis link"),
-        ("User Guide", "/artifact-traceability",                "Artifact Traceability link"),
+        ("User Guide", "/artifact-traceability",                "Requirements Traceability link"),
         ("User Guide", "/task-alignment",                       "Implementation Review link"),
         ("User Guide", "/implementation-traceability",          "Implementation Traceability link"),
         ("User Guide", "/traceability",                         "Traceability & Coverage link"),

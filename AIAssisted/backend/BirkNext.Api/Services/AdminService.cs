@@ -245,7 +245,7 @@ public class AdminService
             BlazorWasmPerformanceReview = s.GetValue("BlazorWasmPerformanceReview", true),
             TaskExplorer                = s.GetValue("TaskExplorer",                true),
             QualityReview               = s.GetValue("QualityReview",               true),
-            AiChangeReview       = s.GetValue("AiChangeReview",       true),
+            AiChangeReview       = s.GetValue("AiChangeReview",       false),
             EnableExtractionReview = s.GetValue("EnableExtractionReview", false),
             EnableArchitectureView = s.GetValue("EnableArchitectureView", false),
             AdminSystemSettings  = s.GetValue("AdminSystemSettings",  true)
@@ -373,7 +373,7 @@ public class AdminService
         catch (Exception ex) { _logger.LogWarning(ex, "IConfiguration reload after settings save encountered an issue"); }
 
         _logger.LogInformation("Local settings saved to {Path}", path);
-        return (true, "Settings saved. Feature visibility changes apply immediately. Refresh the page to update the navigation sidebar. Logging changes require a backend restart.");
+        return (true, "Settings saved. Feature visibility changes apply immediately. Logging changes require a backend restart.");
     }
 
     public async Task<(bool Success, string Message)> ResetLocalDatabaseAsync()

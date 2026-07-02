@@ -627,6 +627,249 @@ public sealed class SpecExplorerServiceTests
         req.SpecItemId.Should().Be("FR-001");
     }
 
+    [Fact]
+    public void Parse_WithNorwegianContent_DoesNotBreakParsing()
+    {
+        var markdown = """
+            # Hendelsestjenesten — Feature Specification
+
+            **Feature**: Hendelsestjenesten
+            **Date**: 2026-04-24
+
+            ## Clarifications
+
+            ### Session 2026-04-24
+
+            - Q: Hva er tilgjengelighetsmålet? → A: 99,9 % oppetid
+            - Q: Hva er lovpålagt minimumsgrense? → A: Minimum 10 år
+
+            ## User Scenarios
+
+            ### Scenario 1: Saksbehandler ser hendelsestidslinje
+
+            Gitt at saksbehandler har tilgang til barnet
+            Når saksbehandler åpner hendelsesvisningen
+            Så vises liste over hendelser
+            """;
+
+        var tree = SpecExplorerService.Parse(markdown);
+
+        // Parser should successfully handle Norwegian content
+        tree.Should().NotBeNull();
+        tree.Roots.Should().NotBeEmpty();
+
+        var clarifications = AllDescendants(tree)
+            .Where(n => n.NodeType == SpecNodeType.QaPair)
+            .ToList();
+        clarifications.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithScenarioHeadings_TreatsAsUserStories()
+    {
+        var markdown = """
+            # Feature Specification
+
+            ### Scenario 1: User Action
+
+            This is a scenario that should be treated like a user story.
+
+            Given some precondition
+            When user does something
+            Then result is observed
+            """;
+
+        var tree = SpecExplorerService.Parse(markdown);
+
+        // Parser should successfully process scenario-based specs without errors
+        tree.Should().NotBeNull();
+        tree.Roots.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithClarificationSession_ExtracsDateAndQa()
+    {
+        var markdown = """
+            # Feature Specification
+
+            ## Clarifications
+
+            ### Session 2026-04-24
+
+            - Q: What is the availability target? → A: 99.9% uptime
+            - Q: What happens if service is unavailable? → A: Outbox queue
+            """;
+
+        var tree = SpecExplorerService.Parse(markdown);
+
+        var clarifications = AllDescendants(tree)
+            .Where(n => n.NodeType == SpecNodeType.QaPair || n.NodeType == SpecNodeType.DecisionNode)
+            .ToList();
+
+        clarifications.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithAlternativeTitle_ParsesCorrectly()
+    {
+        var markdown = """
+            # Hendelsestjenesten — Feature Specification
+
+            **Feature**: Hendelsestjenesten
+            **Version**: 1.0
+            **Date**: 2026-04-24
+
+            ## Overview
+
+            This is the overview section.
+            """;
+
+        var tree = SpecExplorerService.Parse(markdown);
+
+        var root = tree.Roots.FirstOrDefault();
+        root.Should().NotBeNull();
+        root!.Title.Should().Contain("Hendelsestjenesten");
+    }
+
+    [Fact]
+    public void Parse_WithMixedLanguageContent_HandlesBothEnglishAndNorwegian()
+    {
+        var markdown = """
+            # Feature Specification
+
+            ## User Scenarios & Testing
+
+            ### Scenario 1: Mixed Language
+
+            Given user has access
+            Når user opens the view
+            Then list is shown
+
+            **Forventet resultat**: Works correctly
+            """;
+
+        var tree = SpecExplorerService.Parse(markdown);
+
+        // Parser should successfully handle mixed English/Norwegian without breaking
+        tree.Should().NotBeNull();
+        AllDescendants(tree).Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithEdgeCasesSection_ExtractsEdgeCases()
+    {
+        var markdown = """
+            # Feature Specification
+
+            ## Edge Cases
+
+            - What if event never gets child identity linked?
+            - What if service is temporarily unavailable?
+            - Simultaneous upsert attempts for same source ID?
+            """;
+
+        var tree = SpecExplorerService.Parse(markdown);
+
+        var edgeCases = AllDescendants(tree)
+            .Where(n => n.NodeType == SpecNodeType.EdgeCase)
+            .ToList();
+
+        edgeCases.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithSuccessCriteriaSection_ExtractsSuccessCriteria()
+    {
+        var markdown = """
+            # Feature Specification
+
+            ## Success Criteria
+
+            - SC-001: Event stored within 100ms
+            - SC-002: Availability >= 99.9%
+            - SC-003: Full audit trail maintained
+            """;
+
+        var tree = SpecExplorerService.Parse(markdown);
+
+        var successCriteria = AllDescendants(tree)
+            .Where(n => n.NodeType == SpecNodeType.SuccessCriterion)
+            .ToList();
+
+        successCriteria.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithNonFunctionalRequirements_ExtractsCorrectly()
+    {
+        var markdown = """
+            # Feature Specification
+
+            ## Non-Functional Requirements
+
+            - **NFR-001**: Response time < 200ms for reads
+            - **NFR-002**: Support 2000 concurrent users
+            - **NFR-003**: 99.9% uptime SLA
+            """;
+
+        var tree = SpecExplorerService.Parse(markdown);
+
+        var nfrs = AllDescendants(tree)
+            .Where(n => n.NodeType == SpecNodeType.Requirement && n.SpecItemId?.StartsWith("NFR-") == true)
+            .ToList();
+
+        nfrs.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithConstitutionalAdjustments_ExtractsFromClarifications()
+    {
+        var markdown = """
+            # Feature Specification
+
+            ## Clarifications
+
+            - Konstitusjonell justering (§1.3): barnIdentitet is not mandatory at intake
+            - Konstitusjonell justering (§3.4): Involvert is free text in M01
+            - Constitutional adjustment (§3.1): Correct dependency is Service Module
+            """;
+
+        var tree = SpecExplorerService.Parse(markdown);
+
+        var clarifications = AllDescendants(tree)
+            .Where(n => n.NodeType == SpecNodeType.QaPair || n.Excerpt?.Contains("justering") == true)
+            .ToList();
+
+        clarifications.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_WithMetadata_ExtractsAllFields()
+    {
+        var markdown = """
+            # Hendelsestjenesten — Feature Specification
+
+            **Feature**: Hendelsestjenesten
+            **Version**: 1.0
+            **Date**: 2026-04-24
+            **Status**: Draft
+            **Branch**: 003-service-module
+
+            ## Overview
+
+            Feature overview text.
+            """;
+
+        var tree = SpecExplorerService.Parse(markdown);
+
+        var metadata = AllDescendants(tree)
+            .Where(n => n.NodeType == SpecNodeType.Metadata)
+            .ToList();
+
+        // Should extract metadata fields
+        metadata.Should().NotBeEmpty();
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================

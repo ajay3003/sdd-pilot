@@ -87,7 +87,7 @@
             <span>Browse the specification hierarchy, section requirements, tests, and clarifications. Use Traceability &amp; Coverage for analytics and Flow View for release readiness.</span>
         </section>
 
-        @if (_tree.Health.Requirements == 0)
+        @if (_semanticModel?.TotalRequirements == 0)
         {
             <div class="se-info-state" data-testid="se-no-requirements">No requirements extracted.</div>
         }
@@ -615,6 +615,7 @@
     private string _specText = string.Empty;
     private string _lastBuiltMarkdown = string.Empty;
     private SpecTree? _tree;
+    private SpecificationSemanticModel? _semanticModel;
     private HashSet<string> _expandedIds = [];
     private string? _selectedNodeId;
     private string _searchQuery = string.Empty;
@@ -662,6 +663,7 @@
         if ((_tree is null || _tree.Roots.Count == 0) && Candidates is { Count: > 0 })
         {
             _tree = SpecExplorerService.BuildFromCandidates(Candidates);
+            _semanticModel = SpecExplorerService.BuildSemanticModel(_tree, _specText);
             _expandedIds = SpecExplorerService.GetDefaultExpanded(_tree.Roots);
             _selectedNodeId = null;
             _searchQuery = string.Empty;
@@ -674,10 +676,10 @@
     private bool CanBuild => !string.IsNullOrWhiteSpace(_specText);
 
     private int MissingCoverageSectionCount =>
-        _tree is null
+        _semanticModel == null
             ? 0
-            : GetAllNodes(_tree.Roots)
-                .Count(n => n.HeadingLevel > 0 && GetSectionHealth(n).Status == CoverageState.Missing);
+            : _semanticModel.Requirements
+                .Count(r => r.LinkedAcceptanceScenarios.Count == 0);
 
 
     private void OnFileImported(string content)
@@ -700,6 +702,7 @@
     {
         if (!CanBuild) return;
         _tree = SpecExplorerService.Parse(_specText);
+        _semanticModel = SpecExplorerService.BuildSemanticModel(_tree, _specText);
         _expandedIds = SpecExplorerService.GetDefaultExpanded(_tree.Roots);
         _selectedNodeId = null;
         _searchQuery = string.Empty;
@@ -712,6 +715,7 @@
     private void Reset()
     {
         _tree = null;
+        _semanticModel = null;
         _specText = string.Empty;
         _lastBuiltMarkdown = string.Empty;
         _expandedIds = [];
@@ -785,10 +789,17 @@
 
     private List<ExtractionCandidate> GetLinkedCandidates(SpecNode node)
     {
-        if (Candidates is null || Candidates.Count == 0) return [];
-        return Candidates.Where(c =>
-            string.Equals(c.ContextHeading, node.Title, StringComparison.OrdinalIgnoreCase)
-            || (node.SpecItemId is not null && c.Title.Contains(node.SpecItemId, StringComparison.OrdinalIgnoreCase))).ToList();
+        // Use extraction candidates if available (backward compatibility with existing data)
+        if (Candidates is not null && Candidates.Count > 0)
+        {
+            return Candidates.Where(c =>
+                string.Equals(c.ContextHeading, node.Title, StringComparison.OrdinalIgnoreCase)
+                || (node.SpecItemId is not null && c.Title.Contains(node.SpecItemId, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+
+        // Otherwise return empty (semantic model data is used elsewhere)
+        return [];
     }
 
     private static List<SpecNode> GetAllNodes(IEnumerable<SpecNode> nodes)
@@ -868,26 +879,31 @@
 
     private SectionHealth GetSectionHealth(SpecNode node)
     {
-        var nodes = GetAllNodes([node]);
-        var headings = nodes
-            .Where(n => n.HeadingLevel > 0)
-            .Select(n => n.Title)
-            .Append(node.Title)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Use semantic model as single source of truth
+        if (_semanticModel == null)
+            return new SectionHealth(0, 0, 0, 0, 0, CoverageState.Unknown, 0, 0, []);
 
-        var sectionCandidates = Candidates?
-            .Where(c => c.ContextHeading is not null && headings.Contains(c.ContextHeading))
-            .ToList() ?? [];
+        // For section health, derive from semantic model: filter requirements that reference this section
+        var sectionName = node.Title;
+        var relevantReqs = _semanticModel.Requirements
+            .Where(r => r.Text.Contains(sectionName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
-        var requirements = sectionCandidates.Count(c => c.Classification == ScenarioKind.Requirement);
-        var tests = sectionCandidates.Count(c => c.Classification == ScenarioKind.Test);
-        var clarifications = sectionCandidates.Count(c => c.Classification == ScenarioKind.NeedsClarification);
+        var requirements = relevantReqs.Count > 0 ? relevantReqs.Count : node.ReqCount;
+        var successCriteria = _semanticModel.SuccessCriteria
+            .Where(sc => relevantReqs.Any(r => r.LinkedSuccessCriteria.Any(lsc => lsc.Id == sc.Id)))
+            .Count();
 
-        if (requirements == 0) requirements = node.ReqCount;
+        var tests = _semanticModel.AcceptanceScenarios
+            .Where(a => relevantReqs.Any(r => r.LinkedAcceptanceScenarios.Any(las => las.Id == a.Id)))
+            .Count();
         if (tests == 0) tests = node.TestCount;
+
+        var clarifications = _semanticModel.Clarifications
+            .Where(c => c.AffectedElements.Any(e => relevantReqs.Any(r => r.Id == e)))
+            .Count();
         if (clarifications == 0) clarifications = node.ClarCount;
 
-        var successCriteria = node.ScCount;
         var status = CoverageState.Unknown;
         var coveragePercent = 0;
         if (requirements > 0)
@@ -898,10 +914,9 @@
                    : CoverageState.Missing;
         }
 
-        var userStories = nodes
-            .SelectMany(n => ExtractUserStoryLabels(n.Title).Concat(n.SpecItemId is null ? [] : ExtractUserStoryLabels(n.SpecItemId)))
-            .Concat(sectionCandidates.SelectMany(c => c.ContextHeading is null ? [] : ExtractUserStoryLabels(c.ContextHeading)))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+        var userStories = _semanticModel.UserStories
+            .Where(us => relevantReqs.Any(r => r.LinkedUserStories.Any(lu => lu.Id == us.Id)))
+            .Select(us => us.Id)
             .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -920,33 +935,37 @@
     private RequirementTraceDetail? GetRequirementDetail(SpecNode node)
     {
         if (node.NodeType != SpecNodeType.Requirement && node.SpecItemId is null) return null;
+        if (_semanticModel == null) return null;
 
-        var match = Candidates?.FirstOrDefault(c =>
-            c.Classification == ScenarioKind.Requirement &&
-            ((node.SpecItemId is not null && c.Title.Contains(node.SpecItemId, StringComparison.OrdinalIgnoreCase))
-             || c.Title.Contains(node.Title, StringComparison.OrdinalIgnoreCase)));
+        // Find matching requirement in semantic model
+        var reqId = node.SpecItemId ?? $"FR-{node.Id[..3]}";
+        var requirement = _semanticModel.Requirements
+            .FirstOrDefault(r => r.Id.Equals(reqId, StringComparison.OrdinalIgnoreCase)
+                              || r.Text.Contains(node.Title, StringComparison.OrdinalIgnoreCase));
 
-        var sourceHeading = match?.ContextHeading
-            ?? FindNearestHeadingTitle(_tree?.Roots ?? [], node.Id)
-            ?? "Unknown";
+        if (requirement == null) return null;
 
+        var sourceHeading = FindNearestHeadingTitle(_tree?.Roots ?? [], node.Id) ?? "Unknown";
+
+        // Use extraction candidates if available; otherwise return empty
         var linkedTests = Candidates?
             .Where(c => c.Classification == ScenarioKind.Test
                      && !string.IsNullOrWhiteSpace(c.ContextHeading)
                      && string.Equals(c.ContextHeading, sourceHeading, StringComparison.OrdinalIgnoreCase))
             .ToList() ?? [];
 
+        // Use tree nodes for success criteria (semantic model doesn't map back to tree)
         var linkedSuccessCriteria = GetAllNodes(_tree?.Roots ?? [])
             .Where(n => n.NodeType == SpecNodeType.SuccessCriterion
                      && (string.Equals(FindNearestHeadingTitle(_tree?.Roots ?? [], n.Id), sourceHeading, StringComparison.OrdinalIgnoreCase)
                          || (node.SpecItemId is not null && n.Title.Contains(node.SpecItemId, StringComparison.OrdinalIgnoreCase))))
             .ToList();
 
-        var status = linkedTests.Count > 0 ? CoverageState.Covered : CoverageState.Missing;
-        var userStory = ExtractUserStoryLabels(sourceHeading).FirstOrDefault();
+        var status = requirement.LinkedAcceptanceScenarios.Count > 0 ? CoverageState.Covered : CoverageState.Missing;
+        var userStory = requirement.LinkedUserStories.FirstOrDefault()?.Id;
 
         return new RequirementTraceDetail(
-            match?.Title ?? node.FullContent ?? node.Excerpt ?? node.Title,
+            requirement.Text,
             sourceHeading,
             userStory,
             status,

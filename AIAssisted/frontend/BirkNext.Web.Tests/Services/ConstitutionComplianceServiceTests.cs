@@ -10,6 +10,35 @@ public class ConstitutionComplianceServiceTests
     private readonly PlanAnalysisService          _planService         = new();
     private readonly ConstitutionComplianceService _sut                = new();
 
+    // ── Helper to build ReviewContext for tests ──────────────────────────
+
+    private static ReviewContext BuildContext(
+        ConstitutionDocument? constitution,
+        SpecTree? spec,
+        PlanDocument? plan,
+        TaskTree? tasks)
+    {
+        var constModel = constitution is not null
+            ? ConstitutionAnalysisService.BuildSemanticModel(constitution)
+            : new ConstitutionSemanticModel();
+
+        var specModel = spec is not null
+            ? SpecExplorerService.BuildSemanticModel(spec, "")
+            : new SpecificationSemanticModel();
+
+        var planModel = plan is not null
+            ? PlanAnalysisService.BuildSemanticModel(plan)
+            : new PlanSemanticModel();
+
+        var taskModel = tasks is not null
+            ? TaskExplorerService.BuildSemanticModel(tasks)
+            : new TaskSemanticModel();
+
+        var dataModel = new DataModelSemanticModel();
+
+        return ReviewContextFactory.Create(constModel, specModel, planModel, taskModel, dataModel);
+    }
+
     // ── Fixtures ─────────────────────────────────────────────────────────
 
     private ConstitutionDocument ParseConstitution(string md) =>
@@ -111,7 +140,8 @@ public class ConstitutionComplianceServiceTests
     [Fact]
     public void Analyze_WithNullConstitution_ReturnsEmptyReport()
     {
-        var report = _sut.Analyze(null, null, null, null);
+        var context = BuildContext(null, null, null, null);
+        var report = _sut.Analyze(null, null, null, null, context);
 
         report.Results.Should().BeEmpty();
         report.Violations.Should().BeEmpty();
@@ -124,7 +154,8 @@ public class ConstitutionComplianceServiceTests
     public void Analyze_WithEmptyConstitution_ReturnsEmptyReport()
     {
         var constitution = ParseConstitution("# Empty Constitution");
-        var report = _sut.Analyze(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Analyze(constitution, null, null, null, context);
 
         report.Results.Should().BeEmpty();
         report.HasConstitution.Should().BeTrue();
@@ -134,7 +165,8 @@ public class ConstitutionComplianceServiceTests
     public void Analyze_WithConstitutionOnly_ReturnsMissingForAll()
     {
         var constitution = ParseConstitution(SimpleConstitution);
-        var report = _sut.Analyze(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Analyze(constitution, null, null, null, context);
 
         report.HasConstitution.Should().BeTrue();
         report.HasSpecification.Should().BeFalse();
@@ -148,7 +180,8 @@ public class ConstitutionComplianceServiceTests
     [Fact]
     public void Analyze_NullAllArtifacts_DoesNotThrow()
     {
-        var act = () => _sut.Analyze(null, null, null, null);
+        var context = BuildContext(null, null, null, null);
+        var act = () => _sut.Analyze(null, null, null, null, context);
         act.Should().NotThrow();
     }
 
@@ -162,7 +195,8 @@ public class ConstitutionComplianceServiceTests
         var plan         = ParsePlan(AllCoveredPlan);
         var tasks        = TaskExplorerService.Parse(AllCoveredTasks);
 
-        var report = _sut.Analyze(constitution, spec, plan, tasks);
+        var context = BuildContext(constitution, spec, plan, tasks);
+        var report = _sut.Analyze(constitution, spec, plan, tasks, context);
 
         report.HasConstitution.Should().BeTrue();
         report.HasSpecification.Should().BeTrue();
@@ -176,7 +210,8 @@ public class ConstitutionComplianceServiceTests
         var constitution = ParseConstitution(SimpleConstitution);
         var spec         = SpecExplorerService.Parse(AllCoveredSpec);
 
-        var report = _sut.Analyze(constitution, spec, null, null);
+        var context = BuildContext(constitution, spec, null, null);
+        var report = _sut.Analyze(constitution, spec, null, null, context);
 
         var pp01 = report.Results.FirstOrDefault(r => r.RuleId == "PP-01");
         pp01.Should().NotBeNull();
@@ -189,7 +224,8 @@ public class ConstitutionComplianceServiceTests
         var constitution = ParseConstitution(SimpleConstitution);
         var spec         = SpecExplorerService.Parse(PartialSpec);
 
-        var report = _sut.Analyze(constitution, spec, null, null);
+        var context = BuildContext(constitution, spec, null, null);
+        var report = _sut.Analyze(constitution, spec, null, null, context);
 
         var pp02 = report.Results.FirstOrDefault(r => r.RuleId == "PP-02");
         pp02.Should().NotBeNull();
@@ -202,7 +238,8 @@ public class ConstitutionComplianceServiceTests
         var constitution = ParseConstitution(SimpleConstitution);
         var plan         = ParsePlan(AllCoveredPlan);
 
-        var report = _sut.Analyze(constitution, null, plan, null);
+        var context = BuildContext(constitution, null, plan, null);
+        var report = _sut.Analyze(constitution, null, plan, null, context);
 
         var pp01 = report.Results.FirstOrDefault(r => r.RuleId == "PP-01");
         pp01.Should().NotBeNull();
@@ -215,7 +252,8 @@ public class ConstitutionComplianceServiceTests
         var constitution = ParseConstitution(SimpleConstitution);
         var tasks        = TaskExplorerService.Parse(AllCoveredTasks);
 
-        var report = _sut.Analyze(constitution, null, null, tasks);
+        var context = BuildContext(constitution, null, null, tasks);
+        var report = _sut.Analyze(constitution, null, null, tasks, context);
 
         var pp01 = report.Results.FirstOrDefault(r => r.RuleId == "PP-01");
         pp01.Should().NotBeNull();
@@ -232,7 +270,8 @@ public class ConstitutionComplianceServiceTests
         var plan         = ParsePlan(AllCoveredPlan);
         var tasks        = TaskExplorerService.Parse(AllCoveredTasks);
 
-        var report = _sut.Analyze(constitution, spec, plan, tasks);
+        var context = BuildContext(constitution, spec, plan, tasks);
+        var report = _sut.Analyze(constitution, spec, plan, tasks, context);
 
         var pp01 = report.Results.FirstOrDefault(r => r.RuleId == "PP-01");
         pp01.Should().NotBeNull();
@@ -243,7 +282,8 @@ public class ConstitutionComplianceServiceTests
     public void Analyze_RuleWithNoArtifactCoverage_IsMissing()
     {
         var constitution = ParseConstitution(SimpleConstitution);
-        var report = _sut.Analyze(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Analyze(constitution, null, null, null, context);
 
         report.Results.Should().OnlyContain(r => r.Status == ComplianceStatus.Missing);
     }
@@ -256,7 +296,8 @@ public class ConstitutionComplianceServiceTests
         var constitution = ParseConstitution(SimpleConstitution);
         var plan         = ParsePlan(PlanWithViolation);
 
-        var report = _sut.Analyze(constitution, null, plan, null);
+        var context = BuildContext(constitution, null, plan, null);
+        var report = _sut.Analyze(constitution, null, plan, null, context);
 
         report.Violations.Should().Contain(v => v.RuleId == "PP-01");
     }
@@ -267,7 +308,8 @@ public class ConstitutionComplianceServiceTests
         var constitution = ParseConstitution(SimpleConstitution);
         var plan         = ParsePlan(AllCoveredPlan);
 
-        var report = _sut.Analyze(constitution, null, plan, null);
+        var context = BuildContext(constitution, null, plan, null);
+        var report = _sut.Analyze(constitution, null, plan, null, context);
 
         report.Violations.Should().BeEmpty();
     }
@@ -280,7 +322,8 @@ public class ConstitutionComplianceServiceTests
         var constitution = ParseConstitution(SimpleConstitution);
         var spec         = SpecExplorerService.Parse(PartialSpec);
 
-        var report = _sut.Analyze(constitution, spec, null, null);
+        var context = BuildContext(constitution, spec, null, null);
+        var report = _sut.Analyze(constitution, spec, null, null, context);
 
         var pp02Gap = report.Gaps.FirstOrDefault(g => g.RuleId == "PP-02");
         pp02Gap.Should().NotBeNull();
@@ -295,7 +338,8 @@ public class ConstitutionComplianceServiceTests
         var plan         = ParsePlan(AllCoveredPlan);
         var tasks        = TaskExplorerService.Parse(AllCoveredTasks);
 
-        var report = _sut.Analyze(constitution, spec, plan, tasks);
+        var context = BuildContext(constitution, spec, plan, tasks);
+        var report = _sut.Analyze(constitution, spec, plan, tasks, context);
 
         report.Gaps.Should().BeEmpty();
     }
@@ -306,7 +350,8 @@ public class ConstitutionComplianceServiceTests
     public void Coverage_TotalItems_MatchesRuleCount()
     {
         var constitution = ParseConstitution(SimpleConstitution);
-        var report = _sut.Analyze(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Analyze(constitution, null, null, null, context);
 
         report.Coverage.TotalItems.Should().Be(report.Results.Count);
     }
@@ -315,7 +360,8 @@ public class ConstitutionComplianceServiceTests
     public void Coverage_AllMissing_ZeroCompliancePercentage()
     {
         var constitution = ParseConstitution(SimpleConstitution);
-        var report = _sut.Analyze(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Analyze(constitution, null, null, null, context);
 
         report.Coverage.CompliancePercentage.Should().Be(0);
     }
@@ -326,7 +372,8 @@ public class ConstitutionComplianceServiceTests
         var constitution = ParseConstitution(SimpleConstitution);
         var spec         = SpecExplorerService.Parse(PartialSpec);
 
-        var report = _sut.Analyze(constitution, spec, null, null);
+        var context = BuildContext(constitution, spec, null, null);
+        var report = _sut.Analyze(constitution, spec, null, null, context);
 
         report.Coverage.CompliancePercentage.Should().BeGreaterThan(0);
     }
@@ -337,7 +384,8 @@ public class ConstitutionComplianceServiceTests
     public void Analyze_MissingRules_ProducesRecommendations()
     {
         var constitution = ParseConstitution(SimpleConstitution);
-        var report = _sut.Analyze(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Analyze(constitution, null, null, null, context);
 
         report.Recommendations.Should().NotBeEmpty();
     }
@@ -346,7 +394,8 @@ public class ConstitutionComplianceServiceTests
     public void Recommendations_HaveTargetArtifact()
     {
         var constitution = ParseConstitution(SimpleConstitution);
-        var report = _sut.Analyze(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Analyze(constitution, null, null, null, context);
 
         report.Recommendations.Should().OnlyContain(r =>
             r.TargetArtifact == ArtifactType.Specification ||
@@ -360,7 +409,8 @@ public class ConstitutionComplianceServiceTests
     public void Health_TotalRules_MatchesConstitutionRuleCount()
     {
         var constitution = ParseConstitution(SimpleConstitution);
-        var report = _sut.Analyze(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Analyze(constitution, null, null, null, context);
 
         report.Health.TotalRules.Should().Be(report.Results.Count);
     }
@@ -369,7 +419,8 @@ public class ConstitutionComplianceServiceTests
     public void Health_ArtifactNotLoaded_ProducesWarningIndicator()
     {
         var constitution = ParseConstitution(SimpleConstitution);
-        var report = _sut.Analyze(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Analyze(constitution, null, null, null, context);
 
         report.Health.Indicators.Should().Contain(i => i.Level == ComplianceHealthLevel.Warning);
     }
@@ -380,7 +431,8 @@ public class ConstitutionComplianceServiceTests
         var constitution = ParseConstitution(SimpleConstitution);
         var plan         = ParsePlan(AllCoveredPlan);
 
-        var report = _sut.Analyze(constitution, null, plan, null);
+        var context = BuildContext(constitution, null, plan, null);
+        var report = _sut.Analyze(constitution, null, plan, null, context);
 
         var errorIndicators = report.Health.Indicators
             .Where(i => i.Level == ComplianceHealthLevel.Error)
@@ -395,7 +447,8 @@ public class ConstitutionComplianceServiceTests
     public void SearchResults_ByRuleId_ReturnsMatch()
     {
         var constitution = ParseConstitution(SimpleConstitution);
-        var report = _sut.Analyze(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Analyze(constitution, null, null, null, context);
 
         var matches = _sut.SearchResults(report.Results, "PP-01").ToList();
 
@@ -406,7 +459,8 @@ public class ConstitutionComplianceServiceTests
     public void FilterResultsByStatus_ReturnsOnlyMatching()
     {
         var constitution = ParseConstitution(SimpleConstitution);
-        var report = _sut.Analyze(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Analyze(constitution, null, null, null, context);
 
         var filtered = _sut.FilterResultsByStatus(report.Results, ComplianceStatus.Missing).ToList();
 
@@ -417,7 +471,8 @@ public class ConstitutionComplianceServiceTests
     public void FilterResultsByRuleType_ReturnsOnlyMatchingType()
     {
         var constitution = ParseConstitution(SimpleConstitution);
-        var report = _sut.Analyze(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Analyze(constitution, null, null, null, context);
 
         var filtered = _sut.FilterResultsByRuleType(report.Results, ConstitutionRuleType.Principle).ToList();
 
@@ -429,7 +484,8 @@ public class ConstitutionComplianceServiceTests
     {
         var constitution = ParseConstitution(SimpleConstitution);
         var spec         = SpecExplorerService.Parse(PartialSpec);
-        var report = _sut.Analyze(constitution, spec, null, null);
+        var context = BuildContext(constitution, spec, null, null);
+        var report = _sut.Analyze(constitution, spec, null, null, context);
 
         var matches = _sut.SearchGaps(report.Gaps, "PP-02").ToList();
 
@@ -441,7 +497,8 @@ public class ConstitutionComplianceServiceTests
     {
         var constitution = ParseConstitution(SimpleConstitution);
         var plan         = ParsePlan(PlanWithViolation);
-        var report = _sut.Analyze(constitution, null, plan, null);
+        var context = BuildContext(constitution, null, plan, null);
+        var report = _sut.Analyze(constitution, null, plan, null, context);
 
         if (!report.Violations.Any()) return; // no violations produced — skip assertion
 
@@ -455,7 +512,8 @@ public class ConstitutionComplianceServiceTests
     {
         var constitution = ParseConstitution(SimpleConstitution);
         var plan         = ParsePlan(PlanWithViolation);
-        var report = _sut.Analyze(constitution, null, plan, null);
+        var context = BuildContext(constitution, null, plan, null);
+        var report = _sut.Analyze(constitution, null, plan, null, context);
 
         if (!report.Violations.Any()) return;
 

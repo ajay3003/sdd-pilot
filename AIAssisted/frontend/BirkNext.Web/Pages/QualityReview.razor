@@ -176,14 +176,21 @@
                             <div class="qr-pack-group-title">@group.Key</div>
                             @foreach (var pack in group)
                             {
-                                <label class="qr-pack-option">
+                                var isAvailable = IsPackAvailable(pack);
+                                var requirementText = GetPackRequirementText(pack);
+                                <label class="qr-pack-option @(!isAvailable ? "is-disabled" : "")">
                                     <input type="checkbox"
-                                           checked="@_selectedPacks.Contains(pack.PackId)"
+                                           checked="@(_selectedPacks.Contains(pack.PackId) && isAvailable)"
+                                           disabled="@(!isAvailable)"
                                            @onchange="e => TogglePack(pack.PackId, (bool)e.Value!)" />
                                     <span class="qr-pack-label">
                                         <span class="qr-pack-name">@pack.PackName</span>
                                         <span class="qr-pack-desc">@pack.PackDescription</span>
-                                        @if (PackPrerequisiteWarning(pack) is string warn)
+                                        @if (!isAvailable && requirementText is not null)
+                                        {
+                                            <span class="qr-prereq-warn" title="@requirementText">⊘ @requirementText</span>
+                                        }
+                                        else if (isAvailable && PackPrerequisiteWarning(pack) is string warn)
                                         {
                                             <span class="qr-prereq-warn">⚠ @warn</span>
                                         }
@@ -438,22 +445,30 @@
     {
         await QrService.InitializeAsync();
 
-        foreach (var p in QrService.AvailablePacks.Where(p => p.IsDefault))
-            _selectedPacks.Add(p.PackId);
-
-        if (QualitySession.SelectedPackIds.Count > 0)
-        {
-            _selectedPacks.Clear();
-            foreach (var packId in QualitySession.SelectedPackIds)
-                _selectedPacks.Add(packId);
-        }
-
         // Restore any artifacts already in the workspace from this session.
         _constitutionText = Workspace.Get(WorkspaceArtifactKind.Constitution)?.Text ?? string.Empty;
         _specText         = Workspace.Get(WorkspaceArtifactKind.Specification)?.Text ?? string.Empty;
         _planText         = Workspace.Get(WorkspaceArtifactKind.Plan)?.Text          ?? string.Empty;
         _taskText         = Workspace.Get(WorkspaceArtifactKind.Tasks)?.Text         ?? string.Empty;
         _dataModelText    = Workspace.Get(WorkspaceArtifactKind.DataModel)?.Text     ?? string.Empty;
+
+        // Check if there's a prior session with selected packs
+        if (QualitySession.SelectedPackIds.Count > 0)
+        {
+            // Use the prior session's pack selections
+            _selectedPacks.Clear();
+            foreach (var packId in QualitySession.SelectedPackIds)
+            {
+                var pack = QrService.AvailablePacks.FirstOrDefault(p => p.PackId == packId);
+                if (pack is not null && IsPackAvailable(pack))
+                    _selectedPacks.Add(packId);
+            }
+        }
+        else
+        {
+            // Apply default selections based on loaded artifacts
+            ApplyDefaultPackSelections();
+        }
 
         if (QualitySession.HasResult && IsSessionForCurrentWorkspace())
             RestoreReport(QualitySession.Report!);
@@ -466,6 +481,7 @@
         _constitutionText = v ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.Constitution, v!);
         else Workspace.Clear(WorkspaceArtifactKind.Constitution);
+        ApplyDefaultPackSelections();
     }
 
     private void SetSpecText(string? v)
@@ -473,6 +489,7 @@
         _specText = v ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.Specification, v!);
         else Workspace.Clear(WorkspaceArtifactKind.Specification);
+        ApplyDefaultPackSelections();
     }
 
     private void SetPlanText(string? v)
@@ -480,6 +497,7 @@
         _planText = v ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.Plan, v!);
         else Workspace.Clear(WorkspaceArtifactKind.Plan);
+        ApplyDefaultPackSelections();
     }
 
     private void SetTaskText(string? v)
@@ -487,6 +505,7 @@
         _taskText = v ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.Tasks, v!);
         else Workspace.Clear(WorkspaceArtifactKind.Tasks);
+        ApplyDefaultPackSelections();
     }
 
     private void SetDataModelText(string? v)
@@ -494,6 +513,7 @@
         _dataModelText = v ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.DataModel, v!);
         else Workspace.Clear(WorkspaceArtifactKind.DataModel);
+        ApplyDefaultPackSelections();
     }
 
     // ── Derived helpers ───────────────────────────────────────────────────────
@@ -541,6 +561,66 @@
         }
     }
 
+    private bool IsPackAvailable(QualityReviewPackDescriptor pack) =>
+        pack.PackId switch
+        {
+            "qa-auditor" => HasSpec || HasPlan || HasTasks,
+            "constitution-compliance" => HasConstitution,
+            "data-model-quality" => HasDataModel,
+            "wcag-2.2" => HasSpec, // TODO: Add FrontendTargetUrl support when available
+            "owasp-asvs" => HasSpec, // TODO: Add API/Frontend target support when available
+            "gdpr" => HasSpec || HasDataModel,
+            "iso-25010" => HasSpec || HasPlan,
+            "qa-readiness" => HasSpec || HasTasks,
+            "delivery-readiness" => HasPlan || HasTasks,
+            _ => true, // Default to available if pack ID not recognized
+        };
+
+    private string? GetPackRequirementText(QualityReviewPackDescriptor pack) =>
+        pack.PackId switch
+        {
+            "qa-auditor" => "Requires specification, plan, or tasks",
+            "constitution-compliance" => "Requires constitution.md",
+            "data-model-quality" => "Requires data-model.md",
+            "wcag-2.2" => "Requires specification",
+            "owasp-asvs" => "Requires specification",
+            "gdpr" => "Requires specification or data model",
+            "iso-25010" => "Requires specification or plan",
+            "qa-readiness" => "Requires specification or tasks",
+            "delivery-readiness" => "Requires plan or tasks",
+            _ => null,
+        };
+
+    private HashSet<string> GetDefaultSelectedPacks()
+    {
+        var defaultPacks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pack in QrService.AvailablePacks)
+        {
+            if (IsPackAvailable(pack))
+                defaultPacks.Add(pack.PackId);
+        }
+        return defaultPacks;
+    }
+
+    private void ApplyDefaultPackSelections()
+    {
+        // Only auto-select if user hasn't manually customized selections
+        // We determine this by checking if packs are still in their default state
+        var availablePacks = GetDefaultSelectedPacks();
+
+        // Remove selections for now-unavailable packs
+        var unavailablePacks = _selectedPacks.Where(id => !availablePacks.Contains(id)).ToList();
+        foreach (var id in unavailablePacks)
+            _selectedPacks.Remove(id);
+
+        // Add selections for newly-available packs if they were defaults
+        foreach (var pack in QrService.AvailablePacks)
+        {
+            if (pack.IsDefault && IsPackAvailable(pack) && !_selectedPacks.Contains(pack.PackId))
+                _selectedPacks.Add(pack.PackId);
+        }
+    }
+
     private string? PackPrerequisiteWarning(QualityReviewPackDescriptor pack) =>
         pack.PackId == "constitution-compliance" && string.IsNullOrWhiteSpace(_constitutionText)
             ? "Requires constitution"
@@ -553,6 +633,13 @@
         : pack.PackId == "data-model-quality" && string.IsNullOrWhiteSpace(_dataModelText)
             ? "Requires data-model.md"
         : null;
+
+    // ── Artifact presence helpers ─────────────────────────────────────────────
+    private bool HasConstitution => !string.IsNullOrWhiteSpace(_constitutionText);
+    private bool HasSpec => !string.IsNullOrWhiteSpace(_specText);
+    private bool HasPlan => !string.IsNullOrWhiteSpace(_planText);
+    private bool HasTasks => !string.IsNullOrWhiteSpace(_taskText);
+    private bool HasDataModel => !string.IsNullOrWhiteSpace(_dataModelText);
 
     // ── Actions ───────────────────────────────────────────────────────────────
 

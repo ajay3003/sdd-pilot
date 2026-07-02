@@ -7,6 +7,7 @@
 @inject NavigationManager NavigationManager
 @inject BirkNext.Web.Services.ProjectDocumentApiService DocumentApi
 @inject BirkNext.Web.Services.IWorkspaceSessionService Workspace
+@inject BirkNext.Web.Services.IConstitutionAnalysisService ConstitutionService
 
 <PageTitle>Constitution Explorer — QA Review Studio</PageTitle>
 
@@ -18,8 +19,10 @@
     <div class="ce-page-body">
         <ConstitutionExplorerPanel
             ConstitutionText="@_initialText"
+            ParsedDocument="@_parsedDocument"
+            SemanticModel="@_semanticModel"
             InitialView="@_initialView"
-            OnBuilt="OnDocumentBuilt" />
+            OnTextChanged="OnPanelTextChanged" />
     </div>
 
 </div>
@@ -27,6 +30,8 @@
 @code {
     private string _initialText = string.Empty;
     private string? _initialView;
+    private ConstitutionDocument? _parsedDocument;
+    private ConstitutionSemanticModel? _semanticModel;
 
     private const string StorageKey = "ce-standalone-constitution";
 
@@ -53,6 +58,7 @@
         {
             Workspace.Set(WorkspaceArtifactKind.Constitution, content);
             _initialText = content;
+            BuildSemanticModel(content);
             StateHasChanged();
             return;
         }
@@ -70,13 +76,27 @@
             catch { }
             Workspace.Set(WorkspaceArtifactKind.Constitution, legacy);
             _initialText = legacy;
+            BuildSemanticModel(legacy);
             StateHasChanged();
         }
     }
 
-    private async Task OnDocumentBuilt(string text)
+    private void BuildSemanticModel(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _semanticModel = null;
+            _parsedDocument = null;
+            return;
+        }
+        _parsedDocument = ConstitutionService.Parse(text);
+        _semanticModel = ConstitutionAnalysisService.BuildSemanticModel(_parsedDocument);
+    }
+
+    private async Task OnPanelTextChanged(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
+        BuildSemanticModel(text);
         Workspace.Set(WorkspaceArtifactKind.Constitution, text);
         try { await DocumentApi.SaveAsync("constitution", text); } catch { }
         try { await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey); } catch { }

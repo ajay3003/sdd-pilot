@@ -64,6 +64,8 @@ builder.Services.AddSingleton<IConstitutionComplianceService, ConstitutionCompli
 builder.Services.AddSingleton<IQAReadinessService, QAReadinessService>();
 builder.Services.AddSingleton<IQaAuditorService, QaAuditorService>();
 builder.Services.AddSingleton<IDeliveryReadinessAssessmentService, DeliveryReadinessService>();
+builder.Services.AddSingleton<IReviewContextValidator, ReviewContextValidator>();
+builder.Services.AddSingleton<TaskSpecAlignmentService>();
 builder.Services.AddSingleton<IStandardsComplianceService>(_ =>
     new StandardsComplianceService(
         new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) }));
@@ -73,9 +75,11 @@ builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotServic
 builder.Services.AddSingleton<IReportExportService, ReportExportService>();
 builder.Services.AddSingleton<IFrontendQualityReviewService, FrontendQualityReviewService>();
 builder.Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
+builder.Services.AddScoped<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
 builder.Services.AddSingleton<WorkspaceArtifactRepository>();
 builder.Services.AddSingleton<IWorkspaceArtifactRepository>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
 builder.Services.AddSingleton<IWorkspaceSessionService>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
+builder.Services.AddSingleton<IWorkspaceArtifactStatusService, WorkspaceArtifactStatusService>();
 builder.Services.AddScoped<RuntimeReviewSessionService>();
 builder.Services.AddScoped<QualityReviewSessionService>();
 builder.Services.AddScoped<TaskAlignmentSessionService>();

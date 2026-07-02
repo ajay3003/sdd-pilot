@@ -78,6 +78,44 @@ public class AdminApiService
             return (false, $"Request failed: {ex.Message}");
         }
     }
+
+    public async Task<EnvironmentDiagnosticsReportDto?> GetEnvironmentDiagnosticsAsync()
+    {
+        try
+        {
+            var response = await _client.PostAsJsonAsync("api/admin/environment-diagnostics", new { });
+            return await response.Content.ReadFromJsonAsync<EnvironmentDiagnosticsReportDto>();
+        }
+        catch (Exception ex)
+        {
+            // Log the exception so it's captured in application logs
+            Console.Error.WriteLine($"[ERROR] Environment diagnostics failed: {ex.GetType().Name}: {ex.Message}");
+            if (ex.InnerException != null)
+                Console.Error.WriteLine($"[ERROR] Inner exception: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
+            Console.Error.WriteLine($"[ERROR] Stack trace: {ex.StackTrace}");
+            return null;
+        }
+    }
+
+    public async Task<(EnvironmentDiagnosticsReportDto? Report, string? ErrorMessage, string? ErrorStack)> GetEnvironmentDiagnosticsWithErrorDetailsAsync()
+    {
+        try
+        {
+            var response = await _client.PostAsJsonAsync("api/admin/environment-diagnostics", new { });
+            var report = await response.Content.ReadFromJsonAsync<EnvironmentDiagnosticsReportDto>();
+            return (report, null, null);
+        }
+        catch (Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            if (ex.InnerException != null)
+                message += $"\n\nInner Exception: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}";
+
+            var stackTrace = ex.StackTrace ?? "No stack trace available";
+
+            return (null, message, stackTrace);
+        }
+    }
 }
 
 public class SystemSettingsDto
@@ -283,7 +321,7 @@ public class FeatureVisibilityDto
     [JsonPropertyName("blazorWasmSecurityReview")]        public bool BlazorWasmSecurityReview        { get; set; } = true;
     [JsonPropertyName("blazorWasmPerformanceReview")]     public bool BlazorWasmPerformanceReview     { get; set; } = true;
     [JsonPropertyName("taskExplorer")]         public bool TaskExplorer         { get; set; } = true;
-    [JsonPropertyName("aiChangeReview")]       public bool AiChangeReview       { get; set; } = true;
+    [JsonPropertyName("aiChangeReview")]       public bool AiChangeReview       { get; set; } = false;
     [JsonPropertyName("enableExtractionReview")] public bool EnableExtractionReview { get; set; } = false;
     [JsonPropertyName("enableArchitectureView")] public bool EnableArchitectureView { get; set; } = false;
     [JsonPropertyName("constitutionExplorer")]  public bool ConstitutionExplorer  { get; set; } = true;
@@ -292,4 +330,25 @@ public class FeatureVisibilityDto
     [JsonPropertyName("artifactTraceability")]        public bool ArtifactTraceability       { get; set; } = true;
     [JsonPropertyName("adminSystemSettings")]         public bool AdminSystemSettings        { get; set; } = true;
     [JsonPropertyName("qualityReview")]               public bool QualityReview              { get; set; } = true;
+}
+
+public class EnvironmentDiagnosticsReportDto
+{
+    [JsonPropertyName("generatedAt")] public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
+    [JsonPropertyName("environment")] public string Environment { get; set; } = "";
+    [JsonPropertyName("databaseChecks")] public List<EnvironmentDiagnosticCheckDto> DatabaseChecks { get; set; } = [];
+    [JsonPropertyName("backendApiChecks")] public List<EnvironmentDiagnosticCheckDto> BackendApiChecks { get; set; } = [];
+    [JsonPropertyName("workspaceChecks")] public List<EnvironmentDiagnosticCheckDto> WorkspaceChecks { get; set; } = [];
+    [JsonPropertyName("reviewContextChecks")] public List<EnvironmentDiagnosticCheckDto> ReviewContextChecks { get; set; } = [];
+    [JsonPropertyName("exportChecks")] public List<EnvironmentDiagnosticCheckDto> ExportChecks { get; set; } = [];
+    [JsonPropertyName("overallStatus")] public string OverallStatus { get; set; } = "Pass";
+}
+
+public class EnvironmentDiagnosticCheckDto
+{
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("status")] public string Status { get; set; } = "";
+    [JsonPropertyName("details")] public string Details { get; set; } = "";
+    [JsonPropertyName("recommendation")] public string Recommendation { get; set; } = "";
+    [JsonPropertyName("technicalDetails")] public string? TechnicalDetails { get; set; }
 }

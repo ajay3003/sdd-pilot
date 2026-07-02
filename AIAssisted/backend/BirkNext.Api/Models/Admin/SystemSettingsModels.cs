@@ -145,7 +145,7 @@ public class FeatureVisibilityInfo
     public bool BlazorWasmPerformanceReview { get; set; } = true;
     public bool TaskExplorer { get; set; } = true;
     public bool QualityReview { get; set; } = true;
-    public bool AiChangeReview { get; set; } = true;
+    public bool AiChangeReview { get; set; } = false;
     public bool EnableExtractionReview { get; set; } = false;
     public bool EnableArchitectureView { get; set; } = false;
     public bool AdminSystemSettings { get; set; } = true;

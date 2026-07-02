@@ -7,6 +7,7 @@
 @inject NavigationManager NavigationManager
 @inject BirkNext.Web.Services.ProjectDocumentApiService DocumentApi
 @inject BirkNext.Web.Services.IWorkspaceSessionService Workspace
+@inject BirkNext.Web.Services.IPlanAnalysisService PlanService
 
 <PageTitle>Plan Explorer — QA Review Studio</PageTitle>
 
@@ -18,8 +19,10 @@
     <div class="pe-page-body">
         <PlanExplorerPanel
             PlanText="@_initialText"
+            ParsedPlan="@_parsedPlan"
+            SemanticModel="@_semanticModel"
             InitialView="@_initialView"
-            OnBuilt="OnPlanBuilt" />
+            OnTextChanged="OnPanelTextChanged" />
     </div>
 
 </div>
@@ -27,6 +30,8 @@
 @code {
     private string _initialText = string.Empty;
     private string? _initialView;
+    private PlanDocument? _parsedPlan;
+    private PlanSemanticModel? _semanticModel;
 
     private const string StorageKey = "pe-standalone-plan";
 
@@ -53,6 +58,7 @@
         {
             Workspace.Set(WorkspaceArtifactKind.Plan, content);
             _initialText = content;
+            BuildSemanticModel(content);
             StateHasChanged();
             return;
         }
@@ -70,13 +76,27 @@
             catch { }
             Workspace.Set(WorkspaceArtifactKind.Plan, legacy);
             _initialText = legacy;
+            BuildSemanticModel(legacy);
             StateHasChanged();
         }
     }
 
-    private async Task OnPlanBuilt(string text)
+    private void BuildSemanticModel(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _semanticModel = null;
+            _parsedPlan = null;
+            return;
+        }
+        _parsedPlan = PlanService.Parse(text);
+        _semanticModel = PlanAnalysisService.BuildSemanticModel(_parsedPlan);
+    }
+
+    private async Task OnPanelTextChanged(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
+        BuildSemanticModel(text);
         Workspace.Set(WorkspaceArtifactKind.Plan, text);
         try { await DocumentApi.SaveAsync("plan", text); } catch { }
         try { await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey); } catch { }

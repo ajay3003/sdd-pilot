@@ -41,7 +41,7 @@
             <button
                 class="ce-build-btn"
                 disabled="@(!CanBuild)"
-                @onclick="BuildDocument">
+                @onclick="BuildDocumentAsync">
                 Build Constitution Explorer
             </button>
         </div>
@@ -777,8 +777,10 @@
 
 @code {
     [Parameter] public string ConstitutionText { get; set; } = string.Empty;
+    [Parameter] public ConstitutionDocument? ParsedDocument { get; set; }
+    [Parameter] public ConstitutionSemanticModel? SemanticModel { get; set; }
     [Parameter] public string? InitialView { get; set; }
-    [Parameter] public EventCallback<string> OnBuilt { get; set; }
+    [Parameter] public EventCallback<string> OnTextChanged { get; set; }
 
     private ConstitutionDocument? _document;
     private string _localText = string.Empty;
@@ -883,29 +885,27 @@
 
     protected override void OnParametersSet()
     {
-        if (!string.IsNullOrWhiteSpace(ConstitutionText) && _document is null)
+        if (ParsedDocument is not null)
+        {
+            _document = ParsedDocument;
+        }
+        else if (!string.IsNullOrWhiteSpace(ConstitutionText) && _document is null)
         {
             _localText = ConstitutionText;
-            BuildDocument();
+            var service = new ConstitutionAnalysisService();
+            _document = service.Parse(ConstitutionText);
         }
 
         if (InitialView is not null && _document is not null)
             _activeTab = InitialView;
     }
 
-    private void BuildDocument()
+
+    private async Task BuildDocumentAsync()
     {
         if (string.IsNullOrWhiteSpace(_localText)) return;
-
-        _document = AnalysisService.Parse(_localText);
-        _expandedIds = [];
-        _mapRoots = null;
-        _mapExpandedIds = [];
-        _searchQuery = string.Empty;
-        _traceTypeFilter = null;
-        _activeTab = InitialView ?? "overview";
-
-        _ = OnBuilt.InvokeAsync(_localText);
+        // Delegate parsing to parent, which will build semantic model and pass back via SemanticModel parameter
+        await OnTextChanged.InvokeAsync(_localText);
     }
 
     private void Reset()

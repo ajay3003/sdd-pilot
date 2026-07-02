@@ -17,6 +17,8 @@
         <span class="ug-toc-sep">·</span>
         <a href="/user-guide#workflow" class="ug-toc-link" onclick="userGuide.scrollToSection('workflow'); return false;">SDD Workflow</a>
         <span class="ug-toc-sep">·</span>
+        <a href="/user-guide#workspace" class="ug-toc-link" onclick="userGuide.scrollToSection('workspace'); return false;">Workspace</a>
+        <span class="ug-toc-sep">·</span>
         <a href="/user-guide#workflows" class="ug-toc-link" onclick="userGuide.scrollToSection('workflows'); return false;">Typical Workflows</a>
         <span class="ug-toc-sep">·</span>
         <a href="/user-guide#feature-details" class="ug-toc-link" onclick="userGuide.scrollToSection('feature-details'); return false;">Feature Details</a>
@@ -26,6 +28,8 @@
         <a href="/user-guide#scenarios" class="ug-toc-link" onclick="userGuide.scrollToSection('scenarios'); return false;">Helpful Scenarios</a>
         <span class="ug-toc-sep">·</span>
         <a href="/user-guide#discovery" class="ug-toc-link" onclick="userGuide.scrollToSection('discovery'); return false;">Feature Discovery</a>
+        <span class="ug-toc-sep">·</span>
+        <a href="/user-guide#validation" class="ug-toc-link" onclick="userGuide.scrollToSection('validation'); return false;">Validation</a>
         <span class="ug-toc-sep">·</span>
         <a href="/user-guide#faq" class="ug-toc-link" onclick="userGuide.scrollToSection('faq'); return false;">FAQ</a>
         <span class="ug-toc-sep">·</span>
@@ -104,7 +108,7 @@
         </div>
 
         <h3 class="ug-subsection-title">AI Review</h3>
-        <p>AI Review features augment the deterministic analysis layer with AI-powered advisors.</p>
+        <p>AI Review features augment the deterministic analysis layer with AI-powered advisors. AI Review is disabled by default for new installations and development environments. Admins can enable it from <a href="/admin/system-settings" class="ug-inline-link">System Settings</a> → <strong>Feature Visibility</strong> by turning on <strong>AI Change Review</strong>.</p>
         <div class="ug-concept-grid">
             <div class="ug-concept-card">
                 <div class="ug-concept-name">AI Change Review</div>
@@ -153,77 +157,101 @@
                 </tbody>
             </table>
         </div>
+
     </section>
 
     <!-- ── Section 4: SDD Workflow ─────────────────────────────────────── -->
     <section id="workflow" class="ug-section">
         <h2 class="ug-section-title">SDD Workflow</h2>
-        <p class="ug-section-lead">The recommended nine-step workflow — from specification review to implementation traceability. Core steps are required; Optional steps apply when the relevant artifact or scenario exists.</p>
+        <p class="ug-section-lead">The workflow is dynamic and workspace-aware. The <a href="/getting-started" class="ug-inline-link">Recommended Workflow</a> page adapts automatically based on what you've loaded, what you've completed, and what's available next. It shows your current workspace status, next recommended action, and which steps are ready, in progress, or locked pending prerequisites.</p>
 
+        <h3 class="ug-subsection-title">The Recommended Workflow Page</h3>
+        <p>Visit <a href="/getting-started" class="ug-inline-link">/getting-started</a> for a live, interactive guide that:</p>
+        <ul class="ug-fd-list">
+            <li><strong>Shows your workspace</strong> — project name, artifact count, and readiness badges for Constitution, Specification, Plan, Tasks, and Data Model</li>
+            <li><strong>Recommends your next action</strong> — a "Next Recommended Action" card shows the most valuable step based on what's loaded and what you've completed</li>
+            <li><strong>Highlights the current step</strong> — the workflow step you should focus on is visually emphasized</li>
+            <li><strong>Locks unavailable steps</strong> — steps that require artifacts you haven't loaded yet are marked as "Locked" until their prerequisites are met</li>
+            <li><strong>Shows completion status</strong> — steps mark as "Complete" when you've run them, "Available" when prerequisites are met, "In Progress" when active, or "Locked" when awaiting prerequisites</li>
+            <li><strong>Updates in real-time</strong> — the workflow refreshes automatically when you load artifacts, run analysis, or toggle features from Feature Visibility</li>
+        </ul>
+
+        <h4 class="ug-feature-title">Typical Workflow Sequence</h4>
+        <p>While the workflow is dynamic, a typical sequence looks like this:</p>
         <div class="ug-core-flow-layout">
             <div class="ug-core-flow">
-                <div class="ug-flow-node ug-flow-primary">1 · Specification Review</div>
+                <div class="ug-flow-node ug-flow-secondary">1 · Load Artifacts</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-secondary">2 · Constitution Explorer (Optional)</div>
+                <div class="ug-flow-node ug-flow-secondary">2-5 · Review Supporting Artifacts</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-secondary">3 · Plan Explorer (Optional)</div>
+                <div class="ug-flow-node ug-flow-primary">6 · Run Reviews & Analysis</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-secondary">4 · Task Explorer (Optional)</div>
+                <div class="ug-flow-node ug-flow-primary">7 · Quality Review</div>
                 <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-secondary">5 · QA Artifact Library (Optional)</div>
-                <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-primary">6 · Quality Review</div>
-                <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-secondary">7 · AI Change Review (Optional)</div>
-                <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-primary">8 · Implementation Review</div>
-                <div class="ug-flow-conn">↓</div>
-                <div class="ug-flow-node ug-flow-primary">9 · Implementation Traceability</div>
+                <div class="ug-flow-node ug-flow-secondary">8 · Optional: AI Change Review or Advanced Analysis</div>
             </div>
 
             <div class="ug-flow-branches">
-                <h4 class="ug-branches-title">Step → Primary Feature</h4>
+                <h4 class="ug-branches-title">Feature Visibility Control</h4>
                 <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Step 1</span>
-                    <span class="ug-branch-when">Specification Review — extract requirements &amp; AC</span>
+                    <span class="ug-branch-badge">AI Review</span>
+                    <span class="ug-branch-when">Disabled by default. Enable from System Settings → Feature Visibility → AI Review to add AI Change Review to the workflow.</span>
                 </div>
                 <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Step 2</span>
-                    <span class="ug-branch-when">Constitution Explorer — review governance rules (Optional)</span>
+                    <span class="ug-branch-badge">Legacy Traceability</span>
+                    <span class="ug-branch-when">Hidden by default. Enable from System Settings → Feature Visibility → Traceability Navigation if your team still uses legacy Code Traceability or Traceability Suggestions.</span>
                 </div>
                 <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Step 3</span>
-                    <span class="ug-branch-when">Plan Explorer — review ADRs, phases, gates (Optional)</span>
-                </div>
-                <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Step 4</span>
-                    <span class="ug-branch-when">Task Explorer — review implementation coverage (Optional)</span>
-                </div>
-                <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Step 5</span>
-                    <span class="ug-branch-when">QA Artifact Library — publish &amp; reuse QA assets (Optional)</span>
-                </div>
-                <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Step 6</span>
-                    <span class="ug-branch-when">Quality Review — Quality, Governance, Standards, Readiness packs</span>
-                </div>
-                <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Step 7</span>
-                    <span class="ug-branch-when">AI Change Review — AI-assisted implementation review (Optional)</span>
-                </div>
-                <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Step 8</span>
-                    <span class="ug-branch-when">Implementation Review — task-to-spec alignment</span>
-                </div>
-                <div class="ug-branch-item">
-                    <span class="ug-branch-badge">Step 9</span>
-                    <span class="ug-branch-when">Implementation Traceability — ADO work items to code evidence chain</span>
+                    <span class="ug-branch-badge">Developer Tools</span>
+                    <span class="ug-branch-when">System Settings includes ReviewContext Validation for developer/admin use only — visible in Development mode.</span>
                 </div>
             </div>
         </div>
+
+        <div class="ug-callout ug-callout-tip">
+            <strong>Key insight:</strong> The Recommended Workflow is not a fixed checklist. It's a guide that evolves with your work. Start by loading artifacts, then follow the "Next Recommended Action" card at the top of the page. Each completed step opens new capabilities and suggests the next valuable action.
+        </div>
     </section>
 
-    <!-- ── Section 5: Typical Workflows ────────────────────────────────── -->
+    <!-- ── Section 5: Workspace ────────────────────────────────────────── -->
+    <section id="workspace" class="ug-section">
+        <h2 class="ug-section-title">Workspace</h2>
+        <p class="ug-section-lead">Your workspace is the collection of loaded artifacts and analysis results that drive the entire platform. Understanding workspace state is key to using QA Review Studio effectively.</p>
+
+        <h3 class="ug-subsection-title">Workspace Status Panel</h3>
+        <p>Every page that works with artifacts displays a workspace status panel showing:</p>
+        <ul class="ug-fd-list">
+            <li><strong>Current project name</strong> — which sample project or workspace is active</li>
+            <li><strong>Artifact count</strong> — how many of the five supported artifacts are loaded (Constitution, Specification, Plan, Tasks, Data Model)</li>
+            <li><strong>Artifact readiness badges</strong> — a badge for each artifact showing loaded (✓) or missing (○) status with color coding</li>
+        </ul>
+
+        <h3 class="ug-subsection-title">Workspace States</h3>
+        <p>Your workspace can be in three states:</p>
+        <div class="ug-concept-grid">
+            <div class="ug-concept-card">
+                <div class="ug-concept-name">Empty Workspace</div>
+                <div class="ug-concept-desc">No artifacts are loaded. The Recommended Workflow shows an empty state and recommends loading a sample project. Most review pages are inaccessible.</div>
+            </div>
+            <div class="ug-concept-card">
+                <div class="ug-concept-name">Partial Workspace</div>
+                <div class="ug-concept-desc">Some artifacts are loaded, but not all five. The Recommended Workflow adapts to what's available and locks steps that require missing artifacts. Quality Review gracefully skips missing artifact analysis.</div>
+            </div>
+            <div class="ug-concept-card">
+                <div class="ug-concept-name">Full Workspace</div>
+                <div class="ug-concept-desc">All five artifacts are loaded. The Recommended Workflow shows all steps as available. Run Quality Review with any combination of packs for a complete analysis.</div>
+            </div>
+        </div>
+
+        <h3 class="ug-subsection-title">Loading Artifacts</h3>
+        <p>Load artifacts using <a href="/sample-projects" class="ug-inline-link">Sample Projects</a>. This page scans configured project folders, shows which artifacts are supported and which are missing, and loads them into your workspace with one click. Once loaded, artifacts remain in the workspace across all pages until you load a different project.</p>
+
+        <div class="ug-callout ug-callout-tip">
+            <strong>Workspace persistence:</strong> Your loaded artifacts and analysis results persist across all pages and browser sessions until you load a different project. You do not need to re-upload files when switching between analysis features.
+        </div>
+    </section>
+
+    <!-- ── Section 6: Typical Workflows ────────────────────────────────── -->
     <section id="workflows" class="ug-section">
         <h2 class="ug-section-title">Typical Workflows</h2>
         <p class="ug-section-lead">Common delivery scenarios and the features that support each one.</p>
@@ -342,6 +370,10 @@
                     }
                 </tbody>
             </table>
+        </div>
+
+        <div class="ug-callout ug-callout-tip">
+            <strong>Feature Visibility:</strong> Sidebar menu visibility is controlled from <a href="/admin/system-settings" class="ug-inline-link">System Settings</a> → <strong>Feature Visibility</strong>. Disabled modules keep their implementation, routes, and components intact, but they are hidden from the main menu until an admin enables them.
         </div>
     </section>
 
@@ -464,7 +496,7 @@
     <!-- ── Section 10: AI-Assisted Development ─────────────────────────── -->
     <section id="ai-dev" class="ug-section">
         <h2 class="ug-section-title">AI-Assisted Development</h2>
-        <p class="ug-section-lead">QA Review Studio is built for teams using AI to accelerate implementation. The platform helps you maintain quality, traceability, and governance even when velocity is high.</p>
+        <p class="ug-section-lead">QA Review Studio supports teams using AI to accelerate implementation. AI Review is disabled by default; enable AI Change Review from System Settings → Feature Visibility when your team needs an AI-assisted post-generation review.</p>
 
         <div class="ug-ai-flow-row">
             <div class="ug-ai-flow">
@@ -513,7 +545,63 @@
         </div>
     </section>
 
-    <!-- ── Section 11: FAQ ─────────────────────────────────────────────── -->
+    <!-- ── Section 11: Validation ──────────────────────────────────────── -->
+    <section id="validation" class="ug-section">
+        <h2 class="ug-section-title">Validation</h2>
+        <p class="ug-section-lead">Developer/admin validation tools verify that the runtime workspace and canonical ReviewContext metrics are coherent before relying on downstream analysis results.</p>
+
+        <h3 class="ug-subsection-title">ReviewContext Validation</h3>
+        <p><strong>Where:</strong> <a href="/admin/system-settings" class="ug-inline-link">System Settings</a> → Developer → ReviewContext Validation. This developer-only section is visible in Development mode and is intended for admins and maintainers, not normal end-user workflows.</p>
+        <p><strong>Purpose:</strong> It validates the canonical ReviewContext created from loaded workspace artifacts and compares its metrics with downstream analysis sources. Use it when diagnosing inconsistent counts, missing artifacts, or suspected parser/traceability regressions.</p>
+
+        <div class="ug-table-scroll">
+            <table class="ug-table">
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Meaning</th>
+                        <th>Typical action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>PASS</strong></td>
+                        <td>Canonical ReviewContext metrics and available downstream comparisons are consistent.</td>
+                        <td>Proceed with review, analysis, and quality checks.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>WARNING</strong></td>
+                        <td>Validation ran but some context is incomplete, unavailable, or only partially comparable.</td>
+                        <td>Check which artifacts are loaded and whether partial-workspace behavior is expected.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>FAIL</strong></td>
+                        <td>A canonical metric or downstream comparison is inconsistent enough to block trust in the result.</td>
+                        <td>Treat as a developer investigation item before relying on affected analysis output.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h4 class="ug-feature-title">Workspace behavior</h4>
+        <ul class="ug-fd-list">
+            <li><strong>Empty workspace:</strong> The section shows a helpful empty state and validation reports that no ReviewContext is available. Load supported artifacts first.</li>
+            <li><strong>Partial workspace:</strong> Validation still runs against the artifacts that are loaded. Missing artifact metrics may appear as warnings or zero counts; this is expected for focused reviews.</li>
+            <li><strong>Loaded workspace:</strong> The Loaded Artifacts table lists constitution.md, spec.md, plan.md, tasks.md, and data-model.md status before validation results are reviewed.</li>
+        </ul>
+
+        <h4 class="ug-feature-title">Exports</h4>
+        <ul class="ug-fd-list">
+            <li><strong>Export JSON:</strong> Copies the full validation report for debugging, automated comparison, or issue attachment.</li>
+            <li><strong>Export HTML:</strong> Copies a readable report that can be shared with maintainers or included in a diagnostic note.</li>
+        </ul>
+
+        <div class="ug-callout ug-callout-tip">
+            <strong>Screenshots:</strong> The User Guide currently does not embed screenshots for navigation, Feature Visibility, Sample Projects, review pages, analysis pages, or System Settings. No screenshot replacements are required in this page.
+        </div>
+    </section>
+
+    <!-- ── Section 12: FAQ ─────────────────────────────────────────────── -->
     <section id="faq" class="ug-section">
         <h2 class="ug-section-title">Frequently Asked Questions</h2>
 
@@ -535,7 +623,7 @@
         </div>
     </section>
 
-    <!-- ── Section 12: Analysis Ecosystem ─────────────────────────────── -->
+    <!-- ── Section 13: Glossary ────────────────────────────────────────── -->
     <section id="glossary" class="ug-section">
         <h2 class="ug-section-title">Glossary</h2>
         <p class="ug-section-lead">Common terms used throughout QA Review Studio and its documentation.</p>
@@ -595,7 +683,7 @@
         </div>
     </section>
 
-    <!-- ── Section 13: About ───────────────────────────────────────────── -->
+    <!-- ── Section 14: About ───────────────────────────────────────────── -->
     <section id="about" class="ug-section ug-about-section">
         <h2 class="ug-section-title">About</h2>
         <div class="ug-about-content">
@@ -705,7 +793,7 @@
         new("🔍", "Deterministic Audit",
             "Run rule-based quality audits that surface findings, risks, and gaps with no AI involvement."),
         new("🤖", "AI-Assisted Quality Review",
-            "Analyse AI-generated implementation changes and synthesise readiness assessments across all analysis outputs."),
+            "Optional AI Change Review for AI-generated implementation changes. Disabled by default and enabled from System Settings → Feature Visibility."),
     ];
 
     // ── Audiences ─────────────────────────────────────────────────────────
@@ -865,7 +953,7 @@
             ["Pre-release regression scoping", "Significant change reviews"],
             ["Quick implementation plan review — use Implementation Review"]),
 
-        new("artifact-traceability", "Artifact Traceability", "Analysis", "analysis", "/artifact-traceability",
+        new("artifact-traceability", "Requirements Traceability", "Analysis", "analysis", "/artifact-traceability",
             "Analyze end-to-end coverage across the Constitution → Specification → Plan → Tasks chain.",
             "constitution.md + spec.md + plan.md + tasks.md",
             "Coverage matrix, traceability chains, gap report per artifact layer",
@@ -893,12 +981,12 @@
             ["Comparing specification versions — use Spec Drift"]),
 
         new("ai-review", "AI Change Review", "AI Review", "ai", "/ai-change-auditor",
-            "AI-assisted review of implementation changes for alignment, quality, and risk.",
+            "AI-assisted review of implementation changes for alignment, quality, and risk. Disabled by default; enable it from System Settings → Feature Visibility.",
             "AI-generated change description or diff",
             "Review findings, risk indicators, alignment assessment",
-            "After using AI to generate or modify implementation.",
+            "After using AI to generate or modify implementation and after an admin has enabled AI Change Review.",
             ["Developers", "Test Leads", "Architects"],
-            ["Post-AI-generation review", "AI-assisted sprint work"],
+            ["Post-AI-generation review", "AI-assisted sprint work", "Teams that explicitly enable AI Review"],
             ["Manual implementation review — use Implementation Review"]),
 
         new("frontend-quality", "Frontend Quality Review", "Quality", "quality", "/frontend-quality-review",
@@ -910,6 +998,24 @@
             ["Pre-deployment quality gate for Blazor WASM apps", "Checking security headers, auth guards, exposed secrets, and endpoint patterns", "Validating performance thresholds — bundle size, startup, caching, and compression", "Checking accessibility and standards compliance in one run"],
             ["Non-deployed applications — requires a reachable target URL"]),
 
+        new("api-quality", "API Quality Review", "Quality", "quality", "/api-quality-review",
+            "Review API integration quality, endpoint contracts, authentication expectations, and service-readiness signals.",
+            "API quality target configured for the current review",
+            "API quality findings, risks, and recommendations",
+            "When reviewing backend/API readiness before integration or release.",
+            ["Architects", "Developers", "Test Leads"],
+            ["Checking API quality before frontend or integration testing", "Reviewing API contract and runtime risk", "Preparing service readiness evidence"],
+            ["Frontend-only reviews — use Frontend Quality Review"]),
+
+        new("integration-quality", "Integration Quality Review", "Quality", "quality", "/integration-quality-review",
+            "Review cross-system integration quality, target registry coverage, dependency risk, and integration readiness.",
+            "Integration target registry and current review context",
+            "Integration findings, risk signals, and readiness recommendations",
+            "When a feature depends on external services, APIs, message flows, or deployment integrations.",
+            ["Architects", "Developers", "Test Leads"],
+            ["Reviewing integration readiness before release", "Checking external dependencies and target configuration", "Assessing cross-service risk"],
+            ["Single-service API review — use API Quality Review"]),
+
         new("impl-traceability", "Implementation Traceability", "Analysis", "analysis", "/implementation-traceability",
             "Map implementation work items (Azure DevOps) to pull requests, commits, and changed files — producing a deterministic evidence chain for delivery governance.",
             "Azure DevOps work item IDs",
@@ -920,39 +1026,39 @@
             ["SDD artifact analysis — use Artifact Traceability for cross-artifact coverage"]),
 
         new("traceability-coverage", "Traceability & Coverage", "Traceability", "traceability", "/traceability",
-            "View session-level coverage analysis — which requirements have tests, which user stories are covered, and where gaps exist.",
+            "Legacy session-level coverage view — hidden from the sidebar by default. Specification Review now embeds Traceability & Coverage after analysis.",
             "Extracted analysis from Specification Review",
             "Coverage percentages, gap indicators, requirement and test counts by category",
-            "When you want a persistent summary view of coverage results from the current session.",
+            "When your team has enabled the legacy Traceability section and wants a persistent summary view of current-session coverage results.",
             ["Testers", "Test Leads"],
-            ["Reviewing session coverage results without re-running analysis", "Tracking requirement and test counts across the session"],
+            ["Reviewing session coverage results without re-running analysis after enabling legacy Traceability", "Tracking requirement and test counts across the session"],
             ["Running new coverage analysis — use Specification Review to re-analyse"]),
 
         new("traceability-suggestions", "Traceability Suggestions", "Traceability", "traceability", "/traceability/suggestions",
-            "Review and act on AI-generated suggestions for improving traceability links — accept or reject recommended connections between requirements and tests.",
+            "Legacy traceability suggestion workflow — hidden from the sidebar by default. Enable it from Feature Visibility only if your team still uses it.",
             "AI-generated link suggestions from session analysis",
             "Pending suggestions with confidence scores; accept or reject each to update coverage",
-            "When coverage is low and you want AI guidance on which test-to-requirement links to create.",
+            "When legacy Traceability is enabled and coverage is low enough to justify suggested test-to-requirement links.",
             ["Testers", "Test Leads"],
-            ["Improving coverage by acting on AI-suggested traceability links", "Prioritising link work by confidence score"],
+            ["Improving coverage by acting on suggested traceability links after enabling legacy Traceability", "Prioritising link work by confidence score"],
             ["Deep coverage analysis — use Specification Review for a fresh analysis run"]),
 
         new("code-traceability", "Code Traceability", "Traceability", "traceability", "/code-traceability",
-            "Link source code files to specification requirements and tests — providing code-level implementation evidence against requirements.",
+            "Legacy code-to-requirement linking workflow — hidden from the sidebar by default. Enable it from Feature Visibility only if your team still uses code-level traceability.",
             "Source code file registrations via the UI",
             "KPIs: tracked files, requirements implemented, tests implemented, files missing traceability links",
-            "When you need to verify that source code is linked to requirements and tests for implementation governance.",
+            "When legacy Code Traceability is enabled and you need to verify that source files are linked to requirements and tests.",
             ["Developers", "Architects", "Test Leads"],
-            ["Confirming source code is traceable to functional requirements", "Identifying files missing requirement or test links", "Code-level governance audits requiring implementation evidence"],
+            ["Confirming source code is traceable to functional requirements after enabling Code Traceability", "Identifying files missing requirement or test links", "Code-level governance audits requiring implementation evidence"],
             ["Artifact-level traceability — use Artifact Traceability for the cross-artifact chain"]),
 
         new("system-settings", "System Settings", "Admin", "admin", "/admin/system-settings",
-            "Configure platform-wide settings — feature visibility, frontend analysis profiles, AI parameters, diagnostics, and maintenance.",
+            "Configure platform-wide settings — Feature Visibility, platform/runtime configuration, diagnostics, Runtime Diagnostics, developer-only ReviewContext Validation, and maintenance.",
             "No input — configuration interface",
             "Platform configuration across all modules and features",
             "When configuring the platform for your team or setting up frontend analysis profiles.",
-            ["Architects", "Test Leads"],
-            ["Enabling or disabling features via Feature Visibility", "Configuring Target Environments for Frontend Quality Review and future runtime reviews", "Reviewing Configuration Health and connection status", "Setting AI parameters and API credentials", "Running diagnostics or maintenance tasks", "Viewing Runtime Diagnostics (Developer -> Runtime Diagnostics) - live session, workspace, cache, analysis, and service state"],
+            ["Architects", "Test Leads", "Developers/Admins"],
+            ["Enabling or disabling sidebar modules via Feature Visibility", "Configuring Target Environments for Frontend Quality Review and future runtime reviews", "Reviewing Configuration Health and connection status", "Running Diagnostics or Runtime Diagnostics", "Running ReviewContext Validation in Development mode to validate canonical metrics", "Running maintenance tasks"],
             ["Feature-level analysis — navigate to the specific feature page for analysis work"]),
     ];
 
@@ -962,6 +1068,8 @@
 
     private static readonly NavEntry[] NavReference =
     [
+        new("Recommended Workflow",     "Guided SDD workflow",                "Getting Started", "getting-started", "/getting-started"),
+        new("User Guide",               "Reference documentation",            "Getting Started", "getting-started", "/user-guide"),
         new("Dashboard",                "Project health KPIs at a glance",    "Review",      "review",      "/dashboard"),
         new("Constitution Explorer",    "Review governance rules",             "Review",      "review",      "/constitution-explorer"),
         new("Specification Review",     "Review requirements & AC",            "Review",      "review",      "/extract"),
@@ -971,17 +1079,16 @@
         new("QA Artifact Library",      "Store & reuse QA assets",             "Library",     "library",     "/scenarios"),
         new("Sample Projects",          "Browse M2LB projects and load artifacts", "Library", "library",     "/sample-projects"),
         new("Create Test Scenario",     "Author manual test cases",            "Library",     "library",     "/scenarios/new"),
-        new("Traceability & Coverage",  "View session coverage results",       "Traceability","traceability","/traceability"),
-        new("Traceability Suggestions", "Act on AI traceability suggestions",  "Traceability","traceability","/traceability/suggestions"),
-        new("Code Traceability",        "Link source files to requirements",   "Traceability","traceability","/code-traceability"),
         new("Spec Drift",               "Detect coverage drift",               "Analysis",    "analysis",    "/spec-drift"),
         new("Impact Analysis",          "Scope regression impact",             "Analysis",    "analysis",    "/impact-analysis"),
-        new("Artifact Traceability",    "Analyze cross-artifact coverage",     "Analysis",    "analysis",    "/artifact-traceability"),
+        new("Requirements Traceability", "Analyze cross-artifact coverage",     "Analysis",    "analysis",    "/artifact-traceability"),
         new("Implementation Review",    "Align tasks to spec",                 "Analysis",    "analysis",    "/task-alignment"),
         new("Implementation Traceability","Map ADO work items to code changes","Analysis",    "analysis",    "/implementation-traceability"),
         new("Quality Review",             "Run compliance, audit, and readiness packs","Quality","quality", "/quality-review"),
         new("Frontend Quality Review",  "Unified performance, security, accessibility, and standards review","Quality","quality","/frontend-quality-review"),
-        new("AI Change Review",         "Review AI-generated changes",         "AI Review",   "ai",          "/ai-change-auditor"),
+        new("API Quality Review",       "Review backend/API quality",          "Quality",     "quality",     "/api-quality-review"),
+        new("Integration Quality Review","Review integration readiness",        "Quality",     "quality",     "/integration-quality-review"),
+        new("AI Change Review",         "Review AI-generated changes",         "AI REVIEW", "ai", "/ai-change-auditor"),
         new("System Settings",          "Configure platform settings",         "Admin",       "admin",       "/admin/system-settings"),
     ];
 
@@ -997,6 +1104,9 @@
         new("I want to review a specification.",
             "Specification Review", "/extract",
             "Extract requirements, AC, and review coverage"),
+        new("I want to load a sample project.",
+            "Sample Projects", "/sample-projects",
+            "Load supported artifacts, then verify the workspace banner before opening explorer pages"),
         new("I want to review an implementation plan.",
             "Plan Explorer", "/plan-explorer",
             "Check ADRs, phases, gates, and risks"),
@@ -1017,7 +1127,7 @@
             "Select the QA Readiness (Readiness) pack for scored readiness gates"),
         new("I want to review AI-generated changes.",
             "AI Change Review", "/ai-change-auditor",
-            "After AI generates or modifies implementation"),
+            "Disabled by default; enable AI Change Review in System Settings → Feature Visibility"),
         new("I want to check implementation task alignment against the spec.",
             "Implementation Review", "/task-alignment",
             "Align tasks.md to spec.md"),
@@ -1035,10 +1145,13 @@
             "Enter work item IDs from Azure DevOps"),
         new("I want to link source code files to requirements.",
             "Code Traceability", "/code-traceability",
-            "Register source files to create code-level traceability links"),
+            "Legacy Traceability navigation is hidden by default; enable it from Feature Visibility if your team still uses it"),
         new("I want to enable or disable features for my team.",
             "System Settings", "/admin/system-settings",
             "Use the Feature Visibility tab"),
+        new("I want to validate canonical ReviewContext metrics.",
+            "System Settings", "/admin/system-settings",
+            "Developer-only: open Developer → ReviewContext Validation in Development mode"),
     ];
 
     // ── Typical workflows ─────────────────────────────────────────────────
@@ -1048,14 +1161,14 @@
     private static readonly Workflow[] TypicalWorkflows =
     [
         new("Full SDD Review",
-            ["Specification Review", "Constitution Explorer", "Plan Explorer", "Task Explorer", "Quality Review", "Implementation Review", "Implementation Traceability"],
-            "Complete end-to-end workflow — from spec extraction through governance, plan, and task review to the final Quality Review gate and implementation traceability sign-off."),
+            ["Sample Projects", "Verify Workspace Banner", "Explorer Pages", "Quality Review", "Artifact Traceability", "Implementation Review", "Implementation Traceability"],
+            "Complete end-to-end workflow: load a sample or project workspace, verify the workspace banner, inspect explorer pages, run reviews and analysis, then sign off implementation traceability."),
         new("New Feature Review",
             ["Specification Review", "Plan Explorer", "Quality Review", "Implementation Review"],
             "Quality validation for a new feature — extract requirements, review the plan, run Quality Review with Quality and Readiness packs, then validate task alignment."),
         new("Existing Project Review",
-            ["Specification Review", "Constitution Explorer", "Spec Drift", "Quality Review"],
-            "Onboard an existing project — extract the spec, review governance rules, identify drift, then run Quality Review with Governance and Readiness packs."),
+            ["Sample Projects", "Specification Review", "Constitution Explorer", "Spec Drift", "Quality Review"],
+            "Onboard an existing project: load supported artifacts from Sample Projects, extract the spec, review governance rules, identify drift, then run Quality Review with Governance and Readiness packs."),
         new("Specification Validation",
             ["Specification Review", "Traceability & Coverage", "Flow View", "Spec Explorer"],
             "Deep review of a single specification — extract requirements, assess coverage, and explore story readiness."),
@@ -1076,7 +1189,10 @@
             "When a requirement changes — identify drift, assess impact, validate task alignment, then re-run Quality Review."),
         new("AI Generated Change",
             ["AI Change Review", "Implementation Review", "Quality Review"],
-            "After AI generates implementation — review alignment with AI Change Review, validate tasks against the spec, then run Quality Review with Quality and Readiness packs."),
+            "After AI generates implementation: enable AI Change Review from Feature Visibility, review alignment, validate tasks against the spec, then run Quality Review with Quality and Readiness packs."),
+        new("Developer Validation",
+            ["System Settings", "ReviewContext Validation", "Export JSON/HTML"],
+            "Optional maintainer workflow: validate canonical ReviewContext metrics, inspect PASS/WARNING/FAIL findings, and export JSON or HTML diagnostics when investigating runtime inconsistencies."),
     ];
 
     // ── FAQ ───────────────────────────────────────────────────────────────

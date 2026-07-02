@@ -49,8 +49,8 @@ public static class TaskDeltaService
         "classification", "sensitivity", "gdpr",
     ];
 
-    // Area detection — intentionally a subset of AreaDefs in TaskSpecAlignmentService,
-    // kept independent so the two services can evolve separately.
+    // Area detection for deltas is intentionally local because this service compares
+    // two task snapshots and does not receive a ReviewContext.
     private static readonly (AffectedArea Area, string[] Keywords)[] AreaDefs =
     [
         (AffectedArea.Security, ["security", "kode6", "kode7", "kode 6", "kode 7",

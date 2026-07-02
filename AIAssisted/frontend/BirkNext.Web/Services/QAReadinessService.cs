@@ -21,10 +21,19 @@ public sealed class QAReadinessService : IQAReadinessService
         ConstitutionDocument? constitution,
         SpecTree?             spec,
         PlanDocument?         plan,
-        TaskTree?             tasks)
+        TaskTree?             tasks,
+        ReviewContext?        context = null)
     {
-        // Run sub-analyses so scoring can use their outputs
-        var traceReport      = _traceability.Analyze(constitution, spec, plan, tasks);
+        // Use pre-built ReviewContext if provided (consumer pattern),
+        // otherwise build it here (producer pattern).
+        var reviewContext = context ?? ReviewContextFactory.Create(
+            ConstitutionAnalysisService.BuildSemanticModel(constitution ?? new()),
+            SpecExplorerService.BuildSemanticModel(spec ?? new(), ""),
+            PlanAnalysisService.BuildSemanticModel(plan ?? new()),
+            TaskExplorerService.BuildSemanticModel(tasks ?? new()),
+            new DataModelSemanticModel());
+
+        var traceReport      = _traceability.Analyze(constitution, spec, plan, tasks, reviewContext);
         var complianceReport = constitution is not null
             ? _compliance.Analyze(constitution, spec, plan, tasks)
             : new ConstitutionComplianceReport { HasConstitution = false };

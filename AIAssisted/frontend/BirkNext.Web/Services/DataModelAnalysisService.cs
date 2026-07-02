@@ -37,6 +37,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         string?         currentEnumDesc           = null;
         var             currentEnumValues         = new List<string>();
         var             currentSection            = string.Empty;
+        var             currentEntitySectionKind = string.Empty; // "persistent", "runtime", etc.
         var             globalRelationships       = new List<DataRelationship>();
         var             globalIndexes             = new List<DataIndex>();
         var             globalConstraints         = new List<DataConstraint>();
@@ -112,46 +113,61 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         currentEntityName    = h2[7..].Trim();
                         currentEntityIsTable = false;
                         currentSection       = string.Empty;
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.StartsWith("Table:", StringComparison.OrdinalIgnoreCase))
                     {
                         currentEntityName    = h2[6..].Trim();
                         currentEntityIsTable = true;
                         currentSection       = string.Empty;
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.StartsWith("Enum:", StringComparison.OrdinalIgnoreCase))
                     {
                         currentEnumName = h2[5..].Trim();
                         currentSection  = "enum";
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.Equals("Overview", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "overview";
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.StartsWith("Migration", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "migration";
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.StartsWith("Retention", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "retention";
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.Equals("Relationships", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "relationships";
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.Equals("Indexes", StringComparison.OrdinalIgnoreCase) ||
                              h2.Equals("Indices", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "indexes";
+                        currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.Equals("Constraints", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "constraints";
+                        currentEntitySectionKind = string.Empty;
+                    }
+                    else if (IsEntitySectionHeading(h2))
+                    {
+                        currentSection = "entity-section";
+                        currentEntitySectionKind = ClassifyEntitySection(h2);
                     }
                     else
                     {
                         currentSection = string.Empty;
+                        currentEntitySectionKind = string.Empty;
                     }
                     continue;
                 }
@@ -160,7 +176,50 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                 {
                     var h3 = token.Content;
 
-                    if (h3.Equals("Columns", StringComparison.OrdinalIgnoreCase))
+                    // List of subsection headings that should not be treated as entity names
+                    var isSubsectionHeading = h3.Equals("Columns", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Fields", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Properties", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Relationships", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Indexes", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Indices", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Constraints", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Traceability", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Open Questions", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("EF Configuration", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Notes", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Invariants", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Seed Data", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Source Reference", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Validation rules", StringComparison.OrdinalIgnoreCase) ||
+                                              h3.Equals("Design notes", StringComparison.OrdinalIgnoreCase);
+
+                    // Check if this is an entity name within a persistent-entities or other entity sections
+                    // Do this check BEFORE subsection name checks so entity names take precedence
+                    if (!string.IsNullOrEmpty(currentEntitySectionKind) &&
+                        !isSubsectionHeading &&
+                        !NumericH3Re.IsMatch(h3))
+                    {
+                        // Handle H3 entities in entity-section contexts
+                        // Pattern: "### EntityName" or "### EntityName — tableName description"
+                        FlushEntity();
+                        FlushEnum();
+
+                        var (entityName, tableName) = ExtractEntityAndTableName(h3);
+                        currentEntityName    = entityName;
+                        currentEntityIsTable = !string.IsNullOrEmpty(tableName);
+
+                        // If a table name was extracted, set it as a description hint
+                        if (!string.IsNullOrEmpty(tableName))
+                            currentEntityDesc = $"Table: {tableName}";
+
+                        // Continue processing subsections
+                        currentSection = string.Empty;
+                    }
+                    else if (h3.Equals("Columns", StringComparison.OrdinalIgnoreCase))
+                        currentSection = "columns";
+                    else if (h3.Equals("Fields", StringComparison.OrdinalIgnoreCase) ||
+                             h3.Equals("Properties", StringComparison.OrdinalIgnoreCase))
                         currentSection = "columns";
                     else if (h3.Equals("Relationships", StringComparison.OrdinalIgnoreCase))
                         currentSection = "relationships";
@@ -181,6 +240,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         currentEntityName    = StripNumericPrefix(h3);
                         currentEntityIsTable = false;
                         currentSection       = string.Empty;
+                        currentEntitySectionKind = string.Empty;
                     }
                     else
                         currentSection = string.Empty;
@@ -255,6 +315,17 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             }
 
             // ── Section content ────────────────────────────────────────────────
+
+            // Auto-detect column tables after entities with no explicit section
+            if (currentEntityName is not null && currentSection == string.Empty &&
+                token.Kind == MarkdownTokenKind.TableRow && token.TableCells is not null)
+            {
+                if (IsColumnHeaderRow(token.TableCells))
+                {
+                    currentSection = "columns";
+                    // Continue to fall through to columns case
+                }
+            }
 
             switch (currentSection)
             {
@@ -399,12 +470,18 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
     private static bool IsColumnHeaderRow(IReadOnlyList<string> cells)
     {
         if (cells.Count == 0) return false;
-        var first = cells[0].ToLowerInvariant();
-        if (first is "name" or "column" or "field" or "column name" or "field name")
+        var first = cells[0].Trim().ToLowerInvariant();
+        if (first is "name" or "column" or "field" or "column name" or "field name" or "property")
             return true;
-        return cells.Any(c => c.Equals("name",     StringComparison.OrdinalIgnoreCase)) &&
-               cells.Any(c => c.Equals("type",     StringComparison.OrdinalIgnoreCase)) &&
-               cells.Any(c => c.Equals("nullable", StringComparison.OrdinalIgnoreCase));
+
+        var cellsLower = cells.Select(c => c.Trim().ToLowerInvariant()).ToList();
+
+        // Header must have name/column/field AND (type OR description)
+        var hasNameCol = cellsLower.Any(c => c is "name" or "column" or "field" or "property" or "column name" or "field name");
+        var hasTypeCol = cellsLower.Any(c => c is "type" or "sql type");
+        var hasDescCol = cellsLower.Any(c => c is "description" or "notes" or "required" or "nullable" or "constraints");
+
+        return hasNameCol && (hasTypeCol || hasDescCol);
     }
 
     private static DataColumn? ParseColumnRow(IReadOnlyList<string> cells)
@@ -555,6 +632,54 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         return s;
     }
 
+    // Extracts entity name and table name from H3 format like "### EntityName" or "### EntityName — tableName description"
+    private static (string EntityName, string? TableName) ExtractEntityAndTableName(string heading)
+    {
+        var s = heading.Trim();
+
+        // First, handle backticked names like "### `birk_tiltak`" or "### `birk_tiltak`, `birk_tiltakstype`"
+        // For comma-separated backticked names, take the first one as the entity name
+        if (s.StartsWith("`"))
+        {
+            var closeIdx = s.IndexOf("`", 1);
+            if (closeIdx > 0)
+            {
+                var tableName = s[1..closeIdx].Trim();
+                return (tableName, tableName);  // Use table name as entity name
+            }
+        }
+
+        // Check for "EntityName — tableName" pattern
+        var emdashIdx = s.IndexOf(" — "); // " — "
+        if (emdashIdx > 0)
+        {
+            var entityName = s[..emdashIdx].Trim();
+            var rest = s[(emdashIdx + 3)..].Trim();
+
+            // Extract table name — it's typically the first word(s) before "table" keyword or space
+            // Pattern: "### FaultQueueEntry — feilkoe table" → table name is "feilkoe"
+            var tableName = rest;
+            var tableKeywordIdx = rest.IndexOf(" table", StringComparison.OrdinalIgnoreCase);
+            if (tableKeywordIdx > 0)
+                tableName = rest[..tableKeywordIdx].Trim();
+            else
+            {
+                // No "table" keyword, take first word (could be backticked)
+                var spaceIdx = rest.IndexOf(' ');
+                if (spaceIdx > 0)
+                    tableName = rest[..spaceIdx].Trim();
+            }
+
+            // Clean backticks from table name
+            tableName = tableName.Replace("`", "").Trim();
+
+            return (entityName, tableName);
+        }
+
+        // No table name, just entity name
+        return (s, null);
+    }
+
     // ── Findings ───────────────────────────────────────────────────────────────
 
     private static List<DataModelFinding> GenerateFindings(
@@ -570,11 +695,14 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
         if (entities.Count == 0)
         {
+            // If no entities found, the document may be stateless or configuration-only
+            // Don't show a hard error; use INFO instead to indicate the document was parsed successfully
+            // but contains no persistent data model
             findings.Add(new DataModelFinding
             {
-                Severity    = DataModelSeverity.Error,
+                Severity    = DataModelSeverity.Info,
                 Category    = "Structure",
-                Description = "No entities or tables were found. Add ## Entity: Name or ## Table: Name sections.",
+                Description = "No persistent entities or tables were found. This document may describe configuration, runtime models, or be intentionally stateless.",
             });
             return findings;
         }
@@ -740,6 +868,64 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         return findings;
     }
 
+    // ── Entity section detection ───────────────────────────────────────────────
+
+    private static bool IsEntitySectionHeading(string heading)
+    {
+        var h = NormalizeSectionHeading(heading);
+        return PersistentEntitySections.Contains(h, StringComparer.OrdinalIgnoreCase) ||
+               NonPersistentEntitySections.Contains(h, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string ClassifyEntitySection(string heading)
+    {
+        var h = NormalizeSectionHeading(heading);
+        if (PersistentEntitySections.Contains(h, StringComparer.OrdinalIgnoreCase))
+            return "persistent";
+        if (NonPersistentEntitySections.Contains(h, StringComparer.OrdinalIgnoreCase))
+            return "runtime";
+        return string.Empty;
+    }
+
+    // Normalize section headings by removing parenthetical suffixes
+    // "In-Transit Objects (not persisted by adapter)" → "In-Transit Objects"
+    private static string NormalizeSectionHeading(string heading)
+    {
+        var h = heading.Trim();
+        var parenIdx = h.IndexOf('(');
+        if (parenIdx > 0)
+            h = h[..parenIdx].Trim();
+        return h;
+    }
+
+    private static readonly HashSet<string> PersistentEntitySections = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Domain Entities",
+        "Persistent Entities",
+        "Core Entities",
+        "Core Tables",
+        "Reference Tables",
+        "Staging Entities",
+        "Infrastructure Entity",
+        "Outbox Tables",
+        "Entities"
+    };
+
+    private static readonly HashSet<string> NonPersistentEntitySections = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Configuration Entities",
+        "Runtime Context Structures",
+        "In-Transit Objects",
+        "Event Contracts",
+        "Events",
+        "SCIM Request/Response Models",
+        "Frontend-Only View Models",
+        "Domain Interface",
+        "Infrastructure Implementation",
+        "Derived Value",
+        "Non-Entities"
+    };
+
     // ── Document-structure patterns ───────────────────────────────────────────
 
     // Matches H3 headings with numeric prefix, e.g. "2.1 Person", "3.4 SikkerhetsnivaaType"
@@ -810,5 +996,102 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             i.Name.ToLowerInvariant().Contains(q) ||
             i.EntityName.ToLowerInvariant().Contains(q) ||
             i.Columns.Any(c => c.ToLowerInvariant().Contains(q)));
+    }
+
+    // ── Build Semantic Model ───────────────────────────────────────────────
+
+    public static DataModelSemanticModel BuildSemanticModel(DataModelDocument document)
+    {
+        var entities = document.Entities
+            .Select(e => new SemanticDataEntity
+            {
+                Id = e.Name,
+                Name = e.Name,
+                Description = e.Description,
+                Attributes = e.Columns
+                    .Select(c => new SemanticDataAttribute
+                    {
+                        Name = c.Name,
+                        Type = c.Type ?? "Unknown",
+                        IsRequired = !(c.Nullable ?? true),
+                        IsIdentifier = c.IsPrimaryKey,
+                        Description = c.Description,
+                        Constraint = c.IsForeignKey ? "ForeignKey" : (c.IsUnique ? "Unique" : null),
+                    })
+                    .ToList(),
+                IdentifierFields = e.Columns
+                    .Where(c => c.IsPrimaryKey)
+                    .Select(c => c.Name)
+                    .ToList(),
+                ValidationRules = e.Columns
+                    .Where(c => !string.IsNullOrEmpty(c.Description))
+                    .Select(c => $"{c.Name}: {c.Description}")
+                    .ToList(),
+                Methods = [],
+                Lifecycle = null,
+                RelatedRequirementIds = e.TraceabilityIds,
+                RelationshipIds = document.Relationships
+                    .Where(r => r.SourceEntity == e.Name || r.TargetEntity == e.Name)
+                    .Select(r => $"{r.Source}->{r.Target}")
+                    .ToList(),
+            })
+            .ToList();
+
+        var relationships = document.Relationships
+            .Select((r, idx) => new SemanticDataRelationship
+            {
+                Id = $"Rel-{idx + 1}",
+                SourceEntityId = r.SourceEntity,
+                TargetEntityId = r.TargetEntity,
+                Type = r.RelationshipType ?? "Unknown",
+                Cardinality = null,
+                IsBidirectional = false,
+                Description = $"{r.Source} -> {r.Target}",
+            })
+            .ToList();
+
+        var enumerations = document.Enums
+            .Select(e => new SemanticDataEnumeration
+            {
+                Id = e.Name,
+                Name = e.Name,
+                Description = e.Description,
+                Values = e.Values
+                    .Select((v, idx) => new SemanticDataEnumerationValue
+                    {
+                        Name = v,
+                        Value = idx.ToString(),
+                        Description = null,
+                    })
+                    .ToList(),
+                UsedByEntityIds = [],
+            })
+            .ToList();
+
+        return new DataModelSemanticModel
+        {
+            Title = document.Title,
+            Version = null,
+            Description = document.Overview,
+            CreatedDate = null,
+            LastUpdated = null,
+            Entities = entities,
+            Relationships = relationships,
+            Enumerations = enumerations,
+            ValueObjects = [],
+            AggregateRoots = [],
+            EntityToRequirements = BuildEntityToRequirementsMap(entities),
+        };
+    }
+
+    private static Dictionary<string, List<string>> BuildEntityToRequirementsMap(List<SemanticDataEntity> entities)
+    {
+        var map = new Dictionary<string, List<string>>();
+        foreach (var entity in entities)
+        {
+            if (entity.RelatedRequirementIds.Count > 0)
+                map[entity.Id] = entity.RelatedRequirementIds;
+        }
+        return map;
     }
 }

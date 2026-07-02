@@ -17,6 +17,35 @@ public class QaAuditorServiceTests
         _sut = new QaAuditorService(_traceability, _compliance);
     }
 
+    // ── Helper to build ReviewContext for tests ────────────────────────────────
+
+    private static ReviewContext BuildContext(
+        ConstitutionDocument? constitution,
+        SpecTree? spec,
+        PlanDocument? plan,
+        TaskTree? tasks)
+    {
+        var constModel = constitution is not null
+            ? ConstitutionAnalysisService.BuildSemanticModel(constitution)
+            : new ConstitutionSemanticModel();
+
+        var specModel = spec is not null
+            ? SpecExplorerService.BuildSemanticModel(spec, "")
+            : new SpecificationSemanticModel();
+
+        var planModel = plan is not null
+            ? PlanAnalysisService.BuildSemanticModel(plan)
+            : new PlanSemanticModel();
+
+        var taskModel = tasks is not null
+            ? TaskExplorerService.BuildSemanticModel(tasks)
+            : new TaskSemanticModel();
+
+        var dataModel = new DataModelSemanticModel();
+
+        return ReviewContextFactory.Create(constModel, specModel, planModel, taskModel, dataModel);
+    }
+
     // ── Fixtures ──────────────────────────────────────────────────────────────
 
     private const string SimpleConstitution = """
@@ -136,21 +165,24 @@ public class QaAuditorServiceTests
     [Fact]
     public void Audit_AllNull_DoesNotThrow()
     {
-        var act = () => _sut.Audit(null, null, null, null);
+        var context = BuildContext(null, null, null, null);
+        var act = () => _sut.Audit(null, null, null, null, context);
         act.Should().NotThrow();
     }
 
     [Fact]
     public void Audit_AllNull_EmptyFindings()
     {
-        var report = _sut.Audit(null, null, null, null);
+        var context = BuildContext(null, null, null, null);
+        var report = _sut.Audit(null, null, null, null, context);
         report.Findings.Should().BeEmpty();
     }
 
     [Fact]
     public void Audit_AllNull_AllHasFlagsFalse()
     {
-        var report = _sut.Audit(null, null, null, null);
+        var context = BuildContext(null, null, null, null);
+        var report = _sut.Audit(null, null, null, null, context);
         report.HasConstitution.Should().BeFalse();
         report.HasSpecification.Should().BeFalse();
         report.HasPlan.Should().BeFalse();
@@ -160,7 +192,8 @@ public class QaAuditorServiceTests
     [Fact]
     public void Audit_AllNull_Score100_NoFindings()
     {
-        var report = _sut.Audit(null, null, null, null);
+        var context = BuildContext(null, null, null, null);
+        var report = _sut.Audit(null, null, null, null, context);
         report.Health.AuditScore.Should().Be(100);
     }
 
@@ -171,7 +204,8 @@ public class QaAuditorServiceTests
     {
         var constitution = _constitutionService.Parse(SimpleConstitution);
 
-        var report = _sut.Audit(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Audit(constitution, null, null, null, context);
 
         report.Findings.Should().Contain(f => f.RuleCode == "CONST-001");
     }
@@ -180,7 +214,8 @@ public class QaAuditorServiceTests
     public void ConstitutionRule_CONST001_SeverityBasedOnRuleType()
     {
         var constitution = _constitutionService.Parse(SimpleConstitution);
-        var report = _sut.Audit(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Audit(constitution, null, null, null, context);
 
         var principleFinding = report.Findings
             .FirstOrDefault(f => f.RuleCode == "CONST-001" && f.AffectedArtifact == "PP-01");
@@ -195,7 +230,8 @@ public class QaAuditorServiceTests
         var constitution = _constitutionService.Parse(SimpleConstitution);
         var plan         = _planService.Parse(PlanWithViolation);
 
-        var report = _sut.Audit(constitution, null, plan, null);
+        var context = BuildContext(constitution, null, plan, null);
+        var report = _sut.Audit(constitution, null, plan, null, context);
 
         report.Findings.Should().Contain(f => f.RuleCode == "CONST-003");
     }
@@ -205,7 +241,8 @@ public class QaAuditorServiceTests
     {
         var spec = SpecExplorerService.Parse(FullSpec);
 
-        var report = _sut.Audit(null, spec, null, null);
+        var context = BuildContext(null, spec, null, null);
+        var report = _sut.Audit(null, spec, null, null, context);
 
         // No CONST-* findings when no constitution loaded
         report.Findings.Should().NotContain(f => f.RuleCode.StartsWith("CONST-"));
@@ -218,7 +255,8 @@ public class QaAuditorServiceTests
     {
         var spec = SpecExplorerService.Parse(SpecNoAC);
 
-        var report = _sut.Audit(null, spec, null, null);
+        var context = BuildContext(null, spec, null, null);
+        var report = _sut.Audit(null, spec, null, null, context);
 
         report.Findings.Should().Contain(f => f.RuleCode == "SPEC-001");
     }
@@ -230,7 +268,8 @@ public class QaAuditorServiceTests
         const string minimalSpec = "# Spec Title";
 
         var spec   = SpecExplorerService.Parse(minimalSpec);
-        var report = _sut.Audit(null, spec, null, null);
+        var context = BuildContext(null, spec, null, null);
+        var report = _sut.Audit(null, spec, null, null, context);
 
         report.Findings.Should().NotContain(f => f.RuleCode == "SPEC-001");
     }
@@ -239,7 +278,8 @@ public class QaAuditorServiceTests
     public void SpecRule_SPEC001_SeverityIsHigh()
     {
         var spec = SpecExplorerService.Parse(SpecNoAC);
-        var report = _sut.Audit(null, spec, null, null);
+        var context = BuildContext(null, spec, null, null);
+        var report = _sut.Audit(null, spec, null, null, context);
 
         var finding = report.Findings.FirstOrDefault(f => f.RuleCode == "SPEC-001");
         if (finding is not null)
@@ -249,7 +289,8 @@ public class QaAuditorServiceTests
     [Fact]
     public void SpecRule_NoFinding_WhenSpecNotLoaded()
     {
-        var report = _sut.Audit(null, null, null, null);
+        var context = BuildContext(null, null, null, null);
+        var report = _sut.Audit(null, null, null, null, context);
 
         report.Findings.Should().NotContain(f => f.RuleCode.StartsWith("SPEC-"));
     }
@@ -259,7 +300,8 @@ public class QaAuditorServiceTests
     {
         // SpecNoAC has requirements but no Edge Cases section
         var spec = SpecExplorerService.Parse(SpecNoAC);
-        var report = _sut.Audit(null, spec, null, null);
+        var context = BuildContext(null, spec, null, null);
+        var report = _sut.Audit(null, spec, null, null, context);
 
         // SPEC-005 fires when requirements exist but no edge cases
         report.Findings.Should().Contain(f => f.RuleCode == "SPEC-005");
@@ -272,7 +314,8 @@ public class QaAuditorServiceTests
     {
         var plan = _planService.Parse(PlanNoPhases);
 
-        var report = _sut.Audit(null, null, plan, null);
+        var context = BuildContext(null, null, plan, null);
+        var report = _sut.Audit(null, null, plan, null, context);
 
         report.Findings.Should().Contain(f => f.RuleCode == "PLAN-001");
     }
@@ -282,7 +325,8 @@ public class QaAuditorServiceTests
     {
         var plan = _planService.Parse(FullPlan);
 
-        var report = _sut.Audit(null, null, plan, null);
+        var context = BuildContext(null, null, plan, null);
+        var report = _sut.Audit(null, null, plan, null, context);
 
         report.Findings.Should().NotContain(f => f.RuleCode == "PLAN-001");
     }
@@ -298,7 +342,9 @@ public class QaAuditorServiceTests
             - Do something
             """;
 
-        var report = _sut.Audit(null, null, _planService.Parse(planNoRisks), null);
+        var plan = _planService.Parse(planNoRisks);
+        var context = BuildContext(null, null, plan, null);
+        var report = _sut.Audit(null, null, plan, null, context);
 
         report.Findings.Should().Contain(f => f.RuleCode == "PLAN-003");
     }
@@ -306,7 +352,9 @@ public class QaAuditorServiceTests
     [Fact]
     public void PlanRule_PLAN004_WhenNoTestingStrategy()
     {
-        var report = _sut.Audit(null, null, _planService.Parse(PlanNoPhases), null);
+        var plan = _planService.Parse(PlanNoPhases);
+        var context = BuildContext(null, null, plan, null);
+        var report = _sut.Audit(null, null, plan, null, context);
 
         report.Findings.Should().Contain(f => f.RuleCode == "PLAN-004");
     }
@@ -323,7 +371,9 @@ public class QaAuditorServiceTests
             Decision: Use JWT tokens.
             """;
 
-        var report = _sut.Audit(null, null, _planService.Parse(planNoRationale), null);
+        var plan = _planService.Parse(planNoRationale);
+        var context = BuildContext(null, null, plan, null);
+        var report = _sut.Audit(null, null, plan, null, context);
 
         report.Findings.Should().Contain(f => f.RuleCode == "PLAN-002");
     }
@@ -332,7 +382,8 @@ public class QaAuditorServiceTests
     public void PlanRule_NoPLAN002_WhenADRHasRationale()
     {
         var plan = _planService.Parse(FullPlan);
-        var report = _sut.Audit(null, null, plan, null);
+        var context = BuildContext(null, null, plan, null);
+        var report = _sut.Audit(null, null, plan, null, context);
 
         report.Findings.Should().NotContain(f => f.RuleCode == "PLAN-002");
     }
@@ -342,7 +393,8 @@ public class QaAuditorServiceTests
     [Fact]
     public void TaskRule_NoFinding_WhenTasksNotLoaded()
     {
-        var report = _sut.Audit(null, null, null, null);
+        var context = BuildContext(null, null, null, null);
+        var report = _sut.Audit(null, null, null, null, context);
 
         report.Findings.Should().NotContain(f => f.RuleCode.StartsWith("TASK-"));
     }
@@ -352,7 +404,8 @@ public class QaAuditorServiceTests
     {
         var spec = SpecExplorerService.Parse(FullSpec);
 
-        var report = _sut.Audit(null, spec, null, null);
+        var context = BuildContext(null, spec, null, null);
+        var report = _sut.Audit(null, spec, null, null, context);
 
         // A gap should appear when tasks are not loaded
         report.Gaps.Should().Contain(g => g.GapArea == "Missing Task Coverage");
@@ -363,7 +416,8 @@ public class QaAuditorServiceTests
     [Fact]
     public void AuditScore_NoFindings_Returns100()
     {
-        var report = _sut.Audit(null, null, null, null);
+        var context = BuildContext(null, null, null, null);
+        var report = _sut.Audit(null, null, null, null, context);
         report.Health.AuditScore.Should().Be(100);
     }
 
@@ -372,7 +426,8 @@ public class QaAuditorServiceTests
     {
         var constitution = _constitutionService.Parse(SimpleConstitution);
 
-        var report = _sut.Audit(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Audit(constitution, null, null, null, context);
 
         // Critical findings for each uncovered principle
         report.Health.AuditScore.Should().BeLessThan(100);
@@ -385,7 +440,8 @@ public class QaAuditorServiceTests
         var spec         = SpecExplorerService.Parse(SpecNoAC);
         var plan         = _planService.Parse(PlanNoPhases);
 
-        var report = _sut.Audit(constitution, spec, plan, null);
+        var context = BuildContext(constitution, spec, plan, null);
+        var report = _sut.Audit(constitution, spec, plan, null, context);
 
         report.Health.AuditScore.Should().BeInRange(0, 100);
     }
@@ -396,7 +452,8 @@ public class QaAuditorServiceTests
     public void Health_TotalFindingsMatchFindingsList()
     {
         var constitution = _constitutionService.Parse(SimpleConstitution);
-        var report = _sut.Audit(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Audit(constitution, null, null, null, context);
 
         report.Health.TotalFindings.Should().Be(report.Findings.Count);
     }
@@ -405,7 +462,8 @@ public class QaAuditorServiceTests
     public void Health_CriticalCount_MatchesCriticalFindings()
     {
         var constitution = _constitutionService.Parse(SimpleConstitution);
-        var report = _sut.Audit(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Audit(constitution, null, null, null, context);
 
         int actual = report.Findings.Count(f => f.Severity == QaSeverity.Critical);
         report.Health.CriticalCount.Should().Be(actual);
@@ -415,7 +473,8 @@ public class QaAuditorServiceTests
     public void Health_HighCount_MatchesHighFindings()
     {
         var spec = SpecExplorerService.Parse(SpecNoAC);
-        var report = _sut.Audit(null, spec, null, null);
+        var context = BuildContext(null, spec, null, null);
+        var report = _sut.Audit(null, spec, null, null, context);
 
         int actual = report.Findings.Count(f => f.Severity == QaSeverity.High);
         report.Health.HighCount.Should().Be(actual);
@@ -429,7 +488,8 @@ public class QaAuditorServiceTests
         var constitution = _constitutionService.Parse(SimpleConstitution);
         var spec         = SpecExplorerService.Parse(SpecNoAC);
 
-        var report = _sut.Audit(constitution, spec, null, null);
+        var context = BuildContext(constitution, spec, null, null);
+        var report = _sut.Audit(constitution, spec, null, null, context);
 
         report.Risks.Should().OnlyContain(r =>
             r.Severity == QaSeverity.Critical || r.Severity == QaSeverity.High);
@@ -439,7 +499,8 @@ public class QaAuditorServiceTests
     public void Risks_CountMatchesCriticalPlusHigh()
     {
         var constitution = _constitutionService.Parse(SimpleConstitution);
-        var report = _sut.Audit(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Audit(constitution, null, null, null, context);
 
         int expected = report.Findings.Count(f =>
             f.Severity == QaSeverity.Critical || f.Severity == QaSeverity.High);
@@ -454,7 +515,8 @@ public class QaAuditorServiceTests
     {
         var constitution = _constitutionService.Parse(SimpleConstitution);
 
-        var report = _sut.Audit(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Audit(constitution, null, null, null, context);
 
         report.Gaps.Should().Contain(g => g.GapArea == "Missing Constitution Coverage");
     }
@@ -464,7 +526,8 @@ public class QaAuditorServiceTests
     {
         var plan = _planService.Parse(PlanNoPhases);
 
-        var report = _sut.Audit(null, null, plan, null);
+        var context = BuildContext(null, null, plan, null);
+        var report = _sut.Audit(null, null, plan, null, context);
 
         report.Gaps.Should().Contain(g => g.GapArea == "Missing Testing Coverage");
     }
@@ -476,7 +539,8 @@ public class QaAuditorServiceTests
     {
         var spec = SpecExplorerService.Parse(SpecNoAC);
 
-        var report = _sut.Audit(null, spec, null, null);
+        var context = BuildContext(null, spec, null, null);
+        var report = _sut.Audit(null, spec, null, null, context);
 
         report.Recommendations.Should().NotBeEmpty();
     }
@@ -487,7 +551,8 @@ public class QaAuditorServiceTests
         var constitution = _constitutionService.Parse(SimpleConstitution);
         var spec         = SpecExplorerService.Parse(SpecNoAC);
 
-        var report = _sut.Audit(constitution, spec, null, null);
+        var context = BuildContext(constitution, spec, null, null);
+        var report = _sut.Audit(constitution, spec, null, null, context);
 
         var priorities = report.Recommendations.Select(r => (int)r.Priority).ToList();
         priorities.Should().BeInAscendingOrder();
@@ -499,7 +564,8 @@ public class QaAuditorServiceTests
         var constitution = _constitutionService.Parse(SimpleConstitution);
         var spec         = SpecExplorerService.Parse(SpecNoAC);
 
-        var report = _sut.Audit(constitution, spec, null, null);
+        var context = BuildContext(constitution, spec, null, null);
+        var report = _sut.Audit(constitution, spec, null, null, context);
 
         var texts = report.Recommendations.Select(r => r.Text).ToList();
         texts.Should().OnlyHaveUniqueItems();
@@ -511,7 +577,8 @@ public class QaAuditorServiceTests
     public void SearchFindings_ByRuleCode_ReturnsMatch()
     {
         var constitution = _constitutionService.Parse(SimpleConstitution);
-        var report = _sut.Audit(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Audit(constitution, null, null, null, context);
 
         var matches = _sut.SearchFindings(report.Findings, "CONST-001").ToList();
 
@@ -524,7 +591,8 @@ public class QaAuditorServiceTests
         var constitution = _constitutionService.Parse(SimpleConstitution);
         var spec         = SpecExplorerService.Parse(SpecNoAC);
 
-        var report   = _sut.Audit(constitution, spec, null, null);
+        var context = BuildContext(constitution, spec, null, null);
+        var report   = _sut.Audit(constitution, spec, null, null, context);
         var filtered = _sut.FilterFindingsBySeverity(report.Findings, QaSeverity.Critical).ToList();
 
         filtered.Should().OnlyContain(f => f.Severity == QaSeverity.Critical);
@@ -536,7 +604,8 @@ public class QaAuditorServiceTests
         var constitution = _constitutionService.Parse(SimpleConstitution);
         var spec         = SpecExplorerService.Parse(SpecNoAC);
 
-        var report   = _sut.Audit(constitution, spec, null, null);
+        var context = BuildContext(constitution, spec, null, null);
+        var report   = _sut.Audit(constitution, spec, null, null, context);
         var filtered = _sut.FilterFindingsByCategory(report.Findings, QaCategory.Constitution).ToList();
 
         filtered.Should().OnlyContain(f => f.Category == QaCategory.Constitution);
@@ -546,7 +615,8 @@ public class QaAuditorServiceTests
     public void FilterFindingsBySeverity_NullReturnsAll()
     {
         var constitution = _constitutionService.Parse(SimpleConstitution);
-        var report = _sut.Audit(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Audit(constitution, null, null, null, context);
 
         var filtered = _sut.FilterFindingsBySeverity(report.Findings, null).ToList();
         filtered.Should().HaveCount(report.Findings.Count);
@@ -556,7 +626,8 @@ public class QaAuditorServiceTests
     public void SearchGaps_ByGapArea_ReturnsMatch()
     {
         var constitution = _constitutionService.Parse(SimpleConstitution);
-        var report = _sut.Audit(constitution, null, null, null);
+        var context = BuildContext(constitution, null, null, null);
+        var report = _sut.Audit(constitution, null, null, null, context);
 
         var matches = _sut.SearchGaps(report.Gaps, "Constitution").ToList();
 
@@ -567,7 +638,8 @@ public class QaAuditorServiceTests
     public void SearchRecommendations_ByKeyword_ReturnsMatch()
     {
         var spec = SpecExplorerService.Parse(SpecNoAC);
-        var report = _sut.Audit(null, spec, null, null);
+        var context = BuildContext(null, spec, null, null);
+        var report = _sut.Audit(null, spec, null, null, context);
 
         if (!report.Recommendations.Any()) return;
 
@@ -583,7 +655,8 @@ public class QaAuditorServiceTests
         var constitution = _constitutionService.Parse(SimpleConstitution);
         var spec         = SpecExplorerService.Parse(SpecNoAC);
 
-        var report   = _sut.Audit(constitution, spec, null, null);
+        var context = BuildContext(constitution, spec, null, null);
+        var report   = _sut.Audit(constitution, spec, null, null, context);
         var filtered = _sut.FilterRecommendationsByCategory(report.Recommendations, QaCategory.Specification).ToList();
 
         filtered.Should().OnlyContain(r => r.Category == QaCategory.Specification);

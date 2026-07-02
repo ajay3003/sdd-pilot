@@ -18,8 +18,10 @@
     <div class="tx-page-body">
         <TaskExplorerPanel
             TasksText="@_initialTasksText"
+            ParsedTasks="@_parsedTasks"
+            SemanticModel="@_semanticModel"
             InitialView="@_initialView"
-            OnBuilt="OnTreeBuilt" />
+            OnTextChanged="OnPanelTextChanged" />
     </div>
 
 </div>
@@ -27,6 +29,8 @@
 @code {
     private string _initialTasksText = string.Empty;
     private string? _initialView;
+    private TaskTree? _parsedTasks;
+    private TaskSemanticModel? _semanticModel;
 
     private const string StorageKey = "te-standalone-tasks";
 
@@ -53,6 +57,7 @@
         {
             Workspace.Set(WorkspaceArtifactKind.Tasks, content);
             _initialTasksText = content;
+            BuildSemanticModel(content);
             StateHasChanged();
             return;
         }
@@ -70,13 +75,27 @@
             catch { }
             Workspace.Set(WorkspaceArtifactKind.Tasks, legacy);
             _initialTasksText = legacy;
+            BuildSemanticModel(legacy);
             StateHasChanged();
         }
     }
 
-    private async Task OnTreeBuilt(string text)
+    private void BuildSemanticModel(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _semanticModel = null;
+            _parsedTasks = null;
+            return;
+        }
+        _parsedTasks = TaskExplorerService.Parse(text);
+        _semanticModel = TaskExplorerService.BuildSemanticModel(_parsedTasks);
+    }
+
+    private async Task OnPanelTextChanged(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
+        BuildSemanticModel(text);
         Workspace.Set(WorkspaceArtifactKind.Tasks, text);
         try { await DocumentApi.SaveAsync("tasks", text); } catch { }
         try { await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey); } catch { }

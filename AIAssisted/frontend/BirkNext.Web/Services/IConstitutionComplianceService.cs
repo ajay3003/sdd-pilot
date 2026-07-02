@@ -9,7 +9,8 @@ public interface IConstitutionComplianceService
         ConstitutionDocument? constitution,
         SpecTree?             spec,
         PlanDocument?         plan,
-        TaskTree?             tasks);
+        TaskTree?             tasks,
+        ReviewContext?        context = null);
 
     // Search and filter helpers for the UI
     IEnumerable<ComplianceResult>        SearchResults(IEnumerable<ComplianceResult> results, string query);

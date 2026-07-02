@@ -11,10 +11,10 @@ public static class TaskExplorerService
         @"^\s*[-*]\s+\[([xX ])\]\s+(.+)$", RegexOptions.Compiled);
 
     private static readonly Regex BareTaskRe = new(
-        @"^\s*[-*]?\s*T(\d{2,4})\b\s*[-–.]?\s*(.*)$", RegexOptions.Compiled);
+        @"^\s*[-*]?\s*T(\d{2,4}[a-zA-Z]*)\b\s*[-–.]?\s*(.*)$", RegexOptions.Compiled);
 
     private static readonly Regex TaskIdRe = new(
-        @"\bT(\d{2,4})\b", RegexOptions.Compiled);
+        @"\bT(\d{2,4}[a-zA-Z]*)\b", RegexOptions.Compiled);
 
     private static readonly Regex TaskRangeRe = new(
         @"\bT(\d{2,4})[–\-]T(\d{2,4})\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -23,7 +23,7 @@ public static class TaskExplorerService
         @"\[P\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex UserStoryTagRe = new(
-        @"\[US(\d+)\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        @"\[US(\d+(?:[–\-]\d+)?)\]|\[Story\???\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex FrRefRe = new(
         @"\b(FR)-?(\d{1,4})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -37,11 +37,31 @@ public static class TaskExplorerService
         RegexOptions.Compiled);
 
     private static readonly Regex TestKeywordRe = new(
-        @"\b(?:test|spec|assert|xunit|nunit|mstest|shouldly|testcontainer|integration[\s-]?test|unit[\s-]?test)\b",
+        @"\b(?:test|spec|assert|xunit|nunit|mstest|shouldly|testcontainer|bunit|webapplicationfactory|test[\s-]?(?:case|task)|integration[\s-]?test|unit[\s-]?test)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex SecurityKeywordRe = new(
-        @"\b(?:security|authoris|kode[\s-]?[67]|permission|access[\s-]?control|gradert|sikkerhet|auth(?:orization|entication)?)\b",
+        @"\b(?:security|authoris[ae]|kode[\s-]?[67]|permission|access[\s-]?control|gradert|sikkerhet|auth(?:orization|entication|ority))\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex CriticalNoteRe = new(
+        @"⚠️\s*CRITICAL|CRITICAL.*(?:phase|blocking|prerequisite)|No user story work can begin",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex FrontendOnlyKeywordRe = new(
+        @"\b(?:frontend[\s-]?only|blazor\s+wasm|spa|webassembly|client[\s-]?side)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex WorkerServiceKeywordRe = new(
+        @"\b(?:worker[\s-]?(?:service|role)|background|hosted[\s-]?service|queue|consumer)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex ProxyKeywordRe = new(
+        @"\b(?:proxy|gateway|router|load[\s-]?balanc)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex NoSqlKeywordRe = new(
+        @"\b(?:no[\s-]?sql|no[\s-]?database|blob[\s-]?storage|stateless)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex TableSepRe = new(
@@ -67,6 +87,7 @@ public static class TaskExplorerService
 
         var hTasks = 0; var hCompleted = 0; var hPhases = 0; var hUserStories = 0;
         var hTables = 0; var hRows = 0;
+        var hCritical = 0; var hFrontend = 0; var hWorker = 0; var hProxy = 0; var hNoSql = 0; var hParallel = 0;
 
         var tableBuffer = new List<string>();
 
@@ -122,6 +143,12 @@ public static class TaskExplorerService
                 {
                     hTasks++;
                     if (completed) hCompleted++;
+                    if (task.IsCritical) hCritical++;
+                    if (task.IsFrontendOnly) hFrontend++;
+                    if (task.IsWorkerService) hWorker++;
+                    if (task.IsProxy) hProxy++;
+                    if (task.IsNoSql) hNoSql++;
+                    if (task.IsParallel) hParallel++;
                     InjectContext(task, headingStack);
                     AddToParent(roots, headingStack, task);
                 }
@@ -137,6 +164,12 @@ public static class TaskExplorerService
                 if (task is not null)
                 {
                     hTasks++;
+                    if (task.IsCritical) hCritical++;
+                    if (task.IsFrontendOnly) hFrontend++;
+                    if (task.IsWorkerService) hWorker++;
+                    if (task.IsProxy) hProxy++;
+                    if (task.IsNoSql) hNoSql++;
+                    if (task.IsParallel) hParallel++;
                     InjectContext(task, headingStack);
                     AddToParent(roots, headingStack, task);
                 }
@@ -168,6 +201,12 @@ public static class TaskExplorerService
             TraceabilityRows = hRows,
             TasksLinkedFromTables = linkedTaskIds.Count,
             UnresolvedTableRefs = hUnresolved,
+            CriticalTasks = hCritical,
+            FrontendOnlyTasks = hFrontend,
+            WorkerServiceTasks = hWorker,
+            ProxyTasks = hProxy,
+            NoSqlTasks = hNoSql,
+            ParallelTasks = hParallel,
         };
 
         return new TaskTree { Roots = roots, Health = health };
@@ -316,7 +355,15 @@ public static class TaskExplorerService
 
         var isParallel = ParallelRe.IsMatch(body);
         var usMatch = UserStoryTagRe.Match(body);
-        var userStoryTag = usMatch.Success ? $"US{usMatch.Groups[1].Value}" : null;
+        string? userStoryTag = null;
+        if (usMatch.Success)
+        {
+            // Check if it matched [US\d+] or [Story]
+            if (usMatch.Groups[1].Success)
+                userStoryTag = $"US{usMatch.Groups[1].Value}";
+            else
+                userStoryTag = "Story"; // [Story] or [Story?]
+        }
 
         var frIds = FrRefRe.Matches(body)
             .Select(m => $"FR-{m.Groups[2].Value.PadLeft(2, '0')}").Distinct().ToList();
@@ -327,7 +374,17 @@ public static class TaskExplorerService
         var taskMatch = TaskIdRe.Match(body);
         string? taskId = null;
         if (taskMatch.Success)
-            taskId = $"T{taskMatch.Groups[1].Value.PadLeft(3, '0')}";
+        {
+            var captured = taskMatch.Groups[1].Value;
+            // Extract numeric part and optional letter suffix (e.g., "006b" → "006" + "b")
+            var digitMatch = Regex.Match(captured, @"^(\d+)([a-zA-Z]*)$");
+            if (digitMatch.Success)
+            {
+                var digits = digitMatch.Groups[1].Value.PadLeft(3, '0');
+                var suffix = digitMatch.Groups[2].Value;
+                taskId = $"T{digits}{suffix}";
+            }
+        }
 
         // Clean title: strip [P], [USN], FR/SC refs, then strip redundant leading task ID
         var title = ParallelRe.Replace(body, "").Trim();
@@ -358,6 +415,11 @@ public static class TaskExplorerService
             RelatedFiles = relatedFiles,
             IsTestingTask = TestKeywordRe.IsMatch(rawLine),
             IsSecurityTask = SecurityKeywordRe.IsMatch(rawLine),
+            IsCritical = CriticalNoteRe.IsMatch(rawLine),
+            IsFrontendOnly = FrontendOnlyKeywordRe.IsMatch(rawLine),
+            IsWorkerService = WorkerServiceKeywordRe.IsMatch(rawLine),
+            IsProxy = ProxyKeywordRe.IsMatch(rawLine),
+            IsNoSql = NoSqlKeywordRe.IsMatch(rawLine),
         };
     }
 
@@ -445,8 +507,16 @@ public static class TaskExplorerService
 
         foreach (Match m in TaskIdRe.Matches(expanded))
         {
-            var id = $"T{m.Groups[1].Value.PadLeft(3, '0')}";
-            if (seen.Add(id)) result.Add(id);
+            var captured = m.Groups[1].Value;
+            // Extract numeric part and optional letter suffix
+            var digitMatch = Regex.Match(captured, @"^(\d+)([a-zA-Z]*)$");
+            if (digitMatch.Success)
+            {
+                var digits = digitMatch.Groups[1].Value.PadLeft(3, '0');
+                var suffix = digitMatch.Groups[2].Value;
+                var id = $"T{digits}{suffix}";
+                if (seen.Add(id)) result.Add(id);
+            }
         }
         return result;
     }
@@ -721,4 +791,195 @@ public static class TaskExplorerService
 
     private static string StripMarkdown(string s) =>
         Regex.Replace(s, @"[*_`#\[\]]", "").Trim();
+
+    // ── Build Semantic Model ───────────────────────────────────────────────
+
+    public static TaskSemanticModel BuildSemanticModel(TaskTree taskTree)
+    {
+        var allTaskNodes = ExtractAllTaskNodes(taskTree.Roots);
+        var phases = ExtractPhases(taskTree.Roots, allTaskNodes);
+        var dependencies = ExtractDependencies(allTaskNodes);
+        var parallelGroups = ExtractParallelGroups(phases, allTaskNodes);
+
+        var userStoryToTasks = new Dictionary<string, List<string>>();
+        var frToTasks = new Dictionary<string, List<string>>();
+        var scToTasks = new Dictionary<string, List<string>>();
+        var taskToDependencies = new Dictionary<string, List<string>>();
+
+        foreach (var taskNode in allTaskNodes)
+        {
+            if (string.IsNullOrEmpty(taskNode.TaskId)) continue;
+
+            if (!string.IsNullOrEmpty(taskNode.UserStoryTag))
+            {
+                if (!userStoryToTasks.ContainsKey(taskNode.UserStoryTag))
+                    userStoryToTasks[taskNode.UserStoryTag] = [];
+                userStoryToTasks[taskNode.UserStoryTag].Add(taskNode.TaskId);
+            }
+
+            foreach (var frId in taskNode.ReferencedFrIds)
+            {
+                if (!frToTasks.ContainsKey(frId))
+                    frToTasks[frId] = [];
+                if (!frToTasks[frId].Contains(taskNode.TaskId))
+                    frToTasks[frId].Add(taskNode.TaskId);
+            }
+
+            foreach (var scId in taskNode.ReferencedScIds)
+            {
+                if (!scToTasks.ContainsKey(scId))
+                    scToTasks[scId] = [];
+                if (!scToTasks[scId].Contains(taskNode.TaskId))
+                    scToTasks[scId].Add(taskNode.TaskId);
+            }
+        }
+
+        var phaseProgress = new Dictionary<string, TaskPhaseProgress>();
+        foreach (var phase in phases)
+        {
+            var phaseTasks = allTaskNodes.Where(t => t.PhaseTitle == phase.Title).ToList();
+            var completedCount = phaseTasks.Count(t => t.IsCompleted);
+            phaseProgress[phase.Id] = new TaskPhaseProgress
+            {
+                PhaseId = phase.Id,
+                PhaseName = phase.Title,
+                TotalTasks = phaseTasks.Count,
+                CompletedTasks = completedCount,
+                OpenTasks = phaseTasks.Count - completedCount,
+                CompletionPercentage = phaseTasks.Count == 0 ? 0 : (completedCount * 100) / phaseTasks.Count,
+                Status = completedCount == 0 ? "NotStarted" : (completedCount == phaseTasks.Count ? "Complete" : "InProgress"),
+            };
+        }
+
+        var taskItems = allTaskNodes
+            .Where(t => !string.IsNullOrEmpty(t.TaskId))
+            .Select(t => new TaskItem
+            {
+                Id = t.TaskId ?? $"T-{t.Id[..3]}",
+                Title = t.ShortTitle ?? t.Title,
+                Description = t.RawText,
+                IsCompleted = t.IsCompleted,
+                IsParallel = t.IsParallel,
+                IsTestingTask = t.IsTestingTask,
+                IsSecurityTask = t.IsSecurityTask,
+                UserStoryId = t.UserStoryTag,
+                PhaseId = null,
+                LinkedFRIds = t.ReferencedFrIds,
+                LinkedSCIds = t.ReferencedScIds,
+                RelatedFileIds = t.RelatedFiles,
+            })
+            .ToList();
+
+        return new TaskSemanticModel
+        {
+            Title = "Tasks",
+            Description = null,
+            TotalTasks = allTaskNodes.Count(n => !string.IsNullOrEmpty(n.TaskId)),
+            Phases = phases,
+            AllTasks = taskItems,
+            Dependencies = dependencies,
+            ParallelGroups = parallelGroups,
+            PhaseProgress = phaseProgress,
+            UserStoryToTasks = userStoryToTasks,
+            FRToTasks = frToTasks,
+            SCToTasks = scToTasks,
+            TaskToDependencies = taskToDependencies,
+        };
+    }
+
+    private static List<TaskNode> ExtractAllTaskNodes(List<TaskNode> roots)
+    {
+        var tasks = new List<TaskNode>();
+        var queue = new Queue<TaskNode>(roots);
+
+        while (queue.Count > 0)
+        {
+            var node = queue.Dequeue();
+            if (node.NodeType == TaskNodeType.Task && !string.IsNullOrEmpty(node.TaskId))
+                tasks.Add(node);
+
+            foreach (var child in node.Children)
+                queue.Enqueue(child);
+        }
+
+        return tasks;
+    }
+
+    private static List<TaskPhase> ExtractPhases(List<TaskNode> roots, List<TaskNode> allTasks)
+    {
+        var phases = new List<TaskPhase>();
+        var phaseNumber = 1;
+
+        foreach (var node in roots)
+        {
+            if (node.NodeType == TaskNodeType.Phase)
+            {
+                var phaseTasks = ExtractPhaseTaskIds(node);
+                phases.Add(new TaskPhase
+                {
+                    Id = node.Id,
+                    Title = node.Title,
+                    PhaseNumber = phaseNumber++,
+                    Description = null,
+                    TaskIds = phaseTasks,
+                    CompletedCount = allTasks.Count(t => phaseTasks.Contains(t.TaskId ?? "") && t.IsCompleted),
+                    TotalCount = phaseTasks.Count,
+                });
+            }
+        }
+
+        return phases;
+    }
+
+    private static List<string> ExtractPhaseTaskIds(TaskNode phaseNode)
+    {
+        var taskIds = new List<string>();
+        var queue = new Queue<TaskNode>(phaseNode.Children);
+
+        while (queue.Count > 0)
+        {
+            var node = queue.Dequeue();
+            if (node.NodeType == TaskNodeType.Task && !string.IsNullOrEmpty(node.TaskId))
+                taskIds.Add(node.TaskId);
+
+            foreach (var child in node.Children)
+                queue.Enqueue(child);
+        }
+
+        return taskIds;
+    }
+
+    private static List<TaskDependency> ExtractDependencies(List<TaskNode> allTasks)
+    {
+        var dependencies = new List<TaskDependency>();
+        // Dependencies would be extracted from task relationships if they existed
+        // For now, return empty list
+        return dependencies;
+    }
+
+    private static List<TaskParallelGroup> ExtractParallelGroups(List<TaskPhase> phases, List<TaskNode> allTasks)
+    {
+        var groups = new List<TaskParallelGroup>();
+
+        foreach (var phase in phases)
+        {
+            var parallelTasks = allTasks
+                .Where(t => t.IsParallel && phase.TaskIds.Contains(t.TaskId ?? ""))
+                .Select(t => t.TaskId ?? "")
+                .Where(id => !string.IsNullOrEmpty(id))
+                .ToList();
+
+            if (parallelTasks.Count > 0)
+            {
+                groups.Add(new TaskParallelGroup
+                {
+                    PhaseId = phase.Id,
+                    PhaseName = phase.Title,
+                    ParallelTaskIds = parallelTasks,
+                });
+            }
+        }
+
+        return groups;
+    }
 }

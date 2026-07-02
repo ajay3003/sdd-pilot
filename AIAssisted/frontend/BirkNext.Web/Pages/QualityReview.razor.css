@@ -128,6 +128,25 @@
     color: var(--clr-text-muted, #64748b);
 }
 
+/* ─── Pack option disabled state ───────────────────────────────────────────── */
+
+.qr-pack-option.is-disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.qr-pack-option.is-disabled input[type="checkbox"] {
+    cursor: not-allowed;
+}
+
+.qr-pack-option.is-disabled .qr-pack-name {
+    color: var(--clr-text-disabled, #9ca3af);
+}
+
+.qr-pack-option.is-disabled .qr-pack-desc {
+    color: var(--clr-text-placeholder, #d1d5db);
+}
+
 /* ─── Run bar ──────────────────────────────────────────────────────────────── */
 
 .qr-run-bar {

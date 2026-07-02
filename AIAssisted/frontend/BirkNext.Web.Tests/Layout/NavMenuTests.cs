@@ -29,6 +29,8 @@ public class NavMenuTests : BunitContext
         navText.Should().Contain("Specification Review");
         navText.Should().Contain("QA Artifact Library");
         navText.Should().Contain("Create Test Scenario");
+        navText.Should().NotContain("AI REVIEW");
+        navText.Should().NotContain("AI Change Review");
         navText.Should().NotContain("Spec Comparison");
         navText.Should().NotContain("Specification Deltas");
 
@@ -42,7 +44,24 @@ public class NavMenuTests : BunitContext
         cut.Find("a[href='scenarios/new']").Should().NotBeNull();
         cut.FindAll("a[href='compare']").Should().BeEmpty();
         cut.FindAll("a[href='compare/reviews']").Should().BeEmpty();
+        cut.FindAll("a[href='ai-change-auditor']").Should().BeEmpty();
         cut.Find("a[href='dashboard'] .nav-icon-dashboard").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Navigation_ShowsAiReviewGroup_WhenFeatureFlagEnabled()
+    {
+        Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto
+        {
+            AiChangeReview = true
+        });
+
+        var cut = Render<NavMenu>();
+
+        var navText = cut.Find("nav").TextContent;
+        navText.Should().Contain("AI REVIEW");
+        navText.Should().Contain("AI Change Review");
+        cut.Find("a[href='ai-change-auditor']").Should().NotBeNull();
     }
 
     [Fact]
