@@ -17,18 +17,25 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
     private readonly AppDbContext _db;
     private readonly ILogger<EnvironmentDiagnosticsService> _logger;
 
-    // Workspace tables that indicate if artifacts have been loaded
-    private static readonly string[] WorkspaceTables =
+    // All created by EF Core migrations - required for platform infrastructure
+    private static readonly string[] RequiredTables =
     [
         "project_documents",
-        "reviewed_candidates",
         "scenarios",
+        "reviewed_candidates",
         "candidate_links",
         "qa_delta_reviews",
         "trace_links",
         "traceability_suggestions",
         "code_files",
         "code_links"
+    ];
+
+    // Tables whose data indicates workspace readiness (empty = fresh workspace)
+    private static readonly string[] WorkspaceIndicatorTables =
+    [
+        "project_documents",
+        "scenarios"
     ];
 
     public EnvironmentDiagnosticsService(
@@ -50,11 +57,11 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             Environment = _env.EnvironmentName
         };
 
-        // Platform Health: Core infrastructure checks
+        // Platform Health: Core infrastructure checks (hard failures if not met)
         report.DatabaseChecks.AddRange(await RunDatabaseChecksAsync());
         report.BackendApiChecks.AddRange(RunBackendApiChecks());
 
-        // Workspace Readiness: Check if workspace artifacts have been loaded
+        // Workspace Readiness: Check if workspace artifacts have been loaded (not failures)
         report.WorkspaceChecks.AddRange(await RunWorkspaceReadinessChecksAsync());
 
         // Frontend-specific checks (populated by frontend)
@@ -81,7 +88,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
     {
         var checks = new List<EnvironmentDiagnosticCheck>();
 
-        // 1. Database reachable (PLATFORM HEALTH)
+        // 1. Database reachable
         var canConnect = await CanConnectToDatabaseAsync();
         checks.Add(new EnvironmentDiagnosticCheck
         {
@@ -93,7 +100,6 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
 
         if (!canConnect)
         {
-            // If DB is unreachable, we can't run other checks
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Database Configuration",
@@ -104,7 +110,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return checks;
         }
 
-        // 2. Get database info (PLATFORM HEALTH)
+        // 2. Database info
         var dbName = _config["DatabaseSettings:DatabaseName"] ?? "birknext";
         var dbVersion = await GetDatabaseVersionAsync();
         checks.Add(new EnvironmentDiagnosticCheck
@@ -126,7 +132,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             });
         }
 
-        // 3. Current user (PLATFORM HEALTH)
+        // 3. Current user
         var currentUser = await GetCurrentDatabaseUserAsync();
         checks.Add(new EnvironmentDiagnosticCheck
         {
@@ -136,7 +142,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             Recommendation = ""
         });
 
-        // 4. Required roles (PLATFORM HEALTH)
+        // 4. Required roles
         var dbProvider = _config["DatabaseSettings:Provider"] ?? "PostgreSQL";
         if (dbProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase))
         {
@@ -144,25 +150,28 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(rolesCheck);
         }
 
-        // 5. Required database exists (PLATFORM HEALTH)
-        var dbExistsCheck = new EnvironmentDiagnosticCheck
+        // 5. Required database exists
+        checks.Add(new EnvironmentDiagnosticCheck
         {
             Name = "Required Database Exists",
             Status = EnvironmentDiagnosticStatus.Pass,
             Details = $"Database '{dbName}' exists",
             Recommendation = ""
-        };
-        checks.Add(dbExistsCheck);
+        });
 
-        // 6. EF Core migrations status (PLATFORM HEALTH - migrations themselves are infrastructure)
+        // 6. Required tables exist (schema validation - all created by migrations)
+        var tablesCheck = await CheckRequiredTablesExistAsync();
+        checks.Add(tablesCheck);
+
+        // 7. EF Core migrations status
         var migrationsCheck = await CheckMigrationsAsync();
         checks.Add(migrationsCheck);
 
-        // 7. Pending migrations (PLATFORM HEALTH)
+        // 8. Pending migrations
         var pendingCheck = await CheckPendingMigrationsAsync();
         checks.Add(pendingCheck);
 
-        // 8. Schema up to date (PLATFORM HEALTH)
+        // 9. Schema up to date
         var schemaCheck = new EnvironmentDiagnosticCheck
         {
             Name = "Schema Up to Date",
@@ -179,18 +188,17 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
     {
         var checks = new List<EnvironmentDiagnosticCheck>();
 
-        // Check if migrations have run - if not, workspace tables won't exist
+        // Check if migrations have run first
         try
         {
             var migrationsApplied = await _db.Database.GetAppliedMigrationsAsync();
             if (!migrationsApplied.Any())
             {
-                // Migrations haven't run, so workspace readiness is NotAvailable
                 checks.Add(new EnvironmentDiagnosticCheck
                 {
                     Name = "Workspace Initialization",
                     Status = EnvironmentDiagnosticStatus.NotAvailable,
-                    Details = "Migrations not yet applied; workspace tables not available",
+                    Details = "Migrations not applied; workspace not available",
                     Recommendation = "Run migrations: dotnet ef database update"
                 });
                 return checks;
@@ -209,7 +217,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return checks;
         }
 
-        // Check if any workspace data exists (not just if tables exist)
+        // Check if workspace has imported artifacts (table data presence, not schema)
         var hasWorkspaceData = await CheckIfWorkspaceHasDataAsync();
 
         if (!hasWorkspaceData)
@@ -218,8 +226,8 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             {
                 Name = "Workspace Initialization",
                 Status = EnvironmentDiagnosticStatus.NotAvailable,
-                Details = "No project artifacts have been imported yet",
-                Recommendation = "Import markdown files (constitution.md, spec.md, plan.md, tasks.md, data-model.md) to initialize the workspace"
+                Details = "No project artifacts have been imported",
+                Recommendation = "Import markdown files (constitution.md, spec.md, plan.md, tasks.md, data-model.md) to initialize workspace"
             });
         }
         else
@@ -350,6 +358,54 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 Recommendation = "Verify database user has appropriate role permissions"
             };
         }
+    }
+
+    private async Task<EnvironmentDiagnosticCheck> CheckRequiredTablesExistAsync()
+    {
+        var missingTables = new List<string>();
+
+        foreach (var table in RequiredTables)
+        {
+            try
+            {
+                var exists = await _db.Database.SqlQueryRaw<bool>(
+                    """
+                    SELECT EXISTS(
+                        SELECT 1 FROM information_schema.tables
+                        WHERE table_schema = 'public' AND table_name = {0}
+                    )
+                    """, table).FirstOrDefaultAsync();
+
+                if (!exists)
+                {
+                    missingTables.Add(table);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to check table {Table}", table);
+                missingTables.Add(table);
+            }
+        }
+
+        if (missingTables.Count == 0)
+        {
+            return new EnvironmentDiagnosticCheck
+            {
+                Name = "Required Tables Exist",
+                Status = EnvironmentDiagnosticStatus.Pass,
+                Details = $"All {RequiredTables.Length} schema tables verified",
+                Recommendation = ""
+            };
+        }
+
+        return new EnvironmentDiagnosticCheck
+        {
+            Name = "Required Tables Exist",
+            Status = EnvironmentDiagnosticStatus.Fail,
+            Details = $"Missing schema tables: {string.Join(", ", missingTables)}",
+            Recommendation = "Migrations did not complete successfully. Run: dotnet ef database update"
+        };
     }
 
     private async Task<bool> CheckIfWorkspaceHasDataAsync()
