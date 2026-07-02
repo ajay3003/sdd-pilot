@@ -48,9 +48,14 @@ public static class SpecExplorerService
         @"^\s*\*{0,2}A[:\.\)]\*{0,2}\s+(.+)$",
         RegexOptions.Compiled);
 
-    // Traditional BDD scenario header: "**Scenario 1:** title", "Scenario: title"
+    // Traditional BDD scenario header: "**Scenario 1:** title", "Scenario: title", "### Scenario 1: Title"
     private static readonly Regex BddScenarioRe = new(
         @"^\s*(?:[-*]\s*)?\*{0,2}Scenario\s*(?:#?\d+)?[:\*\s–-]*\*{0,2}\s*(.*?)[\*]*\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // Scenario heading: "### Scenario 1: Title" or "## Scenario 1: Title"
+    private static readonly Regex ScenarioHeadingRe = new(
+        @"^Scenario\s*(?:#|\d+|[:\-–])",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // Numbered inline BDD item: "1. **Given** ..." or "1. Given ..."
@@ -58,9 +63,9 @@ public static class SpecExplorerService
         @"^\d+\.\s+\*{0,2}Given\*{0,2}\s+",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    // BDD step keywords on their own line
+    // BDD step keywords on their own line — supports English and Norwegian
     private static readonly Regex BddKeywordRe = new(
-        @"^\s*(?:[-*]\s*)?\*{0,2}(Given|When|Then|And|But)\*{0,2}\s+(.+)$",
+        @"^\s*(?:[-*]\s*)?\*{0,2}(Given|When|Then|And|But|Gitt|Når|Så)\*{0,2}\s+(.+)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // Entity definition in Key Entities section: "- **EntityName**: description"
@@ -523,9 +528,12 @@ public static class SpecExplorerService
                         var stepText = km.Groups[2].Value.Trim();
                         switch (keyword)
                         {
-                            case "given": bddGiven.Add(stepText); bddPhase = 1; break;
-                            case "when":  bddWhen.Add(stepText);  bddPhase = 2; break;
-                            case "then":  bddThen.Add(stepText);  bddPhase = 3; break;
+                            case "given":
+                            case "gitt": bddGiven.Add(stepText); bddPhase = 1; break;
+                            case "when":
+                            case "når":  bddWhen.Add(stepText);  bddPhase = 2; break;
+                            case "then":
+                            case "så":  bddThen.Add(stepText);  bddPhase = 3; break;
                             default:
                                 if (bddPhase == 1) bddGiven.Add(stepText);
                                 else if (bddPhase == 2) bddWhen.Add(stepText);
@@ -805,6 +813,8 @@ public static class SpecExplorerService
         // ISO-date headings (e.g. "2026-03-06 Q/A Session") are decision sessions
         if (DateHeadingRe.IsMatch(title)) return SectionSemantics.Clarifications;
         if (UserStoryHeadingRe.IsMatch(title)) return SectionSemantics.UserStory;
+        // Scenario headings (e.g. "Scenario 1: Title") are treated like user stories
+        if (ScenarioHeadingRe.IsMatch(title)) return SectionSemantics.UserStory;
         if (Regex.IsMatch(t, @"\bclarification"))  return SectionSemantics.Clarifications;
         if (Regex.IsMatch(t, @"\bedge\s+case"))    return SectionSemantics.EdgeCases;
         if (Regex.IsMatch(t, @"\bassumption"))     return SectionSemantics.Assumptions;
