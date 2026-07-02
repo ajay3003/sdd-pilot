@@ -83,6 +83,8 @@ builder.Services.AddSingleton<IWorkspaceArtifactStatusService, WorkspaceArtifact
 builder.Services.AddScoped<IWorkspaceSessionRestoreService, WorkspaceSessionRestoreService>();
 builder.Services.AddHttpClient<IWorkspacePersistenceApiService, WorkspacePersistenceApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
+builder.Services.AddHttpClient<IRecommendedWorkflowApiService, RecommendedWorkflowApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddScoped<IWorkspaceAutoSaveService, WorkspaceAutoSaveService>();
 builder.Services.AddScoped<RuntimeReviewSessionService>();
 builder.Services.AddScoped<QualityReviewSessionService>();

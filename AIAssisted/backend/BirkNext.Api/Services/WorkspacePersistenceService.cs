@@ -283,16 +283,16 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         _logger.LogInformation("Set current workspace to {WorkspaceId}", workspaceId);
     }
 
-    public async Task<Guid?> GetCurrentWorkspaceIdAsync()
+    public Task<Guid?> GetCurrentWorkspaceIdAsync()
     {
-        return _currentWorkspaceId;
+        return Task.FromResult(_currentWorkspaceId);
     }
 
-    public async Task ClearCurrentWorkspaceAsync()
+    public Task ClearCurrentWorkspaceAsync()
     {
         _currentWorkspaceId = null;
         _logger.LogInformation("Cleared current workspace");
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
     public async Task SaveArtifactAsync(Guid workspaceId, WorkspaceArtifactDto artifact)
@@ -489,7 +489,8 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
                 updatedAt = workspace.UpdatedAt,
                 version = workspace.Version,
                 parserVersion = workspace.ParserVersion,
-                reviewContextVersion = workspace.ReviewContextVersion
+                reviewContextVersion = workspace.ReviewContextVersion,
+                favorite = workspace.Favorite
             },
             artifacts = workspace.Artifacts.Select(a => new
             {
@@ -557,7 +558,8 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
                 Description = workspaceObj.GetProperty("description").GetString(),
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow,
-                AutoSaved = false
+                AutoSaved = false,
+                Favorite = workspaceObj.TryGetProperty("favorite", out var favElem) && favElem.GetBoolean()
             };
 
             // Import artifacts with validation
@@ -645,7 +647,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         {
             throw new InvalidOperationException("Invalid JSON format in import file. Please ensure the file is valid JSON.", ex);
         }
-        catch (KeyNotFoundException ex)
+        catch (System.Collections.Generic.KeyNotFoundException ex)
         {
             throw new InvalidOperationException("Missing required field in import file. Please ensure all required fields are present.", ex);
         }

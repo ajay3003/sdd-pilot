@@ -64,6 +64,7 @@ builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<IEnvironmentDiagnosticsService, EnvironmentDiagnosticsService>();
 builder.Services.AddScoped<IWorkspacePersistenceService, WorkspacePersistenceService>();
 builder.Services.AddScoped<IAutoSaveService, AutoSaveService>();
+builder.Services.AddScoped<IRecommendedWorkflowService, RecommendedWorkflowService>();
 builder.Services.AddScoped<ScenarioService>();
 builder.Services.AddScoped<ReviewedCandidateService>();
 builder.Services.AddScoped<CandidateLinkService>();

@@ -540,6 +540,94 @@ Feature visibility is useful for:
 After saving feature visibility changes from the UI, the backend applies the new settings immediately. The sidebar in the frontend will not update until the page is refreshed. A full browser refresh (F5) is required to reload the Blazor application and pick up the updated feature flags.
 
 
+---
+
+## Recommended Workflow — Manual Review and Approval
+
+The Recommended Workflow page guides you through QA review steps. Each step progresses through explicit states to ensure quality control.
+
+### Step States
+
+Steps progress through defined states, not automatically by loading artifacts:
+
+| State | Meaning | Color | Action |
+|---|---|---|---|
+| **Locked** | Prerequisites not met | Grey | Cannot open |
+| **Available** | Ready to review (prerequisites met) | Blue | Open page |
+| **In Progress** | User is currently reviewing | Blue | (automatic) |
+| **Reviewed** | User completed review | Purple | Awaiting approval |
+| **Pending Approval** | Reviewed, awaiting manual approval | Neutral | Approve or Reject |
+| **Approved** | Manually approved by user | Green | ✓ Complete |
+| **Needs Attention** | Artifact changed after approval, or user rejected | Orange/Red | Reopen and re-approve |
+
+### Key Principle
+
+**Loaded artifacts ≠ Approved**
+
+Simply having artifacts (constitution.md, spec.md, plan.md, tasks.md, data-model.md) means a step is **Available**, not **Approved**.
+
+Only **explicit user approval** makes a step green and complete.
+
+### Approval Workflow
+
+#### 1. Open the page
+Click the step's action button to open the corresponding analysis page.
+
+#### 2. Review
+Review the artifacts, analysis results, or findings as appropriate for that step.
+Click **Mark Reviewed** when you've completed the review.
+
+#### 3. Approve
+After reviewing, click **Approve** to mark the step as complete.
+- You may add an optional comment
+- The approval is recorded with timestamp and your user identity
+- The step turns green
+
+#### 4. Reject or Request Changes
+If the step needs work, click **Reject** or **Needs Changes**.
+- The step turns orange/red
+- Add a comment explaining what needs to be fixed
+- The workflow stays on this step until re-approved
+
+### Step Dependencies
+
+Some steps are **locked** until others are approved:
+
+- **Artifact Traceability** is locked until Specification Review is approved
+- **Implementation Review** is locked until Artifact Traceability is approved
+- **Data Model Explorer** is locked until data-model.md is loaded
+
+This ensures you follow the recommended workflow order and don't skip critical reviews.
+
+### Artifact Changes Invalidate Approvals
+
+If you modify an artifact after approving a step, dependent approvals are invalidated:
+
+- **Spec changes** → invalidates Specification Review, Artifact Traceability, Implementation Review
+- **Plan changes** → invalidates Plan Explorer, Artifact Traceability
+- **Task changes** → invalidates Task Explorer, Artifact Traceability, Implementation Review
+- **Constitution changes** → invalidates Constitution Explorer, Artifact Traceability
+
+An invalidated step shows **Needs Attention** in orange and must be re-reviewed and re-approved.
+
+### Approval History
+
+All approvals are recorded with:
+- **Timestamp** (when approved)
+- **User** (who approved, or "Local Developer")
+- **Comment** (optional notes from reviewer)
+
+Reordering approvals (e.g., loading a new artifact and re-approving) does not erase the previous approval history.
+
+### Using Approvals with Workspaces
+
+Approvals are saved **per workspace**:
+- When you save a workspace, approvals are persisted
+- When you reopen a workspace, all approvals are restored
+- Each workspace has independent approval history
+
+---
+
 ## Troubleshooting
 
 ### Logs

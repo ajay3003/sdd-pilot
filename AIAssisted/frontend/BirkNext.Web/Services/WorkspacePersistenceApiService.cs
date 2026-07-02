@@ -42,6 +42,7 @@ public class SavedWorkspaceDto
     public string ReviewContextVersion { get; set; } = "1.0";
     public string? ArtifactSetHash { get; set; }
     public bool AutoSaved { get; set; }
+    public bool Favorite { get; set; }
     public List<SavedWorkspaceArtifactDto> Artifacts { get; set; } = new();
 }
 

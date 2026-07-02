@@ -18,6 +18,7 @@ public class AppDbContext : DbContext
     public DbSet<ProjectDocument> ProjectDocuments => Set<ProjectDocument>();
     public DbSet<SavedWorkspace> SavedWorkspaces => Set<SavedWorkspace>();
     public DbSet<SavedWorkspaceArtifact> SavedWorkspaceArtifacts => Set<SavedWorkspaceArtifact>();
+    public DbSet<WorkspaceReviewStep> WorkspaceReviewSteps => Set<WorkspaceReviewStep>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -462,6 +463,46 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(a => new { a.WorkspaceId, a.ArtifactType })
                 .HasDatabaseName("ix_saved_artifacts_workspace_type");
+        });
+
+        modelBuilder.Entity<WorkspaceReviewStep>(entity =>
+        {
+            entity.ToTable("workspace_review_steps");
+
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.WorkspaceId).HasColumnName("workspace_id");
+            entity.Property(r => r.StepKey).HasColumnName("step_key").HasMaxLength(100).IsRequired();
+            entity.Property(r => r.StepTitle).HasColumnName("step_title").HasMaxLength(500).IsRequired();
+            entity.Property(r => r.RequiredArtifactTypesJson).HasColumnName("required_artifact_types_json").HasColumnType("text");
+            entity.Property(r => r.PrerequisiteState).HasColumnName("prerequisite_state").HasMaxLength(50).IsRequired()
+                .HasConversion<string>();
+            entity.Property(r => r.ReviewState).HasColumnName("review_state").HasMaxLength(50).IsRequired()
+                .HasConversion<string>();
+            entity.Property(r => r.ApprovalState).HasColumnName("approval_state").HasMaxLength(50).IsRequired()
+                .HasConversion<string>();
+            entity.Property(r => r.ReviewedBy).HasColumnName("reviewed_by").HasMaxLength(200);
+            entity.Property(r => r.ReviewedAt).HasColumnName("reviewed_at");
+            entity.Property(r => r.ApprovedBy).HasColumnName("approved_by").HasMaxLength(200);
+            entity.Property(r => r.ApprovedAt).HasColumnName("approved_at");
+            entity.Property(r => r.RejectedBy).HasColumnName("rejected_by").HasMaxLength(200);
+            entity.Property(r => r.RejectedAt).HasColumnName("rejected_at");
+            entity.Property(r => r.Comment).HasColumnName("comment").HasColumnType("text");
+            entity.Property(r => r.LastOpenedAt).HasColumnName("last_opened_at");
+            entity.Property(r => r.ArtifactSetHashAtApproval).HasColumnName("artifact_set_hash_at_approval").HasMaxLength(128);
+            entity.Property(r => r.CreatedAt).HasColumnName("created_at");
+            entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(r => r.Workspace)
+                .WithMany()
+                .HasForeignKey(r => r.WorkspaceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(r => new { r.WorkspaceId, r.StepKey })
+                .HasDatabaseName("ix_workspace_review_steps_workspace_key")
+                .IsUnique();
+
+            entity.HasIndex(r => new { r.WorkspaceId, r.ApprovalState })
+                .HasDatabaseName("ix_workspace_review_steps_workspace_approval");
         });
     }
 }
