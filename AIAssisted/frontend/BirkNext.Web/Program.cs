@@ -65,6 +65,7 @@ builder.Services.AddSingleton<IQAReadinessService, QAReadinessService>();
 builder.Services.AddSingleton<IQaAuditorService, QaAuditorService>();
 builder.Services.AddSingleton<IDeliveryReadinessAssessmentService, DeliveryReadinessService>();
 builder.Services.AddSingleton<IReviewContextValidator, ReviewContextValidator>();
+builder.Services.AddSingleton<TaskSpecAlignmentService>();
 builder.Services.AddSingleton<IStandardsComplianceService>(_ =>
     new StandardsComplianceService(
         new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) }));

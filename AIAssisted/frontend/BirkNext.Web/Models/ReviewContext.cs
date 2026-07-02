@@ -64,6 +64,11 @@ public sealed class ReviewContext
     public IReadOnlyList<string> GetLinkedTasks(string requirementId) =>
         SpecToTasks.TryGetValue(requirementId, out var tasks) ? tasks : [];
 
+    public IReadOnlyDictionary<string, List<string>> GetSpecLinks() => SpecToTasks;
+
+    public IReadOnlyList<string> GetSpecLinks(string specItemId) =>
+        SpecToTasks.TryGetValue(specItemId, out var tasks) ? tasks : [];
+
     public IReadOnlyList<string> GetLinkedPlans(string requirementId) =>
         SpecToPlan.TryGetValue(requirementId, out var plans) ? plans : [];
 

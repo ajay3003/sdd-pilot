@@ -1,297 +1,58 @@
-using System.Text.RegularExpressions;
 using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
 
-public static class TaskSpecAlignmentService
+/// <summary>
+/// Implementation Review analysis over the canonical ReviewContext.
+/// This service must not parse markdown or rebuild spec/task relationships.
+/// </summary>
+public sealed class TaskSpecAlignmentService
 {
-    private sealed record SpecItem(string Id, string Title, SpecItemKind Kind);
-    private sealed record ParsedTask(string TaskId, string Title, string RawText, IReadOnlyList<string> ReferencedIds);
-    private enum SpecItemKind { Requirement, UserStory, SuccessCriterion }
-
-    private static readonly char[] WordSplitChars = [' ', '\t', '-', '_', '.', '/', '\\', '(', ')', '[', ']'];
-    private const StringComparison OIC = StringComparison.OrdinalIgnoreCase;
-    private const StringSplitOptions NONE = StringSplitOptions.RemoveEmptyEntries;
-
-    // ── Technical-only terms ─────────────────────────────────────────────────
-    // Tasks matching these (with no behavioural terms) are Technical Only
-    // regardless of spec keyword score — prevents false Linked classification.
-    private static readonly string[] TechnicalOnlyTerms =
+    private static readonly string[] InfrastructureTerms =
     [
-        "nuget", "npm", "yarn", "add package", "package reference", "csproj",
-        "project init", "scaffold new", "boilerplate",
-        "build script", "ci/cd", "pipeline yaml", "dockerfile", "podman",
-        "refactor ", "rename ", "move class", "clean up", "cleanup",
-        "serilog setup", "logging infrastructure", "configure logging", "logging setup",
-        "ef migration", "database migration", "migration scaffold",
-        "test infrastructure", "test helper ", "test util", "test project setup",
-        "bump version", "upgrade sdk", "update packages",
-        "readme", "documentation comment",
-        "program.cs", "appsettings.json", "appsettings", "di registration",
-        "error handling middleware", "exception filter setup",
-        "create solution", "create project", "new solution", "solution structure",
-        "build setup", "project setup", "configure packages", "configure nuget",
-        "styling ", " styling", "colour scheme", "color scheme", ".css ",
-        "connection string", "connectionstring",
-        "github actions", "azure devops", "ci pipeline",
+        "csproj", "sln", "solution", "project setup", "project skeleton",
+        "package reference", "nuget", "npm", "yarn", "appsettings", "configuration",
+        "program.cs", "di registration", "service extension", "migration",
+        "dbcontext", "healthcheck", "health check", "logging", "telemetry",
+        "opentelemetry", "key vault", "managed identity", "pipeline", "dockerfile",
+        "test project", "test fixture", "testcontainers", "fake", "mock",
+        "options class", "placeholder config", "gitignore"
     ];
 
-    // ── Important infrastructure configuration ───────────────────────────────
-    // Technical tasks that configure significant external dependencies.
-    // These are still TechnicalOnly but warrant Medium Risk (not Low Risk).
-    private static readonly string[] InfrastructureConfigTerms =
+    private static readonly string[] GeneratedCodeTerms =
     [
-        "servicebus", "service bus", "azure service bus",
-        "auth url", "auth base url", "authority", "audience", "issuer",
-        "microsoft graph", "graph api", "msgraph",
-        "oauth", "openidconnect", "openid connect",
-        "database connection", "sql connection", "redis connection",
-        "api key", "client secret", "client id",
-        "keyvault", "key vault", "certificate thumbprint",
-        "msal", "entra id", "azure ad", "tenant id",
+        "generated", "scaffold", "stub", "boilerplate", "dto", "record",
+        "enum", "options", "model", "contract", "schema"
     ];
 
-    // ── Behavioural terms ────────────────────────────────────────────────────
-    // Tasks matching these introduce externally visible behaviour.
-    // "service bus" / "message queue" are intentionally excluded here — they
-    // appear in both config and behavioural contexts; infrastructure config tasks
-    // are caught by the TechnicalOnly early-exit path before behavioural scoring.
     private static readonly string[] BehavioralTerms =
     [
-        "endpoint", "api route", "rest api", "http get", "http post", "http put",
-        "graphql query", "graphql mutation", "graphql subscription",
-        "publish event", "event publisher", "event consumer", "event handler",
-        "message consumer", "message handler",
-        "authorization policy", "permission check", "access control rule",
-        "validation rule", "business rule", "business logic",
-        "user flow", "user journey", "user can",
-        "database entity", "data model", "schema migration",
-        "ui screen", "ui page", "ui form", "ui component", "ui action",
-        "webhook", "external integration",
-        "register operation", "operation type",
-        "audit log", "audit trail",
-        "mask field", "hide sensitive",
-        "kode 6", "kode 7", "kode6", "kode7",
+        "endpoint", "api", "route", "process", "consume", "publish", "deliver",
+        "map", "translate", "reject", "authorize", "validate", "business rule",
+        "cdc", "event", "fault queue", "checkpoint", "full load", "retry",
+        "health", "alert", "security", "kode 6", "kode 7", "permission"
     ];
 
-    // ── Area detection ────────────────────────────────────────────────────────
-    private static readonly (AffectedArea Area, string[] Keywords)[] AreaDefs =
+    private static readonly (AffectedArea Area, string[] Terms)[] AreaTerms =
     [
-        (AffectedArea.Security, ["security", "kode6", "kode7", "kode 6", "kode 7", "classification",
-            "sensitive", "gradert", "gradertilgang", "visibility rule", "securityclassification",
-            "krevergradert", "invisibl"]),
-        (AffectedArea.Authorization, ["permission", "access control", "role", "grant", "tilgang",
-            "autorisasjon", "policy", "authorize", "forbidden", "unauthorized", "authorization"]),
-        (AffectedArea.Search, ["search", "søk", "filter", "pagination", "lookup", "findperson",
-            "personsearch", "searchperson"]),
-        (AffectedArea.Profile, ["profile", "profil", "persondata", "identitet", "national id",
-            "fnr", "dnr", "fodselsnummer", "fødselsnummer", "personprofile", "personinfo", "mask"]),
-        (AffectedArea.AccessManagement, ["access management", "grant access", "expiry", "self-assign",
-            "tildeling", "tilgangstyring", "oppfølger", "selfassign"]),
-        (AffectedArea.ReferenceData, ["reference data", "referansedata", "koderegister", "koder",
-            "active values", "deactivated", "historikk", "referencecode", "referencevalue",
-            "kjoenntype", "kjønntype", "kjoenn", "kjønn",
-            "barntype", "barnstatus", "barnstatustype", "barntypekode",
-            "kodetype", "kodeverk", "kodeverdi", "kodegruppe", "enumvalue"]),
-        (AffectedArea.Ingestion, ["ingest", "upsert", "duf", "freg", "idempotent", "importbatch",
-            "syncperson", "ingestion"]),
-        (AffectedArea.DomainEvents, ["domain event", "publish event", "hendelse", "event bus",
-            "eventbus", "event consumer", "event handler", "event publisher", "domainevent"]),
-        (AffectedArea.Audit, ["audit", "auditlog", "audit trail", "immutable", "sporbarhet"]),
-        (AffectedArea.OperationRegistration, ["operation registration", "register operation",
-            "seven operations", "operasjonsregistrering", "operationregist"]),
-        (AffectedArea.HealthMonitoring, ["health check", "healthcheck", "metric", "monitor",
-            "dashboard", "availability", "helsesjekk", "readiness", "liveness"]),
-        (AffectedArea.Infrastructure, ["infrastructure", "scaffold", "config", "di registration",
-            "middleware", "logging", "test infra", "program.cs", "appsettings",
-            "solution", "project setup", "build", "packages", "nuget", "connection string"]),
-        (AffectedArea.BusinessRules, [
-            "business rule", "businessrule", "statusregel", "forretningsregel",
-            "statustransition", "state transition", "statetransition", "statusovergang",
-            "transitionservice", "transitionhandler", "transitionrule",
-            "eligibility", "calculation rule", "derivation", "rule engine", "domain rule"]),
-        (AffectedArea.Workflow, [
-            "workflow", "arbeidsflyt", "prosessflyt",
-            "workflowstep", "processstep", "orchestrat",
-            "statemachine", "state machine", "workflowservice", "processflow"]),
-        (AffectedArea.Validation, [
-            "validation", "validator", "valider", "validering",
-            "fluentvalidation", "fluent validation", "input validation",
-            "schema validation", "domain validation", "validationservice"]),
-        (AffectedArea.Testing, [
-            "tests", "testclass", "test class", "testfixture", "test fixture",
-            "unittest", "unit test", "integrationtest", "integration test",
-            "testbuilder", "testfactory", "test factory", "testdata", "mockservice"]),
-        (AffectedArea.ExceptionHandling, [
-            "exception", "exceptionhandler", "exception handler",
-            "notfoundexception", "validationexception", "domainexception",
-            "errorhandler", "error handler", "problem details",
-            "errorresponse", "error response", "globalexception"]),
+        (AffectedArea.Security, ["security", "kode 6", "kode 7", "sikkerhetsnivaa", "managed identity", "secret"]),
+        (AffectedArea.Authorization, ["authorize", "authorization", "permission", "access", "bearer", "token"]),
+        (AffectedArea.Ingestion, ["cdc", "ingest", "full load", "batch", "event hubs", "eventhub"]),
+        (AffectedArea.DomainEvents, ["event", "publish", "consumer", "processor", "service bus"]),
+        (AffectedArea.Audit, ["audit", "revisjon"]),
+        (AffectedArea.HealthMonitoring, ["health", "metric", "telemetry", "opentelemetry", "monitor"]),
+        (AffectedArea.Infrastructure, ["csproj", "sln", "appsettings", "configuration", "program.cs", "di", "migration", "dbcontext", "key vault"]),
+        (AffectedArea.Validation, ["validation", "validate", "validator"]),
+        (AffectedArea.Testing, ["test", "xunit", "nsubstitute", "testcontainers", "fixture", "mock", "fake"]),
+        (AffectedArea.ExceptionHandling, ["exception", "error", "failure", "fault"]),
     ];
 
-    // ── Impact level per area ─────────────────────────────────────────────────
-    private static ImpactLevel AreaImpact(AffectedArea a) => a switch
+    public AlignmentReport Analyse(ReviewContext reviewContext)
     {
-        AffectedArea.Security
-            or AffectedArea.Authorization
-            or AffectedArea.DomainEvents
-            or AffectedArea.Audit
-            or AffectedArea.OperationRegistration => ImpactLevel.High,
-        AffectedArea.Search
-            or AffectedArea.Profile
-            or AffectedArea.AccessManagement
-            or AffectedArea.ReferenceData
-            or AffectedArea.Ingestion
-            or AffectedArea.HealthMonitoring
-            or AffectedArea.BusinessRules
-            or AffectedArea.Workflow => ImpactLevel.Medium,
-        _ => ImpactLevel.Low,
-    };
+        ArgumentNullException.ThrowIfNull(reviewContext);
 
-    // ── Recommended tests by area ─────────────────────────────────────────────
-    private static readonly Dictionary<AffectedArea, string[]> AreaTests = new()
-    {
-        [AffectedArea.Security] =
-        [
-            "Kode 6/7 visibility regression — names must not appear in results",
-            "Unauthorized search/profile access negative test",
-            "Permission boundary test — correct 403 responses",
-        ],
-        [AffectedArea.Authorization] =
-        [
-            "Grant access validation",
-            "Expiry date enforcement",
-            "Self-assignment rejection",
-            "Audit trail for grants",
-        ],
-        [AffectedArea.Search] =
-        [
-            "Search by name",
-            "Search by national ID",
-            "Filter combination coverage",
-            "Pagination correctness",
-            "Response-time check",
-        ],
-        [AffectedArea.Profile] =
-        [
-            "Profile field visibility per classification",
-            "National ID masking for Kode 6/7",
-            "Status history display",
-        ],
-        [AffectedArea.AccessManagement] =
-        [
-            "Grant access flow end-to-end",
-            "Expiry date enforced at access time",
-            "Self-assignment rejection",
-            "Audit trail for grants",
-        ],
-        [AffectedArea.ReferenceData] =
-        [
-            "Active reference values returned",
-            "Deactivated values excluded from active lists",
-            "Historical records display old values",
-        ],
-        [AffectedArea.Ingestion] =
-        [
-            "Idempotent upsert — duplicate ingestion is safe",
-            "Invalid or incomplete records handled gracefully",
-            "DUF to fødselsnummer upgrade flow",
-            "Metrics validation after ingestion",
-        ],
-        [AffectedArea.DomainEvents] =
-        [
-            "Event published with correct payload schema",
-            "No personal data (PII) in event payload",
-            "Idempotent consumer behaviour",
-            "Session ordering preserved",
-        ],
-        [AffectedArea.Audit] =
-        [
-            "Audit event published on state change",
-            "No local audit table — events go to shared trail",
-            "Immutable audit trail integration test",
-        ],
-        [AffectedArea.OperationRegistration] =
-        [
-            "Exactly seven operations registered",
-            "Health endpoint waits for registration completion",
-        ],
-        [AffectedArea.HealthMonitoring] =
-        [
-            "Health check endpoint responds 200 OK",
-            "Metrics collection active",
-            "Dashboard visibility",
-        ],
-        [AffectedArea.Infrastructure] =
-        [
-            "Application starts with expected configuration",
-            "Health endpoint reports dependency status",
-            "Missing or invalid configuration fails safely at startup",
-            "No secrets or sensitive data in application logs",
-            "All required service connections succeed",
-        ],
-        [AffectedArea.BusinessRules] =
-        [
-            "Business rule produces expected output for known scenarios",
-            "Edge cases and boundary conditions covered",
-            "Invalid transition or rule violation is rejected correctly",
-            "Regression test for any changed calculation or transition",
-        ],
-        [AffectedArea.Workflow] =
-        [
-            "State transition sequence is correct",
-            "Invalid transitions are rejected",
-            "Workflow completes end-to-end for valid input",
-            "Concurrent state changes handled safely",
-        ],
-        [AffectedArea.Validation] =
-        [
-            "Valid input is accepted without error",
-            "Invalid input is rejected with correct error message",
-            "Boundary values handled correctly",
-            "Required fields enforced",
-        ],
-        [AffectedArea.Testing] =
-        [
-            "All test cases compile and run successfully",
-            "Test coverage is adequate for the component under test",
-        ],
-        [AffectedArea.ExceptionHandling] =
-        [
-            "Exception thrown in expected error scenario",
-            "Exception carries correct message and error code",
-            "Global handler catches and formats response correctly",
-            "No sensitive data exposed in error responses",
-        ],
-    };
-
-    // ── Regexes ───────────────────────────────────────────────────────────────
-    private static readonly Regex SpecIdRe = new(
-        @"\b(FR|NFR|US|SC|AC|UC|TS|REQ)-?(\d{1,4})\b",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    private static readonly Regex TaskLineRe = new(
-        @"^T(\d{2,4})\s*[-–.:)]\s*(.+)$",
-        RegexOptions.Compiled | RegexOptions.Multiline);
-
-    private static readonly Regex CheckboxRe = new(
-        @"^\s*[-*]\s+\[[ xX]\]\s+(.+)$",
-        RegexOptions.Compiled | RegexOptions.Multiline);
-
-    private static readonly Regex CamelCaseRe = new(
-        @"\b([A-Z][a-z]+(?:[A-Z][a-z]+)+)\b",
-        RegexOptions.Compiled);
-
-    // ── Public API ────────────────────────────────────────────────────────────
-
-    public static AlignmentReport Analyse(string specText, string tasksText)
-    {
-        var specItems = ParseSpec(specText);
-        var specKeywords = ExtractSpecKeywords(specText);
-        var tasks = ParseTasks(tasksText);
-
-        var findings = tasks
-            .Select(t => ClassifyTask(t, specItems, specKeywords))
+        var findings = reviewContext.GetTasks()
+            .Select(task => ClassifyTask(task, reviewContext))
             .ToList();
 
         return new AlignmentReport
@@ -310,471 +71,328 @@ public static class TaskSpecAlignmentService
         };
     }
 
-    // ── Spec parsing ──────────────────────────────────────────────────────────
-
-    private static List<SpecItem> ParseSpec(string specText)
+    private static TaskFinding ClassifyTask(TaskItem task, ReviewContext context)
     {
-        var items = new List<SpecItem>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var matches = BuildSpecMatches(task, context);
+        var areas = DetectAreas(task);
 
-        foreach (var (pattern, kind) in new (string, SpecItemKind)[]
-        {
-            (@"\b(FR|NFR|REQ)-?(\d{1,4})\b([^\n]*)", SpecItemKind.Requirement),
-            (@"\b(US|UC)-?(\d{1,4})\b([^\n]*)", SpecItemKind.UserStory),
-            (@"\b(SC|AC)-?(\d{1,4})\b([^\n]*)", SpecItemKind.SuccessCriterion),
-        })
-        {
-            foreach (Match m in Regex.Matches(specText, pattern, RegexOptions.IgnoreCase))
-            {
-                var id = $"{m.Groups[1].Value.ToUpperInvariant()}-{m.Groups[2].Value.PadLeft(2, '0')}";
-                if (!seen.Add(id)) continue;
-                var ctx = m.Groups[3].Value.Trim(' ', ':');
-                var raw = string.IsNullOrEmpty(ctx) ? id : $"{id} {ctx}";
-                items.Add(new SpecItem(id, raw[..Math.Min(120, raw.Length)], kind));
-            }
-        }
+        if (matches.Count > 0)
+            return BuildLinkedFinding(task, matches, areas);
 
-        return items;
+        if (IsTechnicalOnly(task))
+            return BuildTechnicalFinding(task, areas);
+
+        if (IntroducesBehavior(task))
+            return BuildDeviationFinding(task, areas);
+
+        return BuildNeedsReviewFinding(task, areas);
     }
 
-    private static HashSet<string> ExtractSpecKeywords(string specText)
+    private static List<SpecMatch> BuildSpecMatches(TaskItem task, ReviewContext context)
     {
-        var kw = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var matches = new List<SpecMatch>();
 
-        // Markdown headings
-        foreach (Match m in Regex.Matches(specText, @"^#{1,6}\s+(.+)$", RegexOptions.Multiline))
-            foreach (var word in m.Groups[1].Value.Split(WordSplitChars, NONE))
-            {
-                var w = word.Trim('*', '`', '#', '\r', '.', ':');
-                if (w.Length >= 6) kw.Add(w);
-            }
-
-        // Bold text
-        foreach (Match m in Regex.Matches(specText, @"\*\*([^*\n]{2,60})\*\*"))
+        foreach (var requirementId in task.LinkedFRIds)
         {
-            kw.Add(m.Groups[1].Value.Trim());
-            foreach (var word in m.Groups[1].Value.Split(' ', NONE))
-            {
-                var w = word.Trim('`', '.', ':');
-                if (w.Length >= 6) kw.Add(w);
-            }
-        }
-
-        // Inline code spans
-        foreach (Match m in Regex.Matches(specText, @"`([^`\n]{2,80})`"))
-            kw.Add(m.Groups[1].Value.Trim());
-
-        // CamelCase identifiers from entire spec
-        foreach (Match m in CamelCaseRe.Matches(specText))
-        {
-            kw.Add(m.Value);
-            foreach (var part in SplitCamelCase(m.Value))
-                if (part.Length >= 5) kw.Add(part);
-        }
-
-        // Significant words from requirement lines
-        foreach (Match m in Regex.Matches(specText, @"\b(?:FR|US|NFR|SC|AC|REQ)-?\d+[^\n]*", RegexOptions.IgnoreCase))
-            foreach (var word in m.Value.Split(' ', NONE))
-            {
-                var w = word.Trim('.', ':', ',', ';', '(', ')');
-                if (w.Length >= 6 && !Regex.IsMatch(w, @"^\d+$")) kw.Add(w);
-            }
-
-        return kw;
-    }
-
-    // ── Task parsing ──────────────────────────────────────────────────────────
-
-    private static List<ParsedTask> ParseTasks(string tasksText)
-    {
-        var tasks = new List<ParsedTask>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (Match m in TaskLineRe.Matches(tasksText))
-        {
-            var id = $"T{m.Groups[1].Value.PadLeft(3, '0')}";
-            if (!seen.Add(id)) continue;
-            tasks.Add(new ParsedTask(id, m.Groups[2].Value.Trim(), m.Value.Trim(), ExtractSpecRefs(m.Value)));
-        }
-
-        if (tasks.Count == 0)
-        {
-            var idx = 0;
-            foreach (Match m in CheckboxRe.Matches(tasksText))
-            {
-                idx++;
-                var id = $"T{idx:D3}";
-                tasks.Add(new ParsedTask(id, m.Groups[1].Value.Trim(), m.Value.Trim(), ExtractSpecRefs(m.Value)));
-            }
-        }
-
-        return tasks;
-    }
-
-    private static IReadOnlyList<string> ExtractSpecRefs(string text)
-    {
-        var refs = new List<string>();
-        foreach (Match m in SpecIdRe.Matches(text))
-        {
-            var norm = $"{m.Groups[1].Value.ToUpperInvariant()}-{m.Groups[2].Value.PadLeft(2, '0')}";
-            if (!refs.Any(r => r.Equals(norm, OIC)))
-                refs.Add(norm);
-        }
-        return refs;
-    }
-
-    // ── Classification ────────────────────────────────────────────────────────
-
-    private static TaskFinding ClassifyTask(
-        ParsedTask task, List<SpecItem> specItems, HashSet<string> specKeywords)
-    {
-        var lower = task.RawText.ToLowerInvariant();
-
-        // Pre-compute signals
-        var isTechnical = TechnicalOnlyTerms.Any(t => lower.Contains(t));
-        var hasBehavioral = BehavioralTerms.Any(t => lower.Contains(t));
-        var isImportantConfig = InfrastructureConfigTerms.Any(t => lower.Contains(t));
-
-        // ── EARLY EXIT: Technical-only tasks ──────────────────────────────────
-        // Front-loading this prevents accidental keyword matches from elevating
-        // setup/config tasks to Spec Linked. A task with clear technical signals
-        // and no explicit behavioural terms cannot be Spec Linked.
-        if (isTechnical && !hasBehavioral)
-        {
-            var allAreas = DetectAreas(lower);
-            var areas = FilterAreasForTechnical(allAreas, lower);
-
-            // Important infrastructure config (auth URLs, service bus, external APIs)
-            // warrants Medium Risk even though it is still TechnicalOnly.
-            var risk = isImportantConfig ? AlignmentRisk.Medium : AlignmentRisk.Low;
-            var impactLevel = isImportantConfig ? ImpactLevel.Medium : ImpactLevel.Low;
-            var riskReason = isImportantConfig ? BuildImportantConfigReason(areas) : string.Empty;
-
-            var tests = BuildTests(areas, 5);
-
-            return new TaskFinding
-            {
-                TaskId = task.TaskId,
-                Title = task.Title,
-                Status = AlignmentStatus.TechnicalOnly,
-                Risk = risk,
-                Reason = "Task is infrastructure, setup, or technical scaffolding with no externally visible behavior.",
-                RecommendedAction = "No spec update required — verify this task does not introduce user-visible behavior.",
-                Confidence = 0.80,
-                AffectedAreas = areas,
-                RecommendedTests = tests,
-                ImpactLevel = impactLevel,
-                RiskReason = riskReason,
-                IsRegressionCandidate = false,
-            };
-        }
-
-        // ── Score-based matching for potentially behavioural tasks ─────────────
-
-        var score = 0;
-        var reasons = new List<string>();
-
-        // Direct spec ID references
-        var matched = task.ReferencedIds
-            .Select(r => specItems.FirstOrDefault(s => s.Id.Equals(r, OIC)))
-            .OfType<SpecItem>()
-            .ToList();
-
-        foreach (var item in matched)
-        {
-            score += item.Kind switch
-            {
-                SpecItemKind.Requirement => 8,
-                SpecItemKind.UserStory => 7,
-                SpecItemKind.SuccessCriterion => 5,
-                _ => 4,
-            };
-        }
-        if (matched.Count > 0)
-            reasons.Add($"direct ref: {string.Join(", ", matched.Select(m => m.Id))}");
-
-        // CamelCase component matches from task title
-        var entityMatches = new List<string>();
-        foreach (Match m in CamelCaseRe.Matches(task.Title))
-        {
-            if (specKeywords.Contains(m.Value) && !entityMatches.Any(e => e.Equals(m.Value, OIC)))
-            {
-                entityMatches.Add(m.Value);
-                score += 6;
+            var requirement = context.GetRequirement(requirementId);
+            if (requirement is null)
                 continue;
-            }
-            foreach (var part in SplitCamelCase(m.Value))
+
+            if (context.GetLinkedTasks(requirement.Id).Contains(task.Id, StringComparer.OrdinalIgnoreCase)
+                || requirement.LinkedTasks.Contains(task.Id, StringComparer.OrdinalIgnoreCase)
+                || task.LinkedFRIds.Contains(requirement.Id, StringComparer.OrdinalIgnoreCase))
             {
-                if (part.Length >= 5 && specKeywords.Contains(part)
-                    && !entityMatches.Any(e => e.Equals(part, OIC)))
+                matches.Add(new SpecMatch
                 {
-                    entityMatches.Add(part);
-                    score += 4;
-                }
+                    ItemId = requirement.Id,
+                    Title = Shorten(requirement.Text),
+                    MatchType = SpecMatchType.Requirement,
+                });
             }
         }
-        if (entityMatches.Count > 0)
-            reasons.Add($"entity: {string.Join(", ", entityMatches.Take(3))}");
 
-        // Plain title word matches
-        var kwMatches = new List<string>();
-        foreach (var word in task.Title.Split(WordSplitChars, NONE))
+        foreach (var criterionId in task.LinkedSCIds)
         {
-            if (word.Length >= 6 && specKeywords.Contains(word)
-                && !entityMatches.Any(e => e.Equals(word, OIC))
-                && !kwMatches.Any(k => k.Equals(word, OIC)))
+            var criterion = context.GetSuccessCriteria()
+                .FirstOrDefault(sc => sc.Id.Equals(criterionId, StringComparison.OrdinalIgnoreCase));
+            if (criterion is null)
+                continue;
+
+            if (context.GetSpecLinks(criterion.Id).Contains(task.Id, StringComparer.OrdinalIgnoreCase)
+                || criterion.LinkedTasks.Contains(task.Id, StringComparer.OrdinalIgnoreCase)
+                || task.LinkedSCIds.Contains(criterion.Id, StringComparer.OrdinalIgnoreCase))
             {
-                kwMatches.Add(word);
-                score += 2;
+                matches.Add(new SpecMatch
+                {
+                    ItemId = criterion.Id,
+                    Title = Shorten(criterion.Text),
+                    MatchType = SpecMatchType.SuccessCriterion,
+                });
             }
         }
-        if (kwMatches.Count > 0)
-            reasons.Add($"keyword: {string.Join(", ", kwMatches.Take(3))}");
 
-        // Area detection
-        var areas2 = DetectAreas(lower);
-
-        // Small bonus for areas confirmed in spec
-        foreach (var (area, keywords) in AreaDefs)
+        var userStory = FindUserStory(task.UserStoryId, context);
+        if (userStory is not null)
         {
-            if (!areas2.Contains(area)) continue;
-            if (keywords.Any(kw => specKeywords.Any(sk => sk.Equals(kw, OIC))))
-                score++;
-        }
-
-        var hasAnySpecKw = specKeywords.Any(kw => kw.Length >= 6 && lower.Contains(kw.ToLowerInvariant()));
-
-        // ── Classify ──────────────────────────────────────────────────────────
-        AlignmentStatus status;
-        AlignmentRisk risk2;
-        string reason, action;
-        double confidence;
-
-        if (score >= 6)
-        {
-            status = AlignmentStatus.Linked;
-            risk2 = AlignmentRisk.Low;
-            confidence = Math.Min(0.50 + score * 0.045, 0.95);
-            reason = $"Strong spec coverage — {string.Join("; ", reasons)}.";
-            action = "No action required — task is covered by the specification.";
-        }
-        else if (score >= 2)
-        {
-            status = AlignmentStatus.NeedsReview;
-            risk2 = AlignmentRisk.Medium;
-            confidence = Math.Min(0.38 + score * 0.06, 0.68);
-            reason = $"Partial spec match — {string.Join("; ", reasons)}. Coverage may be incomplete.";
-            action = "Verify spec coverage and link to a requirement or add a new user story.";
-        }
-        else if (hasBehavioral)
-        {
-            if (hasAnySpecKw)
+            matches.Add(new SpecMatch
             {
-                status = AlignmentStatus.NeedsReview;
-                risk2 = AlignmentRisk.Medium;
-                confidence = 0.50;
-                reason = "Task introduces behavior related to specification concepts, but no direct link was found.";
-                action = "Link this task to an existing requirement, or add a new user story and acceptance scenario.";
-            }
-            else
-            {
-                status = AlignmentStatus.PossibleDeviation;
-                risk2 = AlignmentRisk.High;
-                confidence = 0.75;
-                reason = "Task introduces or changes behavior (endpoint, event, permission, business rule, or UI action) with no matching specification item.";
-                action = "Update spec.md to document this behavior, or link the task to an existing requirement.";
-            }
-        }
-        else
-        {
-            // Non-technical, non-behavioral, no clear spec signal
-            status = AlignmentStatus.NeedsReview;
-            risk2 = AlignmentRisk.Medium;
-            confidence = 0.40;
-            reason = "Task could not be matched to any specification item. Manual review recommended.";
-            action = "Review the task against the specification and link or add coverage as needed.";
+                ItemId = userStory.Id,
+                Title = Shorten(userStory.Title),
+                MatchType = SpecMatchType.UserStory,
+            });
         }
 
-        // Downgrade AlignmentRisk when every detected area is Low-impact.
-        // Ensures Testing, Validation, and ExceptionHandling tasks don't show
-        // Medium Risk in the Spec Alignment tab when they have no real risk signal.
-        if (risk2 == AlignmentRisk.Medium && status != AlignmentStatus.PossibleDeviation
-            && areas2.Count > 0 && areas2.All(a => AreaImpact(a) == ImpactLevel.Low))
-        {
-            risk2 = AlignmentRisk.Low;
-        }
+        return matches
+            .GroupBy(match => match.ItemId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+    }
 
-        var impactLevel2 = ComputeImpactLevel(status, areas2);
-        var tests2 = BuildTests(areas2, 6);
-        var riskReason2 = GenerateRiskReason(status, risk2, areas2);
-        var isReg = ComputeIsRegressionCandidate(risk2, areas2, tests2.Count);
+    private static TaskFinding BuildLinkedFinding(TaskItem task, List<SpecMatch> matches, List<AffectedArea> areas)
+    {
+        var hasRequirementOrCriterion = matches.Any(m => m.MatchType is SpecMatchType.Requirement or SpecMatchType.SuccessCriterion);
+        var confidence = hasRequirementOrCriterion ? 0.95 : 0.85;
+        var risk = areas.Any(a => AreaImpact(a) == ImpactLevel.High) ? AlignmentRisk.Medium : AlignmentRisk.Low;
 
         return new TaskFinding
         {
-            TaskId = task.TaskId,
+            TaskId = task.Id,
             Title = task.Title,
-            Status = status,
-            Risk = risk2,
-            Reason = reason,
-            RecommendedAction = action,
+            Status = AlignmentStatus.Linked,
+            Risk = risk,
+            Reason = $"Task is linked through ReviewContext to {string.Join(", ", matches.Select(m => m.ItemId))}.",
+            RecommendedAction = "No action required — task is covered by the canonical ReviewContext relationships.",
             Confidence = confidence,
-            Matches = matched.Select(m => new SpecMatch
-            {
-                ItemId = m.Id,
-                Title = m.Title,
-                MatchType = m.Kind switch
-                {
-                    SpecItemKind.Requirement => SpecMatchType.Requirement,
-                    SpecItemKind.UserStory => SpecMatchType.UserStory,
-                    SpecItemKind.SuccessCriterion => SpecMatchType.SuccessCriterion,
-                    _ => SpecMatchType.None,
-                },
-            }).ToList(),
-            AffectedAreas = areas2,
-            RecommendedTests = tests2,
-            ImpactLevel = impactLevel2,
-            MatchReason = BuildMatchReason(score, reasons),
-            RiskReason = riskReason2,
-            IsRegressionCandidate = isReg,
+            Matches = matches,
+            AffectedAreas = areas,
+            RecommendedTests = BuildTests(areas, 6),
+            ImpactLevel = ComputeImpactLevel(AlignmentStatus.Linked, areas),
+            MatchReason = "ReviewContext semantic relationship",
+            RiskReason = GenerateRiskReason(AlignmentStatus.Linked, risk, areas),
+            IsRegressionCandidate = risk == AlignmentRisk.Medium,
         };
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static List<AffectedArea> DetectAreas(string lowerText)
+    private static TaskFinding BuildTechnicalFinding(TaskItem task, List<AffectedArea> areas)
     {
-        var areas = new List<AffectedArea>();
-        foreach (var (area, keywords) in AreaDefs)
-            if (keywords.Any(kw => lowerText.Contains(kw)))
-                areas.Add(area);
+        if (!areas.Contains(AffectedArea.Infrastructure))
+            areas.Add(AffectedArea.Infrastructure);
+
+        return new TaskFinding
+        {
+            TaskId = task.Id,
+            Title = task.Title,
+            Status = AlignmentStatus.TechnicalOnly,
+            Risk = AlignmentRisk.Low,
+            Reason = "Task is infrastructure, setup, generated-code, or test scaffolding with no ReviewContext spec relationship.",
+            RecommendedAction = "No spec update required unless this task introduces user-visible behavior.",
+            Confidence = 0.80,
+            AffectedAreas = areas,
+            RecommendedTests = BuildTests(areas, 5),
+            ImpactLevel = ImpactLevel.Low,
+            MatchReason = "Technical classification helper",
+            IsRegressionCandidate = false,
+        };
+    }
+
+    private static TaskFinding BuildDeviationFinding(TaskItem task, List<AffectedArea> areas)
+    {
+        return new TaskFinding
+        {
+            TaskId = task.Id,
+            Title = task.Title,
+            Status = AlignmentStatus.PossibleDeviation,
+            Risk = AlignmentRisk.High,
+            Reason = "Task appears to introduce behavior, but ReviewContext has no linked requirement, success criterion, or user story.",
+            RecommendedAction = "Link this task to existing specification coverage or update spec.md to document the behavior.",
+            Confidence = 0.75,
+            AffectedAreas = areas,
+            RecommendedTests = BuildTests(areas, 6),
+            ImpactLevel = ImpactLevel.High,
+            MatchReason = "No ReviewContext relationship",
+            RiskReason = GenerateRiskReason(AlignmentStatus.PossibleDeviation, AlignmentRisk.High, areas),
+            IsRegressionCandidate = true,
+        };
+    }
+
+    private static TaskFinding BuildNeedsReviewFinding(TaskItem task, List<AffectedArea> areas)
+    {
+        return new TaskFinding
+        {
+            TaskId = task.Id,
+            Title = task.Title,
+            Status = AlignmentStatus.NeedsReview,
+            Risk = AlignmentRisk.Medium,
+            Reason = "ReviewContext has no semantic spec relationship for this task, and the remaining helper signals are inconclusive.",
+            RecommendedAction = "Review the task against the specification and either link it, mark it technical-only, or add missing spec coverage.",
+            Confidence = 0.45,
+            AffectedAreas = areas,
+            RecommendedTests = BuildTests(areas, 6),
+            ImpactLevel = ComputeImpactLevel(AlignmentStatus.NeedsReview, areas),
+            MatchReason = "No canonical relationship",
+            RiskReason = GenerateRiskReason(AlignmentStatus.NeedsReview, AlignmentRisk.Medium, areas),
+            IsRegressionCandidate = areas.Any(a => AreaImpact(a) <= ImpactLevel.Medium),
+        };
+    }
+
+    private static SemanticUserStory? FindUserStory(string? userStoryId, ReviewContext context)
+    {
+        if (string.IsNullOrWhiteSpace(userStoryId))
+            return null;
+
+        var normalized = NormalizeId(userStoryId);
+        var userStories = context.GetUserStories();
+        var directMatch = userStories
+            .FirstOrDefault(story => NormalizeId(story.Id) == normalized);
+
+        if (directMatch is not null)
+            return directMatch;
+
+        var ordinal = ExtractOrdinal(userStoryId);
+        if (ordinal is null || ordinal < 1 || ordinal > userStories.Count)
+            return null;
+
+        return userStories[ordinal.Value - 1];
+    }
+
+    private static string NormalizeId(string id)
+    {
+        var chars = id.Where(char.IsLetterOrDigit).ToArray();
+        var compact = new string(chars).ToUpperInvariant();
+        var prefix = new string(compact.TakeWhile(char.IsLetter).ToArray());
+        var digits = new string(compact.SkipWhile(char.IsLetter).ToArray()).TrimStart('0');
+        return string.IsNullOrEmpty(digits) ? compact : $"{prefix}{digits}";
+    }
+
+    private static int? ExtractOrdinal(string id)
+    {
+        var digits = new string(id.Where(char.IsDigit).ToArray());
+        return int.TryParse(digits, out var ordinal) ? ordinal : null;
+    }
+
+    private static bool IsTechnicalOnly(TaskItem task)
+    {
+        var text = TaskText(task);
+        return task.IsTestingTask
+               || HasAny(text, InfrastructureTerms)
+               || HasAny(text, GeneratedCodeTerms)
+               || task.RelatedFileIds.Any(file => EndsWithAny(file, ".csproj", ".sln", ".json", ".yaml", ".yml"));
+    }
+
+    private static bool IntroducesBehavior(TaskItem task)
+    {
+        var text = TaskText(task);
+        return task.IsSecurityTask || HasAny(text, BehavioralTerms);
+    }
+
+    private static List<AffectedArea> DetectAreas(TaskItem task)
+    {
+        var text = TaskText(task);
+        var areas = AreaTerms
+            .Where(definition => HasAny(text, definition.Terms))
+            .Select(definition => definition.Area)
+            .Distinct()
+            .ToList();
+
+        if (task.IsTestingTask && !areas.Contains(AffectedArea.Testing))
+            areas.Add(AffectedArea.Testing);
+        if (task.IsSecurityTask && !areas.Contains(AffectedArea.Security))
+            areas.Add(AffectedArea.Security);
+        if (task.RelatedFileIds.Any() && !areas.Contains(AffectedArea.Infrastructure))
+            areas.Add(AffectedArea.Infrastructure);
+
         return areas;
     }
 
-    // For technical tasks, exclude domain-behaviour areas that appear only
-    // because of incidental keyword overlap (e.g. "service bus" → DomainEvents
-    // when the task is really just configuring a connection string).
-    private static List<AffectedArea> FilterAreasForTechnical(List<AffectedArea> areas, string lowerText)
-    {
-        var filtered = areas
-            .Where(a => a is AffectedArea.Infrastructure
-                           or AffectedArea.HealthMonitoring
-                           or AffectedArea.Testing
-                           or AffectedArea.ExceptionHandling)
-            .ToList();
+    private static string TaskText(TaskItem task) =>
+        $"{task.Title} {task.Description} {string.Join(' ', task.RelatedFileIds)}".ToLowerInvariant();
 
-        if (areas.Contains(AffectedArea.Authorization)
-            && (lowerText.Contains("auth") || lowerText.Contains("oauth") || lowerText.Contains("jwt")))
-            filtered.Add(AffectedArea.Authorization);
+    private static bool HasAny(string text, IEnumerable<string> terms) =>
+        terms.Any(term => text.Contains(term, StringComparison.OrdinalIgnoreCase));
 
-        if (areas.Contains(AffectedArea.Security) && lowerText.Contains("security"))
-            filtered.Add(AffectedArea.Security);
-
-        // Always ensure Infrastructure is present for setup tasks
-        if (!filtered.Contains(AffectedArea.Infrastructure))
-            filtered.Add(AffectedArea.Infrastructure);
-
-        return filtered;
-    }
+    private static bool EndsWithAny(string text, params string[] suffixes) =>
+        suffixes.Any(suffix => text.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
 
     private static ImpactLevel ComputeImpactLevel(AlignmentStatus status, List<AffectedArea> areas)
     {
-        if (status == AlignmentStatus.PossibleDeviation) return ImpactLevel.High;
-        if (status == AlignmentStatus.TechnicalOnly) return ImpactLevel.Low;
-        if (areas.Count == 0) return ImpactLevel.Unknown;
+        if (status == AlignmentStatus.PossibleDeviation)
+            return ImpactLevel.High;
+        if (status == AlignmentStatus.TechnicalOnly)
+            return ImpactLevel.Low;
+        if (areas.Count == 0)
+            return ImpactLevel.Unknown;
         return areas.Select(AreaImpact).Min();
     }
 
-    private static List<string> BuildTests(List<AffectedArea> areas, int maxCount) =>
-        areas.Where(a => AreaTests.ContainsKey(a))
-             .SelectMany(a => AreaTests[a])
-             .Distinct()
-             .Take(maxCount)
-             .ToList();
-
-    private static string BuildMatchReason(int score, List<string> reasons)
+    private static ImpactLevel AreaImpact(AffectedArea area) => area switch
     {
-        if (reasons.Count == 0) return string.Empty;
-        return $"{string.Join("; ", reasons)} (score: {score})";
-    }
-
-    private static string BuildImportantConfigReason(List<AffectedArea> areas)
-    {
-        var parts = new List<string> { "Configures external service dependencies." };
-        if (areas.Contains(AffectedArea.Authorization))
-            parts.Add("Includes authentication or authorization endpoint configuration.");
-        if (areas.Contains(AffectedArea.Security))
-            parts.Add("Touches security-relevant configuration.");
-        parts.Add("Incorrect configuration may affect runtime behavior, health checks, or startup.");
-        parts.Add("Does not directly change authorization rules or business logic.");
-        return string.Join(" ", parts);
-    }
-
-    private static string GenerateRiskReason(
-        AlignmentStatus status, AlignmentRisk risk, List<AffectedArea> areas)
-    {
-        if (risk == AlignmentRisk.Low) return string.Empty;
-
-        var parts = new List<string>();
-
-        if (status == AlignmentStatus.PossibleDeviation)
-            parts.Add("Introduces behavior with no specification coverage.");
-
-        foreach (var area in areas.Take(4))
-        {
-            var exp = AreaRiskExplanation(area);
-            if (!string.IsNullOrEmpty(exp)) parts.Add(exp);
-        }
-
-        if (parts.Count == 0 && risk == AlignmentRisk.Medium)
-            parts.Add("Partial specification match — verify coverage before release.");
-
-        return string.Join(" ", parts);
-    }
-
-    private static string AreaRiskExplanation(AffectedArea area) => area switch
-    {
-        AffectedArea.Security =>
-            "Implements or affects Kode 6/7 visibility rules.",
-        AffectedArea.Authorization =>
-            "Affects permission evaluation or access control behavior.",
-        AffectedArea.Audit =>
-            "Affects audit trail guarantees.",
-        AffectedArea.DomainEvents =>
-            "Affects domain event contracts or message publication.",
-        AffectedArea.Profile =>
-            "Handles personal identity data — national IDs or masking rules.",
-        AffectedArea.Search =>
-            "Affects what appears in search results or how filtering works.",
-        AffectedArea.AccessManagement =>
-            "Affects access grant flows, expiry, or self-assignment rules.",
-        AffectedArea.OperationRegistration =>
-            "Affects operation registration required for access control completion.",
-        AffectedArea.Ingestion =>
-            "Affects data ingestion pipeline or idempotency guarantees.",
-        AffectedArea.ReferenceData =>
-            "Affects reference data values or active/inactive state filtering.",
-        AffectedArea.HealthMonitoring =>
-            "Affects health reporting and external dependency visibility.",
-        AffectedArea.BusinessRules =>
-            "Implements business rules or state transition logic.",
-        AffectedArea.Workflow =>
-            "Affects process flow or workflow state transitions.",
-        AffectedArea.Validation =>
-            "Domain validation — verify boundary and rejection behavior.",
-        AffectedArea.Testing =>
-            "Test code — verify test coverage is adequate.",
-        AffectedArea.ExceptionHandling =>
-            "Error/exception handling — verify error scenarios and response format.",
-        _ => string.Empty,
+        AffectedArea.Security
+            or AffectedArea.Authorization
+            or AffectedArea.DomainEvents
+            or AffectedArea.Audit => ImpactLevel.High,
+        AffectedArea.Ingestion
+            or AffectedArea.HealthMonitoring
+            or AffectedArea.Validation
+            or AffectedArea.ExceptionHandling => ImpactLevel.Medium,
+        _ => ImpactLevel.Low,
     };
 
-    private static bool ComputeIsRegressionCandidate(
-        AlignmentRisk risk, List<AffectedArea> areas, int testCount) =>
-        risk == AlignmentRisk.High
-        || areas.Any(a => a is AffectedArea.Security or AffectedArea.Authorization
-                              or AffectedArea.Audit or AffectedArea.DomainEvents)
-        || (testCount > 0 && risk == AlignmentRisk.Medium);
+    private static List<string> BuildTests(List<AffectedArea> areas, int maxCount) =>
+        areas.SelectMany(TestsForArea)
+            .Distinct()
+            .Take(maxCount)
+            .ToList();
 
-    private static IEnumerable<string> SplitCamelCase(string s) =>
-        Regex.Matches(s, @"[A-Z][a-z]+").Select(m => m.Value);
+    private static IEnumerable<string> TestsForArea(AffectedArea area) => area switch
+    {
+        AffectedArea.Security => ["Security classification negative test", "No sensitive data in logs"],
+        AffectedArea.Authorization => ["Unauthorized request rejection", "Permission boundary test"],
+        AffectedArea.Ingestion => ["Idempotent ingestion", "Invalid event handling"],
+        AffectedArea.DomainEvents => ["Event payload contract test", "Duplicate event handling"],
+        AffectedArea.HealthMonitoring => ["Health endpoint status test", "Dependency failure health test"],
+        AffectedArea.Infrastructure => ["Application starts with expected configuration", "Missing configuration fails safely"],
+        AffectedArea.Testing => ["Test suite compiles and runs"],
+        AffectedArea.ExceptionHandling => ["Error response format test"],
+        AffectedArea.Validation => ["Invalid input rejection test"],
+        _ => [],
+    };
+
+    private static string GenerateRiskReason(AlignmentStatus status, AlignmentRisk risk, List<AffectedArea> areas)
+    {
+        if (risk == AlignmentRisk.Low)
+            return string.Empty;
+
+        var reasons = new List<string>();
+        if (status == AlignmentStatus.PossibleDeviation)
+            reasons.Add("Behavior has no canonical ReviewContext specification coverage.");
+
+        foreach (var area in areas.Take(3))
+        {
+            var reason = area switch
+            {
+                AffectedArea.Security => "Touches security-sensitive behavior.",
+                AffectedArea.Authorization => "Touches authorization or access control.",
+                AffectedArea.DomainEvents => "Touches event publication or consumption.",
+                AffectedArea.Ingestion => "Touches ingestion or data synchronization.",
+                AffectedArea.HealthMonitoring => "Touches operational health visibility.",
+                _ => string.Empty,
+            };
+            if (!string.IsNullOrEmpty(reason))
+                reasons.Add(reason);
+        }
+
+        if (reasons.Count == 0)
+            reasons.Add("Manual confirmation is required.");
+
+        return string.Join(" ", reasons);
+    }
+
+    private static string Shorten(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return string.Empty;
+
+        var clean = text.ReplaceLineEndings(" ").Trim();
+        return clean.Length <= 140 ? clean : $"{clean[..137]}...";
+    }
 }
