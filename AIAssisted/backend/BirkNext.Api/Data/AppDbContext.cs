@@ -16,6 +16,8 @@ public class AppDbContext : DbContext
     public DbSet<CodeFile> CodeFiles => Set<CodeFile>();
     public DbSet<CodeLink> CodeLinks => Set<CodeLink>();
     public DbSet<ProjectDocument> ProjectDocuments => Set<ProjectDocument>();
+    public DbSet<SavedWorkspace> SavedWorkspaces => Set<SavedWorkspace>();
+    public DbSet<SavedWorkspaceArtifact> SavedWorkspaceArtifacts => Set<SavedWorkspaceArtifact>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -404,6 +406,62 @@ public class AppDbContext : DbContext
             entity.HasIndex(d => d.DocumentKind)
                 .HasDatabaseName("ix_project_documents_kind")
                 .IsUnique();
+        });
+
+        modelBuilder.Entity<SavedWorkspace>(entity =>
+        {
+            entity.ToTable("saved_workspaces");
+
+            entity.Property(w => w.Id).HasColumnName("id");
+            entity.Property(w => w.UserId).HasColumnName("user_id").HasMaxLength(200).IsRequired();
+            entity.Property(w => w.Name).HasColumnName("name").HasMaxLength(500).IsRequired();
+            entity.Property(w => w.ProjectName).HasColumnName("project_name").HasMaxLength(500).IsRequired();
+            entity.Property(w => w.Description).HasColumnName("description").HasColumnType("text");
+            entity.Property(w => w.CreatedAt).HasColumnName("created_at");
+            entity.Property(w => w.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(w => w.LastOpenedAt).HasColumnName("last_opened_at");
+            entity.Property(w => w.Version).HasColumnName("version").HasDefaultValue(1);
+            entity.Property(w => w.ParserVersion).HasColumnName("parser_version").HasMaxLength(50);
+            entity.Property(w => w.ReviewContextVersion).HasColumnName("review_context_version").HasMaxLength(50);
+            entity.Property(w => w.ArtifactSetHash).HasColumnName("artifact_set_hash").HasMaxLength(128);
+            entity.Property(w => w.AutoSaved).HasColumnName("auto_saved").HasDefaultValue(false);
+            entity.Property(w => w.Favorite).HasColumnName("favorite").HasDefaultValue(false);
+            entity.Property(w => w.TagsJson).HasColumnName("tags_json").HasColumnType("text");
+            entity.Property(w => w.IsDeleted).HasColumnName("is_deleted").HasDefaultValue(false);
+
+            entity.HasIndex(w => new { w.UserId, w.IsDeleted })
+                .HasDatabaseName("ix_saved_workspaces_user_not_deleted");
+
+            entity.HasIndex(w => new { w.UserId, w.UpdatedAt })
+                .HasDatabaseName("ix_saved_workspaces_user_updated")
+                .IsDescending(false, true);
+        });
+
+        modelBuilder.Entity<SavedWorkspaceArtifact>(entity =>
+        {
+            entity.ToTable("saved_workspace_artifacts");
+
+            entity.Property(a => a.Id).HasColumnName("id");
+            entity.Property(a => a.WorkspaceId).HasColumnName("workspace_id");
+            entity.Property(a => a.ArtifactType).HasColumnName("artifact_type").HasMaxLength(50).IsRequired()
+                .HasConversion<string>();
+            entity.Property(a => a.FileName).HasColumnName("file_name").HasMaxLength(500).IsRequired();
+            entity.Property(a => a.OriginalPath).HasColumnName("original_path").HasMaxLength(1000);
+            entity.Property(a => a.Content).HasColumnName("content").HasColumnType("text").IsRequired();
+            entity.Property(a => a.ContentHash).HasColumnName("content_hash").HasMaxLength(128);
+            entity.Property(a => a.Encoding).HasColumnName("encoding").HasMaxLength(50);
+            entity.Property(a => a.LastModified).HasColumnName("last_modified");
+            entity.Property(a => a.ParseVersion).HasColumnName("parse_version").HasMaxLength(50);
+            entity.Property(a => a.CreatedAt).HasColumnName("created_at");
+            entity.Property(a => a.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(a => a.Workspace)
+                .WithMany(w => w.Artifacts)
+                .HasForeignKey(a => a.WorkspaceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(a => new { a.WorkspaceId, a.ArtifactType })
+                .HasDatabaseName("ix_saved_artifacts_workspace_type");
         });
     }
 }
