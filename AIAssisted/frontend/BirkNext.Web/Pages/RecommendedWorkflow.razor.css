@@ -648,6 +648,156 @@
     color: var(--rw-phase-color);
 }
 
+/* ── Approval buttons ────────────────────────────────────────────────────── */
+
+.rw-approval-buttons {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.rw-btn-review,
+.rw-btn-approve,
+.rw-btn-reject {
+    padding: 0.4rem 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition);
+    white-space: nowrap;
+}
+
+.rw-btn-review {
+    background: #3b82f6;
+    color: #fff;
+}
+
+.rw-btn-review:hover:not(:disabled) {
+    background: #2563eb;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+.rw-btn-approve {
+    background: #10b981;
+    color: #fff;
+}
+
+.rw-btn-approve:hover:not(:disabled) {
+    background: #059669;
+    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+}
+
+.rw-btn-reject {
+    background: #f59e0b;
+    color: #fff;
+}
+
+.rw-btn-reject:hover:not(:disabled) {
+    background: #d97706;
+    box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3);
+}
+
+.rw-btn-review:disabled,
+.rw-btn-approve:disabled,
+.rw-btn-reject:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* ── Error alert ─────────────────────────────────────────────────────────── */
+
+.rw-error-alert {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-left: 4px solid #f87171;
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.rw-error-icon {
+    flex: 0 0 1.5rem;
+    font-size: 1.25rem;
+}
+
+.rw-error-message {
+    flex: 1;
+    font-size: 0.875rem;
+    color: #991b1b;
+}
+
+.rw-error-close {
+    flex: 0 0 auto;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #991b1b;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    opacity: 0.7;
+    transition: opacity var(--transition);
+}
+
+.rw-error-close:hover {
+    opacity: 1;
+}
+
+/* ── Artifact Invalidation Alert ─────────────────────────────────────────── */
+
+.rw-phase.is-invalidated {
+    border-left-color: #f59e0b;
+    background: color-mix(in srgb, #f59e0b 5%, transparent);
+}
+
+.rw-phase-num-warning {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+.rw-invalidation-alert {
+    display: flex;
+    gap: 0.75rem;
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: var(--radius-md);
+    padding: 0.875rem 1rem;
+    margin-bottom: 0.75rem;
+    align-items: flex-start;
+}
+
+.rw-invalidation-icon {
+    flex: 0 0 1.5rem;
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+.rw-invalidation-content {
+    flex: 1;
+}
+
+.rw-invalidation-title {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #92400e;
+    margin-bottom: 0.25rem;
+}
+
+.rw-invalidation-reason {
+    font-size: 0.8rem;
+    color: #b45309;
+    line-height: 1.4;
+}
+
 /* ── Inline links within phase content ──────────────────────────────────── */
 
 .rw-inline-link {

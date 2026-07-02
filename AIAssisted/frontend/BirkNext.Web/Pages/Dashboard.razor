@@ -8,6 +8,7 @@
 @inject IWorkspaceSessionService Workspace
 @inject IWorkspaceArtifactStatusService ArtifactStatus
 @inject IReportExportService ExportService
+@inject IRecommendedWorkflowApiService WorkflowApi
 @inject IJSRuntime JS
 
 <PageTitle>Dashboard</PageTitle>
@@ -148,6 +149,13 @@
         else
         {
             <MetricCard Value="—" Label="Performance" Sublabel="@RuntimeStatusLabel(RuntimeReviews.PerformanceReview.Status)" />
+        }
+        @if (_workflowReadiness is not null)
+        {
+            <MetricCard Value="@($"{_workflowReadiness.OverallReadiness}%")"
+                        Label="Workflow"
+                        Sublabel="@(_workflowReadiness.OverallReadiness == 100 ? "Complete" : _workflowReadiness.OverallReadiness >= 50 ? "In Progress" : "Started")"
+                        Variant="@(_workflowReadiness.OverallReadiness == 100 ? "success" : _workflowReadiness.OverallReadiness >= 50 ? "warning" : null)" />
         }
     </div>
 
@@ -803,7 +811,36 @@
     private void OnWorkspaceStatusChanged()
     {
         _workspaceStatus = ArtifactStatus.GetStatus();
+        _ = RefreshWorkflowReadinessAsync();
         StateHasChanged();
+    }
+
+    // ── Workflow readiness ────────────────────────────────────────────────────
+
+    private WorkflowReadinessBreakdown? _workflowReadiness;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshWorkflowReadinessAsync();
+    }
+
+    private async Task RefreshWorkflowReadinessAsync()
+    {
+        try
+        {
+            _workflowReadiness = await WorkflowApi.GetReadinessAsync(
+                Guid.Empty,
+                _workspaceStatus.HasConstitution,
+                _workspaceStatus.HasSpecification,
+                _workspaceStatus.HasPlan,
+                _workspaceStatus.HasTasks,
+                _workspaceStatus.HasDataModel);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading workflow readiness: {ex.Message}");
+        }
     }
 
     // ── Runtime review session ────────────────────────────────────────────────

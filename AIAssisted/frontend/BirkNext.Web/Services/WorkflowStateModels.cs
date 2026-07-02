@@ -30,6 +30,12 @@ public enum ApprovalState
     InvalidatedByArtifactChange
 }
 
+public enum PrerequisiteState
+{
+    Missing,
+    Available
+}
+
 public class WorkflowStepViewModel
 {
     public int Number { get; set; }
@@ -44,7 +50,14 @@ public class WorkflowStepViewModel
     public bool IsCurrent { get; set; }
     public bool IsFuture { get; set; }
 
+    // Step type/requirement properties
+    public bool IsOptional { get; set; } = false;
+    public bool RequiresApproval { get; set; } = true;
+    public bool RequiresManualReview { get; set; } = true;
+
+    // State indicators
     public WorkflowStepStatus Status { get; set; }
+    public PrerequisiteState Prerequisites { get; set; }
     public ReviewState ReviewState { get; set; }
     public ApprovalState ApprovalState { get; set; }
 
@@ -78,4 +91,12 @@ public class WorkflowStepViewModel
         WorkflowStepStatus.Locked => "is-disabled",
         _ => ""
     };
+}
+
+public class WorkflowReadinessBreakdown
+{
+    public int OverallReadiness { get; set; }
+    public int ArtifactReadiness { get; set; }
+    public int ReviewReadiness { get; set; }
+    public int ApprovalReadiness { get; set; }
 }

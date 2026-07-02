@@ -43,6 +43,17 @@ public interface IRecommendedWorkflowApiService
     /// Invalidate approvals when artifacts change.
     /// </summary>
     Task InvalidateApprovalsAsync(Guid workspaceId, List<string> changedArtifactTypes, string currentHash);
+
+    /// <summary>
+    /// Get workflow readiness breakdown.
+    /// </summary>
+    Task<WorkflowReadinessBreakdown?> GetReadinessAsync(
+        Guid workspaceId,
+        bool hasConstitution,
+        bool hasSpecification,
+        bool hasPlan,
+        bool hasTasks,
+        bool hasDataModel);
 }
 
 public class RecommendedWorkflowApiService : IRecommendedWorkflowApiService
@@ -187,6 +198,43 @@ public class RecommendedWorkflowApiService : IRecommendedWorkflowApiService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error invalidating approvals");
+        }
+    }
+
+    public async Task<WorkflowReadinessBreakdown?> GetReadinessAsync(
+        Guid workspaceId,
+        bool hasConstitution,
+        bool hasSpecification,
+        bool hasPlan,
+        bool hasTasks,
+        bool hasDataModel)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                "api/recommended-workflow/readiness",
+                new
+                {
+                    workspaceId,
+                    hasConstitution,
+                    hasSpecification,
+                    hasPlan,
+                    hasTasks,
+                    hasDataModel
+                });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Get readiness failed with status {StatusCode}", response.StatusCode);
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<WorkflowReadinessBreakdown>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting readiness");
+            return null;
         }
     }
 }
