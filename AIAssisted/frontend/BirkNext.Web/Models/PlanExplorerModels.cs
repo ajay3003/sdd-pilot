@@ -313,6 +313,11 @@ public sealed class PlanHealth
     public bool HasTestingInfo { get; init; }
     public bool HasArchitecture { get; init; }
 
+    // Special cases
+    public bool IsFrontendOnly { get; init; }
+    public bool IsStateless { get; init; }
+    public bool HasNoStorage { get; init; }
+
     public string HealthSummary { get; init; } = string.Empty;
     public List<PlanHealthIndicator> Indicators { get; init; } = [];
 }

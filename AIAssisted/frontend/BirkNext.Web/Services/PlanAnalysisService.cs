@@ -65,6 +65,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         "adr references", "repository structure", "folder structure",
         "infrastructure", "deployment architecture", "system boundaries",
         "integration points", "external interfaces", "api design",
+        "key design decisions",  // Alternative to dedicated Architecture section
     };
 
     private static readonly HashSet<string> ProjectStructureKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -95,7 +96,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     private static readonly HashSet<string> DependencyKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
         "dependencies", "dependency", "external dependencies", "internal dependencies",
-        "packages", "libraries", "integrations",
+        "packages", "libraries", "integrations", "external integration",
     };
 
     private static readonly HashSet<string> MilestoneKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -1713,6 +1714,42 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
     // ── Health builder ───────────────────────────────────────────────────────
 
+    // ── Stateless / Frontend-Only Detection ──────────────────────────────────
+
+    private static bool IsFrontendOnly(List<PlanSection> sections, List<PlanConstraint> constraints)
+    {
+        var allText = (string.Join(" ", sections.Select(s => s.RawContent)) + " " +
+                       string.Join(" ", constraints.Select(c => c.Title + " " + c.Description)))
+                      .ToLowerInvariant();
+
+        return (allText.Contains("frontend-only") || allText.Contains("wasm") || allText.Contains("blazor webassembly")) &&
+               (allText.Contains("storage = n/a") || allText.Contains("storage: n/a") || allText.Contains("no storage") ||
+                allText.Contains("no database") || allText.Contains("no persistence"));
+    }
+
+    private static bool IsStateless(List<PlanSection> sections, List<PlanConstraint> constraints)
+    {
+        var allText = (string.Join(" ", sections.Select(s => s.RawContent)) +
+                       string.Join(" ", constraints.Select(c => c.Title + " " + c.Description)))
+                      .ToLowerInvariant();
+
+        return allText.Contains("stateless") &&
+               (allText.Contains("no local state") || allText.Contains("scales horizontally") ||
+                allText.Contains("no persistence"));
+    }
+
+    private static bool HasNoStorage(List<PlanSection> sections, List<PlanConstraint> constraints)
+    {
+        var allText = (string.Join(" ", sections.Select(s => s.RawContent)) +
+                       string.Join(" ", constraints.Select(c => c.Title + " " + c.Description)))
+                      .ToLowerInvariant();
+
+        return (allText.Contains("no sql") || allText.Contains("no database") || allText.Contains("no persistence") ||
+                allText.Contains("storage = n/a")) && !allText.Contains("blob storage");
+    }
+
+    // ── Health Assessment ────────────────────────────────────────────────────
+
     private static PlanHealth BuildHealth(
         string? summary,
         List<PlanRisk> risks,
@@ -1809,7 +1846,12 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 Level = PlanHealthLevel.Good,
             });
 
-        if (!hasTechCtx)
+        // Detect stateless/frontend-only/no-storage cases for smarter findings
+        bool isFrontendOnly = IsFrontendOnly(sections, constraints);
+        bool isStateless = IsStateless(sections, constraints);
+        bool hasNoStorage = HasNoStorage(sections, constraints);
+
+        if (!hasTechCtx && !isFrontendOnly && !isStateless)
             indicators.Add(new PlanHealthIndicator
             {
                 Icon = "⚠", Message = "No Technical Context section found",
@@ -1858,6 +1900,9 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             HasArchitecture = hasArch,
             HealthSummary = parts.Count > 0 ? string.Join(", ", parts) + "." : "No structured content detected.",
             Indicators = indicators,
+            IsFrontendOnly = IsFrontendOnly(sections, constraints),
+            IsStateless = IsStateless(sections, constraints),
+            HasNoStorage = HasNoStorage(sections, constraints),
         };
     }
 
