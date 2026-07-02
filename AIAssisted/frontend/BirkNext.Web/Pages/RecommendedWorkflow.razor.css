@@ -6,6 +6,124 @@
     margin: 0 auto;
 }
 
+/* ── Workspace Persistence Actions ────────────────────────────────────────── */
+
+.rw-workspace-actions {
+    background: linear-gradient(135deg, #f0f9ff 0%, #f8fafc 100%);
+    border: 1px solid #bfdbfe;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem 2rem;
+    margin-bottom: 2rem;
+}
+
+.rw-workspace-actions-header {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #1e40af;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 1rem;
+}
+
+.rw-workspace-info {
+    display: flex;
+    gap: 2rem;
+    align-items: flex-start;
+}
+
+.rw-workspace-details {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem 1rem;
+}
+
+.rw-detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.rw-detail-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.rw-detail-value {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #1e293b;
+    font-family: 'Monaco', 'Courier New', monospace;
+}
+
+.rw-detail-value.status-saved {
+    color: #059669;
+}
+
+.rw-detail-value.status-auto-saved {
+    color: #f59e0b;
+}
+
+.rw-detail-value.status-unsaved {
+    color: #dc2626;
+}
+
+.rw-detail-value.status-not-saved {
+    color: #6b7280;
+}
+
+.rw-workspace-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.rw-action-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    background: #0ea5e9;
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-default);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.rw-action-btn:hover:not(:disabled) {
+    background: #0284c7;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.rw-action-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.rw-action-btn.is-danger {
+    background: #ef4444;
+}
+
+.rw-action-btn.is-danger:hover:not(:disabled) {
+    background: #dc2626;
+}
+
+.rw-no-workspace {
+    text-align: center;
+    padding: 1rem 0;
+}
+
+.rw-no-workspace > p {
+    margin: 0 0 1rem;
+    font-size: 0.95rem;
+    color: #475569;
+}
+
 /* ── Empty state ─────────────────────────────────────────────────────────── */
 
 .rw-empty-state {

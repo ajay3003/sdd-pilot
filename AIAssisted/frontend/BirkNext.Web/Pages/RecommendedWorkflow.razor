@@ -8,6 +8,11 @@
 @inject IExtractionSessionService ExtractionSession
 @inject IDashboardSnapshotService DashboardSnapshot
 @inject TaskAlignmentSessionService AlignmentSession
+@inject IWorkspacePersistenceApiService WorkspacePersistence
+@inject IWorkspaceSessionRestoreService WorkspaceRestore
+@inject NavigationManager Navigation
+@inject ILogger<RecommendedWorkflow> Logger
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Recommended Workflow — QA Review Studio</PageTitle>
 
@@ -15,6 +20,56 @@
 
     <PageHeader Title="Recommended Workflow"
                 Description="A live workspace-aware guide that recommends the next action from loaded artifacts, completed analysis sessions, Feature Visibility, and the current navigation." />
+
+    <!-- Workspace Persistence Actions -->
+    <div class="rw-workspace-actions">
+        <div class="rw-workspace-actions-header">
+            <span class="rw-actions-label">💾 Current Workspace</span>
+        </div>
+
+        @if (_currentWorkspaceMeta != null)
+        {
+            <div class="rw-workspace-info">
+                <div class="rw-workspace-details">
+                    <div class="rw-detail-item">
+                        <span class="rw-detail-label">Workspace:</span>
+                        <span class="rw-detail-value">@_currentWorkspaceMeta.WorkspaceName</span>
+                    </div>
+                    <div class="rw-detail-item">
+                        <span class="rw-detail-label">Project:</span>
+                        <span class="rw-detail-value">@(_currentWorkspaceMeta.ProjectName ?? "—")</span>
+                    </div>
+                    <div class="rw-detail-item">
+                        <span class="rw-detail-label">Artifacts:</span>
+                        <span class="rw-detail-value">@_currentWorkspaceMeta.ArtifactCount of 5</span>
+                    </div>
+                    <div class="rw-detail-item">
+                        <span class="rw-detail-label">Status:</span>
+                        <span class="rw-detail-value @GetStatusClass(_workspaceStatus)">@_workspaceStatus</span>
+                    </div>
+                    <div class="rw-detail-item">
+                        <span class="rw-detail-label">Last saved:</span>
+                        <span class="rw-detail-value">@GetLastSavedText()</span>
+                    </div>
+                </div>
+                <div class="rw-workspace-buttons">
+                    <button class="rw-action-btn" @onclick="SaveWorkspaceAsync" disabled="@_isSaving">
+                        @if (_isSaving) { <span>Saving...</span> } else { <span>💾 Save</span> }
+                    </button>
+                    <button class="rw-action-btn" @onclick="SaveAsWorkspaceAsync" disabled="@_isSaving">Save As</button>
+                    <button class="rw-action-btn" @onclick="@(() => ShowManageWorkspacesAsync())" disabled="@_isSaving">Manage</button>
+                    <button class="rw-action-btn is-danger" @onclick="ClearWorkspaceAsync" disabled="@_isSaving">Clear</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="rw-no-workspace">
+                <p>No workspace loaded. Load a sample project or import artifacts to get started.</p>
+                <button class="rw-action-btn" @onclick="@(() => ShowManageWorkspacesAsync())">📂 Resume Workspace</button>
+            </div>
+        }
+    </div>
 
     <div class="rw-workspace-status" role="status" aria-live="polite">
         <div class="rw-status-header">
@@ -112,6 +167,11 @@
     private IReadOnlyList<WorkflowStep> _steps = [];
     private WorkflowStep? _currentStep;
 
+    // Workspace persistence state
+    private CurrentWorkspaceMetadata? _currentWorkspaceMeta;
+    private string _workspaceStatus = "Not Saved";
+    private bool _isSaving = false;
+
     private string ProjectName =>
         string.IsNullOrWhiteSpace(_status.ActiveProjectName)
             ? "No project loaded"
@@ -120,7 +180,9 @@
     protected override async Task OnInitializedAsync()
     {
         ArtifactStatus.StatusChanged += OnWorkspaceChanged;
+        WorkspaceRestore.ReviewContextRebuildNeeded += OnReviewContextRebuildNeeded;
         await RefreshWorkflowAsync();
+        await RefreshWorkspaceMetadataAsync();
     }
 
     private async void OnWorkspaceChanged()
@@ -317,6 +379,138 @@
     public void Dispose()
     {
         ArtifactStatus.StatusChanged -= OnWorkspaceChanged;
+        WorkspaceRestore.ReviewContextRebuildNeeded -= OnReviewContextRebuildNeeded;
+    }
+
+    private async Task RefreshWorkspaceMetadataAsync()
+    {
+        try
+        {
+            _currentWorkspaceMeta = await WorkspaceRestore.GetCurrentWorkspaceMetadataAsync();
+            if (_currentWorkspaceMeta != null)
+            {
+                var state = await WorkspacePersistence.GetCurrentStateAsync();
+                _workspaceStatus = state?.Status ?? "Not Saved";
+            }
+            else
+            {
+                _workspaceStatus = "Not Saved";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error refreshing workspace metadata");
+        }
+    }
+
+    private async Task SaveWorkspaceAsync()
+    {
+        if (_isSaving) return;
+        _isSaving = true;
+
+        try
+        {
+            var result = await WorkspacePersistence.SaveCurrentAsync();
+            if (result != null)
+            {
+                await RefreshWorkspaceMetadataAsync();
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving workspace");
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SaveAsWorkspaceAsync()
+    {
+        var name = await GetWorkspaceNameFromUserAsync();
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        _isSaving = true;
+        try
+        {
+            var result = await WorkspacePersistence.SaveAsAsync(name);
+            if (result != null)
+            {
+                await RefreshWorkspaceMetadataAsync();
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving workspace as {Name}", name);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task ShowManageWorkspacesAsync()
+    {
+        // TODO: Open Workspace Manager dialog (Phase 5)
+        Navigation.NavigateTo("/workspace-manager");
+    }
+
+    private async Task ClearWorkspaceAsync()
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Clear current workspace? You can resume it later from Manage Workspaces.");
+        if (!confirmed) return;
+
+        try
+        {
+            await WorkspaceRestore.ClearWorkspaceAsync();
+            _currentWorkspaceMeta = null;
+            _workspaceStatus = "Not Saved";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error clearing workspace");
+        }
+    }
+
+    private void OnReviewContextRebuildNeeded(object? sender, EventArgs e)
+    {
+        InvokeAsync(async () =>
+        {
+            await RefreshWorkflowAsync();
+            StateHasChanged();
+        });
+    }
+
+    private string GetStatusClass(string status) => status switch
+    {
+        "Saved" => "status-saved",
+        "AutoSaved" => "status-auto-saved",
+        "UnsavedChanges" => "status-unsaved",
+        _ => "status-not-saved"
+    };
+
+    private string GetLastSavedText()
+    {
+        if (_currentWorkspaceMeta?.LoadedAt == null) return "—";
+        var elapsed = DateTimeOffset.UtcNow - _currentWorkspaceMeta.LoadedAt;
+        return elapsed.TotalSeconds < 60
+            ? "just now"
+            : elapsed.TotalMinutes < 60
+                ? $"{(int)elapsed.TotalMinutes}m ago"
+                : elapsed.TotalHours < 24
+                    ? $"{(int)elapsed.TotalHours}h ago"
+                    : $"{(int)elapsed.TotalDays}d ago";
+    }
+
+    private async Task<string?> GetWorkspaceNameFromUserAsync()
+    {
+        // TODO: Show dialog to get name from user (Phase 5)
+        var name = await JSRuntime.InvokeAsync<string>("prompt", "Enter workspace name:");
+        return string.IsNullOrWhiteSpace(name) ? null : name;
     }
 
     private sealed record ArtifactReadiness(string Name, bool IsLoaded);
