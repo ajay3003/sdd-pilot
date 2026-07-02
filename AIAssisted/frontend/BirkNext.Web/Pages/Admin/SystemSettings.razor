@@ -1253,6 +1253,27 @@ else if (_settings is not null)
                         </div>
                     </div>
 
+                    @if (_envDiagErrorDetails is not null)
+                    {
+                        <div style="margin-bottom:1.5rem;padding:1rem;background:#fee2e2;border:1px solid #fecaca;border-radius:var(--radius-default)">
+                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+                                <span style="font-weight:600;color:#991b1b">⚠️ Diagnostics Failed</span>
+                            </div>
+                            <div style="font-size:0.9rem;color:#7c2d12;font-family:monospace;white-space:pre-wrap;word-break:break-word;margin-bottom:0.75rem">@_envDiagErrorDetails</div>
+                            @if (!string.IsNullOrWhiteSpace(_envDiagStackTrace))
+                            {
+                                <button class="btn-text" style="color:#991b1b;font-size:0.85rem;padding:0;margin-top:0.5rem"
+                                        @onclick='() => _envDiagShowStackTrace = !_envDiagShowStackTrace'>
+                                    @(_envDiagShowStackTrace ? "▼ Hide Stack Trace" : "▶ Show Stack Trace")
+                                </button>
+                                @if (_envDiagShowStackTrace)
+                                {
+                                    <div style="font-size:0.8rem;color:#7c2d12;font-family:monospace;white-space:pre-wrap;word-break:break-word;margin-top:0.5rem;padding:0.5rem;background:#fee2e2;border-radius:0.25rem;max-height:400px;overflow-y:auto">@_envDiagStackTrace</div>
+                                }
+                            }
+                        </div>
+                    }
+
                     @if (_envDiagReport is not null)
                     {
                         <div class="ss-status-bar" style="margin-bottom:1.5rem">
@@ -1630,6 +1651,9 @@ else if (_settings is not null)
     private EnvironmentDiagnosticsReportDto? _envDiagReport;
     private bool _envDiagRunning;
     private string? _envDiagMessage;
+    private string? _envDiagErrorDetails;
+    private string? _envDiagStackTrace;
+    private bool _envDiagShowStackTrace;
 
     // Azure DevOps connection test
     private bool _adoTestRunning;
@@ -2185,15 +2209,36 @@ else if (_settings is not null)
         if (_envDiagRunning) return;
         _envDiagRunning = true;
         _envDiagMessage = null;
+        _envDiagErrorDetails = null;
+        _envDiagStackTrace = null;
         StateHasChanged();
 
         try
         {
-            _envDiagReport = await AdminApi.GetEnvironmentDiagnosticsAsync();
-            if (_envDiagReport is not null)
+            var (report, errorMessage, errorStack) = await AdminApi.GetEnvironmentDiagnosticsWithErrorDetailsAsync();
+
+            if (report is not null)
+            {
+                _envDiagReport = report;
+                _envDiagErrorDetails = null;
+                _envDiagStackTrace = null;
                 _envDiagMessage = $"Diagnostics complete: {_envDiagReport.OverallStatus} — {_envDiagReport.DatabaseChecks.Count} database, {_envDiagReport.BackendApiChecks.Count} backend, {_envDiagReport.WorkspaceChecks.Count} workspace checks run.";
+            }
             else
-                _envDiagMessage = "Failed to run diagnostics.";
+            {
+                // Diagnostics failed - show detailed error
+                _envDiagReport = null;
+                _envDiagErrorDetails = errorMessage ?? "Unknown error occurred";
+                _envDiagStackTrace = errorStack;
+                _envDiagMessage = "Diagnostics failed — see details below.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _envDiagReport = null;
+            _envDiagErrorDetails = $"{ex.GetType().Name}: {ex.Message}";
+            _envDiagStackTrace = ex.StackTrace ?? "No stack trace available";
+            _envDiagMessage = "Diagnostics failed with exception.";
         }
         finally
         {

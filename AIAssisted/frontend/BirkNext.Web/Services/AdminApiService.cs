@@ -86,9 +86,34 @@ public class AdminApiService
             var response = await _client.PostAsJsonAsync("api/admin/environment-diagnostics", new { });
             return await response.Content.ReadFromJsonAsync<EnvironmentDiagnosticsReportDto>();
         }
-        catch
+        catch (Exception ex)
         {
+            // Log the exception so it's captured in application logs
+            Console.Error.WriteLine($"[ERROR] Environment diagnostics failed: {ex.GetType().Name}: {ex.Message}");
+            if (ex.InnerException != null)
+                Console.Error.WriteLine($"[ERROR] Inner exception: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
+            Console.Error.WriteLine($"[ERROR] Stack trace: {ex.StackTrace}");
             return null;
+        }
+    }
+
+    public async Task<(EnvironmentDiagnosticsReportDto? Report, string? ErrorMessage, string? ErrorStack)> GetEnvironmentDiagnosticsWithErrorDetailsAsync()
+    {
+        try
+        {
+            var response = await _client.PostAsJsonAsync("api/admin/environment-diagnostics", new { });
+            var report = await response.Content.ReadFromJsonAsync<EnvironmentDiagnosticsReportDto>();
+            return (report, null, null);
+        }
+        catch (Exception ex)
+        {
+            var message = $"{ex.GetType().Name}: {ex.Message}";
+            if (ex.InnerException != null)
+                message += $"\n\nInner Exception: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}";
+
+            var stackTrace = ex.StackTrace ?? "No stack trace available";
+
+            return (null, message, stackTrace);
         }
     }
 }
