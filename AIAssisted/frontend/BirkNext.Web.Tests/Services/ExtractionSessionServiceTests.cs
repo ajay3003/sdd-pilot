@@ -5,6 +5,7 @@ using BirkNext.Web.Models;
 using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
+using Moq;
 
 namespace BirkNext.Web.Tests.Services;
 
@@ -18,7 +19,7 @@ public class ExtractionSessionServiceTests : BunitContext
         Converters = { new JsonStringEnumConverter() },
     };
 
-    private ExtractionSessionService CreateService() => new(JSInterop.JSRuntime);
+    private ExtractionSessionService CreateService() => new(JSInterop.JSRuntime, Mock.Of<IWorkspaceStateManager>());
 
     private static ExtractionSessionSnapshot MakeSnapshot(DateTimeOffset? timestamp = null) => new()
     {

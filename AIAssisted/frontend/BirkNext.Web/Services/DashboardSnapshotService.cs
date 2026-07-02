@@ -26,6 +26,8 @@ public interface IDashboardSnapshotService
 
 public sealed class DashboardSnapshotService : IDashboardSnapshotService
 {
+    private readonly IWorkspaceStateManager _stateManager;
+
     public ArtifactTraceabilityReport?   TraceabilityReport { get; private set; }
     public ConstitutionComplianceReport? ComplianceReport   { get; private set; }
     public QaAuditReport?                AuditReport        { get; private set; }
@@ -36,6 +38,18 @@ public sealed class DashboardSnapshotService : IDashboardSnapshotService
     public DateTimeOffset?               AuditRunAt         { get; private set; }
     public DateTimeOffset?               DeliveryRunAt      { get; private set; }
     public DateTimeOffset?               ReadinessRunAt     { get; private set; }
+
+    public DashboardSnapshotService(IWorkspaceStateManager stateManager)
+    {
+        _stateManager = stateManager;
+        _stateManager.WorkspaceChanged += OnWorkspaceChanged;
+    }
+
+    private void OnWorkspaceChanged(Guid? newWorkspaceId)
+    {
+        // Clear all snapshots when workspace changes
+        Clear();
+    }
 
     public void Publish(ArtifactTraceabilityReport report)
     {

@@ -57,6 +57,7 @@ public class CurrentWorkspaceMetadata
 public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
 {
     private readonly IWorkspaceArtifactRepository _artifactRepository;
+    private readonly IWorkspaceStateManager _stateManager;
     private readonly ILogger<WorkspaceSessionRestoreService> _logger;
     private CurrentWorkspaceMetadata? _currentMetadata;
 
@@ -64,9 +65,11 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
 
     public WorkspaceSessionRestoreService(
         IWorkspaceArtifactRepository artifactRepository,
+        IWorkspaceStateManager stateManager,
         ILogger<WorkspaceSessionRestoreService> logger)
     {
         _artifactRepository = artifactRepository;
+        _stateManager = stateManager;
         _logger = logger;
     }
 
@@ -127,6 +130,9 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
                 "Restored workspace {WorkspaceId} ({WorkspaceName}) with {ArtifactCount} artifacts",
                 workspace.Id, workspace.Name, restoredCount);
 
+            // Notify root state manager: workspace changed
+            _stateManager.NotifyWorkspaceChanged(workspace.Id);
+
             // Signal ReviewContext rebuild
             OnReviewContextRebuildNeeded();
         }
@@ -150,6 +156,9 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
 
         _artifactRepository.ProjectName = null;
         _currentMetadata = null;
+
+        // Notify root state manager: workspace cleared
+        _stateManager.NotifyWorkspaceChanged(null);
 
         _logger.LogInformation("Cleared workspace from session");
         await Task.CompletedTask;

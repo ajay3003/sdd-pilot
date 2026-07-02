@@ -808,6 +808,18 @@
         ArtifactStatus.StatusChanged += OnWorkspaceStatusChanged;
     }
 
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await RefreshWorkflowReadinessAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error initializing Dashboard: {ex.Message}");
+        }
+    }
+
     private void OnWorkspaceStatusChanged()
     {
         _workspaceStatus = ArtifactStatus.GetStatus();
@@ -818,11 +830,6 @@
     // ── Workflow readiness ────────────────────────────────────────────────────
 
     private WorkflowReadinessBreakdown? _workflowReadiness;
-
-    protected override async Task OnInitializedAsync()
-    {
-        await RefreshWorkflowReadinessAsync();
-    }
 
     private async Task RefreshWorkflowReadinessAsync()
     {

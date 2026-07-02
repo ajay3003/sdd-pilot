@@ -1,4 +1,5 @@
 using BirkNext.Api.Data;
+using BirkNext.Api.Data.Migrations;
 using BirkNext.Api.Models.Admin;
 using Microsoft.EntityFrameworkCore;
 using System.Reflection;
@@ -15,6 +16,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
     private readonly AppDbContext _db;
+    private readonly IMigrationIntegrityValidator _migrationValidator;
     private readonly ILogger<EnvironmentDiagnosticsService> _logger;
 
     // All created by EF Core migrations - required for platform infrastructure
@@ -42,11 +44,13 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         IConfiguration config,
         IWebHostEnvironment env,
         AppDbContext db,
+        IMigrationIntegrityValidator migrationValidator,
         ILogger<EnvironmentDiagnosticsService> logger)
     {
         _config = config;
         _env = env;
         _db = db;
+        _migrationValidator = migrationValidator;
         _logger = logger;
     }
 
@@ -180,6 +184,10 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             Recommendation = pendingCheck.Status == EnvironmentDiagnosticStatus.Pass ? "" : "Run pending migrations: dotnet ef database update"
         };
         checks.Add(schemaCheck);
+
+        // 10. EF Core Migration Integrity
+        var integrityCheck = await CheckMigrationIntegrityAsync();
+        checks.Add(integrityCheck);
 
         return checks;
     }
@@ -621,6 +629,59 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 Status = EnvironmentDiagnosticStatus.Warning,
                 Details = "Could not determine migration status",
                 Recommendation = "Verify database schema is current"
+            };
+        }
+    }
+
+    private async Task<EnvironmentDiagnosticCheck> CheckMigrationIntegrityAsync()
+    {
+        try
+        {
+            var report = await _migrationValidator.ValidateAsync(_db);
+
+            if (report.IsValid)
+            {
+                return new EnvironmentDiagnosticCheck
+                {
+                    Name = "EF Migration Integrity",
+                    Status = EnvironmentDiagnosticStatus.Pass,
+                    Details = $"{report.AppliedMigrationCount} migrations applied, 0 issues detected",
+                    Recommendation = ""
+                };
+            }
+
+            var criticalIssues = report.Issues.Where(i => i.Severity == MigrationIssueSeverity.Critical).ToList();
+            var warningIssues = report.Issues.Where(i => i.Severity == MigrationIssueSeverity.Warning).ToList();
+
+            var details = $"Issues found:\n";
+            foreach (var issue in criticalIssues)
+            {
+                details += $"  ❌ {issue.Issue}\n";
+            }
+            foreach (var issue in warningIssues)
+            {
+                details += $"  ⚠️  {issue.Issue}\n";
+            }
+
+            return new EnvironmentDiagnosticCheck
+            {
+                Name = "EF Migration Integrity",
+                Status = criticalIssues.Any() ? EnvironmentDiagnosticStatus.Fail : EnvironmentDiagnosticStatus.Warning,
+                Details = details.TrimEnd(),
+                Recommendation = criticalIssues.Any()
+                    ? "Fix migration files: ensure all .cs files have matching .Designer.cs files. Run: dotnet ef migrations list"
+                    : "Review warnings and consider fixing orphaned files"
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to check migration integrity");
+            return new EnvironmentDiagnosticCheck
+            {
+                Name = "EF Migration Integrity",
+                Status = EnvironmentDiagnosticStatus.Warning,
+                Details = $"Could not validate migrations: {ex.Message}",
+                Recommendation = "Verify migration files are in Migrations directory and properly formatted"
             };
         }
     }

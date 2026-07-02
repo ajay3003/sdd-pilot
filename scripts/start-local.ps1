@@ -6,6 +6,7 @@ param(
 
     [switch]$Fast,
     [switch]$SkipContainers,
+    [switch]$SkipMigrationCheck,
     [switch]$BackendOnly,
     [switch]$FrontendOnly,
     [switch]$ForceKillPorts,
@@ -928,6 +929,56 @@ function Start-DotNetProcessLogged {
     return $process
 }
 
+function Invoke-MigrationIntegrityPreflight {
+    param(
+        [string]$BackendPath,
+        [string]$RepoRoot
+    )
+
+    if ($SkipMigrationCheck) {
+        Warn "Migration integrity check skipped."
+        return
+    }
+
+    $checkScript = Join-Path $RepoRoot "scripts\check-migrations.ps1"
+    $migrationGuide = Join-Path $BackendPath "MIGRATION_GUIDE.md"
+    $apiProjectPath = Join-Path $BackendPath "BirkNext.Api"
+
+    if (-not (Test-Path $checkScript)) {
+        Fail "Migration integrity check script not found: $checkScript"
+        Write-Host "Migration guide: $migrationGuide" -ForegroundColor Yellow
+        throw "Migration integrity check failed. Fix migrations before starting local app."
+    }
+
+    if (-not (Test-Path $apiProjectPath)) {
+        Fail "API project folder not found: $apiProjectPath"
+        Write-Host "Migration guide: $migrationGuide" -ForegroundColor Yellow
+        throw "Migration integrity check failed. Fix migrations before starting local app."
+    }
+
+    Info "Running migration integrity check..."
+    $powerShellExe = (Get-Process -Id $PID).Path
+    if ([string]::IsNullOrWhiteSpace($powerShellExe)) {
+        $powerShellExe = if ($PSVersionTable.PSEdition -eq "Core") { "pwsh" } else { "powershell" }
+    }
+
+    $process = Start-Process `
+        -FilePath $powerShellExe `
+        -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $checkScript, "-ProjectPath", $apiProjectPath) `
+        -WorkingDirectory $BackendPath `
+        -NoNewWindow `
+        -PassThru `
+        -Wait
+
+    if ($process.ExitCode -ne 0) {
+        Fail "Migration integrity check failed. Fix migrations before starting local app."
+        Write-Host "Migration guide: $migrationGuide" -ForegroundColor Yellow
+        throw "Migration integrity check failed. Fix migrations before starting local app."
+    }
+
+    Ok "Migration integrity check passed."
+}
+
 Write-Host ""
 Write-Host "============================================================"
 Write-Host " BirkNext Local Startup"
@@ -987,6 +1038,8 @@ if (-not (Test-Path $backendPath)) {
 if (-not (Test-Path $frontendPath)) {
     throw "Frontend folder not found: $frontendPath"
 }
+
+Invoke-MigrationIntegrityPreflight -BackendPath $backendPath -RepoRoot $repoRoot
 
 $backendRunnable = Find-DotNetRunnable -BasePath $backendPath -PreferredName "BirkNext.Api"
 

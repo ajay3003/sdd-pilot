@@ -80,11 +80,13 @@ builder.Services.AddSingleton<WorkspaceArtifactRepository>();
 builder.Services.AddSingleton<IWorkspaceArtifactRepository>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
 builder.Services.AddSingleton<IWorkspaceSessionService>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
 builder.Services.AddSingleton<IWorkspaceArtifactStatusService, WorkspaceArtifactStatusService>();
+builder.Services.AddSingleton<IWorkspaceStateManager, WorkspaceStateManager>();
 builder.Services.AddScoped<IWorkspaceSessionRestoreService, WorkspaceSessionRestoreService>();
 builder.Services.AddHttpClient<IWorkspacePersistenceApiService, WorkspacePersistenceApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddHttpClient<IRecommendedWorkflowApiService, RecommendedWorkflowApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
+builder.Services.AddScoped<IWorkflowReadinessService, WorkflowReadinessService>();
 builder.Services.AddScoped<IWorkspaceAutoSaveService, WorkspaceAutoSaveService>();
 builder.Services.AddScoped<RuntimeReviewSessionService>();
 builder.Services.AddScoped<QualityReviewSessionService>();

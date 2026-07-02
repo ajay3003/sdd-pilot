@@ -1181,6 +1181,18 @@ else if (_settings is not null)
                         </div>
 
                         <div class="dev-diag-section">
+                            <div class="dev-diag-section-title">Recommended Workflow</div>
+                            <table class="dev-diag-table">
+                                <tbody>
+                                    <tr><td>Readiness source</td><td>WorkflowReadinessService</td></tr>
+                                    <tr><td>Renderer</td><td>RecommendedWorkflow.razor</td></tr>
+                                    <tr><td>Release state</td><td>Derived from current workflow readiness</td></tr>
+                                    <tr><td>Workspace reset behavior</td><td>Empty workspace suppresses completion and release states</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="dev-diag-section">
                             <div class="dev-diag-section-title">Application</div>
                             <table class="dev-diag-table">
                                 <tbody>

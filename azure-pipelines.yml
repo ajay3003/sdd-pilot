@@ -90,6 +90,16 @@ steps:
   workingDirectory: AIAssisted/backend
   condition: eq(variables['BUILD_BACKEND'], 'true')
 
+- pwsh: |
+    if (-not (Test-Path "./scripts/check-migrations.ps1")) {
+      Write-Error "Migration integrity check script not found: ./scripts/check-migrations.ps1"
+      exit 1
+    }
+
+    ./scripts/check-migrations.ps1
+  displayName: 'Validate EF migration integrity'
+  condition: eq(variables['BUILD_BACKEND'], 'true')
+
 - script: dotnet build BirkNext.sln --configuration Release --no-restore
   displayName: 'Build backend solution'
   workingDirectory: AIAssisted/backend
@@ -234,6 +244,16 @@ steps:
     cp scripts/start-local.bat "$PACKAGE_DIR/scripts/"
     cp scripts/start-local.ps1 "$PACKAGE_DIR/scripts/"
 
+    echo "Copying migration check script..."
+    cp scripts/check-migrations.ps1 "$PACKAGE_DIR/scripts/"
+
+    echo "Copying migration guide documentation..."
+    if [ -f AIAssisted/backend/MIGRATION_GUIDE.md ]; then
+      cp AIAssisted/backend/MIGRATION_GUIDE.md "$PACKAGE_DIR/"
+    else
+      echo "Migration guide not found, skipping"
+    fi
+
     echo "Copying test results if available..."
     cp -r "$(Agent.TempDirectory)/test-results"/* "$PACKAGE_DIR/test-results/" || echo "No test results found, skipping"
 
@@ -256,6 +276,20 @@ steps:
     scripts/start-local.ps1
     ```
 
+    ## Database Migrations
+
+    Before modifying the database schema, always consult:
+
+    ```text
+    MIGRATION_GUIDE.md
+    ```
+
+    Validate migrations before committing:
+
+    ```powershell
+    .\scripts\check-migrations.ps1
+    ```
+
     ## Expected structure
 
     ```text
@@ -270,6 +304,9 @@ steps:
     scripts/
       start-local.bat
       start-local.ps1
+      check-migrations.ps1
+
+    MIGRATION_GUIDE.md
     ```
 
     ## Important
@@ -278,6 +315,7 @@ steps:
     - Frontend is Blazor WebAssembly static output.
     - Do not run `dotnet BirkNext.Web.dll`.
     - The local script should serve the frontend static files and start the backend.
+    - Always validate migrations with `check-migrations.ps1` before committing.
     EOF
 
     echo "Final tester package contents:"

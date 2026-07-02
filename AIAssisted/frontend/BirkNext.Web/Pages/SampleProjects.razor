@@ -493,12 +493,21 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var projectsTask = ProjectsApi.GetProjectsAsync();
-        var metaTask     = ProjectsApi.GetMetaAsync();
-        await Task.WhenAll(projectsTask, metaTask);
-        _projects = projectsTask.Result;
-        _meta     = metaTask.Result;
-        _loading  = false;
+        try
+        {
+            var projectsTask = ProjectsApi.GetProjectsAsync();
+            var metaTask     = ProjectsApi.GetMetaAsync();
+            await Task.WhenAll(projectsTask, metaTask);
+            _projects = projectsTask.Result ?? new();
+            _meta     = metaTask.Result;
+            _loading  = false;
+        }
+        catch (Exception ex)
+        {
+            _loading = false;
+            _projects = new();
+            System.Diagnostics.Debug.WriteLine($"Error loading projects: {ex.Message}");
+        }
     }
 
     private static readonly IReadOnlyDictionary<string, WorkspaceArtifactKind> _artifactKindMap =
