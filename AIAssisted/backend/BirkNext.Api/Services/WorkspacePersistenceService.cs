@@ -511,63 +511,144 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
     public async Task<SavedWorkspace> ImportJsonAsync(string json)
     {
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-
-        var schemaVersion = root.GetProperty("schemaVersion").GetString();
-        if (schemaVersion != "1.0")
+        try
         {
-            throw new InvalidOperationException($"Unsupported schema version: {schemaVersion}");
-        }
+            // Parse JSON with validation
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
 
-        var workspaceObj = root.GetProperty("workspace");
-        var workspace = new SavedWorkspace
-        {
-            Id = Guid.NewGuid(),
-            UserId = _currentUserId ?? "default-user",
-            Name = workspaceObj.GetProperty("name").GetString() ?? "Imported",
-            ProjectName = workspaceObj.GetProperty("projectName").GetString() ?? "",
-            Description = workspaceObj.GetProperty("description").GetString(),
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
-            AutoSaved = false
-        };
-
-        var artifacts = root.GetProperty("artifacts");
-        foreach (var artifactObj in artifacts.EnumerateArray())
-        {
-            var typeStr = artifactObj.GetProperty("artifactType").GetString();
-            if (!Enum.TryParse<ArtifactType>(typeStr, out var type))
+            // Validate schema version
+            if (!root.TryGetProperty("schemaVersion", out var schemaVersionElement))
             {
-                continue;
+                throw new InvalidOperationException("Missing required field: schemaVersion. Export file must contain schema version.");
             }
 
-            var content = artifactObj.GetProperty("content").GetString() ?? "";
-            var artifact = new SavedWorkspaceArtifact
+            var schemaVersion = schemaVersionElement.GetString();
+            if (string.IsNullOrEmpty(schemaVersion))
+            {
+                throw new InvalidOperationException("Schema version cannot be empty");
+            }
+
+            if (schemaVersion != "1.0")
+            {
+                throw new InvalidOperationException(
+                    $"Unsupported schema version: {schemaVersion}. This application supports schema version 1.0. " +
+                    "Please export from a compatible version of the application.");
+            }
+
+            // Validate workspace object
+            if (!root.TryGetProperty("workspace", out var workspaceObj))
+            {
+                throw new InvalidOperationException("Missing required field: workspace");
+            }
+
+            // Validate required workspace fields
+            if (!workspaceObj.TryGetProperty("name", out var nameElement) || string.IsNullOrWhiteSpace(nameElement.GetString()))
+            {
+                throw new InvalidOperationException("Missing or empty required field: workspace.name");
+            }
+
+            var workspace = new SavedWorkspace
             {
                 Id = Guid.NewGuid(),
-                WorkspaceId = workspace.Id,
-                ArtifactType = type,
-                FileName = artifactObj.GetProperty("fileName").GetString() ?? "",
-                OriginalPath = artifactObj.GetProperty("originalPath").GetString(),
-                Content = content,
-                ContentHash = ComputeContentHash(content),
-                Encoding = artifactObj.GetProperty("encoding").GetString() ?? "utf-8",
-                ParseVersion = artifactObj.GetProperty("parseVersion").GetString() ?? "1.0",
+                UserId = _currentUserId ?? "default-user",
+                Name = workspaceObj.GetProperty("name").GetString() ?? "Imported",
+                ProjectName = workspaceObj.GetProperty("projectName").GetString() ?? "",
+                Description = workspaceObj.GetProperty("description").GetString(),
                 CreatedAt = DateTimeOffset.UtcNow,
-                UpdatedAt = DateTimeOffset.UtcNow
+                UpdatedAt = DateTimeOffset.UtcNow,
+                AutoSaved = false
             };
-            workspace.Artifacts.Add(artifact);
+
+            // Import artifacts with validation
+            if (root.TryGetProperty("artifacts", out var artifacts))
+            {
+                var artifactCount = 0;
+                var skippedCount = 0;
+
+                foreach (var artifactObj in artifacts.EnumerateArray())
+                {
+                    try
+                    {
+                        // Validate artifact type
+                        if (!artifactObj.TryGetProperty("artifactType", out var typeElement))
+                        {
+                            _logger.LogWarning("Skipping artifact: missing artifactType");
+                            skippedCount++;
+                            continue;
+                        }
+
+                        var typeStr = typeElement.GetString();
+                        if (!Enum.TryParse<ArtifactType>(typeStr, out var type))
+                        {
+                            _logger.LogWarning("Skipping artifact: unsupported type {ArtifactType}", typeStr);
+                            skippedCount++;
+                            continue;
+                        }
+
+                        // Validate content
+                        if (!artifactObj.TryGetProperty("content", out var contentElement))
+                        {
+                            _logger.LogWarning("Skipping artifact: missing content for type {ArtifactType}", typeStr);
+                            skippedCount++;
+                            continue;
+                        }
+
+                        var content = contentElement.GetString() ?? "";
+                        var artifact = new SavedWorkspaceArtifact
+                        {
+                            Id = Guid.NewGuid(),
+                            WorkspaceId = workspace.Id,
+                            ArtifactType = type,
+                            FileName = artifactObj.TryGetProperty("fileName", out var fnElem)
+                                ? fnElem.GetString() ?? ""
+                                : "",
+                            OriginalPath = artifactObj.TryGetProperty("originalPath", out var opElem)
+                                ? opElem.GetString()
+                                : null,
+                            Content = content,
+                            ContentHash = ComputeContentHash(content),
+                            Encoding = artifactObj.TryGetProperty("encoding", out var encElem)
+                                ? encElem.GetString() ?? "utf-8"
+                                : "utf-8",
+                            ParseVersion = artifactObj.TryGetProperty("parseVersion", out var pvElem)
+                                ? pvElem.GetString() ?? "1.0"
+                                : "1.0",
+                            CreatedAt = DateTimeOffset.UtcNow,
+                            UpdatedAt = DateTimeOffset.UtcNow
+                        };
+                        workspace.Artifacts.Add(artifact);
+                        artifactCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Error processing artifact during import");
+                        skippedCount++;
+                    }
+                }
+
+                _logger.LogInformation("Imported {ArtifactCount} artifacts, skipped {SkippedCount}",
+                    artifactCount, skippedCount);
+            }
+
+            workspace.ArtifactSetHash = await ComputeArtifactSetHashAsync(workspace.Id);
+
+            _db.SavedWorkspaces.Add(workspace);
+            await _db.SaveChangesAsync();
+
+            _currentWorkspaceId = workspace.Id;
+            _logger.LogInformation("Imported workspace {WorkspaceId} ({Name}) with {ArtifactCount} artifacts",
+                workspace.Id, workspace.Name, workspace.Artifacts.Count);
+            return workspace;
         }
-
-        workspace.ArtifactSetHash = await ComputeArtifactSetHashAsync(workspace.Id);
-
-        _db.SavedWorkspaces.Add(workspace);
-        await _db.SaveChangesAsync();
-
-        _currentWorkspaceId = workspace.Id;
-        _logger.LogInformation("Imported workspace {WorkspaceId} from JSON", workspace.Id);
-        return workspace;
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("Invalid JSON format in import file. Please ensure the file is valid JSON.", ex);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            throw new InvalidOperationException("Missing required field in import file. Please ensure all required fields are present.", ex);
+        }
     }
 
     // Helper methods

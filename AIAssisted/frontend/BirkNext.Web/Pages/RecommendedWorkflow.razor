@@ -10,6 +10,7 @@
 @inject TaskAlignmentSessionService AlignmentSession
 @inject IWorkspacePersistenceApiService WorkspacePersistence
 @inject IWorkspaceSessionRestoreService WorkspaceRestore
+@inject IWorkspaceAutoSaveService AutoSave
 @inject NavigationManager Navigation
 @inject ILogger<RecommendedWorkflow> Logger
 @inject IJSRuntime JSRuntime
@@ -160,6 +161,11 @@
 
 </div>
 
+@if (_showWorkspaceManager)
+{
+    <WorkspaceManager OnClose="OnWorkspaceManagerCloseAsync" />
+}
+
 @code {
     private WorkspaceArtifactStatus _status = new(false, false, false, false, false, 0, null);
     private ExtractionSessionSnapshot? _extractionSnapshot;
@@ -169,8 +175,10 @@
 
     // Workspace persistence state
     private CurrentWorkspaceMetadata? _currentWorkspaceMeta;
+    private CurrentWorkspaceStateDto? _currentWorkspaceState;
     private string _workspaceStatus = "Not Saved";
     private bool _isSaving = false;
+    private bool _showWorkspaceManager = false;
 
     private string ProjectName =>
         string.IsNullOrWhiteSpace(_status.ActiveProjectName)
@@ -181,6 +189,7 @@
     {
         ArtifactStatus.StatusChanged += OnWorkspaceChanged;
         WorkspaceRestore.ReviewContextRebuildNeeded += OnReviewContextRebuildNeeded;
+        await AutoSave.StartMonitoringAsync();
         await RefreshWorkflowAsync();
         await RefreshWorkspaceMetadataAsync();
     }
@@ -189,6 +198,7 @@
     {
         await InvokeAsync(async () =>
         {
+            AutoSave.OnArtifactChanged();
             await RefreshWorkflowAsync();
             StateHasChanged();
         });
@@ -376,10 +386,11 @@
         builder.CloseElement();
     };
 
-    public void Dispose()
+    public async void Dispose()
     {
         ArtifactStatus.StatusChanged -= OnWorkspaceChanged;
         WorkspaceRestore.ReviewContextRebuildNeeded -= OnReviewContextRebuildNeeded;
+        await AutoSave.StopMonitoringAsync();
     }
 
     private async Task RefreshWorkspaceMetadataAsync()
@@ -387,10 +398,11 @@
         try
         {
             _currentWorkspaceMeta = await WorkspaceRestore.GetCurrentWorkspaceMetadataAsync();
-            if (_currentWorkspaceMeta != null)
+            _currentWorkspaceState = await WorkspacePersistence.GetCurrentStateAsync();
+
+            if (_currentWorkspaceState != null && _currentWorkspaceMeta != null)
             {
-                var state = await WorkspacePersistence.GetCurrentStateAsync();
-                _workspaceStatus = state?.Status ?? "Not Saved";
+                _workspaceStatus = _currentWorkspaceState.Status ?? "Not Saved";
             }
             else
             {
@@ -454,8 +466,15 @@
 
     private async Task ShowManageWorkspacesAsync()
     {
-        // TODO: Open Workspace Manager dialog (Phase 5)
-        Navigation.NavigateTo("/workspace-manager");
+        _showWorkspaceManager = true;
+        StateHasChanged();
+    }
+
+    private async Task OnWorkspaceManagerCloseAsync()
+    {
+        _showWorkspaceManager = false;
+        await RefreshWorkspaceMetadataAsync();
+        StateHasChanged();
     }
 
     private async Task ClearWorkspaceAsync()
@@ -485,7 +504,7 @@
         });
     }
 
-    private string GetStatusClass(string status) => status switch
+    private string GetStatusClass(string? status) => status switch
     {
         "Saved" => "status-saved",
         "AutoSaved" => "status-auto-saved",

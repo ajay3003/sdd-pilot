@@ -1,4 +1,5 @@
 using BirkNext.Api.Models;
+using System.Text.Json.Serialization;
 
 namespace BirkNext.Api.Services;
 
@@ -20,6 +21,7 @@ public class WorkspaceStateDto
     public bool IsDirty { get; set; }
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum WorkspaceStatus
 {
     NotSaved,

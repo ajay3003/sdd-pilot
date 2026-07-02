@@ -241,7 +241,82 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             });
         }
 
+        // Workspace Persistence checks
+        var persistenceChecks = await RunWorkspacePersistenceChecksAsync();
+        checks.AddRange(persistenceChecks);
+
         return checks;
+    }
+
+    private async Task<List<EnvironmentDiagnosticCheck>> RunWorkspacePersistenceChecksAsync()
+    {
+        var checks = new List<EnvironmentDiagnosticCheck>();
+
+        try
+        {
+            // Check workspace tables exist
+            var tablesExist = await CheckWorkspacePersistenceTablesExistAsync();
+            checks.Add(new EnvironmentDiagnosticCheck
+            {
+                Name = "Workspace Persistence Tables",
+                Status = tablesExist ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Fail,
+                Details = tablesExist ? "saved_workspaces and saved_workspace_artifacts tables exist" : "Workspace persistence tables missing",
+                Recommendation = tablesExist ? "" : "Run migrations: dotnet ef database update"
+            });
+
+            if (!tablesExist)
+            {
+                return checks;
+            }
+
+            // Check saved workspaces count
+            var workspaceCount = await _db.SavedWorkspaces.CountAsync(w => !w.IsDeleted);
+            checks.Add(new EnvironmentDiagnosticCheck
+            {
+                Name = "Saved Workspaces",
+                Status = EnvironmentDiagnosticStatus.Pass,
+                Details = $"{workspaceCount} workspace(s) saved",
+                Recommendation = ""
+            });
+
+            // Check auto-save configuration
+            var autoSaveInterval = _config.GetValue("WorkspacePersistence:AutoSaveIntervalMs", 3000);
+            var autoSaveThrottle = _config.GetValue("WorkspacePersistence:AutoSaveThrottleMs", 30000);
+            checks.Add(new EnvironmentDiagnosticCheck
+            {
+                Name = "Auto-Save Configuration",
+                Status = EnvironmentDiagnosticStatus.Pass,
+                Details = $"Auto-save every {autoSaveInterval}ms, throttled to every {autoSaveThrottle}ms",
+                Recommendation = ""
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error running workspace persistence checks");
+            checks.Add(new EnvironmentDiagnosticCheck
+            {
+                Name = "Workspace Persistence",
+                Status = EnvironmentDiagnosticStatus.Warning,
+                Details = "Could not check workspace persistence configuration",
+                Recommendation = "Verify workspace persistence is properly configured"
+            });
+        }
+
+        return checks;
+    }
+
+    private async Task<bool> CheckWorkspacePersistenceTablesExistAsync()
+    {
+        try
+        {
+            // Try to query the workspace tables
+            var count = await _db.SavedWorkspaces.CountAsync();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private List<EnvironmentDiagnosticCheck> RunBackendApiChecks()
