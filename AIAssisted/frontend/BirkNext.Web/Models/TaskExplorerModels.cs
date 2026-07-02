@@ -47,6 +47,13 @@ public sealed class TaskNode
     public bool IsTestingTask { get; init; }         // keyword-detected testing task
     public bool IsSecurityTask { get; init; }        // keyword-detected security task
 
+    // Architecture/context keywords
+    public bool IsCritical { get; init; }            // CRITICAL note or blocking prerequisite
+    public bool IsFrontendOnly { get; init; }        // frontend-only/Blazor WASM project
+    public bool IsWorkerService { get; init; }       // worker/background service
+    public bool IsProxy { get; init; }               // proxy/gateway role
+    public bool IsNoSql { get; init; }               // no-SQL/no-database project
+
     // Table-specific fields
     public List<string> TableHeaders { get; init; } = [];   // column names on TableSection
     public List<string> CellValues { get; init; } = [];     // raw cells for TableRow
@@ -97,6 +104,12 @@ public sealed class TaskHealth
     public int TestingTasks { get; init; }
     public int SecurityTasks { get; init; }
     public int UserStoryCount { get; init; }
+    public int CriticalTasks { get; init; }    // blocking or critical tasks
+    public int FrontendOnlyTasks { get; init; } // frontend-only project tasks
+    public int WorkerServiceTasks { get; init; } // worker/background service tasks
+    public int ProxyTasks { get; init; }        // proxy/gateway tasks
+    public int NoSqlTasks { get; init; }        // no-SQL/no-database project tasks
+    public int ParallelTasks { get; init; }     // tasks marked [P]
 }
 
 public sealed class TaskTree

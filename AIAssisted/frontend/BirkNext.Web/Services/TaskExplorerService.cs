@@ -11,10 +11,10 @@ public static class TaskExplorerService
         @"^\s*[-*]\s+\[([xX ])\]\s+(.+)$", RegexOptions.Compiled);
 
     private static readonly Regex BareTaskRe = new(
-        @"^\s*[-*]?\s*T(\d{2,4})\b\s*[-–.]?\s*(.*)$", RegexOptions.Compiled);
+        @"^\s*[-*]?\s*T(\d{2,4}[a-zA-Z]*)\b\s*[-–.]?\s*(.*)$", RegexOptions.Compiled);
 
     private static readonly Regex TaskIdRe = new(
-        @"\bT(\d{2,4})\b", RegexOptions.Compiled);
+        @"\bT(\d{2,4}[a-zA-Z]*)\b", RegexOptions.Compiled);
 
     private static readonly Regex TaskRangeRe = new(
         @"\bT(\d{2,4})[–\-]T(\d{2,4})\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -23,7 +23,7 @@ public static class TaskExplorerService
         @"\[P\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex UserStoryTagRe = new(
-        @"\[US(\d+)\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        @"\[US(\d+(?:[–\-]\d+)?)\]|\[Story\???\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex FrRefRe = new(
         @"\b(FR)-?(\d{1,4})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -37,11 +37,31 @@ public static class TaskExplorerService
         RegexOptions.Compiled);
 
     private static readonly Regex TestKeywordRe = new(
-        @"\b(?:test|spec|assert|xunit|nunit|mstest|shouldly|testcontainer|integration[\s-]?test|unit[\s-]?test)\b",
+        @"\b(?:test|spec|assert|xunit|nunit|mstest|shouldly|testcontainer|bunit|webapplicationfactory|test[\s-]?(?:case|task)|integration[\s-]?test|unit[\s-]?test)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex SecurityKeywordRe = new(
-        @"\b(?:security|authoris|kode[\s-]?[67]|permission|access[\s-]?control|gradert|sikkerhet|auth(?:orization|entication)?)\b",
+        @"\b(?:security|authoris[ae]|kode[\s-]?[67]|permission|access[\s-]?control|gradert|sikkerhet|auth(?:orization|entication|ority))\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex CriticalNoteRe = new(
+        @"⚠️\s*CRITICAL|CRITICAL.*(?:phase|blocking|prerequisite)|No user story work can begin",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex FrontendOnlyKeywordRe = new(
+        @"\b(?:frontend[\s-]?only|blazor\s+wasm|spa|webassembly|client[\s-]?side)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex WorkerServiceKeywordRe = new(
+        @"\b(?:worker[\s-]?(?:service|role)|background|hosted[\s-]?service|queue|consumer)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex ProxyKeywordRe = new(
+        @"\b(?:proxy|gateway|router|load[\s-]?balanc)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex NoSqlKeywordRe = new(
+        @"\b(?:no[\s-]?sql|no[\s-]?database|blob[\s-]?storage|stateless)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex TableSepRe = new(
@@ -67,6 +87,7 @@ public static class TaskExplorerService
 
         var hTasks = 0; var hCompleted = 0; var hPhases = 0; var hUserStories = 0;
         var hTables = 0; var hRows = 0;
+        var hCritical = 0; var hFrontend = 0; var hWorker = 0; var hProxy = 0; var hNoSql = 0; var hParallel = 0;
 
         var tableBuffer = new List<string>();
 
@@ -122,6 +143,12 @@ public static class TaskExplorerService
                 {
                     hTasks++;
                     if (completed) hCompleted++;
+                    if (task.IsCritical) hCritical++;
+                    if (task.IsFrontendOnly) hFrontend++;
+                    if (task.IsWorkerService) hWorker++;
+                    if (task.IsProxy) hProxy++;
+                    if (task.IsNoSql) hNoSql++;
+                    if (task.IsParallel) hParallel++;
                     InjectContext(task, headingStack);
                     AddToParent(roots, headingStack, task);
                 }
@@ -137,6 +164,12 @@ public static class TaskExplorerService
                 if (task is not null)
                 {
                     hTasks++;
+                    if (task.IsCritical) hCritical++;
+                    if (task.IsFrontendOnly) hFrontend++;
+                    if (task.IsWorkerService) hWorker++;
+                    if (task.IsProxy) hProxy++;
+                    if (task.IsNoSql) hNoSql++;
+                    if (task.IsParallel) hParallel++;
                     InjectContext(task, headingStack);
                     AddToParent(roots, headingStack, task);
                 }
@@ -168,6 +201,12 @@ public static class TaskExplorerService
             TraceabilityRows = hRows,
             TasksLinkedFromTables = linkedTaskIds.Count,
             UnresolvedTableRefs = hUnresolved,
+            CriticalTasks = hCritical,
+            FrontendOnlyTasks = hFrontend,
+            WorkerServiceTasks = hWorker,
+            ProxyTasks = hProxy,
+            NoSqlTasks = hNoSql,
+            ParallelTasks = hParallel,
         };
 
         return new TaskTree { Roots = roots, Health = health };
@@ -316,7 +355,15 @@ public static class TaskExplorerService
 
         var isParallel = ParallelRe.IsMatch(body);
         var usMatch = UserStoryTagRe.Match(body);
-        var userStoryTag = usMatch.Success ? $"US{usMatch.Groups[1].Value}" : null;
+        string? userStoryTag = null;
+        if (usMatch.Success)
+        {
+            // Check if it matched [US\d+] or [Story]
+            if (usMatch.Groups[1].Success)
+                userStoryTag = $"US{usMatch.Groups[1].Value}";
+            else
+                userStoryTag = "Story"; // [Story] or [Story?]
+        }
 
         var frIds = FrRefRe.Matches(body)
             .Select(m => $"FR-{m.Groups[2].Value.PadLeft(2, '0')}").Distinct().ToList();
@@ -327,7 +374,17 @@ public static class TaskExplorerService
         var taskMatch = TaskIdRe.Match(body);
         string? taskId = null;
         if (taskMatch.Success)
-            taskId = $"T{taskMatch.Groups[1].Value.PadLeft(3, '0')}";
+        {
+            var captured = taskMatch.Groups[1].Value;
+            // Extract numeric part and optional letter suffix (e.g., "006b" → "006" + "b")
+            var digitMatch = Regex.Match(captured, @"^(\d+)([a-zA-Z]*)$");
+            if (digitMatch.Success)
+            {
+                var digits = digitMatch.Groups[1].Value.PadLeft(3, '0');
+                var suffix = digitMatch.Groups[2].Value;
+                taskId = $"T{digits}{suffix}";
+            }
+        }
 
         // Clean title: strip [P], [USN], FR/SC refs, then strip redundant leading task ID
         var title = ParallelRe.Replace(body, "").Trim();
@@ -358,6 +415,11 @@ public static class TaskExplorerService
             RelatedFiles = relatedFiles,
             IsTestingTask = TestKeywordRe.IsMatch(rawLine),
             IsSecurityTask = SecurityKeywordRe.IsMatch(rawLine),
+            IsCritical = CriticalNoteRe.IsMatch(rawLine),
+            IsFrontendOnly = FrontendOnlyKeywordRe.IsMatch(rawLine),
+            IsWorkerService = WorkerServiceKeywordRe.IsMatch(rawLine),
+            IsProxy = ProxyKeywordRe.IsMatch(rawLine),
+            IsNoSql = NoSqlKeywordRe.IsMatch(rawLine),
         };
     }
 
@@ -445,8 +507,16 @@ public static class TaskExplorerService
 
         foreach (Match m in TaskIdRe.Matches(expanded))
         {
-            var id = $"T{m.Groups[1].Value.PadLeft(3, '0')}";
-            if (seen.Add(id)) result.Add(id);
+            var captured = m.Groups[1].Value;
+            // Extract numeric part and optional letter suffix
+            var digitMatch = Regex.Match(captured, @"^(\d+)([a-zA-Z]*)$");
+            if (digitMatch.Success)
+            {
+                var digits = digitMatch.Groups[1].Value.PadLeft(3, '0');
+                var suffix = digitMatch.Groups[2].Value;
+                var id = $"T{digits}{suffix}";
+                if (seen.Add(id)) result.Add(id);
+            }
         }
         return result;
     }
