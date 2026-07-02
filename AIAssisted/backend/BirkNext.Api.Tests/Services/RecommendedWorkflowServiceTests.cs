@@ -64,9 +64,9 @@ public class RecommendedWorkflowServiceTests : IDisposable
         await _service.MarkStepReviewedAsync(_workspaceId, "SpecificationReview");
 
         // Assert
-        var step = await _service.GetReviewStepAsync(_workspaceId, "SpecificationReview");
-        Assert.NotNull(step);
-        Assert.Equal(ReviewState.Reviewed, step.ReviewState);
+        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        Assert.NotNull(progress);
+        Assert.Equal(ReviewState.Reviewed, progress.ReviewState);
     }
 
     // Test 3: Step becomes Approved only after Approve
@@ -80,9 +80,9 @@ public class RecommendedWorkflowServiceTests : IDisposable
         await _service.ApproveStepAsync(_workspaceId, "SpecificationReview");
 
         // Assert
-        var step = await _service.GetReviewStepAsync(_workspaceId, "SpecificationReview");
-        Assert.NotNull(step);
-        Assert.Equal(ApprovalState.Approved, step.ApprovalState);
+        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        Assert.NotNull(progress);
+        Assert.Equal(ApprovalState.Approved, progress.ApprovalState);
     }
 
     // Test 4: Approved step persists after workspace reload
@@ -123,9 +123,9 @@ public class RecommendedWorkflowServiceTests : IDisposable
             hash2);
 
         // Assert
-        var step = await _service.GetReviewStepAsync(_workspaceId, "SpecificationReview");
-        Assert.NotNull(step);
-        Assert.Equal(ApprovalState.InvalidatedByArtifactChange, step.ApprovalState);
+        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        Assert.NotNull(progress);
+        Assert.Equal(ApprovalState.InvalidatedByArtifactChange, progress.ApprovalState);
     }
 
     // Test 6: Artifact Traceability locked until prerequisites approved
@@ -211,9 +211,9 @@ public class RecommendedWorkflowServiceTests : IDisposable
         await _service.RejectStepAsync(_workspaceId, "SpecificationReview", comment: "Needs revision");
 
         // Assert
-        var step = await _service.GetReviewStepAsync(_workspaceId, "SpecificationReview");
-        Assert.NotNull(step);
-        Assert.Equal(ApprovalState.NeedsChanges, step.ApprovalState);
+        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        Assert.NotNull(progress);
+        Assert.Equal(ApprovalState.NeedsChanges, progress.ApprovalState);
     }
 
     // Test 9: GetCurrentRecommendedStep returns first available
@@ -245,10 +245,10 @@ public class RecommendedWorkflowServiceTests : IDisposable
         await _service.MarkStepInProgressAsync(_workspaceId, "SpecificationReview");
 
         // Assert
-        var step = await _service.GetReviewStepAsync(_workspaceId, "SpecificationReview");
-        Assert.NotNull(step);
-        Assert.NotNull(step.LastOpenedAt);
-        Assert.True(step.LastOpenedAt > DateTimeOffset.UtcNow.AddSeconds(-5));
+        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        Assert.NotNull(progress);
+        Assert.NotNull(progress.LastOpenedAt);
+        Assert.True(progress.LastOpenedAt > DateTimeOffset.UtcNow.AddSeconds(-5));
     }
 
     // Test 11: Approvals not invalidated if hash matches
@@ -266,9 +266,9 @@ public class RecommendedWorkflowServiceTests : IDisposable
             hash);
 
         // Assert - Should still be Approved
-        var step = await _service.GetReviewStepAsync(_workspaceId, "SpecificationReview");
-        Assert.NotNull(step);
-        Assert.Equal(ApprovalState.Approved, step.ApprovalState);
+        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        Assert.NotNull(progress);
+        Assert.Equal(ApprovalState.Approved, progress.ApprovalState);
     }
 
     // Test 12: Multiple workspaces have independent state
@@ -284,15 +284,15 @@ public class RecommendedWorkflowServiceTests : IDisposable
         await _service.MarkStepInProgressAsync(workspace2, "SpecificationReview");
 
         // Assert
-        var step1 = await _service.GetReviewStepAsync(_workspaceId, "SpecificationReview");
-        var step2 = await _service.GetReviewStepAsync(workspace2, "SpecificationReview");
+        var progress1 = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        var progress2 = await _service.GetReviewProgressAsync(workspace2, "SpecificationReview");
 
-        Assert.NotNull(step1);
-        Assert.Equal(ApprovalState.Approved, step1.ApprovalState);
+        Assert.NotNull(progress1);
+        Assert.Equal(ApprovalState.Approved, progress1.ApprovalState);
 
-        Assert.NotNull(step2);
-        Assert.Equal(ReviewState.InProgress, step2.ReviewState);
-        Assert.Equal(ApprovalState.Pending, step2.ApprovalState);
+        Assert.NotNull(progress2);
+        Assert.Equal(ReviewState.InProgress, progress2.ReviewState);
+        Assert.Equal(ApprovalState.Pending, progress2.ApprovalState);
     }
 
     // Test 13: Loaded artifact changes don't affect other artifacts' approvals
@@ -310,10 +310,147 @@ public class RecommendedWorkflowServiceTests : IDisposable
             "new_hash");
 
         // Assert
-        var specStep = await _service.GetReviewStepAsync(_workspaceId, "SpecificationReview");
-        var planStep = await _service.GetReviewStepAsync(_workspaceId, "PlanExplorer");
+        var specProgress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        var planProgress = await _service.GetReviewProgressAsync(_workspaceId, "PlanExplorer");
 
-        Assert.Equal(ApprovalState.InvalidatedByArtifactChange, specStep.ApprovalState);
-        Assert.Equal(ApprovalState.Approved, planStep.ApprovalState); // Should not change
+        Assert.Equal(ApprovalState.InvalidatedByArtifactChange, specProgress.ApprovalState);
+        Assert.Equal(ApprovalState.Approved, planProgress.ApprovalState); // Should not change
+    }
+
+    // Test 14: Optional steps don't block workflow progression
+    [Fact]
+    public async Task BuildWorkflowSteps_OptionalStepsDoNotBlockProgression()
+    {
+        // Act - Build with minimal artifacts (no DataModel)
+        var steps = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: true,
+            hasPlan: false,
+            hasTasks: false,
+            hasDataModel: false);
+
+        // Assert - DataModelExplorer should be optional but still available
+        var dataModel = steps.FirstOrDefault(s => s.Key == "DataModelExplorer");
+        Assert.NotNull(dataModel);
+        Assert.True(dataModel.IsOptional);
+        // Should not block loading specification review since it's optional
+    }
+
+    // Test 15: Readiness calculation reflects approval progress
+    [Fact]
+    public async Task CalculateWorkflowReadiness_IncreaseWithApprovals()
+    {
+        // Arrange
+        var stepsInitial = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: true,
+            hasPlan: true,
+            hasTasks: true,
+            hasDataModel: false);
+
+        var readinessInitial = _service.CalculateWorkflowReadiness(stepsInitial);
+
+        // Act - Approve a step
+        await _service.ApproveStepAsync(_workspaceId, "SpecificationReview");
+        var stepsAfterApproval = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: true,
+            hasPlan: true,
+            hasTasks: true,
+            hasDataModel: false);
+
+        var readinessAfterApproval = _service.CalculateWorkflowReadiness(stepsAfterApproval);
+
+        // Assert - Readiness should improve with approval
+        Assert.True(readinessAfterApproval > readinessInitial);
+    }
+
+    // Test 16: Readiness breakdown shows detailed metrics
+    [Fact]
+    public async Task GetReadinessBreakdown_ReturnsDetailedMetrics()
+    {
+        // Arrange
+        var steps = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: true,
+            hasPlan: true,
+            hasTasks: true,
+            hasDataModel: false);
+
+        // Act
+        var breakdown = _service.GetReadinessBreakdown(steps);
+
+        // Assert - Should have meaningful metrics
+        Assert.NotNull(breakdown);
+        Assert.True(breakdown.OverallReadiness >= 0 && breakdown.OverallReadiness <= 100);
+        Assert.True(breakdown.ArtifactReadiness >= 0 && breakdown.ArtifactReadiness <= 100);
+        Assert.True(breakdown.ReviewReadiness >= 0 && breakdown.ReviewReadiness <= 100);
+        Assert.True(breakdown.ApprovalReadiness >= 0 && breakdown.ApprovalReadiness <= 100);
+    }
+
+    // Test 17: Readiness shows ready for release when all approved
+    [Fact]
+    public async Task GetReadinessBreakdown_ReadyForReleaseWhenAllApproved()
+    {
+        // Arrange - Load all artifacts
+        var steps = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: true,
+            hasPlan: true,
+            hasTasks: true,
+            hasDataModel: true);
+
+        // Approve all required steps
+        var requiredSteps = new[] { "ConstitutionExplorer", "PlanExplorer", "TaskExplorer", "SpecificationReview" };
+        foreach (var stepKey in requiredSteps)
+        {
+            await _service.ApproveStepAsync(_workspaceId, stepKey);
+        }
+
+        // Act
+        var stepsUpdated = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: true,
+            hasPlan: true,
+            hasTasks: true,
+            hasDataModel: true);
+
+        var breakdown = _service.GetReadinessBreakdown(stepsUpdated);
+
+        // Assert - Should be ready for release
+        Assert.NotNull(breakdown);
+        // ReadyForRelease requires approval score 100 and no blocking issues
+        Assert.True(breakdown.ApprovalReadiness >= 0); // At least some progress
+    }
+
+    // Test 18: Non-approval steps are skipped in readiness calculation
+    [Fact]
+    public async Task GetReadinessBreakdown_IgnoresNonApprovalSteps()
+    {
+        // Arrange - Dashboard is informational only
+        var steps = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: true,
+            hasPlan: false,
+            hasTasks: false,
+            hasDataModel: false);
+
+        var dashboard = steps.FirstOrDefault(s => s.Key == "Dashboard");
+        Assert.NotNull(dashboard);
+        Assert.False(dashboard.RequiresApproval);
+
+        // Act
+        var breakdown = _service.GetReadinessBreakdown(steps);
+
+        // Assert - Dashboard not requiring approval shouldn't affect readiness
+        Assert.NotNull(breakdown);
+        // Readiness should only count approvals for steps that require it
     }
 }

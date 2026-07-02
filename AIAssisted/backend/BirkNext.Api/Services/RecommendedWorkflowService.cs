@@ -7,7 +7,8 @@ namespace BirkNext.Api.Services;
 /// <summary>
 /// Service for managing Recommended Workflow state and approvals.
 /// Determines step status based on artifacts, review state, and approvals.
-/// Persists approval state per workspace.
+/// Persists only human decisions via WorkspaceReviewProgress.
+/// Computes Available/Locked status at runtime from WorkflowDefinitions and artifact availability.
 /// </summary>
 public interface IRecommendedWorkflowService
 {
@@ -61,19 +62,30 @@ public interface IRecommendedWorkflowService
         string currentArtifactSetHash);
 
     /// <summary>
-    /// Get review/approval state for a specific step.
+    /// Get review/approval progress for a specific step.
     /// </summary>
-    Task<WorkspaceReviewStep?> GetReviewStepAsync(Guid workspaceId, string stepKey);
+    Task<WorkspaceReviewProgress?> GetReviewProgressAsync(Guid workspaceId, string stepKey);
 
     /// <summary>
-    /// Get all review steps for a workspace.
+    /// Get all review progress for a workspace.
     /// </summary>
-    Task<List<WorkspaceReviewStep>> GetWorkspaceReviewStepsAsync(Guid workspaceId);
+    Task<List<WorkspaceReviewProgress>> GetWorkspaceReviewProgressAsync(Guid workspaceId);
 
     /// <summary>
     /// Determine which step should be current (next recommended action).
     /// </summary>
     WorkflowStepViewModel? GetCurrentRecommendedStep(List<WorkflowStepViewModel> steps);
+
+    /// <summary>
+    /// Calculate overall workflow readiness (0-100%).
+    /// Weights: 30% artifacts, 30% reviews, 40% approvals.
+    /// </summary>
+    int CalculateWorkflowReadiness(List<WorkflowStepViewModel> steps);
+
+    /// <summary>
+    /// Get a detailed readiness breakdown for dashboard display.
+    /// </summary>
+    WorkflowReadinessBreakdown GetReadinessBreakdown(List<WorkflowStepViewModel> steps);
 }
 
 public class RecommendedWorkflowService : IRecommendedWorkflowService
@@ -81,37 +93,25 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
     private readonly AppDbContext _db;
     private readonly ILogger<RecommendedWorkflowService> _logger;
 
+    // Artifact dependencies per step (from WorkflowDefinitions)
     private static readonly Dictionary<string, string[]> StepDependencies = new()
     {
-        // LoadSampleProject has no dependencies
         { "LoadSampleProject", Array.Empty<string>() },
-
-        // Explorers depend on their respective artifacts
         { "ConstitutionExplorer", new[] { "Constitution" } },
         { "PlanExplorer", new[] { "Plan" } },
         { "TaskExplorer", new[] { "Tasks" } },
         { "DataModelExplorer", new[] { "DataModel" } },
-
-        // Specification Review depends on spec
         { "SpecificationReview", new[] { "Specification" } },
-
-        // Artifact Traceability depends on multiple artifacts
         { "ArtifactTraceability", new[] { "Constitution", "Specification", "Plan", "Tasks" } },
-
-        // Implementation Review depends on spec and tasks
         { "ImplementationReview", new[] { "Specification", "Tasks" } },
-
-        // These are optional/future
         { "ReviewContextValidation", Array.Empty<string>() },
-        { "DashboardReview", Array.Empty<string>() }
+        { "Dashboard", Array.Empty<string>() }
     };
 
+    // Approval dependencies per step (steps that must be approved first)
     private static readonly Dictionary<string, List<string>> ApprovalDependencies = new()
     {
-        // Artifact Traceability needs prior exploration approvals
         { "ArtifactTraceability", new[] { "SpecificationReview" }.ToList() },
-
-        // Implementation Review needs Artifact Traceability approved
         { "ImplementationReview", new[] { "ArtifactTraceability" }.ToList() }
     };
 
@@ -129,90 +129,94 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         bool hasTasks,
         bool hasDataModel)
     {
-        // Get or create review steps for this workspace
-        var existingSteps = await _db.WorkspaceReviewSteps
-            .Where(r => r.WorkspaceId == workspaceId)
+        // Load persisted progress for this workspace
+        var progressRecords = await _db.WorkspaceReviewProgress
+            .Where(p => p.WorkspaceId == workspaceId)
             .ToListAsync();
 
-        var existingLookup = existingSteps.ToDictionary(s => s.StepKey);
+        var progressLookup = progressRecords.ToDictionary(p => p.StepKey);
 
-        // Map artifact types for dependency checking
-        var loadedArtifacts = new[]
+        // Map artifact availability
+        var loadedArtifacts = new Dictionary<string, bool>
         {
-            ("Constitution", hasConstitution),
-            ("Specification", hasSpecification),
-            ("Plan", hasPlan),
-            ("Tasks", hasTasks),
-            ("DataModel", hasDataModel)
+            { "Constitution", hasConstitution },
+            { "Specification", hasSpecification },
+            { "Plan", hasPlan },
+            { "Tasks", hasTasks },
+            { "DataModel", hasDataModel }
         };
 
         var viewModels = new List<WorkflowStepViewModel>();
-        int stepNumber = 1;
-        WorkflowStepViewModel? previousApprovedStep = null;
         var currentStepAssigned = false;
 
-        // Define all possible steps
-        var stepDefinitions = new[]
+        // Build view model for each workflow step definition
+        foreach (var definition in WorkflowDefinitions.AllSteps)
         {
-            new { Key = "LoadSampleProject", Title = "Load Sample Project", Description = "Load a sample project or import artifacts to get started", Route = "sample-projects", ActionLabel = "Open Sample Projects", Color = "#15803d" },
-            new { Key = "ConstitutionExplorer", Title = "Constitution Explorer", Description = "Review governance rules and quality standards", Route = "constitution-explorer", ActionLabel = "Open Constitution Explorer", Color = "#1e40af" },
-            new { Key = "PlanExplorer", Title = "Plan Explorer", Description = "Inspect implementation plan and architecture decisions", Route = "plan-explorer", ActionLabel = "Open Plan Explorer", Color = "#6d28d9" },
-            new { Key = "TaskExplorer", Title = "Task Explorer", Description = "Review task coverage and delivery risk", Route = "task-explorer", ActionLabel = "Open Task Explorer", Color = "#b45309" },
-            new { Key = "DataModelExplorer", Title = "Data Model Explorer", Description = "Review entities, relationships, and constraints", Route = "data-model-explorer", ActionLabel = "Open Data Model Explorer", Color = "#065f46" },
-            new { Key = "SpecificationReview", Title = "Specification Review", Description = "Run analysis to extract requirements and tests", Route = "extract", ActionLabel = "Run Specification Review", Color = "#0f766e" },
-            new { Key = "ArtifactTraceability", Title = "Artifact Traceability", Description = "Analyze end-to-end coverage across artifacts", Route = "artifact-traceability", ActionLabel = "Run Artifact Traceability", Color = "#2563eb" },
-            new { Key = "ImplementationReview", Title = "Implementation Review", Description = "Validate tasks against spec for alignment gaps", Route = "task-alignment", ActionLabel = "Run Implementation Review", Color = "#c2410c" }
-        };
+            var progress = progressLookup.TryGetValue(definition.StepKey, out var p) ? p : null;
 
-        foreach (var definition in stepDefinitions)
-        {
-            var reviewStep = existingLookup.TryGetValue(definition.Key, out var existing) ? existing : null;
+            // Check if required artifacts are available
+            // Optional artifacts are not blocking
+            var requiredArtifactsLoaded = definition.RequiredArtifacts.Count == 0 ||
+                definition.RequiredArtifacts.All(art =>
+                    loadedArtifacts.TryGetValue(art, out var loaded) && loaded);
 
-            // Determine prerequisites
-            var requiredArtifacts = StepDependencies.TryGetValue(definition.Key, out var deps) ? deps : Array.Empty<string>();
-            var prerequisitesMet = requiredArtifacts.Length == 0 ||
-                requiredArtifacts.All(art => loadedArtifacts.Any(la => la.Item1 == art && la.Item2));
+            // Check if approval dependencies are met
+            var approvalDepsRequired = ApprovalDependencies.TryGetValue(definition.StepKey, out var deps) ? deps : new List<string>();
+            var approvalDepsMet = approvalDepsRequired.All(depKey =>
+                progressLookup.TryGetValue(depKey, out var depProgress) &&
+                depProgress.ApprovalState == ApprovalState.Approved);
 
-            var prerequisiteState = prerequisitesMet ? PrerequisiteState.Available : PrerequisiteState.Missing;
+            // Compute workflow status at runtime
+            var status = ComputeStepStatus(
+                definition,
+                requiredArtifactsLoaded,
+                approvalDepsMet,
+                progress);
 
-            // Get approval dependencies
-            var approvalDeps = ApprovalDependencies.TryGetValue(definition.Key, out var aDeps) ? aDeps : new List<string>();
-            var approvalDepsMet = approvalDeps.All(depKey =>
-                existingLookup.TryGetValue(depKey, out var depStep) &&
-                depStep.ApprovalState == ApprovalState.Approved);
+            var isAvailable = status switch
+            {
+                WorkflowStepStatus.Available or
+                WorkflowStepStatus.InProgress or
+                WorkflowStepStatus.Reviewed or
+                WorkflowStepStatus.Approved or
+                WorkflowStepStatus.NeedsAttention => true,
+                _ => false
+            };
 
-            // Determine workflow status
-            var status = DetermineStepStatus(
-                prerequisiteMet: prerequisitesMet,
-                approvalDepMet: approvalDepsMet,
-                reviewStep: reviewStep);
+            // Only mark as current if step requires approval/review OR it's the first available
+            var stepNeedsApproval = definition.RequiresApproval || definition.RequiresManualReview;
+            var isCurrent = !currentStepAssigned &&
+                isAvailable &&
+                status != WorkflowStepStatus.Approved &&
+                stepNeedsApproval;
 
-            var isAvailable = status == WorkflowStepStatus.Available || status == WorkflowStepStatus.InProgress ||
-                            status == WorkflowStepStatus.Reviewed || status == WorkflowStepStatus.Approved ||
-                            status == WorkflowStepStatus.NeedsAttention;
-
-            var isCurrent = !currentStepAssigned && isAvailable && status != WorkflowStepStatus.Approved;
             if (isCurrent)
                 currentStepAssigned = true;
 
             var vm = new WorkflowStepViewModel
             {
-                Number = stepNumber++,
-                Key = definition.Key,
+                Number = definition.SortOrder,
+                Key = definition.StepKey,
                 Title = definition.Title,
                 Description = definition.Description,
                 Route = definition.Route,
                 ActionLabel = definition.ActionLabel,
                 Color = definition.Color,
                 Status = status,
-                Prerequisites = prerequisiteState,
-                ReviewState = reviewStep?.ReviewState ?? ReviewState.NotStarted,
-                ApprovalState = reviewStep?.ApprovalState ?? ApprovalState.Pending,
+                Prerequisites = requiredArtifactsLoaded ? PrerequisiteState.Available : PrerequisiteState.Missing,
+                ReviewState = progress?.ReviewState ?? ReviewState.NotStarted,
+                ApprovalState = progress?.ApprovalState ?? ApprovalState.Pending,
                 CanOpen = isAvailable,
-                DisabledReason = prerequisiteState == PrerequisiteState.Missing ? "Load required artifacts first" :
-                                !approvalDepsMet ? "Complete prerequisite steps first" : "",
+                DisabledReason = !requiredArtifactsLoaded && definition.RequiredArtifacts.Count > 0
+                    ? "Load required artifacts first"
+                    : !approvalDepsMet
+                    ? "Complete prerequisite approvals first"
+                    : "",
                 IsCurrent = isCurrent,
-                IsFuture = !isAvailable
+                IsFuture = !isAvailable,
+                IsOptional = definition.IsOptional,
+                RequiresApproval = definition.RequiresApproval,
+                RequiresManualReview = definition.RequiresManualReview
             };
 
             viewModels.Add(vm);
@@ -223,13 +227,13 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
 
     public async Task MarkStepInProgressAsync(Guid workspaceId, string stepKey, string? userId = null)
     {
-        var step = await GetOrCreateReviewStepAsync(workspaceId, stepKey);
-        if (step.ReviewState < ReviewState.InProgress)
+        var progress = await GetOrCreateProgressAsync(workspaceId, stepKey);
+        if (progress.ReviewState < ReviewState.InProgress)
         {
-            step.ReviewState = ReviewState.InProgress;
-            step.LastOpenedAt = DateTimeOffset.UtcNow;
-            step.UpdatedAt = DateTimeOffset.UtcNow;
-            _db.WorkspaceReviewSteps.Update(step);
+            progress.ReviewState = ReviewState.InProgress;
+            progress.LastOpenedAt = DateTimeOffset.UtcNow;
+            progress.UpdatedAt = DateTimeOffset.UtcNow;
+            _db.WorkspaceReviewProgress.Update(progress);
             await _db.SaveChangesAsync();
             _logger.LogInformation("Marked step {StepKey} as in progress for workspace {WorkspaceId}", stepKey, workspaceId);
         }
@@ -237,15 +241,15 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
 
     public async Task MarkStepReviewedAsync(Guid workspaceId, string stepKey, string? comment = null, string? userId = null)
     {
-        var step = await GetOrCreateReviewStepAsync(workspaceId, stepKey);
-        step.ReviewState = ReviewState.Reviewed;
-        step.ReviewedAt = DateTimeOffset.UtcNow;
-        step.ReviewedBy = userId ?? "Local Developer";
+        var progress = await GetOrCreateProgressAsync(workspaceId, stepKey);
+        progress.ReviewState = ReviewState.Reviewed;
+        progress.ReviewedAt = DateTimeOffset.UtcNow;
+        progress.ReviewedBy = userId ?? "Local Developer";
         if (!string.IsNullOrWhiteSpace(comment))
-            step.Comment = comment;
-        step.UpdatedAt = DateTimeOffset.UtcNow;
+            progress.Comment = comment;
+        progress.UpdatedAt = DateTimeOffset.UtcNow;
 
-        _db.WorkspaceReviewSteps.Update(step);
+        _db.WorkspaceReviewProgress.Update(progress);
         await _db.SaveChangesAsync();
         _logger.LogInformation("Marked step {StepKey} as reviewed for workspace {WorkspaceId}", stepKey, workspaceId);
     }
@@ -257,17 +261,17 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         string? comment = null,
         string? userId = null)
     {
-        var step = await GetOrCreateReviewStepAsync(workspaceId, stepKey);
-        step.ReviewState = ReviewState.Reviewed;
-        step.ApprovalState = ApprovalState.Approved;
-        step.ApprovedAt = DateTimeOffset.UtcNow;
-        step.ApprovedBy = userId ?? "Local Developer";
-        step.ArtifactSetHashAtApproval = artifactSetHash;
+        var progress = await GetOrCreateProgressAsync(workspaceId, stepKey);
+        progress.ReviewState = ReviewState.Reviewed;
+        progress.ApprovalState = ApprovalState.Approved;
+        progress.ApprovedAt = DateTimeOffset.UtcNow;
+        progress.ApprovedBy = userId ?? "Local Developer";
+        progress.ArtifactSetHashAtApproval = artifactSetHash;
         if (!string.IsNullOrWhiteSpace(comment))
-            step.Comment = comment;
-        step.UpdatedAt = DateTimeOffset.UtcNow;
+            progress.Comment = comment;
+        progress.UpdatedAt = DateTimeOffset.UtcNow;
 
-        _db.WorkspaceReviewSteps.Update(step);
+        _db.WorkspaceReviewProgress.Update(progress);
         await _db.SaveChangesAsync();
         _logger.LogInformation("Approved step {StepKey} for workspace {WorkspaceId}", stepKey, workspaceId);
     }
@@ -278,15 +282,15 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         string? comment = null,
         string? userId = null)
     {
-        var step = await GetOrCreateReviewStepAsync(workspaceId, stepKey);
-        step.ApprovalState = ApprovalState.NeedsChanges;
-        step.RejectedAt = DateTimeOffset.UtcNow;
-        step.RejectedBy = userId ?? "Local Developer";
+        var progress = await GetOrCreateProgressAsync(workspaceId, stepKey);
+        progress.ApprovalState = ApprovalState.NeedsChanges;
+        progress.RejectedAt = DateTimeOffset.UtcNow;
+        progress.RejectedBy = userId ?? "Local Developer";
         if (!string.IsNullOrWhiteSpace(comment))
-            step.Comment = comment;
-        step.UpdatedAt = DateTimeOffset.UtcNow;
+            progress.Comment = comment;
+        progress.UpdatedAt = DateTimeOffset.UtcNow;
 
-        _db.WorkspaceReviewSteps.Update(step);
+        _db.WorkspaceReviewProgress.Update(progress);
         await _db.SaveChangesAsync();
         _logger.LogInformation("Rejected step {StepKey} for workspace {WorkspaceId}", stepKey, workspaceId);
     }
@@ -296,20 +300,20 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         List<string> changedArtifactTypes,
         string currentArtifactSetHash)
     {
-        var steps = await _db.WorkspaceReviewSteps
-            .Where(r => r.WorkspaceId == workspaceId && r.ApprovalState == ApprovalState.Approved)
+        var approvedSteps = await _db.WorkspaceReviewProgress
+            .Where(p => p.WorkspaceId == workspaceId && p.ApprovalState == ApprovalState.Approved)
             .ToListAsync();
 
         var invalidated = new List<string>();
 
-        foreach (var step in steps)
+        foreach (var step in approvedSteps)
         {
             var shouldInvalidate = ShouldInvalidateStep(step.StepKey, changedArtifactTypes);
             if (shouldInvalidate && step.ArtifactSetHashAtApproval != currentArtifactSetHash)
             {
                 step.ApprovalState = ApprovalState.InvalidatedByArtifactChange;
                 step.UpdatedAt = DateTimeOffset.UtcNow;
-                _db.WorkspaceReviewSteps.Update(step);
+                _db.WorkspaceReviewProgress.Update(step);
                 invalidated.Add(step.StepKey);
             }
         }
@@ -317,21 +321,22 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         if (invalidated.Any())
         {
             await _db.SaveChangesAsync();
-            _logger.LogInformation("Invalidated approvals for steps {Steps} due to artifact changes in workspace {WorkspaceId}",
+            _logger.LogInformation(
+                "Invalidated approvals for steps {Steps} due to artifact changes in workspace {WorkspaceId}",
                 string.Join(", ", invalidated), workspaceId);
         }
     }
 
-    public async Task<WorkspaceReviewStep?> GetReviewStepAsync(Guid workspaceId, string stepKey)
+    public async Task<WorkspaceReviewProgress?> GetReviewProgressAsync(Guid workspaceId, string stepKey)
     {
-        return await _db.WorkspaceReviewSteps
-            .FirstOrDefaultAsync(r => r.WorkspaceId == workspaceId && r.StepKey == stepKey);
+        return await _db.WorkspaceReviewProgress
+            .FirstOrDefaultAsync(p => p.WorkspaceId == workspaceId && p.StepKey == stepKey);
     }
 
-    public async Task<List<WorkspaceReviewStep>> GetWorkspaceReviewStepsAsync(Guid workspaceId)
+    public async Task<List<WorkspaceReviewProgress>> GetWorkspaceReviewProgressAsync(Guid workspaceId)
     {
-        return await _db.WorkspaceReviewSteps
-            .Where(r => r.WorkspaceId == workspaceId)
+        return await _db.WorkspaceReviewProgress
+            .Where(p => p.WorkspaceId == workspaceId)
             .ToListAsync();
     }
 
@@ -340,25 +345,107 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         return steps.FirstOrDefault(s => s.IsCurrent);
     }
 
+    public int CalculateWorkflowReadiness(List<WorkflowStepViewModel> steps)
+    {
+        var breakdown = GetReadinessBreakdown(steps);
+        return breakdown.OverallReadiness;
+    }
+
+    public WorkflowReadinessBreakdown GetReadinessBreakdown(List<WorkflowStepViewModel> steps)
+    {
+        // Filter to steps that require action (not informational/optional)
+        var actionableSteps = steps.Where(s => s.RequiresApproval || s.RequiresManualReview).ToList();
+        var requiredSteps = actionableSteps.Where(s => !s.IsOptional).ToList();
+
+        // Count artifact readiness
+        var artifactsLoaded = steps.Count(s => s.Prerequisites == PrerequisiteState.Available);
+        var artifactTotal = steps.Count; // Simplified: all steps need their artifacts eventually
+
+        // Calculate actual artifact availability (distinct artifacts from required steps)
+        var requiredArtifacts = GetRequiredArtifactsForSteps(requiredSteps);
+        var loadedArtifactCount = requiredArtifacts.Count(art => steps.Any(s =>
+            s.Prerequisites == PrerequisiteState.Available && s.Key.Contains(art)));
+
+        // Count review completion
+        var stepsReviewed = requiredSteps.Count(s =>
+            s.ReviewState == ReviewState.Reviewed ||
+            s.ApprovalState == ApprovalState.Approved);
+        var stepsRequiringReview = requiredSteps.Count(s => s.RequiresManualReview);
+
+        // Count approval completion
+        var stepsApproved = requiredSteps.Count(s => s.ApprovalState == ApprovalState.Approved);
+        var stepsRequiringApproval = requiredSteps.Count(s => s.RequiresApproval);
+
+        // Count blocking issues
+        var blockingIssues = steps.Count(s =>
+            s.Status == WorkflowStepStatus.NeedsAttention &&
+            !s.IsOptional);
+
+        // Calculate percentages (avoid division by zero)
+        var artifactScore = artifactTotal > 0
+            ? (int)((artifactsLoaded / (double)artifactTotal) * 100)
+            : 100;
+
+        var reviewScore = stepsRequiringReview > 0
+            ? (int)((stepsReviewed / (double)stepsRequiringReview) * 100)
+            : 100;
+
+        var approvalScore = stepsRequiringApproval > 0
+            ? (int)((stepsApproved / (double)stepsRequiringApproval) * 100)
+            : 100;
+
+        // Overall readiness: 30% artifacts, 30% reviews, 40% approvals
+        var overallReadiness = (int)(
+            (artifactScore * 0.30) +
+            (reviewScore * 0.30) +
+            (approvalScore * 0.40));
+
+        // Ready for release: all required steps approved, no blocking issues
+        var readyForRelease =
+            artifactScore == 100 &&
+            approvalScore == 100 &&
+            blockingIssues == 0;
+
+        return new WorkflowReadinessBreakdown
+        {
+            OverallReadiness = overallReadiness,
+            ArtifactReadiness = artifactScore,
+            ReviewReadiness = reviewScore,
+            ApprovalReadiness = approvalScore,
+            ReadyForRelease = readyForRelease,
+            ArtifactsLoaded = artifactsLoaded,
+            ArtifactTotal = artifactTotal,
+            StepsReviewed = stepsReviewed,
+            StepsRequiringReview = stepsRequiringReview,
+            StepsApproved = stepsApproved,
+            StepsRequiringApproval = stepsRequiringApproval,
+            BlockingIssues = blockingIssues
+        };
+    }
+
     // Helper methods
 
-    private WorkflowStepStatus DetermineStepStatus(
-        bool prerequisiteMet,
-        bool approvalDepMet,
-        WorkspaceReviewStep? reviewStep)
+    private WorkflowStepStatus ComputeStepStatus(
+        WorkflowStepDefinition definition,
+        bool requiredArtifactsLoaded,
+        bool approvalDepsMet,
+        WorkspaceReviewProgress? progress)
     {
-        if (!prerequisiteMet || !approvalDepMet)
+        // If required artifacts or approval dependencies not met, step is locked
+        if (!requiredArtifactsLoaded || !approvalDepsMet)
             return WorkflowStepStatus.Locked;
 
-        if (reviewStep == null)
+        // If no progress record yet, step is available
+        if (progress == null)
             return WorkflowStepStatus.Available;
 
-        return reviewStep.ApprovalState switch
+        // Compute status from persisted approval/review decisions
+        return progress.ApprovalState switch
         {
             ApprovalState.Approved => WorkflowStepStatus.Approved,
             ApprovalState.NeedsChanges => WorkflowStepStatus.NeedsAttention,
             ApprovalState.InvalidatedByArtifactChange => WorkflowStepStatus.NeedsAttention,
-            ApprovalState.Pending => reviewStep.ReviewState switch
+            ApprovalState.Pending => progress.ReviewState switch
             {
                 ReviewState.NotStarted => WorkflowStepStatus.Available,
                 ReviewState.InProgress => WorkflowStepStatus.InProgress,
@@ -377,47 +464,46 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         return dependencies.Any(dep => changedArtifactTypes.Contains(dep));
     }
 
-    private async Task<WorkspaceReviewStep> GetOrCreateReviewStepAsync(Guid workspaceId, string stepKey)
+    private async Task<WorkspaceReviewProgress> GetOrCreateProgressAsync(Guid workspaceId, string stepKey)
     {
-        var existing = await _db.WorkspaceReviewSteps
-            .FirstOrDefaultAsync(r => r.WorkspaceId == workspaceId && r.StepKey == stepKey);
+        var existing = await _db.WorkspaceReviewProgress
+            .FirstOrDefaultAsync(p => p.WorkspaceId == workspaceId && p.StepKey == stepKey);
 
         if (existing != null)
             return existing;
 
-        var newStep = new WorkspaceReviewStep
+        var newProgress = new WorkspaceReviewProgress
         {
             Id = Guid.NewGuid(),
             WorkspaceId = workspaceId,
             StepKey = stepKey,
-            StepTitle = GetStepTitle(stepKey),
-            PrerequisiteState = PrerequisiteState.Missing,
             ReviewState = ReviewState.NotStarted,
             ApprovalState = ApprovalState.Pending,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
-        _db.WorkspaceReviewSteps.Add(newStep);
+        _db.WorkspaceReviewProgress.Add(newProgress);
         await _db.SaveChangesAsync();
-        return newStep;
+        return newProgress;
     }
 
-    private string GetStepTitle(string stepKey)
+    private List<string> GetRequiredArtifactsForSteps(List<WorkflowStepViewModel> steps)
     {
-        return stepKey switch
+        // Map step keys to their associated artifact types
+        var stepToArtifact = new Dictionary<string, string>
         {
-            "LoadSampleProject" => "Load Sample Project",
-            "ConstitutionExplorer" => "Constitution Explorer",
-            "PlanExplorer" => "Plan Explorer",
-            "TaskExplorer" => "Task Explorer",
-            "DataModelExplorer" => "Data Model Explorer",
-            "SpecificationReview" => "Specification Review",
-            "ArtifactTraceability" => "Artifact Traceability",
-            "ImplementationReview" => "Implementation Review",
-            "ReviewContextValidation" => "ReviewContext Validation",
-            "DashboardReview" => "Dashboard Review",
-            _ => stepKey
+            { "ConstitutionExplorer", "Constitution" },
+            { "PlanExplorer", "Plan" },
+            { "TaskExplorer", "Tasks" },
+            { "DataModelExplorer", "DataModel" },
+            { "SpecificationReview", "Specification" },
         };
+
+        return steps
+            .Where(s => stepToArtifact.ContainsKey(s.Key))
+            .Select(s => stepToArtifact[s.Key])
+            .Distinct()
+            .ToList();
     }
 }

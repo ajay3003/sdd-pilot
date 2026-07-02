@@ -44,67 +44,9 @@ public enum WorkflowStepStatus
 }
 
 /// <summary>
-/// Persisted review and approval state for a workflow step in a workspace.
-/// Allows workflow progress to survive workspace reload.
+/// Persisted review progress is now in WorkspaceReviewProgress.
+/// See BirkNext.Api.Models.WorkspaceReviewProgress for the entity definition.
 /// </summary>
-public class WorkspaceReviewStep
-{
-    public Guid Id { get; set; }
-    public Guid WorkspaceId { get; set; }
-
-    // Step identification
-    public string StepKey { get; set; } = "";  // e.g., "SpecificationReview", "ArtifactTraceability"
-    public string StepTitle { get; set; } = "";
-
-    // Prerequisites (JSON array of artifact type names)
-    public string? RequiredArtifactTypesJson { get; set; }
-
-    // State tracking
-    public PrerequisiteState PrerequisiteState { get; set; } = PrerequisiteState.Missing;
-    public ReviewState ReviewState { get; set; } = ReviewState.NotStarted;
-    public ApprovalState ApprovalState { get; set; } = ApprovalState.Pending;
-
-    // User audit trail
-    public string? ReviewedBy { get; set; }        // User ID or "Local Developer"
-    public DateTimeOffset? ReviewedAt { get; set; }
-
-    public string? ApprovedBy { get; set; }
-    public DateTimeOffset? ApprovedAt { get; set; }
-
-    public string? RejectedBy { get; set; }
-    public DateTimeOffset? RejectedAt { get; set; }
-
-    // Optional comment from reviewer
-    public string? Comment { get; set; }
-
-    // When user last opened this step's page
-    public DateTimeOffset? LastOpenedAt { get; set; }
-
-    // Artifact content hash at time of approval (for invalidation detection)
-    public string? ArtifactSetHashAtApproval { get; set; }
-
-    // Metadata
-    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
-
-    // Navigation property
-    public SavedWorkspace? Workspace { get; set; }
-}
-
-/// <summary>
-/// Step definition for workflow building.
-/// </summary>
-public class WorkflowStepDefinition
-{
-    public string Key { get; set; } = "";
-    public string Title { get; set; } = "";
-    public string Description { get; set; } = "";
-    public string Route { get; set; } = "";
-    public string ActionLabel { get; set; } = "";
-    public string Color { get; set; } = "";
-    public bool IsVisible { get; set; }
-    public PrerequisiteState PrerequisiteState { get; set; } = PrerequisiteState.Missing;
-}
 
 /// <summary>
 /// Workflow step view model for UI.
@@ -122,6 +64,11 @@ public class WorkflowStepViewModel
     public string DisabledReason { get; set; } = "";
     public bool IsCurrent { get; set; }
     public bool IsFuture { get; set; }
+
+    // Step type/requirement properties
+    public bool IsOptional { get; set; } = false;
+    public bool RequiresApproval { get; set; } = true;
+    public bool RequiresManualReview { get; set; } = true;
 
     // State indicators
     public WorkflowStepStatus Status { get; set; } = WorkflowStepStatus.Locked;
@@ -159,4 +106,73 @@ public class WorkflowStepViewModel
         WorkflowStepStatus.Locked => "is-disabled",
         _ => ""
     };
+}
+
+/// <summary>
+/// Workflow readiness breakdown for dashboard display.
+/// Shows separate metrics for artifacts, reviews, and approvals.
+/// </summary>
+public class WorkflowReadinessBreakdown
+{
+    /// <summary>
+    /// Overall readiness percentage (0-100).
+    /// Calculated as: 30% ArtifactsScore + 30% ReviewScore + 40% ApprovalScore.
+    /// </summary>
+    public int OverallReadiness { get; set; }
+
+    /// <summary>
+    /// Artifact loading progress: percentage of required artifacts loaded.
+    /// </summary>
+    public int ArtifactReadiness { get; set; }
+
+    /// <summary>
+    /// Review completion: percentage of required steps reviewed.
+    /// </summary>
+    public int ReviewReadiness { get; set; }
+
+    /// <summary>
+    /// Approval completion: percentage of required steps approved.
+    /// </summary>
+    public int ApprovalReadiness { get; set; }
+
+    /// <summary>
+    /// Whether all critical requirements are met (ready for release).
+    /// True when: all required artifacts loaded AND all required steps approved AND no blocking issues.
+    /// </summary>
+    public bool ReadyForRelease { get; set; }
+
+    /// <summary>
+    /// Number of artifacts loaded.
+    /// </summary>
+    public int ArtifactsLoaded { get; set; }
+
+    /// <summary>
+    /// Total number of artifacts in workflow.
+    /// </summary>
+    public int ArtifactTotal { get; set; }
+
+    /// <summary>
+    /// Number of steps reviewed.
+    /// </summary>
+    public int StepsReviewed { get; set; }
+
+    /// <summary>
+    /// Total number of required review steps.
+    /// </summary>
+    public int StepsRequiringReview { get; set; }
+
+    /// <summary>
+    /// Number of steps approved.
+    /// </summary>
+    public int StepsApproved { get; set; }
+
+    /// <summary>
+    /// Total number of required approval steps.
+    /// </summary>
+    public int StepsRequiringApproval { get; set; }
+
+    /// <summary>
+    /// Number of steps with blocking issues (needs attention).
+    /// </summary>
+    public int BlockingIssues { get; set; }
 }

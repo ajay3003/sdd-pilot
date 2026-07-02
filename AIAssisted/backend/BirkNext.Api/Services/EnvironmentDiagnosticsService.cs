@@ -289,6 +289,43 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 Details = $"Auto-save every {autoSaveInterval}ms, throttled to every {autoSaveThrottle}ms",
                 Recommendation = ""
             });
+
+            // Check workflow review progress tables
+            var reviewProgressTableExists = await CheckReviewProgressTableExistsAsync();
+            checks.Add(new EnvironmentDiagnosticCheck
+            {
+                Name = "Workflow Review Progress Table",
+                Status = reviewProgressTableExists ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Warning,
+                Details = reviewProgressTableExists ? "workspace_review_progress table exists" : "Table not yet created",
+                Recommendation = reviewProgressTableExists ? "" : "Run pending migrations: dotnet ef database update"
+            });
+
+            if (reviewProgressTableExists)
+            {
+                // Check saved review progress records
+                var reviewProgressCount = await _db.WorkspaceReviewProgress.CountAsync();
+                checks.Add(new EnvironmentDiagnosticCheck
+                {
+                    Name = "Saved Review Progress Records",
+                    Status = EnvironmentDiagnosticStatus.Pass,
+                    Details = $"{reviewProgressCount} review progress record(s) saved",
+                    Recommendation = ""
+                });
+
+                // Check for invalidated approvals
+                var invalidatedCount = await _db.WorkspaceReviewProgress
+                    .CountAsync(p => p.ApprovalState.ToString() == "InvalidatedByArtifactChange");
+                if (invalidatedCount > 0)
+                {
+                    checks.Add(new EnvironmentDiagnosticCheck
+                    {
+                        Name = "Invalidated Approvals",
+                        Status = EnvironmentDiagnosticStatus.Warning,
+                        Details = $"{invalidatedCount} approval(s) invalidated due to artifact changes",
+                        Recommendation = "Review affected workspaces and re-approve steps as needed"
+                    });
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -303,6 +340,19 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         }
 
         return checks;
+    }
+
+    private async Task<bool> CheckReviewProgressTableExistsAsync()
+    {
+        try
+        {
+            var count = await _db.WorkspaceReviewProgress.CountAsync();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private async Task<bool> CheckWorkspacePersistenceTablesExistAsync()

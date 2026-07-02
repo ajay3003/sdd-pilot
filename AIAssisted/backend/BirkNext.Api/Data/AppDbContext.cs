@@ -18,7 +18,7 @@ public class AppDbContext : DbContext
     public DbSet<ProjectDocument> ProjectDocuments => Set<ProjectDocument>();
     public DbSet<SavedWorkspace> SavedWorkspaces => Set<SavedWorkspace>();
     public DbSet<SavedWorkspaceArtifact> SavedWorkspaceArtifacts => Set<SavedWorkspaceArtifact>();
-    public DbSet<WorkspaceReviewStep> WorkspaceReviewSteps => Set<WorkspaceReviewStep>();
+    public DbSet<WorkspaceReviewProgress> WorkspaceReviewProgress => Set<WorkspaceReviewProgress>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -465,30 +465,47 @@ public class AppDbContext : DbContext
                 .HasDatabaseName("ix_saved_artifacts_workspace_type");
         });
 
-        modelBuilder.Entity<WorkspaceReviewStep>(entity =>
+        modelBuilder.Entity<WorkspaceReviewProgress>(entity =>
         {
-            entity.ToTable("workspace_review_steps");
+            entity.ToTable("workspace_review_progress");
 
             entity.Property(r => r.Id).HasColumnName("id");
             entity.Property(r => r.WorkspaceId).HasColumnName("workspace_id");
             entity.Property(r => r.StepKey).HasColumnName("step_key").HasMaxLength(100).IsRequired();
-            entity.Property(r => r.StepTitle).HasColumnName("step_title").HasMaxLength(500).IsRequired();
-            entity.Property(r => r.RequiredArtifactTypesJson).HasColumnName("required_artifact_types_json").HasColumnType("text");
-            entity.Property(r => r.PrerequisiteState).HasColumnName("prerequisite_state").HasMaxLength(50).IsRequired()
-                .HasConversion<string>();
+
+            // Human review/approval decisions (persisted)
             entity.Property(r => r.ReviewState).HasColumnName("review_state").HasMaxLength(50).IsRequired()
                 .HasConversion<string>();
             entity.Property(r => r.ApprovalState).HasColumnName("approval_state").HasMaxLength(50).IsRequired()
                 .HasConversion<string>();
+
+            // Review audit trail
             entity.Property(r => r.ReviewedBy).HasColumnName("reviewed_by").HasMaxLength(200);
             entity.Property(r => r.ReviewedAt).HasColumnName("reviewed_at");
+
+            // Approval audit trail
             entity.Property(r => r.ApprovedBy).HasColumnName("approved_by").HasMaxLength(200);
             entity.Property(r => r.ApprovedAt).HasColumnName("approved_at");
+
+            // Rejection audit trail
             entity.Property(r => r.RejectedBy).HasColumnName("rejected_by").HasMaxLength(200);
             entity.Property(r => r.RejectedAt).HasColumnName("rejected_at");
+
+            // Optional comment
             entity.Property(r => r.Comment).HasColumnName("comment").HasColumnType("text");
-            entity.Property(r => r.LastOpenedAt).HasColumnName("last_opened_at");
+
+            // Artifact state tracking for invalidation
+            entity.Property(r => r.ArtifactSetHashAtReview).HasColumnName("artifact_set_hash_at_review").HasMaxLength(128);
             entity.Property(r => r.ArtifactSetHashAtApproval).HasColumnName("artifact_set_hash_at_approval").HasMaxLength(128);
+
+            // Version tracking for invalidation
+            entity.Property(r => r.ReviewContextVersionAtApproval).HasColumnName("review_context_version_at_approval").HasMaxLength(50);
+            entity.Property(r => r.WorkspaceVersionAtApproval).HasColumnName("workspace_version_at_approval");
+
+            // User engagement tracking
+            entity.Property(r => r.LastOpenedAt).HasColumnName("last_opened_at");
+
+            // Metadata
             entity.Property(r => r.CreatedAt).HasColumnName("created_at");
             entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
 
@@ -498,11 +515,11 @@ public class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(r => new { r.WorkspaceId, r.StepKey })
-                .HasDatabaseName("ix_workspace_review_steps_workspace_key")
+                .HasDatabaseName("ix_workspace_review_progress_workspace_key")
                 .IsUnique();
 
             entity.HasIndex(r => new { r.WorkspaceId, r.ApprovalState })
-                .HasDatabaseName("ix_workspace_review_steps_workspace_approval");
+                .HasDatabaseName("ix_workspace_review_progress_workspace_approval");
         });
     }
 }

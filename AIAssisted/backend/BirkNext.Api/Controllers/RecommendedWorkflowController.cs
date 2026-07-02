@@ -125,6 +125,29 @@ public class RecommendedWorkflowController : ControllerBase
         }
     }
 
+    [HttpPost("readiness")]
+    public async Task<ActionResult<WorkflowReadinessBreakdown>> GetReadiness([FromBody] BuildStepsRequest request)
+    {
+        try
+        {
+            var steps = await _service.BuildWorkflowStepsAsync(
+                request.WorkspaceId,
+                request.HasConstitution,
+                request.HasSpecification,
+                request.HasPlan,
+                request.HasTasks,
+                request.HasDataModel);
+
+            var breakdown = _service.GetReadinessBreakdown(steps);
+            return Ok(breakdown);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error calculating readiness");
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
     // Request DTOs
     public class BuildStepsRequest
     {
