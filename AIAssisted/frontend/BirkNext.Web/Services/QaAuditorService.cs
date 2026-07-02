@@ -48,9 +48,11 @@ public sealed class QaAuditorService : IQaAuditorService
         TaskTree?             tasks,
         ReviewContext?        context = null)
     {
-        // Pre-compute sub-reports once. All rule packs share them via RuleContext —
-        // no pack triggers duplicate sub-analysis.
-        var reviewContext = ReviewContextFactory.Create(
+        // Use pre-built ReviewContext if provided (consumer pattern),
+        // otherwise build it here (producer pattern).
+        // All rule packs share the same ReviewContext via RuleContext —
+        // no pack triggers duplicate semantic model building.
+        var reviewContext = context ?? ReviewContextFactory.Create(
             ConstitutionAnalysisService.BuildSemanticModel(constitution ?? new()),
             SpecExplorerService.BuildSemanticModel(spec ?? new(), ""),
             PlanAnalysisService.BuildSemanticModel(plan ?? new()),

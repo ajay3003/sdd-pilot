@@ -7,12 +7,14 @@ public interface IQAReadinessService
     /// <summary>
     /// Compute an end-to-end readiness report from the four artifact documents.
     /// Any argument may be null; the service degrades gracefully.
+    /// If ReviewContext is provided, it is reused to avoid duplicate semantic model building.
     /// </summary>
     QAReadinessReport Assess(
         ConstitutionDocument? constitution,
         SpecTree?             spec,
         PlanDocument?         plan,
-        TaskTree?             tasks);
+        TaskTree?             tasks,
+        ReviewContext?        context = null);
 
     IEnumerable<ReadinessGap>            FilterGapsBySeverity(IEnumerable<ReadinessGap> gaps, ViolationSeverity? severity);
     IEnumerable<ReadinessRecommendation> FilterRecommendationsByArtifact(IEnumerable<ReadinessRecommendation> recs, ArtifactType? artifact);

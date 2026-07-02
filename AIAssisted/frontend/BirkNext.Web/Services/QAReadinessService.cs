@@ -21,10 +21,12 @@ public sealed class QAReadinessService : IQAReadinessService
         ConstitutionDocument? constitution,
         SpecTree?             spec,
         PlanDocument?         plan,
-        TaskTree?             tasks)
+        TaskTree?             tasks,
+        ReviewContext?        context = null)
     {
-        // Run sub-analyses so scoring can use their outputs
-        var reviewContext = ReviewContextFactory.Create(
+        // Use pre-built ReviewContext if provided (consumer pattern),
+        // otherwise build it here (producer pattern).
+        var reviewContext = context ?? ReviewContextFactory.Create(
             ConstitutionAnalysisService.BuildSemanticModel(constitution ?? new()),
             SpecExplorerService.BuildSemanticModel(spec ?? new(), ""),
             PlanAnalysisService.BuildSemanticModel(plan ?? new()),

@@ -75,6 +75,7 @@ builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotServic
 builder.Services.AddSingleton<IReportExportService, ReportExportService>();
 builder.Services.AddSingleton<IFrontendQualityReviewService, FrontendQualityReviewService>();
 builder.Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
+builder.Services.AddScoped<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
 builder.Services.AddSingleton<WorkspaceArtifactRepository>();
 builder.Services.AddSingleton<IWorkspaceArtifactRepository>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
 builder.Services.AddSingleton<IWorkspaceSessionService>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
