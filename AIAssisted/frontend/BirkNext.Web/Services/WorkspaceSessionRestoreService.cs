@@ -58,6 +58,7 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
 {
     private readonly IWorkspaceArtifactRepository _artifactRepository;
     private readonly IWorkspaceStateManager _stateManager;
+    private readonly IReviewContextProvider _reviewContextProvider;
     private readonly ILogger<WorkspaceSessionRestoreService> _logger;
     private CurrentWorkspaceMetadata? _currentMetadata;
 
@@ -66,10 +67,12 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
     public WorkspaceSessionRestoreService(
         IWorkspaceArtifactRepository artifactRepository,
         IWorkspaceStateManager stateManager,
+        IReviewContextProvider reviewContextProvider,
         ILogger<WorkspaceSessionRestoreService> logger)
     {
         _artifactRepository = artifactRepository;
         _stateManager = stateManager;
+        _reviewContextProvider = reviewContextProvider;
         _logger = logger;
     }
 
@@ -133,7 +136,10 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
             // Notify root state manager: workspace changed
             _stateManager.NotifyWorkspaceChanged(workspace.Id);
 
-            // Signal ReviewContext rebuild
+            // Rebuild ReviewContext from restored artifacts
+            await _reviewContextProvider.RebuildAsync();
+
+            // Signal ReviewContext rebuild event (for backward compatibility)
             OnReviewContextRebuildNeeded();
         }
         catch (Exception ex)
@@ -141,8 +147,6 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
             _logger.LogError(ex, "Error restoring workspace {WorkspaceId}", workspace.Id);
             throw;
         }
-
-        await Task.CompletedTask;
     }
 
     public async Task ClearWorkspaceAsync()

@@ -80,6 +80,7 @@ builder.Services.AddSingleton<WorkspaceArtifactRepository>();
 builder.Services.AddSingleton<IWorkspaceArtifactRepository>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
 builder.Services.AddSingleton<IWorkspaceSessionService>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
 builder.Services.AddSingleton<IWorkspaceUpdateCoordinator, WorkspaceUpdateCoordinator>();
+builder.Services.AddSingleton<IReviewContextProvider, ReviewContextProvider>();
 builder.Services.AddSingleton<IWorkspaceStateManager, WorkspaceStateManager>();
 builder.Services.AddSingleton<IWorkspaceArtifactStatusService, WorkspaceArtifactStatusService>();
 builder.Services.AddScoped<IWorkspaceSessionRestoreService, WorkspaceSessionRestoreService>();
