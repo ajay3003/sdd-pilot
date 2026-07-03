@@ -217,9 +217,9 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Imported Project Documents",
-                Status = EnvironmentDiagnosticStatus.NotAvailable,
-                Details = "No backend-imported project documents are stored. This is expected when using browser/session workspace state only.",
-                Recommendation = "Import or save artifacts if backend persistence diagnostics should inspect workspace data."
+                Status = EnvironmentDiagnosticStatus.Info,
+                Details = "No project documents have been imported to backend storage. This is normal when using browser/session workspace state.",
+                Recommendation = ""
             });
         }
         else
@@ -228,7 +228,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             {
                 Name = "Imported Project Documents",
                 Status = EnvironmentDiagnosticStatus.Pass,
-                Details = "Workspace has imported project artifacts",
+                Details = "Project documents have been imported to backend storage",
                 Recommendation = ""
             });
         }
@@ -266,9 +266,9 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Saved Workspaces",
-                Status = workspaceCount > 0 ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.NotAvailable,
+                Status = workspaceCount > 0 ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Info,
                 Details = $"{workspaceCount} workspace(s) saved",
-                Recommendation = workspaceCount > 0 ? "" : "Save a workspace to enable backend persisted workspace diagnostics."
+                Recommendation = ""
             });
 
             checks.Add(new EnvironmentDiagnosticCheck
@@ -307,9 +307,9 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 checks.Add(new EnvironmentDiagnosticCheck
                 {
                     Name = "Saved Review Progress Records",
-                    Status = reviewProgressCount > 0 ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.NotAvailable,
+                    Status = reviewProgressCount > 0 ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Info,
                     Details = $"{reviewProgressCount} review progress record(s) saved",
-                    Recommendation = reviewProgressCount > 0 ? "" : "Approve or review workflow steps in a saved workspace to create progress records."
+                    Recommendation = ""
                 });
 
                 // Check for invalidated approvals
@@ -460,9 +460,9 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "Saved Workspace ReviewContext Source",
-                Status = EnvironmentDiagnosticStatus.NotAvailable,
-                Details = "No saved workspace exists. Backend diagnostics cannot build ReviewContext from unsaved browser/session state.",
-                Recommendation = "Save the sample project workspace, then run diagnostics again or use frontend ReviewContext Validation for the active session."
+                Status = EnvironmentDiagnosticStatus.Info,
+                Details = "No saved workspaces exist. Backend can only build ReviewContext from persisted workspaces.",
+                Recommendation = ""
             };
         }
 
@@ -472,8 +472,8 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             {
                 Name = "Saved Workspace ReviewContext Source",
                 Status = EnvironmentDiagnosticStatus.Warning,
-                Details = $"{savedWorkspaceCount} saved workspace(s) found, but none contain the required constitution, specification, plan, and tasks artifacts.",
-                Recommendation = "Save a complete workspace artifact set before using persisted ReviewContext diagnostics."
+                Details = $"{savedWorkspaceCount} saved workspace(s) found, but none have the required artifacts (constitution, specification, plan, tasks).",
+                Recommendation = "Save a complete workspace to enable ReviewContext reconstruction from backend state."
             };
         }
 
@@ -481,7 +481,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         {
             Name = "Saved Workspace ReviewContext Source",
             Status = EnvironmentDiagnosticStatus.Pass,
-            Details = $"{completeWorkspaceCount} saved workspace(s) contain the required artifacts for ReviewContext reconstruction. Browser-side ReviewContextFactory validation remains available under System Settings -> Developer.",
+            Details = $"{completeWorkspaceCount} saved workspace(s) can be used to reconstruct ReviewContext",
             Recommendation = ""
         };
     }
@@ -589,12 +589,15 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             }
         }
 
-        return EvaluateRequiredTables(modelTables, existingTables);
+        var appliedMigrationsCount = (await _db.Database.GetAppliedMigrationsAsync()).Count();
+
+        return EvaluateRequiredTables(modelTables, existingTables, appliedMigrationsCount);
     }
 
     internal static EnvironmentDiagnosticCheck EvaluateRequiredTables(
         IReadOnlyCollection<SchemaTable> modelTables,
-        IReadOnlySet<string> existingTableKeys)
+        IReadOnlySet<string> existingTableKeys,
+        int appliedMigrationsCount)
     {
         var requiredMissing = new List<string>();
         var optionalMissing = new List<string>();
@@ -644,14 +647,29 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             details += $" Inactive/demo tables missing: {string.Join(", ", inactiveMissing)}.";
         }
 
+        EnvironmentDiagnosticStatus optionalTableStatus = EnvironmentDiagnosticStatus.Pass;
+        string optionalTableRecommendation = "";
+
+        if (optionalMissing.Count > 0)
+        {
+            if (appliedMigrationsCount > 0)
+            {
+                optionalTableStatus = EnvironmentDiagnosticStatus.Warning;
+                optionalTableRecommendation = "Optional feature tables are missing despite migrations being applied. This may indicate a failed migration or dropped tables.";
+            }
+            else
+            {
+                optionalTableStatus = EnvironmentDiagnosticStatus.Info;
+                optionalTableRecommendation = "";
+            }
+        }
+
         return new EnvironmentDiagnosticCheck
         {
             Name = "Required Tables Exist",
-            Status = optionalMissing.Count > 0 ? EnvironmentDiagnosticStatus.Warning : EnvironmentDiagnosticStatus.Pass,
+            Status = optionalTableStatus,
             Details = details,
-            Recommendation = optionalMissing.Count > 0
-                ? "Optional or inactive feature tables do not block startup. Enable/apply feature migrations only when those features are active."
-                : ""
+            Recommendation = optionalTableRecommendation
         };
     }
 
@@ -681,21 +699,28 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
 
     internal static SchemaTableRequirement ClassifyTable(string tableName) => tableName switch
     {
+        // Core platform infrastructure tables
         "project_documents" => SchemaTableRequirement.Required,
         "saved_workspaces" => SchemaTableRequirement.Required,
         "saved_workspace_artifacts" => SchemaTableRequirement.Required,
         "workspace_review_progress" => SchemaTableRequirement.Required,
+
+        // Analysis and traceability tables (optional features but created by migrations)
         "scenarios" => SchemaTableRequirement.Optional,
         "reviewed_candidates" => SchemaTableRequirement.Optional,
         "candidate_links" => SchemaTableRequirement.Optional,
+        "qa_delta_reviews" => SchemaTableRequirement.Optional,
         "trace_links" => SchemaTableRequirement.Optional,
         "traceability_suggestions" => SchemaTableRequirement.Optional,
         "code_files" => SchemaTableRequirement.Optional,
         "code_links" => SchemaTableRequirement.Optional,
+
+        // Demo/test/seed data tables
         _ when tableName.Contains("demo", StringComparison.OrdinalIgnoreCase)
             || tableName.Contains("seed", StringComparison.OrdinalIgnoreCase)
             || tableName.Contains("test", StringComparison.OrdinalIgnoreCase)
             => SchemaTableRequirement.DemoOrSeed,
+
         _ => SchemaTableRequirement.Optional
     };
 

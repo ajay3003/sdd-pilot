@@ -139,7 +139,7 @@
                                 <div class="rw-workspace-actions-header">Current Workspace</div>
                                 <div class="rw-workspace-title">@_readiness.WorkspaceName</div>
                             </div>
-                            <details class="rw-workspace-menu">
+                            <details class="rw-workspace-menu" @ref="_workspaceMenuRef">
                                 <summary class="btn-secondary rw-workspace-menu-trigger">Workspace</summary>
                                 <div class="rw-workspace-menu-list">
                                     <button type="button" @onclick="SaveWorkspaceAsync" disabled="@(_isSaving || !_readiness.WorkspaceLoaded)">
@@ -221,6 +221,7 @@
     private bool _showWorkspaceManager;
     private string? _approvingStepId;
     private string? _approvalErrorMessage;
+    private ElementReference _workspaceMenuRef;
 
     protected override async Task OnInitializedAsync()
     {
@@ -448,6 +449,7 @@
             {
                 await RefreshReadinessAsync();
                 StateHasChanged();
+                await CloseWorkspaceMenuAsync();
             }
         }
         catch (Exception ex)
@@ -473,6 +475,7 @@
             {
                 await RefreshReadinessAsync();
                 StateHasChanged();
+                await CloseWorkspaceMenuAsync();
             }
         }
         catch (Exception ex)
@@ -485,11 +488,11 @@
         }
     }
 
-    private Task ShowManageWorkspacesAsync()
+    private async Task ShowManageWorkspacesAsync()
     {
         _showWorkspaceManager = true;
         StateHasChanged();
-        return Task.CompletedTask;
+        await CloseWorkspaceMenuAsync();
     }
 
     private async Task OnWorkspaceManagerCloseAsync()
@@ -509,10 +512,23 @@
             await WorkspaceRestore.ClearWorkspaceAsync();
             await RefreshReadinessAsync();
             StateHasChanged();
+            await CloseWorkspaceMenuAsync();
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error clearing workspace");
+        }
+    }
+
+    private async Task CloseWorkspaceMenuAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("closeDetailsElement", _workspaceMenuRef);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Error closing workspace menu");
         }
     }
 

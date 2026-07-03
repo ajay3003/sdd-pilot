@@ -9,3 +9,9 @@ window.downloadHtmlFile = function (filename, htmlContent) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 };
+
+window.closeDetailsElement = function (elementRef) {
+    if (elementRef && elementRef.open !== undefined) {
+        elementRef.open = false;
+    }
+};

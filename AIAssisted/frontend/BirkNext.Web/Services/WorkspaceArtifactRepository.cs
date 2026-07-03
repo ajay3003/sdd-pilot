@@ -40,6 +40,9 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
 
     public void Clear(WorkspaceArtifactType type) => _artifacts.Remove(type);
 
+    public IEnumerable<(WorkspaceArtifactType Type, WorkspaceArtifact Artifact)> GetAllArtifacts()
+        => _artifacts.Select(kvp => (kvp.Key, kvp.Value));
+
     // ── IWorkspaceSessionService (WorkspaceArtifactKind) ─────────────────────
     // WorkspaceArtifactKind and WorkspaceArtifactType share identical integer values,
     // so the cast is safe for all defined members.

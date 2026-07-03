@@ -20,12 +20,13 @@ public class WorkspacePersistenceController : ControllerBase
     }
 
     [HttpPost("save-current")]
-    public async Task<ActionResult<SavedWorkspace>> SaveCurrent([FromBody] SaveRequest? request = null)
+    public async Task<ActionResult<SavedWorkspaceDto>> SaveCurrent([FromBody] SaveRequest? request = null)
     {
         try
         {
-            var result = await _service.SaveCurrentAsync(request?.Name);
-            return Ok(result);
+            var result = await _service.SaveCurrentAsync(request?.Name, request?.Artifacts ?? new());
+            var dto = MapWorkspaceToDto(result);
+            return Ok(dto);
         }
         catch (Exception ex)
         {
@@ -35,7 +36,7 @@ public class WorkspacePersistenceController : ControllerBase
     }
 
     [HttpPost("save-as")]
-    public async Task<ActionResult<SavedWorkspace>> SaveAs([FromBody] SaveAsRequest request)
+    public async Task<ActionResult<SavedWorkspaceDto>> SaveAs([FromBody] SaveAsRequest request)
     {
         if (string.IsNullOrWhiteSpace(request?.Name))
         {
@@ -44,8 +45,9 @@ public class WorkspacePersistenceController : ControllerBase
 
         try
         {
-            var result = await _service.SaveAsAsync(request.Name);
-            return Ok(result);
+            var result = await _service.SaveAsAsync(request.Name, request.Artifacts ?? new());
+            var dto = MapWorkspaceToDto(result);
+            return Ok(dto);
         }
         catch (Exception ex)
         {
@@ -55,7 +57,7 @@ public class WorkspacePersistenceController : ControllerBase
     }
 
     [HttpGet("load/{workspaceId}")]
-    public async Task<ActionResult<SavedWorkspace>> Load(Guid workspaceId)
+    public async Task<ActionResult<SavedWorkspaceDto>> Load(Guid workspaceId)
     {
         try
         {
@@ -65,7 +67,8 @@ public class WorkspacePersistenceController : ControllerBase
                 return NotFound(new { error = "Workspace not found" });
             }
 
-            return Ok(result);
+            var dto = MapWorkspaceToDto(result);
+            return Ok(dto);
         }
         catch (Exception ex)
         {
@@ -75,13 +78,14 @@ public class WorkspacePersistenceController : ControllerBase
     }
 
     [HttpGet("list")]
-    public async Task<ActionResult<List<SavedWorkspace>>> List()
+    public async Task<ActionResult<List<SavedWorkspaceDto>>> List()
     {
         try
         {
             // TODO: Get actual userId from auth context
             var result = await _service.ListAsync("default-user");
-            return Ok(result);
+            var dtos = result.Select(MapWorkspaceToDto).ToList();
+            return Ok(dtos);
         }
         catch (Exception ex)
         {
@@ -91,7 +95,7 @@ public class WorkspacePersistenceController : ControllerBase
     }
 
     [HttpPost("rename/{workspaceId}")]
-    public async Task<ActionResult<SavedWorkspace>> Rename(Guid workspaceId, [FromBody] RenameRequest request)
+    public async Task<ActionResult<SavedWorkspaceDto>> Rename(Guid workspaceId, [FromBody] RenameRequest request)
     {
         if (string.IsNullOrWhiteSpace(request?.NewName))
         {
@@ -101,7 +105,8 @@ public class WorkspacePersistenceController : ControllerBase
         try
         {
             var result = await _service.RenameAsync(workspaceId, request.NewName);
-            return Ok(result);
+            var dto = MapWorkspaceToDto(result);
+            return Ok(dto);
         }
         catch (Exception ex)
         {
@@ -111,7 +116,7 @@ public class WorkspacePersistenceController : ControllerBase
     }
 
     [HttpPost("duplicate/{workspaceId}")]
-    public async Task<ActionResult<SavedWorkspace>> Duplicate(Guid workspaceId, [FromBody] DuplicateRequest request)
+    public async Task<ActionResult<SavedWorkspaceDto>> Duplicate(Guid workspaceId, [FromBody] DuplicateRequest request)
     {
         if (string.IsNullOrWhiteSpace(request?.NewName))
         {
@@ -121,7 +126,8 @@ public class WorkspacePersistenceController : ControllerBase
         try
         {
             var result = await _service.DuplicateAsync(workspaceId, request.NewName);
-            return Ok(result);
+            var dto = MapWorkspaceToDto(result);
+            return Ok(dto);
         }
         catch (Exception ex)
         {
@@ -146,12 +152,13 @@ public class WorkspacePersistenceController : ControllerBase
     }
 
     [HttpPost("auto-save")]
-    public async Task<ActionResult<SavedWorkspace>> AutoSave([FromBody] AutoSaveRequest? request = null)
+    public async Task<ActionResult<SavedWorkspaceDto>> AutoSave([FromBody] AutoSaveRequest? request = null)
     {
         try
         {
             var result = await _service.AutoSaveAsync(request?.GeneratedName);
-            return Ok(result);
+            var dto = MapWorkspaceToDto(result);
+            return Ok(dto);
         }
         catch (Exception ex)
         {
@@ -191,7 +198,7 @@ public class WorkspacePersistenceController : ControllerBase
     }
 
     [HttpPost("import")]
-    public async Task<ActionResult<SavedWorkspace>> Import([FromBody] ImportRequest request)
+    public async Task<ActionResult<SavedWorkspaceDto>> Import([FromBody] ImportRequest request)
     {
         if (string.IsNullOrWhiteSpace(request?.Json))
         {
@@ -201,7 +208,8 @@ public class WorkspacePersistenceController : ControllerBase
         try
         {
             var result = await _service.ImportJsonAsync(request.Json);
-            return Ok(result);
+            var dto = MapWorkspaceToDto(result);
+            return Ok(dto);
         }
         catch (Exception ex)
         {
@@ -214,11 +222,13 @@ public class WorkspacePersistenceController : ControllerBase
     public class SaveRequest
     {
         public string? Name { get; set; }
+        public List<WorkspaceArtifactDto> Artifacts { get; set; } = new();
     }
 
     public class SaveAsRequest
     {
         public string? Name { get; set; }
+        public List<WorkspaceArtifactDto> Artifacts { get; set; } = new();
     }
 
     public class RenameRequest
@@ -239,5 +249,38 @@ public class WorkspacePersistenceController : ControllerBase
     public class ImportRequest
     {
         public string? Json { get; set; }
+    }
+
+    private SavedWorkspaceDto MapWorkspaceToDto(SavedWorkspace workspace)
+    {
+        return new SavedWorkspaceDto
+        {
+            Id = workspace.Id,
+            UserId = workspace.UserId,
+            Name = workspace.Name,
+            ProjectName = workspace.ProjectName,
+            Description = workspace.Description,
+            CreatedAt = workspace.CreatedAt,
+            UpdatedAt = workspace.UpdatedAt,
+            LastOpenedAt = workspace.LastOpenedAt,
+            Version = workspace.Version,
+            ParserVersion = workspace.ParserVersion,
+            ReviewContextVersion = workspace.ReviewContextVersion,
+            ArtifactSetHash = workspace.ArtifactSetHash,
+            AutoSaved = workspace.AutoSaved,
+            Favorite = workspace.Favorite,
+            Artifacts = workspace.Artifacts
+                .Select(a => new SavedWorkspaceArtifactResponseDto
+                {
+                    ArtifactType = a.ArtifactType.ToString(),
+                    FileName = a.FileName,
+                    OriginalPath = a.OriginalPath,
+                    Content = a.Content,
+                    ContentHash = a.ContentHash,
+                    Encoding = a.Encoding,
+                    ParseVersion = a.ParseVersion
+                })
+                .ToList()
+        };
     }
 }

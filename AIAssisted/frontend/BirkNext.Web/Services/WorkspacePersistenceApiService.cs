@@ -72,22 +72,38 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<WorkspacePersistenceApiService> _logger;
+    private readonly IWorkspaceArtifactRepository _artifactRepository;
 
     public WorkspacePersistenceApiService(
         HttpClient httpClient,
-        ILogger<WorkspacePersistenceApiService> logger)
+        ILogger<WorkspacePersistenceApiService> logger,
+        IWorkspaceArtifactRepository artifactRepository)
     {
         _httpClient = httpClient;
         _logger = logger;
+        _artifactRepository = artifactRepository;
     }
 
     public async Task<SavedWorkspaceDto?> SaveCurrentAsync(string? name = null)
     {
         try
         {
+            var artifacts = _artifactRepository.GetAllArtifacts()
+                .Select(item => new SavedWorkspaceArtifactDto
+                {
+                    ArtifactType = item.Type.ToString(),
+                    FileName = item.Artifact.FileName ?? $"{item.Type}",
+                    OriginalPath = item.Artifact.SourcePath,
+                    Content = item.Artifact.Text,
+                    ContentHash = null,
+                    Encoding = "utf-8",
+                    ParseVersion = "1.0"
+                })
+                .ToList();
+
             var response = await _httpClient.PostAsJsonAsync(
                 "api/workspace-persistence/save-current",
-                new { name });
+                new { name, artifacts });
 
             if (!response.IsSuccessStatusCode)
             {
@@ -108,9 +124,22 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
     {
         try
         {
+            var artifacts = _artifactRepository.GetAllArtifacts()
+                .Select(item => new SavedWorkspaceArtifactDto
+                {
+                    ArtifactType = item.Type.ToString(),
+                    FileName = item.Artifact.FileName ?? $"{item.Type}",
+                    OriginalPath = item.Artifact.SourcePath,
+                    Content = item.Artifact.Text,
+                    ContentHash = null,
+                    Encoding = "utf-8",
+                    ParseVersion = "1.0"
+                })
+                .ToList();
+
             var response = await _httpClient.PostAsJsonAsync(
                 "api/workspace-persistence/save-as",
-                new { name });
+                new { name, artifacts });
 
             if (!response.IsSuccessStatusCode)
             {

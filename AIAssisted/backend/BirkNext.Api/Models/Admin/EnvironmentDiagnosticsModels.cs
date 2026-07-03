@@ -9,8 +9,9 @@ namespace BirkNext.Api.Models.Admin;
 public enum EnvironmentDiagnosticStatus
 {
     Pass,          // Check passed
+    Info,          // Informational - feature not configured or not needed (not an error)
     Warning,       // Check passed with warnings
-    Fail,          // Check failed
+    Fail,          // Check failed - something is broken
     NotAvailable   // Check could not run (e.g., service not available)
 }
 
@@ -62,7 +63,8 @@ public class EnvironmentDiagnosticsReport
     public List<EnvironmentDiagnosticCheck> ExportChecks { get; set; } = [];
 
     /// <summary>
-    /// Overall status: Pass only if all checks pass.
+    /// Overall status: Fail > Warning > Info > Pass.
+    /// Info status (optional features not configured) does not downgrade overall status.
     /// </summary>
     [JsonPropertyName("overallStatus")]
     public EnvironmentDiagnosticStatus OverallStatus
@@ -70,10 +72,17 @@ public class EnvironmentDiagnosticsReport
         get
         {
             var allChecks = GetAllChecks();
+
+            // Fail is worst
             if (allChecks.Any(c => c.Status == EnvironmentDiagnosticStatus.Fail))
                 return EnvironmentDiagnosticStatus.Fail;
+
+            // Warning is second worst
             if (allChecks.Any(c => c.Status == EnvironmentDiagnosticStatus.Warning))
                 return EnvironmentDiagnosticStatus.Warning;
+
+            // Info (optional features not configured) doesn't downgrade status
+            // Pass is best and default
             return EnvironmentDiagnosticStatus.Pass;
         }
     }

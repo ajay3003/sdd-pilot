@@ -49,4 +49,7 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
     public bool Has(WorkspaceArtifactType type) => Has((WorkspaceArtifactKind)(int)type);
 
     public void Clear(WorkspaceArtifactType type) => Clear((WorkspaceArtifactKind)(int)type);
+
+    public IEnumerable<(WorkspaceArtifactType Type, WorkspaceArtifact Artifact)> GetAllArtifacts()
+        => _artifacts.Select(kvp => ((WorkspaceArtifactType)(int)kvp.Key, kvp.Value));
 }

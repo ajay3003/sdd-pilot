@@ -78,8 +78,8 @@
 }
 
 .rw-workspace-menu-trigger::after {
-    content: " v";
-    font-size: 0.75rem;
+    content: " ▾";
+    font-size: 0.7rem;
 }
 
 .rw-workspace-menu-list {

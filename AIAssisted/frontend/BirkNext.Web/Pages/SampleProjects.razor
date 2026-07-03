@@ -582,6 +582,9 @@
         if (!hasError)
             _hintState[project.Slug] = TargetHintExtractor.Extract(project, await FetchProjectTextsAsync(project));
         _loadingSlug = null;
+
+        // Notify that artifacts have changed so RecommendedWorkflow refreshes readiness
+        Workspace.NotifyArtifactsChanged();
     }
 
     private async Task<List<SampleProjectArtifactText>> FetchProjectTextsAsync(SampleProjectDto project)

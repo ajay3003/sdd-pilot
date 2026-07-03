@@ -174,6 +174,11 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
         return await Task.FromResult(_currentMetadata != null);
     }
 
+    public void NotifyArtifactsChanged()
+    {
+        OnReviewContextRebuildNeeded();
+    }
+
     protected virtual void OnReviewContextRebuildNeeded()
     {
         ReviewContextRebuildNeeded?.Invoke(this, EventArgs.Empty);

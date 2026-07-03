@@ -20,14 +20,16 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         _logger = logger;
     }
 
-    public async Task<SavedWorkspace> SaveCurrentAsync(string? name = null)
+    public async Task<SavedWorkspace> SaveCurrentAsync(string? name = null, List<WorkspaceArtifactDto>? artifacts = null)
     {
         if (!_currentWorkspaceId.HasValue)
         {
-            return await SaveAsAsync(name ?? $"Workspace_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
+            return await SaveAsAsync(name ?? $"Workspace_{DateTime.UtcNow:yyyyMMdd_HHmmss}", artifacts ?? new());
         }
 
-        var workspace = await _db.SavedWorkspaces.FindAsync(_currentWorkspaceId);
+        var workspace = await _db.SavedWorkspaces
+            .Include(w => w.Artifacts)
+            .FirstOrDefaultAsync(w => w.Id == _currentWorkspaceId && !w.IsDeleted);
         if (workspace == null)
         {
             throw new InvalidOperationException($"Current workspace {_currentWorkspaceId} not found");
@@ -38,6 +40,36 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             workspace.Name = name;
         }
 
+        // Update artifacts if provided
+        if (artifacts != null && artifacts.Any())
+        {
+            // Remove existing artifacts
+            _db.SavedWorkspaceArtifacts.RemoveRange(workspace.Artifacts);
+
+            // Add new artifacts
+            foreach (var artifact in artifacts)
+            {
+                if (!string.IsNullOrWhiteSpace(artifact.Content))
+                {
+                    var saved = new SavedWorkspaceArtifact
+                    {
+                        Id = Guid.NewGuid(),
+                        WorkspaceId = workspace.Id,
+                        ArtifactType = artifact.ArtifactType,
+                        FileName = artifact.FileName,
+                        Content = artifact.Content,
+                        ContentHash = ComputeContentHash(artifact.Content),
+                        Encoding = "utf-8",
+                        LastModified = DateTimeOffset.UtcNow,
+                        ParseVersion = "1.0",
+                        CreatedAt = DateTimeOffset.UtcNow,
+                        UpdatedAt = DateTimeOffset.UtcNow
+                    };
+                    workspace.Artifacts.Add(saved);
+                }
+            }
+        }
+
         workspace.UpdatedAt = DateTimeOffset.UtcNow;
         workspace.AutoSaved = false;
         workspace.ArtifactSetHash = await ComputeArtifactSetHashAsync(_currentWorkspaceId.Value);
@@ -45,11 +77,12 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         _db.SavedWorkspaces.Update(workspace);
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("Saved workspace {WorkspaceId} with name {Name}", workspace.Id, workspace.Name);
+        _logger.LogInformation("Saved workspace {WorkspaceId} with name {Name} and {ArtifactCount} artifacts",
+            workspace.Id, workspace.Name, workspace.Artifacts.Count);
         return workspace;
     }
 
-    public async Task<SavedWorkspace> SaveAsAsync(string name)
+    public async Task<SavedWorkspace> SaveAsAsync(string name, List<WorkspaceArtifactDto>? artifacts = null)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -68,27 +101,29 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             AutoSaved = false
         };
 
-        // Copy current artifacts to new workspace
-        var artifacts = await GetCurrentArtifactsFromSessionAsync();
-        if (artifacts.Any())
+        // Copy artifacts from request (frontend already has them from WorkspaceArtifactRepository)
+        if (artifacts != null && artifacts.Any())
         {
             foreach (var artifact in artifacts)
             {
-                var saved = new SavedWorkspaceArtifact
+                if (!string.IsNullOrWhiteSpace(artifact.Content))
                 {
-                    Id = Guid.NewGuid(),
-                    WorkspaceId = workspace.Id,
-                    ArtifactType = artifact.ArtifactType,
-                    FileName = artifact.FileName,
-                    Content = artifact.Content,
-                    ContentHash = ComputeContentHash(artifact.Content),
-                    Encoding = "utf-8",
-                    LastModified = DateTimeOffset.UtcNow,
-                    ParseVersion = "1.0",
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    UpdatedAt = DateTimeOffset.UtcNow
-                };
-                workspace.Artifacts.Add(saved);
+                    var saved = new SavedWorkspaceArtifact
+                    {
+                        Id = Guid.NewGuid(),
+                        WorkspaceId = workspace.Id,
+                        ArtifactType = artifact.ArtifactType,
+                        FileName = artifact.FileName,
+                        Content = artifact.Content,
+                        ContentHash = ComputeContentHash(artifact.Content),
+                        Encoding = "utf-8",
+                        LastModified = DateTimeOffset.UtcNow,
+                        ParseVersion = "1.0",
+                        CreatedAt = DateTimeOffset.UtcNow,
+                        UpdatedAt = DateTimeOffset.UtcNow
+                    };
+                    workspace.Artifacts.Add(saved);
+                }
             }
         }
 
@@ -98,7 +133,8 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         await _db.SaveChangesAsync();
 
         _currentWorkspaceId = workspace.Id;
-        _logger.LogInformation("Created new workspace {WorkspaceId} with name {Name}", workspace.Id, workspace.Name);
+        _logger.LogInformation("Created new workspace {WorkspaceId} with name {Name} and {ArtifactCount} artifacts",
+            workspace.Id, workspace.Name, workspace.Artifacts.Count);
         return workspace;
     }
 
@@ -130,6 +166,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
     public async Task<List<SavedWorkspace>> ListAsync(string userId)
     {
         return await _db.SavedWorkspaces
+            .Include(w => w.Artifacts)
             .Where(w => w.UserId == userId && !w.IsDeleted)
             .OrderByDescending(w => w.UpdatedAt)
             .ToListAsync();
@@ -142,7 +179,9 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             throw new ArgumentException("Workspace name cannot be empty", nameof(newName));
         }
 
-        var workspace = await _db.SavedWorkspaces.FindAsync(workspaceId);
+        var workspace = await _db.SavedWorkspaces
+            .Include(w => w.Artifacts)
+            .FirstOrDefaultAsync(w => w.Id == workspaceId && !w.IsDeleted);
         if (workspace == null)
         {
             throw new InvalidOperationException($"Workspace {workspaceId} not found");
@@ -254,7 +293,9 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             return workspace;
         }
 
-        var current = await _db.SavedWorkspaces.FindAsync(_currentWorkspaceId);
+        var current = await _db.SavedWorkspaces
+            .Include(w => w.Artifacts)
+            .FirstOrDefaultAsync(w => w.Id == _currentWorkspaceId && !w.IsDeleted);
         if (current == null)
         {
             throw new InvalidOperationException($"Current workspace {_currentWorkspaceId} not found");
@@ -667,5 +708,38 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
     {
         // TODO: Get from WorkspaceSession service
         return await Task.FromResult(new List<WorkspaceArtifactDto>());
+    }
+
+    private SavedWorkspaceDto MapWorkspaceToDto(SavedWorkspace workspace)
+    {
+        return new SavedWorkspaceDto
+        {
+            Id = workspace.Id,
+            UserId = workspace.UserId,
+            Name = workspace.Name,
+            ProjectName = workspace.ProjectName,
+            Description = workspace.Description,
+            CreatedAt = workspace.CreatedAt,
+            UpdatedAt = workspace.UpdatedAt,
+            LastOpenedAt = workspace.LastOpenedAt,
+            Version = workspace.Version,
+            ParserVersion = workspace.ParserVersion,
+            ReviewContextVersion = workspace.ReviewContextVersion,
+            ArtifactSetHash = workspace.ArtifactSetHash,
+            AutoSaved = workspace.AutoSaved,
+            Favorite = workspace.Favorite,
+            Artifacts = workspace.Artifacts
+                .Select(a => new SavedWorkspaceArtifactResponseDto
+                {
+                    ArtifactType = a.ArtifactType.ToString(),
+                    FileName = a.FileName,
+                    OriginalPath = a.OriginalPath,
+                    Content = a.Content,
+                    ContentHash = a.ContentHash,
+                    Encoding = a.Encoding,
+                    ParseVersion = a.ParseVersion
+                })
+                .ToList()
+        };
     }
 }

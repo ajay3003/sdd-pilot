@@ -10,6 +10,36 @@ public class WorkspaceArtifactDto
     public string Content { get; set; } = "";
 }
 
+public class SavedWorkspaceArtifactResponseDto
+{
+    public string ArtifactType { get; set; } = "";
+    public string FileName { get; set; } = "";
+    public string? OriginalPath { get; set; }
+    public string Content { get; set; } = "";
+    public string? ContentHash { get; set; }
+    public string Encoding { get; set; } = "utf-8";
+    public string ParseVersion { get; set; } = "1.0";
+}
+
+public class SavedWorkspaceDto
+{
+    public Guid Id { get; set; }
+    public string UserId { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string ProjectName { get; set; } = "";
+    public string? Description { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? LastOpenedAt { get; set; }
+    public int Version { get; set; } = 1;
+    public string ParserVersion { get; set; } = "1.0";
+    public string ReviewContextVersion { get; set; } = "1.0";
+    public string? ArtifactSetHash { get; set; }
+    public bool AutoSaved { get; set; }
+    public bool Favorite { get; set; }
+    public List<SavedWorkspaceArtifactResponseDto> Artifacts { get; set; } = new();
+}
+
 public class WorkspaceStateDto
 {
     public Guid? CurrentWorkspaceId { get; set; }
@@ -33,8 +63,8 @@ public enum WorkspaceStatus
 public interface IWorkspacePersistenceService
 {
     // Workspace operations
-    Task<SavedWorkspace> SaveCurrentAsync(string? name = null);
-    Task<SavedWorkspace> SaveAsAsync(string name);
+    Task<SavedWorkspace> SaveCurrentAsync(string? name = null, List<WorkspaceArtifactDto>? artifacts = null);
+    Task<SavedWorkspace> SaveAsAsync(string name, List<WorkspaceArtifactDto>? artifacts = null);
     Task<SavedWorkspace?> LoadAsync(Guid workspaceId);
     Task<List<SavedWorkspace>> ListAsync(string userId);
     Task<SavedWorkspace> RenameAsync(Guid workspaceId, string newName);
