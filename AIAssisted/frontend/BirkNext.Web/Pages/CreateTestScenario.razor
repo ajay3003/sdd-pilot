@@ -1,0 +1,310 @@
+@page "/create-test-scenario"
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models.Library
+@using BirkNext.Web.Services
+
+@inject ILibraryPageModelService LibraryPageModelService
+@inject IWorkspaceSessionService Workspace
+
+<PageTitle>Create Test Scenario</PageTitle>
+
+<div class="create-scenario-page">
+    <PageHeader Title="Create Test Scenario"
+                Description="Create structured test scenarios linked to your requirements." />
+
+    <!-- ── Readiness Panel ────────────────────────────────────────── -->
+    @if (IsLoading)
+    {
+        <div class="loading-state" role="status">Loading scenario creation interface...</div>
+    }
+    else if (PageModel is not null)
+    {
+        <LibraryReadinessPanel Model="PageModel" />
+    }
+    else
+    {
+        <div class="notification notification-error" role="alert">@(LoadError ?? "Failed to load scenario creation interface")</div>
+    }
+
+    <!-- ── Scenario Creation Form ─────────────────────────────────── -->
+    @if (PageModel?.ReadinessStatus == LibraryStatus.Ready)
+    {
+        <div class="scenario-form-container">
+            <div class="form-card">
+                <h2 class="form-title">New Test Scenario</h2>
+                <p class="form-description">Create a new test scenario linked to your requirements.</p>
+
+                <!-- Scenario Details -->
+                <div class="form-group">
+                    <label for="scenario-name">Scenario Name</label>
+                    <input type="text" id="scenario-name" class="form-input" placeholder="e.g., User Registration with Email Validation" />
+                </div>
+
+                <div class="form-group">
+                    <label for="scenario-description">Description</label>
+                    <textarea id="scenario-description" class="form-textarea" rows="4" placeholder="Describe what this scenario tests..."></textarea>
+                </div>
+
+                <!-- Links to Artifacts -->
+                <div class="form-group">
+                    <label for="spec-link">Link to Specification (optional)</label>
+                    <input type="text" id="spec-link" class="form-input" placeholder="Reference section in specification.md" />
+                </div>
+
+                <div class="form-group">
+                    <label for="task-link">Link to Tasks (optional)</label>
+                    <input type="text" id="task-link" class="form-input" placeholder="Reference task ID from tasks.md" />
+                </div>
+
+                <!-- Actions -->
+                <div class="form-actions">
+                    <button class="btn-primary" disabled>Create Scenario</button>
+                    <button class="btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+    }
+    else if (PageModel?.ReadinessStatus == LibraryStatus.Blocked)
+    {
+        <div class="guidance-container">
+            <div class="guidance-card">
+                <div class="guidance-icon">🔒</div>
+                <h2 class="guidance-title">Setup Required</h2>
+                <p class="guidance-text">To create test scenarios, you need at least one of the following:</p>
+                <ul class="guidance-list">
+                    <li>specification.md with requirements</li>
+                    <li>plan.md with technical details</li>
+                    <li>tasks.md with work items</li>
+                </ul>
+                <p class="guidance-action">Load an artifact from the menu to get started.</p>
+            </div>
+        </div>
+    }
+    else if (PageModel?.ReadinessStatus == LibraryStatus.Empty)
+    {
+        <div class="empty-state-container">
+            <div class="empty-state-icon">📋</div>
+            <h2 class="empty-state-title">No test scenarios yet</h2>
+            <p class="empty-state-description">Start creating test scenarios linked to your requirements.</p>
+        </div>
+    }
+</div>
+
+@code {
+    private LibraryPageModel? PageModel;
+    private bool IsLoading = true;
+    private string? LoadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Subscribe to workspace changes
+        Workspace.ReviewContextRebuildNeeded += (s, e) => _ = RefreshPageModel();
+
+        // Load initial model
+        await RefreshPageModel();
+    }
+
+    private async Task RefreshPageModel()
+    {
+        try
+        {
+            IsLoading = true;
+            LoadError = null;
+            PageModel = await LibraryPageModelService.GetCreateTestScenarioModelAsync();
+
+            if (PageModel is null)
+            {
+                LoadError = "Failed to load scenario creation interface";
+            }
+        }
+        catch (Exception ex)
+        {
+            LoadError = $"Error loading interface: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+}
+
+<style>
+.create-scenario-page {
+    padding: 0 20px;
+}
+
+.loading-state {
+    text-align: center;
+    color: #6b7280;
+    padding: 40px 20px;
+}
+
+.scenario-form-container {
+    margin-top: 32px;
+    max-width: 600px;
+}
+
+.form-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 32px;
+    background: white;
+}
+
+.form-title {
+    margin: 0 0 8px 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #111827;
+}
+
+.form-description {
+    margin: 0 0 24px 0;
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.form-group label {
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #374151;
+    font-size: 14px;
+}
+
+.form-input,
+.form-textarea {
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.form-input:focus,
+.form-textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-textarea {
+    resize: vertical;
+}
+
+.form-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 28px;
+}
+
+.btn-primary,
+.btn-secondary {
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background: #3b82f6;
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: #2563eb;
+}
+
+.btn-primary:disabled {
+    background: #d1d5db;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover {
+    background: #e5e7eb;
+}
+
+.guidance-container {
+    margin-top: 40px;
+}
+
+.guidance-card {
+    border: 1px solid #fef2f2;
+    border-radius: 8px;
+    padding: 32px;
+    background: #fef2f2;
+    text-align: center;
+}
+
+.guidance-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.guidance-title {
+    margin: 0 0 12px 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #991b1b;
+}
+
+.guidance-text {
+    margin: 0 0 12px 0;
+    color: #7f1d1d;
+    font-size: 14px;
+}
+
+.guidance-list {
+    text-align: left;
+    display: inline-block;
+    margin: 12px 0;
+    padding-left: 20px;
+    color: #7f1d1d;
+}
+
+.guidance-list li {
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.guidance-action {
+    margin: 16px 0 0 0;
+    color: #7f1d1d;
+    font-size: 14px;
+}
+
+.empty-state-container {
+    text-align: center;
+    padding: 80px 20px;
+}
+
+.empty-state-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-state-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 8px;
+}
+
+.empty-state-description {
+    font-size: 16px;
+    color: #6b7280;
+}
+</style>

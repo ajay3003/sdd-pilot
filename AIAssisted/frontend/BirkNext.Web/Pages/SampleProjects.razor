@@ -13,17 +13,17 @@
                 Description="Load pre-built sample projects to explore BirkNext features and learn best practices." />
 
     <!-- ── Readiness Panel ────────────────────────────────────────── -->
-    @if (PageModel is not null)
-    {
-        <LibraryReadinessPanel Model="PageModel" />
-    }
-    else if (IsLoading)
+    @if (IsLoading)
     {
         <div class="loading-state" role="status">Loading sample projects...</div>
     }
-    else if (LoadError is not null)
+    else if (PageModel is not null)
     {
-        <div class="notification notification-error" role="alert">@LoadError</div>
+        <LibraryReadinessPanel Model="PageModel" />
+    }
+    else
+    {
+        <div class="notification notification-error" role="alert">@(LoadError ?? "Failed to load sample projects")</div>
     }
 
     <!-- ── Project Cards Grid ─────────────────────────────────────── -->

@@ -13,11 +13,6 @@
     <PageHeader Title="Task Explorer"
                 Description="Navigate and analyze tasks.md files — task dependencies, risk, coverage, and traceability." />
 
-    @if (PageModel is not null)
-    {
-        <ReviewReadinessPanel Model="PageModel" />
-    }
-
     @if (IsLoading)
     {
         <div class="loading-state">Loading task analysis...</div>
@@ -26,11 +21,26 @@
     {
         <div class="notification notification-error">@LoadError</div>
     }
-
-    @if (PageModel?.Summary.CanRun == true)
+    else if (PageModel is not null)
     {
-        <div class="content">
-            @if (PageModel.Results.Count > 0)
+        <!-- Status Panel (without MissingInputs duplication when blocked) -->
+        @if (PageModel.ReadinessStatus == ReviewStatus.Ready)
+        {
+            <ReviewReadinessPanel Model="PageModel" />
+        }
+        else if (PageModel.ReadinessStatus == ReviewStatus.Blocked)
+        {
+            <div class="setup-panel">
+                <div class="setup-header status-blocked">
+                    <span class="status-badge">🔒 Blocked</span>
+                    <span class="setup-message">Load tasks.md to analyze task dependencies and coverage</span>
+                </div>
+            </div>
+        }
+
+        <div class="content-section">
+            <!-- Analysis Results (only when ready) -->
+            @if (PageModel?.Summary.CanRun == true && PageModel.Results.Count > 0)
             {
                 <div class="results-section">
                     <h2>Analysis Results</h2>
@@ -60,7 +70,8 @@
                 </div>
             }
 
-            <div class="editor-section">
+            <!-- Content Editor (always visible) -->
+            <div class="content-editor">
                 <h2>Task List Content</h2>
                 <textarea @bind="_tasksText"
                           class="editor"
@@ -159,30 +170,211 @@
 }
 
 <style>
-.te-page { padding: 0 20px; }
-.loading-state { text-align: center; padding: 40px; color: #6b7280; }
-.content { margin-top: 32px; }
-h2 { font-size: 18px; font-weight: 600; margin: 24px 0 16px 0; border-bottom: 2px solid #e5e7eb; padding-bottom: 12px; }
-.results-section { margin-bottom: 40px; }
-.result-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: white; margin-bottom: 12px; }
-.result-header { display: flex; justify-content: space-between; margin-bottom: 12px; }
-.result-header h3 { margin: 0; font-size: 16px; font-weight: 600; }
-.severity { display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; }
-.severity.critical { background: #fee2e2; color: #991b1b; }
-.severity.warning { background: #fef3c7; color: #92400e; }
-.severity.info { background: #dbeafe; color: #1e40af; }
-.summary { margin: 8px 0; font-size: 14px; color: #374151; }
-.details { margin: 8px 0; padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 13px; color: #6b7280; }
-.recommendation { margin-top: 8px; padding: 8px; background: #fef3c7; border-left: 3px solid #f59e0b; border-radius: 4px; font-size: 13px; }
-.editor-section { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 24px; }
-.editor { width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 6px; font-family: monospace; font-size: 13px; }
-.editor:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
-.actions { display: flex; gap: 12px; margin-top: 16px; }
-.btn-primary, .btn-secondary, .file-upload { padding: 10px 20px; border-radius: 6px; font-weight: 500; cursor: pointer; border: none; transition: all 0.2s ease; }
-.btn-primary { background: #3b82f6; color: white; }
-.btn-primary:hover { background: #2563eb; }
-.btn-secondary { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
-.btn-secondary:hover { background: #e5e7eb; }
-.file-upload { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
-.file-upload:hover { background: #e5e7eb; }
+.te-page {
+    padding: 0 20px;
+}
+
+.content-section {
+    margin-top: 32px;
+}
+
+.setup-panel {
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    padding: 16px;
+    margin-bottom: 24px;
+}
+
+.setup-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.setup-header.status-blocked {
+    background-color: #f3f4f6;
+    padding: 12px;
+    border-radius: 6px;
+}
+
+.status-badge {
+    display: inline-block;
+    font-weight: 600;
+    color: #374151;
+    white-space: nowrap;
+}
+
+.setup-message {
+    color: #6b7280;
+    font-size: 14px;
+}
+
+h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #111827;
+    margin: 24px 0 16px 0;
+    border-bottom: 2px solid #e5e7eb;
+    padding-bottom: 12px;
+}
+
+.results-section {
+    margin-bottom: 40px;
+}
+
+.result-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    background: white;
+    margin-bottom: 12px;
+    transition: all 0.2s ease;
+}
+
+.result-card:hover {
+    border-color: #d1d5db;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+}
+
+.result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    margin-bottom: 12px;
+}
+
+.result-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #111827;
+}
+
+.severity {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.severity.critical {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.severity.warning {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.severity.info {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.summary {
+    margin: 8px 0;
+    font-size: 14px;
+    color: #374151;
+}
+
+.details {
+    margin: 8px 0;
+    padding: 8px;
+    background: #f9fafb;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.recommendation {
+    margin-top: 8px;
+    padding: 8px;
+    background: #fef3c7;
+    border-left: 3px solid #f59e0b;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.content-editor {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 24px;
+    margin-top: 24px;
+}
+
+.editor {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+    resize: vertical;
+}
+
+.editor:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.btn-primary, .btn-secondary {
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background: #3b82f6;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #2563eb;
+}
+
+.btn-secondary {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover {
+    background: #e5e7eb;
+}
+
+.file-upload {
+    display: inline-block;
+    padding: 10px 20px;
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.file-upload:hover {
+    background: #e5e7eb;
+}
+
+.loading-state {
+    text-align: center;
+    padding: 40px;
+    color: #6b7280;
+}
 </style>

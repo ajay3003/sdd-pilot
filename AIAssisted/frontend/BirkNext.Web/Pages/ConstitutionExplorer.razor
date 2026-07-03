@@ -14,11 +14,6 @@
     <PageHeader Title="Constitution Explorer"
                 Description="Navigate and analyze constitution.md files — review principles, standards, constraints, and governance in one place." />
 
-    @if (PageModel is not null)
-    {
-        <ReviewReadinessPanel Model="PageModel" />
-    }
-
     @if (IsLoading)
     {
         <div class="loading-state">Loading constitution analysis...</div>
@@ -27,12 +22,26 @@
     {
         <div class="notification notification-error">@LoadError</div>
     }
-
-    @if (PageModel?.Summary.CanRun == true)
+    else if (PageModel is not null)
     {
-        <div class="constitution-content">
-            <!-- Review Results Section -->
-            @if (PageModel.Results.Count > 0)
+        <!-- Status Panel (without MissingInputs duplication when blocked) -->
+        @if (PageModel.ReadinessStatus == ReviewStatus.Ready)
+        {
+            <ReviewReadinessPanel Model="PageModel" />
+        }
+        else if (PageModel.ReadinessStatus == ReviewStatus.Blocked)
+        {
+            <div class="setup-panel">
+                <div class="setup-header status-blocked">
+                    <span class="status-badge">🔒 Blocked</span>
+                    <span class="setup-message">Load constitution.md to analyze governance rules</span>
+                </div>
+            </div>
+        }
+
+        <div class="content-section">
+            <!-- Analysis Results (only when ready) -->
+            @if (PageModel?.Summary.CanRun == true && PageModel.Results.Count > 0)
             {
                 <div class="results-section">
                     <h2 class="section-title">Analysis Results</h2>
@@ -64,8 +73,8 @@
                 </div>
             }
 
-            <!-- Content Editor Section -->
-            <div class="constitution-editor">
+            <!-- Content Editor (always visible) -->
+            <div class="content-editor">
                 <h2 class="section-title">Constitution Content</h2>
                 <textarea @bind="_constitutionText"
                           class="editor-textarea"
@@ -80,14 +89,6 @@
                     </label>
                 </div>
             </div>
-        </div>
-    }
-    else if (PageModel?.ReadinessStatus == ReviewStatus.Blocked)
-    {
-        <div class="blocked-state">
-            <div class="blocked-icon">🔒</div>
-            <h2>Load Constitution First</h2>
-            <p>Click the upload button above to load a constitution.md file, or paste content directly.</p>
         </div>
     }
 </div>
@@ -182,8 +183,39 @@
     padding: 0 20px;
 }
 
-.constitution-content {
+.content-section {
     margin-top: 32px;
+}
+
+.setup-panel {
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    padding: 16px;
+    margin-bottom: 24px;
+}
+
+.setup-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.setup-header.status-blocked {
+    background-color: #f3f4f6;
+    padding: 12px;
+    border-radius: 6px;
+}
+
+.status-badge {
+    display: inline-block;
+    font-weight: 600;
+    color: #374151;
+    white-space: nowrap;
+}
+
+.setup-message {
+    color: #6b7280;
+    font-size: 14px;
 }
 
 .section-title {
@@ -282,11 +314,12 @@
     color: #92400e;
 }
 
-.constitution-editor {
+.content-editor {
     background: white;
     border: 1px solid #e5e7eb;
     border-radius: 8px;
     padding: 24px;
+    margin-top: 24px;
 }
 
 .editor-textarea {
@@ -353,30 +386,6 @@
 
 .file-upload-label:hover {
     background: #e5e7eb;
-}
-
-.blocked-state {
-    text-align: center;
-    padding: 80px 20px;
-    background: #fef2f2;
-    border-radius: 8px;
-    margin: 32px 0;
-}
-
-.blocked-icon {
-    font-size: 64px;
-    margin-bottom: 16px;
-}
-
-.blocked-state h2 {
-    font-size: 24px;
-    color: #991b1b;
-    margin-bottom: 8px;
-}
-
-.blocked-state p {
-    font-size: 16px;
-    color: #7f1d1d;
 }
 
 .loading-state {

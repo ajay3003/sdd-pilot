@@ -1,0 +1,280 @@
+@page "/qa-artifact-library"
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models.Library
+@using BirkNext.Web.Services
+
+@inject ILibraryPageModelService LibraryPageModelService
+@inject IWorkspaceSessionService Workspace
+
+<PageTitle>QA Artifact Library</PageTitle>
+
+<div class="qa-library-page">
+    <PageHeader Title="QA Artifact Library"
+                Description="View, replace, or clear artifacts in your workspace." />
+
+    <!-- ── Readiness Panel ────────────────────────────────────────── -->
+    @if (IsLoading)
+    {
+        <div class="loading-state" role="status">Loading artifact library...</div>
+    }
+    else if (PageModel is not null)
+    {
+        <LibraryReadinessPanel Model="PageModel" />
+    }
+    else
+    {
+        <div class="notification notification-error" role="alert">@(LoadError ?? "Failed to load artifact library")</div>
+    }
+
+    <!-- ── Artifact Sections ──────────────────────────────────────── -->
+    @if (PageModel?.Sections.Count > 0)
+    {
+        @foreach (var sect in PageModel.Sections)
+        {
+            <div class="artifact-section">
+                <h2 class="section-title">@sect.Title</h2>
+                @if (!string.IsNullOrEmpty(sect.Description))
+                {
+                    <p class="section-description">@sect.Description</p>
+                }
+
+                <div class="artifact-cards">
+                    @foreach (var item in sect.Items)
+                    {
+                        <div class="artifact-card">
+                            <div class="artifact-header">
+                                <h3 class="artifact-name">@item.Name</h3>
+                                <span class="artifact-type">@item.Type</span>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(item.Description))
+                            {
+                                <p class="artifact-description">@item.Description</p>
+                            }
+
+                            <div class="artifact-meta">
+                                @if (!string.IsNullOrEmpty(item.Source))
+                                {
+                                    <span class="meta-item">📦 @item.Source</span>
+                                }
+                                @if (item.LastUpdated.HasValue)
+                                {
+                                    <span class="meta-item">⏱️ @item.LastUpdated.Value.ToString("MMM d, yyyy")</span>
+                                }
+                            </div>
+
+                            @if (item.Actions.Count > 0)
+                            {
+                                <div class="artifact-actions">
+                                    @foreach (var action in item.Actions)
+                                    {
+                                        <button class="action-btn @(action.Enabled ? "" : "is-disabled")"
+                                                disabled="@(!action.Enabled)"
+                                                title="@(action.Reason ?? action.ExpectedEffect ?? action.Name)">
+                                            @action.Name
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+    else if (PageModel?.ReadinessStatus == LibraryStatus.Empty)
+    {
+        <div class="empty-state-container">
+            <div class="empty-state-icon">📦</div>
+            <h2 class="empty-state-title">No artifacts loaded</h2>
+            <p class="empty-state-description">Import or create artifacts to get started.</p>
+        </div>
+    }
+</div>
+
+@code {
+    private LibraryPageModel? PageModel;
+    private bool IsLoading = true;
+    private string? LoadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Subscribe to workspace changes
+        Workspace.ReviewContextRebuildNeeded += (s, e) => _ = RefreshPageModel();
+
+        // Load initial model
+        await RefreshPageModel();
+    }
+
+    private async Task RefreshPageModel()
+    {
+        try
+        {
+            IsLoading = true;
+            LoadError = null;
+            PageModel = await LibraryPageModelService.GetQAArtifactLibraryModelAsync();
+
+            if (PageModel is null)
+            {
+                LoadError = "Failed to load artifact library";
+            }
+        }
+        catch (Exception ex)
+        {
+            LoadError = $"Error loading library: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+}
+
+<style>
+.qa-library-page {
+    padding: 0 20px;
+}
+
+.loading-state {
+    text-align: center;
+    color: #6b7280;
+    padding: 40px 20px;
+}
+
+.artifact-section {
+    margin-top: 40px;
+}
+
+.section-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 8px;
+    border-bottom: 2px solid #e5e7eb;
+    padding-bottom: 12px;
+}
+
+.section-description {
+    color: #6b7280;
+    font-size: 14px;
+    margin-bottom: 16px;
+}
+
+.artifact-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+}
+
+.artifact-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    background: white;
+    transition: all 0.2s ease;
+}
+
+.artifact-card:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.artifact-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.artifact-name {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #111827;
+}
+
+.artifact-type {
+    display: inline-block;
+    padding: 4px 12px;
+    background: #f0f9ff;
+    color: #0369a1;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.artifact-description {
+    color: #6b7280;
+    font-size: 14px;
+    margin: 0 0 12px 0;
+    line-height: 1.5;
+}
+
+.artifact-meta {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: #9ca3af;
+}
+
+.meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.artifact-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.action-btn {
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    background: #ffffff;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.action-btn:hover:not(.is-disabled) {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+}
+
+.action-btn.is-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.empty-state-container {
+    text-align: center;
+    padding: 80px 20px;
+}
+
+.empty-state-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-state-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 8px;
+}
+
+.empty-state-description {
+    font-size: 16px;
+    color: #6b7280;
+}
+</style>

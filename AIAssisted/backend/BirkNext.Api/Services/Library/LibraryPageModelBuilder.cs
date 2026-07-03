@@ -75,7 +75,7 @@ public class QAArtifactLibraryPageModelBuilder : IQAArtifactLibraryPageModelBuil
                     Status = LibraryStatus.Ready,
                     Source = "Workspace",
                     ArtifactKind = artifact.ArtifactType.ToString(),
-                    LastUpdated = artifact.UpdatedAt,
+                    LastUpdated = artifact.UpdatedAt.DateTime,
                     Actions = [
                         new LibraryAction
                         {
@@ -198,9 +198,8 @@ public class CreateTestScenarioPageModelBuilder : ICreateTestScenarioPageModelBu
             var workspaceId = await GetCurrentWorkspaceIdAsync();
             if (workspaceId == Guid.Empty)
             {
-                return MissingInputsModel(
-                    ["at least one artifact (specification, plan, or tasks)"],
-                    "No active workspace. Load a specification, plan, or tasks artifact before creating test scenarios.");
+                return EmptyModel(
+                    "No active workspace yet. Create or load a workspace first, then load artifacts.");
             }
 
             var artifactStatus = await _artifactStatus.GetStatusAsync(workspaceId);
@@ -213,7 +212,7 @@ public class CreateTestScenarioPageModelBuilder : ICreateTestScenarioPageModelBu
 
             if (missingInputs.Count > 0)
             {
-                return MissingInputsModel(
+                return BlockedModel(
                     missingInputs,
                     $"Missing: {string.Join(", ", missingInputs)}");
             }
@@ -258,7 +257,24 @@ public class CreateTestScenarioPageModelBuilder : ICreateTestScenarioPageModelBu
         return workspace?.Id ?? Guid.Empty;
     }
 
-    private static LibraryPageModel MissingInputsModel(List<string> missingInputs, string statusMessage)
+    private static LibraryPageModel EmptyModel(string statusMessage)
+    {
+        return new LibraryPageModel
+        {
+            Title = "Create Test Scenario",
+            Description = "Create structured test scenarios linked to your requirements.",
+            ReadinessStatus = LibraryStatus.Empty,
+            RequiredInputs = ["Workspace", "Specification or Tasks or Plan"],
+            MissingInputs = ["active workspace"],
+            Summary = new LibrarySummary
+            {
+                StatusMessage = statusMessage,
+                HasAvailableActions = false
+            }
+        };
+    }
+
+    private static LibraryPageModel BlockedModel(List<string> missingInputs, string statusMessage)
     {
         return new LibraryPageModel
         {
@@ -371,6 +387,26 @@ public class SampleProjectsPageModelBuilder : ISampleProjectsPageModelBuilder
                     ]
                 }
             };
+
+            if (sampleProjects.Count == 0)
+            {
+                return new LibraryPageModel
+                {
+                    Title = "Sample Projects",
+                    Description = "Load pre-built sample projects to explore BirkNext features and learn best practices.",
+                    ReadinessStatus = LibraryStatus.Empty,
+                    Items = [],
+                    RequiredInputs = [],
+                    MissingInputs = [],
+                    Summary = new LibrarySummary
+                    {
+                        StatusMessage = "No sample projects available yet",
+                        TotalItems = 0,
+                        AvailableActionsCount = 0,
+                        HasAvailableActions = false
+                    }
+                };
+            }
 
             return new LibraryPageModel
             {
