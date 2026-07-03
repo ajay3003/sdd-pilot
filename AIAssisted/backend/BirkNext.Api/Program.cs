@@ -62,8 +62,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AdminService>();
+builder.Services.AddScoped<ISystemSettingsStatusEngine, SystemSettingsStatusEngine>();
+builder.Services.AddScoped<IGeneralPageService, GeneralPageService>();
 builder.Services.AddScoped<IMigrationIntegrityValidator, MigrationIntegrityValidator>();
 builder.Services.AddScoped<IEnvironmentDiagnosticsService, EnvironmentDiagnosticsService>();
+builder.Services.AddScoped<IConfigurationHealthService, ConfigurationHealthService>();
 builder.Services.AddScoped<IWorkspacePersistenceService, WorkspacePersistenceService>();
 builder.Services.AddScoped<IAutoSaveService, AutoSaveService>();
 builder.Services.AddScoped<IWorkspaceArtifactStatusService, WorkspaceArtifactStatusService>();

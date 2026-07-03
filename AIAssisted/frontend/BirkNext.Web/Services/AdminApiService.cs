@@ -116,6 +116,18 @@ public class AdminApiService
             return (null, message, stackTrace);
         }
     }
+
+    public async Task<ConfigurationHealthReport?> GetConfigurationHealthAsync()
+    {
+        try
+        {
+            return await _client.GetFromJsonAsync<ConfigurationHealthReport>("api/admin/configuration-health");
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
 
 public class SystemSettingsDto
@@ -351,4 +363,24 @@ public class EnvironmentDiagnosticCheckDto
     [JsonPropertyName("details")] public string Details { get; set; } = "";
     [JsonPropertyName("recommendation")] public string Recommendation { get; set; } = "";
     [JsonPropertyName("technicalDetails")] public string? TechnicalDetails { get; set; }
+}
+
+public class ConfigurationHealthReport
+{
+    [JsonPropertyName("overallStatus")] public string OverallStatus { get; set; } = "Pass";
+    [JsonPropertyName("passCount")] public int PassCount { get; set; }
+    [JsonPropertyName("warningCount")] public int WarningCount { get; set; }
+    [JsonPropertyName("failCount")] public int FailCount { get; set; }
+    [JsonPropertyName("unavailableCount")] public int UnavailableCount { get; set; }
+    [JsonPropertyName("requiredChecks")] public List<ConfigurationHealthCheck> RequiredChecks { get; set; } = [];
+    [JsonPropertyName("optionalChecks")] public List<ConfigurationHealthCheck> OptionalChecks { get; set; } = [];
+}
+
+public class ConfigurationHealthCheck
+{
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("status")] public string Status { get; set; } = "Pass";
+    [JsonPropertyName("message")] public string Message { get; set; } = "";
+    [JsonPropertyName("details")] public string Details { get; set; } = "";
+    [JsonPropertyName("isRequired")] public bool IsRequired { get; set; }
 }

@@ -2,6 +2,7 @@
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models
+@using static BirkNext.Web.Services.AdminApiService
 @inject AdminApiService AdminApi
 @inject FeatureVisibilityService FeatureViz
 @inject ImplementationTraceabilityApiService AdoApi
@@ -284,55 +285,109 @@ else if (_settings is not null)
             {
                 <div class="settings-card settings-card-full-width">
                     <div class="settings-card-title">Configuration Health</div>
-                    <p class="settings-card-note">Detected configuration issues that may affect platform functionality.</p>
+                    <p class="settings-card-note">System configuration checks and platform diagnostics. Identifies required vs optional configuration and their current status.</p>
 
-                    @if (_configHealthIssueCount == 0)
+                    @if (_configHealthReport is null)
                     {
-                        <p class="ss-health-all-good" role="status">
-                            ✓ All configuration checks passed. No issues detected.
-                        </p>
+                        @if (!_configHealthLoaded)
+                        {
+                            <p class="db-section-empty">Loading configuration health…</p>
+                        }
+                        else
+                        {
+                            <p class="db-section-empty">Unable to load configuration health. Please try again.</p>
+                        }
                     }
                     else
                     {
-                        <div class="ss-health-cards" role="list">
-
-                            @if (UnflaggedList.Count > 0)
+                        <!-- Summary cards -->
+                        <div class="ss-status-bar" style="margin-bottom:1.5rem">
+                            <span class="ss-status-pill @(_configHealthReport.OverallStatus == "Pass" ? "ss-status-pill-ok" : _configHealthReport.OverallStatus == "Fail" ? "ss-status-pill-error" : "ss-status-pill-warn")">
+                                <span class="ss-status-label">Overall Status</span>
+                                <span class="ss-status-value">@_configHealthReport.OverallStatus</span>
+                            </span>
+                            <span class="ss-status-pill">
+                                <span class="ss-status-label">Passed</span>
+                                <span class="ss-status-value">@_configHealthReport.PassCount</span>
+                            </span>
+                            @if (_configHealthReport.WarningCount > 0)
                             {
-                                <div class="ss-health-card" role="listitem">
-                                    <span class="ss-health-sev ss-health-sev-warn">Warning</span>
-                                    <div class="ss-health-body">
-                                        <div class="ss-health-component">Feature Visibility</div>
-                                        <p class="ss-health-desc">@UnflaggedList.Count menu item@(UnflaggedList.Count != 1 ? "s have" : " has") no visibility flag and will always appear in the sidebar.</p>
-                                        <button class="ss-health-action" @onclick='() => SetSection("feature-visibility")'>Open Feature Visibility →</button>
-                                    </div>
-                                </div>
+                                <span class="ss-status-pill ss-status-pill-warn">
+                                    <span class="ss-status-label">Warnings</span>
+                                    <span class="ss-status-value">@_configHealthReport.WarningCount</span>
+                                </span>
                             }
-
-                            @if (_settings.AzureDevOps.Enabled && !_settings.AzureDevOps.PatConfigured)
+                            @if (_configHealthReport.FailCount > 0)
                             {
-                                <div class="ss-health-card" role="listitem">
-                                    <span class="ss-health-sev ss-health-sev-warn">Warning</span>
-                                    <div class="ss-health-body">
-                                        <div class="ss-health-component">Platform — Azure DevOps</div>
-                                        <p class="ss-health-desc">Azure DevOps is enabled but the PAT is not configured. Implementation Traceability will use demo data. Set the <code>ADO_PAT</code> environment variable and restart the backend.</p>
-                                        <button class="ss-health-action" @onclick='() => SetSection("platform")'>Open Platform →</button>
-                                    </div>
-                                </div>
+                                <span class="ss-status-pill ss-status-pill-error">
+                                    <span class="ss-status-label">Failures</span>
+                                    <span class="ss-status-value">@_configHealthReport.FailCount</span>
+                                </span>
                             }
-
-                            @if (_settings.Database.MigrationStatus is not null && _settings.Database.MigrationStatus != "Up to date")
+                            @if (_configHealthReport.UnavailableCount > 0)
                             {
-                                <div class="ss-health-card" role="listitem">
-                                    <span class="ss-health-sev ss-health-sev-warn">Warning</span>
-                                    <div class="ss-health-body">
-                                        <div class="ss-health-component">Diagnostics — Database</div>
-                                        <p class="ss-health-desc">Database migration status: <strong>@_settings.Database.MigrationStatus</strong>. Pending migrations may affect application functionality.</p>
-                                        <button class="ss-health-action" @onclick='() => SetSection("diagnostics")'>Open Diagnostics →</button>
-                                    </div>
-                                </div>
+                                <span class="ss-status-pill ss-status-pill-warn">
+                                    <span class="ss-status-label">Unavailable</span>
+                                    <span class="ss-status-value">@_configHealthReport.UnavailableCount</span>
+                                </span>
                             }
-
                         </div>
+
+                        <!-- Overall message -->
+                        @if (_configHealthReport.OverallStatus == "Pass")
+                        {
+                            <p class="ss-health-all-good" role="status">
+                                ✓ All required configuration checks passed.
+                            </p>
+                        }
+
+                        <!-- Required checks -->
+                        @if (_configHealthReport.RequiredChecks.Count > 0)
+                        {
+                            <div style="margin-top:1.5rem">
+                                <div class="dev-diag-section-title" style="margin-bottom:0.75rem">Required Configuration</div>
+                                <div class="ss-health-cards" role="list">
+                                    @foreach (var check in _configHealthReport.RequiredChecks)
+                                    {
+                                        <div class="ss-health-card" role="listitem">
+                                            <span class="ss-health-sev @GetConfigHealthStatusClass(check.Status)">@check.Status</span>
+                                            <div class="ss-health-body">
+                                                <div class="ss-health-component">@check.Name</div>
+                                                <p class="ss-health-desc">@check.Message</p>
+                                                @if (!string.IsNullOrWhiteSpace(check.Details))
+                                                {
+                                                    <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0.25rem 0 0">@check.Details</p>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Optional checks -->
+                        @if (_configHealthReport.OptionalChecks.Count > 0)
+                        {
+                            <div style="margin-top:1.5rem">
+                                <div class="dev-diag-section-title" style="margin-bottom:0.75rem">Optional Configuration</div>
+                                <div class="ss-health-cards" role="list">
+                                    @foreach (var check in _configHealthReport.OptionalChecks)
+                                    {
+                                        <div class="ss-health-card" role="listitem">
+                                            <span class="ss-health-sev @GetConfigHealthStatusClass(check.Status)">@check.Status</span>
+                                            <div class="ss-health-body">
+                                                <div class="ss-health-component">@check.Name</div>
+                                                <p class="ss-health-desc">@check.Message</p>
+                                                @if (!string.IsNullOrWhiteSpace(check.Details))
+                                                {
+                                                    <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0.25rem 0 0">@check.Details</p>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
                     }
                 </div>
             }
@@ -1728,6 +1783,10 @@ else if (_settings is not null)
     private ReviewContextValidationReport? _reviewContextReport;
     private string? _reviewContextValidationMessage;
 
+    // Configuration Health
+    private ConfigurationHealthReport? _configHealthReport;
+    private bool _configHealthLoaded;
+
     // Environment Diagnostics
     private EnvironmentDiagnosticsReportDto? _envDiagReport;
     private bool _envDiagRunning;
@@ -2117,6 +2176,20 @@ else if (_settings is not null)
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_activeSection == "config-health" && !_configHealthLoaded)
+        {
+            _configHealthLoaded = true;
+            try
+            {
+                _configHealthReport = await AdminApi.GetConfigurationHealthAsync();
+            }
+            catch
+            {
+                _configHealthReport = null;
+            }
+            StateHasChanged();
+        }
+
         if (_activeSection == "diagnostics" && !_diagDocLoaded)
         {
             _diagDocLoaded = true;
@@ -2620,6 +2693,15 @@ else if (_settings is not null)
         "Warning" => "ss-health-sev-warn",
         "Fail" => "ss-health-sev-error",
         "NotAvailable" => "ss-health-sev-warn",
+        _ => "ss-health-sev-warn"
+    };
+
+    private static string GetConfigHealthStatusClass(string status) => status switch
+    {
+        "Pass" => "ss-health-sev-ok",
+        "Warning" => "ss-health-sev-warn",
+        "Fail" => "ss-health-sev-error",
+        "Unavailable" => "ss-health-sev-warn",
         _ => "ss-health-sev-warn"
     };
 

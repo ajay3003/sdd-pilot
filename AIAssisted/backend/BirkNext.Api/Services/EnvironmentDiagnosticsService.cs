@@ -217,7 +217,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Imported Project Documents",
-                Status = EnvironmentDiagnosticStatus.Info,
+                Status = EnvironmentDiagnosticStatus.Pass,
                 Details = "No project documents have been imported to backend storage. This is normal when using browser/session workspace state.",
                 Recommendation = ""
             });
@@ -460,9 +460,9 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "Saved Workspace ReviewContext Source",
-                Status = EnvironmentDiagnosticStatus.Info,
+                Status = EnvironmentDiagnosticStatus.Warning,
                 Details = "No saved workspaces exist. Backend can only build ReviewContext from persisted workspaces.",
-                Recommendation = ""
+                Recommendation = "Save a workspace to enable ReviewContext reconstruction from backend state."
             };
         }
 
@@ -659,7 +659,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             }
             else
             {
-                optionalTableStatus = EnvironmentDiagnosticStatus.Info;
+                optionalTableStatus = EnvironmentDiagnosticStatus.Pass;
                 optionalTableRecommendation = "";
             }
         }

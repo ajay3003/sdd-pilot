@@ -63,8 +63,10 @@ public class EnvironmentDiagnosticsReport
     public List<EnvironmentDiagnosticCheck> ExportChecks { get; set; } = [];
 
     /// <summary>
-    /// Overall status: Fail > Warning > Info > Pass.
-    /// Info status (optional features not configured) does not downgrade overall status.
+    /// Overall status calculation based on classification rules:
+    /// - FAIL if any check has Fail status
+    /// - WARNING if no Fail statuses but has Warning or NotAvailable statuses
+    /// - PASS if all checks are Pass (or no checks at all)
     /// </summary>
     [JsonPropertyName("overallStatus")]
     public EnvironmentDiagnosticStatus OverallStatus
@@ -73,16 +75,17 @@ public class EnvironmentDiagnosticsReport
         {
             var allChecks = GetAllChecks();
 
-            // Fail is worst
+            // Fail is worst - if any check fails, overall status is Fail
             if (allChecks.Any(c => c.Status == EnvironmentDiagnosticStatus.Fail))
                 return EnvironmentDiagnosticStatus.Fail;
 
-            // Warning is second worst
-            if (allChecks.Any(c => c.Status == EnvironmentDiagnosticStatus.Warning))
+            // Warning is second worst - if any warning or unavailable but no failures
+            if (allChecks.Any(c =>
+                c.Status == EnvironmentDiagnosticStatus.Warning ||
+                c.Status == EnvironmentDiagnosticStatus.NotAvailable))
                 return EnvironmentDiagnosticStatus.Warning;
 
-            // Info (optional features not configured) doesn't downgrade status
-            // Pass is best and default
+            // All checks pass or no checks
             return EnvironmentDiagnosticStatus.Pass;
         }
     }

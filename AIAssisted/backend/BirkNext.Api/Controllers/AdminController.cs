@@ -10,11 +10,16 @@ public class AdminController : ControllerBase
 {
     private readonly AdminService _adminService;
     private readonly IEnvironmentDiagnosticsService _diagnosticsService;
+    private readonly IConfigurationHealthService _configHealthService;
 
-    public AdminController(AdminService adminService, IEnvironmentDiagnosticsService diagnosticsService)
+    public AdminController(
+        AdminService adminService,
+        IEnvironmentDiagnosticsService diagnosticsService,
+        IConfigurationHealthService configHealthService)
     {
         _adminService = adminService;
         _diagnosticsService = diagnosticsService;
+        _configHealthService = configHealthService;
     }
 
     [HttpGet("system-settings")]
@@ -89,6 +94,16 @@ public class AdminController : ControllerBase
             return NotFound();
 
         var report = await _diagnosticsService.RunDiagnosticsAsync();
+        return Ok(report);
+    }
+
+    [HttpGet("configuration-health")]
+    public async Task<IActionResult> GetConfigurationHealth()
+    {
+        if (!_adminService.IsEnabled)
+            return NotFound();
+
+        var report = await _configHealthService.GetConfigurationHealthAsync();
         return Ok(report);
     }
 }
