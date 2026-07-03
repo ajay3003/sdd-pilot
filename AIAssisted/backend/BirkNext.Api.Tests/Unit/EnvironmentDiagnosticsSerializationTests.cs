@@ -13,7 +13,7 @@ public class EnvironmentDiagnosticsSerializationTests
         var check = new EnvironmentDiagnosticCheck
         {
             Name = "Test Check",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = "Test details",
             Recommendation = "Test recommendation"
         };
@@ -27,11 +27,11 @@ public class EnvironmentDiagnosticsSerializationTests
     }
 
     [Theory]
-    [InlineData(EnvironmentDiagnosticStatus.Pass, "Pass")]
-    [InlineData(EnvironmentDiagnosticStatus.Warning, "Warning")]
-    [InlineData(EnvironmentDiagnosticStatus.Fail, "Fail")]
-    [InlineData(EnvironmentDiagnosticStatus.NotAvailable, "NotAvailable")]
-    public void AllStatusValues_SerializeCorrectly(EnvironmentDiagnosticStatus status, string expectedValue)
+    [InlineData(SystemSettingsStatus.Pass, "Pass")]
+    [InlineData(SystemSettingsStatus.Warning, "Warning")]
+    [InlineData(SystemSettingsStatus.Fail, "Fail")]
+    [InlineData(SystemSettingsStatus.Unavailable, "Unavailable")]
+    public void AllStatusValues_SerializeCorrectly(SystemSettingsStatus status, string expectedValue)
     {
         // Arrange
         var check = new EnvironmentDiagnosticCheck
@@ -62,7 +62,7 @@ public class EnvironmentDiagnosticsSerializationTests
         report.DatabaseChecks.Add(new EnvironmentDiagnosticCheck
         {
             Name = "Database Reachable",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = "Connected successfully",
             Recommendation = ""
         });
@@ -105,6 +105,6 @@ public class EnvironmentDiagnosticsSerializationTests
         // Assert
         report.Should().NotBeNull();
         report!.DatabaseChecks.Should().HaveCount(1);
-        report.DatabaseChecks[0].Status.Should().Be(EnvironmentDiagnosticStatus.Pass);
+        report.DatabaseChecks[0].Status.Should().Be(SystemSettingsStatus.Pass);
     }
 }

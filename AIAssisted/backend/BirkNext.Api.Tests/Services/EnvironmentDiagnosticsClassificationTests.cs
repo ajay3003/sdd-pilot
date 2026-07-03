@@ -27,7 +27,7 @@ public class EnvironmentDiagnosticsClassificationTests
             savedWorkspaceCount: 0,
             completeWorkspaceCount: 0);
 
-        Assert.Equal(EnvironmentDiagnosticStatus.Warning, check.Status);
+        Assert.Equal(SystemSettingsStatus.Warning, check.Status);
         Assert.Contains("No saved workspaces", check.Details);
     }
 
@@ -38,7 +38,7 @@ public class EnvironmentDiagnosticsClassificationTests
             savedWorkspaceCount: 5,
             completeWorkspaceCount: 0);
 
-        Assert.Equal(EnvironmentDiagnosticStatus.Warning, check.Status);
+        Assert.Equal(SystemSettingsStatus.Warning, check.Status);
         Assert.Contains("none have the required artifacts", check.Details);
     }
 
@@ -49,7 +49,7 @@ public class EnvironmentDiagnosticsClassificationTests
             savedWorkspaceCount: 3,
             completeWorkspaceCount: 2);
 
-        Assert.Equal(EnvironmentDiagnosticStatus.Pass, check.Status);
+        Assert.Equal(SystemSettingsStatus.Pass, check.Status);
         Assert.Contains("can be used to reconstruct ReviewContext", check.Details);
     }
 
@@ -69,7 +69,7 @@ public class EnvironmentDiagnosticsClassificationTests
             existing,
             appliedMigrationsCount: 1);
 
-        Assert.Equal(EnvironmentDiagnosticStatus.Fail, check.Status);
+        Assert.Equal(SystemSettingsStatus.Fail, check.Status);
         Assert.Contains("Missing required core tables", check.Details);
     }
 
@@ -91,7 +91,7 @@ public class EnvironmentDiagnosticsClassificationTests
             existing,
             appliedMigrationsCount: 10);
 
-        Assert.Equal(EnvironmentDiagnosticStatus.Pass, check.Status);
+        Assert.Equal(SystemSettingsStatus.Pass, check.Status);
         Assert.Contains("All required core tables verified", check.Details);
     }
 
@@ -124,7 +124,7 @@ public class EnvironmentDiagnosticsClassificationTests
             existing,
             appliedMigrationsCount: 5);
 
-        Assert.Equal(EnvironmentDiagnosticStatus.Warning, check.Status);
+        Assert.Equal(SystemSettingsStatus.Warning, check.Status);
         Assert.Contains("Optional feature tables missing", check.Details);
     }
 
@@ -153,7 +153,7 @@ public class EnvironmentDiagnosticsClassificationTests
             appliedMigrationsCount: 0);
 
         // When no migrations, missing optional tables is normal (PASS)
-        Assert.Equal(EnvironmentDiagnosticStatus.Pass, check.Status);
+        Assert.Equal(SystemSettingsStatus.Pass, check.Status);
     }
 
     [Fact]
@@ -162,7 +162,7 @@ public class EnvironmentDiagnosticsClassificationTests
         var tablesCheck = new EnvironmentDiagnosticCheck
         {
             Name = "Required Tables Exist",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = "All required core tables verified",
             Recommendation = ""
         };
@@ -170,7 +170,7 @@ public class EnvironmentDiagnosticsClassificationTests
         var pendingCheck = new EnvironmentDiagnosticCheck
         {
             Name = "Pending Migrations",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = "No pending migrations",
             Recommendation = ""
         };
@@ -178,7 +178,7 @@ public class EnvironmentDiagnosticsClassificationTests
         var integrityCheck = new EnvironmentDiagnosticCheck
         {
             Name = "EF Migration Integrity",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = "0 issues detected",
             Recommendation = ""
         };
@@ -193,7 +193,7 @@ public class EnvironmentDiagnosticsClassificationTests
         var tablesCheck = new EnvironmentDiagnosticCheck
         {
             Name = "Required Tables Exist",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = "All required core tables verified",
             Recommendation = ""
         };
@@ -201,7 +201,7 @@ public class EnvironmentDiagnosticsClassificationTests
         var pendingCheck = new EnvironmentDiagnosticCheck
         {
             Name = "Pending Migrations",
-            Status = EnvironmentDiagnosticStatus.Fail,
+            Status = SystemSettingsStatus.Fail,
             Details = "2 pending migration(s)",
             Recommendation = "Apply migrations: dotnet ef database update"
         };
@@ -209,7 +209,7 @@ public class EnvironmentDiagnosticsClassificationTests
         var integrityCheck = new EnvironmentDiagnosticCheck
         {
             Name = "EF Migration Integrity",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = "0 issues detected",
             Recommendation = ""
         };
@@ -224,7 +224,7 @@ public class EnvironmentDiagnosticsClassificationTests
         var tablesCheck = new EnvironmentDiagnosticCheck
         {
             Name = "Required Tables Exist",
-            Status = EnvironmentDiagnosticStatus.Fail,
+            Status = SystemSettingsStatus.Fail,
             Details = "Missing required core tables: public.saved_workspaces",
             Recommendation = "Migrations did not complete successfully"
         };
@@ -232,7 +232,7 @@ public class EnvironmentDiagnosticsClassificationTests
         var pendingCheck = new EnvironmentDiagnosticCheck
         {
             Name = "Pending Migrations",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = "No pending migrations",
             Recommendation = ""
         };
@@ -240,7 +240,7 @@ public class EnvironmentDiagnosticsClassificationTests
         var integrityCheck = new EnvironmentDiagnosticCheck
         {
             Name = "EF Migration Integrity",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = "0 issues detected",
             Recommendation = ""
         };
@@ -255,7 +255,7 @@ public class EnvironmentDiagnosticsClassificationTests
         var tablesCheck = new EnvironmentDiagnosticCheck
         {
             Name = "Required Tables Exist",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = "All required core tables verified",
             Recommendation = ""
         };
@@ -263,7 +263,7 @@ public class EnvironmentDiagnosticsClassificationTests
         var pendingCheck = new EnvironmentDiagnosticCheck
         {
             Name = "Pending Migrations",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = "No pending migrations",
             Recommendation = ""
         };
@@ -271,7 +271,7 @@ public class EnvironmentDiagnosticsClassificationTests
         var integrityCheck = new EnvironmentDiagnosticCheck
         {
             Name = "EF Migration Integrity",
-            Status = EnvironmentDiagnosticStatus.Fail,
+            Status = SystemSettingsStatus.Fail,
             Details = "Missing migration file: 20250101_AddWorkspaces.Designer.cs",
             Recommendation = "Fix migration files"
         };
@@ -335,29 +335,29 @@ public class EnvironmentDiagnosticsClassificationTests
         {
             DatabaseChecks =
             [
-                new() { Name = "DB1", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" },
-                new() { Name = "DB2", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" }
+                new() { Name = "DB1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" },
+                new() { Name = "DB2", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
             ],
             BackendApiChecks =
             [
-                new() { Name = "API1", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" }
+                new() { Name = "API1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
             ],
             WorkspaceChecks =
             [
-                new() { Name = "WS1", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" }
+                new() { Name = "WS1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
             ],
             ReviewContextChecks =
             [
-                new() { Name = "RC1", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" }
+                new() { Name = "RC1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
             ],
             ExportChecks =
             [
-                new() { Name = "EXP1", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" }
+                new() { Name = "EXP1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
             ]
         };
 
         var overallStatus = CalculateOverallStatus(report);
-        Assert.Equal(EnvironmentDiagnosticStatus.Pass, overallStatus);
+        Assert.Equal(SystemSettingsStatus.Pass, overallStatus);
     }
 
     [Fact]
@@ -367,12 +367,12 @@ public class EnvironmentDiagnosticsClassificationTests
         {
             DatabaseChecks =
             [
-                new() { Name = "DB1", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" },
-                new() { Name = "DB2", Status = EnvironmentDiagnosticStatus.Fail, Details = "", Recommendation = "" }
+                new() { Name = "DB1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" },
+                new() { Name = "DB2", Status = SystemSettingsStatus.Fail, Details = "", Recommendation = "" }
             ],
             BackendApiChecks =
             [
-                new() { Name = "API1", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" }
+                new() { Name = "API1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
             ],
             WorkspaceChecks = [],
             ReviewContextChecks = [],
@@ -380,7 +380,7 @@ public class EnvironmentDiagnosticsClassificationTests
         };
 
         var overallStatus = CalculateOverallStatus(report);
-        Assert.Equal(EnvironmentDiagnosticStatus.Fail, overallStatus);
+        Assert.Equal(SystemSettingsStatus.Fail, overallStatus);
     }
 
     [Fact]
@@ -390,23 +390,23 @@ public class EnvironmentDiagnosticsClassificationTests
         {
             DatabaseChecks =
             [
-                new() { Name = "DB1", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" },
-                new() { Name = "DB2", Status = EnvironmentDiagnosticStatus.Warning, Details = "", Recommendation = "" }
+                new() { Name = "DB1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" },
+                new() { Name = "DB2", Status = SystemSettingsStatus.Warning, Details = "", Recommendation = "" }
             ],
             BackendApiChecks =
             [
-                new() { Name = "API1", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" }
+                new() { Name = "API1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
             ],
             WorkspaceChecks =
             [
-                new() { Name = "WS1", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" }
+                new() { Name = "WS1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
             ],
             ReviewContextChecks = [],
             ExportChecks = []
         };
 
         var overallStatus = CalculateOverallStatus(report);
-        Assert.Equal(EnvironmentDiagnosticStatus.Warning, overallStatus);
+        Assert.Equal(SystemSettingsStatus.Warning, overallStatus);
     }
 
     [Fact]
@@ -416,22 +416,22 @@ public class EnvironmentDiagnosticsClassificationTests
         {
             DatabaseChecks =
             [
-                new() { Name = "DB1", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" }
+                new() { Name = "DB1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
             ],
             BackendApiChecks =
             [
-                new() { Name = "API1", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" }
+                new() { Name = "API1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
             ],
             WorkspaceChecks =
             [
-                new() { Name = "WS1", Status = EnvironmentDiagnosticStatus.NotAvailable, Details = "", Recommendation = "" }
+                new() { Name = "WS1", Status = SystemSettingsStatus.Unavailable, Details = "", Recommendation = "" }
             ],
             ReviewContextChecks = [],
             ExportChecks = []
         };
 
         var overallStatus = CalculateOverallStatus(report);
-        Assert.Equal(EnvironmentDiagnosticStatus.Warning, overallStatus);
+        Assert.Equal(SystemSettingsStatus.Warning, overallStatus);
     }
 
     [Fact]
@@ -441,7 +441,7 @@ public class EnvironmentDiagnosticsClassificationTests
         {
             DatabaseChecks =
             [
-                new() { Name = "DB1", Status = EnvironmentDiagnosticStatus.Pass, Details = "", Recommendation = "" }
+                new() { Name = "DB1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
             ],
             BackendApiChecks = [],
             WorkspaceChecks = [],
@@ -450,7 +450,7 @@ public class EnvironmentDiagnosticsClassificationTests
         };
 
         var overallStatus = CalculateOverallStatus(report);
-        Assert.Equal(EnvironmentDiagnosticStatus.Pass, overallStatus);
+        Assert.Equal(SystemSettingsStatus.Pass, overallStatus);
     }
 
     /// <summary>
@@ -459,7 +459,7 @@ public class EnvironmentDiagnosticsClassificationTests
     /// - WARNING if has WARNING/UNAVAILABLE but no FAIL
     /// - FAIL if has at least one FAIL
     /// </summary>
-    private static EnvironmentDiagnosticStatus CalculateOverallStatus(EnvironmentDiagnosticsReport report)
+    private static SystemSettingsStatus CalculateOverallStatus(EnvironmentDiagnosticsReport report)
     {
         var allChecks = report.DatabaseChecks
             .Concat(report.BackendApiChecks)
@@ -468,16 +468,16 @@ public class EnvironmentDiagnosticsClassificationTests
             .Concat(report.ExportChecks)
             .ToList();
 
-        var hasFail = allChecks.Any(c => c.Status == EnvironmentDiagnosticStatus.Fail);
+        var hasFail = allChecks.Any(c => c.Status == SystemSettingsStatus.Fail);
         if (hasFail)
-            return EnvironmentDiagnosticStatus.Fail;
+            return SystemSettingsStatus.Fail;
 
         var hasWarningOrUnavailable = allChecks.Any(c =>
-            c.Status == EnvironmentDiagnosticStatus.Warning ||
-            c.Status == EnvironmentDiagnosticStatus.NotAvailable);
+            c.Status == SystemSettingsStatus.Warning ||
+            c.Status == SystemSettingsStatus.Unavailable);
 
         return hasWarningOrUnavailable
-            ? EnvironmentDiagnosticStatus.Warning
-            : EnvironmentDiagnosticStatus.Pass;
+            ? SystemSettingsStatus.Warning
+            : SystemSettingsStatus.Pass;
     }
 }

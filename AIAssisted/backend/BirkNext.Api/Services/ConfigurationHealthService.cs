@@ -11,15 +11,18 @@ public sealed class ConfigurationHealthService : IConfigurationHealthService
 {
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
+    private readonly ISystemSettingsStatusEngine _statusEngine;
     private readonly ILogger<ConfigurationHealthService> _logger;
 
     public ConfigurationHealthService(
         IConfiguration config,
         IWebHostEnvironment env,
+        ISystemSettingsStatusEngine statusEngine,
         ILogger<ConfigurationHealthService> logger)
     {
         _config = config;
         _env = env;
+        _statusEngine = statusEngine;
         _logger = logger;
     }
 
@@ -45,8 +48,10 @@ public sealed class ConfigurationHealthService : IConfigurationHealthService
         report.FailCount = allChecks.Count(c => c.Status == "Fail");
         report.UnavailableCount = allChecks.Count(c => c.Status == "Unavailable");
 
-        // Calculate overall status
-        report.OverallStatus = DetermineOverallStatus(report);
+        // Calculate overall status using the shared status engine
+        var allStatusEnums = allChecks.Select(c => ConvertStringStatusToEnum(c.Status)).ToArray();
+        var overallStatusEnum = _statusEngine.CalculateOverallStatus(allStatusEnums);
+        report.OverallStatus = ConvertEnumStatusToString(overallStatusEnum);
 
         return await Task.FromResult(report);
     }
@@ -215,21 +220,21 @@ public sealed class ConfigurationHealthService : IConfigurationHealthService
         };
     }
 
-    private string DetermineOverallStatus(ConfigurationHealthReport report)
+    private static SystemSettingsStatus ConvertStringStatusToEnum(string status) => status switch
     {
-        // If any required check fails, overall status is FAIL
-        if (report.RequiredChecks.Any(c => c.Status == "Fail"))
-            return "Fail";
+        "Pass" => SystemSettingsStatus.Pass,
+        "Warning" => SystemSettingsStatus.Warning,
+        "Fail" => SystemSettingsStatus.Fail,
+        "Unavailable" => SystemSettingsStatus.Unavailable,
+        _ => SystemSettingsStatus.Pass
+    };
 
-        // If any required check is unavailable, it's a warning
-        if (report.RequiredChecks.Any(c => c.Status == "Unavailable"))
-            return "Warning";
-
-        // If any optional check warns or unavailable, it's a warning
-        if (report.OptionalChecks.Any(c => c.Status == "Warning" || c.Status == "Unavailable"))
-            return "Warning";
-
-        // All good
-        return "Pass";
-    }
+    private static string ConvertEnumStatusToString(SystemSettingsStatus status) => status switch
+    {
+        SystemSettingsStatus.Pass => "Pass",
+        SystemSettingsStatus.Warning => "Warning",
+        SystemSettingsStatus.Fail => "Fail",
+        SystemSettingsStatus.Unavailable => "Unavailable",
+        _ => "Pass"
+    };
 }

@@ -15,10 +15,10 @@ public sealed class EnvironmentDiagnosticsSeverityTests
         var requiredTables = EnvironmentDiagnosticsService.EvaluateRequiredTables(tables, existing, appliedMigrationsCount: 1);
         var schemaCurrent = EnvironmentDiagnosticsService.IsSchemaCurrent(
             requiredTables,
-            Check("Pending Migrations", EnvironmentDiagnosticStatus.Pass),
-            Check("EF Migration Integrity", EnvironmentDiagnosticStatus.Pass));
+            Check("Pending Migrations", SystemSettingsStatus.Pass),
+            Check("EF Migration Integrity", SystemSettingsStatus.Pass));
 
-        requiredTables.Status.Should().Be(EnvironmentDiagnosticStatus.Warning);
+        requiredTables.Status.Should().Be(SystemSettingsStatus.Warning);
         requiredTables.Details.Should().Contain("Optional feature tables missing");
         schemaCurrent.Should().BeTrue();
     }
@@ -32,10 +32,10 @@ public sealed class EnvironmentDiagnosticsSeverityTests
         var requiredTables = EnvironmentDiagnosticsService.EvaluateRequiredTables(tables, existing, appliedMigrationsCount: 1);
         var schemaCurrent = EnvironmentDiagnosticsService.IsSchemaCurrent(
             requiredTables,
-            Check("Pending Migrations", EnvironmentDiagnosticStatus.Pass),
-            Check("EF Migration Integrity", EnvironmentDiagnosticStatus.Pass));
+            Check("Pending Migrations", SystemSettingsStatus.Pass),
+            Check("EF Migration Integrity", SystemSettingsStatus.Pass));
 
-        requiredTables.Status.Should().Be(EnvironmentDiagnosticStatus.Fail);
+        requiredTables.Status.Should().Be(SystemSettingsStatus.Fail);
         requiredTables.Details.Should().Contain("saved_workspace_artifacts");
         schemaCurrent.Should().BeFalse();
     }
@@ -48,7 +48,7 @@ public sealed class EnvironmentDiagnosticsSeverityTests
 
         var requiredTables = EnvironmentDiagnosticsService.EvaluateRequiredTables(tables, existing, appliedMigrationsCount: 0);
 
-        requiredTables.Status.Should().Be(EnvironmentDiagnosticStatus.Pass);
+        requiredTables.Status.Should().Be(SystemSettingsStatus.Pass);
         requiredTables.Details.Should().Contain("Inactive/demo tables missing");
     }
 
@@ -57,7 +57,7 @@ public sealed class EnvironmentDiagnosticsSeverityTests
     {
         var check = EnvironmentDiagnosticsService.EvaluateSavedWorkspaceReviewContext(0, 0);
 
-        check.Status.Should().Be(EnvironmentDiagnosticStatus.Info);
+        check.Status.Should().Be(SystemSettingsStatus.Pass);
         check.Details.Should().Contain("persisted workspaces");
     }
 
@@ -66,11 +66,11 @@ public sealed class EnvironmentDiagnosticsSeverityTests
     {
         var check = EnvironmentDiagnosticsService.EvaluateSavedWorkspaceReviewContext(2, 1);
 
-        check.Status.Should().Be(EnvironmentDiagnosticStatus.Pass);
+        check.Status.Should().Be(SystemSettingsStatus.Pass);
         check.Details.Should().Contain("reconstruct ReviewContext");
     }
 
-    private static EnvironmentDiagnosticCheck Check(string name, EnvironmentDiagnosticStatus status) =>
+    private static EnvironmentDiagnosticCheck Check(string name, SystemSettingsStatus status) =>
         new()
         {
             Name = name,

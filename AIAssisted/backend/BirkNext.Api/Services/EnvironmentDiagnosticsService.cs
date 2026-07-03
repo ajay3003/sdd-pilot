@@ -17,6 +17,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
     private readonly IWebHostEnvironment _env;
     private readonly AppDbContext _db;
     private readonly IMigrationIntegrityValidator _migrationValidator;
+    private readonly ISystemSettingsStatusEngine _statusEngine;
     private readonly ILogger<EnvironmentDiagnosticsService> _logger;
 
     public EnvironmentDiagnosticsService(
@@ -24,12 +25,14 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         IWebHostEnvironment env,
         AppDbContext db,
         IMigrationIntegrityValidator migrationValidator,
+        ISystemSettingsStatusEngine statusEngine,
         ILogger<EnvironmentDiagnosticsService> logger)
     {
         _config = config;
         _env = env;
         _db = db;
         _migrationValidator = migrationValidator;
+        _statusEngine = statusEngine;
         _logger = logger;
     }
 
@@ -52,10 +55,15 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         report.ExportChecks.Add(new EnvironmentDiagnosticCheck
         {
             Name = "Export Services",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = "JSON and HTML export available in frontend",
             Recommendation = ""
         });
+
+        // Calculate overall status using the shared engine
+        var allChecks = report.GetAllChecks();
+        var allStatuses = allChecks.Select(c => c.Status).ToArray();
+        report.OverallStatus = _statusEngine.CalculateOverallStatus(allStatuses);
 
         return report;
     }
@@ -69,7 +77,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         checks.Add(new EnvironmentDiagnosticCheck
         {
             Name = "Database Reachable",
-            Status = canConnect ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Fail,
+            Status = canConnect ? SystemSettingsStatus.Pass : SystemSettingsStatus.Fail,
             Details = canConnect ? "Connected successfully" : "Could not connect to database",
             Recommendation = canConnect ? "" : "Check database connection string and ensure database server is running"
         });
@@ -79,7 +87,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Database Configuration",
-                Status = EnvironmentDiagnosticStatus.NotAvailable,
+                Status = SystemSettingsStatus.Unavailable,
                 Details = "Database unreachable; skipping remaining checks",
                 Recommendation = ""
             });
@@ -92,7 +100,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         checks.Add(new EnvironmentDiagnosticCheck
         {
             Name = "Current Database Name",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = dbName,
             Recommendation = ""
         });
@@ -102,7 +110,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "PostgreSQL Version",
-                Status = EnvironmentDiagnosticStatus.Pass,
+                Status = SystemSettingsStatus.Pass,
                 Details = dbVersion,
                 Recommendation = ""
             });
@@ -113,7 +121,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         checks.Add(new EnvironmentDiagnosticCheck
         {
             Name = "Current Database User",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = currentUser ?? "Unknown",
             Recommendation = ""
         });
@@ -130,7 +138,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         checks.Add(new EnvironmentDiagnosticCheck
         {
             Name = "Required Database Exists",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = $"Database '{dbName}' exists",
             Recommendation = ""
         });
@@ -157,7 +165,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         var schemaCheck = new EnvironmentDiagnosticCheck
         {
             Name = "Schema Up to Date",
-            Status = schemaIsCurrent ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Fail,
+            Status = schemaIsCurrent ? SystemSettingsStatus.Pass : SystemSettingsStatus.Fail,
             Details = schemaIsCurrent
                 ? "Schema is current"
                 : "Schema is not current: database connectivity, pending migrations, required core tables, or migration integrity checks did not pass",
@@ -181,7 +189,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 checks.Add(new EnvironmentDiagnosticCheck
                 {
                     Name = "Workspace Initialization",
-                    Status = EnvironmentDiagnosticStatus.NotAvailable,
+                    Status = SystemSettingsStatus.Unavailable,
                     Details = "Migrations not applied; workspace not available",
                     Recommendation = "Run migrations: dotnet ef database update"
                 });
@@ -194,7 +202,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Workspace Initialization",
-                Status = EnvironmentDiagnosticStatus.Warning,
+                Status = SystemSettingsStatus.Warning,
                 Details = "Could not determine migration status",
                 Recommendation = "Verify migrations have been applied"
             });
@@ -204,7 +212,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         checks.Add(new EnvironmentDiagnosticCheck
         {
             Name = "Active Workspace Loaded",
-            Status = EnvironmentDiagnosticStatus.NotAvailable,
+            Status = SystemSettingsStatus.Unavailable,
             Details = "Backend diagnostics cannot see the active browser workspace. Browser/session state is evaluated by frontend diagnostics.",
             Recommendation = "Save the workspace if backend diagnostics need to inspect persisted workspace state."
         });
@@ -217,7 +225,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Imported Project Documents",
-                Status = EnvironmentDiagnosticStatus.Pass,
+                Status = SystemSettingsStatus.Pass,
                 Details = "No project documents have been imported to backend storage. This is normal when using browser/session workspace state.",
                 Recommendation = ""
             });
@@ -227,7 +235,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Imported Project Documents",
-                Status = EnvironmentDiagnosticStatus.Pass,
+                Status = SystemSettingsStatus.Pass,
                 Details = "Project documents have been imported to backend storage",
                 Recommendation = ""
             });
@@ -251,7 +259,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Workspace Persistence Tables",
-                Status = tablesExist ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Fail,
+                Status = tablesExist ? SystemSettingsStatus.Pass : SystemSettingsStatus.Fail,
                 Details = tablesExist ? "saved_workspaces and saved_workspace_artifacts tables exist" : "Required workspace persistence tables are missing",
                 Recommendation = tablesExist ? "" : "Run migrations: dotnet ef database update"
             });
@@ -266,7 +274,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Saved Workspaces",
-                Status = workspaceCount > 0 ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Info,
+                Status = workspaceCount > 0 ? SystemSettingsStatus.Pass : SystemSettingsStatus.Pass,
                 Details = $"{workspaceCount} workspace(s) saved",
                 Recommendation = ""
             });
@@ -274,7 +282,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Current Workspace Saved/Unsaved",
-                Status = EnvironmentDiagnosticStatus.NotAvailable,
+                Status = SystemSettingsStatus.Unavailable,
                 Details = "Backend diagnostics do not receive the active browser workspace id; saved workspace count is reported separately.",
                 Recommendation = "Use frontend ReviewContext Validation for the active session, or save and reopen a workspace before backend diagnostics."
             });
@@ -285,7 +293,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Auto-Save Configuration",
-                Status = EnvironmentDiagnosticStatus.Pass,
+                Status = SystemSettingsStatus.Pass,
                 Details = $"Auto-save every {autoSaveInterval}ms, throttled to every {autoSaveThrottle}ms",
                 Recommendation = ""
             });
@@ -295,7 +303,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Review Progress Tables Exist",
-                Status = reviewProgressTableExists ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Fail,
+                Status = reviewProgressTableExists ? SystemSettingsStatus.Pass : SystemSettingsStatus.Fail,
                 Details = reviewProgressTableExists ? "workspace_review_progress table exists" : "Required review progress table is missing",
                 Recommendation = reviewProgressTableExists ? "" : "Run pending migrations: dotnet ef database update"
             });
@@ -307,7 +315,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 checks.Add(new EnvironmentDiagnosticCheck
                 {
                     Name = "Saved Review Progress Records",
-                    Status = reviewProgressCount > 0 ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Info,
+                    Status = reviewProgressCount > 0 ? SystemSettingsStatus.Pass : SystemSettingsStatus.Pass,
                     Details = $"{reviewProgressCount} review progress record(s) saved",
                     Recommendation = ""
                 });
@@ -320,7 +328,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                     checks.Add(new EnvironmentDiagnosticCheck
                     {
                         Name = "Invalidated Approvals",
-                        Status = EnvironmentDiagnosticStatus.Warning,
+                        Status = SystemSettingsStatus.Warning,
                         Details = $"{invalidatedCount} approval(s) invalidated due to artifact changes",
                         Recommendation = "Review affected workspaces and re-approve steps as needed"
                     });
@@ -333,7 +341,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Workspace Persistence",
-                Status = EnvironmentDiagnosticStatus.Warning,
+                Status = SystemSettingsStatus.Warning,
                 Details = "Could not check workspace persistence configuration",
                 Recommendation = "Verify workspace persistence is properly configured"
             });
@@ -380,7 +388,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         checks.Add(new EnvironmentDiagnosticCheck
         {
             Name = "Backend Reachable",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = $"Backend running at {backendUrl}",
             Recommendation = ""
         });
@@ -389,7 +397,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         checks.Add(new EnvironmentDiagnosticCheck
         {
             Name = "GraphQL Endpoint Reachable",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = graphqlEndpoint,
             Recommendation = ""
         });
@@ -402,7 +410,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         checks.Add(new EnvironmentDiagnosticCheck
         {
             Name = "API Version/Build",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = version,
             Recommendation = ""
         });
@@ -417,7 +425,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             new()
             {
                 Name = "ReviewContext Available",
-                Status = EnvironmentDiagnosticStatus.NotAvailable,
+                Status = SystemSettingsStatus.Unavailable,
                 Details = "Active workspace is browser/session state and is not available to backend diagnostics.",
                 Recommendation = "Use System Settings -> Developer -> ReviewContext Validation in the browser session for the active workspace."
             }
@@ -442,7 +450,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Saved Workspace ReviewContext Source",
-                Status = EnvironmentDiagnosticStatus.Warning,
+                Status = SystemSettingsStatus.Warning,
                 Details = "Could not inspect saved workspace artifacts for ReviewContext readiness.",
                 Recommendation = "Verify saved workspace persistence tables are present and migrations are current."
             });
@@ -460,7 +468,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "Saved Workspace ReviewContext Source",
-                Status = EnvironmentDiagnosticStatus.Warning,
+                Status = SystemSettingsStatus.Warning,
                 Details = "No saved workspaces exist. Backend can only build ReviewContext from persisted workspaces.",
                 Recommendation = "Save a workspace to enable ReviewContext reconstruction from backend state."
             };
@@ -471,7 +479,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "Saved Workspace ReviewContext Source",
-                Status = EnvironmentDiagnosticStatus.Warning,
+                Status = SystemSettingsStatus.Warning,
                 Details = $"{savedWorkspaceCount} saved workspace(s) found, but none have the required artifacts (constitution, specification, plan, tasks).",
                 Recommendation = "Save a complete workspace to enable ReviewContext reconstruction from backend state."
             };
@@ -480,7 +488,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         return new EnvironmentDiagnosticCheck
         {
             Name = "Saved Workspace ReviewContext Source",
-            Status = EnvironmentDiagnosticStatus.Pass,
+            Status = SystemSettingsStatus.Pass,
             Details = $"{completeWorkspaceCount} saved workspace(s) can be used to reconstruct ReviewContext",
             Recommendation = ""
         };
@@ -543,7 +551,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "Required Roles Exist",
-                Status = EnvironmentDiagnosticStatus.Pass,
+                Status = SystemSettingsStatus.Pass,
                 Details = $"User role '{currentUser}' exists",
                 Recommendation = ""
             };
@@ -554,7 +562,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "Required Roles Exist",
-                Status = EnvironmentDiagnosticStatus.Warning,
+                Status = SystemSettingsStatus.Warning,
                 Details = "Could not verify roles",
                 Recommendation = "Verify database user has appropriate role permissions"
             };
@@ -630,7 +638,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "Required Tables Exist",
-                Status = EnvironmentDiagnosticStatus.Fail,
+                Status = SystemSettingsStatus.Fail,
                 Details = $"Missing required core tables: {string.Join(", ", requiredMissing)}",
                 Recommendation = "Migrations did not complete successfully. Run: dotnet ef database update"
             };
@@ -647,19 +655,19 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             details += $" Inactive/demo tables missing: {string.Join(", ", inactiveMissing)}.";
         }
 
-        EnvironmentDiagnosticStatus optionalTableStatus = EnvironmentDiagnosticStatus.Pass;
+        SystemSettingsStatus optionalTableStatus = SystemSettingsStatus.Pass;
         string optionalTableRecommendation = "";
 
         if (optionalMissing.Count > 0)
         {
             if (appliedMigrationsCount > 0)
             {
-                optionalTableStatus = EnvironmentDiagnosticStatus.Warning;
+                optionalTableStatus = SystemSettingsStatus.Warning;
                 optionalTableRecommendation = "Optional feature tables are missing despite migrations being applied. This may indicate a failed migration or dropped tables.";
             }
             else
             {
-                optionalTableStatus = EnvironmentDiagnosticStatus.Pass;
+                optionalTableStatus = SystemSettingsStatus.Pass;
                 optionalTableRecommendation = "";
             }
         }
@@ -693,9 +701,9 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         EnvironmentDiagnosticCheck tablesCheck,
         EnvironmentDiagnosticCheck pendingCheck,
         EnvironmentDiagnosticCheck integrityCheck) =>
-        pendingCheck.Status == EnvironmentDiagnosticStatus.Pass &&
-        tablesCheck.Status != EnvironmentDiagnosticStatus.Fail &&
-        integrityCheck.Status != EnvironmentDiagnosticStatus.Fail;
+        pendingCheck.Status == SystemSettingsStatus.Pass &&
+        tablesCheck.Status != SystemSettingsStatus.Fail &&
+        integrityCheck.Status != SystemSettingsStatus.Fail;
 
     internal static SchemaTableRequirement ClassifyTable(string tableName) => tableName switch
     {
@@ -759,7 +767,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "EF Core Migrations Applied",
-                Status = count > 0 ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Warning,
+                Status = count > 0 ? SystemSettingsStatus.Pass : SystemSettingsStatus.Warning,
                 Details = count > 0 ? $"{count} migrations applied" : "No migrations applied",
                 Recommendation = count > 0 ? "" : "Run migrations: dotnet ef database update"
             };
@@ -770,7 +778,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "EF Core Migrations Applied",
-                Status = EnvironmentDiagnosticStatus.Warning,
+                Status = SystemSettingsStatus.Warning,
                 Details = "Could not verify migration status",
                 Recommendation = "Ensure database is up to date: dotnet ef database update"
             };
@@ -789,7 +797,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 return new EnvironmentDiagnosticCheck
                 {
                     Name = "Pending Migrations",
-                    Status = EnvironmentDiagnosticStatus.Pass,
+                    Status = SystemSettingsStatus.Pass,
                     Details = "No pending migrations",
                     Recommendation = ""
                 };
@@ -798,7 +806,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "Pending Migrations",
-                Status = EnvironmentDiagnosticStatus.Fail,
+                Status = SystemSettingsStatus.Fail,
                 Details = $"{count} pending migration(s): {string.Join(", ", pending.Select(m => m.Split('_').Last()))}",
                 Recommendation = "Apply migrations: dotnet ef database update"
             };
@@ -809,7 +817,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "Pending Migrations",
-                Status = EnvironmentDiagnosticStatus.Warning,
+                Status = SystemSettingsStatus.Warning,
                 Details = "Could not determine migration status",
                 Recommendation = "Verify database schema is current"
             };
@@ -827,7 +835,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 return new EnvironmentDiagnosticCheck
                 {
                     Name = "EF Migration Integrity",
-                    Status = EnvironmentDiagnosticStatus.Pass,
+                    Status = SystemSettingsStatus.Pass,
                     Details = $"{report.AppliedMigrationCount} migrations applied, snapshot {report.SnapshotName} detected, 0 issues detected",
                     Recommendation = ""
                 };
@@ -843,7 +851,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "EF Migration Integrity",
-                Status = criticalIssues.Any() ? EnvironmentDiagnosticStatus.Fail : EnvironmentDiagnosticStatus.Warning,
+                Status = criticalIssues.Any() ? SystemSettingsStatus.Fail : SystemSettingsStatus.Warning,
                 Details = string.Join('\n', detailLines),
                 Recommendation = criticalIssues.Any()
                     ? "Fix migration files: ensure all .cs files have matching .Designer.cs files. Run: dotnet ef migrations list"
@@ -856,7 +864,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "EF Migration Integrity",
-                Status = EnvironmentDiagnosticStatus.Warning,
+                Status = SystemSettingsStatus.Warning,
                 Details = $"Could not validate migrations: {ex.Message}",
                 Recommendation = "Verify migration files are in Migrations directory and properly formatted"
             };
