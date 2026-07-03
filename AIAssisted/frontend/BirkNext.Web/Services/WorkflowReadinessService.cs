@@ -45,6 +45,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     private readonly IWorkspaceArtifactStatusService _artifactStatus;
     private readonly IWorkspaceSessionRestoreService _workspaceRestore;
     private readonly IWorkspaceSessionService _workspaceSession;
+    private readonly IWorkspaceUpdateCoordinator _updates;
     private readonly IWorkspacePersistenceApiService _workspacePersistence;
     private readonly IRecommendedWorkflowApiService _workflowApi;
     private readonly ILogger<WorkflowReadinessService> _logger;
@@ -55,6 +56,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         IWorkspaceArtifactStatusService artifactStatus,
         IWorkspaceSessionRestoreService workspaceRestore,
         IWorkspaceSessionService workspaceSession,
+        IWorkspaceUpdateCoordinator updates,
         IWorkspacePersistenceApiService workspacePersistence,
         IRecommendedWorkflowApiService workflowApi,
         ILogger<WorkflowReadinessService> logger)
@@ -62,6 +64,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         _artifactStatus = artifactStatus;
         _workspaceRestore = workspaceRestore;
         _workspaceSession = workspaceSession;
+        _updates = updates;
         _workspacePersistence = workspacePersistence;
         _workflowApi = workflowApi;
         _logger = logger;
@@ -69,6 +72,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         _artifactStatus.StatusChanged += OnReadinessChanged;
         _workspaceRestore.ReviewContextRebuildNeeded += OnReviewContextRebuildNeeded;
         _workspaceSession.ReviewContextRebuildNeeded += OnReviewContextRebuildNeeded;
+        _updates.ArtifactsChanged += OnArtifactsChanged;
     }
 
     public async Task<WorkflowReadiness> GetReadinessAsync()
@@ -292,10 +296,13 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
 
     private void OnReviewContextRebuildNeeded(object? sender, EventArgs e) => OnReadinessChanged();
 
+    private void OnArtifactsChanged(object? sender, EventArgs e) => OnReadinessChanged();
+
     public void Dispose()
     {
         _artifactStatus.StatusChanged -= OnReadinessChanged;
         _workspaceRestore.ReviewContextRebuildNeeded -= OnReviewContextRebuildNeeded;
         _workspaceSession.ReviewContextRebuildNeeded -= OnReviewContextRebuildNeeded;
+        _updates.ArtifactsChanged -= OnArtifactsChanged;
     }
 }

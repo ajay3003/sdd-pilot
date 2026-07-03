@@ -227,6 +227,7 @@ public sealed class WorkflowReadinessServiceTests
         public Mock<IWorkspaceArtifactStatusService> ArtifactStatus { get; } = new();
         public Mock<IWorkspaceSessionRestoreService> WorkspaceRestore { get; } = new();
         public Mock<IWorkspaceSessionService> WorkspaceSession { get; } = new();
+        public Mock<IWorkspaceUpdateCoordinator> Updates { get; } = new();
         public Mock<IWorkspacePersistenceApiService> WorkspacePersistence { get; } = new();
         public Mock<IRecommendedWorkflowApiService> WorkflowApi { get; } = new();
 
@@ -238,6 +239,7 @@ public sealed class WorkflowReadinessServiceTests
                 ArtifactStatus.Object,
                 WorkspaceRestore.Object,
                 WorkspaceSession.Object,
+                Updates.Object,
                 WorkspacePersistence.Object,
                 WorkflowApi.Object,
                 NullLogger<WorkflowReadinessService>.Instance);

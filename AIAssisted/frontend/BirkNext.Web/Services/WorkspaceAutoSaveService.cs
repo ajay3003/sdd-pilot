@@ -103,8 +103,14 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
 
         CancelAutoSaveTimer();
         _isMonitoring = false;
+        _updates.ArtifactsChanged -= OnArtifactsChanged;
         _logger.LogInformation("Stopped auto-save monitoring");
         await Task.CompletedTask;
+    }
+
+    private void OnArtifactsChanged(object? sender, EventArgs e)
+    {
+        OnArtifactChanged();
     }
 
     public void OnArtifactChanged()
