@@ -81,14 +81,6 @@
             }
         </div>
     }
-    else if (PageModel?.ReadinessStatus == AnalysisStatus.Blocked)
-    {
-        <div class="blocked-state">
-            <div class="blocked-icon">🔒</div>
-            <h2>Load Artifacts First</h2>
-            <p>Load specification and plan artifacts to analyze specification drift.</p>
-        </div>
-    }
 </div>
 
 @code {
@@ -278,28 +270,5 @@
 .summary-text {
     color: #374151;
     line-height: 1.6;
-}
-
-.blocked-state {
-    text-align: center;
-    padding: 80px 20px;
-    background: #fef2f2;
-    border-radius: 8px;
-    margin: 32px 0;
-}
-
-.blocked-icon {
-    font-size: 64px;
-    margin-bottom: 16px;
-}
-
-.blocked-state h2 {
-    font-size: 24px;
-    color: #991b1b;
-    margin-bottom: 8px;
-}
-
-.blocked-state p {
-    color: #7f1d1d;
 }
 </style>

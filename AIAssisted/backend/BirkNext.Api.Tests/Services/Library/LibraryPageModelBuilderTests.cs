@@ -1,4 +1,5 @@
 using BirkNext.Api.Data;
+using BirkNext.Api.Models;
 using BirkNext.Api.Services;
 using BirkNext.Api.Services.Library;
 using Microsoft.EntityFrameworkCore;
@@ -105,7 +106,7 @@ public class LibraryPageModelBuilderTests
     {
         await using var db = CreateInMemoryDb();
         var workspaceId = await CreateWorkspaceAsync(db);
-        await CreateArtifactAsync(db, workspaceId, WorkspaceArtifactType.Specification);
+        await CreateArtifactAsync(db, workspaceId, ArtifactType.Specification);
 
         var artifactStatus = new WorkspaceArtifactStatusService(db, NullLogger<WorkspaceArtifactStatusService>.Instance);
         var builder = new CreateTestScenarioPageModelBuilder(
@@ -125,7 +126,7 @@ public class LibraryPageModelBuilderTests
     {
         await using var db = CreateInMemoryDb();
         var workspaceId = await CreateWorkspaceAsync(db);
-        await CreateArtifactAsync(db, workspaceId, WorkspaceArtifactType.Plan);
+        await CreateArtifactAsync(db, workspaceId, ArtifactType.Plan);
 
         var artifactStatus = new WorkspaceArtifactStatusService(db, NullLogger<WorkspaceArtifactStatusService>.Instance);
         var builder = new CreateTestScenarioPageModelBuilder(
@@ -198,7 +199,7 @@ public class LibraryPageModelBuilderTests
     private static async Task CreateArtifactAsync(
         AppDbContext db,
         Guid workspaceId,
-        WorkspaceArtifactType type = WorkspaceArtifactType.Specification)
+        ArtifactType type = ArtifactType.Specification)
     {
         var artifact = new SavedWorkspaceArtifact
         {
