@@ -1,6 +1,7 @@
 using BirkNext.Web.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Runtime.CompilerServices;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -25,9 +26,8 @@ public class ArtifactCountTraceTest
         // Setup DI
         var services = new ServiceCollection();
         services.AddSingleton<IWorkspaceArtifactRepository, WorkspaceArtifactRepository>();
-        services.AddSingleton<IWorkspaceSessionService>(sp => sp.GetRequiredService<IWorkspaceArtifactRepository>());
         services.AddSingleton<IWorkspaceUpdateCoordinator, WorkspaceUpdateCoordinator>();
-        services.AddLogging(builder => builder.AddXUnit(_output));
+        services.AddLogging();
 
         var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<ILogger<ArtifactCountTraceTest>>();

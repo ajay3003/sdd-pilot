@@ -5,6 +5,7 @@ namespace BirkNext.Api.Services;
 
 public class WorkspaceArtifactDto
 {
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public ArtifactType ArtifactType { get; set; }
     public string FileName { get; set; } = "";
     public string Content { get; set; } = "";
@@ -72,7 +73,7 @@ public interface IWorkspacePersistenceService
     Task DeleteAsync(Guid workspaceId);
 
     // Auto-save
-    Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null);
+    Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null, List<WorkspaceArtifactDto>? artifacts = null);
 
     // Current workspace tracking
     Task SetCurrentWorkspaceAsync(Guid workspaceId);

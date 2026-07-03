@@ -85,6 +85,16 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
     public async Task<SavedWorkspace> SaveAsAsync(string name, List<WorkspaceArtifactDto>? artifacts = null)
     {
         _logger.LogInformation($"DIAG: [SaveAs] ENTERED with name={name}, artifactCount={artifacts?.Count ?? 0}");
+
+        if (artifacts != null && artifacts.Count > 0)
+        {
+            _logger.LogInformation($"DIAG: [SaveAs] Artifacts received:");
+            foreach (var art in artifacts)
+            {
+                _logger.LogInformation($"      - {art.ArtifactType}: {art.Content?.Length ?? 0} bytes, fileName={art.FileName}");
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(name))
         {
             throw new ArgumentException("Workspace name cannot be empty", nameof(name));
@@ -107,6 +117,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         if (artifacts != null && artifacts.Any())
         {
             _logger.LogInformation($"DIAG: [SaveAs] Processing {artifacts.Count} artifacts");
+            int addedCount = 0;
             foreach (var artifact in artifacts)
             {
                 if (!string.IsNullOrWhiteSpace(artifact.Content))
@@ -126,10 +137,15 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
                         UpdatedAt = DateTimeOffset.UtcNow
                     };
                     workspace.Artifacts.Add(saved);
-                    _logger.LogInformation($"DIAG: [SaveAs] Added artifact {artifact.ArtifactType} to workspace");
+                    addedCount++;
+                    _logger.LogInformation($"DIAG: [SaveAs] Added artifact {artifact.ArtifactType} ({artifact.Content.Length} bytes)");
+                }
+                else
+                {
+                    _logger.LogWarning($"DIAG: [SaveAs] Skipped artifact {artifact.ArtifactType} - empty content");
                 }
             }
-            _logger.LogInformation($"DIAG: [SaveAs] Total artifacts in entity: {workspace.Artifacts.Count}");
+            _logger.LogInformation($"DIAG: [SaveAs] Total artifacts added: {addedCount}, Total in entity: {workspace.Artifacts.Count}");
         }
         else
         {
@@ -298,18 +314,33 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         _logger.LogInformation("Soft-deleted workspace {WorkspaceId}", workspaceId);
     }
 
-    public async Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null)
+    public async Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null, List<WorkspaceArtifactDto>? artifacts = null)
     {
-        _logger.LogInformation($"TRACE: AutoSaveAsync entered, currentWorkspaceId={_currentWorkspaceId}");
+        _logger.LogInformation($"DIAG: [AutoSaveAsync] ENTERED");
+        _logger.LogInformation($"DIAG: [AutoSaveAsync]   generatedName={generatedName}");
+        _logger.LogInformation($"DIAG: [AutoSaveAsync]   artifactCount={artifacts?.Count ?? 0}");
+        _logger.LogInformation($"DIAG: [AutoSaveAsync]   currentWorkspaceId={_currentWorkspaceId}");
+
+        if (artifacts != null && artifacts.Count > 0)
+        {
+            _logger.LogInformation($"DIAG: [AutoSaveAsync] Artifacts provided:");
+            foreach (var art in artifacts)
+            {
+                _logger.LogInformation($"      - {art.ArtifactType}: {art.Content?.Length ?? 0} bytes, fileName={art.FileName}");
+            }
+        }
+
+        _logger.LogInformation($"TRACE: AutoSaveAsync entered, currentWorkspaceId={_currentWorkspaceId}, artifactCount={artifacts?.Count ?? 0}");
         if (!_currentWorkspaceId.HasValue)
         {
             _logger.LogInformation("TRACE: No current workspace ID, calling SaveAsAsync");
             var name = generatedName ?? $"Auto_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
-            var workspace = await SaveAsAsync(name);
+            var workspace = await SaveAsAsync(name, artifacts ?? new());
             workspace.AutoSaved = true;
             _db.SavedWorkspaces.Update(workspace);
             await _db.SaveChangesAsync();
-            _logger.LogInformation($"TRACE: AutoSaveAsync created new workspace {workspace.Id}");
+            _logger.LogInformation($"TRACE: AutoSaveAsync created new workspace {workspace.Id} with {workspace.Artifacts.Count} artifacts");
+            _logger.LogInformation($"DIAG: [AutoSaveAsync] Returned workspace with {workspace.Artifacts.Count} artifacts");
             return workspace;
         }
 
@@ -323,6 +354,38 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             throw new InvalidOperationException($"Current workspace {_currentWorkspaceId} not found");
         }
 
+        // Update artifacts if provided
+        if (artifacts != null && artifacts.Any())
+        {
+            _logger.LogInformation($"TRACE: Replacing {current.Artifacts.Count} artifacts with {artifacts.Count} new artifacts");
+            // Remove existing artifacts
+            _db.SavedWorkspaceArtifacts.RemoveRange(current.Artifacts);
+            current.Artifacts.Clear();
+
+            // Add new artifacts
+            foreach (var artifact in artifacts)
+            {
+                if (!string.IsNullOrWhiteSpace(artifact.Content))
+                {
+                    var saved = new SavedWorkspaceArtifact
+                    {
+                        Id = Guid.NewGuid(),
+                        WorkspaceId = current.Id,
+                        ArtifactType = artifact.ArtifactType,
+                        FileName = artifact.FileName,
+                        Content = artifact.Content,
+                        ContentHash = ComputeContentHash(artifact.Content),
+                        Encoding = "utf-8",
+                        LastModified = DateTimeOffset.UtcNow,
+                        ParseVersion = "1.0",
+                        CreatedAt = DateTimeOffset.UtcNow,
+                        UpdatedAt = DateTimeOffset.UtcNow
+                    };
+                    current.Artifacts.Add(saved);
+                }
+            }
+        }
+
         current.UpdatedAt = DateTimeOffset.UtcNow;
         current.AutoSaved = true;
         current.ArtifactSetHash = await ComputeArtifactSetHashAsync(_currentWorkspaceId.Value);
@@ -330,7 +393,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         _db.SavedWorkspaces.Update(current);
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation($"TRACE: Auto-saved workspace {current.Id}");
+        _logger.LogInformation($"TRACE: Auto-saved workspace {current.Id} with {current.Artifacts.Count} artifacts");
         return current;
     }
 
@@ -480,8 +543,26 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
     public async Task<WorkspaceStateDto> GetCurrentStateAsync()
     {
-        _logger.LogInformation($"DIAG: [GetCurrentState] ENTERED, _currentWorkspaceId={_currentWorkspaceId}");
-        if (!_currentWorkspaceId.HasValue)
+        // Check in-memory first (for within-request state)
+        var workspaceIdToUse = _currentWorkspaceId;
+
+        // If not in memory, try to load from database (for cross-request persistence)
+        if (!workspaceIdToUse.HasValue)
+        {
+            var lastWorkspace = await _db.SavedWorkspaces
+                .Where(w => w.UserId == (_currentUserId ?? "default-user") && !w.IsDeleted)
+                .OrderByDescending(w => w.UpdatedAt)
+                .FirstOrDefaultAsync();
+
+            if (lastWorkspace != null)
+            {
+                workspaceIdToUse = lastWorkspace.Id;
+                _logger.LogInformation($"DIAG: [GetCurrentState] Loaded workspace from database: {workspaceIdToUse}");
+            }
+        }
+
+        _logger.LogInformation($"DIAG: [GetCurrentState] ENTERED, _currentWorkspaceId={_currentWorkspaceId}, workspaceIdToUse={workspaceIdToUse}");
+        if (!workspaceIdToUse.HasValue)
         {
             _logger.LogInformation("DIAG: [GetCurrentState] No current workspace ID, returning NotSaved");
             return new WorkspaceStateDto
@@ -495,11 +576,11 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
         var workspace = await _db.SavedWorkspaces
             .Include(w => w.Artifacts)
-            .FirstOrDefaultAsync(w => w.Id == _currentWorkspaceId);
+            .FirstOrDefaultAsync(w => w.Id == workspaceIdToUse);
 
         if (workspace == null)
         {
-            _logger.LogInformation($"DIAG: [GetCurrentState] Workspace {_currentWorkspaceId} not found in DB, returning NotSaved");
+            _logger.LogInformation($"DIAG: [GetCurrentState] Workspace {workspaceIdToUse} not found in DB, returning NotSaved");
             return new WorkspaceStateDto
             {
                 CurrentWorkspaceId = null,

@@ -164,9 +164,9 @@ public class WorkspacePersistenceController : ControllerBase
         try
         {
             _logger.LogInformation("TRACE: [WorkspacePersistenceController.AutoSave]");
-            _logger.LogInformation("  RequestArtifacts=0");
+            _logger.LogInformation("  RequestArtifacts={Count}", request?.Artifacts?.Count ?? 0);
 
-            var result = await _service.AutoSaveAsync(request?.GeneratedName);
+            var result = await _service.AutoSaveAsync(request?.GeneratedName, request?.Artifacts ?? new());
             _logger.LogInformation("  ResponseArtifacts={Count}", result.Artifacts.Count);
 
             var dto = MapWorkspaceToDto(result);
@@ -258,6 +258,7 @@ public class WorkspacePersistenceController : ControllerBase
     public class AutoSaveRequest
     {
         public string? GeneratedName { get; set; }
+        public List<WorkspaceArtifactDto> Artifacts { get; set; } = new();
     }
 
     public class ImportRequest

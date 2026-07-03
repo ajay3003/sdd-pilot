@@ -88,19 +88,7 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
     {
         try
         {
-            var artifacts = _artifactRepository.GetAllArtifacts()
-                .Select(item => new SavedWorkspaceArtifactDto
-                {
-                    ArtifactType = item.Type.ToString(),
-                    FileName = item.Artifact.FileName ?? $"{item.Type}",
-                    OriginalPath = item.Artifact.SourcePath,
-                    Content = item.Artifact.Text,
-                    ContentHash = null,
-                    Encoding = "utf-8",
-                    ParseVersion = "1.0"
-                })
-                .ToList();
-
+            var artifacts = GetArtifactsFromRepository();
             var response = await _httpClient.PostAsJsonAsync(
                 "api/workspace-persistence/save-current",
                 new { name, artifacts });
@@ -124,19 +112,7 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
     {
         try
         {
-            var artifacts = _artifactRepository.GetAllArtifacts()
-                .Select(item => new SavedWorkspaceArtifactDto
-                {
-                    ArtifactType = item.Type.ToString(),
-                    FileName = item.Artifact.FileName ?? $"{item.Type}",
-                    OriginalPath = item.Artifact.SourcePath,
-                    Content = item.Artifact.Text,
-                    ContentHash = null,
-                    Encoding = "utf-8",
-                    ParseVersion = "1.0"
-                })
-                .ToList();
-
+            var artifacts = GetArtifactsFromRepository();
             var response = await _httpClient.PostAsJsonAsync(
                 "api/workspace-persistence/save-as",
                 new { name, artifacts });
@@ -262,20 +238,32 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
     {
         try
         {
+            _logger.LogInformation("DIAG: [AutoSaveAsync] ENTERED");
+            var artifacts = GetArtifactsFromRepository();
+
             _logger.LogInformation("TRACE: [WorkspacePersistenceApiService.AutoSaveAsync]");
-            _logger.LogInformation("  RequestArtifacts=0");
+            _logger.LogInformation("  GeneratedName={Name}", generatedName);
+            _logger.LogInformation("  RequestArtifacts={Count}", artifacts.Count);
+
+            var request = new { generatedName, artifacts };
+            _logger.LogInformation("DIAG: [AutoSaveAsync] Request object created with {ArtifactCount} artifacts", artifacts.Count);
 
             var response = await _httpClient.PostAsJsonAsync(
                 "api/workspace-persistence/auto-save",
-                new { generatedName });
+                request);
+
+            _logger.LogInformation("DIAG: [AutoSaveAsync] POST returned status {Status}", response.StatusCode);
 
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("AutoSave failed with status {StatusCode}", response.StatusCode);
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("  Error response: {Error}", errorContent);
                 return null;
             }
 
             var result = await response.Content.ReadFromJsonAsync<SavedWorkspaceDto>();
+            _logger.LogInformation("DIAG: [AutoSaveAsync] Response received with {ArtifactCount} artifacts", result?.Artifacts.Count ?? 0);
             return result;
         }
         catch (Exception ex)
@@ -337,5 +325,29 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
             _logger.LogError(ex, "Error importing workspace from JSON");
             return null;
         }
+    }
+
+    private List<SavedWorkspaceArtifactDto> GetArtifactsFromRepository()
+    {
+        var artifacts = _artifactRepository.GetAllArtifacts()
+            .Select(item => new SavedWorkspaceArtifactDto
+            {
+                ArtifactType = item.Type.ToString(),
+                FileName = item.Artifact.FileName ?? $"{item.Type}",
+                OriginalPath = item.Artifact.SourcePath,
+                Content = item.Artifact.Text,
+                ContentHash = null,
+                Encoding = "utf-8",
+                ParseVersion = "1.0"
+            })
+            .ToList();
+
+        _logger.LogInformation("DIAG: [GetArtifactsFromRepository] Loaded {Count} artifacts from repository", artifacts.Count);
+        foreach (var artifact in artifacts)
+        {
+            _logger.LogInformation("  - {Type}: {ContentLength} bytes", artifact.ArtifactType, artifact.Content?.Length ?? 0);
+        }
+
+        return artifacts;
     }
 }
