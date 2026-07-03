@@ -3,6 +3,15 @@ using System.Text.Json.Serialization;
 
 namespace BirkNext.Web.Services;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SystemSettingsStatus
+{
+    Pass,
+    Warning,
+    Fail,
+    Unavailable
+}
+
 public class AdminApiService
 {
     private readonly HttpClient _client;
@@ -353,13 +362,13 @@ public class EnvironmentDiagnosticsReportDto
     [JsonPropertyName("workspaceChecks")] public List<EnvironmentDiagnosticCheckDto> WorkspaceChecks { get; set; } = [];
     [JsonPropertyName("reviewContextChecks")] public List<EnvironmentDiagnosticCheckDto> ReviewContextChecks { get; set; } = [];
     [JsonPropertyName("exportChecks")] public List<EnvironmentDiagnosticCheckDto> ExportChecks { get; set; } = [];
-    [JsonPropertyName("overallStatus")] public string OverallStatus { get; set; } = "Pass";
+    [JsonPropertyName("overallStatus")] public SystemSettingsStatus OverallStatus { get; set; } = SystemSettingsStatus.Pass;
 }
 
 public class EnvironmentDiagnosticCheckDto
 {
     [JsonPropertyName("name")] public string Name { get; set; } = "";
-    [JsonPropertyName("status")] public string Status { get; set; } = "";
+    [JsonPropertyName("status")] public SystemSettingsStatus Status { get; set; } = SystemSettingsStatus.Pass;
     [JsonPropertyName("details")] public string Details { get; set; } = "";
     [JsonPropertyName("recommendation")] public string Recommendation { get; set; } = "";
     [JsonPropertyName("technicalDetails")] public string? TechnicalDetails { get; set; }
@@ -367,7 +376,7 @@ public class EnvironmentDiagnosticCheckDto
 
 public class ConfigurationHealthReport
 {
-    [JsonPropertyName("overallStatus")] public string OverallStatus { get; set; } = "Pass";
+    [JsonPropertyName("overallStatus")] public SystemSettingsStatus OverallStatus { get; set; } = SystemSettingsStatus.Pass;
     [JsonPropertyName("passCount")] public int PassCount { get; set; }
     [JsonPropertyName("warningCount")] public int WarningCount { get; set; }
     [JsonPropertyName("failCount")] public int FailCount { get; set; }
@@ -379,7 +388,7 @@ public class ConfigurationHealthReport
 public class ConfigurationHealthCheck
 {
     [JsonPropertyName("name")] public string Name { get; set; } = "";
-    [JsonPropertyName("status")] public string Status { get; set; } = "Pass";
+    [JsonPropertyName("status")] public SystemSettingsStatus Status { get; set; } = SystemSettingsStatus.Pass;
     [JsonPropertyName("message")] public string Message { get; set; } = "";
     [JsonPropertyName("details")] public string Details { get; set; } = "";
     [JsonPropertyName("isRequired")] public bool IsRequired { get; set; }

@@ -50,8 +50,7 @@ public sealed class ConfigurationHealthService : IConfigurationHealthService
 
         // Calculate overall status using the shared status engine
         var allStatusEnums = allChecks.Select(c => ConvertStringStatusToEnum(c.Status)).ToArray();
-        var overallStatusEnum = _statusEngine.CalculateOverallStatus(allStatusEnums);
-        report.OverallStatus = ConvertEnumStatusToString(overallStatusEnum);
+        report.OverallStatus = _statusEngine.CalculateOverallStatus(allStatusEnums);
 
         return await Task.FromResult(report);
     }
@@ -227,14 +226,5 @@ public sealed class ConfigurationHealthService : IConfigurationHealthService
         "Fail" => SystemSettingsStatus.Fail,
         "Unavailable" => SystemSettingsStatus.Unavailable,
         _ => SystemSettingsStatus.Pass
-    };
-
-    private static string ConvertEnumStatusToString(SystemSettingsStatus status) => status switch
-    {
-        SystemSettingsStatus.Pass => "Pass",
-        SystemSettingsStatus.Warning => "Warning",
-        SystemSettingsStatus.Fail => "Fail",
-        SystemSettingsStatus.Unavailable => "Unavailable",
-        _ => "Pass"
     };
 }

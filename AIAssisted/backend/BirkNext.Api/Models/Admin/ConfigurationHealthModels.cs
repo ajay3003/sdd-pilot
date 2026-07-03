@@ -8,7 +8,7 @@ namespace BirkNext.Api.Models.Admin;
 public class ConfigurationHealthReport
 {
     [JsonPropertyName("overallStatus")]
-    public string OverallStatus { get; set; } = "Pass";
+    public SystemSettingsStatus OverallStatus { get; set; } = SystemSettingsStatus.Pass;
 
     [JsonPropertyName("passCount")]
     public int PassCount { get; set; }

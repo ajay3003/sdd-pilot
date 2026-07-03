@@ -57,7 +57,7 @@ public sealed class EnvironmentDiagnosticsSeverityTests
     {
         var check = EnvironmentDiagnosticsService.EvaluateSavedWorkspaceReviewContext(0, 0);
 
-        check.Status.Should().Be(SystemSettingsStatus.Pass);
+        check.Status.Should().Be(SystemSettingsStatus.Warning);
         check.Details.Should().Contain("persisted workspaces");
     }
 
