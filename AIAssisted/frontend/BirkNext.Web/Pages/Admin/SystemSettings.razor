@@ -302,7 +302,7 @@ else if (_settings is not null)
                     {
                         <!-- Summary cards -->
                         <div class="ss-status-bar" style="margin-bottom:1.5rem">
-                            <span class="ss-status-pill @(_configHealthReport.OverallStatus == "Pass" ? "ss-status-pill-ok" : _configHealthReport.OverallStatus == "Fail" ? "ss-status-pill-error" : "ss-status-pill-warn")">
+                            <span class="ss-status-pill @(_configHealthReport.OverallStatus == SystemSettingsStatus.Pass ? "ss-status-pill-ok" : _configHealthReport.OverallStatus == SystemSettingsStatus.Fail ? "ss-status-pill-error" : "ss-status-pill-warn")">
                                 <span class="ss-status-label">Overall Status</span>
                                 <span class="ss-status-value">@_configHealthReport.OverallStatus</span>
                             </span>
@@ -334,7 +334,7 @@ else if (_settings is not null)
                         </div>
 
                         <!-- Overall message -->
-                        @if (_configHealthReport.OverallStatus == "Pass")
+                        @if (_configHealthReport.OverallStatus == SystemSettingsStatus.Pass)
                         {
                             <p class="ss-health-all-good" role="status">
                                 ✓ All required configuration checks passed.
@@ -2585,12 +2585,12 @@ else if (_settings is not null)
     private static string BuildEnvironmentDiagnosticsHtml(EnvironmentDiagnosticsReportDto report)
     {
         static string E(object? value) => System.Net.WebUtility.HtmlEncode(value?.ToString() ?? "");
-        static string StatusBadge(string status) => status switch
+        static string StatusBadge(SystemSettingsStatus status) => status switch
         {
-            "Pass" => "<span style=\"background:#d1fae5;color:#065f46;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Pass</span>",
-            "Warning" => "<span style=\"background:#fef08a;color:#854d0e;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Warning</span>",
-            "Fail" => "<span style=\"background:#fee2e2;color:#991b1b;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Fail</span>",
-            _ => "<span style=\"background:#f3f4f6;color:#6b7280;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">NotAvailable</span>"
+            SystemSettingsStatus.Pass => "<span style=\"background:#d1fae5;color:#065f46;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Pass</span>",
+            SystemSettingsStatus.Warning => "<span style=\"background:#fef08a;color:#854d0e;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Warning</span>",
+            SystemSettingsStatus.Fail => "<span style=\"background:#fee2e2;color:#991b1b;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Fail</span>",
+            _ => "<span style=\"background:#f3f4f6;color:#6b7280;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Unavailable</span>"
         };
 
         var sb = new System.Text.StringBuilder();
@@ -2687,30 +2687,30 @@ else if (_settings is not null)
         _ => "ss-health-sev-warn"
     };
 
-    private static string GetCheckStatusClass(string status) => status switch
+    private static string GetCheckStatusClass(SystemSettingsStatus status) => status switch
     {
-        "Pass" => "ss-health-sev-ok",
-        "Warning" => "ss-health-sev-warn",
-        "Fail" => "ss-health-sev-error",
-        "NotAvailable" => "ss-health-sev-warn",
+        SystemSettingsStatus.Pass => "ss-health-sev-ok",
+        SystemSettingsStatus.Warning => "ss-health-sev-warn",
+        SystemSettingsStatus.Fail => "ss-health-sev-error",
+        SystemSettingsStatus.Unavailable => "ss-health-sev-warn",
         _ => "ss-health-sev-warn"
     };
 
-    private static string GetConfigHealthStatusClass(string status) => status switch
+    private static string GetConfigHealthStatusClass(SystemSettingsStatus status) => status switch
     {
-        "Pass" => "ss-health-sev-ok",
-        "Warning" => "ss-health-sev-warn",
-        "Fail" => "ss-health-sev-error",
-        "Unavailable" => "ss-health-sev-warn",
+        SystemSettingsStatus.Pass => "ss-health-sev-ok",
+        SystemSettingsStatus.Warning => "ss-health-sev-warn",
+        SystemSettingsStatus.Fail => "ss-health-sev-error",
+        SystemSettingsStatus.Unavailable => "ss-health-sev-warn",
         _ => "ss-health-sev-warn"
     };
 
-    private static string GetDiagnosticStatusBadge(string status) => status switch
+    private static string GetDiagnosticStatusBadge(SystemSettingsStatus status) => status switch
     {
-        "Pass" => "Pass",
-        "Warning" => "Warning",
-        "Fail" => "Fail",
-        _ => "NotAvailable"
+        SystemSettingsStatus.Pass => "Pass",
+        SystemSettingsStatus.Warning => "Warning",
+        SystemSettingsStatus.Fail => "Fail",
+        _ => "Unavailable"
     };
 
     private static string DisplayValue(object? value) =>
