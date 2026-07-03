@@ -27,6 +27,11 @@ public sealed class WorkflowReadinessServiceTests
         readiness.ImplementationReviewState.Should().BeNull();
         readiness.CanRelease.Should().BeFalse();
         readiness.ReleaseReason.Should().Contain("Load a workspace");
+        readiness.OverallReadiness.OverallReadiness.Should().Be(0);
+        readiness.OverallReadiness.ArtifactReadiness.Should().Be(0);
+        readiness.OverallReadiness.ReviewReadiness.Should().Be(0);
+        readiness.OverallReadiness.ApprovalReadiness.Should().Be(0);
+        readiness.Steps.Should().NotContain(step => step.Status == WorkflowStepStatus.Approved);
         fixture.WorkflowApi.Verify(api => api.BuildWorkflowStepsAsync(
             It.IsAny<Guid>(),
             It.IsAny<bool>(),
@@ -63,7 +68,33 @@ public sealed class WorkflowReadinessServiceTests
         readiness.WorkspaceName.Should().Be("Saved workspace");
         readiness.ArtifactStatus.ArtifactCount.Should().Be(3);
         readiness.Artifacts.Count(a => a.IsLoaded).Should().Be(3);
+        readiness.Steps.Should().NotContain(step => step.Key == "ReviewContextValidation");
+        readiness.OverallReadiness.ArtifactReadiness.Should().Be(60);
+        readiness.OverallReadiness.ReviewReadiness.Should().Be(0);
+        readiness.OverallReadiness.ApprovalReadiness.Should().Be(0);
+        readiness.OverallReadiness.OverallReadiness.Should().Be(0);
         readiness.NextRecommendedAction!.Key.Should().Be("SpecificationReview");
+        readiness.CanRelease.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ReviewedSteps_DoNotIncreaseReleaseReadinessWithoutApproval()
+    {
+        var fixture = new Fixture();
+        fixture.ArtifactStatus.Setup(s => s.GetStatus()).Returns(LoadedArtifacts());
+        fixture.WorkspaceRestore.Setup(s => s.GetCurrentWorkspaceMetadataAsync()).ReturnsAsync(Workspace());
+        fixture.WorkspacePersistence.Setup(s => s.GetCurrentStateAsync()).ReturnsAsync(CurrentState());
+        fixture.WorkflowApi.SetupBuildSteps([
+            Step("SpecificationReview", "Specification Review", WorkflowStepStatus.Reviewed, approvalState: ApprovalState.Pending),
+            Step("ArtifactTraceability", "Artifact Traceability", WorkflowStepStatus.Available),
+            Step("ImplementationReview", "Implementation Review", WorkflowStepStatus.Locked)
+        ]);
+
+        var readiness = await fixture.Service.GetReadinessAsync();
+
+        readiness.OverallReadiness.ArtifactReadiness.Should().Be(100);
+        readiness.OverallReadiness.ApprovalReadiness.Should().Be(0);
+        readiness.OverallReadiness.OverallReadiness.Should().Be(0);
         readiness.CanRelease.Should().BeFalse();
     }
 
@@ -94,8 +125,8 @@ public sealed class WorkflowReadinessServiceTests
         readiness.CanRelease.Should().Be(expectedRelease);
         if (expectedCurrentStep is null)
         {
-            readiness.NextRecommendedAction.Should().NotBeNull();
-            readiness.NextRecommendedAction!.Key.Should().Be("ReviewContextValidation");
+            readiness.NextRecommendedAction.Should().BeNull();
+            readiness.Steps.Should().NotContain(step => step.Key == "ReviewContextValidation");
         }
         else
         {
@@ -163,7 +194,8 @@ public sealed class WorkflowReadinessServiceTests
         string title,
         WorkflowStepStatus status,
         bool isCurrent = false,
-        bool requiresApproval = true) =>
+        bool requiresApproval = true,
+        ApprovalState? approvalState = null) =>
         new()
         {
             Number = key switch
@@ -185,8 +217,8 @@ public sealed class WorkflowReadinessServiceTests
             IsFuture = status == WorkflowStepStatus.Locked,
             RequiresApproval = requiresApproval,
             RequiresManualReview = requiresApproval,
-            ApprovalState = status == WorkflowStepStatus.Approved ? ApprovalState.Approved : ApprovalState.Pending,
-            ReviewState = status == WorkflowStepStatus.Approved ? ReviewState.Reviewed : ReviewState.NotStarted,
+            ApprovalState = approvalState ?? (status == WorkflowStepStatus.Approved ? ApprovalState.Approved : ApprovalState.Pending),
+            ReviewState = status is WorkflowStepStatus.Approved or WorkflowStepStatus.Reviewed ? ReviewState.Reviewed : ReviewState.NotStarted,
             Prerequisites = status == WorkflowStepStatus.Locked ? PrerequisiteState.Missing : PrerequisiteState.Available
         };
 

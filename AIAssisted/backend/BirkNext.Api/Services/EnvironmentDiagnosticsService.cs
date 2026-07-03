@@ -47,14 +47,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         // Workspace Readiness: Check if workspace artifacts have been loaded (not failures)
         report.WorkspaceChecks.AddRange(await RunWorkspaceReadinessChecksAsync());
 
-        // Frontend-specific checks (populated by frontend)
-        report.ReviewContextChecks.Add(new EnvironmentDiagnosticCheck
-        {
-            Name = "ReviewContext Available",
-            Status = EnvironmentDiagnosticStatus.NotAvailable,
-            Details = "Populated by frontend diagnostics",
-            Recommendation = "Load a complete workspace (constitution.md, spec.md, plan.md, tasks.md) to build ReviewContext"
-        });
+        report.ReviewContextChecks.AddRange(await RunReviewContextChecksAsync());
 
         report.ExportChecks.Add(new EnvironmentDiagnosticCheck
         {
@@ -159,10 +152,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         checks.Add(integrityCheck);
 
         // 10. Schema up to date
-        var schemaIsCurrent =
-            pendingCheck.Status == EnvironmentDiagnosticStatus.Pass &&
-            tablesCheck.Status == EnvironmentDiagnosticStatus.Pass &&
-            integrityCheck.Status != EnvironmentDiagnosticStatus.Fail;
+        var schemaIsCurrent = IsSchemaCurrent(tablesCheck, pendingCheck, integrityCheck);
 
         var schemaCheck = new EnvironmentDiagnosticCheck
         {
@@ -170,7 +160,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             Status = schemaIsCurrent ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Fail,
             Details = schemaIsCurrent
                 ? "Schema is current"
-                : "Schema is not current: required tables, pending migrations, or migration integrity checks did not pass",
+                : "Schema is not current: database connectivity, pending migrations, required core tables, or migration integrity checks did not pass",
             Recommendation = schemaIsCurrent ? "" : "Review failing database diagnostics before using the application"
         };
         checks.Add(schemaCheck);
@@ -211,6 +201,14 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return checks;
         }
 
+        checks.Add(new EnvironmentDiagnosticCheck
+        {
+            Name = "Active Workspace Loaded",
+            Status = EnvironmentDiagnosticStatus.NotAvailable,
+            Details = "Backend diagnostics cannot see the active browser workspace. Browser/session state is evaluated by frontend diagnostics.",
+            Recommendation = "Save the workspace if backend diagnostics need to inspect persisted workspace state."
+        });
+
         // Check if workspace has imported artifacts (table data presence, not schema)
         var hasWorkspaceData = await CheckIfWorkspaceHasDataAsync();
 
@@ -218,17 +216,17 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         {
             checks.Add(new EnvironmentDiagnosticCheck
             {
-                Name = "Workspace Initialization",
+                Name = "Imported Project Documents",
                 Status = EnvironmentDiagnosticStatus.NotAvailable,
-                Details = "No project artifacts have been imported",
-                Recommendation = "Import markdown files (constitution.md, spec.md, plan.md, tasks.md, data-model.md) to initialize workspace"
+                Details = "No backend-imported project documents are stored. This is expected when using browser/session workspace state only.",
+                Recommendation = "Import or save artifacts if backend persistence diagnostics should inspect workspace data."
             });
         }
         else
         {
             checks.Add(new EnvironmentDiagnosticCheck
             {
-                Name = "Workspace Initialization",
+                Name = "Imported Project Documents",
                 Status = EnvironmentDiagnosticStatus.Pass,
                 Details = "Workspace has imported project artifacts",
                 Recommendation = ""
@@ -254,7 +252,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             {
                 Name = "Workspace Persistence Tables",
                 Status = tablesExist ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Fail,
-                Details = tablesExist ? "saved_workspaces and saved_workspace_artifacts tables exist" : "Workspace persistence tables missing",
+                Details = tablesExist ? "saved_workspaces and saved_workspace_artifacts tables exist" : "Required workspace persistence tables are missing",
                 Recommendation = tablesExist ? "" : "Run migrations: dotnet ef database update"
             });
 
@@ -268,9 +266,17 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             checks.Add(new EnvironmentDiagnosticCheck
             {
                 Name = "Saved Workspaces",
-                Status = EnvironmentDiagnosticStatus.Pass,
+                Status = workspaceCount > 0 ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.NotAvailable,
                 Details = $"{workspaceCount} workspace(s) saved",
-                Recommendation = ""
+                Recommendation = workspaceCount > 0 ? "" : "Save a workspace to enable backend persisted workspace diagnostics."
+            });
+
+            checks.Add(new EnvironmentDiagnosticCheck
+            {
+                Name = "Current Workspace Saved/Unsaved",
+                Status = EnvironmentDiagnosticStatus.NotAvailable,
+                Details = "Backend diagnostics do not receive the active browser workspace id; saved workspace count is reported separately.",
+                Recommendation = "Use frontend ReviewContext Validation for the active session, or save and reopen a workspace before backend diagnostics."
             });
 
             // Check auto-save configuration
@@ -288,9 +294,9 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             var reviewProgressTableExists = await CheckReviewProgressTableExistsAsync();
             checks.Add(new EnvironmentDiagnosticCheck
             {
-                Name = "Workflow Review Progress Table",
-                Status = reviewProgressTableExists ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Warning,
-                Details = reviewProgressTableExists ? "workspace_review_progress table exists" : "Table not yet created",
+                Name = "Review Progress Tables Exist",
+                Status = reviewProgressTableExists ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.Fail,
+                Details = reviewProgressTableExists ? "workspace_review_progress table exists" : "Required review progress table is missing",
                 Recommendation = reviewProgressTableExists ? "" : "Run pending migrations: dotnet ef database update"
             });
 
@@ -301,9 +307,9 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 checks.Add(new EnvironmentDiagnosticCheck
                 {
                     Name = "Saved Review Progress Records",
-                    Status = EnvironmentDiagnosticStatus.Pass,
+                    Status = reviewProgressCount > 0 ? EnvironmentDiagnosticStatus.Pass : EnvironmentDiagnosticStatus.NotAvailable,
                     Details = $"{reviewProgressCount} review progress record(s) saved",
-                    Recommendation = ""
+                    Recommendation = reviewProgressCount > 0 ? "" : "Approve or review workflow steps in a saved workspace to create progress records."
                 });
 
                 // Check for invalidated approvals
@@ -404,6 +410,82 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         return checks;
     }
 
+    private async Task<List<EnvironmentDiagnosticCheck>> RunReviewContextChecksAsync()
+    {
+        var checks = new List<EnvironmentDiagnosticCheck>
+        {
+            new()
+            {
+                Name = "ReviewContext Available",
+                Status = EnvironmentDiagnosticStatus.NotAvailable,
+                Details = "Active workspace is browser/session state and is not available to backend diagnostics.",
+                Recommendation = "Use System Settings -> Developer -> ReviewContext Validation in the browser session for the active workspace."
+            }
+        };
+
+        try
+        {
+            var savedWorkspaceCount = await _db.SavedWorkspaces.CountAsync(workspace => !workspace.IsDeleted);
+            var completeWorkspaceCount = await _db.SavedWorkspaces
+                .Where(workspace => !workspace.IsDeleted)
+                .CountAsync(workspace =>
+                    workspace.Artifacts.Any(artifact => artifact.ArtifactType == Models.ArtifactType.Constitution) &&
+                    workspace.Artifacts.Any(artifact => artifact.ArtifactType == Models.ArtifactType.Specification) &&
+                    workspace.Artifacts.Any(artifact => artifact.ArtifactType == Models.ArtifactType.Plan) &&
+                    workspace.Artifacts.Any(artifact => artifact.ArtifactType == Models.ArtifactType.Tasks));
+
+            checks.Add(EvaluateSavedWorkspaceReviewContext(savedWorkspaceCount, completeWorkspaceCount));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to check persisted ReviewContext workspace availability");
+            checks.Add(new EnvironmentDiagnosticCheck
+            {
+                Name = "Saved Workspace ReviewContext Source",
+                Status = EnvironmentDiagnosticStatus.Warning,
+                Details = "Could not inspect saved workspace artifacts for ReviewContext readiness.",
+                Recommendation = "Verify saved workspace persistence tables are present and migrations are current."
+            });
+        }
+
+        return checks;
+    }
+
+    internal static EnvironmentDiagnosticCheck EvaluateSavedWorkspaceReviewContext(
+        int savedWorkspaceCount,
+        int completeWorkspaceCount)
+    {
+        if (savedWorkspaceCount == 0)
+        {
+            return new EnvironmentDiagnosticCheck
+            {
+                Name = "Saved Workspace ReviewContext Source",
+                Status = EnvironmentDiagnosticStatus.NotAvailable,
+                Details = "No saved workspace exists. Backend diagnostics cannot build ReviewContext from unsaved browser/session state.",
+                Recommendation = "Save the sample project workspace, then run diagnostics again or use frontend ReviewContext Validation for the active session."
+            };
+        }
+
+        if (completeWorkspaceCount == 0)
+        {
+            return new EnvironmentDiagnosticCheck
+            {
+                Name = "Saved Workspace ReviewContext Source",
+                Status = EnvironmentDiagnosticStatus.Warning,
+                Details = $"{savedWorkspaceCount} saved workspace(s) found, but none contain the required constitution, specification, plan, and tasks artifacts.",
+                Recommendation = "Save a complete workspace artifact set before using persisted ReviewContext diagnostics."
+            };
+        }
+
+        return new EnvironmentDiagnosticCheck
+        {
+            Name = "Saved Workspace ReviewContext Source",
+            Status = EnvironmentDiagnosticStatus.Pass,
+            Details = $"{completeWorkspaceCount} saved workspace(s) contain the required artifacts for ReviewContext reconstruction. Browser-side ReviewContextFactory validation remains available under System Settings -> Developer.",
+            Recommendation = ""
+        };
+    }
+
     private async Task<bool> CanConnectToDatabaseAsync()
     {
         try
@@ -481,10 +563,10 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
 
     private async Task<EnvironmentDiagnosticCheck> CheckRequiredTablesExistAsync()
     {
-        var requiredTables = GetRequiredTablesFromModel();
-        var missingTables = new List<string>();
+        var modelTables = GetTablesFromModel();
+        var existingTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var table in requiredTables)
+        foreach (var table in modelTables)
         {
             try
             {
@@ -496,39 +578,84 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                     )
                     """, table.Schema, table.Name).FirstOrDefaultAsync();
 
-                if (!exists)
+                if (exists)
                 {
-                    missingTables.Add(table.DisplayName);
+                    existingTables.Add(table.Key);
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to check table {Schema}.{Table}", table.Schema, table.Name);
-                missingTables.Add(table.DisplayName);
             }
         }
 
-        if (missingTables.Count == 0)
+        return EvaluateRequiredTables(modelTables, existingTables);
+    }
+
+    internal static EnvironmentDiagnosticCheck EvaluateRequiredTables(
+        IReadOnlyCollection<SchemaTable> modelTables,
+        IReadOnlySet<string> existingTableKeys)
+    {
+        var requiredMissing = new List<string>();
+        var optionalMissing = new List<string>();
+        var inactiveMissing = new List<string>();
+
+        foreach (var table in modelTables)
+        {
+            if (existingTableKeys.Contains(table.Key))
+            {
+                continue;
+            }
+
+            switch (ClassifyTable(table.Name))
+            {
+                case SchemaTableRequirement.Required:
+                    requiredMissing.Add(table.DisplayName);
+                    break;
+                case SchemaTableRequirement.Optional:
+                    optionalMissing.Add(table.DisplayName);
+                    break;
+                case SchemaTableRequirement.Inactive:
+                case SchemaTableRequirement.DemoOrSeed:
+                    inactiveMissing.Add(table.DisplayName);
+                    break;
+            }
+        }
+
+        if (requiredMissing.Count > 0)
         {
             return new EnvironmentDiagnosticCheck
             {
                 Name = "Required Tables Exist",
-                Status = EnvironmentDiagnosticStatus.Pass,
-                Details = $"All {requiredTables.Count} DbContext schema tables verified",
-                Recommendation = ""
+                Status = EnvironmentDiagnosticStatus.Fail,
+                Details = $"Missing required core tables: {string.Join(", ", requiredMissing)}",
+                Recommendation = "Migrations did not complete successfully. Run: dotnet ef database update"
             };
+        }
+
+        var requiredCount = modelTables.Count(table => ClassifyTable(table.Name) == SchemaTableRequirement.Required);
+        var details = $"All required core tables verified ({requiredCount} required, {modelTables.Count} EF model tables discovered).";
+        if (optionalMissing.Count > 0)
+        {
+            details += $" Optional feature tables missing: {string.Join(", ", optionalMissing)}.";
+        }
+        if (inactiveMissing.Count > 0)
+        {
+            details += $" Inactive/demo tables missing: {string.Join(", ", inactiveMissing)}.";
         }
 
         return new EnvironmentDiagnosticCheck
         {
             Name = "Required Tables Exist",
-            Status = EnvironmentDiagnosticStatus.Fail,
-            Details = $"Missing schema tables: {string.Join(", ", missingTables)}",
-            Recommendation = "Migrations did not complete successfully. Run: dotnet ef database update"
+            Status = optionalMissing.Count > 0 ? EnvironmentDiagnosticStatus.Warning : EnvironmentDiagnosticStatus.Pass,
+            Details = details,
+            Recommendation = optionalMissing.Count > 0
+                ? "Optional or inactive feature tables do not block startup. Enable/apply feature migrations only when those features are active."
+                : ""
         };
     }
 
-    private List<RequiredTable> GetRequiredTablesFromModel()
+    private List<SchemaTable> GetTablesFromModel()
     {
         return _db.Model.GetEntityTypes()
             .Select(entityType => new
@@ -537,12 +664,40 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 Schema = entityType.GetSchema() ?? "public"
             })
             .Where(table => !string.IsNullOrWhiteSpace(table.Name))
-            .Select(table => new RequiredTable(table.Name!, table.Schema))
+            .Select(table => new SchemaTable(table.Name!, table.Schema))
             .Distinct()
             .OrderBy(table => table.Schema)
             .ThenBy(table => table.Name)
             .ToList();
     }
+
+    internal static bool IsSchemaCurrent(
+        EnvironmentDiagnosticCheck tablesCheck,
+        EnvironmentDiagnosticCheck pendingCheck,
+        EnvironmentDiagnosticCheck integrityCheck) =>
+        pendingCheck.Status == EnvironmentDiagnosticStatus.Pass &&
+        tablesCheck.Status != EnvironmentDiagnosticStatus.Fail &&
+        integrityCheck.Status != EnvironmentDiagnosticStatus.Fail;
+
+    internal static SchemaTableRequirement ClassifyTable(string tableName) => tableName switch
+    {
+        "project_documents" => SchemaTableRequirement.Required,
+        "saved_workspaces" => SchemaTableRequirement.Required,
+        "saved_workspace_artifacts" => SchemaTableRequirement.Required,
+        "workspace_review_progress" => SchemaTableRequirement.Required,
+        "scenarios" => SchemaTableRequirement.Optional,
+        "reviewed_candidates" => SchemaTableRequirement.Optional,
+        "candidate_links" => SchemaTableRequirement.Optional,
+        "trace_links" => SchemaTableRequirement.Optional,
+        "traceability_suggestions" => SchemaTableRequirement.Optional,
+        "code_files" => SchemaTableRequirement.Optional,
+        "code_links" => SchemaTableRequirement.Optional,
+        _ when tableName.Contains("demo", StringComparison.OrdinalIgnoreCase)
+            || tableName.Contains("seed", StringComparison.OrdinalIgnoreCase)
+            || tableName.Contains("test", StringComparison.OrdinalIgnoreCase)
+            => SchemaTableRequirement.DemoOrSeed,
+        _ => SchemaTableRequirement.Optional
+    };
 
     private async Task<bool> CheckIfWorkspaceHasDataAsync()
     {
@@ -618,7 +773,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return new EnvironmentDiagnosticCheck
             {
                 Name = "Pending Migrations",
-                Status = EnvironmentDiagnosticStatus.Warning,
+                Status = EnvironmentDiagnosticStatus.Fail,
                 Details = $"{count} pending migration(s): {string.Join(", ", pending.Select(m => m.Split('_').Last()))}",
                 Recommendation = "Apply migrations: dotnet ef database update"
             };
@@ -683,8 +838,17 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         }
     }
 
-    private sealed record RequiredTable(string Name, string Schema)
+    internal enum SchemaTableRequirement
     {
+        Required,
+        Optional,
+        Inactive,
+        DemoOrSeed
+    }
+
+    internal sealed record SchemaTable(string Name, string Schema)
+    {
+        public string Key => $"{Schema}.{Name}";
         public string DisplayName => $"{Schema}.{Name}";
     }
 }

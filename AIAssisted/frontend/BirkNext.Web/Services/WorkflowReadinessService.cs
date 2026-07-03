@@ -88,13 +88,14 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             artifactStatus.HasPlan,
             artifactStatus.HasTasks,
             artifactStatus.HasDataModel) ?? [];
+        steps = steps.Where(IsVisibleWorkflowStep).ToList();
 
         var specificationState = FindStep(steps, "Specification");
         var traceabilityState = FindStep(steps, "Traceability");
         var implementationState = FindStep(steps, "Implementation");
-        var qualityGateState = FindStep(steps, "Quality") ?? FindStep(steps, "ReviewContext");
-        var nextAction = steps.FirstOrDefault(step => step.IsCurrent)
-            ?? steps.FirstOrDefault(step => step.Status != WorkflowStepStatus.Approved);
+        var qualityGateState = FindStep(steps, "Quality");
+        var nextAction = steps.FirstOrDefault(step => step.IsCurrent && IsReleaseReviewStep(step))
+            ?? steps.FirstOrDefault(step => IsReleaseReviewStep(step) && step.Status != WorkflowStepStatus.Approved);
         var canRelease = artifactStatus.IsFullyLoaded
             && IsApproved(specificationState)
             && IsApproved(traceabilityState)
@@ -217,29 +218,38 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             || step.Key.Contains(token, StringComparison.OrdinalIgnoreCase));
 
     private static bool IsApproved(WorkflowStepViewModel? step) =>
-        step?.Status == WorkflowStepStatus.Approved;
+        step?.ApprovalState == ApprovalState.Approved;
 
     private static bool IsQualityGatePassed(WorkflowStepViewModel? step) =>
         step is null
         || step.Status == WorkflowStepStatus.Approved
         || (!step.RequiresApproval && step.CanOpen && step.Status != WorkflowStepStatus.Locked);
 
+    private static bool IsVisibleWorkflowStep(WorkflowStepViewModel step) =>
+        !step.Key.Equals("ReviewContextValidation", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsReleaseReviewStep(WorkflowStepViewModel step) =>
+        !step.Key.Equals("LoadSampleProject", StringComparison.OrdinalIgnoreCase)
+        && !step.Key.Equals("LoadWorkspace", StringComparison.OrdinalIgnoreCase)
+        && !step.Key.Equals("Dashboard", StringComparison.OrdinalIgnoreCase)
+        && !step.Key.Equals("ReviewContextValidation", StringComparison.OrdinalIgnoreCase)
+        && (step.RequiresManualReview || step.RequiresApproval);
+
     private static WorkflowReadinessBreakdown BuildOverallReadiness(
         WorkspaceArtifactStatus artifactStatus,
         IReadOnlyList<WorkflowStepViewModel> steps,
         bool canRelease)
     {
-        var requiredSteps = steps.Where(step => !step.IsOptional).ToList();
-        var approvedSteps = requiredSteps.Count(step => step.Status == WorkflowStepStatus.Approved);
+        var requiredSteps = steps.Where(step => IsReleaseReviewStep(step) && !step.IsOptional).ToList();
+        var approvedSteps = requiredSteps.Count(step => step.ApprovalState == ApprovalState.Approved);
+        var approvalReadiness = requiredSteps.Count == 0 ? 0 : approvedSteps * 100 / requiredSteps.Count;
 
         return new WorkflowReadinessBreakdown
         {
             ArtifactReadiness = artifactStatus.ArtifactCount * 20,
-            ReviewReadiness = requiredSteps.Count == 0 ? 0 : approvedSteps * 100 / requiredSteps.Count,
-            ApprovalReadiness = canRelease ? 100 : 0,
-            OverallReadiness = canRelease
-                ? 100
-                : (artifactStatus.ArtifactCount * 20 + (requiredSteps.Count == 0 ? 0 : approvedSteps * 100 / requiredSteps.Count)) / 2
+            ReviewReadiness = approvalReadiness,
+            ApprovalReadiness = approvalReadiness,
+            OverallReadiness = approvalReadiness
         };
     }
 

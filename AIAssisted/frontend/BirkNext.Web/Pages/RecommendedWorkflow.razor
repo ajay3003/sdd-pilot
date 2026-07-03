@@ -25,61 +25,6 @@
     }
     else
     {
-        <div class="rw-workspace-actions">
-            <div class="rw-workspace-header">
-                <div>
-                    <div class="rw-workspace-actions-header">Current Workspace</div>
-                    <div class="rw-workspace-title">@_readiness.WorkspaceName</div>
-                </div>
-                <details class="rw-workspace-menu">
-                    <summary class="btn-secondary rw-workspace-menu-trigger">Workspace</summary>
-                    <div class="rw-workspace-menu-list">
-                        <button type="button" @onclick="SaveWorkspaceAsync" disabled="@(_isSaving || !_readiness.WorkspaceLoaded)">
-                            @(_isSaving ? "Saving..." : "Save")
-                        </button>
-                        <button type="button" @onclick="SaveAsWorkspaceAsync" disabled="@(_isSaving || !_readiness.WorkspaceLoaded)">Save As</button>
-                        <button type="button" @onclick="@(() => ShowManageWorkspacesAsync())" disabled="@_isSaving">Manage</button>
-                        <button type="button" class="is-danger" @onclick="ClearWorkspaceAsync" disabled="@(_isSaving || !_readiness.WorkspaceLoaded)">Clear</button>
-                    </div>
-                </details>
-            </div>
-
-            @if (_readiness.WorkspaceLoaded)
-            {
-                <div class="rw-workspace-info">
-                    <div class="rw-workspace-details">
-                        <div class="rw-detail-item">
-                            <span class="rw-detail-label">Workspace:</span>
-                            <span class="rw-detail-value">@_readiness.WorkspaceName</span>
-                        </div>
-                        <div class="rw-detail-item">
-                            <span class="rw-detail-label">Project:</span>
-                            <span class="rw-detail-value">@_readiness.ProjectName</span>
-                        </div>
-                        <div class="rw-detail-item">
-                            <span class="rw-detail-label">Artifacts:</span>
-                            <span class="rw-detail-value">@_readiness.ArtifactStatus.ArtifactCount of 5</span>
-                        </div>
-                        <div class="rw-detail-item">
-                            <span class="rw-detail-label">Status:</span>
-                            <span class="rw-detail-value @_readiness.WorkspaceStatusClass">@_readiness.WorkspaceStatus</span>
-                        </div>
-                        <div class="rw-detail-item">
-                            <span class="rw-detail-label">Last saved:</span>
-                            <span class="rw-detail-value">@_readiness.LastSavedText</span>
-                        </div>
-                    </div>
-                </div>
-            }
-            else
-            {
-                <div class="rw-no-workspace">
-                    <p>No workspace loaded. Load a sample project or import artifacts to get started.</p>
-                    <SecondaryButton OnClick="ShowManageWorkspacesAsync">Resume Workspace</SecondaryButton>
-                </div>
-            }
-        </div>
-
         @if (!string.IsNullOrEmpty(_approvalErrorMessage))
         {
             <div class="rw-error-alert" role="alert">
@@ -88,12 +33,6 @@
                 <button class="rw-error-close" @onclick="@(() => _approvalErrorMessage = null)">&times;</button>
             </div>
         }
-
-        <div class="rw-summary metric-strip" role="status" aria-live="polite">
-            <MetricCard Value="@AutomaticSetupValue" Label="Automatic Setup" Sublabel="@AutomaticSetupSublabel" Variant="@AutomaticSetupVariant" />
-            <MetricCard Value="@ManualApprovalValue" Label="Manual Review" Sublabel="Approved" Variant="@ManualApprovalVariant" />
-            <MetricCard Value="@($"{_readiness.OverallReadiness.OverallReadiness}%")" Label="Release Readiness" Sublabel="@ReleaseReadinessSublabel" Variant="@ReleaseReadinessVariant" />
-        </div>
 
         <div class="rw-workspace-status" role="status" aria-live="polite">
             <div class="rw-status-header">
@@ -115,11 +54,8 @@
             </div>
         </div>
 
-        <div class="rw-manual-review-note">
-            <div class="rw-section-label">Manual Review</div>
-            <p>Constitution, plan, tasks, data model, specification, traceability, implementation review, and QA reviews require reviewer action before release readiness advances.</p>
-        </div>
-
+        <div class="rw-layout">
+            <main class="rw-main" aria-label="Recommended workflow">
         @if (_readiness.NextRecommendedAction is not null)
         {
             <div class="rw-next-action">
@@ -193,6 +129,80 @@
             </div>
         }
 
+            </main>
+
+            <aside class="rw-sidebar" aria-label="Workspace review dashboard">
+                <div class="rw-sidebar-inner">
+                    <div class="rw-workspace-actions">
+                        <div class="rw-workspace-header">
+                            <div>
+                                <div class="rw-workspace-actions-header">Current Workspace</div>
+                                <div class="rw-workspace-title">@_readiness.WorkspaceName</div>
+                            </div>
+                            <details class="rw-workspace-menu">
+                                <summary class="btn-secondary rw-workspace-menu-trigger">Workspace</summary>
+                                <div class="rw-workspace-menu-list">
+                                    <button type="button" @onclick="SaveWorkspaceAsync" disabled="@(_isSaving || !_readiness.WorkspaceLoaded)">
+                                        @(_isSaving ? "Saving..." : "Save")
+                                    </button>
+                                    <button type="button" @onclick="SaveAsWorkspaceAsync" disabled="@(_isSaving || !_readiness.WorkspaceLoaded)">Save As</button>
+                                    <button type="button" @onclick="@(() => ShowManageWorkspacesAsync())" disabled="@_isSaving">Manage Workspaces</button>
+                                    <button type="button" class="is-danger" @onclick="ClearWorkspaceAsync" disabled="@(_isSaving || !_readiness.WorkspaceLoaded)">Clear Workspace</button>
+                                </div>
+                            </details>
+                        </div>
+
+                        <div class="rw-workspace-info">
+                            <div class="rw-workspace-details">
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Workspace</span>
+                                    <span class="rw-detail-value">@_readiness.WorkspaceName</span>
+                                </div>
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Project</span>
+                                    <span class="rw-detail-value">@_readiness.ProjectName</span>
+                                </div>
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Artifacts</span>
+                                    <span class="rw-detail-value">@_readiness.ArtifactStatus.ArtifactCount of 5</span>
+                                </div>
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Manual Review</span>
+                                    <span class="rw-detail-value">@ManualApprovalValue</span>
+                                </div>
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Release Readiness</span>
+                                    <span class="rw-detail-value">@($"{_readiness.OverallReadiness.OverallReadiness}%")</span>
+                                </div>
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Status</span>
+                                    <span class="rw-detail-value @_readiness.WorkspaceStatusClass">@_readiness.WorkspaceStatus</span>
+                                </div>
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Last Saved</span>
+                                    <span class="rw-detail-value">@_readiness.LastSavedText</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (!_readiness.WorkspaceLoaded)
+                        {
+                            <div class="rw-no-workspace">
+                                <p>No workspace loaded.</p>
+                                <SecondaryButton OnClick="ShowManageWorkspacesAsync">Resume Workspace</SecondaryButton>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="rw-summary metric-strip" role="status" aria-live="polite">
+                        <MetricCard Value="@AutomaticSetupValue" Label="Automatic Setup" Sublabel="@AutomaticSetupSublabel" Variant="@AutomaticSetupVariant" />
+                        <MetricCard Value="@ManualApprovalValue" Label="Manual Review" Sublabel="Approved" Variant="@ManualApprovalVariant" />
+                        <MetricCard Value="@($"{_readiness.OverallReadiness.OverallReadiness}%")" Label="Release Readiness" Sublabel="@ReleaseReadinessSublabel" Variant="@ReleaseReadinessVariant" />
+                    </div>
+                </div>
+            </aside>
+        </div>
+
         <div class="rw-footer-note">
             For detailed reference documentation on any feature, see the <a href="user-guide" class="rw-inline-link">User Guide</a>.
         </div>
@@ -246,7 +256,7 @@
         _readiness?.Steps.Where(IsManualReviewStep).ToList() ?? [];
 
     private int ManualApprovedCount =>
-        ManualReviewSteps.Count(step => step.Status == WorkflowStepStatus.Approved);
+        ManualReviewSteps.Count(step => step.ApprovalState == ApprovalState.Approved);
 
     private string ManualApprovalValue => $"{ManualApprovedCount} / {ManualReviewSteps.Count}";
 

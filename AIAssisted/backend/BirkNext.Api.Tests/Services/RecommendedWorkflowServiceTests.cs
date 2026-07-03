@@ -317,12 +317,11 @@ public class RecommendedWorkflowServiceTests : IDisposable
         Assert.Equal(ApprovalState.Approved, planProgress.ApprovalState); // Should not change
     }
 
-    // Test 14: Optional steps don't block workflow progression
+    // Test 14: Data Model step appears only when the data-model artifact exists
     [Fact]
-    public async Task BuildWorkflowSteps_OptionalStepsDoNotBlockProgression()
+    public async Task BuildWorkflowSteps_DataModelStepOnlyAppearsWhenArtifactExists()
     {
-        // Act - Build with minimal artifacts (no DataModel)
-        var steps = await _service.BuildWorkflowStepsAsync(
+        var stepsWithoutDataModel = await _service.BuildWorkflowStepsAsync(
             _workspaceId,
             hasConstitution: true,
             hasSpecification: true,
@@ -330,11 +329,19 @@ public class RecommendedWorkflowServiceTests : IDisposable
             hasTasks: false,
             hasDataModel: false);
 
-        // Assert - DataModelExplorer should be optional but still available
-        var dataModel = steps.FirstOrDefault(s => s.Key == "DataModelExplorer");
+        Assert.DoesNotContain(stepsWithoutDataModel, s => s.Key == "DataModelExplorer");
+
+        var stepsWithDataModel = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: true,
+            hasPlan: false,
+            hasTasks: false,
+            hasDataModel: true);
+
+        var dataModel = stepsWithDataModel.FirstOrDefault(s => s.Key == "DataModelExplorer");
         Assert.NotNull(dataModel);
         Assert.True(dataModel.IsOptional);
-        // Should not block loading specification review since it's optional
     }
 
     // Test 15: Readiness calculation reflects approval progress
@@ -445,12 +452,15 @@ public class RecommendedWorkflowServiceTests : IDisposable
         var dashboard = steps.FirstOrDefault(s => s.Key == "Dashboard");
         Assert.NotNull(dashboard);
         Assert.False(dashboard.RequiresApproval);
+        Assert.False(dashboard.RequiresManualReview);
+        Assert.DoesNotContain(steps, s => s.Key == "ReviewContextValidation");
 
         // Act
         var breakdown = _service.GetReadinessBreakdown(steps);
 
         // Assert - Dashboard not requiring approval shouldn't affect readiness
         Assert.NotNull(breakdown);
-        // Readiness should only count approvals for steps that require it
+        Assert.Equal(0, breakdown.StepsApproved);
+        Assert.DoesNotContain(steps.Where(s => s.RequiresApproval), s => s.Key == "Dashboard");
     }
 }

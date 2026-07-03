@@ -8,7 +8,7 @@ public enum WorkflowStepType
     ArtifactLoad,      // Loading initial artifacts
     Explorer,          // Artifact explorer (Constitution, Plan, Tasks, DataModel)
     Analysis,          // Analysis step (SpecReview, Traceability, Implementation Review)
-    Validation,        // Validation step (ReviewContext validation)
+    Validation,        // Developer/internal validation step
     Dashboard,         // Dashboard view (informational only)
     Documentation      // Documentation review
 }
@@ -37,6 +37,7 @@ public class WorkflowStepDefinition
     public bool RequiresManualReview { get; set; } = true;
     public bool RequiresApproval { get; set; } = true;
     public bool IsOptional { get; set; } = false;
+    public bool IsDeveloperOnly { get; set; } = false;
 
     // Display properties
     public string ActionLabel { get; set; } = "";
@@ -176,6 +177,7 @@ public static class WorkflowDefinitions
             SortOrder = 9,
             RequiresManualReview = false,
             RequiresApproval = false,
+            IsDeveloperOnly = true,
             Color = "#6366f1"
         },
         new()

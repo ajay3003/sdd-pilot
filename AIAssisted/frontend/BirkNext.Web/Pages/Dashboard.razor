@@ -8,7 +8,7 @@
 @inject IWorkspaceSessionService Workspace
 @inject IWorkspaceArtifactStatusService ArtifactStatus
 @inject IReportExportService ExportService
-@inject IRecommendedWorkflowApiService WorkflowApi
+@inject IWorkflowReadinessService WorkflowReadiness
 @inject IJSRuntime JS
 
 <PageTitle>Dashboard</PageTitle>
@@ -152,10 +152,10 @@
         }
         @if (_workflowReadiness is not null)
         {
-            <MetricCard Value="@($"{_workflowReadiness.OverallReadiness}%")"
+            <MetricCard Value="@($"{_workflowReadiness.OverallReadiness.OverallReadiness}%")"
                         Label="Workflow"
-                        Sublabel="@(_workflowReadiness.OverallReadiness == 100 ? "Complete" : _workflowReadiness.OverallReadiness >= 50 ? "In Progress" : "Started")"
-                        Variant="@(_workflowReadiness.OverallReadiness == 100 ? "success" : _workflowReadiness.OverallReadiness >= 50 ? "warning" : null)" />
+                        Sublabel="@WorkflowStatusLabel"
+                        Variant="@WorkflowStatusVariant" />
         }
     </div>
 
@@ -829,19 +829,28 @@
 
     // ── Workflow readiness ────────────────────────────────────────────────────
 
-    private WorkflowReadinessBreakdown? _workflowReadiness;
+    private WorkflowReadiness? _workflowReadiness;
+
+    private string WorkflowStatusLabel => _workflowReadiness?.OverallReadiness.OverallReadiness switch
+    {
+        100 => "Complete",
+        >= 50 => "In Progress",
+        > 0 => "Started",
+        _ => "Not Started"
+    };
+
+    private string? WorkflowStatusVariant => _workflowReadiness?.OverallReadiness.OverallReadiness switch
+    {
+        100 => "success",
+        >= 50 => "warning",
+        _ => null
+    };
 
     private async Task RefreshWorkflowReadinessAsync()
     {
         try
         {
-            _workflowReadiness = await WorkflowApi.GetReadinessAsync(
-                Guid.Empty,
-                _workspaceStatus.HasConstitution,
-                _workspaceStatus.HasSpecification,
-                _workspaceStatus.HasPlan,
-                _workspaceStatus.HasTasks,
-                _workspaceStatus.HasDataModel);
+            _workflowReadiness = await WorkflowReadiness.GetReadinessAsync();
             StateHasChanged();
         }
         catch (Exception ex)

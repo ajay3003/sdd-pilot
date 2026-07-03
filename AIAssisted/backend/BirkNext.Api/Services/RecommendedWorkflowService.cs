@@ -149,8 +149,9 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         var viewModels = new List<WorkflowStepViewModel>();
         var currentStepAssigned = false;
 
-        // Build view model for each workflow step definition
-        foreach (var definition in WorkflowDefinitions.AllSteps)
+        // Build view model for reviewer workflow definitions only.
+        foreach (var definition in WorkflowDefinitions.AllSteps
+            .Where(definition => ShouldIncludeInReviewerWorkflow(definition, hasDataModel)))
         {
             var progress = progressLookup.TryGetValue(definition.StepKey, out var p) ? p : null;
 
@@ -342,7 +343,7 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
 
     public WorkflowStepViewModel? GetCurrentRecommendedStep(List<WorkflowStepViewModel> steps)
     {
-        return steps.FirstOrDefault(s => s.IsCurrent);
+        return steps.FirstOrDefault(s => s.IsCurrent && IsReleaseReviewStep(s));
     }
 
     public int CalculateWorkflowReadiness(List<WorkflowStepViewModel> steps)
@@ -353,13 +354,14 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
 
     public WorkflowReadinessBreakdown GetReadinessBreakdown(List<WorkflowStepViewModel> steps)
     {
-        // Filter to steps that require action (not informational/optional)
-        var actionableSteps = steps.Where(s => s.RequiresApproval || s.RequiresManualReview).ToList();
-        var requiredSteps = actionableSteps.Where(s => !s.IsOptional).ToList();
+        // Filter to reviewer/release steps only. Developer diagnostics and informational pages
+        // must not affect approval counts or release readiness.
+        var releaseSteps = steps.Where(IsReleaseReviewStep).ToList();
+        var requiredSteps = releaseSteps.Where(s => !s.IsOptional).ToList();
 
         // Count artifact readiness
-        var artifactsLoaded = steps.Count(s => s.Prerequisites == PrerequisiteState.Available);
-        var artifactTotal = steps.Count; // Simplified: all steps need their artifacts eventually
+        var artifactsLoaded = releaseSteps.Count(s => s.Prerequisites == PrerequisiteState.Available);
+        var artifactTotal = releaseSteps.Count;
 
         // Calculate actual artifact availability (distinct artifacts from required steps)
         var requiredArtifacts = GetRequiredArtifactsForSteps(requiredSteps);
@@ -377,7 +379,7 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         var stepsRequiringApproval = requiredSteps.Count(s => s.RequiresApproval);
 
         // Count blocking issues
-        var blockingIssues = steps.Count(s =>
+        var blockingIssues = requiredSteps.Count(s =>
             s.Status == WorkflowStepStatus.NeedsAttention &&
             !s.IsOptional);
 
@@ -424,6 +426,25 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
     }
 
     // Helper methods
+
+    private static bool ShouldIncludeInReviewerWorkflow(WorkflowStepDefinition definition, bool hasDataModel)
+    {
+        if (definition.IsDeveloperOnly)
+            return false;
+
+        if (definition.StepKey == "DataModelExplorer" && !hasDataModel)
+            return false;
+
+        return true;
+    }
+
+    private static bool IsReleaseReviewStep(WorkflowStepViewModel step)
+    {
+        if (step.Key is "LoadSampleProject" or "Dashboard" or "ReviewContextValidation")
+            return false;
+
+        return step.RequiresManualReview || step.RequiresApproval;
+    }
 
     private WorkflowStepStatus ComputeStepStatus(
         WorkflowStepDefinition definition,

@@ -16,6 +16,21 @@
     <PageHeader Title="Implementation Review"
                 Description="Review implementation tasks against the specification to detect undocumented behavior, identify risky areas, and surface recommended regression testing." />
 
+    @if (_analysisError is not null)
+    {
+        <div class="notification notification-error" role="alert" data-testid="implementation-review-error">
+            <strong>Implementation review could not be completed.</strong>
+            <span>@_analysisError.Message</span>
+            @if (ShowDiagnosticDetails)
+            {
+                <details>
+                    <summary>Diagnostic details</summary>
+                    <pre>@_analysisError</pre>
+                </details>
+            }
+        </div>
+    }
+
     @if (_report is null)
     {
         <section class="align-info-panel" aria-label="About Implementation Review">
@@ -651,6 +666,7 @@
     private string? _activeImpactFilter;
     private string _activePageTab = "alignment";
     private bool _analyseAttempted;
+    private Exception? _analysisError;
     private readonly HashSet<string> _expandedFindings = [];
 
     private SpecificationImport? _specImport;
@@ -658,13 +674,21 @@
 
     protected override void OnInitialized()
     {
-        var spec  = Workspace.Get(WorkspaceArtifactKind.Specification);
-        var tasks = Workspace.Get(WorkspaceArtifactKind.Tasks);
+        try
+        {
+            var spec  = Workspace.Get(WorkspaceArtifactKind.Specification);
+            var tasks = Workspace.Get(WorkspaceArtifactKind.Tasks);
 
-        if (spec  is not null) _specText   = spec.Text;
-        if (tasks is not null) _tasksText  = tasks.Text;
+            if (spec  is not null) _specText  = spec.Text ?? string.Empty;
+            if (tasks is not null) _tasksText = tasks.Text ?? string.Empty;
 
-        RestoreOrRunAnalysis();
+            RestoreOrRunAnalysis();
+        }
+        catch (Exception ex)
+        {
+            _analysisError = ex;
+            _report = null;
+        }
     }
 
     private void OnSpecFileImported(string content)
@@ -733,6 +757,8 @@
 
     private void RestoreOrRunAnalysis()
     {
+        _analysisError = null;
+
         if (string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))
         {
             _report = null;
@@ -741,8 +767,13 @@
 
         if (AlignmentSession.HasCurrentResult(Workspace.ProjectName, _specText, _tasksText))
         {
-            _report = AlignmentSession.Report;
-            return;
+            if (TryNormalizeReport(AlignmentSession.Report, out var cachedReport))
+            {
+                _report = cachedReport;
+                return;
+            }
+
+            AlignmentSession.Clear();
         }
 
         RunAnalysis();
@@ -750,16 +781,27 @@
 
     private void RunAnalysis()
     {
-        _analyseAttempted = true;
-        if (string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))
-            return;
-        var reviewContext = BuildReviewContext();
-        _report = ImplementationReview.Analyse(reviewContext);
-        AlignmentSession.SaveResult(_report, Workspace.ProjectName, _specText, _tasksText);
-        _activeFilter = null;
-        _activeImpactFilter = null;
-        _activePageTab = "alignment";
-        _expandedFindings.Clear();
+        try
+        {
+            _analysisError = null;
+            _analyseAttempted = true;
+            if (string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))
+                return;
+
+            var reviewContext = BuildReviewContext();
+            _report = NormalizeReport(ImplementationReview.Analyse(reviewContext));
+            AlignmentSession.SaveResult(_report, Workspace.ProjectName, _specText, _tasksText);
+            _activeFilter = null;
+            _activeImpactFilter = null;
+            _activePageTab = "alignment";
+            _expandedFindings.Clear();
+        }
+        catch (Exception ex)
+        {
+            _analysisError = ex;
+            _report = null;
+            AlignmentSession.Clear();
+        }
     }
 
     private async Task ExportHtml()
@@ -804,6 +846,7 @@
     private void Reset()
     {
         _report = null;
+        _analysisError = null;
         _activeFilter = null;
         _activeImpactFilter = null;
         _activePageTab = "alignment";
@@ -827,16 +870,80 @@
             _expandedFindings.Add(key);
     }
 
-    private List<TaskFinding> GetFiltered(List<TaskFinding> all) =>
-        _activeFilter is null ? all : all.Where(f => f.Status.ToString() == _activeFilter).ToList();
+    private List<TaskFinding> GetFiltered(List<TaskFinding>? all) =>
+        _activeFilter is null ? all ?? [] : (all ?? []).Where(f => f.Status.ToString() == _activeFilter).ToList();
 
-    private List<TaskFinding> GetFilteredImpact(List<TaskFinding> all) =>
+    private List<TaskFinding> GetFilteredImpact(List<TaskFinding>? all) =>
         _activeImpactFilter switch
         {
-            "Regression" => all.Where(f => f.IsRegressionCandidate).ToList(),
-            null => all,
-            _ => all.Where(f => f.ImpactLevel.ToString() == _activeImpactFilter).ToList(),
+            "Regression" => (all ?? []).Where(f => f.IsRegressionCandidate).ToList(),
+            null => all ?? [],
+            _ => (all ?? []).Where(f => f.ImpactLevel.ToString() == _activeImpactFilter).ToList(),
         };
+
+    private static bool TryNormalizeReport(AlignmentReport? report, out AlignmentReport normalized)
+    {
+        if (report is null || report.Findings is null)
+        {
+            normalized = new AlignmentReport();
+            return false;
+        }
+
+        normalized = NormalizeReport(report);
+        return true;
+    }
+
+    private static AlignmentReport NormalizeReport(AlignmentReport report) => new()
+    {
+        TotalTasks = report.TotalTasks,
+        LinkedTasks = report.LinkedTasks,
+        TechnicalOnlyTasks = report.TechnicalOnlyTasks,
+        NeedsReviewTasks = report.NeedsReviewTasks,
+        PossibleDeviations = report.PossibleDeviations,
+        HighImpactTasks = report.HighImpactTasks,
+        MediumImpactTasks = report.MediumImpactTasks,
+        LowImpactTasks = report.LowImpactTasks,
+        UnknownImpactTasks = report.UnknownImpactTasks,
+        RegressionCandidates = report.RegressionCandidates,
+        Findings = (report.Findings ?? []).Where(f => f is not null).Select(NormalizeFinding).ToList(),
+    };
+
+    private static TaskFinding NormalizeFinding(TaskFinding finding) => new()
+    {
+        TaskId = finding.TaskId ?? string.Empty,
+        Title = finding.Title ?? string.Empty,
+        Status = finding.Status,
+        Risk = finding.Risk,
+        Reason = finding.Reason ?? string.Empty,
+        RecommendedAction = finding.RecommendedAction ?? string.Empty,
+        Confidence = finding.Confidence,
+        Matches = (finding.Matches ?? []).Where(m => m is not null).Select(NormalizeMatch).ToList(),
+        AffectedAreas = finding.AffectedAreas ?? [],
+        RecommendedTests = finding.RecommendedTests ?? [],
+        ImpactLevel = finding.ImpactLevel,
+        MatchReason = finding.MatchReason ?? string.Empty,
+        RiskReason = finding.RiskReason ?? string.Empty,
+        IsRegressionCandidate = finding.IsRegressionCandidate,
+    };
+
+    private static SpecMatch NormalizeMatch(SpecMatch match) => new()
+    {
+        ItemId = match.ItemId ?? string.Empty,
+        Title = match.Title ?? string.Empty,
+        MatchType = match.MatchType,
+    };
+
+    private static bool ShowDiagnosticDetails
+    {
+        get
+        {
+#if DEBUG
+            return true;
+#else
+            return false;
+#endif
+        }
+    }
 
     private static string StatusLabel(AlignmentStatus s) => s switch
     {

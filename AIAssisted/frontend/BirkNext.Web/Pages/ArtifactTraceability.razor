@@ -17,6 +17,21 @@
     <PageHeader Title="Requirements Traceability"
                 Description="End-to-end traceability across Constitution → Specification → Plan → Tasks. Surface coverage gaps, orphaned items, and a unified traceability matrix." />
 
+    @if (_analysisError is not null)
+    {
+        <div class="notification notification-error" role="alert" data-testid="artifact-traceability-error">
+            <strong>Traceability analysis could not be completed.</strong>
+            <span>@_analysisError.Message</span>
+            @if (ShowDiagnosticDetails)
+            {
+                <details>
+                    <summary>Diagnostic details</summary>
+                    <pre>@_analysisError</pre>
+                </details>
+            }
+        </div>
+    }
+
     <!-- ── Artifact input panel ──────────────────────────────────────────── -->
     <div class="at-input-panel">
         <div class="at-input-panel-header">
@@ -659,6 +674,7 @@
     private string _tab    = "overview";
     private string _search = string.Empty;
     private bool _inputExpanded = true;
+    private Exception? _analysisError;
 
     private TraceabilityStatus? _statusFilter;
     private ArtifactType? _gapArtifactFilter;
@@ -724,73 +740,135 @@
         _            => "Search…",
     };
 
+    private static bool ShowDiagnosticDetails
+    {
+        get
+        {
+#if DEBUG
+            return true;
+#else
+            return false;
+#endif
+        }
+    }
+
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
     protected override void OnInitialized()
     {
-        var constitution = Workspace.Get(WorkspaceArtifactKind.Constitution);
-        var spec         = Workspace.Get(WorkspaceArtifactKind.Specification);
-        var plan         = Workspace.Get(WorkspaceArtifactKind.Plan);
-        var tasks        = Workspace.Get(WorkspaceArtifactKind.Tasks);
+        try
+        {
+            var constitution = Workspace.Get(WorkspaceArtifactKind.Constitution);
+            var spec         = Workspace.Get(WorkspaceArtifactKind.Specification);
+            var plan         = Workspace.Get(WorkspaceArtifactKind.Plan);
+            var tasks        = Workspace.Get(WorkspaceArtifactKind.Tasks);
 
-        if (constitution is not null) _constitutionText = constitution.Text;
-        if (spec is not null)         _specText          = spec.Text;
-        if (plan is not null)         _planText          = plan.Text;
-        if (tasks is not null)        _taskText          = tasks.Text;
+            if (constitution is not null) _constitutionText = constitution.Text ?? string.Empty;
+            if (spec is not null)         _specText         = spec.Text ?? string.Empty;
+            if (plan is not null)         _planText         = plan.Text ?? string.Empty;
+            if (tasks is not null)        _taskText         = tasks.Text ?? string.Empty;
 
-        if (LoadedCount >= 2)
-            RunAnalysis();
+            if (LoadedCount >= 2)
+                RunAnalysis();
+        }
+        catch (Exception ex)
+        {
+            _analysisError = ex;
+            _report = null;
+            _inputExpanded = true;
+        }
     }
 
     // ── Actions ───────────────────────────────────────────────────────────
 
     private void RunAnalysis()
     {
-        ConstitutionDocument? constitution = null;
-        SpecTree?             spec         = null;
-        PlanDocument?         plan         = null;
-        TaskTree?             tasks        = null;
-        DataModelDocument?    dataModel    = null;
+        try
+        {
+            _analysisError = null;
 
-        if (!string.IsNullOrWhiteSpace(_constitutionText))
-            constitution = ConstitutionService.Parse(_constitutionText);
-        if (!string.IsNullOrWhiteSpace(_specText))
-            spec = SpecExplorerService.Parse(_specText);
-        if (!string.IsNullOrWhiteSpace(_planText))
-            plan = PlanService.Parse(_planText);
-        if (!string.IsNullOrWhiteSpace(_taskText))
-            tasks = TaskExplorerService.Parse(_taskText);
+            ConstitutionDocument? constitution = null;
+            SpecTree?             spec         = null;
+            PlanDocument?         plan         = null;
+            TaskTree?             tasks        = null;
 
-        // Build semantic models and ReviewContext
-        var constitutionSemanticModel = constitution is not null
-            ? ConstitutionAnalysisService.BuildSemanticModel(constitution)
-            : new ConstitutionSemanticModel();
-        var specSemanticModel = spec is not null
-            ? SpecExplorerService.BuildSemanticModel(spec, _specText)
-            : new SpecificationSemanticModel();
-        var planSemanticModel = plan is not null
-            ? PlanAnalysisService.BuildSemanticModel(plan)
-            : new PlanSemanticModel();
-        var taskSemanticModel = tasks is not null
-            ? TaskExplorerService.BuildSemanticModel(tasks)
-            : new TaskSemanticModel();
-        var dataModelSemanticModel = new DataModelSemanticModel();
+            if (!string.IsNullOrWhiteSpace(_constitutionText))
+                constitution = ConstitutionService.Parse(_constitutionText);
+            if (!string.IsNullOrWhiteSpace(_specText))
+                spec = SpecExplorerService.Parse(_specText);
+            if (!string.IsNullOrWhiteSpace(_planText))
+                plan = PlanService.Parse(_planText);
+            if (!string.IsNullOrWhiteSpace(_taskText))
+                tasks = TaskExplorerService.Parse(_taskText);
 
-        var reviewContext = ReviewContextFactory.Create(
-            constitutionSemanticModel,
-            specSemanticModel,
-            planSemanticModel,
-            taskSemanticModel,
-            dataModelSemanticModel);
+            // Build semantic models and ReviewContext
+            var constitutionSemanticModel = constitution is not null
+                ? ConstitutionAnalysisService.BuildSemanticModel(constitution)
+                : new ConstitutionSemanticModel();
+            var specSemanticModel = spec is not null
+                ? SpecExplorerService.BuildSemanticModel(spec, _specText)
+                : new SpecificationSemanticModel();
+            var planSemanticModel = plan is not null
+                ? PlanAnalysisService.BuildSemanticModel(plan)
+                : new PlanSemanticModel();
+            var taskSemanticModel = tasks is not null
+                ? TaskExplorerService.BuildSemanticModel(tasks)
+                : new TaskSemanticModel();
+            var dataModelSemanticModel = new DataModelSemanticModel();
 
-        _report         = TraceabilityService.Analyze(constitution, spec, plan, tasks, reviewContext);
-        DashboardSnapshot.Publish(_report);
-        _tab            = "overview";
-        _search         = string.Empty;
-        _statusFilter   = null;
-        _gapArtifactFilter = null;
-        _inputExpanded  = false;
+            var reviewContext = ReviewContextFactory.Create(
+                constitutionSemanticModel,
+                specSemanticModel,
+                planSemanticModel,
+                taskSemanticModel,
+                dataModelSemanticModel);
+
+            _report = NormalizeReport(TraceabilityService.Analyze(constitution, spec, plan, tasks, reviewContext));
+            DashboardSnapshot.Publish(_report);
+            _tab            = "overview";
+            _search         = string.Empty;
+            _statusFilter   = null;
+            _gapArtifactFilter = null;
+            _inputExpanded  = false;
+        }
+        catch (Exception ex)
+        {
+            _analysisError = ex;
+            _report = null;
+            _inputExpanded = true;
+        }
     }
+
+    private static ArtifactTraceabilityReport NormalizeReport(ArtifactTraceabilityReport report) => new()
+    {
+        ConstitutionCoverage = report.ConstitutionCoverage ?? new TraceabilityCoverageStats(),
+        SpecificationCoverage = report.SpecificationCoverage ?? new TraceabilityCoverageStats(),
+        PlanCoverage = report.PlanCoverage ?? new TraceabilityCoverageStats(),
+        TaskCoverage = report.TaskCoverage ?? new TraceabilityCoverageStats(),
+        ConstitutionToSpec = report.ConstitutionToSpec ?? [],
+        SpecToPlan = report.SpecToPlan ?? [],
+        PlanToTask = report.PlanToTask ?? [],
+        Gaps = report.Gaps ?? [],
+        Matrix = report.Matrix ?? [],
+        Health = new TraceabilityHealth
+        {
+            TotalRules = report.Health?.TotalRules ?? 0,
+            TotalRequirements = report.Health?.TotalRequirements ?? 0,
+            TotalPlanItems = report.Health?.TotalPlanItems ?? 0,
+            TotalTasks = report.Health?.TotalTasks ?? 0,
+            CoveredCount = report.Health?.CoveredCount ?? 0,
+            PartialCount = report.Health?.PartialCount ?? 0,
+            MissingCount = report.Health?.MissingCount ?? 0,
+            OrphanCount = report.Health?.OrphanCount ?? 0,
+            CoveragePercentage = report.Health?.CoveragePercentage ?? 0,
+            GapCount = report.Health?.GapCount ?? 0,
+            Indicators = report.Health?.Indicators ?? [],
+        },
+        HasConstitution = report.HasConstitution,
+        HasSpecification = report.HasSpecification,
+        HasPlan = report.HasPlan,
+        HasTasks = report.HasTasks,
+    };
 
     private void SetTab(string tab)
     {
