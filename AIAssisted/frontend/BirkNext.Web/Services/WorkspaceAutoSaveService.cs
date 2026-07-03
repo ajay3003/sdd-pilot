@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace BirkNext.Web.Services;
 
 /// <summary>
@@ -90,10 +92,15 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
 
     public async Task StartMonitoringAsync()
     {
-        if (_isMonitoring) return;
+        System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] StartMonitoringAsync CALLED");
+        if (_isMonitoring)
+        {
+            System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] Already monitoring, returning");
+            return;
+        }
 
         _isMonitoring = true;
-        _logger.LogInformation("Started auto-save monitoring");
+        System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] Monitoring NOW ENABLED");
         await Task.CompletedTask;
     }
 
@@ -101,36 +108,57 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
     {
         if (!_isMonitoring) return;
 
+        System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] StopMonitoringAsync CALLED");
+        var stackTrace = new System.Diagnostics.StackTrace(true);
+        for (int i = 0; i < Math.Min(10, stackTrace.FrameCount); i++)
+        {
+            var frame = stackTrace.GetFrame(i);
+            var method = frame?.GetMethod();
+            if (method != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"DIAG: [AutoSave]   Stack[{i}]: {method.DeclaringType?.Name}.{method.Name}");
+            }
+        }
+
         CancelAutoSaveTimer();
         _isMonitoring = false;
         _updates.ArtifactsChanged -= OnArtifactsChanged;
+        System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] StopMonitoringAsync COMPLETED");
         _logger.LogInformation("Stopped auto-save monitoring");
         await Task.CompletedTask;
     }
 
     private void OnArtifactsChanged(object? sender, EventArgs e)
     {
+        System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] OnArtifactsChanged event ENTERED");
         OnArtifactChanged();
     }
 
     public void OnArtifactChanged()
     {
-        if (!_isMonitoring) return;
+        System.Diagnostics.Debug.WriteLine($"DIAG: [AutoSave] OnArtifactChanged ENTERED, _isMonitoring={_isMonitoring}");
+        if (!_isMonitoring)
+        {
+            System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] OnArtifactChanged RETURNED EARLY");
+            return;
+        }
 
         // Restart the timer
         CancelAutoSaveTimer();
-        _logger.LogDebug("Artifact changed, starting auto-save timer");
+        System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] Debounce timer CREATED");
 
         _autoSaveTimer = new System.Threading.Timer(
             async state =>
             {
+                System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] Debounce timer FIRED");
                 if (CanAutoSave())
                 {
+                    System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] PerformAutoSaveAsync ENTERING");
                     await PerformAutoSaveAsync();
                 }
                 else
                 {
-                    _logger.LogDebug("Auto-save timer fired but throttled");
+                    System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] Timer fired but throttled");
                 }
             },
             null,
@@ -154,18 +182,25 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
     {
         try
         {
-            _logger.LogDebug("Performing auto-save");
+            var repoHash = RuntimeHelpers.GetHashCode(_artifactRepository);
+            var artifacts = _artifactRepository.GetAllArtifacts().ToList();
+            var artifactCount = artifacts.Count;
+
+            _logger.LogInformation("TRACE: [WorkspaceAutoSaveService.PerformAutoSaveAsync]");
+            _logger.LogInformation("  RepositoryType={Type}", _artifactRepository.GetType().Name);
+            _logger.LogInformation("  Hash={Hash}", repoHash);
+            _logger.LogInformation("  Count={Count}", artifactCount);
+
             var result = await _persistence.AutoSaveAsync();
             if (result != null)
             {
                 _lastAutoSaveTime = DateTimeOffset.UtcNow;
-                _logger.LogInformation("Auto-save completed");
                 OnAutoSaveCompleted();
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Auto-save failed");
+            _logger.LogError(ex, "TRACE: Auto-save failed");
         }
     }
 

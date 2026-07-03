@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace BirkNext.Web.Services;
 
 /// <summary>
@@ -32,7 +34,11 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
                     string? fileName = null, string? sourcePath = null, DateTime? lastModified = null)
     {
         if (!string.IsNullOrWhiteSpace(text))
+        {
+            var hash = RuntimeHelpers.GetHashCode(this);
+            System.Diagnostics.Debug.WriteLine($"DIAG: [Repository] Set({type}) hash={hash}");
             _artifacts[type] = new WorkspaceArtifact(text, DateTime.UtcNow, fileName, sourcePath, lastModified);
+        }
     }
 
     public WorkspaceArtifact? Get(WorkspaceArtifactType type)
@@ -43,7 +49,12 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     public void Clear(WorkspaceArtifactType type) => _artifacts.Remove(type);
 
     public IEnumerable<(WorkspaceArtifactType Type, WorkspaceArtifact Artifact)> GetAllArtifacts()
-        => _artifacts.Select(kvp => (kvp.Key, kvp.Value));
+    {
+        var hash = RuntimeHelpers.GetHashCode(this);
+        var count = _artifacts.Count;
+        System.Diagnostics.Debug.WriteLine($"DIAG: [Repository] GetAllArtifacts() hash={hash}, count={count}");
+        return _artifacts.Select(kvp => (kvp.Key, kvp.Value));
+    }
 
     // ── IWorkspaceSessionService (WorkspaceArtifactKind) ─────────────────────
     // WorkspaceArtifactKind and WorkspaceArtifactType share identical integer values,

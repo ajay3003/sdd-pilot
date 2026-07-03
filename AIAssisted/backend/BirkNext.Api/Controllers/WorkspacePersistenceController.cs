@@ -82,14 +82,21 @@ public class WorkspacePersistenceController : ControllerBase
     {
         try
         {
+            _logger.LogInformation("DIAG: [Controller] List ENTERED");
             // TODO: Get actual userId from auth context
             var result = await _service.ListAsync("default-user");
+            _logger.LogInformation($"DIAG: [Controller] ListAsync returned {result.Count} workspaces");
+            foreach (var ws in result)
+            {
+                _logger.LogInformation($"DIAG: [Controller]   - Id={ws.Id}, name={ws.Name}, artifacts={ws.Artifacts.Count}");
+            }
             var dtos = result.Select(MapWorkspaceToDto).ToList();
+            _logger.LogInformation($"DIAG: [Controller] List returning {dtos.Count} DTOs");
             return Ok(dtos);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error listing workspaces");
+            _logger.LogError(ex, "DIAG: [Controller] Error listing workspaces");
             return BadRequest(new { error = ex.Message });
         }
     }
@@ -156,7 +163,12 @@ public class WorkspacePersistenceController : ControllerBase
     {
         try
         {
+            _logger.LogInformation("TRACE: [WorkspacePersistenceController.AutoSave]");
+            _logger.LogInformation("  RequestArtifacts=0");
+
             var result = await _service.AutoSaveAsync(request?.GeneratedName);
+            _logger.LogInformation("  ResponseArtifacts={Count}", result.Artifacts.Count);
+
             var dto = MapWorkspaceToDto(result);
             return Ok(dto);
         }
@@ -172,12 +184,14 @@ public class WorkspacePersistenceController : ControllerBase
     {
         try
         {
+            _logger.LogInformation("DIAG: [Controller] GetCurrentState ENTERED");
             var result = await _service.GetCurrentStateAsync();
+            _logger.LogInformation($"DIAG: [Controller] GetCurrentState returned: workspaceId={result?.CurrentWorkspaceId}, artifacts={result?.ArtifactCount}");
             return Ok(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting current workspace state");
+            _logger.LogError(ex, "DIAG: [Controller] Error getting current workspace state");
             return BadRequest(new { error = ex.Message });
         }
     }

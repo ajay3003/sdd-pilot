@@ -174,13 +174,22 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
     {
         try
         {
+            System.Diagnostics.Debug.WriteLine("DIAG: [PersistenceApi] ListAsync CALLED");
             var workspaces = await _httpClient.GetFromJsonAsync<List<SavedWorkspaceDto>>(
                 "api/workspace-persistence/list");
+            System.Diagnostics.Debug.WriteLine($"DIAG: [PersistenceApi] ListAsync returned {workspaces?.Count ?? 0} workspaces");
+            if (workspaces != null)
+            {
+                foreach (var ws in workspaces)
+                {
+                    System.Diagnostics.Debug.WriteLine($"DIAG: [PersistenceApi]   - Id={ws.Id}, name={ws.Name}, artifacts={ws.Artifacts.Count}");
+                }
+            }
             return workspaces ?? new();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error listing workspaces");
+            System.Diagnostics.Debug.WriteLine($"DIAG: [PersistenceApi] ListAsync error: {ex.Message}");
             return new();
         }
     }
@@ -253,6 +262,9 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
     {
         try
         {
+            _logger.LogInformation("TRACE: [WorkspacePersistenceApiService.AutoSaveAsync]");
+            _logger.LogInformation("  RequestArtifacts=0");
+
             var response = await _httpClient.PostAsJsonAsync(
                 "api/workspace-persistence/auto-save",
                 new { generatedName });
@@ -263,7 +275,8 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
                 return null;
             }
 
-            return await response.Content.ReadFromJsonAsync<SavedWorkspaceDto>();
+            var result = await response.Content.ReadFromJsonAsync<SavedWorkspaceDto>();
+            return result;
         }
         catch (Exception ex)
         {
@@ -276,12 +289,15 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
     {
         try
         {
-            return await _httpClient.GetFromJsonAsync<CurrentWorkspaceStateDto>(
+            System.Diagnostics.Debug.WriteLine("DIAG: [PersistenceApi] GetCurrentStateAsync CALLED");
+            var result = await _httpClient.GetFromJsonAsync<CurrentWorkspaceStateDto>(
                 "api/workspace-persistence/current-state");
+            System.Diagnostics.Debug.WriteLine($"DIAG: [PersistenceApi] GetCurrentStateAsync returned: workspaceId={result?.CurrentWorkspaceId}, artifacts={result?.ArtifactCount}, status={result?.Status}");
+            return result;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting current workspace state");
+            System.Diagnostics.Debug.WriteLine($"DIAG: [PersistenceApi] GetCurrentStateAsync error: {ex.Message}");
             return null;
         }
     }

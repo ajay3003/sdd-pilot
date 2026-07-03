@@ -1,4 +1,5 @@
 @page "/sample-projects"
+@using System.Runtime.CompilerServices
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @using Microsoft.JSInterop
@@ -7,11 +8,13 @@
 @inject IWorkspaceSessionService Workspace
 @inject IWorkspaceArtifactStatusService ArtifactStatus
 @inject IWorkspaceAutoSaveService AutoSave
+@inject IWorkspaceUpdateCoordinator Updates
 @inject QualityReviewSessionService QualitySession
 @inject IDashboardSnapshotService DashboardSnapshot
 @inject ITargetEnvironmentHintExtractor TargetHintExtractor
 @inject IFrontendAnalysisSettingsService FrontendSettings
 @inject IIntegrationTargetRegistryService IntegrationRegistry
+@inject ILogger<SampleProjects> Logger
 @inject IJSRuntime JS
 
 <div class="sp-page">
@@ -523,6 +526,7 @@
 
     private async Task LoadArtifacts(SampleProjectDto project)
     {
+        System.Diagnostics.Debug.WriteLine("======== DIAG: [LoadArtifacts] START ========");
         var confirmed = await JS.InvokeAsync<bool>("confirm",
             $"Load supported artifacts from \"{project.Name}\"?\n\nThis will overwrite any currently loaded documents for these artifact types.");
         if (!confirmed) return;
@@ -542,20 +546,53 @@
         DashboardSnapshot.ClearQualityReview();
         Workspace.CurrentProject = project.Name;
 
-        foreach (var file in supported)
+        System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] Before BeginUpdate");
+        Updates.BeginUpdate();
+        try
         {
-            var content = await ProjectsApi.GetFileAsync(project.Slug, file.Filename);
-            if (content is null)
+            foreach (var file in supported)
             {
-                skipped.Add(file.Filename);
-                continue;
+                var content = await ProjectsApi.GetFileAsync(project.Slug, file.Filename);
+                if (content is null)
+                {
+                    skipped.Add(file.Filename);
+                    continue;
+                }
+                // Normalize to match what SpecificationImport produces on file upload.
+                content = NormalizeArtifactText(content);
+                await DocumentApi.SaveAsync(file.ArtifactKind!, content);
+                if (file.ArtifactKind is not null && _artifactKindMap.TryGetValue(file.ArtifactKind, out var kind))
+                    Workspace.Set(kind, content, fileName: file.Filename, sourcePath: project.AbsolutePath);
+                loaded++;
             }
-            // Normalize to match what SpecificationImport produces on file upload.
-            content = NormalizeArtifactText(content);
-            await DocumentApi.SaveAsync(file.ArtifactKind!, content);
-            if (file.ArtifactKind is not null && _artifactKindMap.TryGetValue(file.ArtifactKind, out var kind))
-                Workspace.Set(kind, content, fileName: file.Filename, sourcePath: project.AbsolutePath);
-            loaded++;
+
+            // Log repository state after all Set calls
+            var repoHash = RuntimeHelpers.GetHashCode(Workspace);
+            var allArtifacts = Workspace.GetAllArtifacts().ToList();
+            var artifactCount = allArtifacts.Count;
+            var artifactKinds = string.Join(",", allArtifacts.Select(a => a.Type.ToString()));
+
+            Logger.LogInformation("TRACE: [SampleProjects.LoadArtifacts]");
+            Logger.LogInformation("  RepositoryType={Type}", Workspace.GetType().Name);
+            Logger.LogInformation("  Hash={Hash}", repoHash);
+            Logger.LogInformation("  Count={Count}", artifactCount);
+            Logger.LogInformation("  Artifacts={Artifacts}", artifactKinds);
+
+            // Start auto-save monitoring before notifying mutations.
+            // This ensures monitoring is enabled when ArtifactsChanged event fires.
+            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] Before AutoSave.StartMonitoringAsync");
+            await AutoSave.StartMonitoringAsync();
+            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] After AutoSave.StartMonitoringAsync");
+
+            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] Before NotifyMutation");
+            Updates.NotifyMutation();
+            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] After NotifyMutation, before EndUpdate");
+        }
+        finally
+        {
+            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] Before EndUpdate");
+            Updates.EndUpdate();
+            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] After EndUpdate");
         }
 
         var loadedArtifacts = supported
@@ -583,23 +620,7 @@
         if (!hasError)
             _hintState[project.Slug] = TargetHintExtractor.Extract(project, await FetchProjectTextsAsync(project));
         _loadingSlug = null;
-
-        // Ensure auto-save monitoring is started before triggering artifact change.
-        // This allows the auto-save timer to start and create a valid workspace.
-        await AutoSave.StartMonitoringAsync();
-
-        // Trigger auto-save once after all artifacts are loaded.
-        // This ensures a valid workspace identity is created before workflow operations.
-        EventHandler? autoSaveCompletedHandler = null;
-        autoSaveCompletedHandler = (sender, args) =>
-        {
-            if (autoSaveCompletedHandler != null)
-                AutoSave.AutoSaveCompleted -= autoSaveCompletedHandler;
-            // Now that workspace has valid ID, notify that artifacts changed
-            Workspace.NotifyArtifactsChanged();
-        };
-        AutoSave.AutoSaveCompleted += autoSaveCompletedHandler;
-        AutoSave.OnArtifactChanged();
+        System.Diagnostics.Debug.WriteLine("======== DIAG: [LoadArtifacts] END ========");
     }
 
     private async Task<List<SampleProjectArtifactText>> FetchProjectTextsAsync(SampleProjectDto project)

@@ -431,10 +431,9 @@
         builder.CloseElement();
     }
 
-    public async void Dispose()
+    public void Dispose()
     {
         WorkflowReadiness.ReadinessChanged -= OnReadinessChanged;
-        await AutoSave.StopMonitoringAsync();
     }
 
     private async Task SaveWorkspaceAsync()

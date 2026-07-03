@@ -84,6 +84,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
     public async Task<SavedWorkspace> SaveAsAsync(string name, List<WorkspaceArtifactDto>? artifacts = null)
     {
+        _logger.LogInformation($"DIAG: [SaveAs] ENTERED with name={name}, artifactCount={artifacts?.Count ?? 0}");
         if (string.IsNullOrWhiteSpace(name))
         {
             throw new ArgumentException("Workspace name cannot be empty", nameof(name));
@@ -100,10 +101,12 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             UpdatedAt = DateTimeOffset.UtcNow,
             AutoSaved = false
         };
+        _logger.LogInformation($"DIAG: [SaveAs] Created SavedWorkspace entity Id={workspace.Id}");
 
         // Copy artifacts from request (frontend already has them from WorkspaceArtifactRepository)
         if (artifacts != null && artifacts.Any())
         {
+            _logger.LogInformation($"DIAG: [SaveAs] Processing {artifacts.Count} artifacts");
             foreach (var artifact in artifacts)
             {
                 if (!string.IsNullOrWhiteSpace(artifact.Content))
@@ -123,18 +126,24 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
                         UpdatedAt = DateTimeOffset.UtcNow
                     };
                     workspace.Artifacts.Add(saved);
+                    _logger.LogInformation($"DIAG: [SaveAs] Added artifact {artifact.ArtifactType} to workspace");
                 }
             }
+            _logger.LogInformation($"DIAG: [SaveAs] Total artifacts in entity: {workspace.Artifacts.Count}");
+        }
+        else
+        {
+            _logger.LogInformation($"DIAG: [SaveAs] No artifacts provided");
         }
 
         workspace.ArtifactSetHash = await ComputeArtifactSetHashAsync(workspace.Id);
 
         _db.SavedWorkspaces.Add(workspace);
         await _db.SaveChangesAsync();
+        _logger.LogInformation($"DIAG: [SaveAs] SaveChangesAsync completed, saved to DB");
 
         _currentWorkspaceId = workspace.Id;
-        _logger.LogInformation("Created new workspace {WorkspaceId} with name {Name} and {ArtifactCount} artifacts",
-            workspace.Id, workspace.Name, workspace.Artifacts.Count);
+        _logger.LogInformation($"DIAG: [SaveAs] RETURNING WorkspaceId={workspace.Id}, name={workspace.Name}, artifacts={workspace.Artifacts.Count}");
         return workspace;
     }
 
@@ -165,11 +174,19 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
     public async Task<List<SavedWorkspace>> ListAsync(string userId)
     {
-        return await _db.SavedWorkspaces
+        _logger.LogInformation($"DIAG: [List] ENTERED for userId={userId}");
+        var workspaces = await _db.SavedWorkspaces
             .Include(w => w.Artifacts)
             .Where(w => w.UserId == userId && !w.IsDeleted)
             .OrderByDescending(w => w.UpdatedAt)
             .ToListAsync();
+
+        _logger.LogInformation($"DIAG: [List] Found {workspaces.Count} workspaces");
+        foreach (var ws in workspaces)
+        {
+            _logger.LogInformation($"DIAG: [List]   - Id={ws.Id}, name={ws.Name}, artifacts={ws.Artifacts.Count}, autoSaved={ws.AutoSaved}");
+        }
+        return workspaces;
     }
 
     public async Task<SavedWorkspace> RenameAsync(Guid workspaceId, string newName)
@@ -283,21 +300,26 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
     public async Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null)
     {
+        _logger.LogInformation($"TRACE: AutoSaveAsync entered, currentWorkspaceId={_currentWorkspaceId}");
         if (!_currentWorkspaceId.HasValue)
         {
+            _logger.LogInformation("TRACE: No current workspace ID, calling SaveAsAsync");
             var name = generatedName ?? $"Auto_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
             var workspace = await SaveAsAsync(name);
             workspace.AutoSaved = true;
             _db.SavedWorkspaces.Update(workspace);
             await _db.SaveChangesAsync();
+            _logger.LogInformation($"TRACE: AutoSaveAsync created new workspace {workspace.Id}");
             return workspace;
         }
 
+        _logger.LogInformation($"TRACE: Updating existing workspace {_currentWorkspaceId}");
         var current = await _db.SavedWorkspaces
             .Include(w => w.Artifacts)
             .FirstOrDefaultAsync(w => w.Id == _currentWorkspaceId && !w.IsDeleted);
         if (current == null)
         {
+            _logger.LogError($"TRACE: Current workspace {_currentWorkspaceId} not found");
             throw new InvalidOperationException($"Current workspace {_currentWorkspaceId} not found");
         }
 
@@ -308,7 +330,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         _db.SavedWorkspaces.Update(current);
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("Auto-saved workspace {WorkspaceId}", current.Id);
+        _logger.LogInformation($"TRACE: Auto-saved workspace {current.Id}");
         return current;
     }
 
@@ -458,8 +480,10 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
     public async Task<WorkspaceStateDto> GetCurrentStateAsync()
     {
+        _logger.LogInformation($"DIAG: [GetCurrentState] ENTERED, _currentWorkspaceId={_currentWorkspaceId}");
         if (!_currentWorkspaceId.HasValue)
         {
+            _logger.LogInformation("DIAG: [GetCurrentState] No current workspace ID, returning NotSaved");
             return new WorkspaceStateDto
             {
                 CurrentWorkspaceId = null,
@@ -475,6 +499,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
         if (workspace == null)
         {
+            _logger.LogInformation($"DIAG: [GetCurrentState] Workspace {_currentWorkspaceId} not found in DB, returning NotSaved");
             return new WorkspaceStateDto
             {
                 CurrentWorkspaceId = null,
@@ -484,11 +509,13 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             };
         }
 
+        _logger.LogInformation($"DIAG: [GetCurrentState] Found workspace {workspace.Id}, name={workspace.Name}, artifacts={workspace.Artifacts.Count}, autoSaved={workspace.AutoSaved}");
         var isDirty = await HasUnsavedChangesAsync();
         var status = workspace.AutoSaved ? WorkspaceStatus.AutoSaved :
                      isDirty ? WorkspaceStatus.UnsavedChanges :
                      WorkspaceStatus.Saved;
 
+        _logger.LogInformation($"DIAG: [GetCurrentState] RETURNING status={status}, artifactCount={workspace.Artifacts.Count}, isDirty={isDirty}");
         return new WorkspaceStateDto
         {
             CurrentWorkspaceId = workspace.Id,
