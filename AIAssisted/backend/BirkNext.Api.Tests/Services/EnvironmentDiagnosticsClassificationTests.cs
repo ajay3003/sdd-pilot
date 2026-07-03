@@ -1,5 +1,6 @@
 using BirkNext.Api.Models.Admin;
 using BirkNext.Api.Services;
+using BirkNext.Api.Tests.Extensions;
 using Xunit;
 
 namespace BirkNext.Api.Tests.Services;
@@ -333,27 +334,50 @@ public class EnvironmentDiagnosticsClassificationTests
     {
         var report = new EnvironmentDiagnosticsReport
         {
-            DatabaseChecks =
-            [
-                new() { Name = "DB1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" },
-                new() { Name = "DB2", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
-            ],
-            BackendApiChecks =
-            [
-                new() { Name = "API1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
-            ],
-            WorkspaceChecks =
-            [
-                new() { Name = "WS1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
-            ],
-            ReviewContextChecks =
-            [
-                new() { Name = "RC1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
-            ],
-            ExportChecks =
-            [
-                new() { Name = "EXP1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
-            ]
+            Sections = new()
+            {
+                new SettingsSection
+                {
+                    Title = "Database",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "DB1", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" },
+                        new SettingsItem { Name = "DB2", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" }
+                    }
+                },
+                new SettingsSection
+                {
+                    Title = "Backend API",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "API1", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" }
+                    }
+                },
+                new SettingsSection
+                {
+                    Title = "Workspace",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "WS1", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" }
+                    }
+                },
+                new SettingsSection
+                {
+                    Title = "Review Context",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "RC1", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" }
+                    }
+                },
+                new SettingsSection
+                {
+                    Title = "Export",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "EXP1", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" }
+                    }
+                }
+            }
         };
 
         var overallStatus = CalculateOverallStatus(report);
@@ -365,18 +389,26 @@ public class EnvironmentDiagnosticsClassificationTests
     {
         var report = new EnvironmentDiagnosticsReport
         {
-            DatabaseChecks =
-            [
-                new() { Name = "DB1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" },
-                new() { Name = "DB2", Status = SystemSettingsStatus.Fail, Details = "", Recommendation = "" }
-            ],
-            BackendApiChecks =
-            [
-                new() { Name = "API1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
-            ],
-            WorkspaceChecks = [],
-            ReviewContextChecks = [],
-            ExportChecks = []
+            Sections = new()
+            {
+                new SettingsSection
+                {
+                    Title = "Database",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "DB1", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" },
+                        new SettingsItem { Name = "DB2", Status = SystemSettingsStatus.Fail, Description = "", Recommendation = "" }
+                    }
+                },
+                new SettingsSection
+                {
+                    Title = "Backend API",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "API1", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" }
+                    }
+                }
+            }
         };
 
         var overallStatus = CalculateOverallStatus(report);
@@ -388,21 +420,34 @@ public class EnvironmentDiagnosticsClassificationTests
     {
         var report = new EnvironmentDiagnosticsReport
         {
-            DatabaseChecks =
-            [
-                new() { Name = "DB1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" },
-                new() { Name = "DB2", Status = SystemSettingsStatus.Warning, Details = "", Recommendation = "" }
-            ],
-            BackendApiChecks =
-            [
-                new() { Name = "API1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
-            ],
-            WorkspaceChecks =
-            [
-                new() { Name = "WS1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
-            ],
-            ReviewContextChecks = [],
-            ExportChecks = []
+            Sections = new()
+            {
+                new SettingsSection
+                {
+                    Title = "Database",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "DB1", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" },
+                        new SettingsItem { Name = "DB2", Status = SystemSettingsStatus.Warning, Description = "", Recommendation = "" }
+                    }
+                },
+                new SettingsSection
+                {
+                    Title = "Backend API",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "API1", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" }
+                    }
+                },
+                new SettingsSection
+                {
+                    Title = "Workspace",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "WS1", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" }
+                    }
+                }
+            }
         };
 
         var overallStatus = CalculateOverallStatus(report);
@@ -414,20 +459,33 @@ public class EnvironmentDiagnosticsClassificationTests
     {
         var report = new EnvironmentDiagnosticsReport
         {
-            DatabaseChecks =
-            [
-                new() { Name = "DB1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
-            ],
-            BackendApiChecks =
-            [
-                new() { Name = "API1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
-            ],
-            WorkspaceChecks =
-            [
-                new() { Name = "WS1", Status = SystemSettingsStatus.Unavailable, Details = "", Recommendation = "" }
-            ],
-            ReviewContextChecks = [],
-            ExportChecks = []
+            Sections = new()
+            {
+                new SettingsSection
+                {
+                    Title = "Database",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "DB1", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" }
+                    }
+                },
+                new SettingsSection
+                {
+                    Title = "Backend API",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "API1", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" }
+                    }
+                },
+                new SettingsSection
+                {
+                    Title = "Workspace",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "WS1", Status = SystemSettingsStatus.Unavailable, Description = "", Recommendation = "" }
+                    }
+                }
+            }
         };
 
         var overallStatus = CalculateOverallStatus(report);
@@ -439,14 +497,17 @@ public class EnvironmentDiagnosticsClassificationTests
     {
         var report = new EnvironmentDiagnosticsReport
         {
-            DatabaseChecks =
-            [
-                new() { Name = "DB1", Status = SystemSettingsStatus.Pass, Details = "", Recommendation = "" }
-            ],
-            BackendApiChecks = [],
-            WorkspaceChecks = [],
-            ReviewContextChecks = [],
-            ExportChecks = []
+            Sections = new()
+            {
+                new SettingsSection
+                {
+                    Title = "Database",
+                    Items = new()
+                    {
+                        new SettingsItem { Name = "DB1", Status = SystemSettingsStatus.Pass, Description = "", Recommendation = "" }
+                    }
+                }
+            }
         };
 
         var overallStatus = CalculateOverallStatus(report);
@@ -461,20 +522,15 @@ public class EnvironmentDiagnosticsClassificationTests
     /// </summary>
     private static SystemSettingsStatus CalculateOverallStatus(EnvironmentDiagnosticsReport report)
     {
-        var allChecks = report.DatabaseChecks
-            .Concat(report.BackendApiChecks)
-            .Concat(report.WorkspaceChecks)
-            .Concat(report.ReviewContextChecks)
-            .Concat(report.ExportChecks)
-            .ToList();
+        var allItems = report.Sections.SelectMany(s => s.Items).ToList();
 
-        var hasFail = allChecks.Any(c => c.Status == SystemSettingsStatus.Fail);
+        var hasFail = allItems.Any(i => i.Status == SystemSettingsStatus.Fail);
         if (hasFail)
             return SystemSettingsStatus.Fail;
 
-        var hasWarningOrUnavailable = allChecks.Any(c =>
-            c.Status == SystemSettingsStatus.Warning ||
-            c.Status == SystemSettingsStatus.Unavailable);
+        var hasWarningOrUnavailable = allItems.Any(i =>
+            i.Status == SystemSettingsStatus.Warning ||
+            i.Status == SystemSettingsStatus.Unavailable);
 
         return hasWarningOrUnavailable
             ? SystemSettingsStatus.Warning

@@ -64,6 +64,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<ISystemSettingsStatusEngine, SystemSettingsStatusEngine>();
 builder.Services.AddScoped<IGeneralPageService, GeneralPageService>();
+builder.Services.AddScoped<IConfigurationHealthPageService, ConfigurationHealthPageService>();
 builder.Services.AddScoped<IMigrationIntegrityValidator, MigrationIntegrityValidator>();
 builder.Services.AddScoped<IEnvironmentDiagnosticsService, EnvironmentDiagnosticsService>();
 builder.Services.AddScoped<IConfigurationHealthService, ConfigurationHealthService>();

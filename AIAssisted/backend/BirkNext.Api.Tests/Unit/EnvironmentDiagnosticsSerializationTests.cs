@@ -1,4 +1,5 @@
 using BirkNext.Api.Models.Admin;
+using BirkNext.Api.Tests.Extensions;
 using FluentAssertions;
 using System.Text.Json;
 
@@ -56,21 +57,30 @@ public class EnvironmentDiagnosticsSerializationTests
         var report = new EnvironmentDiagnosticsReport
         {
             Environment = "Development",
-            GeneratedAt = DateTime.UtcNow
+            GeneratedAt = DateTime.UtcNow,
+            Sections = new()
+            {
+                new SettingsSection
+                {
+                    Title = "Database",
+                    Items = new()
+                    {
+                        new SettingsItem
+                        {
+                            Name = "Database Reachable",
+                            Status = SystemSettingsStatus.Pass,
+                            Description = "Connected successfully",
+                            Recommendation = ""
+                        }
+                    }
+                }
+            }
         };
-
-        report.DatabaseChecks.Add(new EnvironmentDiagnosticCheck
-        {
-            Name = "Database Reachable",
-            Status = SystemSettingsStatus.Pass,
-            Details = "Connected successfully",
-            Recommendation = ""
-        });
 
         // Act
         var json = JsonSerializer.Serialize(report);
         var doc = JsonDocument.Parse(json);
-        var statusElement = doc.RootElement.GetProperty("databaseChecks")[0].GetProperty("status");
+        var statusElement = doc.RootElement.GetProperty("sections")[0].GetProperty("items")[0].GetProperty("status");
 
         // Assert
         statusElement.ValueKind.Should().Be(JsonValueKind.String);
@@ -84,19 +94,25 @@ public class EnvironmentDiagnosticsSerializationTests
         var jsonString = @"{
             ""generatedAt"": ""2026-01-01T00:00:00Z"",
             ""environment"": ""Development"",
-            ""databaseChecks"": [
+            ""overallStatus"": ""Pass"",
+            ""sections"": [
                 {
-                    ""name"": ""Database Reachable"",
+                    ""title"": ""Database"",
+                    ""description"": ""Database checks"",
                     ""status"": ""Pass"",
-                    ""details"": ""Connected"",
-                    ""recommendation"": """"
+                    ""items"": [
+                        {
+                            ""name"": ""Database Reachable"",
+                            ""value"": """",
+                            ""status"": ""Pass"",
+                            ""description"": ""Connected"",
+                            ""recommendation"": """",
+                            ""isRequired"": true
+                        }
+                    ],
+                    ""isRequired"": true
                 }
-            ],
-            ""backendApiChecks"": [],
-            ""workspaceChecks"": [],
-            ""reviewContextChecks"": [],
-            ""exportChecks"": [],
-            ""overallStatus"": ""Pass""
+            ]
         }";
 
         // Act
@@ -104,7 +120,8 @@ public class EnvironmentDiagnosticsSerializationTests
 
         // Assert
         report.Should().NotBeNull();
-        report!.DatabaseChecks.Should().HaveCount(1);
-        report.DatabaseChecks[0].Status.Should().Be(SystemSettingsStatus.Pass);
+        report!.Sections.Should().HaveCount(1);
+        report.Sections[0].Items.Should().HaveCount(1);
+        report.Sections[0].Items[0].Status.Should().Be(SystemSettingsStatus.Pass);
     }
 }
