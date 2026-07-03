@@ -70,8 +70,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         _logger = logger;
 
         _artifactStatus.StatusChanged += OnReadinessChanged;
-        _workspaceRestore.ReviewContextRebuildNeeded += OnReviewContextRebuildNeeded;
-        _workspaceSession.ReviewContextRebuildNeeded += OnReviewContextRebuildNeeded;
+        // ReviewContextProvider now owns ReviewContextRebuildNeeded - we rely on ArtifactsChanged
         _updates.ArtifactsChanged += OnArtifactsChanged;
     }
 
@@ -294,15 +293,11 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
 
     private void OnReadinessChanged() => ReadinessChanged?.Invoke();
 
-    private void OnReviewContextRebuildNeeded(object? sender, EventArgs e) => OnReadinessChanged();
-
     private void OnArtifactsChanged(object? sender, EventArgs e) => OnReadinessChanged();
 
     public void Dispose()
     {
         _artifactStatus.StatusChanged -= OnReadinessChanged;
-        _workspaceRestore.ReviewContextRebuildNeeded -= OnReviewContextRebuildNeeded;
-        _workspaceSession.ReviewContextRebuildNeeded -= OnReviewContextRebuildNeeded;
         _updates.ArtifactsChanged -= OnArtifactsChanged;
     }
 }
