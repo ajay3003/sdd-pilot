@@ -24,7 +24,8 @@ public class EnvironmentDiagnosticCheck
 }
 
 /// <summary>
-/// Complete diagnostic report with checks organized by category.
+/// Complete diagnostic report with checks organized by unified settings hierarchy.
+/// Uses SettingsSection to eliminate custom report hierarchies.
 /// </summary>
 public class EnvironmentDiagnosticsReport
 {
@@ -34,32 +35,36 @@ public class EnvironmentDiagnosticsReport
     [JsonPropertyName("environment")]
     public string Environment { get; set; } = "";
 
-    [JsonPropertyName("databaseChecks")]
-    public List<EnvironmentDiagnosticCheck> DatabaseChecks { get; set; } = [];
-
-    [JsonPropertyName("backendApiChecks")]
-    public List<EnvironmentDiagnosticCheck> BackendApiChecks { get; set; } = [];
-
-    [JsonPropertyName("workspaceChecks")]
-    public List<EnvironmentDiagnosticCheck> WorkspaceChecks { get; set; } = [];
-
-    [JsonPropertyName("reviewContextChecks")]
-    public List<EnvironmentDiagnosticCheck> ReviewContextChecks { get; set; } = [];
-
-    [JsonPropertyName("exportChecks")]
-    public List<EnvironmentDiagnosticCheck> ExportChecks { get; set; } = [];
-
     [JsonPropertyName("overallStatus")]
     public SystemSettingsStatus OverallStatus { get; set; } = SystemSettingsStatus.Pass;
 
+    [JsonPropertyName("summary")]
+    public StatusSummary? Summary { get; set; }
+
+    [JsonPropertyName("sections")]
+    public List<SettingsSection> Sections { get; set; } = [];
+
+    /// <summary>
+    /// Get all checks from all sections (for backward compatibility with tests).
+    /// </summary>
     public List<EnvironmentDiagnosticCheck> GetAllChecks()
     {
         var all = new List<EnvironmentDiagnosticCheck>();
-        all.AddRange(DatabaseChecks);
-        all.AddRange(BackendApiChecks);
-        all.AddRange(WorkspaceChecks);
-        all.AddRange(ReviewContextChecks);
-        all.AddRange(ExportChecks);
+        foreach (var section in Sections)
+        {
+            // Convert SettingsItem back to EnvironmentDiagnosticCheck for internal use
+            foreach (var item in section.Items)
+            {
+                all.Add(new EnvironmentDiagnosticCheck
+                {
+                    Name = item.Name,
+                    Status = item.Status,
+                    Details = item.Description,
+                    Recommendation = item.Recommendation ?? "",
+                    TechnicalDetails = null
+                });
+            }
+        }
         return all;
     }
 }

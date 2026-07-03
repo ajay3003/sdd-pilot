@@ -43,29 +43,72 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             Environment = _env.EnvironmentName
         };
 
-        // Platform Health: Core infrastructure checks (hard failures if not met)
-        report.DatabaseChecks.AddRange(await RunDatabaseChecksAsync());
-        report.BackendApiChecks.AddRange(RunBackendApiChecks());
-
-        // Workspace Readiness: Check if workspace artifacts have been loaded (not failures)
-        report.WorkspaceChecks.AddRange(await RunWorkspaceReadinessChecksAsync());
-
-        report.ReviewContextChecks.AddRange(await RunReviewContextChecksAsync());
-
-        report.ExportChecks.Add(new EnvironmentDiagnosticCheck
+        // Collect all check categories into sections
+        var databaseChecks = await RunDatabaseChecksAsync();
+        var backendChecks = RunBackendApiChecks();
+        var workspaceChecks = await RunWorkspaceReadinessChecksAsync();
+        var reviewContextChecks = await RunReviewContextChecksAsync();
+        var exportChecks = new List<EnvironmentDiagnosticCheck>
         {
-            Name = "Export Services",
-            Status = SystemSettingsStatus.Pass,
-            Details = "JSON and HTML export available in frontend",
-            Recommendation = ""
-        });
+            new EnvironmentDiagnosticCheck
+            {
+                Name = "Export Services",
+                Status = SystemSettingsStatus.Pass,
+                Details = "JSON and HTML export available in frontend",
+                Recommendation = ""
+            }
+        };
+
+        // Organize checks into unified SettingsSection hierarchy
+        report.Sections.Add(ConvertChecksToSection("Platform Health: Database", databaseChecks));
+        report.Sections.Add(ConvertChecksToSection("Platform Health: Backend API", backendChecks));
+        report.Sections.Add(ConvertChecksToSection("Workspace Readiness", workspaceChecks));
+        report.Sections.Add(ConvertChecksToSection("Review Context", reviewContextChecks));
+        report.Sections.Add(ConvertChecksToSection("Export Services", exportChecks));
 
         // Calculate overall status using the shared engine
-        var allChecks = report.GetAllChecks();
-        var allStatuses = allChecks.Select(c => c.Status).ToArray();
+        var allStatuses = report.Sections
+            .SelectMany(s => s.Items.Select(i => i.Status))
+            .ToArray();
         report.OverallStatus = _statusEngine.CalculateOverallStatus(allStatuses);
 
+        // Create status summary (OverallStatus is calculated from counts)
+        var summary = new StatusSummary();
+        foreach (var item in report.Sections.SelectMany(s => s.Items))
+        {
+            summary.AddStatus(item.Status);
+        }
+        report.Summary = summary;
+
         return report;
+    }
+
+    /// <summary>
+    /// Convert a list of diagnostic checks to a SettingsSection with SettingsItem objects.
+    /// </summary>
+    private SettingsSection ConvertChecksToSection(string title, List<EnvironmentDiagnosticCheck> checks)
+    {
+        var items = checks.Select(check => new SettingsItem
+        {
+            Name = check.Name,
+            Value = check.Details,
+            Status = check.Status,
+            Description = check.Details,
+            Recommendation = check.Recommendation,
+            IsRequired = false
+        }).ToList();
+
+        // Calculate section status from items using the shared engine
+        var sectionStatus = _statusEngine.CalculateOverallStatus(items.Select(i => i.Status).ToArray());
+
+        return new SettingsSection
+        {
+            Title = title,
+            Description = $"Diagnostic checks for {title.ToLower()}",
+            Status = sectionStatus,
+            Items = items,
+            IsRequired = false
+        };
     }
 
     private async Task<List<EnvironmentDiagnosticCheck>> RunDatabaseChecksAsync()
