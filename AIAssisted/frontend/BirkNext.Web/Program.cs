@@ -79,8 +79,9 @@ builder.Services.AddScoped<IExtractionCandidateMetricsService, ExtractionCandida
 builder.Services.AddSingleton<WorkspaceArtifactRepository>();
 builder.Services.AddSingleton<IWorkspaceArtifactRepository>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
 builder.Services.AddSingleton<IWorkspaceSessionService>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
-builder.Services.AddSingleton<IWorkspaceArtifactStatusService, WorkspaceArtifactStatusService>();
+builder.Services.AddSingleton<IWorkspaceUpdateCoordinator, WorkspaceUpdateCoordinator>();
 builder.Services.AddSingleton<IWorkspaceStateManager, WorkspaceStateManager>();
+builder.Services.AddSingleton<IWorkspaceArtifactStatusService, WorkspaceArtifactStatusService>();
 builder.Services.AddScoped<IWorkspaceSessionRestoreService, WorkspaceSessionRestoreService>();
 builder.Services.AddHttpClient<IWorkspacePersistenceApiService, WorkspacePersistenceApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));

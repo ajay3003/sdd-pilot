@@ -30,4 +30,14 @@ public interface IWorkspaceSessionService : IWorkspaceArtifactRepository
     WorkspaceArtifact? Get(WorkspaceArtifactKind kind);
     bool Has(WorkspaceArtifactKind kind);
     void Clear(WorkspaceArtifactKind kind);
+
+    /// <summary>
+    /// Notify that artifacts have changed and ReviewContext needs rebuild.
+    /// </summary>
+    void NotifyArtifactsChanged();
+
+    /// <summary>
+    /// Raised when artifacts change and ReviewContext rebuild is needed.
+    /// </summary>
+    event EventHandler? ReviewContextRebuildNeeded;
 }

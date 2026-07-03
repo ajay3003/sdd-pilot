@@ -242,6 +242,9 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
 
     public async Task MarkStepReviewedAsync(Guid workspaceId, string stepKey, string? comment = null, string? userId = null)
     {
+        if (workspaceId == Guid.Empty)
+            throw new InvalidOperationException("Workflow operations require a saved workspace. Save the workspace first before marking steps as reviewed.");
+
         var progress = await GetOrCreateProgressAsync(workspaceId, stepKey);
         progress.ReviewState = ReviewState.Reviewed;
         progress.ReviewedAt = DateTimeOffset.UtcNow;
@@ -262,6 +265,9 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         string? comment = null,
         string? userId = null)
     {
+        if (workspaceId == Guid.Empty)
+            throw new InvalidOperationException("Workflow operations require a saved workspace. Save the workspace first before approving steps.");
+
         var progress = await GetOrCreateProgressAsync(workspaceId, stepKey);
         progress.ReviewState = ReviewState.Reviewed;
         progress.ApprovalState = ApprovalState.Approved;
@@ -283,6 +289,9 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         string? comment = null,
         string? userId = null)
     {
+        if (workspaceId == Guid.Empty)
+            throw new InvalidOperationException("Workflow operations require a saved workspace. Save the workspace first before rejecting steps.");
+
         var progress = await GetOrCreateProgressAsync(workspaceId, stepKey);
         progress.ApprovalState = ApprovalState.NeedsChanges;
         progress.RejectedAt = DateTimeOffset.UtcNow;

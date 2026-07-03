@@ -48,6 +48,7 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
     private readonly IWorkspaceArtifactRepository _artifactRepository;
     private readonly IWorkspacePersistenceApiService _persistence;
     private readonly IWorkspaceSessionRestoreService _restore;
+    private readonly IWorkspaceUpdateCoordinator _updates;
     private readonly ILogger<WorkspaceAutoSaveService> _logger;
 
     private System.Threading.Timer? _autoSaveTimer;
@@ -74,12 +75,17 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
         IWorkspaceArtifactRepository artifactRepository,
         IWorkspacePersistenceApiService persistence,
         IWorkspaceSessionRestoreService restore,
+        IWorkspaceUpdateCoordinator updates,
         ILogger<WorkspaceAutoSaveService> logger)
     {
         _artifactRepository = artifactRepository;
         _persistence = persistence;
         _restore = restore;
+        _updates = updates;
         _logger = logger;
+
+        // Subscribe to artifacts changed events
+        _updates.ArtifactsChanged += OnArtifactsChanged;
     }
 
     public async Task StartMonitoringAsync()

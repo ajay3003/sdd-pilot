@@ -6,6 +6,7 @@
 @inject ProjectDocumentApiService DocumentApi
 @inject IWorkspaceSessionService Workspace
 @inject IWorkspaceArtifactStatusService ArtifactStatus
+@inject IWorkspaceAutoSaveService AutoSave
 @inject QualityReviewSessionService QualitySession
 @inject IDashboardSnapshotService DashboardSnapshot
 @inject ITargetEnvironmentHintExtractor TargetHintExtractor
@@ -583,8 +584,22 @@
             _hintState[project.Slug] = TargetHintExtractor.Extract(project, await FetchProjectTextsAsync(project));
         _loadingSlug = null;
 
-        // Notify that artifacts have changed so RecommendedWorkflow refreshes readiness
-        Workspace.NotifyArtifactsChanged();
+        // Ensure auto-save monitoring is started before triggering artifact change.
+        // This allows the auto-save timer to start and create a valid workspace.
+        await AutoSave.StartMonitoringAsync();
+
+        // Trigger auto-save once after all artifacts are loaded.
+        // This ensures a valid workspace identity is created before workflow operations.
+        EventHandler? autoSaveCompletedHandler = null;
+        autoSaveCompletedHandler = (sender, args) =>
+        {
+            if (autoSaveCompletedHandler != null)
+                AutoSave.AutoSaveCompleted -= autoSaveCompletedHandler;
+            // Now that workspace has valid ID, notify that artifacts changed
+            Workspace.NotifyArtifactsChanged();
+        };
+        AutoSave.AutoSaveCompleted += autoSaveCompletedHandler;
+        AutoSave.OnArtifactChanged();
     }
 
     private async Task<List<SampleProjectArtifactText>> FetchProjectTextsAsync(SampleProjectDto project)

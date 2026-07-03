@@ -44,6 +44,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
 {
     private readonly IWorkspaceArtifactStatusService _artifactStatus;
     private readonly IWorkspaceSessionRestoreService _workspaceRestore;
+    private readonly IWorkspaceSessionService _workspaceSession;
     private readonly IWorkspacePersistenceApiService _workspacePersistence;
     private readonly IRecommendedWorkflowApiService _workflowApi;
     private readonly ILogger<WorkflowReadinessService> _logger;
@@ -53,18 +54,21 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     public WorkflowReadinessService(
         IWorkspaceArtifactStatusService artifactStatus,
         IWorkspaceSessionRestoreService workspaceRestore,
+        IWorkspaceSessionService workspaceSession,
         IWorkspacePersistenceApiService workspacePersistence,
         IRecommendedWorkflowApiService workflowApi,
         ILogger<WorkflowReadinessService> logger)
     {
         _artifactStatus = artifactStatus;
         _workspaceRestore = workspaceRestore;
+        _workspaceSession = workspaceSession;
         _workspacePersistence = workspacePersistence;
         _workflowApi = workflowApi;
         _logger = logger;
 
         _artifactStatus.StatusChanged += OnReadinessChanged;
         _workspaceRestore.ReviewContextRebuildNeeded += OnReviewContextRebuildNeeded;
+        _workspaceSession.ReviewContextRebuildNeeded += OnReviewContextRebuildNeeded;
     }
 
     public async Task<WorkflowReadiness> GetReadinessAsync()
@@ -292,5 +296,6 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     {
         _artifactStatus.StatusChanged -= OnReadinessChanged;
         _workspaceRestore.ReviewContextRebuildNeeded -= OnReviewContextRebuildNeeded;
+        _workspaceSession.ReviewContextRebuildNeeded -= OnReviewContextRebuildNeeded;
     }
 }

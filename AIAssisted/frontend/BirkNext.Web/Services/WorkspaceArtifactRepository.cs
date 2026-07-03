@@ -9,6 +9,8 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
 {
     private readonly Dictionary<WorkspaceArtifactType, WorkspaceArtifact> _artifacts = new();
 
+    public event EventHandler? ReviewContextRebuildNeeded;
+
     public string? ProjectName { get; set; }
     public string? CurrentProject
     {
@@ -57,4 +59,9 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     public bool Has(WorkspaceArtifactKind kind) => Has((WorkspaceArtifactType)(int)kind);
 
     public void Clear(WorkspaceArtifactKind kind) => Clear((WorkspaceArtifactType)(int)kind);
+
+    public void NotifyArtifactsChanged()
+    {
+        ReviewContextRebuildNeeded?.Invoke(this, EventArgs.Empty);
+    }
 }

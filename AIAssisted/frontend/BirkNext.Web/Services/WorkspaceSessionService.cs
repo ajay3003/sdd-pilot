@@ -8,6 +8,8 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
 {
     private readonly Dictionary<WorkspaceArtifactKind, WorkspaceArtifact> _artifacts = new();
 
+    public event EventHandler? ReviewContextRebuildNeeded;
+
     public string? ProjectName { get; set; }
     public string? CurrentProject
     {
@@ -52,4 +54,9 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
 
     public IEnumerable<(WorkspaceArtifactType Type, WorkspaceArtifact Artifact)> GetAllArtifacts()
         => _artifacts.Select(kvp => ((WorkspaceArtifactType)(int)kvp.Key, kvp.Value));
+
+    public void NotifyArtifactsChanged()
+    {
+        ReviewContextRebuildNeeded?.Invoke(this, EventArgs.Empty);
+    }
 }
