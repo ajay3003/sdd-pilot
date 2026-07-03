@@ -1,4 +1,4 @@
-@page "/admin/system-settings"
+﻿@page "/admin/system-settings"
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models
@@ -20,7 +20,7 @@
 @inject IBlazorWasmPerformanceReviewService PerformanceApi
 @inject Microsoft.AspNetCore.Components.WebAssembly.Hosting.IWebAssemblyHostEnvironment HostEnvironment
 
-<PageTitle>System Settings — QA Review Studio</PageTitle>
+<PageTitle>System Settings â€” QA Review Studio</PageTitle>
 
 <PageHeader Title="System Settings"
             Description="Manage feature visibility and platform configuration. Secrets are never shown.">
@@ -30,7 +30,7 @@
         {
             <SecondaryButton OnClick="CancelEdit" Disabled="@_isSaving">Cancel</SecondaryButton>
             <PrimaryButton OnClick="SaveAsync" Disabled="@_isSaving" Class="btn-save">
-                @(_isSaving ? "Saving…" : "Save Settings")
+                @(_isSaving ? "Savingâ€¦" : "Save Settings")
             </PrimaryButton>
         }
         else
@@ -113,7 +113,7 @@ else if (_settings is not null)
 
     <div class="ss-layout">
 
-        @* ── Left Navigation ──────────────────────────────────────────────────────── *@
+        @* â”€â”€ Left Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ *@
         <nav class="ss-nav" aria-label="Settings sections">
             <div class="ss-nav-search">
                 <div class="ss-nav-search-wrap">
@@ -122,7 +122,7 @@ else if (_settings is not null)
                     </svg>
                     <input type="search"
                            class="ss-nav-search-input"
-                           placeholder="Find a section…"
+                           placeholder="Find a sectionâ€¦"
                            aria-label="Search settings sections"
                            value="@_navSearch"
                            @oninput="e => _navSearch = e.Value?.ToString() ?? string.Empty" />
@@ -155,18 +155,18 @@ else if (_settings is not null)
             </div>
         </nav>
 
-        @* ── Right Content ────────────────────────────────────────────────────────── *@
+        @* â”€â”€ Right Content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ *@
         <div class="ss-content">
 
             @if (_isEditMode)
             {
                 <div class="ss-edit-banner" role="status">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708l-3-3zm.646 6.061L9.793 2.5 3.293 9H3.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.207l6.5-6.5zm-7.468 7.468A.5.5 0 0 1 6 13.5V13h-.5a.5.5 0 0 1-.5-.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.5-.5V10h-.5a.499.499 0 0 1-.175-.032l-.179.178a.5.5 0 0 0-.11.168l-2 5a.5.5 0 0 0 .65.65l5-2a.5.5 0 0 0 .168-.11l.178-.178z"/></svg>
-                    <span>Editing settings — navigate sections freely and save when done.</span>
+                    <span>Editing settings â€” navigate sections freely and save when done.</span>
                 </div>
             }
 
-            @* ══ General ══════════════════════════════════════════════════════════════ *@
+            @* â•â• General â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "general")
             {
                 <div class="settings-card settings-card-full-width">
@@ -280,7 +280,7 @@ else if (_settings is not null)
                 </div>
             }
 
-            @* ══ Configuration Health ══════════════════════════════════════════════════ *@
+            @* â•â• Configuration Health â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "config-health")
             {
                 <div class="settings-card settings-card-full-width">
@@ -291,7 +291,7 @@ else if (_settings is not null)
                     {
                         @if (!_configHealthLoaded)
                         {
-                            <p class="db-section-empty">Loading configuration health…</p>
+                            <p class="db-section-empty">Loading configuration healthâ€¦</p>
                         }
                         else
                         {
@@ -337,7 +337,7 @@ else if (_settings is not null)
                         @if (_configHealthReport.OverallStatus == SystemSettingsStatus.Pass)
                         {
                             <p class="ss-health-all-good" role="status">
-                                ✓ All required configuration checks passed.
+                                âœ“ All required configuration checks passed.
                             </p>
                         }
 
@@ -392,7 +392,7 @@ else if (_settings is not null)
                 </div>
             }
 
-            @* ══ Feature Visibility ═══════════════════════════════════════════════════ *@
+            @* â•â• Feature Visibility â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "feature-visibility")
             {
                 <div class="settings-card settings-card-full-width">
@@ -410,7 +410,7 @@ else if (_settings is not null)
 
                     @if (_editableSettings is not null)
                     {
-                        <!-- Platform Features — always on, shown as chips not toggles -->
+                        <!-- Platform Features â€” always on, shown as chips not toggles -->
                         <div class="fv-section fv-section-platform">
                             <div class="fv-section-header">
                                 <span class="fv-section-label">Platform Features</span>
@@ -461,7 +461,7 @@ else if (_settings is not null)
                             </div>
                         </div>
 
-                        <!-- Grouped feature sections — aligned with sidebar navigation -->
+                        <!-- Grouped feature sections â€” aligned with sidebar navigation -->
                         <div class="fv-sections-grid">
 
                             <div class="fv-section">
@@ -603,14 +603,14 @@ else if (_settings is not null)
                                             <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="color:var(--clr-warning,#f59e0b);flex-shrink:0">
                                                 <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
                                             </svg>
-                                            <span><strong>@item.Label</strong> — key <code>@item.Key</code> not found in feature configuration</span>
+                                            <span><strong>@item.Label</strong> â€” key <code>@item.Key</code> not found in feature configuration</span>
                                         </div>
                                     }
                                 </div>
                             }
                         </div>
 
-                        <!-- Retired Features — read-only -->
+                        <!-- Retired Features â€” read-only -->
                         <div class="fv-section fv-section-retired">
                             <div class="fv-section-header">
                                 <span class="fv-section-label">Retired Features</span>
@@ -639,13 +639,13 @@ else if (_settings is not null)
                 </div>
             }
 
-            @* ══ Platform ══════════════════════════════════════════════════════════════ *@
+            @* â•â• Platform â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "platform")
             {
                 <div class="settings-card settings-card-full-width">
                     <div class="settings-card-title">Azure DevOps Integration</div>
                     <p class="settings-card-note">
-                        Read-only configuration for Implementation Traceability. PAT must be set via <code>ADO_PAT</code> environment variable or <code>appsettings.Local.json</code> — it is never displayed here.
+                        Read-only configuration for Implementation Traceability. PAT must be set via <code>ADO_PAT</code> environment variable or <code>appsettings.Local.json</code> â€” it is never displayed here.
                     </p>
 
                     <div class="dev-diag-subgrid">
@@ -682,15 +682,15 @@ else if (_settings is not null)
                                 </tr>
                                 <tr>
                                     <td>Organization URL</td>
-                                    <td><span class="mono-chip">@(string.IsNullOrWhiteSpace(_settings.AzureDevOps.OrganizationUrl) ? "—" : _settings.AzureDevOps.OrganizationUrl)</span></td>
+                                    <td><span class="mono-chip">@(string.IsNullOrWhiteSpace(_settings.AzureDevOps.OrganizationUrl) ? "â€”" : _settings.AzureDevOps.OrganizationUrl)</span></td>
                                 </tr>
                                 <tr>
                                     <td>Project</td>
-                                    <td><span class="mono-chip">@(string.IsNullOrWhiteSpace(_settings.AzureDevOps.Project) ? "—" : _settings.AzureDevOps.Project)</span></td>
+                                    <td><span class="mono-chip">@(string.IsNullOrWhiteSpace(_settings.AzureDevOps.Project) ? "â€”" : _settings.AzureDevOps.Project)</span></td>
                                 </tr>
                                 <tr>
                                     <td>Repository</td>
-                                    <td><span class="mono-chip">@(string.IsNullOrWhiteSpace(_settings.AzureDevOps.RepositoryId) ? "—" : _settings.AzureDevOps.RepositoryId)</span></td>
+                                    <td><span class="mono-chip">@(string.IsNullOrWhiteSpace(_settings.AzureDevOps.RepositoryId) ? "â€”" : _settings.AzureDevOps.RepositoryId)</span></td>
                                 </tr>
                                 <tr>
                                     <td>Default Branch</td>
@@ -714,7 +714,7 @@ else if (_settings is not null)
 
                             <SecondaryButton OnClick="TestAdoConnectionAsync"
                                              Disabled="@(!_settings.AzureDevOps.Enabled || _adoTestRunning)">
-                                @(_adoTestRunning ? "Testing…" : "Test Connection")
+                                @(_adoTestRunning ? "Testingâ€¦" : "Test Connection")
                             </SecondaryButton>
 
                             @if (_adoTestResult is not null)
@@ -753,7 +753,7 @@ else if (_settings is not null)
                 </div>
             }
 
-            @* ══ Target Environments ══════════════════════════════════════════════════ *@
+            @* â•â• Target Environments â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "target-environments")
             {
                 <div class="settings-card settings-card-full-width">
@@ -765,16 +765,16 @@ else if (_settings is not null)
                 </div>
             }
 
-            @* ══ AI ═══════════════════════════════════════════════════════════════════ *@
+            @* â•â• AI â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "ai")
             {
                 <div class="settings-card settings-card-full-width">
                     <div class="settings-card-title">AI</div>
                     <p class="settings-card-note">
-                        AI provider configuration — model selection, temperature, token limits, prompt configuration — is managed through backend settings and is not currently exposed in System Settings.
+                        AI provider configuration â€” model selection, temperature, token limits, prompt configuration â€” is managed through backend settings and is not currently exposed in System Settings.
                     </p>
                     <div class="ss-placeholder">
-                        <div class="ss-placeholder-icon" aria-hidden="true">🤖</div>
+                        <div class="ss-placeholder-icon" aria-hidden="true">ðŸ¤–</div>
                         <div class="ss-placeholder-text">AI settings not yet available here</div>
                         <div class="ss-placeholder-sub">AI features can be individually enabled or disabled in Feature Visibility.</div>
                         <SecondaryButton OnClick='() => SetSection("feature-visibility")'>Open Feature Visibility</SecondaryButton>
@@ -782,12 +782,12 @@ else if (_settings is not null)
                 </div>
             }
 
-            @* ══ Diagnostics ══════════════════════════════════════════════════════════ *@
+            @* â•â• Diagnostics â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "diagnostics")
             {
                 <div class="settings-card settings-card-full-width">
                     <div class="settings-card-title">Developer Diagnostics</div>
-                    <p class="settings-card-note">Backend, frontend, database, and runtime configuration. Sensitive values are never shown — use Copy Diagnostics in the top-right to export a safe summary.</p>
+                    <p class="settings-card-note">Backend, frontend, database, and runtime configuration. Sensitive values are never shown â€” use Copy Diagnostics in the top-right to export a safe summary.</p>
 
                     <div class="dev-diag-body">
                         <div class="dev-diag-subgrid">
@@ -910,7 +910,7 @@ else if (_settings is not null)
                                     </tr>
                                     <tr><td>Provider</td><td>@OrUnknown(_settings.Database.Provider)</td></tr>
                                     <tr><td>Host</td><td>@OrUnknown(_settings.Database.Host)</td></tr>
-                                    <tr><td>Port</td><td>@(_settings.Database.Port > 0 ? _settings.Database.Port.ToString() : "—")</td></tr>
+                                    <tr><td>Port</td><td>@(_settings.Database.Port > 0 ? _settings.Database.Port.ToString() : "â€”")</td></tr>
                                     <tr><td>Database</td><td>@OrUnknown(_settings.Database.DatabaseName)</td></tr>
                                     <tr><td>Username</td><td>@OrUnknown(_settings.Database.Username)</td></tr>
                                     <tr>
@@ -954,7 +954,7 @@ else if (_settings is not null)
                                     </tr>
                                     <tr>
                                         <td>Sinks</td>
-                                        <td>@((_settings.Logging.Sinks?.Count ?? 0) > 0 ? string.Join(", ", _settings.Logging.Sinks) : "—")</td>
+                                        <td>@((_settings.Logging.Sinks?.Count ?? 0) > 0 ? string.Join(", ", _settings.Logging.Sinks) : "â€”")</td>
                                     </tr>
                                     <tr>
                                         <td>Log Path</td>
@@ -1083,7 +1083,7 @@ else if (_settings is not null)
                                 <table class="settings-table">
                                     @if (!_diagDocLoaded)
                                     {
-                                        <tr><td colspan="3" style="color:var(--clr-text-muted)">Loading…</td></tr>
+                                        <tr><td colspan="3" style="color:var(--clr-text-muted)">Loadingâ€¦</td></tr>
                                     }
                                     else
                                     {
@@ -1102,7 +1102,7 @@ else if (_settings is not null)
                                                         <span class="settings-badge">Empty</span>
                                                     }
                                                 </td>
-                                                <td>@(doc is not null ? $"{doc.ContentLengthChars:N0} chars" : "—")</td>
+                                                <td>@(doc is not null ? $"{doc.ContentLengthChars:N0} chars" : "â€”")</td>
                                             </tr>
                                         }
                                     }
@@ -1114,7 +1114,7 @@ else if (_settings is not null)
                 </div>
             }
 
-            @* ══ Documentation Health ═════════════════════════════════════════════════ *@
+            @* â•â• Documentation Health â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "doc-health")
             {
                 <div class="settings-card settings-card-full-width">
@@ -1123,12 +1123,12 @@ else if (_settings is not null)
 
                     @if (!_docHealthComputed)
                     {
-                        <div class="db-section-empty">Loading…</div>
+                        <div class="db-section-empty">Loadingâ€¦</div>
                     }
                     else if (_docHealthFindings.Count == 0)
                     {
                         <p class="ss-health-all-good" role="status">
-                            ✓ All documentation health checks passed. No issues detected.
+                            âœ“ All documentation health checks passed. No issues detected.
                         </p>
                     }
                     else
@@ -1366,7 +1366,7 @@ else if (_settings is not null)
                     </div>
                 </div>
             }
-            @* ══ Environment Diagnostics ══════════════════════════════════════════════ *@
+            @* â•â• Environment Diagnostics â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "environment-diagnostics")
             {
                 <div class="settings-card settings-card-full-width">
@@ -1382,7 +1382,7 @@ else if (_settings is not null)
                         <div class="settings-card-title" style="font-size:0.95rem">Run Diagnostics</div>
                         <div style="display:flex;flex-wrap:wrap;gap:.5rem">
                             <PrimaryButton OnClick="RunEnvironmentDiagnosticsAsync" Disabled="@_envDiagRunning">
-                                @(_envDiagRunning ? "Running…" : "Run Diagnostics")
+                                @(_envDiagRunning ? "Runningâ€¦" : "Run Diagnostics")
                             </PrimaryButton>
                             <SecondaryButton OnClick="ExportEnvironmentDiagnosticsJsonAsync" Disabled="@(_envDiagReport is null)">Export JSON</SecondaryButton>
                             <SecondaryButton OnClick="ExportEnvironmentDiagnosticsHtmlAsync" Disabled="@(_envDiagReport is null)">Export HTML</SecondaryButton>
@@ -1393,14 +1393,14 @@ else if (_settings is not null)
                     {
                         <div style="margin-bottom:1.5rem;padding:1rem;background:#fee2e2;border:1px solid #fecaca;border-radius:var(--radius-default)">
                             <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
-                                <span style="font-weight:600;color:#991b1b">⚠️ Diagnostics Failed</span>
+                                <span style="font-weight:600;color:#991b1b">âš ï¸ Diagnostics Failed</span>
                             </div>
                             <div style="font-size:0.9rem;color:#7c2d12;font-family:monospace;white-space:pre-wrap;word-break:break-word;margin-bottom:0.75rem">@_envDiagErrorDetails</div>
                             @if (!string.IsNullOrWhiteSpace(_envDiagStackTrace))
                             {
                                 <button class="btn-text" style="color:#991b1b;font-size:0.85rem;padding:0;margin-top:0.5rem"
                                         @onclick='() => _envDiagShowStackTrace = !_envDiagShowStackTrace'>
-                                    @(_envDiagShowStackTrace ? "▼ Hide Stack Trace" : "▶ Show Stack Trace")
+                                    @(_envDiagShowStackTrace ? "â–¼ Hide Stack Trace" : "â–¶ Show Stack Trace")
                                 </button>
                                 @if (_envDiagShowStackTrace)
                                 {
@@ -1419,7 +1419,7 @@ else if (_settings is not null)
                             </span>
                             <span class="ss-status-pill">
                                 <span class="ss-status-label">Generated</span>
-                                <span class="ss-status-value">@_envDiagReport.GeneratedAt:MMM dd, yyyy HH:mm:ss</span>
+                                <span class="ss-status-value">@FormatEnvironmentDiagnosticsTimestamp(_envDiagReport.GeneratedAt)</span>
                             </span>
                             <span class="ss-status-pill">
                                 <span class="ss-status-label">Environment</span>
@@ -1427,110 +1427,55 @@ else if (_settings is not null)
                             </span>
                         </div>
 
+                        @if (_envDiagReport.Summary is not null)
+                        {
+                            <div class="ss-status-bar" style="margin-bottom:1.5rem">
+                                <span class="ss-status-pill">
+                                    <span class="ss-status-label">Checks Executed</span>
+                                    <span class="ss-status-value">@_envDiagReport.Summary.TotalCount</span>
+                                </span>
+                                <span class="ss-status-pill ss-status-pill-ok">
+                                    <span class="ss-status-label">Passed</span>
+                                    <span class="ss-status-value">@_envDiagReport.Summary.PassCount</span>
+                                </span>
+                                <span class="ss-status-pill ss-status-pill-warn">
+                                    <span class="ss-status-label">Warnings</span>
+                                    <span class="ss-status-value">@_envDiagReport.Summary.WarningCount</span>
+                                </span>
+                                <span class="ss-status-pill ss-status-pill-error">
+                                    <span class="ss-status-label">Failed</span>
+                                    <span class="ss-status-value">@_envDiagReport.Summary.FailCount</span>
+                                </span>
+                            </div>
+                        }
+
                         <div class="dev-diag-subgrid">
-                            <!-- Database Checks -->
-                            @if (_envDiagReport.DatabaseChecks.Count > 0)
+                            @foreach (var diagSection in _envDiagReport.Sections)
                             {
                                 <div class="dev-diag-section">
-                                    <div class="dev-diag-section-title">Database</div>
-                                    @foreach (var check in _envDiagReport.DatabaseChecks)
+                                    <div class="dev-diag-section-title">@diagSection.Title</div>
+                                    @if (!string.IsNullOrWhiteSpace(diagSection.Description))
                                     {
-                                        <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface-subtle);border-radius:var(--radius-default)">
-                                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">
-                                                <span style="font-weight:600;flex:1">@check.Name</span>
-                                                <span class="ss-health-sev @GetCheckStatusClass(check.Status)">@check.Status</span>
-                                            </div>
-                                            @if (!string.IsNullOrWhiteSpace(check.Details))
-                                            {
-                                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@check.Details</p>
-                                            }
-                                            @if (!string.IsNullOrWhiteSpace(check.Recommendation))
-                                            {
-                                                <p style="font-size:0.85rem;color:var(--clr-text-placeholder);margin:0.25rem 0 0">→ @check.Recommendation</p>
-                                            }
-                                        </div>
+                                        <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0 0 0.75rem">@diagSection.Description</p>
                                     }
-                                </div>
-                            }
-
-                            <!-- Backend/API Checks -->
-                            @if (_envDiagReport.BackendApiChecks.Count > 0)
-                            {
-                                <div class="dev-diag-section">
-                                    <div class="dev-diag-section-title">Backend / API</div>
-                                    @foreach (var check in _envDiagReport.BackendApiChecks)
+                                    @if (diagSection.Items.Count == 0)
                                     {
-                                        <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface-subtle);border-radius:var(--radius-default)">
-                                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">
-                                                <span style="font-weight:600;flex:1">@check.Name</span>
-                                                <span class="ss-health-sev @GetCheckStatusClass(check.Status)">@check.Status</span>
-                                            </div>
-                                            @if (!string.IsNullOrWhiteSpace(check.Details))
-                                            {
-                                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@check.Details</p>
-                                            }
-                                        </div>
+                                        <div class="db-section-empty">No diagnostics returned for this section.</div>
                                     }
-                                </div>
-                            }
-
-                            <!-- Workspace Checks -->
-                            @if (_envDiagReport.WorkspaceChecks.Count > 0)
-                            {
-                                <div class="dev-diag-section">
-                                    <div class="dev-diag-section-title">Workspace</div>
-                                    @foreach (var check in _envDiagReport.WorkspaceChecks)
+                                    @foreach (var item in diagSection.Items)
                                     {
                                         <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface-subtle);border-radius:var(--radius-default)">
                                             <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">
-                                                <span style="font-weight:600;flex:1">@check.Name</span>
-                                                <span class="ss-health-sev @GetCheckStatusClass(check.Status)">@check.Status</span>
+                                                <span style="font-weight:600;flex:1">@item.Name</span>
+                                                <span class="ss-health-sev @GetCheckStatusClass(item.Status)">@item.Status</span>
                                             </div>
-                                            @if (!string.IsNullOrWhiteSpace(check.Details))
+                                            @if (!string.IsNullOrWhiteSpace(item.Value))
                                             {
-                                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@check.Details</p>
+                                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@item.Value</p>
                                             }
-                                        </div>
-                                    }
-                                </div>
-                            }
-
-                            <!-- ReviewContext Checks -->
-                            @if (_envDiagReport.ReviewContextChecks.Count > 0)
-                            {
-                                <div class="dev-diag-section">
-                                    <div class="dev-diag-section-title">ReviewContext</div>
-                                    @foreach (var check in _envDiagReport.ReviewContextChecks)
-                                    {
-                                        <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface-subtle);border-radius:var(--radius-default)">
-                                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">
-                                                <span style="font-weight:600;flex:1">@check.Name</span>
-                                                <span class="ss-health-sev @GetCheckStatusClass(check.Status)">@check.Status</span>
-                                            </div>
-                                            @if (!string.IsNullOrWhiteSpace(check.Details))
+                                            @if (!string.IsNullOrWhiteSpace(item.Recommendation))
                                             {
-                                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@check.Details</p>
-                                            }
-                                        </div>
-                                    }
-                                </div>
-                            }
-
-                            <!-- Export Checks -->
-                            @if (_envDiagReport.ExportChecks.Count > 0)
-                            {
-                                <div class="dev-diag-section">
-                                    <div class="dev-diag-section-title">Export</div>
-                                    @foreach (var check in _envDiagReport.ExportChecks)
-                                    {
-                                        <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface-subtle);border-radius:var(--radius-default)">
-                                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">
-                                                <span style="font-weight:600;flex:1">@check.Name</span>
-                                                <span class="ss-health-sev @GetCheckStatusClass(check.Status)">@check.Status</span>
-                                            </div>
-                                            @if (!string.IsNullOrWhiteSpace(check.Details))
-                                            {
-                                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@check.Details</p>
+                                                <p style="font-size:0.85rem;color:var(--clr-text-placeholder);margin:0.25rem 0 0">-> @item.Recommendation</p>
                                             }
                                         </div>
                                     }
@@ -1540,12 +1485,18 @@ else if (_settings is not null)
                     }
                     else if (!_envDiagRunning)
                     {
-                        <div class="db-section-empty">Click "Run Diagnostics" to start the health check.</div>
+                        <div class="ss-status-bar" style="margin-bottom:1.5rem">
+                            <span class="ss-status-pill">
+                                <span class="ss-status-label">Overall Status</span>
+                                <span class="ss-status-value">Not Run</span>
+                            </span>
+                        </div>
+                        <div class="db-section-empty">Diagnostics have not been executed yet.</div>
                     }
                 </div>
             }
 
-            @* ══ Maintenance ══════════════════════════════════════════════════════════ *@
+            @* â•â• Maintenance â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "review-context-validation" && IsDeveloperDiagnosticsVisible)
             {
                 <div class="settings-card settings-card-full-width">
@@ -1799,7 +1750,7 @@ else if (_settings is not null)
     private bool _adoTestRunning;
     private AzureDevOpsConnectionTestResultDto? _adoTestResult;
 
-    // ── Section navigation ────────────────────────────────────────────────────
+    // â”€â”€ Section navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private string _activeSection = "general";
     private string _navSearch     = "";
@@ -1826,7 +1777,7 @@ else if (_settings is not null)
         </button>
     };
 
-    // ── Feature section key sets — aligned with sidebar navigation sections ───
+    // â”€â”€ Feature section key sets â€” aligned with sidebar navigation sections â”€â”€â”€
 
     private static readonly HashSet<string> ReviewSectionKeys =
         new(StringComparer.OrdinalIgnoreCase)
@@ -1871,7 +1822,7 @@ else if (_settings is not null)
     // Platform items (locked, always-on) are included so the total count matches the sidebar.
     private static readonly (string Label, string Key)[] MenuItemRegistry =
     [
-        // Getting Started (Platform — always on)
+        // Getting Started (Platform â€” always on)
         ("Recommended Workflow",    "RecommendedWorkflow"),
         ("User Guide",              "UserGuide"),
 
@@ -1888,7 +1839,7 @@ else if (_settings is not null)
         ("Sample Projects",         "SampleProjects"),
         ("Create Test Scenario",    "CreateTestScenario"),
 
-        // Traceability (legacy — shown only when LegacyTraceabilityNavigationEnabled)
+        // Traceability (legacy â€” shown only when LegacyTraceabilityNavigationEnabled)
         ("Traceability & Coverage", "TraceabilityCoverage"),
         ("Traceability Suggestions","TraceabilitySuggestions"),
         ("Code Traceability",       "CodeTraceability"),
@@ -1908,7 +1859,7 @@ else if (_settings is not null)
         // AI Review
         ("AI Change Review",        "AiChangeReview"),
 
-        // Admin (Platform — always on)
+        // Admin (Platform â€” always on)
         ("System Settings",         "AdminSystemSettings"),
     ];
 
@@ -2540,7 +2491,7 @@ else if (_settings is not null)
                 _envDiagReport = report;
                 _envDiagErrorDetails = null;
                 _envDiagStackTrace = null;
-                _envDiagMessage = $"Diagnostics complete: {_envDiagReport.OverallStatus} — {_envDiagReport.DatabaseChecks.Count} database, {_envDiagReport.BackendApiChecks.Count} backend, {_envDiagReport.WorkspaceChecks.Count} workspace checks run.";
+                _envDiagMessage = BuildEnvironmentDiagnosticsSummary(_envDiagReport);
             }
             else
             {
@@ -2548,7 +2499,7 @@ else if (_settings is not null)
                 _envDiagReport = null;
                 _envDiagErrorDetails = errorMessage ?? "Unknown error occurred";
                 _envDiagStackTrace = errorStack;
-                _envDiagMessage = "Diagnostics failed — see details below.";
+                _envDiagMessage = "Diagnostics failed â€” see details below.";
             }
         }
         catch (Exception ex)
@@ -2597,81 +2548,26 @@ else if (_settings is not null)
         sb.AppendLine("<!doctype html><html><head><meta charset=\"utf-8\"><title>Environment Diagnostics</title>");
         sb.AppendLine("<style>body{font-family:system-ui,sans-serif;margin:2rem;color:#1f2937}h2{border-top:2px solid #d1d5db;padding-top:1rem;margin-top:1.5rem}.check{display:flex;align-items:flex-start;gap:1rem;margin:.75rem 0;padding:.75rem;background:#f9fafb;border-radius:.5rem}.check-status{flex-shrink:0;font-weight:600;min-width:80px}.check-body{flex:1}.check-name{font-weight:600;margin-bottom:.25rem}.check-detail{font-size:.85rem;color:#6b7280;margin:0}.check-rec{font-size:.85rem;color:#6b7280;margin:.25rem 0 0;font-style:italic}</style></head><body>");
         sb.AppendLine($"<h1>Environment Diagnostics</h1>");
-        sb.AppendLine($"<p>Environment: {E(report.Environment)}<br>Generated: {E(report.GeneratedAt.ToString("u"))}<br>Overall Status: {StatusBadge(report.OverallStatus)}</p>");
+        sb.AppendLine($"<p>Environment: {E(report.Environment)}<br>Generated: {E(FormatEnvironmentDiagnosticsTimestamp(report.GeneratedAt))}<br>Overall Status: {StatusBadge(report.OverallStatus)}</p>");
 
-        if (report.DatabaseChecks.Count > 0)
+        foreach (var section in report.Sections)
         {
-            sb.AppendLine("<h2>Database</h2>");
-            foreach (var check in report.DatabaseChecks)
+            sb.AppendLine($"<h2>{E(section.Title)}</h2>");
+            if (section.Items.Count == 0)
             {
-                sb.AppendLine($"<div class=\"check\">");
-                sb.AppendLine($"<div class=\"check-status\">{StatusBadge(check.Status)}</div>");
-                sb.AppendLine($"<div class=\"check-body\">");
-                sb.AppendLine($"<div class=\"check-name\">{E(check.Name)}</div>");
-                if (!string.IsNullOrWhiteSpace(check.Details))
-                    sb.AppendLine($"<p class=\"check-detail\">{E(check.Details)}</p>");
-                if (!string.IsNullOrWhiteSpace(check.Recommendation))
-                    sb.AppendLine($"<p class=\"check-rec\">→ {E(check.Recommendation)}</p>");
-                sb.AppendLine("</div></div>");
+                sb.AppendLine("<p class=\"check-detail\">No diagnostics returned for this section.</p>");
             }
-        }
 
-        if (report.BackendApiChecks.Count > 0)
-        {
-            sb.AppendLine("<h2>Backend / API</h2>");
-            foreach (var check in report.BackendApiChecks)
+            foreach (var item in section.Items)
             {
                 sb.AppendLine($"<div class=\"check\">");
-                sb.AppendLine($"<div class=\"check-status\">{StatusBadge(check.Status)}</div>");
+                sb.AppendLine($"<div class=\"check-status\">{StatusBadge(item.Status)}</div>");
                 sb.AppendLine($"<div class=\"check-body\">");
-                sb.AppendLine($"<div class=\"check-name\">{E(check.Name)}</div>");
-                if (!string.IsNullOrWhiteSpace(check.Details))
-                    sb.AppendLine($"<p class=\"check-detail\">{E(check.Details)}</p>");
-                sb.AppendLine("</div></div>");
-            }
-        }
-
-        if (report.WorkspaceChecks.Count > 0)
-        {
-            sb.AppendLine("<h2>Workspace</h2>");
-            foreach (var check in report.WorkspaceChecks)
-            {
-                sb.AppendLine($"<div class=\"check\">");
-                sb.AppendLine($"<div class=\"check-status\">{StatusBadge(check.Status)}</div>");
-                sb.AppendLine($"<div class=\"check-body\">");
-                sb.AppendLine($"<div class=\"check-name\">{E(check.Name)}</div>");
-                if (!string.IsNullOrWhiteSpace(check.Details))
-                    sb.AppendLine($"<p class=\"check-detail\">{E(check.Details)}</p>");
-                sb.AppendLine("</div></div>");
-            }
-        }
-
-        if (report.ReviewContextChecks.Count > 0)
-        {
-            sb.AppendLine("<h2>ReviewContext</h2>");
-            foreach (var check in report.ReviewContextChecks)
-            {
-                sb.AppendLine($"<div class=\"check\">");
-                sb.AppendLine($"<div class=\"check-status\">{StatusBadge(check.Status)}</div>");
-                sb.AppendLine($"<div class=\"check-body\">");
-                sb.AppendLine($"<div class=\"check-name\">{E(check.Name)}</div>");
-                if (!string.IsNullOrWhiteSpace(check.Details))
-                    sb.AppendLine($"<p class=\"check-detail\">{E(check.Details)}</p>");
-                sb.AppendLine("</div></div>");
-            }
-        }
-
-        if (report.ExportChecks.Count > 0)
-        {
-            sb.AppendLine("<h2>Export</h2>");
-            foreach (var check in report.ExportChecks)
-            {
-                sb.AppendLine($"<div class=\"check\">");
-                sb.AppendLine($"<div class=\"check-status\">{StatusBadge(check.Status)}</div>");
-                sb.AppendLine($"<div class=\"check-body\">");
-                sb.AppendLine($"<div class=\"check-name\">{E(check.Name)}</div>");
-                if (!string.IsNullOrWhiteSpace(check.Details))
-                    sb.AppendLine($"<p class=\"check-detail\">{E(check.Details)}</p>");
+                sb.AppendLine($"<div class=\"check-name\">{E(item.Name)}</div>");
+                if (!string.IsNullOrWhiteSpace(item.Value))
+                    sb.AppendLine($"<p class=\"check-detail\">{E(item.Value)}</p>");
+                if (!string.IsNullOrWhiteSpace(item.Recommendation))
+                    sb.AppendLine($"<p class=\"check-rec\">-> {E(item.Recommendation)}</p>");
                 sb.AppendLine("</div></div>");
             }
         }
@@ -2679,6 +2575,20 @@ else if (_settings is not null)
         sb.AppendLine("</body></html>");
         return sb.ToString();
     }
+
+    internal static string BuildEnvironmentDiagnosticsSummary(EnvironmentDiagnosticsReportDto report)
+    {
+        var summary = report.Summary;
+        if (summary is null || summary.TotalCount == 0)
+        {
+            return "Diagnostics completed\n0 checks executed\n0 Passed\n0 Warnings\n0 Failed";
+        }
+
+        return $"Diagnostics completed\n{summary.TotalCount} checks executed\n{summary.PassCount} Passed\n{summary.WarningCount} Warnings\n{summary.FailCount} Failed";
+    }
+
+    internal static string FormatEnvironmentDiagnosticsTimestamp(DateTime timestamp) =>
+        timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
     private static string ReviewContextSeverityClass(ReviewContextValidationStatus status) => status switch
     {
@@ -2821,7 +2731,7 @@ else if (_settings is not null)
 
     private static string SemVerCore(string? version)
     {
-        if (string.IsNullOrWhiteSpace(version)) return "—";
+        if (string.IsNullOrWhiteSpace(version)) return "â€”";
         var idx = version.IndexOfAny(['+', '-']);
         return idx > 0 ? version[..idx] : version;
     }
@@ -2836,10 +2746,10 @@ else if (_settings is not null)
     {
         if (_settings is null) return;
         var s = _settings;
-        var d = (string? v) => string.IsNullOrWhiteSpace(v) ? "—" : v;
+        var d = (string? v) => string.IsNullOrWhiteSpace(v) ? "â€”" : v;
 
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("QA Review Studio — Diagnostics Summary");
+        sb.AppendLine("QA Review Studio â€” Diagnostics Summary");
         sb.AppendLine($"App:             {d(s.Application.ApplicationName)} v{d(s.Application.Version)}");
         sb.AppendLine($"Environment:     {d(s.Application.Environment)}");
         sb.AppendLine($"Package Mode:    {d(s.Application.PackageMode)}");
@@ -2851,7 +2761,7 @@ else if (_settings is not null)
         sb.AppendLine($"GraphQL:         {d(s.Frontend.GraphQlEndpoint)}");
         sb.AppendLine();
         sb.AppendLine($"Database Mode:   {d(s.Database.Mode)}");
-        sb.AppendLine($"Host:            {d(s.Database.Host)}:{(s.Database.Port > 0 ? s.Database.Port.ToString() : "—")}");
+        sb.AppendLine($"Host:            {d(s.Database.Host)}:{(s.Database.Port > 0 ? s.Database.Port.ToString() : "â€”")}");
         sb.AppendLine($"Database Name:   {d(s.Database.DatabaseName)}");
         sb.AppendLine($"Username:        {d(s.Database.Username)}");
         sb.AppendLine($"Provider:        {d(s.Database.Provider)}");
@@ -2914,7 +2824,7 @@ else if (_settings is not null)
         }
     }
 
-    // ── Documentation Health ──────────────────────────────────────────────────
+    // â”€â”€ Documentation Health â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private sealed record DocHealthFinding(string Severity, string Category, string Description, string? Detail = null);
 
@@ -2930,7 +2840,7 @@ else if (_settings is not null)
         "/getting-started", "/user-guide",
     };
 
-    // Removed / deprecated routes — must not be referenced in any documentation or navigation.
+    // Removed / deprecated routes â€” must not be referenced in any documentation or navigation.
     private static readonly HashSet<string> RemovedRoutes = new(StringComparer.OrdinalIgnoreCase)
     {
         "/qa-auditor", "/constitution-compliance", "/standards-compliance",
@@ -2939,7 +2849,7 @@ else if (_settings is not null)
         "qa-readiness", "delivery-readiness",
     };
 
-    // All hrefs used in NavMenu — (label, href) pairs.
+    // All hrefs used in NavMenu â€” (label, href) pairs.
     private static readonly (string Label, string Href)[] DocNavLinks =
     [
         ("Recommended Workflow",         "getting-started"),
@@ -3023,7 +2933,7 @@ else if (_settings is not null)
         ("Dashboard", "quality-review",                         "Quick Actions"),
         ("Dashboard", "wasm-security-review",                   "Quick Actions"),
         ("Dashboard", "wasm-performance-review",                "Quick Actions"),
-        ("Dashboard", "ai-change-auditor",                      "Quick Actions — AI"),
+        ("Dashboard", "ai-change-auditor",                      "Quick Actions â€” AI"),
     ];
 
     private List<DocHealthFinding> RunDocumentationHealthChecks()
@@ -3045,12 +2955,12 @@ else if (_settings is not null)
         {
             var normalised = href.StartsWith('/') ? href : "/" + href;
             if (!KnownRoutes.Contains(normalised))
-                findings.Add(new("Error", "Broken Documentation Link", $"{page} — \"{ctx}\" links to \"{href}\" which is not a known route.", $"Route checked: {normalised}"));
+                findings.Add(new("Error", "Broken Documentation Link", $"{page} â€” \"{ctx}\" links to \"{href}\" which is not a known route.", $"Route checked: {normalised}"));
             if (RemovedRoutes.Contains(href) || RemovedRoutes.Contains(normalised))
-                findings.Add(new("Error", "Removed Route Reference", $"{page} — \"{ctx}\" references a removed route: {href}"));
+                findings.Add(new("Error", "Removed Route Reference", $"{page} â€” \"{ctx}\" references a removed route: {href}"));
         }
 
-        // 3. Menu synchronisation — check MenuItemRegistry hrefs are in KnownRoutes via DocNavLinks.
+        // 3. Menu synchronisation â€” check MenuItemRegistry hrefs are in KnownRoutes via DocNavLinks.
         var navLinkHrefSet = new HashSet<string>(DocNavLinks.Select(l => "/" + l.Href.TrimStart('/')), StringComparer.OrdinalIgnoreCase);
         foreach (var (menuLabel, _) in MenuItemRegistry)
         {
@@ -3061,9 +2971,9 @@ else if (_settings is not null)
                 findings.Add(new("Warning", "Menu Mismatch", $"MenuItemRegistry entry \"{menuLabel}\" has no matching DocNavLinks entry. If this menu item exists in NavMenu, add it to DocNavLinks."));
         }
 
-        // 4. Orphan documentation check — pages that exist but have no menu item.
+        // 4. Orphan documentation check â€” pages that exist but have no menu item.
         var menuLabels = new HashSet<string>(MenuItemRegistry.Select(m => m.Label), StringComparer.OrdinalIgnoreCase);
-        // (No-op for now: pages without menu entries are internal/redirect pages — not an error.)
+        // (No-op for now: pages without menu entries are internal/redirect pages â€” not an error.)
 
         return findings;
     }

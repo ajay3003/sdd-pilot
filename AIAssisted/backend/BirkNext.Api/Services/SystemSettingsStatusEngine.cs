@@ -148,6 +148,9 @@ public class SystemSettingsStatusEngine : ISystemSettingsStatusEngine
         if (statusList.Any(s => s == SystemSettingsStatus.Warning || s == SystemSettingsStatus.Unavailable))
             return SystemSettingsStatus.Warning;
 
+        if (statusList.Count == 0)
+            return SystemSettingsStatus.Unavailable;
+
         // All good
         return SystemSettingsStatus.Pass;
     }

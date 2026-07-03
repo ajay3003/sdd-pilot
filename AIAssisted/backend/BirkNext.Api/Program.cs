@@ -6,6 +6,7 @@ using BirkNext.Api.Middleware;
 using BirkNext.Api.Services;
 using BirkNext.Api.Services.ImplementationTraceability;
 using BirkNext.Api.Services.ApiQuality;
+using BirkNext.Api.Services.QualityReview;
 using BirkNext.Api.Services.WasmPerformance;
 using BirkNext.Api.Services.WasmSecurity;
 using HotChocolate.AspNetCore;
@@ -75,6 +76,12 @@ builder.Services.AddScoped<ITargetEnvironmentsPageService, TargetEnvironmentsPag
 builder.Services.AddScoped<IAIPageService, AIPageService>();
 builder.Services.AddScoped<IMaintenancePageService, MaintenancePageService>();
 builder.Services.AddScoped<ISystemDiagnosticsPageService, SystemDiagnosticsPageService>();
+// ── Quality Review Page Model Builders ─────────────────────────────────────
+builder.Services.AddScoped<IQualityReviewPageModelBuilder_QualityReview, QualityReviewPageModelBuilder>();
+builder.Services.AddScoped<IQualityReviewPageModelBuilder_ApiQuality, ApiQualityReviewPageModelBuilder>();
+builder.Services.AddScoped<IQualityReviewPageModelBuilder_FrontendQuality, FrontendQualityReviewPageModelBuilder>();
+builder.Services.AddScoped<IQualityReviewPageModelBuilder_IntegrationQuality, IntegrationQualityReviewPageModelBuilder>();
+builder.Services.AddScoped<IQualityReviewPageModelService, QualityReviewPageModelService>();
 builder.Services.AddScoped<IMigrationIntegrityValidator, MigrationIntegrityValidator>();
 builder.Services.AddScoped<IEnvironmentDiagnosticsService, EnvironmentDiagnosticsService>();
 builder.Services.AddScoped<IConfigurationHealthService, ConfigurationHealthService>();

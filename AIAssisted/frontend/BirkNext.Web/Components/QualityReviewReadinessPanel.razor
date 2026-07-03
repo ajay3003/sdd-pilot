@@ -1,0 +1,68 @@
+@namespace BirkNext.Web.Components
+@using BirkNext.Web.Models.QualityReview
+
+<section class="qrp-panel" role="region" aria-label="Readiness status">
+    <div class="qrp-header">
+        <h2>Readiness Status</h2>
+        <div class="qrp-summary">
+            @if (Model != null)
+            {
+                <span class="qrp-status qrp-status-@Model.ReadinessStatus.ToString().ToLowerInvariant()">
+                    @Model.ReadinessStatus
+                </span>
+                <span>@Model.Summary.ReadinessMessage</span>
+            }
+        </div>
+    </div>
+
+    @if (Model?.ReviewPacks.Any() == true)
+    {
+        <div class="qrp-packs">
+            <h3>Available Audit Packs</h3>
+            <div class="qrp-pack-grid">
+                @foreach (var pack in Model.ReviewPacks)
+                {
+                    <div class="qrp-pack qrp-pack-@pack.Status.ToString().ToLowerInvariant()">
+                        <div class="qrp-pack-header">
+                            <span class="qrp-pack-name">@pack.Name</span>
+                            <span class="qrp-pack-status">@pack.Status</span>
+                        </div>
+                        <p class="qrp-pack-desc">@pack.Description</p>
+                        @if (pack.MissingInputs.Any())
+                        {
+                            <div class="qrp-pack-missing">
+                                <strong>Required:</strong>
+                                <ul>
+                                    @foreach (var missing in pack.MissingInputs)
+                                    {
+                                        <li>@missing</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <div class="qrp-summary-stats">
+        <div class="qrp-stat">
+            <span class="qrp-stat-value">@Model?.Summary.AvailablePacks</span>
+            <span class="qrp-stat-label">Available</span>
+        </div>
+        <div class="qrp-stat">
+            <span class="qrp-stat-value">@Model?.Summary.BlockedPacks</span>
+            <span class="qrp-stat-label">Blocked</span>
+        </div>
+        <div class="qrp-stat">
+            <span class="qrp-stat-value">@Model?.Summary.TotalPacks</span>
+            <span class="qrp-stat-label">Total</span>
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter]
+    public QualityReviewPageModel? Model { get; set; }
+}

@@ -1,0 +1,171 @@
+@using BirkNext.Web.Services
+
+<div class="settings-card settings-card-full-width">
+    <div class="settings-card-title">@Title</div>
+    @if (!string.IsNullOrWhiteSpace(Description))
+    {
+        <p class="settings-card-note">@Description</p>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Message))
+    {
+        <div class="notification notification-success" role="status">@Message</div>
+    }
+
+    @if (ShowRunArea)
+    {
+        <div class="settings-card" style="margin-bottom:1.5rem;background:var(--surface-subtle,#f8f9fa)">
+            <div class="settings-card-title" style="font-size:0.95rem">@RunAreaTitle</div>
+            <div style="display:flex;flex-wrap:wrap;gap:.5rem">
+                @if (OnRun.HasDelegate)
+                {
+                    <PrimaryButton OnClick="OnRun" Disabled="@IsRunning">
+                        @(IsRunning ? RunningLabel : RunLabel)
+                    </PrimaryButton>
+                }
+                @Actions
+            </div>
+        </div>
+    }
+
+    @ChildContent
+
+    @if (!HasRun)
+    {
+        <div class="ss-status-bar" style="margin-bottom:1.5rem">
+            <span class="ss-status-pill">
+                <span class="ss-status-label">Overall Status</span>
+                <span class="ss-status-value">Not Run</span>
+            </span>
+        </div>
+        <div class="db-section-empty">@NotRunText</div>
+    }
+    else
+    {
+        <div class="ss-status-bar" style="margin-bottom:1.5rem">
+            <span class="ss-status-pill @StatusPillClass(OverallStatus)">
+                <span class="ss-status-label">Overall Status</span>
+                <span class="ss-status-value">@StatusLabel(OverallStatus)</span>
+            </span>
+            @if (GeneratedAt is not null)
+            {
+                <span class="ss-status-pill">
+                    <span class="ss-status-label">Generated</span>
+                    <span class="ss-status-value">@GeneratedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
+                </span>
+            }
+            @if (!string.IsNullOrWhiteSpace(EnvironmentName))
+            {
+                <span class="ss-status-pill">
+                    <span class="ss-status-label">Environment</span>
+                    <span class="ss-status-value">@EnvironmentName</span>
+                </span>
+            }
+        </div>
+
+        @if (Summary is not null)
+        {
+            <div class="ss-status-bar" style="margin-bottom:1.5rem">
+                <span class="ss-status-pill">
+                    <span class="ss-status-label">Checks Executed</span>
+                    <span class="ss-status-value">@Summary.TotalCount</span>
+                </span>
+                <span class="ss-status-pill ss-status-pill-ok">
+                    <span class="ss-status-label">Passed</span>
+                    <span class="ss-status-value">@Summary.PassCount</span>
+                </span>
+                <span class="ss-status-pill ss-status-pill-warn">
+                    <span class="ss-status-label">Warnings</span>
+                    <span class="ss-status-value">@Summary.WarningCount</span>
+                </span>
+                <span class="ss-status-pill ss-status-pill-error">
+                    <span class="ss-status-label">Failed</span>
+                    <span class="ss-status-value">@Summary.FailCount</span>
+                </span>
+                <span class="ss-status-pill">
+                    <span class="ss-status-label">Unavailable</span>
+                    <span class="ss-status-value">@Summary.UnavailableCount</span>
+                </span>
+            </div>
+        }
+
+        <div class="dev-diag-subgrid">
+            @foreach (var diagSection in Sections)
+            {
+                <div class="dev-diag-section">
+                    <div class="dev-diag-section-title">@diagSection.Title</div>
+                    @if (!string.IsNullOrWhiteSpace(diagSection.Description))
+                    {
+                        <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0 0 0.75rem">@diagSection.Description</p>
+                    }
+                    @if (diagSection.Items.Count == 0)
+                    {
+                        <div class="db-section-empty">No diagnostics returned for this section.</div>
+                    }
+                    @foreach (var item in diagSection.Items)
+                    {
+                        <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface-subtle);border-radius:var(--radius-default)">
+                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">
+                                <span style="font-weight:600;flex:1">@item.Name</span>
+                                <span class="ss-health-sev @StatusClass(item.Status)">@item.Status</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(item.Value))
+                            {
+                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@item.Value</p>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(item.Recommendation))
+                            {
+                                <p style="font-size:0.85rem;color:var(--clr-text-placeholder);margin:0.25rem 0 0">-> @item.Recommendation</p>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string Description { get; set; } = "";
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public bool HasRun { get; set; }
+    [Parameter] public bool IsRunning { get; set; }
+    [Parameter] public bool ShowRunArea { get; set; } = true;
+    [Parameter] public string RunAreaTitle { get; set; } = "Run Diagnostics";
+    [Parameter] public string RunLabel { get; set; } = "Run Diagnostics";
+    [Parameter] public string RunningLabel { get; set; } = "Running...";
+    [Parameter] public string NotRunText { get; set; } = "Diagnostics have not been executed yet.";
+    [Parameter] public SystemSettingsStatus OverallStatus { get; set; } = SystemSettingsStatus.Unavailable;
+    [Parameter] public StatusSummaryDto? Summary { get; set; }
+    [Parameter] public IReadOnlyList<SettingsSectionDto> Sections { get; set; } = [];
+    [Parameter] public DateTime? GeneratedAt { get; set; }
+    [Parameter] public string? EnvironmentName { get; set; }
+    [Parameter] public EventCallback OnRun { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private static string StatusClass(SystemSettingsStatus status) => status switch
+    {
+        SystemSettingsStatus.Pass => "ss-health-sev-ok",
+        SystemSettingsStatus.Warning => "ss-health-sev-warn",
+        SystemSettingsStatus.Fail => "ss-health-sev-error",
+        _ => "ss-health-sev-warn"
+    };
+
+    private static string StatusPillClass(SystemSettingsStatus status) => status switch
+    {
+        SystemSettingsStatus.Pass => "ss-status-pill-ok",
+        SystemSettingsStatus.Fail => "ss-status-pill-error",
+        SystemSettingsStatus.Warning => "ss-status-pill-warn",
+        _ => ""
+    };
+
+    private static string StatusLabel(SystemSettingsStatus status) => status switch
+    {
+        SystemSettingsStatus.Pass => "Pass",
+        SystemSettingsStatus.Warning => "Warning",
+        SystemSettingsStatus.Fail => "Fail",
+        _ => "Unavailable"
+    };
+}

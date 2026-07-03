@@ -11,7 +11,12 @@ public sealed class DocumentationHealthPageService : IDocumentationHealthPageSer
 
     public DocumentationHealthPageService(ISystemSettingsStatusEngine statusEngine, ILogger<DocumentationHealthPageService> logger) { _statusEngine = statusEngine; _logger = logger; }
 
-    public async Task<List<SettingsSection>> GetSectionsAsync() => await Task.FromResult(new List<SettingsSection> { new() { Title = "Documentation", Description = "Documentation coverage and validity", Status = SystemSettingsStatus.Pass, Items = new() { new SettingsItem { Name = "Coverage", Value = "Complete", Status = SystemSettingsStatus.Pass, Description = "Documentation is complete and current", Recommendation = "", IsRequired = false } }, IsRequired = false } });
+    public async Task<List<SettingsSection>> GetSectionsAsync()
+    {
+        var sections = new List<SettingsSection> { new() { Title = "Documentation", Description = "Documentation coverage and validity", Status = SystemSettingsStatus.Pass, Items = new() { new SettingsItem { Name = "Coverage", Value = "Complete", Status = SystemSettingsStatus.Pass, Description = "Documentation is complete and current", Recommendation = "", IsRequired = false } }, IsRequired = false } };
+        DiagnosticPageServiceHelpers.ApplySectionStatuses(sections, _statusEngine);
+        return await Task.FromResult(sections);
+    }
 
-    public async Task<StatusSummary> GetStatusSummaryAsync() { var sections = await GetSectionsAsync(); var summary = new StatusSummary(); foreach (var item in sections.SelectMany(s => s.Items)) summary.AddStatus(item.Status); return summary; }
+    public async Task<StatusSummary> GetStatusSummaryAsync() { var sections = await GetSectionsAsync(); return DiagnosticPageServiceHelpers.SummarizeSections(sections, _statusEngine); }
 }

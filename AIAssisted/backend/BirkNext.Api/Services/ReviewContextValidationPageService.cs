@@ -41,15 +41,13 @@ public sealed class ReviewContextValidationPageService : IReviewContextValidatio
             }
         };
 
+        DiagnosticPageServiceHelpers.ApplySectionStatuses(sections, _statusEngine);
         return await Task.FromResult(sections);
     }
 
     public async Task<StatusSummary> GetStatusSummaryAsync()
     {
         var sections = await GetSectionsAsync();
-        var summary = new StatusSummary();
-        foreach (var item in sections.SelectMany(s => s.Items))
-            summary.AddStatus(item.Status);
-        return summary;
+        return DiagnosticPageServiceHelpers.SummarizeSections(sections, _statusEngine);
     }
 }

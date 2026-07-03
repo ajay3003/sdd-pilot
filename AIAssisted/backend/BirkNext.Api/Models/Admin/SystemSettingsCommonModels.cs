@@ -107,7 +107,7 @@ public class StatusSummary
 
     /// <summary>
     /// Calculated overall status based on hierarchy:
-    /// FAIL > WARNING > PASS (UNAVAILABLE treated as WARNING for calculation)
+    /// FAIL > WARNING > PASS. Empty summaries are unavailable.
     /// </summary>
     [JsonPropertyName("overallStatus")]
     public SystemSettingsStatus OverallStatus => CalculateOverallStatus();
@@ -138,6 +138,9 @@ public class StatusSummary
 
         if (WarningCount > 0 || UnavailableCount > 0)
             return SystemSettingsStatus.Warning;
+
+        if (PassCount == 0)
+            return SystemSettingsStatus.Unavailable;
 
         return SystemSettingsStatus.Pass;
     }

@@ -357,21 +357,39 @@ public class EnvironmentDiagnosticsReportDto
 {
     [JsonPropertyName("generatedAt")] public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
     [JsonPropertyName("environment")] public string Environment { get; set; } = "";
-    [JsonPropertyName("databaseChecks")] public List<EnvironmentDiagnosticCheckDto> DatabaseChecks { get; set; } = [];
-    [JsonPropertyName("backendApiChecks")] public List<EnvironmentDiagnosticCheckDto> BackendApiChecks { get; set; } = [];
-    [JsonPropertyName("workspaceChecks")] public List<EnvironmentDiagnosticCheckDto> WorkspaceChecks { get; set; } = [];
-    [JsonPropertyName("reviewContextChecks")] public List<EnvironmentDiagnosticCheckDto> ReviewContextChecks { get; set; } = [];
-    [JsonPropertyName("exportChecks")] public List<EnvironmentDiagnosticCheckDto> ExportChecks { get; set; } = [];
     [JsonPropertyName("overallStatus")] public SystemSettingsStatus OverallStatus { get; set; } = SystemSettingsStatus.Pass;
+    [JsonPropertyName("summary")] public StatusSummaryDto? Summary { get; set; }
+    [JsonPropertyName("sections")] public List<SettingsSectionDto> Sections { get; set; } = [];
 }
 
-public class EnvironmentDiagnosticCheckDto
+public class SettingsSectionDto
+{
+    [JsonPropertyName("title")] public string Title { get; set; } = "";
+    [JsonPropertyName("description")] public string Description { get; set; } = "";
+    [JsonPropertyName("status")] public SystemSettingsStatus Status { get; set; } = SystemSettingsStatus.Pass;
+    [JsonPropertyName("items")] public List<SettingsItemDto> Items { get; set; } = [];
+    [JsonPropertyName("isRequired")] public bool IsRequired { get; set; }
+}
+
+public class SettingsItemDto
 {
     [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("value")] public string Value { get; set; } = "";
     [JsonPropertyName("status")] public SystemSettingsStatus Status { get; set; } = SystemSettingsStatus.Pass;
-    [JsonPropertyName("details")] public string Details { get; set; } = "";
-    [JsonPropertyName("recommendation")] public string Recommendation { get; set; } = "";
-    [JsonPropertyName("technicalDetails")] public string? TechnicalDetails { get; set; }
+    [JsonPropertyName("description")] public string Description { get; set; } = "";
+    [JsonPropertyName("recommendation")] public string? Recommendation { get; set; }
+    [JsonPropertyName("isRequired")] public bool IsRequired { get; set; }
+}
+
+public class StatusSummaryDto
+{
+    [JsonPropertyName("passCount")] public int PassCount { get; set; }
+    [JsonPropertyName("warningCount")] public int WarningCount { get; set; }
+    [JsonPropertyName("failCount")] public int FailCount { get; set; }
+    [JsonPropertyName("unavailableCount")] public int UnavailableCount { get; set; }
+    [JsonPropertyName("overallStatus")] public SystemSettingsStatus OverallStatus { get; set; } = SystemSettingsStatus.Unavailable;
+
+    public int TotalCount => PassCount + WarningCount + FailCount + UnavailableCount;
 }
 
 public class ConfigurationHealthReport

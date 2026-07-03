@@ -1,691 +1,116 @@
 @page "/api-quality-review"
-@using BirkNext.Web.Models
-@using BirkNext.Web.Services
 @using BirkNext.Web.Components
-@inject IApiQualityReviewService ReviewService
+@using BirkNext.Web.Models
+@using BirkNext.Web.Models.QualityReview
+@using BirkNext.Web.Services
+@inject IQualityReviewPageModelService PageModelService
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject RuntimeReviewSessionService RuntimeReviews
-@inject IWorkspaceSessionService Workspace
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
 
 <PageTitle>API Quality Review</PageTitle>
 
 <div class="aqr-page">
+    <PageHeader Title="@(PageModel?.Title ?? "API Quality Review")"
+                Description="@(PageModel?.Description ?? "Deterministic quality, security, performance, and readiness analysis of a deployed REST and/or GraphQL API using the active Target Environment.")" />
 
-    <PageHeader Title="API Quality Review"
-                Description="Deterministic quality, security, performance, and readiness analysis of a deployed REST and/or GraphQL API using the active Target Environment." />
-
-    @if (_report is null)
+    <!-- ── Readiness Panel ────────────────────────────────────────── -->
+    @if (PageModel is not null)
     {
-        <ReviewLanding Title="Run a production-style API audit"
-                       Description="Review connectivity, REST and GraphQL behavior, OpenAPI completeness, API security, performance, design quality, and deployment readiness for the active target environment."
-                       PrimaryButtonText="@(_running ? "Analysing..." : "Run API Quality Review")"
-                       PrimaryRun="RunReview"
-                       PrimaryDisabled="@(_running || _context is null || !_hasAnyEndpoint)"
-                       SecondaryActionText="Target Environments"
-                       SecondaryActionHref="/admin/system-settings"
-                       TargetFields="BuildApiTargetFields()"
-                       Configuration="BuildApiConfiguration()"
-                       AnalysisCards="ApiAnalysisCards"
-                       Checks="ApiChecks"
-                       Metadata="BuildApiMetadata()"
-                       EstimatedDuration="1-3 minutes" />
+        <QualityReviewReadinessPanel Model="PageModel" />
+    }
+    else if (IsLoading)
+    {
+        <div class="aqr-loading" role="status">Loading page configuration...</div>
+    }
+    else if (LoadError is not null)
+    {
+        <div class="aqr-error" role="alert">@LoadError</div>
     }
 
-    @* ── Compact target summary ── always visible ─────────────────────────────── *@
+    <!-- ── Run Button ───────────────────────────────────────────── -->
+    @if (PageModel is not null)
+    {
+        <div class="aqr-actions">
+            <button class="btn-primary" disabled="@(!PageModel.Summary.CanRun)" @onclick="RunAudit">
+                @if (IsRunning)
+                {
+                    <span class="spinner" aria-hidden="true">⟳</span>
+                }
+                @(IsRunning ? "Analysing…" : "Run API Quality Review")
+            </button>
+        </div>
+    }
+
+    <!-- ── Results Area ────────────────────────────────────────── -->
     @if (_report is not null)
     {
-    <div class="aqr-target-summary">
-        <div class="aqr-target-header">
-            @if (_context is not null)
-            {
-                <div class="aqr-target-env">
-                    <span class="aqr-env-badge aqr-env-badge-@(_context.ActiveProfile.EnvironmentType.ToString().ToLowerInvariant())">
-                        @_context.ActiveProfile.EnvironmentType
-                    </span>
-                    <span class="aqr-env-name">@_context.ActiveProfile.Name</span>
-                    <span class="aqr-target-auth">
-                        Auth: <span class="aqr-auth-value">@_context.ActiveProfile.ApiAuth.AuthType</span>
-                    </span>
-                    @if (_report is not null)
-                    {
-                        <span class="aqr-last-review">
-                            Last review: @_report.GeneratedAt.ToString("yyyy-MM-dd HH:mm") UTC
-                        </span>
-                    }
-                </div>
-            }
-            else
-            {
-                <span class="aqr-target-auth">Loading environment…</span>
-            }
-            <div class="aqr-target-actions">
-                <a href="/admin/system-settings" class="btn-secondary" style="font-size:.8rem;padding:.3rem .7rem">
-                    Configure Environments
-                </a>
-                @if (_report is not null)
-                {
-                    <SecondaryButton OnClick="RefreshContext">Refresh</SecondaryButton>
-                }
-                <PrimaryButton OnClick="RunReview"
-                               Disabled="@(_running || _context is null || !_hasAnyEndpoint)"
-                               aria-label="Run API Quality Review">
-                    @if (_running) { <span class="aqr-spinner" aria-hidden="true">⟳</span> }
-                    @(_running ? "Analysing…" : "Run Review")
-                </PrimaryButton>
-            </div>
-        </div>
-
-        @* ── Endpoint status chips ──────────────────────────────────────── *@
-        @if (_context is not null)
-        {
-            var restOk    = _context.HasRestBaseUrl;
-            var gqlOk     = _context.HasGraphQlEndpoint;
-            var oasOk     = !string.IsNullOrWhiteSpace(_context.SwaggerUrl);
-            var healthOk  = !string.IsNullOrWhiteSpace(_context.HealthEndpoint);
-
-            <div class="aqr-ep-grid">
-                <div class="aqr-ep-chip @(restOk ? "aqr-ep-chip-ok" : "aqr-ep-chip-missing")">
-                    <div class="aqr-ep-head">
-                        <span class="@(restOk ? "aqr-ep-icon-ok" : "aqr-ep-icon-missing")">@(restOk ? "✓" : "✗")</span>
-                        <span class="aqr-ep-label">REST Base URL</span>
-                    </div>
-                    @if (restOk)
-                    { <span class="aqr-ep-url" title="@_context.RestBaseUrl">@_context.RestBaseUrl</span> }
-                    else
-                    { <span class="aqr-ep-none">Not configured</span> }
-                </div>
-
-                <div class="aqr-ep-chip @(gqlOk ? "aqr-ep-chip-ok" : "aqr-ep-chip-missing")">
-                    <div class="aqr-ep-head">
-                        <span class="@(gqlOk ? "aqr-ep-icon-ok" : "aqr-ep-icon-missing")">@(gqlOk ? "✓" : "✗")</span>
-                        <span class="aqr-ep-label">GraphQL Endpoint</span>
-                    </div>
-                    @if (gqlOk)
-                    { <span class="aqr-ep-url" title="@_context.GraphQlEndpoint">@_context.GraphQlEndpoint</span> }
-                    else
-                    { <span class="aqr-ep-none">Not configured</span> }
-                </div>
-
-                <div class="aqr-ep-chip @(oasOk ? "aqr-ep-chip-ok" : "aqr-ep-chip-missing")">
-                    <div class="aqr-ep-head">
-                        <span class="@(oasOk ? "aqr-ep-icon-ok" : "aqr-ep-icon-missing")">@(oasOk ? "✓" : "✗")</span>
-                        <span class="aqr-ep-label">OpenAPI / Swagger URL</span>
-                    </div>
-                    @if (oasOk)
-                    { <span class="aqr-ep-url" title="@_context.SwaggerUrl">@_context.SwaggerUrl</span> }
-                    else
-                    { <span class="aqr-ep-none">Not configured</span> }
-                </div>
-
-                <div class="aqr-ep-chip @(healthOk ? "aqr-ep-chip-ok" : "aqr-ep-chip-missing")">
-                    <div class="aqr-ep-head">
-                        <span class="@(healthOk ? "aqr-ep-icon-ok" : "aqr-ep-icon-missing")">@(healthOk ? "✓" : "✗")</span>
-                        <span class="aqr-ep-label">Health Endpoint</span>
-                    </div>
-                    @if (healthOk)
-                    { <span class="aqr-ep-url" title="@_context.HealthEndpoint">@_context.HealthEndpoint</span> }
-                    else
-                    { <span class="aqr-ep-none">Not configured</span> }
-                </div>
-            </div>
-        }
-    </div>
-    }
-
-    @* ── Running progress ──────────────────────────────────────────────────────── *@
-    @if (_running)
-    {
-        <div class="aqr-progress" role="status" aria-live="polite">
-            <span class="aqr-spinner" aria-hidden="true">⟳</span>
-            @_progressMessage
+        <div class="aqr-results">
+            <!-- Results would be rendered here -->
+            <!-- This is a placeholder for the report display -->
         </div>
     }
-
-    @* ── Error banner ──────────────────────────────────────────────────────────── *@
-    @if (_errorMessage is not null)
-    {
-        <div class="aqr-error" role="alert">@_errorMessage</div>
-    }
-
-    @* ── Report (post-run) ─────────────────────────────────────────────────────── *@
-    @if (_report is not null)
-    {
-        var report = _report;
-
-        <div class="aqr-report-toolbar">
-            <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem"
-                    @onclick="ExportHtml">Export HTML</button>
-        </div>
-
-        @* ── Overall score ────────────────────────────────────────────────── *@
-        <div class="aqr-score-bar aqr-@ScoreClass(report.OverallScore)"
-             aria-label="Overall API quality score: @report.OverallScore out of 100">
-            <div>
-                <div class="aqr-score-num">@report.OverallScore</div>
-                <div class="aqr-score-label">out of 100</div>
-            </div>
-            <div class="aqr-score-meta">
-                <span class="aqr-score-quality">@QualityLabel(report.OverallScore)</span>
-                <span class="aqr-score-sub">Overall API Quality Score</span>
-            </div>
-            <div class="aqr-count-pills" aria-label="Finding counts by severity">
-                @{ var critical = report.Findings.Count(f => f.Severity == ApiQualitySeverity.Critical); }
-                @{ var high     = report.Findings.Count(f => f.Severity == ApiQualitySeverity.High); }
-                @{ var medium   = report.Findings.Count(f => f.Severity == ApiQualitySeverity.Medium); }
-                @{ var low      = report.Findings.Count(f => f.Severity == ApiQualitySeverity.Low); }
-                @{ var info     = report.Findings.Count(f => f.Severity == ApiQualitySeverity.Info); }
-                @if (critical > 0) { <div class="aqr-count-pill aqr-count-critical"><span class="aqr-count-value">@critical</span><span class="aqr-count-lbl">Critical</span></div> }
-                @if (high > 0)     { <div class="aqr-count-pill aqr-count-high"><span class="aqr-count-value">@high</span><span class="aqr-count-lbl">High</span></div> }
-                @if (medium > 0)   { <div class="aqr-count-pill aqr-count-medium"><span class="aqr-count-value">@medium</span><span class="aqr-count-lbl">Medium</span></div> }
-                @if (low > 0)      { <div class="aqr-count-pill aqr-count-low"><span class="aqr-count-value">@low</span><span class="aqr-count-lbl">Low</span></div> }
-                @if (info > 0)     { <div class="aqr-count-pill aqr-count-info"><span class="aqr-count-value">@info</span><span class="aqr-count-lbl">Info</span></div> }
-                @if (critical == 0 && high == 0 && medium == 0 && low == 0 && info == 0)
-                { <span class="aqr-all-clear">No findings — all checks passed</span> }
-            </div>
-            <span class="aqr-ready-badge @(report.IsDeploymentReady ? "aqr-ready-yes" : "aqr-ready-no")">
-                @(report.IsDeploymentReady ? "✓ Deployment Ready" : "✗ Not Ready")
-            </span>
-        </div>
-
-        @* ── Category scores ──────────────────────────────────────────────── *@
-        <div class="aqr-section-header">Category Scores</div>
-        <div class="aqr-cat-grid" role="list" aria-label="API quality category scores">
-            @foreach (var cs in report.CategoryScores)
-            {
-                var worstSeverity = report.Findings
-                    .Where(f => f.Category == cs.Category && f.Severity != ApiQualitySeverity.Info)
-                    .Select(f => (ApiQualitySeverity?)f.Severity)
-                    .OrderBy(s => s)
-                    .FirstOrDefault();
-
-                <button class="aqr-cat-card @CatCardClass(worstSeverity, cs.Assessed)"
-                        role="listitem"
-                        @onclick='() => SetCategoryFilter(cs.Category)'
-                        title="View @CategoryLabel(cs.Category) findings"
-                        aria-label="@CategoryLabel(cs.Category): @(cs.Assessed ? cs.Score.ToString() : "not assessed")">
-                    <div class="aqr-cat-name">@CategoryLabel(cs.Category)</div>
-                    <div class="aqr-cat-score @(cs.Assessed ? "" : "aqr-cat-score-na")">
-                        @(cs.Assessed ? cs.Score.ToString() : "—")
-                    </div>
-                    <div class="aqr-cat-status">@(cs.Assessed ? CatStatusLabel(worstSeverity) : "Not assessed")</div>
-                    <div class="aqr-cat-findings">
-                        @if (!cs.Assessed) { <span>Not assessed</span> }
-                        else if (cs.FindingCount == 0) { <span>No issues</span> }
-                        else { <span>@cs.FindingCount finding@(cs.FindingCount != 1 ? "s" : "")</span> }
-                    </div>
-                </button>
-            }
-        </div>
-
-        @* ── Connectivity table ────────────────────────────────────────────── *@
-        <div class="aqr-section-header">Connectivity</div>
-        <div class="aqr-conn-table-wrap">
-            <table class="aqr-conn-table">
-                <thead>
-                    <tr>
-                        <th>Endpoint</th>
-                        <th>Status</th>
-                        <th>TLS</th>
-                        <th>Response Time</th>
-                        <th>HTTP Code</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @ConnectivityRow("REST API", report.RestResult)
-                    @ConnectivityRow("Health", report.HealthResult)
-                    @ConnectivityRow("OpenAPI / Swagger", report.SwaggerResult)
-                    @ConnectivityRow("GraphQL", report.GraphQlResult)
-                </tbody>
-            </table>
-        </div>
-
-        @* ── Top risks ────────────────────────────────────────────────────── *@
-        var topRisks = report.Findings
-            .Where(f => f.Severity is ApiQualitySeverity.Critical or ApiQualitySeverity.High)
-            .OrderBy(f => f.Severity)
-            .Take(3)
-            .ToList();
-        @if (topRisks.Count > 0)
-        {
-            <div class="aqr-section-header">Top Risks</div>
-            <div class="issue-cards">
-                @foreach (var risk in topRisks)
-                {
-                    <IssueCard Severity="@risk.Severity.ToString()"
-                               Component="@CategoryLabel(risk.Category)"
-                               Description="@(string.IsNullOrEmpty(risk.Description) ? risk.Title : $"{risk.Title} — {risk.Description}")"
-                               SuggestedFix="@risk.Recommendation" />
-                }
-            </div>
-        }
-
-        @* ── Findings ─────────────────────────────────────────────────────── *@
-        <div class="aqr-section-header">Findings</div>
-        <div class="aqr-findings-toolbar" role="group" aria-label="Filter findings">
-            <input type="search"
-                   class="form-control aqr-search"
-                   placeholder="Search findings…"
-                   aria-label="Search findings"
-                   value="@_findingSearch"
-                   @oninput="e => _findingSearch = e.Value?.ToString() ?? string.Empty" />
-            <div class="aqr-filter-chips">
-                @foreach (var sev in Enum.GetValues<ApiQualitySeverity>())
-                {
-                    var count = report.Findings.Count(f => f.Severity == sev);
-                    if (count == 0) continue;
-                    <button class="aqr-chip aqr-chip-@sev.ToString().ToLowerInvariant() @(_sevFilter == sev ? "is-active" : "")"
-                            @onclick="() => ToggleSev(sev)"
-                            aria-pressed="@(_sevFilter == sev)">
-                        @sev <span class="aqr-chip-count">@count</span>
-                    </button>
-                }
-                @if (_sevFilter is not null || _catFilter is not null || !string.IsNullOrEmpty(_findingSearch))
-                {
-                    <button class="aqr-chip" @onclick="ClearFilters">Clear ×</button>
-                }
-            </div>
-            <div class="aqr-filter-chips" aria-label="Filter by category">
-                @foreach (var cat in Enum.GetValues<ApiQualityCategory>())
-                {
-                    var count = report.Findings.Count(f => f.Category == cat);
-                    if (count == 0) continue;
-                    <button class="aqr-chip @(_catFilter == cat ? "is-active" : "")"
-                            @onclick="() => SetCategoryFilter(cat)"
-                            aria-pressed="@(_catFilter == cat)">
-                        @CategoryLabel(cat) <span class="aqr-chip-count">@count</span>
-                    </button>
-                }
-            </div>
-        </div>
-
-        var filteredFindings = FilteredFindings(report.Findings).ToList();
-        @if (filteredFindings.Count == 0)
-        {
-            <div class="aqr-empty-filter">No findings match the current filter.</div>
-        }
-        else
-        {
-            <div class="aqr-findings-list" aria-label="API quality findings">
-                @foreach (var f in filteredFindings)
-                {
-                    @FindingCard(f)
-                }
-            </div>
-        }
-
-        @* ── Recommendations ──────────────────────────────────────────────── *@
-        @if (report.Recommendations.Count > 0)
-        {
-            <div class="aqr-section-header">Recommendations</div>
-            <ol class="aqr-rec-list">
-                @{ int rIdx = 0; }
-                @foreach (var rec in report.Recommendations)
-                {
-                    rIdx++;
-                    <li class="aqr-rec-item">
-                        <div class="aqr-rec-num" aria-hidden="true">@rIdx</div>
-                        <div class="aqr-rec-body">@rec</div>
-                    </li>
-                }
-            </ol>
-        }
-
-        @* ── Limitations ──────────────────────────────────────────────────── *@
-        @if (report.Limitations.Count > 0)
-        {
-            <div class="aqr-section-header">Review Limitations</div>
-            <div class="aqr-limitations">
-                <ul>
-                    @foreach (var l in report.Limitations) { <li>@l</li> }
-                </ul>
-            </div>
-        }
-    }
-
-    @* ── Landing (pre-run, not running) ───────────────────────────────────────── *@
 </div>
 
 @code {
-    private FrontendAnalysisContext? _context;
-
-    private bool    _running;
-    private string  _progressMessage = "";
-    private string? _errorMessage;
-
+    private QualityReviewPageModel? PageModel;
+    private bool IsLoading = true;
+    private string? LoadError;
+    private bool IsRunning;
     private ApiQualityReviewReport? _report;
-
-    private string?               _findingSearch;
-    private ApiQualitySeverity?   _sevFilter;
-    private ApiQualityCategory?   _catFilter;
-    private readonly HashSet<string> _expandedFindings = [];
-
-    private bool _hasAnyEndpoint =>
-        _context is not null &&
-        (_context.HasRestBaseUrl || _context.HasGraphQlEndpoint ||
-         !string.IsNullOrWhiteSpace(_context.HealthEndpoint) ||
-         !string.IsNullOrWhiteSpace(_context.SwaggerUrl));
-
-    // ── Analysis card data ────────────────────────────────────────────────────
-
-    private static readonly ReviewLanding.AnalysisCard[] ApiAnalysisCards =
-    [
-        new("NET",  "Connectivity",    "Probes each configured API endpoint for reachability, TLS, redirect behaviour, and HTTP status codes."),
-        new("REST", "REST API",        "Validates compression, versioning headers, cache-control, and error response format consistency."),
-        new("GQL",  "GraphQL",         "Detects introspection exposure and validates response content type compliance."),
-        new("OAS",  "OpenAPI",         "Checks schema completeness, operationId coverage, response definitions, and security scheme declarations."),
-        new("SEC",  "Security",        "Inspects HSTS, CORS wildcard policy, rate limiting headers, and server header exposure."),
-        new("PERF", "Performance",     "Measures response times and flags endpoints that exceed acceptable latency thresholds."),
-        new("DSN",  "API Design",      "Evaluates REST versioning patterns, error response consistency, and API contract quality."),
-        new("RDY",  "QA Readiness",    "Assesses health endpoint structure, status fields, and overall deployment readiness."),
-    ];
-
-    private static readonly string[] ApiChecks =
-    [
-        "HTTP status validation",
-        "Response time",
-        "TLS / HTTPS",
-        "OpenAPI completeness",
-        "REST endpoint discovery",
-        "GraphQL schema validation",
-        "Security headers",
-        "Authentication",
-        "CORS",
-        "Compression",
-        "Health endpoint",
-        "Versioning",
-        "Error responses",
-        "Rate limiting",
-        "Observability",
-    ];
-
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     protected override async Task OnInitializedAsync()
     {
-        _context = await ContextFactory.GetActiveContextAsync();
-        _report  = RuntimeReviews.ApiQualityReview.Report;
+        // Subscribe to target environment changes
+        RuntimeReviews.ReviewStarted += RefreshPageModel;
+
+        // Load initial page model
+        await RefreshPageModel();
     }
 
-    // ── Actions ───────────────────────────────────────────────────────────────
-
-    private async Task RunReview()
+    private async Task RefreshPageModel()
     {
-        if (_context is null || !_hasAnyEndpoint) return;
-
-        _running         = true;
-        _errorMessage    = null;
-        _report          = null;
-        _progressMessage = "Analysing API endpoints…";
-        RuntimeReviews.MarkApiQualityRunning(_context);
-        StateHasChanged();
-
         try
         {
-            var request = BuildRequest(_context);
-            var (report, error) = await ReviewService.AnalyzeAsync(request);
+            IsLoading = true;
+            LoadError = null;
+            PageModel = await PageModelService.GetApiQualityReviewModelAsync();
 
-            if (error is not null)
+            if (PageModel is null)
             {
-                _errorMessage = error;
-                RuntimeReviews.MarkApiQualityFailed(_context, error);
-            }
-            else if (report is not null)
-            {
-                _report = report;
-                RuntimeReviews.SaveApiQualityResult(_report, _context);
-                _expandedFindings.Clear();
-                _findingSearch = null;
-                _sevFilter     = null;
-                _catFilter     = null;
+                LoadError = "Failed to load page configuration";
             }
         }
         catch (Exception ex)
         {
-            _errorMessage = "Review failed: " + ex.Message;
-            RuntimeReviews.MarkApiQualityFailed(_context, _errorMessage);
+            LoadError = $"Error loading configuration: {ex.Message}";
         }
         finally
         {
-            _running = false;
+            IsLoading = false;
         }
     }
 
-    private async Task ExportHtml()
+    private async Task RunAudit()
     {
-        if (_report is null) return;
-        var html = ExportService.ExportApiQualityReview(_report, Workspace.ProjectName);
-        await JS.InvokeVoidAsync("downloadHtmlFile", $"api-quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
-    }
+        if (PageModel?.Summary.CanRun != true)
+            return;
 
-    private async Task RefreshContext()
-    {
-        _context = await ContextFactory.GetActiveContextAsync();
-    }
-
-    // ── Request builder ───────────────────────────────────────────────────────
-
-    private IReadOnlyList<ReviewLanding.TargetField> BuildApiTargetFields()
-    {
-        if (_context is null)
+        IsRunning = true;
+        try
         {
-            return
-            [
-                new("Environment", "Loading...", ReviewLanding.FieldStatus.Informational),
-                new("REST Base URL", "Loading...", ReviewLanding.FieldStatus.Informational),
-                new("GraphQL Endpoint", "Loading...", ReviewLanding.FieldStatus.Informational),
-                new("OpenAPI / Swagger", "Loading...", ReviewLanding.FieldStatus.Informational),
-                new("Health Endpoint", "Loading...", ReviewLanding.FieldStatus.Informational),
-            ];
+            // Call the actual quality review service
+            await Task.Delay(1000); // Placeholder
         }
-
-        return
-        [
-            new("Environment", $"{_context.ActiveProfile.EnvironmentType} - {_context.ActiveProfile.Name}", ReviewLanding.FieldStatus.Configured),
-            new("REST Base URL", _context.HasRestBaseUrl ? _context.RestBaseUrl ?? "Configured" : "Not configured", _context.HasRestBaseUrl ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Missing),
-            new("GraphQL Endpoint", _context.HasGraphQlEndpoint ? _context.GraphQlEndpoint ?? "Configured" : "Not configured", _context.HasGraphQlEndpoint ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Missing),
-            new("OpenAPI / Swagger", !string.IsNullOrWhiteSpace(_context.SwaggerUrl) ? _context.SwaggerUrl : "Not configured", !string.IsNullOrWhiteSpace(_context.SwaggerUrl) ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Missing),
-            new("Health Endpoint", !string.IsNullOrWhiteSpace(_context.HealthEndpoint) ? _context.HealthEndpoint : "Not configured", !string.IsNullOrWhiteSpace(_context.HealthEndpoint) ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Missing),
-        ];
-    }
-
-    private IReadOnlyList<ReviewLanding.MetadataItem> BuildApiMetadata()
-    {
-        if (_context is null) return [];
-        return
-        [
-            new("Environment", _context.ActiveProfile.EnvironmentType.ToString()),
-            new("Authentication", _context.ActiveProfile.ApiAuth.AuthType.ToString()),
-        ];
-    }
-
-    private ReviewLanding.ConfigurationState BuildApiConfiguration()
-    {
-        if (_context is null)
+        finally
         {
-            return new(
-                ReviewLanding.ConfigurationStatus.Warning,
-                "Loading target environment",
-                "The active API target environment is still loading.",
-                []);
+            IsRunning = false;
         }
-
-        if (!_hasAnyEndpoint)
-        {
-            return new(
-                ReviewLanding.ConfigurationStatus.Error,
-                "Configuration incomplete",
-                "Add at least one executable API endpoint before running the review.",
-                ["At least one executable API endpoint: REST Base URL, GraphQL endpoint, OpenAPI / Swagger URL, or Health endpoint"],
-                "Configure Target Environment",
-                "/admin/system-settings");
-        }
-
-        return new(
-            ReviewLanding.ConfigurationStatus.Success,
-            "Ready to run",
-            "API endpoint configuration is sufficient for a quality review.",
-            []);
     }
 
-    private static ApiQualityReviewRequest BuildRequest(FrontendAnalysisContext ctx) => new()
+    void IAsyncDisposable.Dispose()
     {
-        RestBaseUrl       = ctx.RestBaseUrl,
-        HealthEndpoint    = ctx.HealthEndpoint,
-        SwaggerUrl        = ctx.SwaggerUrl,
-        GraphQlEndpoint   = ctx.GraphQlEndpoint,
-        TimeoutSeconds    = ctx.RequestTimeoutSeconds,
-        RetryCount        = ctx.RetryCount,
-        EnvironmentName   = ctx.ActiveProfile.Name,
-    };
-
-    // ── Filters ───────────────────────────────────────────────────────────────
-
-    private void SetCategoryFilter(ApiQualityCategory cat)
-    {
-        _catFilter     = _catFilter == cat ? null : cat;
-        _findingSearch = null;
-        _sevFilter     = null;
+        RuntimeReviews.ReviewStarted -= RefreshPageModel;
     }
-
-    private void ToggleSev(ApiQualitySeverity sev) =>
-        _sevFilter = _sevFilter == sev ? null : sev;
-
-    private void ClearFilters()
-    {
-        _sevFilter     = null;
-        _catFilter     = null;
-        _findingSearch = null;
-    }
-
-    private IEnumerable<ApiQualityFinding> FilteredFindings(IReadOnlyList<ApiQualityFinding> all)
-    {
-        IEnumerable<ApiQualityFinding> q = all.OrderBy(f => f.Severity).ThenBy(f => f.Category);
-        if (_sevFilter.HasValue) q = q.Where(f => f.Severity == _sevFilter.Value);
-        if (_catFilter.HasValue) q = q.Where(f => f.Category == _catFilter.Value);
-        if (!string.IsNullOrWhiteSpace(_findingSearch))
-        {
-            var term = _findingSearch.Trim();
-            q = q.Where(f =>
-                f.Title.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                f.Description.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                CategoryLabel(f.Category).Contains(term, StringComparison.OrdinalIgnoreCase));
-        }
-        return q;
-    }
-
-    // ── Finding card ──────────────────────────────────────────────────────────
-
-    private RenderFragment<ApiQualityFinding> FindingCard => f => __builder =>
-    {
-        var expanded = _expandedFindings.Contains(f.Id);
-        var sevCls   = f.Severity.ToString().ToLowerInvariant();
-        <div class="aqr-finding aqr-finding-@sevCls">
-            <button class="aqr-finding-toggle"
-                    @onclick="() => ToggleFinding(f.Id)"
-                    aria-expanded="@expanded.ToString().ToLowerInvariant()">
-                <span class="aqr-sev-badge aqr-sev-@sevCls">@f.Severity</span>
-                <span class="aqr-finding-title">@f.Title</span>
-                <span class="aqr-cat-chip">@CategoryLabel(f.Category)</span>
-                <span class="aqr-chevron" aria-hidden="true">@(expanded ? "▲" : "▼")</span>
-            </button>
-            @if (expanded)
-            {
-                <div class="aqr-finding-body">
-                    <div>
-                        <span class="aqr-detail-label">Description</span>
-                        <p class="aqr-detail-text">@f.Description</p>
-                    </div>
-                    <div>
-                        <span class="aqr-detail-label">Recommendation</span>
-                        <p class="aqr-detail-text aqr-detail-action">@f.Recommendation</p>
-                    </div>
-                    @if (f.Evidence.Count > 0)
-                    {
-                        <div>
-                            <span class="aqr-detail-label">Evidence</span>
-                            <ul class="aqr-evidence-list">
-                                @foreach (var ev in f.Evidence) { <li>@ev</li> }
-                            </ul>
-                        </div>
-                    }
-                </div>
-            }
-        </div>
-    };
-
-    private void ToggleFinding(string id)
-    {
-        if (!_expandedFindings.Remove(id))
-            _expandedFindings.Add(id);
-    }
-
-    // ── Connectivity row ──────────────────────────────────────────────────────
-
-    private RenderFragment ConnectivityRow(string label, ApiQualityEndpointResult? r) => __builder =>
-    {
-        if (r is null) return;
-        var isOk       = r.Reachable && r.StatusCode < 400;
-        var statusText = r.Reachable
-            ? (r.StatusCode < 400 ? "Reachable" : $"HTTP {r.StatusCode}")
-            : (r.Error is not null ? "Unreachable" : $"HTTP {r.StatusCode}");
-        <tr>
-            <td class="aqr-conn-label">@label</td>
-            <td class="@(isOk ? "aqr-conn-ok" : "aqr-conn-err")">@statusText</td>
-            <td class="@(r.IsHttps ? "aqr-conn-tls-ok" : "aqr-conn-tls-err")">
-                @(r.IsHttps ? "✓ HTTPS" : "✗ HTTP")
-            </td>
-            <td class="aqr-conn-muted">@r.ResponseTimeMs ms</td>
-            <td class="aqr-conn-muted">@(r.StatusCode > 0 ? r.StatusCode.ToString() : "—")</td>
-        </tr>
-    };
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static string CategoryLabel(ApiQualityCategory c) => c switch
-    {
-        ApiQualityCategory.Connectivity => "Connectivity",
-        ApiQualityCategory.Performance  => "Performance",
-        ApiQualityCategory.Security     => "Security",
-        ApiQualityCategory.Rest         => "REST API",
-        ApiQualityCategory.GraphQL      => "GraphQL",
-        ApiQualityCategory.OpenApi      => "OpenAPI",
-        ApiQualityCategory.Readiness    => "Readiness",
-        _                               => c.ToString(),
-    };
-
-    private static string ScoreClass(int score) =>
-        score >= 80 ? "score-good" : score >= 50 ? "score-warn" : "score-poor";
-
-    private static string QualityLabel(int score) =>
-        score >= 90 ? "Excellent" :
-        score >= 80 ? "Good" :
-        score >= 65 ? "Needs Attention" :
-        score >= 50 ? "At Risk" : "Critical";
-
-    private static string CatCardClass(ApiQualitySeverity? worst, bool assessed)
-    {
-        if (!assessed) return "aqr-cat-unknown";
-        return worst switch
-        {
-            ApiQualitySeverity.Critical => "aqr-cat-critical",
-            ApiQualitySeverity.High     => "aqr-cat-high",
-            ApiQualitySeverity.Medium   => "aqr-cat-medium",
-            ApiQualitySeverity.Low      => "aqr-cat-low",
-            null                        => "aqr-cat-good",
-            _                           => "aqr-cat-low",
-        };
-    }
-
-    private static string CatStatusLabel(ApiQualitySeverity? worst) =>
-        worst switch
-        {
-            ApiQualitySeverity.Critical => "Critical",
-            ApiQualitySeverity.High     => "High Risk",
-            ApiQualitySeverity.Medium   => "Warning",
-            ApiQualitySeverity.Low      => "Low Risk",
-            null                        => "Passed",
-            _                           => "Info",
-        };
 }

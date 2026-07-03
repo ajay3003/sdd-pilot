@@ -210,11 +210,11 @@ public class SystemSettingsStatusEngineTests
     }
 
     [Fact]
-    public void StatusSummary_Empty_OverallStatusIsPass()
+    public void StatusSummary_Empty_OverallStatusIsUnavailable()
     {
         var summary = _engine.SummarizeStatuses(Array.Empty<SystemSettingsStatus>());
 
-        Assert.Equal(SystemSettingsStatus.Pass, summary.OverallStatus);
+        Assert.Equal(SystemSettingsStatus.Unavailable, summary.OverallStatus);
     }
 
     [Fact]
@@ -232,11 +232,11 @@ public class SystemSettingsStatusEngineTests
     }
 
     [Fact]
-    public void CalculateOverallStatus_EmptyArray_ReturnsPass()
+    public void CalculateOverallStatus_EmptyArray_ReturnsUnavailable()
     {
         var status = _engine.CalculateOverallStatus();
 
-        Assert.Equal(SystemSettingsStatus.Pass, status);
+        Assert.Equal(SystemSettingsStatus.Unavailable, status);
     }
 
     [Fact]

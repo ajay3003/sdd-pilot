@@ -44,43 +44,46 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         };
 
         // Collect all check categories into sections
+        var environmentChecks = RunEnvironmentChecks();
         var databaseChecks = await RunDatabaseChecksAsync();
         var backendChecks = RunBackendApiChecks();
         var workspaceChecks = await RunWorkspaceReadinessChecksAsync();
         var reviewContextChecks = await RunReviewContextChecksAsync();
-        var exportChecks = new List<EnvironmentDiagnosticCheck>
-        {
-            new EnvironmentDiagnosticCheck
-            {
-                Name = "Export Services",
-                Status = SystemSettingsStatus.Pass,
-                Details = "JSON and HTML export available in frontend",
-                Recommendation = ""
-            }
-        };
+        var exportChecks = RunExportChecks();
 
         // Organize checks into unified SettingsSection hierarchy
-        report.Sections.Add(ConvertChecksToSection("Platform Health: Database", databaseChecks));
-        report.Sections.Add(ConvertChecksToSection("Platform Health: Backend API", backendChecks));
-        report.Sections.Add(ConvertChecksToSection("Workspace Readiness", workspaceChecks));
-        report.Sections.Add(ConvertChecksToSection("Review Context", reviewContextChecks));
-        report.Sections.Add(ConvertChecksToSection("Export Services", exportChecks));
+        report.Sections.Add(ConvertChecksToSection("Environment", environmentChecks));
+        report.Sections.Add(ConvertChecksToSection("Database", databaseChecks));
+        report.Sections.Add(ConvertChecksToSection("Backend / API", backendChecks));
+        report.Sections.Add(ConvertChecksToSection("Workspace", workspaceChecks));
+        report.Sections.Add(ConvertChecksToSection("ReviewContext", reviewContextChecks));
+        report.Sections.Add(ConvertChecksToSection("Export / Reports", exportChecks));
 
-        // Calculate overall status using the shared engine
-        var allStatuses = report.Sections
-            .SelectMany(s => s.Items.Select(i => i.Status))
-            .ToArray();
-        report.OverallStatus = _statusEngine.CalculateOverallStatus(allStatuses);
+        ApplySummary(report);
 
-        // Create status summary (OverallStatus is calculated from counts)
-        var summary = new StatusSummary();
-        foreach (var item in report.Sections.SelectMany(s => s.Items))
-        {
-            summary.AddStatus(item.Status);
-        }
-        report.Summary = summary;
 
         return report;
+    }
+
+    internal EnvironmentDiagnosticsReport BuildReportForSections(
+        string environment,
+        List<SettingsSection> sections)
+    {
+        var report = new EnvironmentDiagnosticsReport
+        {
+            Environment = environment,
+            Sections = sections
+        };
+
+        ApplySummary(report);
+        return report;
+    }
+
+    private void ApplySummary(EnvironmentDiagnosticsReport report)
+    {
+        DiagnosticPageServiceHelpers.ApplySectionStatuses(report.Sections, _statusEngine);
+        report.Summary = DiagnosticPageServiceHelpers.SummarizeSections(report.Sections, _statusEngine);
+        report.OverallStatus = report.Summary.OverallStatus;
     }
 
     /// <summary>
@@ -109,6 +112,42 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             Items = items,
             IsRequired = false
         };
+    }
+
+    private List<EnvironmentDiagnosticCheck> RunEnvironmentChecks()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? assembly.GetName().Version?.ToString() ?? "Unknown";
+
+        return
+        [
+            new EnvironmentDiagnosticCheck
+            {
+                Name = "Hosting Environment",
+                Status = SystemSettingsStatus.Pass,
+                Details = _env.EnvironmentName,
+                Recommendation = ""
+            },
+            new EnvironmentDiagnosticCheck
+            {
+                Name = "Content Root",
+                Status = string.IsNullOrWhiteSpace(_env.ContentRootPath)
+                    ? SystemSettingsStatus.Warning
+                    : SystemSettingsStatus.Pass,
+                Details = string.IsNullOrWhiteSpace(_env.ContentRootPath)
+                    ? "Content root unavailable"
+                    : _env.ContentRootPath,
+                Recommendation = ""
+            },
+            new EnvironmentDiagnosticCheck
+            {
+                Name = "API Version",
+                Status = SystemSettingsStatus.Pass,
+                Details = version,
+                Recommendation = ""
+            }
+        ];
     }
 
     private async Task<List<EnvironmentDiagnosticCheck>> RunDatabaseChecksAsync()
@@ -445,20 +484,28 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             Recommendation = ""
         });
 
-        // API version/build info
-        var assembly = Assembly.GetExecutingAssembly();
-        var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion ?? assembly.GetName().Version?.ToString() ?? "Unknown";
-
-        checks.Add(new EnvironmentDiagnosticCheck
-        {
-            Name = "API Version/Build",
-            Status = SystemSettingsStatus.Pass,
-            Details = version,
-            Recommendation = ""
-        });
-
         return checks;
+    }
+
+    private static List<EnvironmentDiagnosticCheck> RunExportChecks()
+    {
+        return
+        [
+            new EnvironmentDiagnosticCheck
+            {
+                Name = "JSON Export",
+                Status = SystemSettingsStatus.Pass,
+                Details = "JSON diagnostics export is available.",
+                Recommendation = ""
+            },
+            new EnvironmentDiagnosticCheck
+            {
+                Name = "HTML Report Export",
+                Status = SystemSettingsStatus.Pass,
+                Details = "HTML diagnostics report export is available.",
+                Recommendation = ""
+            }
+        ];
     }
 
     private async Task<List<EnvironmentDiagnosticCheck>> RunReviewContextChecksAsync()
