@@ -1,100 +1,39 @@
 @page "/quality-review"
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models
-@using BirkNext.Web.Models.QualityReview
 @using BirkNext.Web.Services
-@inject IQualityReviewPageModelService PageModelService
+@inject IQualityReviewService QrService
+@inject IDashboardSnapshotService DashboardSnapshot
+@inject IDeliveryReadinessAssessmentService DrService
 @inject IWorkspaceSessionService Workspace
+@inject QualityReviewSessionService QualitySession
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
 
 <PageTitle>Quality Review</PageTitle>
 
 <div class="qr-page">
-    <PageHeader Title="@(PageModel?.Title ?? "Quality Review")"
-                Description="@(PageModel?.Description ?? "Run one or more deterministic quality, compliance, and readiness reviews in a single execution.")" />
 
-    <!-- ── Readiness Panel ────────────────────────────────────────── -->
-    @if (PageModel is not null)
-    {
-        <QualityReviewReadinessPanel Model="PageModel" />
-    }
-    else if (IsLoading)
-    {
-        <div class="qr-loading" role="status">Loading page configuration...</div>
-    }
-    else if (LoadError is not null)
-    {
-        <div class="qr-error" role="alert">@LoadError</div>
-    }
+    <PageHeader Title="Quality Review"
+                Description="Run one or more deterministic quality, compliance, and readiness reviews in a single execution. Select the rule packs to apply, load your artifacts, and get a unified report." />
 
-    <!-- ── Artifact Upload Section ─────────────────────────────── -->
+    <!-- ── Input panel ────────────────────────────────────────────────────── -->
     <div class="qr-input-panel">
         <div class="qr-input-panel-header">
             <span class="qr-input-panel-title"><span class="qr-step-badge">1</span> Load Artifacts</span>
-            <button class="qr-input-panel-toggle" @onclick="() => _inputExpanded = !_inputExpanded">
-                @(_inputExpanded ? "▾ Collapse" : "▸ Expand")
-            </button>
+            @if (_report is not null)
+            {
+                <button class="qr-input-panel-toggle" @onclick="() => _inputExpanded = !_inputExpanded">
+                    @(_inputExpanded ? "▾ Collapse" : "▸ Expand")
+                </button>
+            }
         </div>
 
-        @if (_inputExpanded && PageModel is not null)
+        @if (_inputExpanded)
         {
+            <!-- ── Artifact cards ───────────────────────────────────────── -->
             <div class="qr-artifact-grid">
-                <!-- Specification Card -->
-                <div class="artifact-card @(!string.IsNullOrEmpty(_specificationText) ? "is-loaded" : "")">
-                    <div class="artifact-card-header">
-                        <span class="artifact-icon" aria-hidden="true">📋</span>
-                        <span class="artifact-name">Specification</span>
-                        <span class="artifact-status @(!string.IsNullOrEmpty(_specificationText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_specificationText) ? "Loaded" : "Empty")
-                        </span>
-                    </div>
-                    <SpecificationImport @ref="_specImport"
-                        InputId="qr-spec-import"
-                        OnFileImported="t => OnArtifactLoaded(t, WorkspaceArtifactKind.Specification)"
-                        OnFileRemoved="() => OnArtifactRemoved(WorkspaceArtifactKind.Specification)"
-                        IsDisabled="false" />
-                    <textarea class="artifact-textarea" placeholder="Or paste spec.md here…"
-                              rows="3" @bind:get="_specificationText"
-                              @bind:set="async v => await OnArtifactTextChanged(v, WorkspaceArtifactKind.Specification)"
-                              @bind:event="oninput"></textarea>
-                    @if (!string.IsNullOrEmpty(_specificationText))
-                    {
-                        <div class="artifact-footer">
-                            <span>@_specificationText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => OnArtifactRemoved(WorkspaceArtifactKind.Specification)'>Clear</button>
-                        </div>
-                    }
-                </div>
 
-                <!-- Plan Card -->
-                <div class="artifact-card @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
-                    <div class="artifact-card-header">
-                        <span class="artifact-icon" aria-hidden="true">📐</span>
-                        <span class="artifact-name">Plan</span>
-                        <span class="artifact-status @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_planText) ? "Loaded" : "Empty")
-                        </span>
-                    </div>
-                    <SpecificationImport @ref="_planImport"
-                        InputId="qr-plan-import"
-                        OnFileImported="t => OnArtifactLoaded(t, WorkspaceArtifactKind.Plan)"
-                        OnFileRemoved="() => OnArtifactRemoved(WorkspaceArtifactKind.Plan)"
-                        IsDisabled="false" />
-                    <textarea class="artifact-textarea" placeholder="Or paste plan.md here…"
-                              rows="3" @bind:get="_planText"
-                              @bind:set="async v => await OnArtifactTextChanged(v, WorkspaceArtifactKind.Plan)"
-                              @bind:event="oninput"></textarea>
-                    @if (!string.IsNullOrEmpty(_planText))
-                    {
-                        <div class="artifact-footer">
-                            <span>@_planText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => OnArtifactRemoved(WorkspaceArtifactKind.Plan)'>Clear</button>
-                        </div>
-                    }
-                </div>
-
-                <!-- Constitution Card -->
                 <div class="artifact-card @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
                     <div class="artifact-card-header">
                         <span class="artifact-icon" aria-hidden="true">📜</span>
@@ -105,23 +44,92 @@
                     </div>
                     <SpecificationImport @ref="_constitutionImport"
                         InputId="qr-constitution-import"
-                        OnFileImported="t => OnArtifactLoaded(t, WorkspaceArtifactKind.Constitution)"
-                        OnFileRemoved="() => OnArtifactRemoved(WorkspaceArtifactKind.Constitution)"
+                        OnFileImported="t => { _constitutionText = t; Workspace.Set(WorkspaceArtifactKind.Constitution, t); }"
+                        OnFileRemoved="() => { _constitutionText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Constitution); }"
                         IsDisabled="false" />
                     <textarea class="artifact-textarea" placeholder="Or paste constitution.md here…"
-                              rows="3" @bind:get="_constitutionText"
-                              @bind:set="async v => await OnArtifactTextChanged(v, WorkspaceArtifactKind.Constitution)"
-                              @bind:event="oninput"></textarea>
+                              rows="3" @bind:get="_constitutionText" @bind:set="SetConstitutionText" @bind:event="oninput"></textarea>
                     @if (!string.IsNullOrEmpty(_constitutionText))
                     {
                         <div class="artifact-footer">
                             <span>@_constitutionText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => OnArtifactRemoved(WorkspaceArtifactKind.Constitution)'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => { _constitutionText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Constitution); _constitutionImport?.Reset(); }'>Clear</button>
                         </div>
                     }
                 </div>
 
-                <!-- Data Model Card -->
+                <div class="artifact-card @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">📋</span>
+                        <span class="artifact-name">Specification</span>
+                        <span class="artifact-status @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
+                            @(!string.IsNullOrEmpty(_specText) ? "Loaded" : "Empty")
+                        </span>
+                    </div>
+                    <SpecificationImport @ref="_specImport"
+                        InputId="qr-spec-import"
+                        OnFileImported="t => { _specText = t; Workspace.Set(WorkspaceArtifactKind.Specification, t); }"
+                        OnFileRemoved="() => { _specText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Specification); }"
+                        IsDisabled="false" />
+                    <textarea class="artifact-textarea" placeholder="Or paste spec.md here…"
+                              rows="3" @bind:get="_specText" @bind:set="SetSpecText" @bind:event="oninput"></textarea>
+                    @if (!string.IsNullOrEmpty(_specText))
+                    {
+                        <div class="artifact-footer">
+                            <span>@_specText.Split('\n').Length lines</span>
+                            <button class="artifact-clear" @onclick='() => { _specText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Specification); _specImport?.Reset(); }'>Clear</button>
+                        </div>
+                    }
+                </div>
+
+                <div class="artifact-card @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">📐</span>
+                        <span class="artifact-name">Plan</span>
+                        <span class="artifact-status @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
+                            @(!string.IsNullOrEmpty(_planText) ? "Loaded" : "Empty")
+                        </span>
+                    </div>
+                    <SpecificationImport @ref="_planImport"
+                        InputId="qr-plan-import"
+                        OnFileImported="t => { _planText = t; Workspace.Set(WorkspaceArtifactKind.Plan, t); }"
+                        OnFileRemoved="() => { _planText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Plan); }"
+                        IsDisabled="false" />
+                    <textarea class="artifact-textarea" placeholder="Or paste plan.md here…"
+                              rows="3" @bind:get="_planText" @bind:set="SetPlanText" @bind:event="oninput"></textarea>
+                    @if (!string.IsNullOrEmpty(_planText))
+                    {
+                        <div class="artifact-footer">
+                            <span>@_planText.Split('\n').Length lines</span>
+                            <button class="artifact-clear" @onclick='() => { _planText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Plan); _planImport?.Reset(); }'>Clear</button>
+                        </div>
+                    }
+                </div>
+
+                <div class="artifact-card @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">✅</span>
+                        <span class="artifact-name">Tasks</span>
+                        <span class="artifact-status @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
+                            @(!string.IsNullOrEmpty(_taskText) ? "Loaded" : "Empty")
+                        </span>
+                    </div>
+                    <SpecificationImport @ref="_taskImport"
+                        InputId="qr-task-import"
+                        OnFileImported="t => { _taskText = t; Workspace.Set(WorkspaceArtifactKind.Tasks, t); }"
+                        OnFileRemoved="() => { _taskText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Tasks); }"
+                        IsDisabled="false" />
+                    <textarea class="artifact-textarea" placeholder="Or paste tasks.md here…"
+                              rows="3" @bind:get="_taskText" @bind:set="SetTaskText" @bind:event="oninput"></textarea>
+                    @if (!string.IsNullOrEmpty(_taskText))
+                    {
+                        <div class="artifact-footer">
+                            <span>@_taskText.Split('\n').Length lines</span>
+                            <button class="artifact-clear" @onclick='() => { _taskText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Tasks); _taskImport?.Reset(); }'>Clear</button>
+                        </div>
+                    }
+                </div>
+
                 <div class="artifact-card @(!string.IsNullOrEmpty(_dataModelText) ? "is-loaded" : "")">
                     <div class="artifact-card-header">
                         <span class="artifact-icon" aria-hidden="true">🗄️</span>
@@ -132,242 +140,1385 @@
                     </div>
                     <SpecificationImport @ref="_dataModelImport"
                         InputId="qr-datamodel-import"
-                        OnFileImported="t => OnArtifactLoaded(t, WorkspaceArtifactKind.DataModel)"
-                        OnFileRemoved="() => OnArtifactRemoved(WorkspaceArtifactKind.DataModel)"
+                        OnFileImported="t => { _dataModelText = t; Workspace.Set(WorkspaceArtifactKind.DataModel, t); }"
+                        OnFileRemoved="() => { _dataModelText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.DataModel); }"
                         IsDisabled="false" />
                     <textarea class="artifact-textarea" placeholder="Or paste data-model.md here…"
-                              rows="3" @bind:get="_dataModelText"
-                              @bind:set="async v => await OnArtifactTextChanged(v, WorkspaceArtifactKind.DataModel)"
-                              @bind:event="oninput"></textarea>
+                              rows="3" @bind:get="_dataModelText" @bind:set="SetDataModelText" @bind:event="oninput"></textarea>
                     @if (!string.IsNullOrEmpty(_dataModelText))
                     {
                         <div class="artifact-footer">
                             <span>@_dataModelText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => OnArtifactRemoved(WorkspaceArtifactKind.DataModel)'>Clear</button>
+                            <button class="artifact-clear" @onclick='() => { _dataModelText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.DataModel); _dataModelImport?.Reset(); }'>Clear</button>
                         </div>
                     }
                 </div>
 
-                <!-- Tasks Card -->
-                <div class="artifact-card @(!string.IsNullOrEmpty(_tasksText) ? "is-loaded" : "")">
-                    <div class="artifact-card-header">
-                        <span class="artifact-icon" aria-hidden="true">✅</span>
-                        <span class="artifact-name">Tasks</span>
-                        <span class="artifact-status @(!string.IsNullOrEmpty(_tasksText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_tasksText) ? "Loaded" : "Empty")
-                        </span>
-                    </div>
-                    <SpecificationImport @ref="_tasksImport"
-                        InputId="qr-tasks-import"
-                        OnFileImported="t => OnArtifactLoaded(t, WorkspaceArtifactKind.Tasks)"
-                        OnFileRemoved="() => OnArtifactRemoved(WorkspaceArtifactKind.Tasks)"
-                        IsDisabled="false" />
-                    <textarea class="artifact-textarea" placeholder="Or paste tasks.md here…"
-                              rows="3" @bind:get="_tasksText"
-                              @bind:set="async v => await OnArtifactTextChanged(v, WorkspaceArtifactKind.Tasks)"
-                              @bind:event="oninput"></textarea>
-                    @if (!string.IsNullOrEmpty(_tasksText))
+            </div>
+
+            <!-- ── Review pack selector ─────────────────────────────────── -->
+            <div class="qr-packs-section">
+                <div class="qr-packs-title"><span class="qr-step-badge">2</span> Review Packs</div>
+                <div class="qr-shortcut-bar">
+                    <button class="qr-shortcut-btn" @onclick="SelectAllPacks">All</button>
+                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Quality")'>Quality</button>
+                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Governance")'>Governance</button>
+                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Standards")'>Standards</button>
+                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Readiness")'>Readiness</button>
+                    <button class="qr-shortcut-btn qr-shortcut-btn--clear" @onclick="() => _selectedPacks.Clear()">Clear</button>
+                </div>
+                <div class="qr-packs-grid">
+                    @foreach (var group in QrService.AvailablePacks
+                        .GroupBy(p => p.PackGroup)
+                        .OrderBy(g => _groupOrder.GetValueOrDefault(g.Key, 99)))
                     {
-                        <div class="artifact-footer">
-                            <span>@_tasksText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => OnArtifactRemoved(WorkspaceArtifactKind.Tasks)'>Clear</button>
+                        <div class="qr-pack-group">
+                            <div class="qr-pack-group-title">@group.Key</div>
+                            @foreach (var pack in group)
+                            {
+                                var isAvailable = IsPackAvailable(pack);
+                                var requirementText = GetPackRequirementText(pack);
+                                <label class="qr-pack-option @(!isAvailable ? "is-disabled" : "")">
+                                    <input type="checkbox"
+                                           checked="@(_selectedPacks.Contains(pack.PackId) && isAvailable)"
+                                           disabled="@(!isAvailable)"
+                                           @onchange="e => TogglePack(pack.PackId, (bool)e.Value!)" />
+                                    <span class="qr-pack-label">
+                                        <span class="qr-pack-name">@pack.PackName</span>
+                                        <span class="qr-pack-desc">@pack.PackDescription</span>
+                                        @if (!isAvailable && requirementText is not null)
+                                        {
+                                            <span class="qr-prereq-warn" title="@requirementText">⊘ @requirementText</span>
+                                        }
+                                        else if (isAvailable && PackPrerequisiteWarning(pack) is string warn)
+                                        {
+                                            <span class="qr-prereq-warn">⚠ @warn</span>
+                                        }
+                                    </span>
+                                </label>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- ── Run bar ──────────────────────────────────────────────── -->
+            <div class="qr-run-bar">
+                <span class="qr-run-summary"><span class="qr-step-badge">3</span> @RunSummaryText</span>
+                <PrimaryButton OnClick="RunReview" Disabled="@CannotRun">
+                    @if (_running) { <span>Running…</span> } else { <span>Run Quality Review</span> }
+                </PrimaryButton>
+            </div>
+        }
+    </div>
+
+    <!-- ── Results ───────────────────────────────────────────────────────── -->
+    @if (_report is not null)
+    {
+        <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
+            <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportHtml">Export HTML</button>
+        </div>
+
+        <!-- ── Overall summary ────────────────────────────────────────── -->
+        <div class="qr-overall">
+            <div class="qr-score-ring-wrap @ScoreVariant(_report.OverallScore)">
+                @RenderScoreRing(_report.OverallScore)
+            </div>
+            <div class="qr-overall-meta">
+                <div class="qr-overall-label">@ScoreLabel(_report.OverallScore) Overall</div>
+                <div class="qr-overall-sub">
+                    @_report.TotalFindings finding@(_report.TotalFindings != 1 ? "s" : "") across
+                    @_report.PackResults.Count(r => r.Error is null) pack@(_report.PackResults.Count(r => r.Error is null) != 1 ? "s" : "")
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Finding counts ─────────────────────────────────────────── -->
+        <div class="qr-count-grid">
+            <div class="qr-count-card qr-count-total">
+                <div class="qr-count-num">@_report.TotalFindings</div>
+                <div class="qr-count-label">Findings</div>
+            </div>
+            <div class="qr-count-card qr-count-critical">
+                <div class="qr-count-num">@_report.CriticalCount</div>
+                <div class="qr-count-label">Critical</div>
+            </div>
+            <div class="qr-count-card qr-count-high">
+                <div class="qr-count-num">@_report.HighCount</div>
+                <div class="qr-count-label">High</div>
+            </div>
+            <div class="qr-count-card qr-count-medium">
+                <div class="qr-count-num">@_report.MediumCount</div>
+                <div class="qr-count-label">Medium</div>
+            </div>
+            <div class="qr-count-card qr-count-low">
+                <div class="qr-count-num">@_report.LowCount</div>
+                <div class="qr-count-label">Low</div>
+            </div>
+            <div class="qr-count-card qr-count-blocker">
+                <div class="qr-count-num">@TotalDeliveryBlockers</div>
+                <div class="qr-count-label">Blockers</div>
+            </div>
+            <div class="qr-count-card qr-count-warnings">
+                <div class="qr-count-num">@(_report.MediumCount + _report.LowCount)</div>
+                <div class="qr-count-label">Warnings</div>
+            </div>
+        </div>
+
+        <!-- ── By review pack summary cards ───────────────────────────── -->
+        @if (_report.PackResults.Count > 0)
+        {
+            <div class="qr-pack-cards-section">
+                <div class="qr-pack-cards-title">By Review Pack</div>
+                <div class="qr-pack-cards">
+                    @foreach (var result in _report.PackResults)
+                    {
+                        var isWeakest   = result.PackId == WeakestPackId;
+                        var isStrongest = result.PackId == StrongestPackId;
+                        var cardClass   = result.Error is not null ? "is-error"
+                                        : isWeakest                ? $"{ScoreVariant(result.Score)} is-weakest"
+                                        : isStrongest              ? $"{ScoreVariant(result.Score)} is-strongest"
+                                        : ScoreVariant(result.Score);
+                        var totalF      = result.Critical + result.High + result.Medium + result.Low;
+                        var hSev        = result.Critical > 0 ? "Critical"
+                                        : result.High > 0     ? "High"
+                                        : result.Medium > 0   ? "Medium"
+                                        : result.Low > 0      ? "Low" : "None";
+
+                        <div class="qr-pack-card @cardClass">
+                            @if (isWeakest || isStrongest)
+                            {
+                                <span class="qr-pack-card-highlight">@(isStrongest ? "Strongest" : "Weakest")</span>
+                            }
+                            <div class="qr-pack-card-name">@result.PackName</div>
+                            @if (result.Error is not null)
+                            {
+                                <div class="qr-pack-card-score qr-pack-card-score--na">—</div>
+                                <div class="qr-pack-card-error">@result.Error</div>
+                            }
+                            else
+                            {
+                                <div class="qr-pack-card-score">@((int)Math.Round(result.Score))%</div>
+                                <div class="qr-pack-card-findings">
+                                    @if (totalF == 0) { <span class="qr-pack-card-ok">No issues</span> }
+                                    else { <span>@totalF finding@(totalF != 1 ? "s" : "")</span> }
+                                </div>
+                                @if (totalF > 0)
+                                {
+                                    <div class="qr-pack-card-sev">Highest: @hSev</div>
+                                }
+                                <div class="qr-pack-card-status">
+                                    <span class="qr-result-score @ScoreVariant(result.Score)">@ScoreLabel(result.Score)</span>
+                                </div>
+                            }
                         </div>
                     }
                 </div>
             </div>
         }
-    </div>
 
-    <!-- ── Run Button ───────────────────────────────────────────── -->
-    @if (PageModel is not null)
-    {
-        <div class="qr-actions">
-            <button class="btn-primary" disabled="@(!PageModel.Summary.CanRun)" @onclick="RunAudit">
-                @if (IsRunning)
+        <!-- ── Top Issues ─────────────────────────────────────────────── -->
+        @if (_topIssues.Count > 0)
+        {
+            <div class="qr-top-issues">
+                <div class="qr-top-issues-title">Top Issues</div>
+                @foreach (var issue in _topIssues)
                 {
-                    <span class="spinner" aria-hidden="true">⟳</span>
+                    <IssueCard Severity="@issue.Severity"
+                               Component="@issue.PackName"
+                               Description="@issue.Title"
+                               SuggestedFix="@(string.IsNullOrEmpty(issue.Detail) ? null : issue.Detail)" />
                 }
-                @(IsRunning ? "Running…" : "Run Quality Review")
-            </button>
+            </div>
+        }
+
+        <!-- ── Per-pack expandable result sections ─────────────────────── -->
+        <div class="qr-results">
+            @foreach (var result in _report.PackResults)
+            {
+                var expanded = _expanded.Contains(result.PackId);
+                <div class="qr-result-section">
+                    <button class="qr-result-header" @onclick="() => ToggleSection(result.PackId)">
+                        <span class="qr-result-name">@result.PackName</span>
+                        <span class="qr-result-meta">
+                            @if (result.Error is null)
+                            {
+                                <span class="qr-result-score @ScoreVariant(result.Score)">@((int)Math.Round(result.Score))%</span>
+                                @if (result.Critical + result.High + result.Medium + result.Low > 0)
+                                {
+                                    <span class="qr-result-findings">@(result.Critical + result.High + result.Medium + result.Low) finding@((result.Critical + result.High + result.Medium + result.Low) != 1 ? "s" : "")</span>
+                                }
+                                else
+                                {
+                                    <span class="qr-result-ok">✓ No issues</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="qr-result-error-badge">Error</span>
+                            }
+                        </span>
+                        <span class="qr-result-toggle" aria-hidden="true">@(expanded ? "▾" : "▸")</span>
+                    </button>
+
+                    @if (expanded)
+                    {
+                        <div class="qr-result-body">
+                            @if (result.Error is not null)
+                            {
+                                <div class="qr-pack-error">@result.Error</div>
+                            }
+                            else if (result.QaAudit is not null)
+                            {
+                                @RenderQaSection(result.QaAudit)
+                            }
+                            else if (result.Compliance is not null)
+                            {
+                                @RenderComplianceSection(result.Compliance)
+                            }
+                            else if (result.Standards is not null)
+                            {
+                                @RenderStandardsSection(result.Standards)
+                            }
+                            else if (result.QaReadiness is not null)
+                            {
+                                @RenderQaReadinessSection(result.QaReadiness)
+                            }
+                            else if (result.DeliveryReadiness is not null)
+                            {
+                                @RenderDeliveryReadinessSection(result.DeliveryReadiness)
+                            }
+                        </div>
+                    }
+                </div>
+            }
         </div>
     }
+    else if (!_inputExpanded)
+    {
+        <EmptyState Icon="📋" Title="No review run yet." Description="Expand the panel above to load artifacts and run a review." />
+    }
+
 </div>
 
 @code {
-    private QualityReviewPageModel? PageModel;
-    private bool IsLoading = true;
-    private string? LoadError;
-    private bool IsRunning;
-    private bool _inputExpanded;
-
-    // Artifact state - read from workspace on init
-    private string _specificationText = string.Empty;
-    private string _planText = string.Empty;
     private string _constitutionText = string.Empty;
-    private string _dataModelText = string.Empty;
-    private string _tasksText = string.Empty;
+    private string _specText         = string.Empty;
+    private string _planText         = string.Empty;
+    private string _taskText         = string.Empty;
+    private string _dataModelText    = string.Empty;
 
+    private SpecificationImport? _constitutionImport;
     private SpecificationImport? _specImport;
     private SpecificationImport? _planImport;
-    private SpecificationImport? _constitutionImport;
+    private SpecificationImport? _taskImport;
     private SpecificationImport? _dataModelImport;
-    private SpecificationImport? _tasksImport;
+
+    private readonly HashSet<string> _selectedPacks = [];
+    private readonly HashSet<string> _expanded      = [];
+
+    private QualityReviewReport? _report;
+    private List<TopIssueItem>   _topIssues = [];
+    private bool _running;
+    private bool _inputExpanded = true;
+
+    private static readonly Dictionary<string, int> _groupOrder = new()
+    {
+        ["Quality"] = 0, ["Governance"] = 1, ["Standards"] = 2, ["Readiness"] = 3,
+    };
+
+    // ── QA Readiness detail state ─────────────────────────────────────────────
+    private string? _qaExpandedCategory;
+    private bool    _qaGapShowAll;
+    private bool    _qaRecShowAll;
+
+    // ── Delivery Readiness detail state ───────────────────────────────────────
+    private string        _drTab                   = "overview";
+    private GateSeverity? _drBlockerSeverityFilter;
+    private string?       _drBlockerPhaseFilter;
+    private string?       _drRecPhaseFilter;
+    private string        _drRecSearch             = string.Empty;
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     protected override async Task OnInitializedAsync()
     {
-        // Subscribe to workspace changes
-        Workspace.ReviewContextRebuildNeeded += (s, e) => _ = RefreshPageModel();
-
-        // Load initial artifact state
-        _specificationText = Workspace.Get(WorkspaceArtifactKind.Specification)?.Text ?? string.Empty;
-        _planText = Workspace.Get(WorkspaceArtifactKind.Plan)?.Text ?? string.Empty;
-        _constitutionText = Workspace.Get(WorkspaceArtifactKind.Constitution)?.Text ?? string.Empty;
-        _dataModelText = Workspace.Get(WorkspaceArtifactKind.DataModel)?.Text ?? string.Empty;
-        _tasksText = Workspace.Get(WorkspaceArtifactKind.Tasks)?.Text ?? string.Empty;
-
-        // Load page model
-        await RefreshPageModel();
-    }
-
-    private async Task RefreshPageModel()
-    {
         try
         {
-            IsLoading = true;
-            LoadError = null;
-            PageModel = await PageModelService.GetQualityReviewModelAsync();
+            await QrService.InitializeAsync();
 
-            if (PageModel is null)
+            // Restore any artifacts already in the workspace from this session.
+            _constitutionText = Workspace.Get(WorkspaceArtifactKind.Constitution)?.Text ?? string.Empty;
+            _specText         = Workspace.Get(WorkspaceArtifactKind.Specification)?.Text ?? string.Empty;
+            _planText         = Workspace.Get(WorkspaceArtifactKind.Plan)?.Text          ?? string.Empty;
+            _taskText         = Workspace.Get(WorkspaceArtifactKind.Tasks)?.Text         ?? string.Empty;
+            _dataModelText    = Workspace.Get(WorkspaceArtifactKind.DataModel)?.Text     ?? string.Empty;
+
+            // Check if there's a prior session with selected packs
+            if (QualitySession.SelectedPackIds.Count > 0)
             {
-                LoadError = "Failed to load page configuration";
+                // Use the prior session's pack selections
+                _selectedPacks.Clear();
+                foreach (var packId in QualitySession.SelectedPackIds)
+                {
+                    var pack = QrService.AvailablePacks.FirstOrDefault(p => p.PackId == packId);
+                    if (pack is not null && IsPackAvailable(pack))
+                        _selectedPacks.Add(packId);
+                }
             }
+            else
+            {
+                // Apply default selections based on loaded artifacts
+                ApplyDefaultPackSelections();
+            }
+
+            if (QualitySession.HasResult && IsSessionForCurrentWorkspace())
+                RestoreReport(QualitySession.Report!);
         }
         catch (Exception ex)
         {
-            LoadError = $"Error loading configuration: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine($"Error initializing QualityReview: {ex.Message}");
+        }
+    }
+
+    // ── Workspace-syncing text setters ────────────────────────────────────────
+
+    private void SetConstitutionText(string? v)
+    {
+        _constitutionText = v ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.Constitution, v!);
+        else Workspace.Clear(WorkspaceArtifactKind.Constitution);
+        ApplyDefaultPackSelections();
+    }
+
+    private void SetSpecText(string? v)
+    {
+        _specText = v ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.Specification, v!);
+        else Workspace.Clear(WorkspaceArtifactKind.Specification);
+        ApplyDefaultPackSelections();
+    }
+
+    private void SetPlanText(string? v)
+    {
+        _planText = v ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.Plan, v!);
+        else Workspace.Clear(WorkspaceArtifactKind.Plan);
+        ApplyDefaultPackSelections();
+    }
+
+    private void SetTaskText(string? v)
+    {
+        _taskText = v ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.Tasks, v!);
+        else Workspace.Clear(WorkspaceArtifactKind.Tasks);
+        ApplyDefaultPackSelections();
+    }
+
+    private void SetDataModelText(string? v)
+    {
+        _dataModelText = v ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.DataModel, v!);
+        else Workspace.Clear(WorkspaceArtifactKind.DataModel);
+        ApplyDefaultPackSelections();
+    }
+
+    // ── Derived helpers ───────────────────────────────────────────────────────
+
+    private bool AnyArtifactLoaded =>
+        !string.IsNullOrWhiteSpace(_constitutionText) ||
+        !string.IsNullOrWhiteSpace(_specText)         ||
+        !string.IsNullOrWhiteSpace(_planText)         ||
+        !string.IsNullOrWhiteSpace(_taskText)         ||
+        !string.IsNullOrWhiteSpace(_dataModelText);
+
+    private bool CannotRun => _running || _selectedPacks.Count == 0 || !AnyArtifactLoaded;
+
+    private int TotalDeliveryBlockers => _report?.PackResults
+        .Where(r => r.DeliveryReadiness is not null)
+        .Sum(r => r.DeliveryReadiness!.Blockers.Count) ?? 0;
+
+    private string? WeakestPackId
+    {
+        get
+        {
+            var valid = _report?.PackResults.Where(r => r.Error is null).ToList();
+            return valid is { Count: > 1 } ? valid.MinBy(r => r.Score)?.PackId : null;
+        }
+    }
+
+    private string? StrongestPackId
+    {
+        get
+        {
+            var valid = _report?.PackResults.Where(r => r.Error is null).ToList();
+            return valid is { Count: > 1 } ? valid.MaxBy(r => r.Score)?.PackId : null;
+        }
+    }
+
+    private string RunSummaryText
+    {
+        get
+        {
+            if (!AnyArtifactLoaded) return "Load at least one artifact to run a review";
+            if (_selectedPacks.Count == 0) return "Select at least one review pack";
+            int loaded = new[] { _constitutionText, _specText, _planText, _taskText, _dataModelText }
+                            .Count(t => !string.IsNullOrWhiteSpace(t));
+            return $"{loaded} artifact{(loaded != 1 ? "s" : "")} loaded · {_selectedPacks.Count} pack{(_selectedPacks.Count != 1 ? "s" : "")} selected";
+        }
+    }
+
+    private bool IsPackAvailable(QualityReviewPackDescriptor pack) =>
+        pack.PackId switch
+        {
+            "qa-auditor" => HasSpec || HasPlan || HasTasks,
+            "constitution-compliance" => HasConstitution,
+            "data-model-quality" => HasDataModel,
+            "wcag-2.2" => HasSpec, // TODO: Add FrontendTargetUrl support when available
+            "owasp-asvs" => HasSpec, // TODO: Add API/Frontend target support when available
+            "gdpr" => HasSpec || HasDataModel,
+            "iso-25010" => HasSpec || HasPlan,
+            "qa-readiness" => HasSpec || HasTasks,
+            "delivery-readiness" => HasPlan || HasTasks,
+            _ => true, // Default to available if pack ID not recognized
+        };
+
+    private string? GetPackRequirementText(QualityReviewPackDescriptor pack) =>
+        pack.PackId switch
+        {
+            "qa-auditor" => "Requires specification, plan, or tasks",
+            "constitution-compliance" => "Requires constitution.md",
+            "data-model-quality" => "Requires data-model.md",
+            "wcag-2.2" => "Requires specification",
+            "owasp-asvs" => "Requires specification",
+            "gdpr" => "Requires specification or data model",
+            "iso-25010" => "Requires specification or plan",
+            "qa-readiness" => "Requires specification or tasks",
+            "delivery-readiness" => "Requires plan or tasks",
+            _ => null,
+        };
+
+    private HashSet<string> GetDefaultSelectedPacks()
+    {
+        var defaultPacks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pack in QrService.AvailablePacks)
+        {
+            if (IsPackAvailable(pack))
+                defaultPacks.Add(pack.PackId);
+        }
+        return defaultPacks;
+    }
+
+    private void ApplyDefaultPackSelections()
+    {
+        // Only auto-select if user hasn't manually customized selections
+        // We determine this by checking if packs are still in their default state
+        var availablePacks = GetDefaultSelectedPacks();
+
+        // Remove selections for now-unavailable packs
+        var unavailablePacks = _selectedPacks.Where(id => !availablePacks.Contains(id)).ToList();
+        foreach (var id in unavailablePacks)
+            _selectedPacks.Remove(id);
+
+        // Add selections for newly-available packs if they were defaults
+        foreach (var pack in QrService.AvailablePacks)
+        {
+            if (pack.IsDefault && IsPackAvailable(pack) && !_selectedPacks.Contains(pack.PackId))
+                _selectedPacks.Add(pack.PackId);
+        }
+    }
+
+    private string? PackPrerequisiteWarning(QualityReviewPackDescriptor pack) =>
+        pack.PackId == "constitution-compliance" && string.IsNullOrWhiteSpace(_constitutionText)
+            ? "Requires constitution"
+        : pack.PackGroup == "Standards" && string.IsNullOrWhiteSpace(_specText)
+            ? "Requires specification"
+        : pack.PackId == "qa-readiness" && string.IsNullOrWhiteSpace(_specText)
+            ? "Requires specification"
+        : pack.PackId == "delivery-readiness" && !AnyArtifactLoaded
+            ? "Requires artifacts"
+        : pack.PackId == "data-model-quality" && string.IsNullOrWhiteSpace(_dataModelText)
+            ? "Requires data-model.md"
+        : null;
+
+    // ── Artifact presence helpers ─────────────────────────────────────────────
+    private bool HasConstitution => !string.IsNullOrWhiteSpace(_constitutionText);
+    private bool HasSpec => !string.IsNullOrWhiteSpace(_specText);
+    private bool HasPlan => !string.IsNullOrWhiteSpace(_planText);
+    private bool HasTasks => !string.IsNullOrWhiteSpace(_taskText);
+    private bool HasDataModel => !string.IsNullOrWhiteSpace(_dataModelText);
+
+    // ── Actions ───────────────────────────────────────────────────────────────
+
+    private async Task ExportHtml()
+    {
+        if (_report is null) return;
+        var html = ExportService.ExportQualityReview(_report, Workspace.ProjectName);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
+    }
+
+    private async Task RunReview()
+    {
+        if (CannotRun) return;
+        _running = true;
+        try
+        {
+            var artifactSnapshot = BuildArtifactSnapshot();
+            QualitySession.MarkRunning(_selectedPacks, Workspace.ProjectName, artifactSnapshot);
+
+            _report = await QrService.RunAsync(
+                string.IsNullOrWhiteSpace(_constitutionText) ? null : _constitutionText,
+                string.IsNullOrWhiteSpace(_specText)         ? null : _specText,
+                string.IsNullOrWhiteSpace(_planText)         ? null : _planText,
+                string.IsNullOrWhiteSpace(_taskText)         ? null : _taskText,
+                string.IsNullOrWhiteSpace(_dataModelText)    ? null : _dataModelText,
+                _selectedPacks);
+
+            QualitySession.SaveResult(_report, _selectedPacks, Workspace.ProjectName, artifactSnapshot);
+
+            // Publish pack results so Dashboard can consume the shared quality session.
+            var complianceResult = _report.PackResults.FirstOrDefault(r => r.Compliance is not null);
+            if (complianceResult?.Compliance is not null)
+                DashboardSnapshot.Publish(complianceResult.Compliance);
+
+            var auditResult = _report.PackResults.FirstOrDefault(r => r.QaAudit is not null);
+            if (auditResult?.QaAudit is not null)
+                DashboardSnapshot.Publish(auditResult.QaAudit);
+
+            var qaResult = _report.PackResults.FirstOrDefault(r => r.QaReadiness is not null);
+            if (qaResult?.QaReadiness is not null)
+                DashboardSnapshot.Publish(qaResult.QaReadiness);
+
+            var drResult = _report.PackResults.FirstOrDefault(r => r.DeliveryReadiness is not null);
+            if (drResult?.DeliveryReadiness is not null)
+                DashboardSnapshot.Publish(drResult.DeliveryReadiness);
+
+            _topIssues     = GetTopIssues(5);
+            _inputExpanded = false;
+            _expanded.Clear();
+            foreach (var r in _report.PackResults)
+                _expanded.Add(r.PackId);
+
+            // Reset readiness detail state.
+            _qaExpandedCategory      = null;
+            _qaGapShowAll            = false;
+            _qaRecShowAll            = false;
+            _drTab                   = "overview";
+            _drBlockerSeverityFilter = null;
+            _drBlockerPhaseFilter    = null;
+            _drRecPhaseFilter        = null;
+            _drRecSearch             = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            QualitySession.MarkFailed(_selectedPacks, Workspace.ProjectName, BuildArtifactSnapshot(), ex.Message);
+            throw;
         }
         finally
         {
-            IsLoading = false;
+            _running = false;
         }
     }
 
-    private async Task OnArtifactLoaded(string text, WorkspaceArtifactKind kind)
+    private void TogglePack(string id, bool on)
     {
-        // Write to workspace
-        Workspace.Set(kind, text);
-
-        // Update local state
-        UpdateLocalState(kind, text);
-
-        // Notify system of change
-        Workspace.NotifyArtifactsChanged();
-
-        // Refresh page model
-        await RefreshPageModel();
+        if (on) _selectedPacks.Add(id);
+        else    _selectedPacks.Remove(id);
     }
 
-    private async Task OnArtifactRemoved(WorkspaceArtifactKind kind)
+    private void ToggleSection(string packId)
     {
-        // Clear from workspace
-        Workspace.Clear(kind);
-
-        // Update local state
-        UpdateLocalState(kind, string.Empty);
-
-        // Reset import component
-        ResetImportComponent(kind);
-
-        // Notify system of change
-        Workspace.NotifyArtifactsChanged();
-
-        // Refresh page model
-        await RefreshPageModel();
+        if (!_expanded.Remove(packId))
+            _expanded.Add(packId);
     }
 
-    private async Task OnArtifactTextChanged(string text, WorkspaceArtifactKind kind)
+    private void SelectAllPacks()
     {
-        // Update local state
-        UpdateLocalState(kind, text);
+        foreach (var p in QrService.AvailablePacks)
+            _selectedPacks.Add(p.PackId);
+    }
 
-        // Update workspace
-        if (!string.IsNullOrEmpty(text))
+    private void SelectPackGroup(string group)
+    {
+        _selectedPacks.Clear();
+        foreach (var p in QrService.AvailablePacks.Where(p => p.PackGroup == group))
+            _selectedPacks.Add(p.PackId);
+    }
+
+    // ── Top Issues ────────────────────────────────────────────────────────────
+
+    private IReadOnlyDictionary<WorkspaceArtifactKind, string> BuildArtifactSnapshot()
+    {
+        var snapshot = new Dictionary<WorkspaceArtifactKind, string>();
+        AddArtifact(snapshot, WorkspaceArtifactKind.Constitution, _constitutionText);
+        AddArtifact(snapshot, WorkspaceArtifactKind.Specification, _specText);
+        AddArtifact(snapshot, WorkspaceArtifactKind.Plan, _planText);
+        AddArtifact(snapshot, WorkspaceArtifactKind.Tasks, _taskText);
+        AddArtifact(snapshot, WorkspaceArtifactKind.DataModel, _dataModelText);
+        return snapshot;
+    }
+
+    private static void AddArtifact(Dictionary<WorkspaceArtifactKind, string> snapshot, WorkspaceArtifactKind kind, string text)
+    {
+        if (!string.IsNullOrWhiteSpace(text))
+            snapshot[kind] = text;
+    }
+
+    private bool IsSessionForCurrentWorkspace()
+    {
+        if (string.IsNullOrWhiteSpace(QualitySession.ProjectName))
+            return string.IsNullOrWhiteSpace(Workspace.ProjectName);
+
+        return string.Equals(QualitySession.ProjectName, Workspace.ProjectName, StringComparison.Ordinal);
+    }
+
+    private void RestoreReport(QualityReviewReport report)
+    {
+        _report = report;
+        _topIssues = GetTopIssues(5);
+        _inputExpanded = false;
+        _expanded.Clear();
+        foreach (var result in report.PackResults)
+            _expanded.Add(result.PackId);
+    }
+
+    private record TopIssueItem(string PackName, string Title, string Severity, int SortKey, string? Detail = null);
+
+    private static int SeveritySortKey(string sev) => sev.ToLowerInvariant() switch
+    {
+        "critical"          => 0,
+        "high" or "error"   => 1,
+        "medium" or "warning" => 2,
+        _                   => 3,
+    };
+
+    private static string ViolSevToCard(ViolationSeverity sev) => sev switch
+    {
+        ViolationSeverity.Critical => "critical",
+        ViolationSeverity.High     => "error",
+        ViolationSeverity.Medium   => "warning",
+        _                          => "info",
+    };
+
+    private List<TopIssueItem> GetTopIssues(int limit = 5)
+    {
+        if (_report is null) return [];
+        var items = new List<TopIssueItem>();
+        foreach (var r in _report.PackResults.Where(r => r.Error is null))
         {
-            Workspace.Set(kind, text);
+            if (r.QaAudit is not null)
+                foreach (var f in r.QaAudit.Findings)
+                {
+                    var sev = QaSevString(f.Severity);
+                    items.Add(new(r.PackName, f.Title, sev, SeveritySortKey(sev)));
+                }
+            if (r.Compliance is not null)
+            {
+                foreach (var v in r.Compliance.Violations)
+                {
+                    var sev = ViolSevToCard(v.Severity);
+                    items.Add(new(r.PackName, v.RuleTitle, sev, SeveritySortKey(sev), v.Issue));
+                }
+                foreach (var g in r.Compliance.Gaps)
+                {
+                    var sev = ViolSevToCard(g.Severity);
+                    items.Add(new(r.PackName, g.RuleTitle, sev, SeveritySortKey(sev)));
+                }
+            }
+            if (r.Standards is not null)
+                foreach (var s in r.Standards.Results.Where(s => s.Status == CheckStatus.Failed))
+                {
+                    var sev = StdSevString(s.Severity);
+                    items.Add(new(r.PackName, s.Title, sev, SeveritySortKey(sev), s.Recommendation));
+                }
+            if (r.QaReadiness is not null)
+                foreach (var g in r.QaReadiness.Gaps)
+                {
+                    var sev = ViolSevToCard(g.Severity);
+                    items.Add(new(r.PackName, g.Description, sev, SeveritySortKey(sev)));
+                }
+            if (r.DeliveryReadiness is not null)
+                foreach (var b in r.DeliveryReadiness.Blockers)
+                {
+                    var sev = DrSevCard(b.Severity);
+                    items.Add(new(r.PackName, b.Title, sev, SeveritySortKey(sev), b.Description));
+                }
+        }
+        return [.. items.OrderBy(i => i.SortKey).Take(limit)];
+    }
+
+    // ── Score helpers ─────────────────────────────────────────────────────────
+
+    private static string ScoreVariant(double score) =>
+        score >= 80 ? "is-good" : score >= 50 ? "is-fair" : "is-poor";
+
+    private static string ScoreLabel(double score) =>
+        score >= 80 ? "Good" : score >= 50 ? "Fair" : "Needs attention";
+
+    private static RenderFragment RenderScoreRing(double score) => __builder =>
+    {
+        const int r  = 36;
+        const int cx = 44;
+        const int cy = 44;
+        var circ   = 2 * Math.PI * r;
+        var offset = circ - score / 100.0 * circ;
+        var cls    = score >= 80 ? "is-good" : score >= 50 ? "is-fair" : "is-poor";
+        var svg    = $"<svg viewBox=\"0 0 88 88\">" +
+                     $"<circle class=\"qr-ring-bg\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\" />" +
+                     $"<circle class=\"qr-ring-fill {cls}\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\"" +
+                     $" stroke-dasharray=\"{circ:0.00}\" stroke-dashoffset=\"{offset:0.00}\" />" +
+                     $"</svg>";
+        __builder.OpenElement(0, "div");
+        __builder.AddAttribute(1, "class", "qr-score-ring-wrap");
+        __builder.AddMarkupContent(2, svg);
+        __builder.OpenElement(3, "div");
+        __builder.AddAttribute(4, "class", "qr-score-ring-label");
+        __builder.AddMarkupContent(5, $"{(int)Math.Round(score)}<small>%</small>");
+        __builder.CloseElement();
+        __builder.CloseElement();
+    };
+
+    // ── Per-pack result renderers — static ────────────────────────────────────
+
+    private static RenderFragment RenderQaSection(QaAuditReport report) => __builder =>
+    {
+        if (report.Findings.Count == 0)
+        {
+            __builder.OpenComponent<EmptyState>(0);
+            __builder.AddAttribute(1, "Icon", "✓");
+            __builder.AddAttribute(2, "Title", "No findings detected.");
+            __builder.CloseComponent();
+            return;
+        }
+
+        int seq = 0;
+        foreach (var grp in report.Findings.GroupBy(f => f.Category).OrderBy(g => g.Key))
+        {
+            __builder.OpenElement(seq++, "div");
+            __builder.AddAttribute(seq++, "class", "qr-cat-section");
+            __builder.OpenElement(seq++, "div");
+            __builder.AddAttribute(seq++, "class", "qr-cat-title");
+            __builder.AddContent(seq++, grp.Key.ToString());
+            __builder.OpenElement(seq++, "span");
+            __builder.AddAttribute(seq++, "class", "qr-cat-badge");
+            __builder.AddContent(seq++, grp.Count().ToString());
+            __builder.CloseElement();
+            __builder.CloseElement();
+            foreach (var f in grp.OrderBy(f => f.Severity))
+            {
+                __builder.OpenComponent<IssueCard>(seq++);
+                __builder.AddAttribute(seq++, "Severity", QaSevString(f.Severity));
+                __builder.AddAttribute(seq++, "Component", $"{f.RuleCode}{(f.AffectedArtifact is not null ? " · " + f.AffectedArtifact : "")}");
+                __builder.AddAttribute(seq++, "Description", $"{f.Title} — {f.Description}");
+                __builder.CloseComponent();
+            }
+            __builder.CloseElement();
+        }
+    };
+
+    private static RenderFragment RenderComplianceSection(ConstitutionComplianceReport report) => __builder =>
+    {
+        if (report.Violations.Count == 0 && report.Gaps.Count == 0)
+        {
+            __builder.OpenComponent<EmptyState>(0);
+            __builder.AddAttribute(1, "Icon", "✓");
+            __builder.AddAttribute(2, "Title", "No violations or coverage gaps detected.");
+            __builder.CloseComponent();
+            return;
+        }
+
+        int seq = 0;
+        if (report.Violations.Count > 0)
+        {
+            __builder.OpenElement(seq++, "div");
+            __builder.AddAttribute(seq++, "class", "qr-cat-title");
+            __builder.AddContent(seq++, $"Violations ({report.Violations.Count})");
+            __builder.CloseElement();
+            foreach (var v in report.Violations)
+            {
+                __builder.OpenComponent<IssueCard>(seq++);
+                __builder.AddAttribute(seq++, "Severity", v.Severity.ToString());
+                __builder.AddAttribute(seq++, "Component", $"{v.RuleId} · {v.Artifact}");
+                __builder.AddAttribute(seq++, "Description", $"{v.RuleTitle} — {v.Issue}");
+                __builder.CloseComponent();
+            }
+        }
+        if (report.Gaps.Count > 0)
+        {
+            __builder.OpenElement(seq++, "div");
+            __builder.AddAttribute(seq++, "class", "qr-cat-title");
+            __builder.AddContent(seq++, $"Coverage Gaps ({report.Gaps.Count})");
+            __builder.CloseElement();
+            foreach (var gap in report.Gaps)
+            {
+                __builder.OpenComponent<IssueCard>(seq++);
+                __builder.AddAttribute(seq++, "Severity", gap.Severity.ToString());
+                __builder.AddAttribute(seq++, "Component", $"{gap.RuleId} · {gap.RuleType}");
+                __builder.AddAttribute(seq++, "Description", gap.RuleTitle);
+                __builder.AddAttribute(seq++, "SuggestedFix", $"Missing in: {gap.MissingSummary}");
+                __builder.CloseComponent();
+            }
+        }
+    };
+
+    private static RenderFragment RenderStandardsSection(StandardsComplianceReport report) => __builder =>
+    {
+        var summary = report.Summaries.FirstOrDefault();
+        int seq = 0;
+
+        if (summary is not null)
+        {
+            __builder.OpenElement(seq++, "div");
+            __builder.AddAttribute(seq++, "class", "qr-std-summary");
+            __builder.OpenElement(seq++, "span");
+            __builder.AddAttribute(seq++, "class", "qr-std-passed");
+            __builder.AddContent(seq++, $"{summary.Passed} passed");
+            __builder.CloseElement();
+            __builder.OpenElement(seq++, "span");
+            __builder.AddAttribute(seq++, "class", "qr-std-warning");
+            __builder.AddContent(seq++, $"{summary.Warnings} potential gaps");
+            __builder.CloseElement();
+            __builder.OpenElement(seq++, "span");
+            __builder.AddAttribute(seq++, "class", "qr-std-failed");
+            __builder.AddContent(seq++, $"{summary.Failed} failed");
+            __builder.CloseElement();
+            __builder.CloseElement();
+        }
+
+        var notPassed = report.Results.Where(r => r.Status != CheckStatus.Passed).ToList();
+        if (notPassed.Count == 0)
+        {
+            __builder.OpenComponent<EmptyState>(seq++);
+            __builder.AddAttribute(seq++, "Icon", "✓");
+            __builder.AddAttribute(seq++, "Title", "All checks passed.");
+            __builder.CloseComponent();
+            return;
+        }
+
+        foreach (var grp in notPassed.GroupBy(r => r.Category).OrderBy(g => g.Key))
+        {
+            __builder.OpenElement(seq++, "div");
+            __builder.AddAttribute(seq++, "class", "qr-cat-section");
+            __builder.OpenElement(seq++, "div");
+            __builder.AddAttribute(seq++, "class", "qr-cat-title");
+            __builder.AddContent(seq++, grp.Key);
+            __builder.OpenElement(seq++, "span");
+            __builder.AddAttribute(seq++, "class", "qr-cat-badge");
+            __builder.AddContent(seq++, grp.Count().ToString());
+            __builder.CloseElement();
+            __builder.CloseElement();
+            foreach (var r in grp)
+            {
+                __builder.OpenComponent<IssueCard>(seq++);
+                __builder.AddAttribute(seq++, "Severity", StdSevString(r.Severity));
+                __builder.AddAttribute(seq++, "Component", r.Title);
+                __builder.AddAttribute(seq++, "Description", r.Description);
+                if (!string.IsNullOrEmpty(r.Recommendation))
+                    __builder.AddAttribute(seq++, "SuggestedFix", r.Recommendation);
+                __builder.CloseComponent();
+            }
+            __builder.CloseElement();
+        }
+    };
+
+    // ── QA Readiness detail section (inline — uses instance state) ────────────
+
+    private RenderFragment RenderQaReadinessSection(QAReadinessReport report) => __builder =>
+    {
+        // Score overview
+        var circ   = 2 * Math.PI * 44;
+        var offset = circ - report.OverallScore / 100.0 * circ;
+        var rVariant = report.OverallScore >= 85 ? "is-ready" :
+                       report.OverallScore >= 65 ? "is-mostly" :
+                       report.OverallScore >= 40 ? "is-needs-work" : "is-not-ready";
+        var svg = $"<svg viewBox=\"0 0 120 120\">" +
+                  $"<circle class=\"qr-score-ring-bg\" cx=\"60\" cy=\"60\" r=\"44\" />" +
+                  $"<circle class=\"qr-score-ring-fill {rVariant}\" cx=\"60\" cy=\"60\" r=\"44\"" +
+                  $" stroke-dasharray=\"{circ:0.00}\" stroke-dashoffset=\"{offset:0.00}\" /></svg>";
+
+        <div class="qr-score-row">
+            <div class="qr-score-ring">
+                @((MarkupString)svg)
+                <div class="qr-score-label">@report.OverallScore.ToString("0.#")<small>/ 100</small></div>
+            </div>
+            <div>
+                <div class="qr-score-meta-title">@QrStatusLabel(report.OverallStatus) Readiness</div>
+                <div class="qr-score-meta-sub">
+                    @report.OverallScore.ToString("0.#")% overall · @report.Scores.Count(s => s.IsAssessed) of 5 categories assessed
+                </div>
+                <StatusChip Status="@QrStatusToChip(report.OverallStatus)" Label="@QrStatusLabel(report.OverallStatus)" />
+            </div>
+        </div>
+
+        // Category cards
+        <div class="qr-category-grid">
+            @foreach (var score in report.Scores)
+            {
+                <div class='qr-category-card @(score.IsAssessed ? "is-" + QrStatusClass(score.Status) : "is-not-assessed")'
+                     @onclick="() => ToggleQaCategory(score.Category)">
+                    <div class="qr-category-score">@(score.IsAssessed ? $"{score.Score:0.#}" : "—")</div>
+                    <div class="qr-category-name">@QrShortCategory(score.Category)</div>
+                    <div class="qr-category-status">@(score.IsAssessed ? QrStatusLabel(score.Status) : "Not loaded")</div>
+                </div>
+            }
+        </div>
+
+        // Expanded category
+        @if (_qaExpandedCategory is not null)
+        {
+            var exp = report.Scores.FirstOrDefault(s => s.Category == _qaExpandedCategory);
+            if (exp is not null && exp.IsAssessed)
+            {
+                <div class="qr-detail-panel">
+                    <div class="qr-detail-panel-title">@exp.Category</div>
+                    @if (exp.Signals.Count > 0)
+                    {
+                        <ul class="qr-signal-list">@foreach (var s in exp.Signals) { <li>@s</li> }</ul>
+                    }
+                    @if (exp.Weaknesses.Count > 0)
+                    {
+                        <ul class="qr-weak-list" style="margin-top:0.5rem">@foreach (var w in exp.Weaknesses) { <li>@w</li> }</ul>
+                    }
+                </div>
+            }
+        }
+
+        // Gates
+        <SectionHeader Title="Readiness Gates" />
+        <div class="qr-gate-grid">
+            @foreach (var gate in report.Gates)
+            {
+                <div class='qr-gate-card @(gate.IsReady ? "is-ready" : "is-blocked")'>
+                    <div class="qr-gate-header">
+                        <span class="qr-gate-icon" aria-hidden="true">@(gate.IsReady ? "✅" : "🚫")</span>
+                        <span class="qr-gate-name">@gate.Name</span>
+                    </div>
+                    <div class="qr-gate-question">@gate.Question</div>
+                    @if (!gate.IsReady && !string.IsNullOrEmpty(gate.BlockReason))
+                    {
+                        <div class="qr-gate-reason">@gate.BlockReason</div>
+                    }
+                </div>
+            }
+        </div>
+
+        // Gaps
+        @if (report.Gaps.Count > 0)
+        {
+            <SectionHeader Title="Readiness Gaps"
+                           Description="@($"{report.Gaps.Count} gap{(report.Gaps.Count != 1 ? "s" : "")} · sorted by severity")" />
+            @foreach (var gap in report.Gaps.Take(_qaGapShowAll ? 999 : 8))
+            {
+                <IssueCard Severity="@gap.Severity.ToString().ToLowerInvariant()"
+                           Component="@QrShortCategory(gap.Category)"
+                           Description="@gap.Description" />
+            }
+            @if (report.Gaps.Count > 8 && !_qaGapShowAll)
+            {
+                <GhostButton OnClick="() => _qaGapShowAll = true">Show all @report.Gaps.Count gaps</GhostButton>
+            }
+        }
+
+        // Recommendations
+        @if (report.Recommendations.Count > 0)
+        {
+            <SectionHeader Title="Recommendations"
+                           Description="@($"{report.Recommendations.Count} recommendation{(report.Recommendations.Count != 1 ? "s" : "")} · highest priority first")" />
+            @foreach (var rec in report.Recommendations.Take(_qaRecShowAll ? 999 : 8))
+            {
+                <RecommendationCard Title="@rec.Text"
+                                    Description="@rec.TargetArtifact.ToString()"
+                                    Priority="@rec.Priority.ToString().ToLowerInvariant()" />
+            }
+            @if (report.Recommendations.Count > 8 && !_qaRecShowAll)
+            {
+                <GhostButton OnClick="() => _qaRecShowAll = true">Show all @report.Recommendations.Count recommendations</GhostButton>
+            }
+        }
+    };
+
+    // ── Delivery Readiness detail section (inline — uses instance state) ───────
+
+    private RenderFragment RenderDeliveryReadinessSection(DeliveryReadinessReport report) => __builder =>
+    {
+        // Decision cards
+        <div class="dr-decision-grid">
+            @DrDecisionCard(report.DevelopmentDecision)
+            @DrDecisionCard(report.TestingDecision)
+            @DrDecisionCard(report.ReleaseDecision)
+        </div>
+
+        // Tabs
+        <div class="tab-bar" role="tablist">
+            <button class="tab-btn @(_drTab == "overview"        ? "is-active" : "")" role="tab" @onclick='() => _drTab = "overview"'>Overview</button>
+            <button class="tab-btn @(_drTab == "development"     ? "is-active" : "")" role="tab" @onclick='() => _drTab = "development"'>
+                @DrStateIcon(report.DevelopmentDecision.State) Development
+            </button>
+            <button class="tab-btn @(_drTab == "testing"         ? "is-active" : "")" role="tab" @onclick='() => _drTab = "testing"'>
+                @DrStateIcon(report.TestingDecision.State) Testing
+            </button>
+            <button class="tab-btn @(_drTab == "release"         ? "is-active" : "")" role="tab" @onclick='() => _drTab = "release"'>
+                @DrStateIcon(report.ReleaseDecision.State) Release
+            </button>
+            <button class="tab-btn @(_drTab == "blockers"        ? "is-active" : "")" role="tab" @onclick='() => _drTab = "blockers"'>
+                Blockers
+                @if (report.Blockers.Count > 0)
+                {
+                    <span class="dr-tab-badge @(report.Blockers.Any(b => b.Severity == GateSeverity.Critical) ? "dr-tab-badge-danger" : "dr-tab-badge-warning")">@report.Blockers.Count</span>
+                }
+            </button>
+            <button class="tab-btn @(_drTab == "recommendations" ? "is-active" : "")" role="tab" @onclick='() => _drTab = "recommendations"'>
+                Recommendations
+                @if (report.Recommendations.Count > 0)
+                {
+                    <span class="dr-tab-badge dr-tab-badge-neutral">@report.Recommendations.Count</span>
+                }
+            </button>
+        </div>
+
+        @if (_drTab == "overview")            { @DrOverviewTab(report) }
+        else if (_drTab == "development")     { @DrGateTab(report.DevelopmentGate) }
+        else if (_drTab == "testing")         { @DrGateTab(report.TestingGate) }
+        else if (_drTab == "release")         { @DrGateTab(report.ReleaseGate) }
+        else if (_drTab == "blockers")        { @DrBlockersTab(report) }
+        else if (_drTab == "recommendations") { @DrRecommendationsTab(report) }
+    };
+
+    // ── QA Readiness helpers ──────────────────────────────────────────────────
+
+    private void ToggleQaCategory(string category) =>
+        _qaExpandedCategory = _qaExpandedCategory == category ? null : category;
+
+    private static string QrStatusToChip(ReadinessStatus s) => s switch
+    {
+        ReadinessStatus.Ready       => "ready",
+        ReadinessStatus.MostlyReady => "partial",
+        ReadinessStatus.NeedsWork   => "warning",
+        _                           => "critical",
+    };
+
+    private static string QrStatusClass(ReadinessStatus s) => s switch
+    {
+        ReadinessStatus.Ready       => "ready",
+        ReadinessStatus.MostlyReady => "mostly",
+        ReadinessStatus.NeedsWork   => "needs-work",
+        _                           => "not-ready",
+    };
+
+    private static string QrStatusLabel(ReadinessStatus s) => s switch
+    {
+        ReadinessStatus.Ready       => "Ready",
+        ReadinessStatus.MostlyReady => "Mostly Ready",
+        ReadinessStatus.NeedsWork   => "Needs Work",
+        _                           => "Not Ready",
+    };
+
+    private static string QrShortCategory(string category) => category switch
+    {
+        "Specification Quality" => "Spec",
+        "Plan Quality"          => "Plan",
+        "Task Readiness"        => "Tasks",
+        "Traceability"          => "Traceability",
+        "Compliance"            => "Compliance",
+        _                       => category,
+    };
+
+    // ── Delivery Readiness helpers ────────────────────────────────────────────
+
+    private RenderFragment DrDecisionCard(ReadinessDecision decision) => __builder =>
+    {
+        <Card Title="@($"{decision.Name} Readiness")">
+            <Header>
+                <StatusChip Status="@DrStateChip(decision.State)" Label="@DrStateLabel(decision.State)" />
+            </Header>
+            <ChildContent>
+                <KeyValueList>
+                    <InfoRow Label="Score" Value="@($"{decision.Score:0.#} / 100")" />
+                    @if (!string.IsNullOrEmpty(decision.Summary))
+                    {
+                        <InfoRow Label="Summary" Value="@decision.Summary" />
+                    }
+                </KeyValueList>
+            </ChildContent>
+        </Card>
+    };
+
+    private RenderFragment DrOverviewTab(DeliveryReadinessReport r) => __builder =>
+    {
+        <div class="dr-overview-body">
+            <div class="metric-strip">
+                <MetricCard Value="@r.Health.OverallReadinessScore.ToString("0.#")" Label="Overall Score" Sublabel="/ 100"
+                            Variant="@DrStateChip(r.DevelopmentDecision.State)" />
+                <MetricCard Value="@r.Blockers.Count(b => b.Severity == GateSeverity.Critical).ToString()" Label="Critical Blockers"
+                            Variant="@(r.Blockers.Any(b => b.Severity == GateSeverity.Critical) ? "danger" : null)" />
+                <MetricCard Value="@r.Blockers.Count.ToString()" Label="Total Blockers"
+                            Variant="@(r.Blockers.Count > 0 ? "warning" : null)" />
+                <MetricCard Value="@r.Recommendations.Count.ToString()" Label="Recommendations" />
+            </div>
+            <div class="dr-check-columns">
+                <Card Title="Loaded Artifacts">
+                    <KeyValueList>
+                        @DrArtifactRow("Constitution", r.HasConstitution)
+                        @DrArtifactRow("Specification", r.HasSpecification)
+                        @DrArtifactRow("Plan", r.HasPlan)
+                        @DrArtifactRow("Tasks", r.HasTasks)
+                    </KeyValueList>
+                </Card>
+                <Card Title="Gate Scores">
+                    <div style="display:flex;flex-direction:column;gap:12px">
+                        @DrGateScoreRow("Development", r.DevelopmentDecision)
+                        @DrGateScoreRow("Testing",     r.TestingDecision)
+                        @DrGateScoreRow("Release",     r.ReleaseDecision)
+                    </div>
+                </Card>
+            </div>
+            @if (r.Blockers.Count > 0)
+            {
+                <div>
+                    <SectionHeader Title="Critical Blockers" />
+                    <div class="issue-cards">
+                        @foreach (var b in r.Blockers.Where(b => b.Severity == GateSeverity.Critical).Take(3))
+                        {
+                            <IssueCard Severity="critical" Component="@b.Phase" Description="@b.Title"
+                                       SuggestedFix="@(string.IsNullOrEmpty(b.Description) ? null : b.Description)" />
+                        }
+                        @if (r.Blockers.Count(b => b.Severity == GateSeverity.Critical) > 3)
+                        {
+                            <div class="dr-see-more">
+                                + @(r.Blockers.Count(b => b.Severity == GateSeverity.Critical) - 3) more —
+                                <button class="dr-see-more-btn" @onclick='() => _drTab = "blockers"'>view all</button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    };
+
+    private static RenderFragment DrArtifactRow(string name, bool loaded) => __builder =>
+    {
+        <InfoRow Label="@name">
+            <StatusChip Status="@(loaded ? "healthy" : "neutral")" Label="@(loaded ? "Loaded" : "Not loaded")" />
+        </InfoRow>
+    };
+
+    private RenderFragment DrGateScoreRow(string phase, ReadinessDecision decision) => __builder =>
+    {
+        var sz  = 36;
+        var r2  = (sz - 10) / 2;
+        var c   = 2 * Math.PI * r2;
+        var off = c * (1.0 - Math.Min(100, Math.Max(0, decision.Score)) / 100.0);
+        var svg = "<svg viewBox=\"0 0 36 36\" width=\"36\" height=\"36\">" +
+                  "<circle class=\"dr-score-ring-bg\" cx=\"18\" cy=\"18\" r=\"" + r2 + "\" />" +
+                  "<circle class=\"dr-score-ring-fill dr-ring-" + DrStateChip(decision.State) + "\" cx=\"18\" cy=\"18\" r=\"" + r2 + "\"" +
+                  " stroke-dasharray=\"" + c.ToString("0.00") + "\" stroke-dashoffset=\"" + off.ToString("0.00") + "\" />" +
+                  "<text x=\"50%\" y=\"50%\" dominant-baseline=\"middle\" text-anchor=\"middle\" font-size=\"9\" font-weight=\"700\" fill=\"currentColor\">" +
+                  ((int)Math.Round(decision.Score)).ToString() + "</text></svg>";
+
+        <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:36px;height:36px;flex-shrink:0">@((MarkupString)svg)</div>
+            <div>
+                <div style="font-size:var(--text-sm);font-weight:600">@phase</div>
+                <StatusChip Status="@DrStateChip(decision.State)" Label="@DrStateLabel(decision.State)" />
+            </div>
+        </div>
+    };
+
+    private RenderFragment DrGateTab(DeliveryGate gate) => __builder =>
+    {
+        var sz  = 72;
+        var r2  = (sz - 10) / 2;
+        var c   = 2 * Math.PI * r2;
+        var off = c * (1.0 - Math.Min(100, Math.Max(0, gate.Score)) / 100.0);
+        var svg = "<svg viewBox=\"0 0 " + sz + " " + sz + "\" width=\"" + sz + "\" height=\"" + sz + "\">" +
+                  "<circle class=\"dr-score-ring-bg\" cx=\"" + (sz/2) + "\" cy=\"" + (sz/2) + "\" r=\"" + r2 + "\" />" +
+                  "<circle class=\"dr-score-ring-fill dr-ring-" + DrStateChip(gate.State) + "\" cx=\"" + (sz/2) + "\" cy=\"" + (sz/2) + "\" r=\"" + r2 + "\"" +
+                  " stroke-dasharray=\"" + c.ToString("0.00") + "\" stroke-dashoffset=\"" + off.ToString("0.00") + "\" />" +
+                  "<text x=\"50%\" y=\"50%\" dominant-baseline=\"middle\" text-anchor=\"middle\" font-size=\"18\" font-weight=\"700\" fill=\"currentColor\">" +
+                  ((int)Math.Round(gate.Score)).ToString() + "</text></svg>";
+
+        <div class="dr-gate-header">
+            <div class="dr-gate-score-area">@((MarkupString)svg)</div>
+            <div class="dr-gate-info">
+                <h3>@gate.Phase Readiness Gate</h3>
+                <StatusChip Status="@DrStateChip(gate.State)" Label="@($"{DrStateIcon(gate.State)} {DrStateLabel(gate.State)}")" />
+                <div class="dr-gate-meta">
+                    @gate.PassedChecks.Count passed · @gate.FailedChecks.Count failed
+                    @if (gate.Blockers.Count > 0) { <span> · @gate.Blockers.Count blocker(s)</span> }
+                </div>
+            </div>
+        </div>
+        <div class="dr-check-columns">
+            <div class="dr-check-section is-passed">
+                <div class="dr-check-section-title">Passed Checks (@gate.PassedChecks.Count)</div>
+                @if (gate.PassedChecks.Count == 0)
+                { <div class="dr-hint-text">No checks passed yet.</div> }
+                else
+                {
+                    <ul class="dr-check-list">
+                        @foreach (var ch in gate.PassedChecks)
+                        { <li class="dr-check-item is-passed"><span class="dr-check-item-icon">✓</span><span>@ch</span></li> }
+                    </ul>
+                }
+            </div>
+            <div class="dr-check-section is-failed">
+                <div class="dr-check-section-title">Failed Checks (@gate.FailedChecks.Count)</div>
+                @if (gate.FailedChecks.Count == 0)
+                { <div class="dr-hint-text">All checks passed.</div> }
+                else
+                {
+                    <ul class="dr-check-list">
+                        @foreach (var ch in gate.FailedChecks)
+                        { <li class="dr-check-item is-failed"><span class="dr-check-item-icon">✗</span><span>@ch</span></li> }
+                    </ul>
+                }
+            </div>
+        </div>
+        @if (gate.Blockers.Count > 0)
+        {
+            <SectionHeader Title="Gate Blockers" />
+            <div class="issue-cards">
+                @foreach (var b in gate.Blockers)
+                {
+                    <IssueCard Severity="@DrSevCard(b.Severity)"
+                               Component="@($"{b.Phase}{(b.RuleCode is not null ? $" [{b.RuleCode}]" : "")}")"
+                               Description="@b.Title"
+                               SuggestedFix="@(string.IsNullOrEmpty(b.Description) ? null : b.Description)" />
+                }
+            </div>
+        }
+    };
+
+    private RenderFragment DrBlockersTab(DeliveryReadinessReport r) => __builder =>
+    {
+        var filtered = DrService.FilterBlockersBySeverity(
+            DrService.FilterBlockersByPhase(r.Blockers, _drBlockerPhaseFilter),
+            _drBlockerSeverityFilter).ToList();
+
+        <div class="filter-strip">
+            <label>Severity:</label>
+            <select @bind="_drBlockerSeverityFilter">
+                <option value="">All</option>
+                @foreach (var s in Enum.GetValues<GateSeverity>())
+                { <option value="@s">@s</option> }
+            </select>
+            <label>Phase:</label>
+            <select @bind="_drBlockerPhaseFilter">
+                <option value="">All</option>
+                <option value="Development">Development</option>
+                <option value="Testing">Testing</option>
+                <option value="Release">Release</option>
+            </select>
+            @if (filtered.Count != r.Blockers.Count)
+            { <span class="dr-hint-text">Showing @filtered.Count of @r.Blockers.Count</span> }
+        </div>
+        @if (filtered.Count == 0)
+        {
+            <EmptyState Title="@(r.Blockers.Count > 0 ? "No blockers match the current filter." : "No blockers found.")"
+                        Description="@(r.Blockers.Count == 0 ? "All gates are clear." : null)" />
         }
         else
         {
-            Workspace.Clear(kind);
+            <div class="issue-cards">
+                @foreach (var b in filtered)
+                {
+                    <IssueCard Severity="@DrSevCard(b.Severity)"
+                               Component="@($"{b.Phase}{(b.RuleCode is not null ? $" [{b.RuleCode}]" : "")}")"
+                               Description="@b.Title"
+                               SuggestedFix="@(string.IsNullOrEmpty(b.Description) ? null : b.Description)" />
+                }
+            </div>
         }
+    };
 
-        // Notify system of change
-        Workspace.NotifyArtifactsChanged();
-
-        // Refresh page model
-        await RefreshPageModel();
-    }
-
-    private void UpdateLocalState(WorkspaceArtifactKind kind, string text)
+    private RenderFragment DrRecommendationsTab(DeliveryReadinessReport r) => __builder =>
     {
-        switch (kind)
-        {
-            case WorkspaceArtifactKind.Specification:
-                _specificationText = text;
-                break;
-            case WorkspaceArtifactKind.Plan:
-                _planText = text;
-                break;
-            case WorkspaceArtifactKind.Constitution:
-                _constitutionText = text;
-                break;
-            case WorkspaceArtifactKind.DataModel:
-                _dataModelText = text;
-                break;
-            case WorkspaceArtifactKind.Tasks:
-                _tasksText = text;
-                break;
-        }
-    }
+        var filtered = DrService.SearchRecommendations(
+            DrService.FilterRecommendationsByPhase(r.Recommendations, _drRecPhaseFilter),
+            _drRecSearch).ToList();
 
-    private void ResetImportComponent(WorkspaceArtifactKind kind)
+        <div class="filter-strip">
+            <label>Phase:</label>
+            <select @bind="_drRecPhaseFilter">
+                <option value="">All</option>
+                <option value="Development">Development</option>
+                <option value="Testing">Testing</option>
+                <option value="Release">Release</option>
+            </select>
+            <input type="search" class="form-control" style="max-width:280px"
+                   placeholder="Search recommendations…" @bind="_drRecSearch" @bind:event="oninput" />
+            @if (filtered.Count != r.Recommendations.Count)
+            { <span class="dr-hint-text">Showing @filtered.Count of @r.Recommendations.Count</span> }
+        </div>
+        @if (filtered.Count == 0)
+        {
+            <EmptyState Title="@(r.Recommendations.Count > 0 ? "No recommendations match the current filter." : "No recommendations.")"
+                        Description="@(r.Recommendations.Count == 0 ? "Delivery readiness looks good." : null)" />
+        }
+        else
+        {
+            <div class="dr-rec-list">
+                @foreach (var rec in filtered)
+                {
+                    <RecommendationCard Title="@rec.Text"
+                                        Priority="@rec.Priority.ToString().ToLowerInvariant()"
+                                        Description="@($"{rec.Phase}{(string.IsNullOrEmpty(rec.Category) ? "" : $" · {rec.Category}")}")" />
+                }
+            </div>
+        }
+    };
+
+    private static string DrStateLabel(ReadinessState s) => s switch
     {
-        switch (kind)
-        {
-            case WorkspaceArtifactKind.Specification:
-                _specImport?.Reset();
-                break;
-            case WorkspaceArtifactKind.Plan:
-                _planImport?.Reset();
-                break;
-            case WorkspaceArtifactKind.Constitution:
-                _constitutionImport?.Reset();
-                break;
-            case WorkspaceArtifactKind.DataModel:
-                _dataModelImport?.Reset();
-                break;
-            case WorkspaceArtifactKind.Tasks:
-                _tasksImport?.Reset();
-                break;
-        }
-    }
+        ReadinessState.Ready       => "Ready",
+        ReadinessState.MostlyReady => "Mostly Ready",
+        ReadinessState.NotReady    => "Not Ready",
+        ReadinessState.Blocked     => "Blocked",
+        _                          => s.ToString(),
+    };
 
-    private async Task RunAudit()
+    private static string DrStateIcon(ReadinessState s) => s switch
     {
-        if (PageModel?.Summary.CanRun != true)
-            return;
+        ReadinessState.Ready       => "✓",
+        ReadinessState.MostlyReady => "~",
+        ReadinessState.NotReady    => "✗",
+        ReadinessState.Blocked     => "⊘",
+        _                          => "",
+    };
 
-        IsRunning = true;
-        try
-        {
-            // Call the actual quality review service
-            // (This would use IQualityReviewService to run the audit)
-            // For now, this is a placeholder
-            await Task.Delay(1000); // Simulate work
-        }
-        finally
-        {
-            IsRunning = false;
-        }
-    }
+    private static string DrStateChip(ReadinessState s) => s switch
+    {
+        ReadinessState.Ready       => "healthy",
+        ReadinessState.MostlyReady => "warning",
+        ReadinessState.NotReady    => "critical",
+        ReadinessState.Blocked     => "critical",
+        _                          => "neutral",
+    };
+
+    private static string DrSevCard(GateSeverity sev) => sev switch
+    {
+        GateSeverity.Critical => "critical",
+        GateSeverity.High     => "error",
+        GateSeverity.Medium   => "warning",
+        _                     => "info",
+    };
+
+    // ── Severity string helpers ────────────────────────────────────────────────
+
+    private static string QaSevString(QaSeverity sev) => sev switch
+    {
+        QaSeverity.Critical => "critical",
+        QaSeverity.High     => "error",
+        QaSeverity.Medium   => "warning",
+        QaSeverity.Low      => "info",
+        _                   => "info",
+    };
+
+    private static string StdSevString(CheckSeverity sev) => sev switch
+    {
+        CheckSeverity.High   => "error",
+        CheckSeverity.Medium => "warning",
+        _                    => "info",
+    };
 
 }

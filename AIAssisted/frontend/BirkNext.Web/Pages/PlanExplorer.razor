@@ -1,380 +1,104 @@
 @page "/plan-explorer"
 @using BirkNext.Web.Components
-@using BirkNext.Web.Models.Review
-@using BirkNext.Web.Services
+@using BirkNext.Web.Models
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+@inject BirkNext.Web.Services.ProjectDocumentApiService DocumentApi
+@inject BirkNext.Web.Services.IWorkspaceSessionService Workspace
+@inject BirkNext.Web.Services.IPlanAnalysisService PlanService
 
-@inject ReviewPageModelService ReviewPageModelService
-@inject IWorkspaceSessionService Workspace
-@inject IWorkspaceUpdateCoordinator UpdateCoordinator
-
-<PageTitle>Plan Explorer</PageTitle>
+<PageTitle>Plan Explorer — QA Review Studio</PageTitle>
 
 <div class="pe-page">
+
     <PageHeader Title="Plan Explorer"
-                Description="Navigate and analyze plan.md files — architecture, risks, decisions, and delivery phases." />
+                Description="Navigate and analyze plan.md artifacts — review architecture decisions, risks, complexity, and constitution compliance in one place." />
 
-    @if (IsLoading)
-    {
-        <div class="loading-state">Loading plan analysis...</div>
-    }
-    else if (LoadError is not null)
-    {
-        <div class="notification notification-error">@LoadError</div>
-    }
-    else if (PageModel is not null)
-    {
-        <!-- Status Panel (without MissingInputs duplication when blocked) -->
-        @if (PageModel.ReadinessStatus == ReviewStatus.Ready)
-        {
-            <ReviewReadinessPanel Model="PageModel" />
-        }
-        else if (PageModel.ReadinessStatus == ReviewStatus.Blocked)
-        {
-            <div class="setup-panel">
-                <div class="setup-header status-blocked">
-                    <span class="status-badge">🔒 Blocked</span>
-                    <span class="setup-message">Load plan.md to analyze architecture, risks, and delivery phases</span>
-                </div>
-            </div>
-        }
+    <div class="pe-page-body">
+        <PlanExplorerPanel
+            PlanText="@_initialText"
+            ParsedPlan="@_parsedPlan"
+            SemanticModel="@_semanticModel"
+            InitialView="@_initialView"
+            OnTextChanged="OnPanelTextChanged" />
+    </div>
 
-        <div class="content-section">
-            <!-- Analysis Results (only when ready) -->
-            @if (PageModel?.Summary.CanRun == true && PageModel.Results.Count > 0)
-            {
-                <div class="results-section">
-                    <h2>Analysis Results</h2>
-                    @foreach (var result in PageModel.Results)
-                    {
-                        <div class="result-card">
-                            <div class="result-header">
-                                <h3>@result.Name</h3>
-                                <span class="severity @GetSeverityClass(result.Severity)">@result.Severity</span>
-                            </div>
-                            @if (!string.IsNullOrEmpty(result.Summary))
-                            {
-                                <p class="summary">@result.Summary</p>
-                            }
-                            @if (!string.IsNullOrEmpty(result.Details))
-                            {
-                                <div class="details">@result.Details</div>
-                            }
-                            @if (!string.IsNullOrEmpty(result.Recommendation))
-                            {
-                                <div class="recommendation">
-                                    <strong>Recommendation:</strong> @result.Recommendation
-                                </div>
-                            }
-                        </div>
-                    }
-                </div>
-            }
-
-            <!-- Content Editor (always visible) -->
-            <div class="content-editor">
-                <h2>Plan Content</h2>
-                <textarea @bind="_planText"
-                          class="editor"
-                          placeholder="Paste or edit plan content..."
-                          rows="20"></textarea>
-                <div class="actions">
-                    <button class="btn-primary" @onclick="SavePlan">Save Plan</button>
-                    <button class="btn-secondary" @onclick="ClearPlan">Clear</button>
-                    <label class="file-upload">
-                        <InputFile OnChange="HandleFileUpload" accept=".md,.txt" hidden />
-                        📎 Upload File
-                    </label>
-                </div>
-            </div>
-        </div>
-    }
 </div>
 
 @code {
-    private ReviewPageModel? PageModel;
-    private bool IsLoading = true;
-    private string? LoadError;
-    private string _planText = string.Empty;
+    private string _initialText = string.Empty;
+    private string? _initialView;
+    private PlanDocument? _parsedPlan;
+    private PlanSemanticModel? _semanticModel;
 
-    protected override async Task OnInitializedAsync()
+    private const string StorageKey = "pe-standalone-plan";
+
+    protected override void OnInitialized()
     {
-        Workspace.ReviewContextRebuildNeeded += (s, e) => _ = RefreshPageModel();
-        await RefreshPageModel();
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var view))
+            _initialView = view;
 
         var cached = Workspace.Get(WorkspaceArtifactKind.Plan);
-        if (cached != null) _planText = cached.Text;
+        if (cached != null)
+            _initialText = cached.Text;
     }
 
-    private async Task RefreshPageModel()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        try
-        {
-            IsLoading = true;
-            LoadError = null;
-            PageModel = await ReviewPageModelService.GetPlanExplorerModelAsync();
-        }
-        catch (Exception ex)
-        {
-            LoadError = ex.Message;
-        }
-        finally
-        {
-            IsLoading = false;
-        }
-    }
+        if (!firstRender) return;
+        if (!string.IsNullOrWhiteSpace(_initialText)) return;
 
-    private async Task SavePlan()
-    {
-        if (string.IsNullOrWhiteSpace(_planText))
+        string? content = null;
+        try { content = await DocumentApi.GetAsync("plan"); } catch { }
+
+        if (!string.IsNullOrWhiteSpace(content))
         {
-            LoadError = "Plan content cannot be empty";
+            Workspace.Set(WorkspaceArtifactKind.Plan, content);
+            _initialText = content;
+            BuildSemanticModel(content);
+            StateHasChanged();
             return;
         }
 
-        try
-        {
-            Workspace.Set(WorkspaceArtifactKind.Plan, _planText);
-            UpdateCoordinator.NotifyMutation();
-            await RefreshPageModel();
-        }
-        catch (Exception ex)
-        {
-            LoadError = $"Failed to save: {ex.Message}";
-        }
-    }
+        string? legacy = null;
+        try { legacy = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey); } catch { }
 
-    private void ClearPlan() => _planText = string.Empty;
-
-    private async Task HandleFileUpload(InputFileChangeEventArgs e)
-    {
-        try
+        if (!string.IsNullOrWhiteSpace(legacy))
         {
-            using var stream = e.File.OpenReadStream();
-            using var reader = new StreamReader(stream);
-            _planText = await reader.ReadToEndAsync();
-            await SavePlan();
-        }
-        catch (Exception ex)
-        {
-            LoadError = $"Failed to upload file: {ex.Message}";
+            try
+            {
+                await DocumentApi.SaveAsync("plan", legacy);
+                await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey);
+            }
+            catch { }
+            Workspace.Set(WorkspaceArtifactKind.Plan, legacy);
+            _initialText = legacy;
+            BuildSemanticModel(legacy);
+            StateHasChanged();
         }
     }
 
-    private string GetSeverityClass(string? severity) => severity?.ToLower() switch
+    private void BuildSemanticModel(string text)
     {
-        "critical" => "critical",
-        "warning" => "warning",
-        "info" => "info",
-        _ => "default"
-    };
-}
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _semanticModel = null;
+            _parsedPlan = null;
+            return;
+        }
+        _parsedPlan = PlanService.Parse(text);
+        _semanticModel = PlanAnalysisService.BuildSemanticModel(_parsedPlan);
+    }
 
-<style>
-.pe-page {
-    padding: 0 20px;
+    private async Task OnPanelTextChanged(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        BuildSemanticModel(text);
+        Workspace.Set(WorkspaceArtifactKind.Plan, text);
+        try { await DocumentApi.SaveAsync("plan", text); } catch { }
+        try { await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey); } catch { }
+    }
 }
-
-.content-section {
-    margin-top: 32px;
-}
-
-.setup-panel {
-    border-radius: 8px;
-    border: 1px solid #e5e7eb;
-    padding: 16px;
-    margin-bottom: 24px;
-}
-
-.setup-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.setup-header.status-blocked {
-    background-color: #f3f4f6;
-    padding: 12px;
-    border-radius: 6px;
-}
-
-.status-badge {
-    display: inline-block;
-    font-weight: 600;
-    color: #374151;
-    white-space: nowrap;
-}
-
-.setup-message {
-    color: #6b7280;
-    font-size: 14px;
-}
-
-h2 {
-    font-size: 18px;
-    font-weight: 600;
-    color: #111827;
-    margin: 24px 0 16px 0;
-    border-bottom: 2px solid #e5e7eb;
-    padding-bottom: 12px;
-}
-
-.results-section {
-    margin-bottom: 40px;
-}
-
-.result-card {
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 16px;
-    background: white;
-    margin-bottom: 12px;
-    transition: all 0.2s ease;
-}
-
-.result-card:hover {
-    border-color: #d1d5db;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-}
-
-.result-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: start;
-    margin-bottom: 12px;
-}
-
-.result-header h3 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: #111827;
-}
-
-.severity {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-.severity.critical {
-    background: #fee2e2;
-    color: #991b1b;
-}
-
-.severity.warning {
-    background: #fef3c7;
-    color: #92400e;
-}
-
-.severity.info {
-    background: #dbeafe;
-    color: #1e40af;
-}
-
-.summary {
-    margin: 8px 0;
-    font-size: 14px;
-    color: #374151;
-}
-
-.details {
-    margin: 8px 0;
-    padding: 8px;
-    background: #f9fafb;
-    border-radius: 4px;
-    font-size: 13px;
-    color: #6b7280;
-}
-
-.recommendation {
-    margin-top: 8px;
-    padding: 8px;
-    background: #fef3c7;
-    border-left: 3px solid #f59e0b;
-    border-radius: 4px;
-    font-size: 13px;
-}
-
-.content-editor {
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 24px;
-    margin-top: 24px;
-}
-
-.editor {
-    width: 100%;
-    padding: 12px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-    font-size: 13px;
-    resize: vertical;
-}
-
-.editor:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.actions {
-    display: flex;
-    gap: 12px;
-    margin-top: 16px;
-}
-
-.btn-primary, .btn-secondary {
-    padding: 10px 20px;
-    border-radius: 6px;
-    font-weight: 500;
-    cursor: pointer;
-    border: none;
-    transition: all 0.2s ease;
-}
-
-.btn-primary {
-    background: #3b82f6;
-    color: white;
-}
-
-.btn-primary:hover {
-    background: #2563eb;
-}
-
-.btn-secondary {
-    background: #f3f4f6;
-    color: #374151;
-    border: 1px solid #d1d5db;
-}
-
-.btn-secondary:hover {
-    background: #e5e7eb;
-}
-
-.file-upload {
-    display: inline-block;
-    padding: 10px 20px;
-    background: #f3f4f6;
-    color: #374151;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.file-upload:hover {
-    background: #e5e7eb;
-}
-
-.loading-state {
-    text-align: center;
-    padding: 40px;
-    color: #6b7280;
-}
-</style>

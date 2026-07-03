@@ -1,9 +1,9 @@
 @page "/spec-drift"
+@using BirkNext.Web.GraphQL
 @using BirkNext.Web.Components
-@using BirkNext.Web.Models.Analysis
-@using BirkNext.Web.Services
-@inject IAnalysisPageModelService AnalysisPageModelService
-@inject IWorkspaceSessionService Workspace
+@using Microsoft.AspNetCore.WebUtilities
+@inject IBirkNextClient Client
+@inject NavigationManager NavigationManager
 
 <PageTitle>Spec Drift</PageTitle>
 
@@ -11,264 +11,332 @@
     <PageHeader Title="Spec Drift"
                 Description="The single entry point for specification changes, change history, and drift analysis — all in one place." />
 
-    <!-- ── Readiness Panel ────────────────────────────────────────── -->
-    @if (PageModel is not null)
-    {
-        <AnalysisReadinessPanel Model="PageModel" />
-    }
-    else if (IsLoading)
-    {
-        <div class="loading-state" role="status">Loading page configuration...</div>
-    }
-    else if (LoadError is not null)
-    {
-        <div class="notification notification-error" role="alert">@LoadError</div>
-    }
+    <div class="sd-tab-strip" role="tablist">
+        <button class='sd-tab @(_activeTab == "overview" ? "is-active" : "")' @onclick='() => SetTab("overview")' role="tab">Overview</button>
+        <button class='sd-tab @(_activeTab == "changes" ? "is-active" : "")' @onclick='() => SetTab("changes")' role="tab" data-testid="sd-changes-tab-btn">Changes</button>
+        <button class='sd-tab @(_activeTab == "drift" ? "is-active" : "")' @onclick='() => SetTab("drift")' role="tab">Drift</button>
+        <button class='sd-tab @(_activeTab == "actions" ? "is-active" : "")' @onclick='() => SetTab("actions")' role="tab">Actions</button>
+    </div>
 
-    <!-- ── Analysis Content (only if ready) ────────────────────────── -->
-    @if (PageModel?.Summary.CanRun == true)
+    @if (_activeTab == "changes")
     {
-        <div class="drift-content">
-            <!-- Results Section -->
-            @if (PageModel.Results.Count > 0)
-            {
-                <section class="results-section">
-                    <h2 class="section-title">Analysis Results</h2>
-                    <div class="results-grid">
-                        @foreach (var result in PageModel.Results)
-                        {
-                            <div class="result-card">
-                                <div class="result-header">
-                                    <h3>@result.Name</h3>
-                                    <span class="severity @GetSeverityClass(result.Severity.ToString())">@result.Severity</span>
-                                </div>
-                                @if (!string.IsNullOrEmpty(result.Summary))
-                                {
-                                    <p class="summary">@result.Summary</p>
-                                }
-                                @if (!string.IsNullOrEmpty(result.Details))
-                                {
-                                    <div class="details">@result.Details</div>
-                                }
-                                @if (!string.IsNullOrEmpty(result.Recommendation))
-                                {
-                                    <div class="recommendation">
-                                        <strong>Recommendation:</strong> @result.Recommendation
-                                    </div>
-                                }
-                            </div>
-                        }
-                    </div>
-                </section>
-            }
-
-            <!-- Summary Section -->
-            @if (PageModel.Summary is not null)
-            {
-                <section class="summary-section">
-                    <h2 class="section-title">Summary</h2>
-                    <div class="summary-card">
-                        <div class="summary-stat">
-                            <span class="stat-label">Total Findings</span>
-                            <span class="stat-value">@PageModel.Results.Count</span>
-                        </div>
-                        @if (!string.IsNullOrEmpty(PageModel.Summary.ReadinessMessage))
-                        {
-                            <div class="summary-text">@PageModel.Summary.ReadinessMessage</div>
-                        }
-                    </div>
-                </section>
-            }
+        <SpecChangesPanel />
+    }
+    else if (_isLoading)
+    {
+        <p class="loading-state">Analysing traceability data…</p>
+    }
+    else if (_loadError is not null)
+    {
+        <div class="notification notification-error" role="alert">@_loadError</div>
+    }
+    else if (_report?.TotalRequirements == 0)
+    {
+        <div class="drift-empty-state" role="status">
+            <p class="section-kicker">Nothing to analyse yet</p>
+            <h2 class="drift-empty-state-heading">No Requirements Found</h2>
+            <p class="drift-empty-state-desc">Spec Drift requires requirements and traceability data before drift can be evaluated.</p>
+            <div class="drift-empty-state-btns">
+                <a href="/scenarios" class="drift-link-btn drift-link-btn--primary">Go to QA Artifact Library</a>
+                <a href="/traceability" class="drift-link-btn">Go to Traceability &amp; Coverage</a>
+            </div>
         </div>
+    }
+    else if (_report is not null)
+    {
+        var report = _report;
+        var reqsFiltered = _activeFilter == "CoverageGap"
+            ? report.RequirementsAtRiskList.Where(r => r.DriftRisk == RiskLevel.High).ToList()
+            : _activeFilter == "PartialCoverage"
+            ? report.RequirementsAtRiskList.Where(r => r.DriftRisk == RiskLevel.Medium).ToList()
+            : report.RequirementsAtRiskList.ToList();
+        var showReqs    = _activeFilter != "OrphanTest";
+        var showOrphans = _activeFilter is null or "OrphanTest";
+
+        @* ── Overview tab ────────────────────────────────────────────────── *@
+        @if (_activeTab == "overview")
+        {
+            <div class="kpi-row" aria-label="Drift summary">
+                <div class="kpi-card @DriftKpiClass(report.OverallDriftRisk)">
+                    <span class="kpi-marker" aria-hidden="true"></span>
+                    <span class="kpi-value">@RiskLabel(report.OverallDriftRisk)</span>
+                    <span class="kpi-label">Drift Risk</span>
+                    <span class="kpi-hint">overall health</span>
+                </div>
+                <div class="kpi-card @(report.RequirementsAtRisk > 0 ? "kpi-card-risks" : "kpi-card-coverage")">
+                    <span class="kpi-marker" aria-hidden="true"></span>
+                    <span class="kpi-value">@report.RequirementsAtRisk</span>
+                    <span class="kpi-label">Requirements at Risk</span>
+                    <span class="kpi-hint">uncovered or partial</span>
+                </div>
+                <div class="kpi-card @(report.OrphanTestCount > 0 ? "kpi-card-risks" : "kpi-card-traceability")">
+                    <span class="kpi-marker" aria-hidden="true"></span>
+                    <span class="kpi-value">@report.OrphanTestCount</span>
+                    <span class="kpi-label">Orphan Tests</span>
+                    <span class="kpi-hint">not linked to any req</span>
+                </div>
+                <div class="kpi-card kpi-card-coverage">
+                    <span class="kpi-marker" aria-hidden="true"></span>
+                    <span class="kpi-value">@report.CoveragePercent.ToString("F0")%</span>
+                    <span class="kpi-label">Coverage</span>
+                    <span class="kpi-hint">@report.TotalRequirements reqs · @report.CoverageGaps with no tests</span>
+                </div>
+            </div>
+        }
+
+        @* ── Drift tab ────────────────────────────────────────────────────── *@
+        @if (_activeTab == "drift")
+        {
+            @if (report.Findings.Count > 0)
+            {
+                <section class="drift-findings-section" aria-label="Drift findings">
+                    <div class="drift-section-header">
+                        <div>
+                            <p class="section-kicker">Active rules</p>
+                            <h2>Drift Findings</h2>
+                        </div>
+                        @if (_activeFilter != null)
+                        {
+                            <button class="drift-filter-clear" @onclick='() => _activeFilter = null'>Clear filter ×</button>
+                        }
+                        else
+                        {
+                            <span class="drift-filter-hint-global">Click a finding to filter the detail below</span>
+                        }
+                    </div>
+                    <div class="drift-findings-list">
+                        @foreach (var finding in report.Findings)
+                        {
+                            var isActive = _activeFilter == finding.Category;
+                            <button class="drift-finding @DriftFindingClass(finding.Severity) @(isActive ? "drift-finding-active" : "drift-finding-clickable")"
+                                    @onclick="() => ToggleFilter(finding.Category)"
+                                    aria-pressed="@isActive">
+                                <div class="drift-finding-header">
+                                    <span class="drift-finding-badge @DriftBadgeClass(finding.Severity)">@FindingLabel(finding.Category)</span>
+                                    <StatusChip Status="@(finding.Severity switch { RiskLevel.High => "critical", RiskLevel.Medium => "warning", _ => "ready" })" Label="@RiskLabel(finding.Severity)" />
+                                    <span class="drift-finding-filter-hint">@(isActive ? "Filtering ↓" : "Filter ↓")</span>
+                                </div>
+                                <p class="drift-finding-desc">@finding.Description</p>
+                            </button>
+                        }
+                    </div>
+                </section>
+            }
+
+            <div class="drift-detail-grid">
+                <div>
+                    @if (showReqs)
+                    {
+                        <section class="drift-card" aria-label="Coverage drift">
+                            <div class="drift-card-header">
+                                <p class="section-kicker">Coverage drift</p>
+                                <h2>Requirements at Risk</h2>
+                                <span class="drift-count-badge">@reqsFiltered.Count</span>
+                            </div>
+
+                            @if (_activeFilter is "CoverageGap" or "PartialCoverage")
+                            {
+                                <div class="drift-filter-banner">
+                                    Filtered: @(_activeFilter == "CoverageGap" ? "requirements with no tests" : "requirements with exactly one test")
+                                </div>
+                            }
+
+                            @if (reqsFiltered.Count == 0)
+                            {
+                                <div class="drift-empty">
+                                    <span class="drift-empty-icon">✓</span>
+                                    <p>@(_activeFilter is "CoverageGap" or "PartialCoverage" ? "No requirements match this filter." : "All requirements have adequate test coverage.")</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <ul class="drift-req-list" aria-label="At-risk requirements">
+                                    @foreach (var r in reqsFiltered)
+                                    {
+                                        <li class="drift-req-item @DriftReqClass(r.DriftRisk)">
+                                            <div class="drift-req-header">
+                                                <StatusChip Status="@(r.DriftRisk switch { RiskLevel.High => "critical", RiskLevel.Medium => "warning", _ => "ready" })" Label="@RiskLabel(r.DriftRisk)" />
+                                                <span class="drift-test-count">@r.LinkedTestCount test@(r.LinkedTestCount == 1 ? "" : "s")</span>
+                                            </div>
+                                            <p class="drift-req-title">@r.Requirement.Title</p>
+                                            <p class="drift-req-reason">@r.DriftReason</p>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </section>
+                    }
+
+                    @if (showOrphans)
+                    {
+                        <section class="drift-card @(_activeFilter == "OrphanTest" ? "drift-card-highlighted" : "")" aria-label="Traceability drift">
+                            <div class="drift-card-header">
+                                <p class="section-kicker">Traceability drift</p>
+                                <h2>Orphan Tests</h2>
+                                <span class="drift-count-badge">@report.OrphanTestCount</span>
+                            </div>
+
+                            @if (report.OrphanTests.Count == 0)
+                            {
+                                <div class="drift-empty">
+                                    <span class="drift-empty-icon">✓</span>
+                                    <p>All tests are linked to at least one requirement.</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <ul class="drift-orphan-list" aria-label="Orphan tests">
+                                    @foreach (var test in report.OrphanTests)
+                                    {
+                                        <li class="drift-orphan-item">
+                                            <span class="badge badge-test">Test</span>
+                                            <span class="drift-orphan-title">@test.Title</span>
+                                        </li>
+                                    }
+                                </ul>
+                                <p class="drift-orphan-hint">
+                                    Link these tests to requirements in <a href="/traceability">Traceability &amp; Coverage</a>.
+                                </p>
+                            }
+                        </section>
+                    }
+                </div>
+            </div>
+        }
+
+        @* ── Actions tab ──────────────────────────────────────────────────── *@
+        @if (_activeTab == "actions")
+        {
+            <section class="drift-card drift-card-actions" aria-label="Recommended actions">
+                <div class="drift-card-header">
+                    <p class="section-kicker">Deterministic from your trace links</p>
+                    <h2>Recommended Actions</h2>
+                </div>
+                <ol class="drift-action-list" aria-label="Actions to address drift">
+                    @foreach (var action in report.RecommendedActions)
+                    {
+                        <li class="drift-action-item">@action</li>
+                    }
+                </ol>
+                <div class="drift-action-btns">
+                    <a href="/traceability" class="drift-action-btn drift-action-btn--primary">
+                        <span class="drift-action-btn-title">Traceability &amp; Coverage</span>
+                        <span class="drift-action-btn-hint">Fix orphan tests and coverage gaps</span>
+                    </a>
+                    <a href="/impact-analysis" class="drift-action-btn">
+                        <span class="drift-action-btn-title">Impact Analysis</span>
+                        <span class="drift-action-btn-hint">Assess full regression scope</span>
+                    </a>
+                    <a href="/ai-change-auditor" class="drift-action-btn">
+                        <span class="drift-action-btn-title">AI Change Review</span>
+                        <span class="drift-action-btn-hint">Audit proposed changes</span>
+                    </a>
+                    <a href="/task-alignment" class="drift-action-btn drift-action-btn--primary">
+                        <span class="drift-action-btn-title">Task-to-Spec Alignment</span>
+                        <span class="drift-action-btn-hint">Compare implementation tasks against the specification</span>
+                    </a>
+                </div>
+            </section>
+        }
     }
 </div>
 
 @code {
-    private AnalysisPageModel? PageModel;
-    private bool IsLoading = true;
-    private string? LoadError;
+    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
 
-    protected override async Task OnInitializedAsync()
+    private bool _isLoading = true;
+    private string? _loadError;
+    private IGetSpecDriftReport_SpecDriftReport? _report;
+    private string? _activeFilter;
+    private string _activeTab = "overview";
+
+    protected override void OnInitialized()
     {
-        // Subscribe to workspace changes
-        Workspace.ReviewContextRebuildNeeded += (s, e) => _ = RefreshPageModel();
-
-        // Load initial model
-        await RefreshPageModel();
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("tab", out var tab))
+            _activeTab = tab!;
     }
 
-    private async Task RefreshPageModel()
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private void SetTab(string tab) => _activeTab = tab;
+
+    private async Task LoadAsync()
     {
+        _isLoading = true;
+        _loadError = null;
+        StateHasChanged();
+
         try
         {
-            IsLoading = true;
-            LoadError = null;
-            PageModel = await AnalysisPageModelService.GetSpecDriftModelAsync();
+            var result = await Client.GetSpecDriftReport.ExecuteAsync(ProjectId);
 
-            if (PageModel is null)
+            if (result.Errors is { Count: > 0 })
             {
-                LoadError = "Failed to load page configuration";
+                _loadError = "Could not load drift data. Please try again later.";
+                return;
             }
+
+            _report = result.Data?.SpecDriftReport;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            LoadError = $"Error loading configuration: {ex.Message}";
+            _loadError = "An unexpected error occurred. Check that the backend is running.";
         }
         finally
         {
-            IsLoading = false;
+            _isLoading = false;
         }
     }
 
-    private string GetSeverityClass(string? severity) => severity?.ToLower() switch
+    private void ToggleFilter(string category)
     {
-        "critical" => "critical",
-        "warning" => "warning",
-        "info" => "info",
-        _ => "default"
+        _activeFilter = _activeFilter == category ? null : category;
+    }
+
+    private static string RiskLabel(RiskLevel risk) => risk switch
+    {
+        RiskLevel.High => "High Risk",
+        RiskLevel.Medium => "Medium Risk",
+        RiskLevel.Low => "Low Risk",
+        _ => risk.ToString(),
+    };
+
+    private static string DriftKpiClass(RiskLevel risk) => risk switch
+    {
+        RiskLevel.High => "kpi-card-risks drift-kpi-high",
+        RiskLevel.Medium => "kpi-card-risks drift-kpi-medium",
+        RiskLevel.Low => "kpi-card-coverage drift-kpi-low",
+        _ => string.Empty,
+    };
+
+    private static string DriftFindingClass(RiskLevel severity) => severity switch
+    {
+        RiskLevel.High => "drift-finding-high",
+        RiskLevel.Medium => "drift-finding-medium",
+        _ => string.Empty,
+    };
+
+    private static string DriftBadgeClass(RiskLevel severity) => severity switch
+    {
+        RiskLevel.High => "drift-category-badge-high",
+        RiskLevel.Medium => "drift-category-badge-medium",
+        _ => "drift-category-badge-low",
+    };
+
+    private static string DriftReqClass(RiskLevel risk) => risk switch
+    {
+        RiskLevel.High => "drift-req-high",
+        RiskLevel.Medium => "drift-req-medium",
+        _ => string.Empty,
+    };
+
+    private static string FindingLabel(string category) => category switch
+    {
+        "CoverageGap" => "Coverage Gap",
+        "PartialCoverage" => "Partial Coverage",
+        "OrphanTest" => "Orphan Test",
+        "LowCoverage" => "Low Coverage",
+        _ => category,
     };
 }
-
-<style>
-.drift-page {
-    padding: 0 20px;
-}
-
-.loading-state {
-    text-align: center;
-    color: #6b7280;
-    padding: 40px 20px;
-}
-
-.drift-content {
-    margin-top: 32px;
-}
-
-.section-title {
-    font-size: 18px;
-    font-weight: 600;
-    color: #111827;
-    margin-bottom: 16px;
-    border-bottom: 2px solid #e5e7eb;
-    padding-bottom: 12px;
-}
-
-.results-section {
-    margin-bottom: 40px;
-}
-
-.results-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 16px;
-}
-
-.result-card {
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 16px;
-    background: white;
-    transition: all 0.2s ease;
-}
-
-.result-card:hover {
-    border-color: #d1d5db;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-}
-
-.result-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: start;
-    margin-bottom: 12px;
-}
-
-.result-header h3 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: #111827;
-}
-
-.severity {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-.severity.critical {
-    background: #fee2e2;
-    color: #991b1b;
-}
-
-.severity.warning {
-    background: #fef3c7;
-    color: #92400e;
-}
-
-.severity.info {
-    background: #dbeafe;
-    color: #1e40af;
-}
-
-.summary {
-    margin: 8px 0;
-    font-size: 14px;
-    color: #374151;
-}
-
-.details {
-    margin: 8px 0;
-    padding: 8px;
-    background: #f9fafb;
-    border-radius: 4px;
-    font-size: 13px;
-    color: #6b7280;
-}
-
-.recommendation {
-    margin-top: 8px;
-    padding: 8px;
-    background: #fef3c7;
-    border-left: 3px solid #f59e0b;
-    border-radius: 4px;
-    font-size: 13px;
-}
-
-.summary-section {
-    margin-bottom: 40px;
-}
-
-.summary-card {
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 20px;
-    background: white;
-}
-
-.summary-stat {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 12px;
-}
-
-.stat-label {
-    font-size: 13px;
-    color: #6b7280;
-    font-weight: 500;
-}
-
-.stat-value {
-    font-size: 20px;
-    font-weight: 700;
-    color: #3b82f6;
-}
-
-.summary-text {
-    color: #374151;
-    line-height: 1.6;
-}
-</style>

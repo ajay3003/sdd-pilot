@@ -1,97 +1,682 @@
 @page "/frontend-quality-review"
-@using BirkNext.Web.Components
-@using BirkNext.Web.Models.QualityReview
+@using BirkNext.Web.Models
 @using BirkNext.Web.Services
-@inject IQualityReviewPageModelService PageModelService
+@using BirkNext.Web.Components
+@inject WasmSecurityApiService Scanner
+@inject IBlazorWasmPerformanceReviewService PerfService
+@inject IFrontendQualityReviewService QualityService
 @inject IFrontendAnalysisContextFactory ContextFactory
+@inject RuntimeReviewSessionService RuntimeReviews
+@inject IWorkspaceSessionService Workspace
+@inject IReportExportService ExportService
 @inject IJSRuntime JS
 
 <PageTitle>Frontend Quality Review</PageTitle>
 
-<div class="fqr-page">
-    <PageHeader Title="@(PageModel?.Title ?? "Frontend Quality Review")"
-                Description="@(PageModel?.Description ?? "Analyse a deployed frontend for performance, security, accessibility, standards compliance, Blazor WASM-specific checks, and QA readiness in a single unified review.")" />
+<div class="wsr-page fqr-page">
 
-    <!-- ── Readiness Panel ────────────────────────────────────────── -->
-    @if (PageModel is not null)
+    <PageHeader Title="Frontend Quality Review"
+                Description="Analyse a deployed frontend for performance, security, accessibility, standards compliance, Blazor WASM-specific checks, and QA readiness in a single unified review.">
+        @if (_report is not null)
+        {
+            <button type="button" class="btn-secondary" @onclick="ExportHtml">Export HTML</button>
+            <button type="button" class="btn-secondary" @onclick="ExportPdf">Export PDF</button>
+        }
+    </PageHeader>
+
+    @if (_report is null)
     {
-        <QualityReviewReadinessPanel Model="PageModel" />
-    }
-    else if (IsLoading)
-    {
-        <div class="fqr-loading" role="status">Loading page configuration...</div>
-    }
-    else if (LoadError is not null)
-    {
-        <div class="fqr-error" role="alert">@LoadError</div>
+        <ReviewLanding Title="Run a production-style frontend audit"
+                       Description="Review performance, security, accessibility, standards, Blazor WASM behavior, and QA readiness for the active target environment."
+                       PrimaryButtonText="@(_running ? "Analysing..." : "Run Frontend Quality Review")"
+                       PrimaryRun="RunReview"
+                       PrimaryDisabled="@(_running || _context is null || !_context.HasTargetUrl)"
+                       SecondaryActionText="Target Environments"
+                       SecondaryActionHref="/admin/system-settings"
+                       TargetFields="BuildFrontendTargetFields()"
+                       Configuration="BuildFrontendConfiguration()"
+                       AnalysisCards="FrontendAnalysisCards"
+                       Checks="FrontendChecks"
+                       Metadata="BuildFrontendMetadata()"
+                       EstimatedDuration="1-3 minutes" />
+
+        @if (_running)
+        {
+            <p class="wsr-scan-progress" aria-live="polite">@_progressMessage</p>
+        }
     }
 
-    <!-- ── Run Button ───────────────────────────────────────────── -->
-    @if (PageModel is not null)
+    @if (_secError is not null)
     {
-        <div class="fqr-actions">
-            <button class="btn-primary" disabled="@(!PageModel.Summary.CanRun)" @onclick="RunAudit">
-                @if (IsRunning)
-                {
-                    <span class="spinner" aria-hidden="true">⟳</span>
-                }
-                @(IsRunning ? "Analysing…" : "Run Frontend Quality Review")
-            </button>
+        <div class="wsr-banner wsr-banner-warn wsr-banner-standalone" role="status">
+            <span aria-hidden="true">!</span> Security scan: @_secError - security findings will be incomplete.
+        </div>
+    }
+    @if (_perfError is not null)
+    {
+        <div class="wsr-banner wsr-banner-warn wsr-banner-standalone" role="status">
+            <span aria-hidden="true">!</span> Performance scan: @_perfError - performance findings will be incomplete.
         </div>
     }
 
+    @if (_report is not null)
+    {
+        var report = _report;
+        var topRisks = report.Findings
+            .Where(f => f.Severity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High)
+            .OrderBy(f => f.Severity)
+            .ThenBy(f => f.Category)
+            .ThenBy(f => f.Title)
+            .ToList();
+        var filtered = FilteredFindings(report.Findings).ToList();
+        var recommendations = BuildRecommendationCards(report).ToList();
+
+        <section class="fqr-summary-grid" aria-label="Frontend quality score summary">
+            <MetricCard Value="@report.OverallScore.ToString()" Label="Overall Score" Sublabel="@QualityLabel(report.OverallScore)" Variant="@ScoreVariant(report.OverallScore)" />
+            <MetricCard Value="@report.PerformanceScore.ToString()" Label="Performance" Sublabel="@QualityLabel(report.PerformanceScore)" Variant="@ScoreVariant(report.PerformanceScore)" />
+            <MetricCard Value="@report.SecurityScore.ToString()" Label="Security" Sublabel="@QualityLabel(report.SecurityScore)" Variant="@ScoreVariant(report.SecurityScore)" />
+            <MetricCard Value="@report.AccessibilityScore.ToString()" Label="Accessibility" Sublabel="@QualityLabel(report.AccessibilityScore)" Variant="@ScoreVariant(report.AccessibilityScore)" />
+            <MetricCard Value="@report.StandardsScore.ToString()" Label="Standards" Sublabel="@QualityLabel(report.StandardsScore)" Variant="@ScoreVariant(report.StandardsScore)" />
+            <MetricCard Value="@report.WasmScore.ToString()" Label="Blazor WASM" Sublabel="@(report.IsBlazorWasm ? QualityLabel(report.WasmScore) : "Not detected")" Variant="@ScoreVariant(report.WasmScore)" />
+            <MetricCard Value="@report.ReadinessScore.ToString()" Label="QA Readiness" Sublabel="@QualityLabel(report.ReadinessScore)" Variant="@ScoreVariant(report.ReadinessScore)" />
+        </section>
+
+        <section class="fqr-section" aria-label="Top risks">
+            <SectionHeader Title="Top Risks" />
+            @if (topRisks.Count == 0)
+            {
+                <div class="fqr-empty-panel">No critical or high findings were detected.</div>
+            }
+            else
+            {
+                <div class="fqr-risk-grid">
+                    @foreach (var risk in topRisks)
+                    {
+                        <article class="fqr-risk-card fqr-risk-@risk.Severity.ToString().ToLowerInvariant()">
+                            <div class="fqr-risk-meta">
+                                <span class="fqr-severity fqr-severity-@risk.Severity.ToString().ToLowerInvariant()">@risk.Severity</span>
+                                <span class="fqr-risk-category">@CategoryLabel(risk.Category)</span>
+                            </div>
+                            <h3>@risk.Title</h3>
+                            <div class="fqr-risk-detail">
+                                <span>Risk</span>
+                                <p>@risk.Description</p>
+                            </div>
+                            <div class="fqr-risk-detail">
+                                <span>Recommendation</span>
+                                <p>@risk.Recommendation</p>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="fqr-section" aria-label="Category summary">
+            <SectionHeader Title="Category Summary" />
+            <div class="fqr-category-grid">
+                @foreach (var category in Enum.GetValues<FrontendQualityCategory>())
+                {
+                    var summary = GetCategorySummary(report, category);
+                    <button type="button"
+                            class="fqr-category-card @(_catFilter == category ? "is-active" : "")"
+                            @onclick="() => SetCategoryFilter(category)"
+                            aria-pressed="@(_catFilter == category)"
+                            aria-label="Filter findings by @CategoryLabel(category)">
+                        <span class="fqr-category-title">@CategoryLabel(category)</span>
+                        <strong>@summary.Total</strong>
+                        <span class="fqr-category-sub">total findings</span>
+                        <dl class="fqr-category-counts">
+                            <div><dt>Critical</dt><dd>@summary.Critical</dd></div>
+                            <div><dt>High</dt><dd>@summary.High</dd></div>
+                            <div><dt>Medium</dt><dd>@summary.Medium</dd></div>
+                            <div><dt>Low</dt><dd>@summary.Low</dd></div>
+                        </dl>
+                    </button>
+                }
+            </div>
+        </section>
+
+        <section class="fqr-section" aria-label="Detailed findings">
+            <SectionHeader Title="Detailed Findings" />
+            <div class="fqr-findings-toolbar" role="group" aria-label="Filter findings">
+                <input type="search"
+                       class="form-control fqr-search"
+                       placeholder="Search findings..."
+                       aria-label="Search findings"
+                       value="@_findingSearch"
+                       @oninput="e => _findingSearch = e.Value?.ToString() ?? string.Empty" />
+
+                <select class="form-control fqr-select" @bind="_severityFilterValue" @bind:after="ApplySeverityFilter" aria-label="Filter by severity">
+                    <option value="">All severities</option>
+                    @foreach (var sev in Enum.GetValues<FrontendQualitySeverity>())
+                    {
+                        <option value="@sev.ToString()">@sev</option>
+                    }
+                </select>
+
+                <select class="form-control fqr-select" @bind="_categoryFilterValue" @bind:after="ApplyCategoryFilter" aria-label="Filter by category">
+                    <option value="">All categories</option>
+                    @foreach (var cat in Enum.GetValues<FrontendQualityCategory>())
+                    {
+                        <option value="@cat.ToString()">@CategoryLabel(cat)</option>
+                    }
+                </select>
+
+                @if (_sevFilter is not null || _catFilter is not null || !string.IsNullOrWhiteSpace(_findingSearch))
+                {
+                    <button type="button" class="btn-secondary" @onclick="ClearFilters">Clear</button>
+                }
+            </div>
+
+            @if (filtered.Count == 0)
+            {
+                <div class="fqr-empty-panel">No findings match the current filter.</div>
+            }
+            else
+            {
+                <div class="fqr-table-wrap">
+                    <table class="fqr-findings-table">
+                        <thead>
+                            <tr>
+                                <th><button type="button" @onclick='() => SortBy("severity")'>Severity @SortGlyph("severity")</button></th>
+                                <th><button type="button" @onclick='() => SortBy("category")'>Category @SortGlyph("category")</button></th>
+                                <th><button type="button" @onclick='() => SortBy("title")'>Title @SortGlyph("title")</button></th>
+                                <th>Description</th>
+                                <th>Recommendation</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var finding in filtered)
+                            {
+                                <tr>
+                                    <td><span class="fqr-severity fqr-severity-@finding.Severity.ToString().ToLowerInvariant()">@finding.Severity</span></td>
+                                    <td>@CategoryLabel(finding.Category)</td>
+                                    <td>
+                                        <strong>@finding.Title</strong>
+                                        @if (!string.IsNullOrWhiteSpace(finding.SourceSystem))
+                                        {
+                                            <span class="fqr-source">@finding.SourceSystem</span>
+                                        }
+                                    </td>
+                                    <td>@finding.Description</td>
+                                    <td>@finding.Recommendation</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        @if (recommendations.Count > 0)
+        {
+            <section class="fqr-section" aria-label="Recommendations">
+                <SectionHeader Title="Recommendations" />
+                <div class="fqr-recommendation-grid">
+                    @foreach (var rec in recommendations)
+                    {
+                        <article class="fqr-recommendation-card fqr-recommendation-@rec.Priority.ToLowerInvariant()">
+                            <div class="fqr-recommendation-priority">@rec.Priority Priority</div>
+                            <h3>@rec.Title</h3>
+                            <p>@rec.Description</p>
+                            <div class="fqr-recommendation-benefit">
+                                <span>Expected benefit</span>
+                                <p>@rec.ExpectedBenefit</p>
+                            </div>
+                        </article>
+                    }
+                </div>
+            </section>
+        }
+
+        <section class="fqr-section" aria-label="Technical details">
+            <details class="fqr-technical-details">
+                <summary>Technical Details</summary>
+                <div class="fqr-technical-grid">
+                    <InfoRow Label="Target URL">@report.TargetUrl</InfoRow>
+                    <InfoRow Label="Generated">@report.GeneratedAt.ToString("yyyy-MM-dd HH:mm") UTC</InfoRow>
+                    <InfoRow Label="Application">@(report.IsBlazorWasm ? "Blazor WASM detected" : "Blazor WASM not detected")</InfoRow>
+                    @if (!string.IsNullOrWhiteSpace(report.ErrorMessage))
+                    {
+                        <InfoRow Label="Error">@report.ErrorMessage</InfoRow>
+                    }
+                    @if (report.Risks.Count > 0)
+                    {
+                        <div class="fqr-technical-list">
+                            <h3>Risks</h3>
+                            <ul>
+                                @foreach (var risk in report.Risks)
+                                {
+                                    <li>@risk</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                    @if (report.Limitations.Count > 0)
+                    {
+                        <div class="fqr-technical-list">
+                            <h3>Scanner Limitations</h3>
+                            <ul>
+                                @foreach (var limitation in report.Limitations)
+                                {
+                                    <li>@limitation</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                    @if (report.Findings.Any(f => f.Evidence.Count > 0))
+                    {
+                        <div class="fqr-technical-list fqr-technical-evidence">
+                            <h3>Evidence</h3>
+                            @foreach (var finding in report.Findings.Where(f => f.Evidence.Count > 0))
+                            {
+                                <div class="fqr-evidence-group">
+                                    <strong>@finding.Title</strong>
+                                    <ul>
+                                        @foreach (var evidence in finding.Evidence)
+                                        {
+                                            <li><code>@evidence</code></li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </details>
+        </section>
+    }
 </div>
 
 @code {
-    private QualityReviewPageModel? PageModel;
-    private bool IsLoading = true;
-    private string? LoadError;
-    private bool IsRunning;
+    private sealed record CategorySummary(int Total, int Critical, int High, int Medium, int Low);
+    private sealed record RecommendationView(string Priority, string Title, string Description, string ExpectedBenefit);
+    private static readonly ReviewLanding.AnalysisCard[] FrontendAnalysisCards =
+    [
+        new("PF", "Performance", "Measures loading, rendering, caching, and runtime responsiveness."),
+        new("SC", "Security", "Reviews browser-exposed attack surface and security posture."),
+        new("AX", "Accessibility", "Checks user-facing accessibility signals and WCAG readiness."),
+        new("ST", "Standards Compliance", "Validates platform, policy, and delivery best-practice signals."),
+        new("BW", "Blazor WASM", "Inspects startup behavior and WebAssembly-specific runtime concerns."),
+        new("QA", "QA Readiness", "Summarizes release risk, testability, and operational review signals."),
+    ];
+
+    private static readonly string[] FrontendChecks =
+    [
+        "Core Web Vitals",
+        "WCAG 2.2",
+        "OWASP",
+        "Security Headers",
+        "CSP",
+        "CORS",
+        "Bundle Size",
+        "Lazy Loading",
+        "Compression",
+        "Cache Headers",
+        "Service Worker",
+        "Startup Waterfall",
+        "Testability",
+        "Observability",
+    ];
+
+    private FrontendAnalysisContext? _context;
+
+    private bool    _running;
+    private string  _progressMessage = "";
+    private string? _secError;
+    private string? _perfError;
+
+    private FrontendQualityReviewReport? _report;
+
+    private string? _findingSearch;
+    private FrontendQualitySeverity? _sevFilter;
+    private FrontendQualityCategory? _catFilter;
+    private string _severityFilterValue = "";
+    private string _categoryFilterValue = "";
+    private string _sortColumn = "severity";
+    private bool _sortDescending;
 
     protected override async Task OnInitializedAsync()
     {
-        // Load initial page model
-        await RefreshPageModel();
+        _context = await ContextFactory.GetActiveContextAsync();
+        _report  = RuntimeReviews.QualityReview.Report;
     }
 
-    private async Task RefreshPageModel()
+    private async Task RunReview()
     {
+        if (_context is null || !_context.HasTargetUrl) return;
+
+        _running     = true;
+        _secError    = null;
+        _perfError   = null;
+        _report      = null;
+        RuntimeReviews.MarkQualityRunning(_context);
+        StateHasChanged();
+
+        WasmSecurityReviewReport?    secReport  = null;
+        WasmPerformanceReviewReport? perfReport = null;
+
+        _progressMessage = "Running security scan...";
+        StateHasChanged();
         try
         {
-            IsLoading = true;
-            LoadError = null;
-            PageModel = await PageModelService.GetFrontendQualityReviewModelAsync();
-
-            if (PageModel is null)
-            {
-                LoadError = "Failed to load page configuration";
-            }
+            var scanRequest = BuildScanRequest(_context);
+            var (report, error) = await Scanner.ScanAsync(scanRequest);
+            secReport = report;
+            _secError = error;
         }
         catch (Exception ex)
         {
-            LoadError = $"Error loading configuration: {ex.Message}";
+            _secError = ex.Message;
         }
-        finally
-        {
-            IsLoading = false;
-        }
-    }
 
-    private async Task RunAudit()
-    {
-        if (PageModel?.Summary.CanRun != true)
-            return;
-
-        IsRunning = true;
+        _progressMessage = "Running performance scan...";
+        StateHasChanged();
         try
         {
-            // Call the actual quality review service
-            await Task.Delay(1000); // Placeholder
+            perfReport = await PerfService.RunReviewAsync(_context.TargetUrl);
         }
-        finally
+        catch (Exception ex)
         {
-            IsRunning = false;
+            _perfError = ex.Message;
+        }
+
+        _progressMessage = "Building quality report...";
+        StateHasChanged();
+
+        if (secReport is null && perfReport is null)
+        {
+            _running = false;
+            var errorMsg = "Both security and performance scans failed - unable to produce a quality report.";
+            RuntimeReviews.MarkQualityFailed(_context, errorMsg);
+            StateHasChanged();
+            return;
+        }
+
+        var qualityReport = QualityService.BuildReport(_context.TargetUrl, secReport, perfReport);
+        _report  = qualityReport;
+        _running = false;
+        RuntimeReviews.SaveQualityResult(_report, _context);
+        ClearFilters();
+    }
+
+    private async Task ExportHtml()
+    {
+        if (_report is null) return;
+        var html = ExportService.ExportFrontendQualityReview(_report, Workspace.ProjectName);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"frontend-quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
+    }
+
+    private async Task ExportPdf()
+    {
+        await JS.InvokeVoidAsync("print");
+    }
+
+    private async Task RefreshContext()
+    {
+        _context = await ContextFactory.GetActiveContextAsync();
+    }
+
+    private IReadOnlyList<ReviewLanding.TargetField> BuildFrontendTargetFields()
+    {
+        if (_context is null)
+        {
+            return
+            [
+                new("Environment", "Loading...", ReviewLanding.FieldStatus.Informational),
+                new("Target URL", "Loading...", ReviewLanding.FieldStatus.Informational),
+                new("Authentication", "Loading...", ReviewLanding.FieldStatus.Informational),
+                new("Auth Status", "Loading...", ReviewLanding.FieldStatus.Informational),
+            ];
+        }
+
+        return
+        [
+            new("Environment", $"{_context.ActiveProfile.EnvironmentType} - {_context.ActiveProfile.Name}", ReviewLanding.FieldStatus.Configured),
+            new("Target URL", _context.HasTargetUrl ? _context.TargetUrl : "Not configured", _context.HasTargetUrl ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Missing),
+            new("Authentication", _context.AuthenticationType.ToString(), ReviewLanding.FieldStatus.Informational),
+            new("Auth Status", _context.IsAuthenticatedSessionAvailable ? "Authenticated" : _context.RequiresAuthentication ? "Session unavailable" : "Not required",
+                _context.IsAuthenticatedSessionAvailable || !_context.RequiresAuthentication ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Warning),
+        ];
+    }
+
+    private IReadOnlyList<ReviewLanding.MetadataItem> BuildFrontendMetadata()
+    {
+        if (_context is null) return [];
+        return
+        [
+            new("Environment", _context.ActiveProfile.EnvironmentType.ToString()),
+            new("Authentication", _context.AuthenticationType.ToString()),
+        ];
+    }
+
+    private ReviewLanding.ConfigurationState BuildFrontendConfiguration()
+    {
+        if (_context is null)
+        {
+            return new(
+                ReviewLanding.ConfigurationStatus.Warning,
+                "Loading target environment",
+                "The active frontend analysis profile is still loading.",
+                []);
+        }
+
+        var missing = new List<string>();
+        if (!_context.HasTargetUrl)
+            missing.Add("Frontend target URL");
+
+        missing.AddRange(_context.ValidationErrors);
+
+        if (missing.Count > 0)
+        {
+            return new(
+                ReviewLanding.ConfigurationStatus.Error,
+                "Configuration incomplete",
+                "Resolve the missing requirements before running the review.",
+                missing,
+                "Configure Target Environment",
+                "/admin/system-settings");
+        }
+
+        if (_context.HasValidationWarnings)
+        {
+            return new(
+                ReviewLanding.ConfigurationStatus.Warning,
+                "Configuration warnings",
+                string.Join(" | ", _context.ValidationWarnings),
+                [],
+                "Review Settings",
+                "/admin/system-settings");
+        }
+
+        return new(
+            ReviewLanding.ConfigurationStatus.Success,
+            "Ready to run",
+            "Frontend target configuration is sufficient for a quality review.",
+            []);
+    }
+
+    private static WasmScanRequest BuildScanRequest(FrontendAnalysisContext ctx)
+    {
+        var allowedHosts = ctx.AllowedBackendDomains
+            .Concat(ctx.AllowedRestHosts)
+            .Distinct()
+            .ToList();
+
+        var clientIds = new List<string>();
+        if (!string.IsNullOrWhiteSpace(ctx.SecuritySettings.ExpectedClientId))
+            clientIds.Add(ctx.SecuritySettings.ExpectedClientId);
+
+        var knownSafe = ctx.AllowedGraphQlEndpoints
+            .Concat(ctx.AllowedCdnHosts)
+            .ToList();
+
+        return new WasmScanRequest
+        {
+            TargetUrl                  = ctx.TargetUrl,
+            EnvironmentName            = ctx.ActiveProfile.EnvironmentType.ToString(),
+            ExpectedApiGatewayBasePath = ctx.ActiveProfile.ExpectedApiGateway,
+            AllowedBackendHostnames    = allowedHosts,
+            AllowedAuthority           = ctx.SecuritySettings.ExpectedAuthority,
+            AllowedClientIds           = clientIds,
+            KnownSafeDomains           = knownSafe
+        };
+    }
+
+    private void SetCategoryFilter(FrontendQualityCategory cat)
+    {
+        _catFilter = _catFilter == cat ? null : cat;
+        _categoryFilterValue = _catFilter?.ToString() ?? "";
+    }
+
+    private void ApplySeverityFilter()
+    {
+        _sevFilter = Enum.TryParse<FrontendQualitySeverity>(_severityFilterValue, out var sev) ? sev : null;
+    }
+
+    private void ApplyCategoryFilter()
+    {
+        _catFilter = Enum.TryParse<FrontendQualityCategory>(_categoryFilterValue, out var cat) ? cat : null;
+    }
+
+    private void ClearFilters()
+    {
+        _sevFilter = null;
+        _catFilter = null;
+        _findingSearch = null;
+        _severityFilterValue = "";
+        _categoryFilterValue = "";
+    }
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column)
+        {
+            _sortDescending = !_sortDescending;
+            return;
+        }
+
+        _sortColumn = column;
+        _sortDescending = false;
+    }
+
+    private string SortGlyph(string column) =>
+        _sortColumn != column ? "" : _sortDescending ? "v" : "^";
+
+    private IEnumerable<FrontendQualityFinding> FilteredFindings(IReadOnlyList<FrontendQualityFinding> all)
+    {
+        IEnumerable<FrontendQualityFinding> q = all;
+        if (_sevFilter.HasValue) q = q.Where(f => f.Severity == _sevFilter.Value);
+        if (_catFilter.HasValue) q = q.Where(f => f.Category == _catFilter.Value);
+        if (!string.IsNullOrWhiteSpace(_findingSearch))
+        {
+            var term = _findingSearch.Trim();
+            q = q.Where(f =>
+                f.Title.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                f.Description.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                f.Recommendation.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                CategoryLabel(f.Category).Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                f.Severity.ToString().Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+
+        q = _sortColumn switch
+        {
+            "category" => _sortDescending
+                ? q.OrderByDescending(f => CategoryLabel(f.Category)).ThenBy(f => f.Severity).ThenBy(f => f.Title)
+                : q.OrderBy(f => CategoryLabel(f.Category)).ThenBy(f => f.Severity).ThenBy(f => f.Title),
+            "title" => _sortDescending
+                ? q.OrderByDescending(f => f.Title).ThenBy(f => f.Severity)
+                : q.OrderBy(f => f.Title).ThenBy(f => f.Severity),
+            _ => _sortDescending
+                ? q.OrderByDescending(f => f.Severity).ThenBy(f => f.Category).ThenBy(f => f.Title)
+                : q.OrderBy(f => f.Severity).ThenBy(f => f.Category).ThenBy(f => f.Title),
+        };
+
+        return q;
+    }
+
+    private static CategorySummary GetCategorySummary(FrontendQualityReviewReport report, FrontendQualityCategory category)
+    {
+        var findings = report.Findings.Where(f => f.Category == category).ToList();
+        return new CategorySummary(
+            findings.Count,
+            findings.Count(f => f.Severity == FrontendQualitySeverity.Critical),
+            findings.Count(f => f.Severity == FrontendQualitySeverity.High),
+            findings.Count(f => f.Severity == FrontendQualitySeverity.Medium),
+            findings.Count(f => f.Severity == FrontendQualitySeverity.Low));
+    }
+
+    private static IEnumerable<RecommendationView> BuildRecommendationCards(FrontendQualityReviewReport report)
+    {
+        foreach (var finding in report.Findings
+            .Where(f => f.Severity is not FrontendQualitySeverity.Info && !string.IsNullOrWhiteSpace(f.Recommendation))
+            .OrderBy(f => f.Severity)
+            .ThenBy(f => f.Category)
+            .ThenBy(f => f.Title))
+        {
+            yield return new RecommendationView(
+                RecommendationPriority(finding.Severity),
+                finding.Title,
+                finding.Recommendation,
+                ExpectedBenefit(finding));
+        }
+
+        foreach (var recommendation in report.Recommendations)
+        {
+            yield return new RecommendationView(
+                "Low",
+                ShortTitle(recommendation),
+                recommendation,
+                "Improves review completeness and keeps follow-up work visible.");
         }
     }
 
+    private static string RecommendationPriority(FrontendQualitySeverity severity) => severity switch
+    {
+        FrontendQualitySeverity.Critical => "Critical",
+        FrontendQualitySeverity.High     => "High",
+        FrontendQualitySeverity.Medium   => "Medium",
+        _                                => "Low",
+    };
+
+    private static string ExpectedBenefit(FrontendQualityFinding finding) => finding.Category switch
+    {
+        FrontendQualityCategory.Security      => "Reduces exploitable frontend risk and strengthens deployment confidence.",
+        FrontendQualityCategory.Performance   => "Improves load behavior, responsiveness, and user-perceived stability.",
+        FrontendQualityCategory.Accessibility => "Improves usability for assistive technologies and reduces compliance risk.",
+        FrontendQualityCategory.Standards     => "Improves standards compliance and makes future audits easier to pass.",
+        FrontendQualityCategory.BlazorWasm    => "Improves Blazor WASM reliability, startup behavior, and operational readiness.",
+        FrontendQualityCategory.Readiness     => "Improves release confidence and clarifies go/no-go decision inputs.",
+        _                                     => "Improves frontend quality and audit readiness.",
+    };
+
+    private static string ShortTitle(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "Recommendation";
+        var trimmed = text.Trim();
+        var stop = trimmed.IndexOfAny(['.', ':', '-']);
+        if (stop > 12) trimmed = trimmed[..stop];
+        return trimmed.Length <= 72 ? trimmed : $"{trimmed[..69]}...";
+    }
+
+    private static string CategoryLabel(FrontendQualityCategory c) => c switch
+    {
+        FrontendQualityCategory.Performance   => "Performance",
+        FrontendQualityCategory.Security      => "Security",
+        FrontendQualityCategory.Accessibility => "Accessibility",
+        FrontendQualityCategory.Standards     => "Standards",
+        FrontendQualityCategory.BlazorWasm    => "Blazor WASM",
+        FrontendQualityCategory.Readiness     => "Readiness",
+        _                                     => c.ToString(),
+    };
+
+    private static string ScoreVariant(int score) =>
+        score >= 80 ? "success" : score >= 50 ? "warning" : "danger";
+
+    private static string QualityLabel(int score) =>
+        score >= 90 ? "Excellent" :
+        score >= 80 ? "Good" :
+        score >= 65 ? "Needs Attention" :
+        score >= 50 ? "At Risk" : "Critical";
 }
