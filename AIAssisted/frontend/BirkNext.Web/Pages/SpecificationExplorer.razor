@@ -1,4 +1,4 @@
-@page "/plan-explorer"
+@page "/specification-review"
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models.Review
 @using BirkNext.Web.Services
@@ -7,11 +7,11 @@
 @inject IWorkspaceSessionService Workspace
 @inject IWorkspaceUpdateCoordinator UpdateCoordinator
 
-<PageTitle>Plan Explorer</PageTitle>
+<PageTitle>Specification Review</PageTitle>
 
-<div class="pe-page">
-    <PageHeader Title="Plan Explorer"
-                Description="Navigate and analyze plan.md files — architecture, risks, decisions, and delivery phases." />
+<div class="sr-page">
+    <PageHeader Title="Specification Review"
+                Description="Review and analyze specification.md files — requirements, gaps, scenarios, and validation." />
 
     @if (PageModel is not null)
     {
@@ -20,7 +20,7 @@
 
     @if (IsLoading)
     {
-        <div class="loading-state">Loading plan analysis...</div>
+        <div class="loading-state">Loading specification analysis...</div>
     }
     else if (LoadError is not null)
     {
@@ -61,14 +61,14 @@
             }
 
             <div class="editor-section">
-                <h2>Plan Content</h2>
-                <textarea @bind="_planText"
+                <h2>Specification Content</h2>
+                <textarea @bind="_specText"
                           class="editor"
-                          placeholder="Paste or edit plan content..."
+                          placeholder="Paste or edit specification content..."
                           rows="20"></textarea>
                 <div class="actions">
-                    <button class="btn-primary" @onclick="SavePlan">Save Plan</button>
-                    <button class="btn-secondary" @onclick="ClearPlan">Clear</button>
+                    <button class="btn-primary" @onclick="SaveSpec">Save Specification</button>
+                    <button class="btn-secondary" @onclick="ClearSpec">Clear</button>
                     <label class="file-upload">
                         <InputFile OnChange="HandleFileUpload" accept=".md,.txt" hidden />
                         📎 Upload File
@@ -83,15 +83,15 @@
     private ReviewPageModel? PageModel;
     private bool IsLoading = true;
     private string? LoadError;
-    private string _planText = string.Empty;
+    private string _specText = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
         Workspace.ReviewContextRebuildNeeded += (s, e) => _ = RefreshPageModel();
         await RefreshPageModel();
 
-        var cached = Workspace.Get(WorkspaceArtifactKind.Plan);
-        if (cached != null) _planText = cached.Text;
+        var cached = Workspace.Get(WorkspaceArtifactKind.Specification);
+        if (cached != null) _specText = cached.Text;
     }
 
     private async Task RefreshPageModel()
@@ -100,7 +100,7 @@
         {
             IsLoading = true;
             LoadError = null;
-            PageModel = await ReviewPageModelService.GetPlanExplorerModelAsync();
+            PageModel = await ReviewPageModelService.GetSpecificationReviewModelAsync();
         }
         catch (Exception ex)
         {
@@ -112,17 +112,17 @@
         }
     }
 
-    private async Task SavePlan()
+    private async Task SaveSpec()
     {
-        if (string.IsNullOrWhiteSpace(_planText))
+        if (string.IsNullOrWhiteSpace(_specText))
         {
-            LoadError = "Plan content cannot be empty";
+            LoadError = "Specification content cannot be empty";
             return;
         }
 
         try
         {
-            Workspace.Set(WorkspaceArtifactKind.Plan, _planText);
+            Workspace.Set(WorkspaceArtifactKind.Specification, _specText);
             UpdateCoordinator.NotifyMutation();
             await RefreshPageModel();
         }
@@ -132,7 +132,7 @@
         }
     }
 
-    private void ClearPlan() => _planText = string.Empty;
+    private void ClearSpec() => _specText = string.Empty;
 
     private async Task HandleFileUpload(InputFileChangeEventArgs e)
     {
@@ -140,8 +140,8 @@
         {
             using var stream = e.File.OpenReadStream();
             using var reader = new StreamReader(stream);
-            _planText = await reader.ReadToEndAsync();
-            await SavePlan();
+            _specText = await reader.ReadToEndAsync();
+            await SaveSpec();
         }
         catch (Exception ex)
         {
@@ -159,7 +159,7 @@
 }
 
 <style>
-.pe-page { padding: 0 20px; }
+.sr-page { padding: 0 20px; }
 .loading-state { text-align: center; padding: 40px; color: #6b7280; }
 .content { margin-top: 32px; }
 h2 { font-size: 18px; font-weight: 600; margin: 24px 0 16px 0; border-bottom: 2px solid #e5e7eb; padding-bottom: 12px; }

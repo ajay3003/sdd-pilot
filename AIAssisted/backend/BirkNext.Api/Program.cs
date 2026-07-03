@@ -8,6 +8,8 @@ using BirkNext.Api.Services.ImplementationTraceability;
 using BirkNext.Api.Services.ApiQuality;
 using BirkNext.Api.Services.QualityReview;
 using BirkNext.Api.Services.Analysis;
+using BirkNext.Api.Services.Library;
+using BirkNext.Api.Services.Review;
 using BirkNext.Api.Services.WasmPerformance;
 using BirkNext.Api.Services.WasmSecurity;
 using HotChocolate.AspNetCore;
@@ -90,6 +92,19 @@ builder.Services.AddScoped<IRequirementsTraceabilityPageModelBuilder, Requiremen
 builder.Services.AddScoped<IImplementationReviewPageModelBuilder, ImplementationReviewPageModelBuilder>();
 builder.Services.AddScoped<IImplementationTraceabilityPageModelBuilder, ImplementationTraceabilityPageModelBuilder>();
 builder.Services.AddScoped<IAnalysisPageModelService, AnalysisPageModelService>();
+// ── Library Page Model Builders ──────────────────────────────────────────
+builder.Services.AddScoped<IQAArtifactLibraryPageModelBuilder, QAArtifactLibraryPageModelBuilder>();
+builder.Services.AddScoped<ICreateTestScenarioPageModelBuilder, CreateTestScenarioPageModelBuilder>();
+builder.Services.AddScoped<ISampleProjectsPageModelBuilder, SampleProjectsPageModelBuilder>();
+builder.Services.AddScoped<ILibraryPageModelService, LibraryPageModelService>();
+// ── Review Page Model Builders ───────────────────────────────────────────
+builder.Services.AddScoped<IDashboardPageModelBuilder, DashboardPageModelBuilder>();
+builder.Services.AddScoped<IConstitutionExplorerPageModelBuilder, ConstitutionExplorerPageModelBuilder>();
+builder.Services.AddScoped<IDataModelExplorerPageModelBuilder, DataModelExplorerPageModelBuilder>();
+builder.Services.AddScoped<IPlanExplorerPageModelBuilder, PlanExplorerPageModelBuilder>();
+builder.Services.AddScoped<ITaskExplorerPageModelBuilder, TaskExplorerPageModelBuilder>();
+builder.Services.AddScoped<ISpecificationReviewPageModelBuilder, SpecificationReviewPageModelBuilder>();
+builder.Services.AddScoped<ReviewPageModelService>();
 builder.Services.AddScoped<IMigrationIntegrityValidator, MigrationIntegrityValidator>();
 builder.Services.AddScoped<IEnvironmentDiagnosticsService, EnvironmentDiagnosticsService>();
 builder.Services.AddScoped<IConfigurationHealthService, ConfigurationHealthService>();

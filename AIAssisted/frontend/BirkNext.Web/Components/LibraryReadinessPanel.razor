@@ -1,0 +1,286 @@
+@using BirkNext.Web.Models.Library
+
+<div class="library-readiness-panel">
+    <!-- ── Status Header ────────────────────────────────────────────────── -->
+    <div class="readiness-header @GetStatusClass(Model?.ReadinessStatus ?? LibraryStatus.Empty)">
+        <div class="readiness-status-badge">
+            <span class="status-icon">@GetStatusIcon(Model?.ReadinessStatus ?? LibraryStatus.Empty)</span>
+            <span class="status-label">@GetStatusLabel(Model?.ReadinessStatus ?? LibraryStatus.Empty)</span>
+        </div>
+        <div class="readiness-message">
+            @if (Model?.Summary is not null)
+            {
+                <p>@Model.Summary.StatusMessage</p>
+            }
+        </div>
+    </div>
+
+    <!-- ── Missing Inputs Section ─────────────────────────────────────── -->
+    @if (Model?.MissingInputs.Count > 0)
+    {
+        <div class="missing-inputs-section">
+            <h3 class="section-title">Required Inputs Missing</h3>
+            <ul class="missing-inputs-list">
+                @foreach (var missing in Model.MissingInputs)
+                {
+                    <li class="missing-input-item">
+                        <span class="icon">📋</span>
+                        <span class="text">@missing</span>
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+
+    <!-- ── Summary Stats ──────────────────────────────────────────────── -->
+    @if (Model?.Summary is not null)
+    {
+        <div class="summary-stats">
+            @if (Model.Summary.TotalItems > 0)
+            {
+                <div class="stat-item">
+                    <span class="stat-label">Items</span>
+                    <span class="stat-value">@Model.Summary.TotalItems</span>
+                </div>
+            }
+
+            @if (Model.Summary.WarningCount > 0)
+            {
+                <div class="stat-item warning">
+                    <span class="stat-label">⚠️ Warnings: @Model.Summary.WarningCount</span>
+                </div>
+            }
+
+            @if (Model.Summary.EmptyCount > 0)
+            {
+                <div class="stat-item empty">
+                    <span class="stat-label">Empty: @Model.Summary.EmptyCount</span>
+                </div>
+            }
+
+            @if (Model.Summary.AvailableActionsCount > 0)
+            {
+                <div class="stat-item">
+                    <span class="stat-label">Actions</span>
+                    <span class="stat-value">@Model.Summary.AvailableActionsCount</span>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- ── Action Buttons ─────────────────────────────────────────────── -->
+    @if (Model?.Actions.Count > 0)
+    {
+        <div class="action-buttons">
+            @foreach (var action in Model.Actions)
+            {
+                <button type="button"
+                        class="action-button @(action.Enabled ? "" : "is-disabled")"
+                        disabled="@(!action.Enabled)"
+                        title="@(action.Reason ?? action.ExpectedEffect ?? action.Name)">
+                    @action.Name
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public LibraryPageModel? Model { get; set; }
+
+    private string GetStatusClass(LibraryStatus status) => status switch
+    {
+        LibraryStatus.Ready => "status-ready",
+        LibraryStatus.Empty => "status-empty",
+        LibraryStatus.Blocked => "status-blocked",
+        LibraryStatus.Warning => "status-warning",
+        LibraryStatus.Fail => "status-fail",
+        LibraryStatus.Unavailable => "status-unavailable",
+        _ => "status-unknown"
+    };
+
+    private string GetStatusLabel(LibraryStatus status) => status switch
+    {
+        LibraryStatus.Ready => "Ready",
+        LibraryStatus.Empty => "Empty",
+        LibraryStatus.Blocked => "Blocked",
+        LibraryStatus.Warning => "Warning",
+        LibraryStatus.Fail => "Failed",
+        LibraryStatus.Unavailable => "Unavailable",
+        _ => "Unknown"
+    };
+
+    private string GetStatusIcon(LibraryStatus status) => status switch
+    {
+        LibraryStatus.Ready => "✓",
+        LibraryStatus.Empty => "∅",
+        LibraryStatus.Blocked => "🔒",
+        LibraryStatus.Warning => "⚠️",
+        LibraryStatus.Fail => "❌",
+        LibraryStatus.Unavailable => "⊗",
+        _ => "?"
+    };
+}
+
+<style>
+.library-readiness-panel {
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    padding: 20px;
+    margin-bottom: 24px;
+}
+
+.readiness-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.readiness-header.status-ready {
+    background-color: #f0fdf4;
+    border-left: 4px solid #22c55e;
+}
+
+.readiness-header.status-empty {
+    background-color: #f3f4f6;
+    border-left: 4px solid #6b7280;
+}
+
+.readiness-header.status-blocked {
+    background-color: #fef2f2;
+    border-left: 4px solid #ef4444;
+}
+
+.readiness-header.status-warning {
+    background-color: #fffbeb;
+    border-left: 4px solid #f59e0b;
+}
+
+.readiness-header.status-fail {
+    background-color: #fef2f2;
+    border-left: 4px solid #dc2626;
+}
+
+.readiness-header.status-unavailable {
+    background-color: #f5f3ff;
+    border-left: 4px solid #8b5cf6;
+}
+
+.readiness-status-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.status-icon {
+    font-size: 20px;
+}
+
+.readiness-message {
+    flex: 1;
+}
+
+.readiness-message p {
+    margin: 0;
+    color: #374151;
+    font-size: 14px;
+}
+
+.missing-inputs-section {
+    background-color: #fef2f2;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 16px;
+}
+
+.section-title {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #991b1b;
+    text-transform: uppercase;
+}
+
+.missing-inputs-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.missing-input-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 14px;
+    color: #7f1d1d;
+}
+
+.summary-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.stat-item {
+    background-color: #f9fafb;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+.stat-item.warning {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+.stat-item.empty {
+    background-color: #f3f4f6;
+    color: #4b5563;
+}
+
+.stat-label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.stat-value {
+    display: block;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.action-button {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    background-color: #ffffff;
+    color: #374151;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.action-button:hover:not(.is-disabled) {
+    background-color: #f3f4f6;
+    border-color: #9ca3af;
+}
+
+.action-button.is-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+</style>

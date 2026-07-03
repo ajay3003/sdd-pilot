@@ -9,7 +9,7 @@ namespace BirkNext.Api.Controllers;
 /// Each page receives a consistent QualityReviewPageModel with readiness status and pack prerequisites.
 /// </summary>
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/quality-review-page-model")]
 public class QualityReviewPageModelController : ControllerBase
 {
     private readonly IQualityReviewPageModelService _modelService;

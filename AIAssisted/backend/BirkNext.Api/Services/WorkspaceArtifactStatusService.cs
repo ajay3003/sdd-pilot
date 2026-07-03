@@ -21,9 +21,29 @@ public interface IWorkspaceArtifactStatusService
     Task<bool> HasArtifactAsync(Guid workspaceId, string artifactType);
 
     /// <summary>
+    /// Check if a specific artifact type is loaded in the current workspace.
+    /// </summary>
+    Task<bool> HasArtifactAsync(WorkspaceArtifactKind artifactKind);
+
+    /// <summary>
+    /// Get a specific artifact from the current workspace.
+    /// </summary>
+    Task<SavedWorkspaceArtifact?> GetArtifactAsync(WorkspaceArtifactKind artifactKind);
+
+    /// <summary>
     /// Get count of loaded artifacts.
     /// </summary>
     Task<int> GetLoadedArtifactCountAsync(Guid workspaceId);
+}
+
+public enum WorkspaceArtifactKind
+{
+    Constitution,
+    Specification,
+    Plan,
+    Tasks,
+    DataModel,
+    Research
 }
 
 /// <summary>
@@ -117,6 +137,35 @@ public class WorkspaceArtifactStatusService : IWorkspaceArtifactStatusService
         }
     }
 
+    public async Task<bool> HasArtifactAsync(WorkspaceArtifactKind artifactKind)
+    {
+        var artifact = await GetArtifactAsync(artifactKind);
+        return artifact is not null;
+    }
+
+    public async Task<SavedWorkspaceArtifact?> GetArtifactAsync(WorkspaceArtifactKind artifactKind)
+    {
+        try
+        {
+            if (!Enum.TryParse<ArtifactType>(artifactKind.ToString(), out var artifactType))
+                return null;
+
+            var workspaceId = await GetCurrentWorkspaceIdAsync();
+            if (workspaceId == Guid.Empty)
+                return null;
+
+            return await _db.SavedWorkspaceArtifacts
+                .Where(a => a.WorkspaceId == workspaceId && a.ArtifactType == artifactType)
+                .OrderByDescending(a => a.UpdatedAt)
+                .FirstOrDefaultAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting artifact {ArtifactKind} from current workspace", artifactKind);
+            return null;
+        }
+    }
+
     public async Task<int> GetLoadedArtifactCountAsync(Guid workspaceId)
     {
         try
@@ -132,5 +181,15 @@ public class WorkspaceArtifactStatusService : IWorkspaceArtifactStatusService
             _logger.LogError(ex, "Error counting artifacts in workspace {WorkspaceId}", workspaceId);
             return 0;
         }
+    }
+
+    private async Task<Guid> GetCurrentWorkspaceIdAsync()
+    {
+        var workspace = await _db.SavedWorkspaces
+            .Where(w => !w.IsDeleted)
+            .OrderByDescending(w => w.UpdatedAt)
+            .FirstOrDefaultAsync();
+
+        return workspace?.Id ?? Guid.Empty;
     }
 }

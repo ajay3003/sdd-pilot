@@ -1,820 +1,417 @@
 @page "/sample-projects"
-@using System.Runtime.CompilerServices
-@using BirkNext.Web.Models
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models.Library
 @using BirkNext.Web.Services
-@using Microsoft.JSInterop
-@inject SampleProjectsApiService ProjectsApi
-@inject ProjectDocumentApiService DocumentApi
+
+@inject ILibraryPageModelService LibraryPageModelService
 @inject IWorkspaceSessionService Workspace
-@inject IWorkspaceArtifactStatusService ArtifactStatus
-@inject IWorkspaceAutoSaveService AutoSave
-@inject IWorkspaceUpdateCoordinator Updates
-@inject QualityReviewSessionService QualitySession
-@inject IDashboardSnapshotService DashboardSnapshot
-@inject ITargetEnvironmentHintExtractor TargetHintExtractor
-@inject IFrontendAnalysisSettingsService FrontendSettings
-@inject IIntegrationTargetRegistryService IntegrationRegistry
-@inject ILogger<SampleProjects> Logger
-@inject IJSRuntime JS
 
-<div class="sp-page">
-    <div class="sp-page-header">
-        <h1 class="sp-page-title">Sample Projects</h1>
-        <p class="sp-page-desc">Browse M2LB project folders and load supported artifacts into BirkNext reviewers. Supported artifacts are ready to open; context-only files require no dedicated reviewer.</p>
-    </div>
+<PageTitle>Sample Projects</PageTitle>
 
-    @if (!string.IsNullOrWhiteSpace(Workspace.CurrentProject))
+<div class="sample-projects-page">
+    <PageHeader Title="Sample Projects"
+                Description="Load pre-built sample projects to explore BirkNext features and learn best practices." />
+
+    <!-- ── Readiness Panel ────────────────────────────────────────── -->
+    @if (PageModel is not null)
     {
-        <div class="sp-workspace-banner" role="status">
-            Current Workspace: <strong>@Workspace.CurrentProject</strong> · @LoadedWorkspaceArtifactCount artifact@(LoadedWorkspaceArtifactCount == 1 ? "" : "s") loaded
-        </div>
+        <LibraryReadinessPanel Model="PageModel" />
+    }
+    else if (IsLoading)
+    {
+        <div class="loading-state" role="status">Loading sample projects...</div>
+    }
+    else if (LoadError is not null)
+    {
+        <div class="notification notification-error" role="alert">@LoadError</div>
     }
 
-    @if (_loading)
+    <!-- ── Project Cards Grid ─────────────────────────────────────── -->
+    @if (PageModel?.Items.Count > 0)
     {
-        <div class="sp-loading">
-            <div class="sp-spinner" aria-label="Loading…"></div>
-            <span>Discovering sample projects…</span>
-        </div>
-    }
-    else if (_projects.Count == 0)
-    {
-        <div class="sp-empty">
-            <div class="sp-empty-icon" aria-hidden="true">📂</div>
-            <div class="sp-empty-title">No sample projects found</div>
-            <p class="sp-empty-hint">
-                @if (_meta?.Source == "config")
-                {
-                    <span>The configured path was not found. Check <code>SampleProjects:BaseDirectory</code> in <code>appsettings.Local.json</code>.</span>
-                }
-                else
-                {
-                    <span>No SampleData folder found. Expected location: <code>&lt;repo-root&gt;/SampleData</code>.</span>
-                    <br/>
-                    <span>To override, set <code>SampleProjects:BaseDirectory</code> in <code>appsettings.Local.json</code>.</span>
-                }
-            </p>
-        </div>
-    }
-    else
-    {
-        @if (_meta is not null)
-        {
-            <div class="sp-meta-bar">
-                <span class="sp-meta-label">@(_meta.Source == "config" ? "Configured" : "Auto-discovered")</span>
-                <code class="sp-meta-path">@_meta.ResolvedPath</code>
-            </div>
-        }
-        <div class="sp-project-list">
-            @foreach (var project in _projects)
+        <div class="projects-grid">
+            @foreach (var project in PageModel.Items)
             {
-                var supported = project.Files.Where(f => f.IsSupported && f.Exists).ToList();
-                var missing   = project.Files.Where(f => f.IsSupported && !f.Exists).ToList();
-                var context   = project.Files.Where(f => f.IsContextOnly).ToList();
-
-                var loadState = GetLoadResult(project);
-                var readmeOpen = _readmeOpen.Contains(project.Slug);
-                var allOpen    = _allFilesOpen.Contains(project.Slug);
-
-                <div class="sp-card">
-                    @* ── Card header ──────────────────────────────────────── *@
-                    <div class="sp-card-header">
-                        <div class="sp-card-title-row">
-                            <span class="sp-card-icon" aria-hidden="true">📁</span>
-                            <span class="sp-card-name">@project.Name</span>
-                            @if (!string.IsNullOrEmpty(project.Domain))
-                            {
-                                <span class="sp-domain-tag">@project.Domain</span>
-                            }
-                        </div>
-                        @if (!string.IsNullOrEmpty(project.Description))
-                        {
-                            <p class="sp-card-desc">@project.Description</p>
-                        }
+                <div class="project-card">
+                    <div class="project-card-header">
+                        <h2 class="project-name">@project.Name</h2>
+                        <span class="project-source-badge">@project.Source</span>
                     </div>
 
-                    @* ── Supported artifacts ──────────────────────────────── *@
-                    @if (supported.Count > 0)
-                    {
-                        <div class="sp-section">
-                            <div class="sp-section-label sp-section-supported">
-                                Supported Artifacts (@supported.Count)
-                            </div>
-                            @foreach (var f in supported)
+                    <p class="project-description">@project.Description</p>
+
+                    <!-- Included Artifacts -->
+                    <div class="project-artifacts">
+                        <h3 class="artifacts-title">Included Artifacts</h3>
+                        <div class="artifact-badges">
+                            @if (!string.IsNullOrEmpty(project.ArtifactKind))
                             {
-                                <div class="sp-file-row">
-                                    <span class="sp-file-status sp-status-ok" aria-label="Available">✓</span>
-                                    <span class="sp-file-name">@f.Filename</span>
-                                    <span class="sp-file-arrow" aria-hidden="true">→</span>
-                                    <a class="sp-reviewer-link" href="@f.ReviewerRoute">@f.ReviewerName</a>
-                                </div>
+                                <span class="artifact-badge">
+                                    @GetArtifactEmoji(project.ArtifactKind) @project.ArtifactKind
+                                </span>
+                            }
+                            else
+                            {
+                                <!-- Show multiple artifacts for sample projects -->
+                                <span class="artifact-badge">📋 Specification</span>
+                                <span class="artifact-badge">📐 Plan</span>
+                                <span class="artifact-badge">✅ Tasks</span>
                             }
                         </div>
-                    }
+                    </div>
 
-                    @* ── Context-only files ───────────────────────────────── *@
-                    @if (context.Count > 0)
-                    {
-                        <div class="sp-section">
-                            <div class="sp-section-label sp-section-context">
-                                Context-Only (@context.Count)
-                            </div>
-                            @foreach (var f in context)
+                    <!-- What You'll Learn -->
+                    <div class="project-highlights">
+                        <h3 class="highlights-title">What You'll Learn</h3>
+                        <ul class="highlights-list">
+                            @foreach (var highlight in GetProjectHighlights(project.Name))
                             {
-                                <div class="sp-file-row sp-file-row-context">
-                                    <span class="sp-file-status sp-status-ctx" aria-label="Context only">📄</span>
-                                    <span class="sp-file-name">@f.Filename</span>
-                                    <span class="sp-file-context-note">Available as context. No dedicated explorer yet.</span>
-                                </div>
+                                <li>@highlight</li>
                             }
-                        </div>
-                    }
+                        </ul>
+                    </div>
 
-                    @* ── Missing expected ─────────────────────────────────── *@
-                    @if (missing.Count > 0)
+                    <!-- Project Stats -->
+                    @if (project.LastUpdated.HasValue)
                     {
-                        <div class="sp-section">
-                            <div class="sp-section-label sp-section-missing">
-                                Missing Expected (@missing.Count)
-                            </div>
-                            @foreach (var f in missing)
-                            {
-                                <div class="sp-file-row sp-file-row-missing">
-                                    <span class="sp-file-status sp-status-miss" aria-label="Missing">⚠</span>
-                                    <span class="sp-file-name">@f.Filename</span>
-                                    <span class="sp-file-arrow" aria-hidden="true">→</span>
-                                    <span class="sp-reviewer-name">@f.ReviewerName</span>
-                                    <span class="sp-file-missing-note">(not found)</span>
-                                </div>
-                            }
-                        </div>
-                    }
-
-                    @* ── Recommended pages ────────────────────────────────── *@
-                    @if (supported.Count > 0)
-                    {
-                        <div class="sp-section sp-section-rec">
-                            <div class="sp-section-label">Recommended Pages</div>
-                            <div class="sp-rec-links">
-                                @foreach (var f in supported)
-                                {
-                                    <a class="sp-rec-chip" href="@f.ReviewerRoute">@f.ReviewerName</a>
-                                }
-                                <a class="sp-rec-chip" href="quality-review">Quality Review</a>
+                        <div class="project-stats">
+                            <div class="stat">
+                                <span class="stat-label">Last Updated</span>
+                                <span class="stat-value">@project.LastUpdated.Value.ToString("MMM d, yyyy")</span>
                             </div>
                         </div>
                     }
 
-                    @* ── Load result ──────────────────────────────────────── *@
-                    @if (loadState is not null)
-                    {
-                        <div class="sp-load-result @(loadState.HasError ? "is-error" : "is-ok")">
-                            @loadState.Message
-                        </div>
-                        @if (!loadState.HasError)
+                    <!-- Actions -->
+                    <div class="project-actions">
+                        @foreach (var action in project.Actions)
                         {
-                            <div class="sp-confirm-panel" role="status" aria-label="Loaded workspace confirmation">
-                                <div class="sp-confirm-title">Loaded workspace: @loadState.ProjectName</div>
-                                <div class="sp-confirm-grid">
-                                    <div class="sp-confirm-column">
-                                        <div class="sp-confirm-label">Loaded artifacts</div>
-                                        @foreach (var file in loadState.LoadedArtifacts)
-                                        {
-                                            <div class="sp-confirm-row"><span class="sp-confirm-ok" aria-hidden="true">✓</span><span>@file</span></div>
-                                        }
-                                    </div>
-                                    <div class="sp-confirm-column">
-                                        <div class="sp-confirm-label">Context-only files</div>
-                                        @if (loadState.ContextOnlyFiles.Count == 0)
-                                        {
-                                            <div class="sp-confirm-muted">None</div>
-                                        }
-                                        else
-                                        {
-                                            @foreach (var file in loadState.ContextOnlyFiles)
-                                            {
-                                                <div class="sp-confirm-row"><span class="sp-confirm-context" aria-hidden="true">○</span><span>@file</span></div>
-                                            }
-                                        }
-                                    </div>
-                                </div>
-                                <div class="sp-confirm-actions" aria-label="Next actions">
-                                    @foreach (var action in NextActions)
-                                    {
-                                        <a class="sp-confirm-link" href="@action.Href">@action.Label</a>
-                                    }
-                                </div>
-                            </div>
-                        }
-                        @if (_hintState.TryGetValue(project.Slug, out var hints) && !_ignoredHints.Contains(project.Slug))
-                        {
-                            <div class="sp-hints-panel" aria-label="Detected Target Environment Hints">
-                                <div class="sp-hints-header">
-                                    <div>
-                                        <div class="sp-hints-title">Detected Target Environment Hints</div>
-                                        <p class="sp-hints-note">Review and edit deterministic detections before applying them to the active Target Environment.</p>
-                                    </div>
-                                    <button class="sp-btn sp-btn-secondary" @onclick="() => IgnoreHints(project.Slug)">Ignore</button>
-                                </div>
-
-                                @if (!hints.HasAny)
-                                {
-                                    <div class="sp-hints-empty">No runtime target hints were found in the loaded sample artifacts.</div>
-                                }
-                                else
-                                {
-                                    <div class="sp-hints-grid">
-                                        <label class="sp-hint-field">
-                                            <span>Environment</span>
-                                            <select value="@(hints.EnvironmentType?.ToString() ?? "")" @onchange="e => SetEnvironmentHint(hints, e)">
-                                                <option value="">Not detected</option>
-                                                @foreach (var env in Enum.GetValues<FrontendEnvironmentType>())
-                                                {
-                                                    <option value="@env">@env</option>
-                                                }
-                                            </select>
-                                        </label>
-                                        <label class="sp-hint-field">
-                                            <span>Frontend URL</span>
-                                            <input value="@hints.FrontendUrl" @oninput="e => hints.FrontendUrl = e.Value?.ToString()" />
-                                        </label>
-                                        <label class="sp-hint-field">
-                                            <span>REST Base URL</span>
-                                            <input value="@hints.RestBaseUrl" @oninput="e => hints.RestBaseUrl = e.Value?.ToString()" />
-                                        </label>
-                                        <label class="sp-hint-field">
-                                            <span>Health Endpoint</span>
-                                            <input value="@hints.HealthEndpoint" @oninput="e => hints.HealthEndpoint = e.Value?.ToString()" />
-                                        </label>
-                                        <label class="sp-hint-field">
-                                            <span>Swagger / OpenAPI URL</span>
-                                            <input value="@hints.SwaggerUrl" @oninput="e => hints.SwaggerUrl = e.Value?.ToString()" />
-                                        </label>
-                                        <label class="sp-hint-field">
-                                            <span>GraphQL Endpoint</span>
-                                            <input value="@hints.GraphQlEndpoint" @oninput="e => hints.GraphQlEndpoint = e.Value?.ToString()" />
-                                        </label>
-                                        <label class="sp-hint-field">
-                                            <span>API Authentication</span>
-                                            <select @bind="hints.AuthType">
-                                                @foreach (var auth in Enum.GetValues<TargetApiAuthType>())
-                                                {
-                                                    <option value="@auth">@auth</option>
-                                                }
-                                            </select>
-                                        </label>
-                                    </div>
-
-                                    @if (hints.Integrations.Count > 0)
-                                    {
-                                        <div class="sp-integration-hints">
-                                            <div class="sp-hints-subtitle">Integration registry entries</div>
-                                            @foreach (var integration in hints.Integrations)
-                                            {
-                                                <div class="sp-integration-card" @key="integration.Id">
-                                                    <div class="sp-integration-row">
-                                                        <label class="sp-hint-field">
-                                                            <span>Name</span>
-                                                            <input @bind="integration.Name" />
-                                                        </label>
-                                                        <label class="sp-hint-field">
-                                                            <span>Provider</span>
-                                                            <select @bind="integration.ProviderType">
-                                                                @foreach (var provider in IntegrationProviders)
-                                                                {
-                                                                    <option value="@provider">@provider</option>
-                                                                }
-                                                            </select>
-                                                        </label>
-                                                        <label class="sp-hint-field">
-                                                            <span>Endpoint</span>
-                                                            <input @bind="integration.Endpoint" />
-                                                        </label>
-                                                        <label class="sp-hint-field">
-                                                            <span>Namespace</span>
-                                                            <input @bind="integration.Namespace" />
-                                                        </label>
-                                                        <label class="sp-hint-field">
-                                                            <span>Topic</span>
-                                                            <input @bind="integration.Topic" />
-                                                        </label>
-                                                        <label class="sp-hint-field">
-                                                            <span>Queue</span>
-                                                            <input @bind="integration.Queue" />
-                                                        </label>
-                                                        <label class="sp-hint-field">
-                                                            <span>Consumer Group</span>
-                                                            <input @bind="integration.ConsumerGroup" />
-                                                        </label>
-                                                        <label class="sp-hint-field">
-                                                            <span>Subscription</span>
-                                                            <input @bind="integration.Subscription" />
-                                                        </label>
-                                                    </div>
-                                                </div>
-                                            }
-                                        </div>
-                                    }
-
-                                    @if (hints.Evidence.Count > 0)
-                                    {
-                                        <div class="sp-hint-evidence">
-                                            <span>Evidence</span>
-                                            @foreach (var evidence in hints.Evidence)
-                                            {
-                                                <code>@evidence</code>
-                                            }
-                                        </div>
-                                    }
-
-                                    <div class="sp-hints-actions">
-                                        <button class="sp-btn sp-btn-primary" @onclick="() => ApplyHintsAsync(hints)">Apply to active Target Environment</button>
-                                        <a class="sp-btn sp-btn-secondary" href="admin/system-settings">Review Target Environments</a>
-                                    </div>
-                                }
-
-                                @if (_hintApplyMessages.TryGetValue(project.Slug, out var applyMessage))
-                                {
-                                    <div class="sp-hints-message" role="status">@applyMessage</div>
-                                }
-                            </div>
-                        }
-                    }
-
-                    @* ── README viewer ────────────────────────────────────── *@
-                    @if (readmeOpen && _readmeContent.TryGetValue(project.Slug, out var readme))
-                    {
-                        <div class="sp-readme-box">
-                            <div class="sp-readme-header">
-                                <span>README.md</span>
-                                <button class="sp-readme-close" @onclick="() => CloseReadme(project.Slug)">×</button>
-                            </div>
-                            <pre class="sp-readme-content">@readme</pre>
-                        </div>
-                    }
-
-                    @* ── All files viewer ─────────────────────────────────── *@
-                    @if (allOpen)
-                    {
-                        var allFiles = project.Files.OrderBy(f => f.Filename).ToList();
-                        <div class="sp-all-files-box">
-                            <div class="sp-all-files-header">
-                                <span>All Files</span>
-                                <button class="sp-readme-close" @onclick="() => CloseAllFiles(project.Slug)">×</button>
-                            </div>
-                            @foreach (var f in allFiles)
-                            {
-                                <div class="sp-all-file-row">
-                                    <span class="sp-file-name">@f.Filename</span>
-                                    @if (f.IsSupported && f.Exists)
-                                    {
-                                        <span class="sp-file-type-badge sp-badge-supported">Supported → @f.ReviewerName</span>
-                                    }
-                                    else if (f.IsContextOnly)
-                                    {
-                                        <span class="sp-file-type-badge sp-badge-context">Context-only</span>
-                                    }
-                                    else if (f.IsSupported && !f.Exists)
-                                    {
-                                        <span class="sp-file-type-badge sp-badge-missing">Missing</span>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    }
-
-                    @* ── Card actions ─────────────────────────────────────── *@
-                    <div class="sp-card-actions">
-                        <button class="sp-btn sp-btn-primary"
-                                disabled="@(supported.Count == 0 || _loadingSlug == project.Slug)"
-                                @onclick="() => LoadArtifacts(project)">
-                            @if (_loadingSlug == project.Slug)
-                            { <span class="sp-btn-spinner" aria-hidden="true"></span> }
-                            Load Supported Artifacts
-                        </button>
-                        <button class="sp-btn sp-btn-secondary" @onclick="() => ToggleAllFiles(project.Slug)">
-                            @(allOpen ? "Hide Files" : "View All Files")
-                        </button>
-                        @if (project.HasReadme)
-                        {
-                            <button class="sp-btn sp-btn-secondary" @onclick="() => ToggleReadme(project)">
-                                @(readmeOpen ? "Close README" : "README")
+                            <button class="action-btn primary @(action.Enabled ? "" : "is-disabled")"
+                                    disabled="@(!action.Enabled)"
+                                    title="@(action.Reason ?? action.ExpectedEffect ?? action.Name)">
+                                ⬇️ @action.Name
                             </button>
                         }
-                        <button class="sp-btn sp-btn-icon" title="Copy folder path"
-                                @onclick="() => CopyPath(project.AbsolutePath)">
-                            📋
+                        <button class="action-btn secondary">
+                            👁️ Preview
                         </button>
                     </div>
                 </div>
             }
         </div>
     }
+    else
+    {
+        <div class="empty-state-container">
+            <div class="empty-state-icon">📦</div>
+            <h2 class="empty-state-title">No sample projects available</h2>
+            <p class="empty-state-description">Sample projects will be available soon.</p>
+        </div>
+    }
 </div>
 
 @code {
-    private List<SampleProjectDto> _projects = [];
-    private SampleProjectsMetaDto? _meta;
-    private bool _loading = true;
-    private string? _loadingSlug;
-    private Dictionary<string, LoadResult> _loadState = [];
-    private Dictionary<string, DetectedTargetEnvironmentHints> _hintState = [];
-    private Dictionary<string, string> _hintApplyMessages = [];
-    private HashSet<string> _ignoredHints = [];
-    private HashSet<string> _readmeOpen = [];
-    private HashSet<string> _allFilesOpen = [];
-    private Dictionary<string, string> _readmeContent = [];
-
-    private static readonly IReadOnlyList<string> IntegrationProviders =
-    [
-        "REST",
-        "GraphQL",
-        "Event Hub",
-        "Service Bus",
-        "Kafka",
-        "RabbitMQ"
-    ];
-
-    private int LoadedWorkspaceArtifactCount =>
-        ArtifactStatus.GetStatus().ArtifactCount;
-
-    private LoadResult? GetLoadResult(SampleProjectDto project)
-    {
-        if (_loadState.TryGetValue(project.Slug, out var localState) && localState.HasError)
-            return localState;
-
-        if (!IsCurrentWorkspace(project) || LoadedWorkspaceArtifactCount == 0)
-            return null;
-
-        var loadedArtifacts = GetWorkspaceLoadedArtifactNames().ToList();
-        var contextOnly = project.Files
-            .Where(f => f.IsContextOnly && f.Exists)
-            .Select(f => f.Filename)
-            .ToList();
-
-        var message = $"Loaded {loadedArtifacts.Count} artifact{(loadedArtifacts.Count == 1 ? "" : "s")}.";
-        return new LoadResult(project.Name, message, false, loadedArtifacts, contextOnly);
-    }
-
-    private bool IsCurrentWorkspace(SampleProjectDto project) =>
-        string.Equals(Workspace.CurrentProject, project.Name, StringComparison.Ordinal);
-
-    private IEnumerable<string> GetWorkspaceLoadedArtifactNames()
-    {
-        foreach (var kind in new[]
-        {
-            WorkspaceArtifactKind.Constitution,
-            WorkspaceArtifactKind.Specification,
-            WorkspaceArtifactKind.DataModel,
-            WorkspaceArtifactKind.Plan,
-            WorkspaceArtifactKind.Tasks
-        })
-        {
-            if (Workspace.Get(kind) is { } artifact)
-                yield return artifact.FileName ?? DefaultArtifactFileName(kind);
-        }
-    }
-
-    private static string DefaultArtifactFileName(WorkspaceArtifactKind kind) => kind switch
-    {
-        WorkspaceArtifactKind.Constitution => "constitution.md",
-        WorkspaceArtifactKind.Specification => "spec.md",
-        WorkspaceArtifactKind.DataModel => "data-model.md",
-        WorkspaceArtifactKind.Plan => "plan.md",
-        WorkspaceArtifactKind.Tasks => "tasks.md",
-        _ => kind.ToString()
-    };
-
-    private static readonly IReadOnlyList<NextActionLink> NextActions =
-    [
-        new("Open Specification Review", "extract"),
-        new("Open Data Model Explorer", "data-model-explorer"),
-        new("Open Plan Explorer", "plan-explorer"),
-        new("Open Task Explorer", "task-explorer"),
-        new("Open Quality Review", "quality-review"),
-        new("Open Dashboard", "dashboard"),
-    ];
+    private LibraryPageModel? PageModel;
+    private bool IsLoading = true;
+    private string? LoadError;
 
     protected override async Task OnInitializedAsync()
     {
+        // Subscribe to workspace changes
+        Workspace.ReviewContextRebuildNeeded += (s, e) => _ = RefreshPageModel();
+
+        // Load initial model
+        await RefreshPageModel();
+    }
+
+    private async Task RefreshPageModel()
+    {
         try
         {
-            var projectsTask = ProjectsApi.GetProjectsAsync();
-            var metaTask     = ProjectsApi.GetMetaAsync();
-            await Task.WhenAll(projectsTask, metaTask);
-            _projects = projectsTask.Result ?? new();
-            _meta     = metaTask.Result;
-            _loading  = false;
+            IsLoading = true;
+            LoadError = null;
+            PageModel = await LibraryPageModelService.GetSampleProjectsModelAsync();
+
+            if (PageModel is null)
+            {
+                LoadError = "Failed to load sample projects";
+            }
         }
         catch (Exception ex)
         {
-            _loading = false;
-            _projects = new();
-            System.Diagnostics.Debug.WriteLine($"Error loading projects: {ex.Message}");
-        }
-    }
-
-    private static readonly IReadOnlyDictionary<string, WorkspaceArtifactKind> _artifactKindMap =
-        new Dictionary<string, WorkspaceArtifactKind>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["constitution"] = WorkspaceArtifactKind.Constitution,
-            ["spec"]         = WorkspaceArtifactKind.Specification,
-            ["plan"]         = WorkspaceArtifactKind.Plan,
-            ["tasks"]        = WorkspaceArtifactKind.Tasks,
-            ["datamodel"]    = WorkspaceArtifactKind.DataModel,
-        };
-
-    private async Task LoadArtifacts(SampleProjectDto project)
-    {
-        System.Diagnostics.Debug.WriteLine("======== DIAG: [LoadArtifacts] START ========");
-        var confirmed = await JS.InvokeAsync<bool>("confirm",
-            $"Load supported artifacts from \"{project.Name}\"?\n\nThis will overwrite any currently loaded documents for these artifact types.");
-        if (!confirmed) return;
-
-        _loadingSlug = project.Slug;
-        _loadState.Remove(project.Slug);
-        _hintState.Remove(project.Slug);
-        _hintApplyMessages.Remove(project.Slug);
-        _ignoredHints.Remove(project.Slug);
-        StateHasChanged();
-
-        var supported = project.Files.Where(f => f.IsSupported && f.Exists).ToList();
-        var loaded = 0;
-        var skipped = new List<string>();
-
-        QualitySession.Clear();
-        DashboardSnapshot.ClearQualityReview();
-        Workspace.CurrentProject = project.Name;
-
-        System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] Before BeginUpdate");
-        Updates.BeginUpdate();
-        try
-        {
-            foreach (var file in supported)
-            {
-                var content = await ProjectsApi.GetFileAsync(project.Slug, file.Filename);
-                if (content is null)
-                {
-                    skipped.Add(file.Filename);
-                    continue;
-                }
-                // Normalize to match what SpecificationImport produces on file upload.
-                content = NormalizeArtifactText(content);
-                await DocumentApi.SaveAsync(file.ArtifactKind!, content);
-                if (file.ArtifactKind is not null && _artifactKindMap.TryGetValue(file.ArtifactKind, out var kind))
-                    Workspace.Set(kind, content, fileName: file.Filename, sourcePath: project.AbsolutePath);
-                loaded++;
-            }
-
-            // Log repository state after all Set calls
-            var repoHash = RuntimeHelpers.GetHashCode(Workspace);
-            var allArtifacts = Workspace.GetAllArtifacts().ToList();
-            var artifactCount = allArtifacts.Count;
-            var artifactKinds = string.Join(",", allArtifacts.Select(a => a.Type.ToString()));
-
-            Logger.LogInformation("TRACE: [SampleProjects.LoadArtifacts]");
-            Logger.LogInformation("  RepositoryType={Type}", Workspace.GetType().Name);
-            Logger.LogInformation("  Hash={Hash}", repoHash);
-            Logger.LogInformation("  Count={Count}", artifactCount);
-            Logger.LogInformation("  Artifacts={Artifacts}", artifactKinds);
-
-            // Start auto-save monitoring before notifying mutations.
-            // This ensures monitoring is enabled when ArtifactsChanged event fires.
-            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] Before AutoSave.StartMonitoringAsync");
-            await AutoSave.StartMonitoringAsync();
-            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] After AutoSave.StartMonitoringAsync");
-
-            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] Before NotifyMutation");
-            Updates.NotifyMutation();
-            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] After NotifyMutation, before EndUpdate");
+            LoadError = $"Error loading projects: {ex.Message}";
         }
         finally
         {
-            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] Before EndUpdate");
-            Updates.EndUpdate();
-            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] After EndUpdate");
+            IsLoading = false;
         }
-
-        var loadedArtifacts = supported
-            .Where(f => !skipped.Contains(f.Filename))
-            .Select(f => f.Filename)
-            .ToList();
-        var contextOnly = project.Files
-            .Where(f => f.IsContextOnly && f.Exists)
-            .Select(f => f.Filename)
-            .ToList();
-        var missing = project.Files.Where(f => f.IsSupported && !f.Exists).Select(f => f.Filename).ToList();
-        var msg = $"✅ Loaded {loaded} artifact{(loaded != 1 ? "s" : "")}.";
-        var hasError = false;
-        if (skipped.Count > 0)
-        {
-            msg += $" ⚠ Failed to fetch: {string.Join(", ", skipped)}.";
-            hasError = true;
-        }
-        if (missing.Count > 0)
-        {
-            msg += $" Not found: {string.Join(", ", missing)}.";
-        }
-
-        _loadState[project.Slug] = new LoadResult(project.Name, msg, hasError, loadedArtifacts, contextOnly);
-        if (!hasError)
-            _hintState[project.Slug] = TargetHintExtractor.Extract(project, await FetchProjectTextsAsync(project));
-        _loadingSlug = null;
-        System.Diagnostics.Debug.WriteLine("======== DIAG: [LoadArtifacts] END ========");
     }
 
-    private async Task<List<SampleProjectArtifactText>> FetchProjectTextsAsync(SampleProjectDto project)
+    private string GetArtifactEmoji(string artifactKind) => artifactKind switch
     {
-        var result = new List<SampleProjectArtifactText>();
-        foreach (var file in project.Files.Where(f => f.Exists))
+        "Specification" => "📋",
+        "Plan" => "📐",
+        "Tasks" => "✅",
+        "Constitution" => "📜",
+        "DataModel" => "🗄️",
+        _ => "📦"
+    };
+
+    private List<string> GetProjectHighlights(string projectName) => projectName switch
+    {
+        "E-Commerce Platform" => new()
         {
-            var content = await ProjectsApi.GetFileAsync(project.Slug, file.Filename);
-            if (content is null) continue;
-            result.Add(new SampleProjectArtifactText
-            {
-                FileName = file.Filename,
-                Content = NormalizeArtifactText(content)
-            });
-        }
-
-        return result;
-    }
-
-    private async Task ApplyHintsAsync(DetectedTargetEnvironmentHints hints)
-    {
-        await FrontendSettings.LoadAsync(JS);
-        await IntegrationRegistry.LoadAsync(JS);
-
-        var profile = FrontendSettings.ActiveProfile ?? FrontendSettings.Settings.Profiles.FirstOrDefault();
-        if (profile is null)
+            "Full end-to-end specification design",
+            "Multi-phase delivery planning",
+            "Comprehensive test coverage",
+            "Risk mitigation strategies"
+        },
+        "Mobile App MVP" => new()
         {
-            profile = FrontendSettings.CreateProfile(hints.ProjectName, hints.EnvironmentType ?? FrontendEnvironmentType.Local);
-            FrontendSettings.SelectActiveProfile(profile.Id);
-        }
-
-        var frontendUrl = NormalizeAbsoluteUrl(hints.FrontendUrl);
-        var baseForRelative = FirstAbsolute(frontendUrl, profile.TargetUrl, hints.RestBaseUrl, profile.RestBaseUrl);
-        var restBaseUrl = ResolveEndpoint(hints.RestBaseUrl, baseForRelative);
-        var healthEndpoint = ResolveEndpoint(hints.HealthEndpoint, FirstAbsolute(restBaseUrl, baseForRelative));
-        var swaggerUrl = ResolveEndpoint(hints.SwaggerUrl, FirstAbsolute(restBaseUrl, baseForRelative));
-        var graphQlEndpoint = ResolveEndpoint(hints.GraphQlEndpoint, FirstAbsolute(restBaseUrl, baseForRelative));
-
-        var conflicts = new List<string>();
-        AddConflict(conflicts, "Frontend URL", profile.TargetUrl, frontendUrl);
-        AddConflict(conflicts, "REST Base URL", profile.RestBaseUrl, restBaseUrl);
-        AddConflict(conflicts, "Health Endpoint", profile.HealthEndpoint, healthEndpoint);
-        AddConflict(conflicts, "Swagger / OpenAPI URL", profile.SwaggerUrl, swaggerUrl);
-        AddConflict(conflicts, "GraphQL Endpoint", profile.GraphQlEndpoint, graphQlEndpoint);
-        if (hints.EnvironmentType is not null && profile.EnvironmentType != hints.EnvironmentType.Value)
-            conflicts.Add($"Environment: {profile.EnvironmentType} -> {hints.EnvironmentType.Value}");
-        if (hints.AuthType != TargetApiAuthType.None && profile.ApiAuth.AuthType != TargetApiAuthType.None && profile.ApiAuth.AuthType != hints.AuthType)
-            conflicts.Add($"API Authentication: {profile.ApiAuth.AuthType} -> {hints.AuthType}");
-
-        if (conflicts.Count > 0)
+            "Lean requirements definition",
+            "Core feature prioritization",
+            "Quick time-to-market planning",
+            "Iterative quality approach"
+        },
+        "Data Pipeline ETL" => new()
         {
-            var confirm = await JS.InvokeAsync<bool>("confirm",
-                "Apply detected Target Environment hints?\n\nThe following existing settings will be overwritten:\n\n" +
-                string.Join("\n", conflicts));
-            if (!confirm) return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(frontendUrl)) profile.TargetUrl = frontendUrl;
-        if (!string.IsNullOrWhiteSpace(restBaseUrl)) profile.RestBaseUrl = restBaseUrl;
-        if (!string.IsNullOrWhiteSpace(healthEndpoint)) profile.HealthEndpoint = healthEndpoint;
-        if (!string.IsNullOrWhiteSpace(swaggerUrl)) profile.SwaggerUrl = swaggerUrl;
-        if (!string.IsNullOrWhiteSpace(graphQlEndpoint))
+            "Technical architecture documentation",
+            "Data governance requirements",
+            "Compliance and auditing",
+            "Performance optimization"
+        },
+        _ => new()
         {
-            profile.GraphQlEndpoint = graphQlEndpoint;
-            if (!profile.AllowedGraphQlEndpoints.Contains(graphQlEndpoint, StringComparer.OrdinalIgnoreCase))
-                profile.AllowedGraphQlEndpoints.Add(graphQlEndpoint);
+            "Professional QA practices",
+            "Real-world scenario management",
+            "Traceability and coverage",
+            "Reusable artifact patterns"
         }
-        if (hints.EnvironmentType is not null) profile.EnvironmentType = hints.EnvironmentType.Value;
-        if (hints.AuthType != TargetApiAuthType.None) profile.ApiAuth.AuthType = hints.AuthType;
-
-        if (!string.IsNullOrWhiteSpace(restBaseUrl) &&
-            Uri.TryCreate(restBaseUrl, UriKind.Absolute, out var restUri) &&
-            !profile.AllowedRestHosts.Contains(restUri.Host, StringComparer.OrdinalIgnoreCase))
-            profile.AllowedRestHosts.Add(restUri.Host);
-
-        foreach (var integration in hints.Integrations)
-            integration.Endpoint = ResolveEndpoint(integration.Endpoint, FirstAbsolute(restBaseUrl, graphQlEndpoint, baseForRelative));
-
-        IntegrationRegistry.UpsertFromHints(hints.Integrations, hints.ProjectName);
-        FrontendSettings.UpdateProfile(profile);
-        await FrontendSettings.SaveAsync(JS);
-        await IntegrationRegistry.SaveAsync(JS);
-
-        _hintApplyMessages[hints.ProjectSlug] = $"Applied hints to Target Environment \"{profile.Name}\" and saved {hints.Integrations.Count} integration hint{(hints.Integrations.Count == 1 ? "" : "s")}.";
-    }
-
-    private static void AddConflict(List<string> conflicts, string label, string? currentValue, string? nextValue)
-    {
-        if (string.IsNullOrWhiteSpace(nextValue) ||
-            string.IsNullOrWhiteSpace(currentValue) ||
-            string.Equals(currentValue.Trim(), nextValue.Trim(), StringComparison.OrdinalIgnoreCase))
-            return;
-
-        conflicts.Add($"{label}: {currentValue} -> {nextValue}");
-    }
-
-    private static string? FirstAbsolute(params string?[] candidates) =>
-        candidates.FirstOrDefault(value =>
-            !string.IsNullOrWhiteSpace(value) &&
-            Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
-            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps));
-
-    private static string? NormalizeAbsoluteUrl(string? value)
-    {
-        value = value?.Trim();
-        return Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
-               (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
-            ? uri.ToString()
-            : null;
-    }
-
-    private static string? ResolveEndpoint(string? value, string? baseUrl)
-    {
-        value = value?.Trim();
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        if (Uri.TryCreate(value, UriKind.Absolute, out var absolute) &&
-            (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
-            return absolute.ToString();
-
-        if (value.StartsWith('/') &&
-            Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri) &&
-            (baseUri.Scheme == Uri.UriSchemeHttp || baseUri.Scheme == Uri.UriSchemeHttps))
-        {
-            var origin = new Uri($"{baseUri.Scheme}://{baseUri.Authority}");
-            return new Uri(origin, value).ToString();
-        }
-
-        return value;
-    }
-
-    private static void SetEnvironmentHint(DetectedTargetEnvironmentHints hints, ChangeEventArgs e)
-    {
-        var value = e.Value?.ToString();
-        hints.EnvironmentType = Enum.TryParse<FrontendEnvironmentType>(value, out var parsed) ? parsed : null;
-    }
-
-    private void IgnoreHints(string slug)
-    {
-        _ignoredHints.Add(slug);
-        _hintApplyMessages.Remove(slug);
-    }
-
-    private async Task ToggleReadme(SampleProjectDto project)
-    {
-        if (_readmeOpen.Contains(project.Slug))
-        {
-            CloseReadme(project.Slug);
-            return;
-        }
-
-        if (!_readmeContent.ContainsKey(project.Slug))
-        {
-            var content = await ProjectsApi.GetFileAsync(project.Slug, "README.md");
-            _readmeContent[project.Slug] = content ?? "(README could not be loaded)";
-        }
-        _readmeOpen.Add(project.Slug);
-    }
-
-    private void CloseReadme(string slug) => _readmeOpen.Remove(slug);
-
-    private void ToggleAllFiles(string slug)
-    {
-        if (!_allFilesOpen.Remove(slug))
-            _allFilesOpen.Add(slug);
-    }
-
-    private void CloseAllFiles(string slug) => _allFilesOpen.Remove(slug);
-
-    private async Task CopyPath(string path)
-    {
-        try
-        {
-            await JS.InvokeVoidAsync("navigator.clipboard.writeText", path);
-        }
-        catch
-        {
-            // Clipboard API not available — silently ignore
-        }
-    }
-
-    private sealed record LoadResult(
-        string ProjectName,
-        string Message,
-        bool HasError,
-        IReadOnlyList<string> LoadedArtifacts,
-        IReadOnlyList<string> ContextOnlyFiles);
-
-    private sealed record NextActionLink(string Label, string Href);
-
-    private static string NormalizeArtifactText(string text)
-    {
-        // Strip UTF-8 BOM if present.
-        if (text.StartsWith('﻿')) text = text[1..];
-        // Normalize Windows / old-Mac line endings to LF.
-        return text.Replace("\r\n", "\n").Replace('\r', '\n');
-    }
+    };
 }
+
+<style>
+.sample-projects-page {
+    padding: 0 20px;
+}
+
+.loading-state {
+    text-align: center;
+    color: #6b7280;
+    padding: 40px 20px;
+}
+
+.projects-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 24px;
+    margin: 32px 0;
+}
+
+.project-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: white;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.project-card:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+.project-card-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.project-name {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: white;
+}
+
+.project-source-badge {
+    background: rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.project-description {
+    padding: 16px 20px 0 20px;
+    margin: 0;
+    color: #6b7280;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.project-artifacts {
+    padding: 16px 20px;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.artifacts-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #9ca3af;
+    text-transform: uppercase;
+    margin: 0 0 8px 0;
+    letter-spacing: 0.5px;
+}
+
+.artifact-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.artifact-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #f0f9ff;
+    color: #0369a1;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.project-highlights {
+    padding: 16px 20px;
+    border-bottom: 1px solid #f3f4f6;
+    flex-grow: 1;
+}
+
+.highlights-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #9ca3af;
+    text-transform: uppercase;
+    margin: 0 0 8px 0;
+    letter-spacing: 0.5px;
+}
+
+.highlights-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.highlights-list li {
+    padding: 4px 0;
+    color: #374151;
+    font-size: 13px;
+}
+
+.highlights-list li:before {
+    content: "✓ ";
+    color: #10b981;
+    font-weight: 600;
+    margin-right: 6px;
+}
+
+.project-stats {
+    padding: 12px 20px;
+    background: #f9fafb;
+    display: flex;
+    gap: 16px;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 12px;
+}
+
+.stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.stat-label {
+    color: #9ca3af;
+    font-weight: 500;
+}
+
+.stat-value {
+    color: #374151;
+    font-weight: 600;
+}
+
+.project-actions {
+    padding: 16px 20px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.action-btn {
+    flex: 1;
+    min-width: 120px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s ease;
+}
+
+.action-btn.primary {
+    background: #3b82f6;
+    color: white;
+}
+
+.action-btn.primary:hover:not(.is-disabled) {
+    background: #2563eb;
+}
+
+.action-btn.secondary {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+
+.action-btn.secondary:hover {
+    background: #e5e7eb;
+}
+
+.action-btn.is-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.empty-state-container {
+    text-align: center;
+    padding: 80px 20px;
+}
+
+.empty-state-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.empty-state-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 8px;
+}
+
+.empty-state-description {
+    font-size: 16px;
+    color: #6b7280;
+}
+</style>

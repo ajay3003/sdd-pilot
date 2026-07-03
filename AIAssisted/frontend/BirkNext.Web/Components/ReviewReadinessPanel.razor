@@ -1,0 +1,284 @@
+@using BirkNext.Web.Models.Review
+
+<div class="review-readiness-panel">
+    <!-- ── Status Header ────────────────────────────────────────────────── -->
+    <div class="readiness-header @GetStatusClass(Model?.ReadinessStatus ?? ReviewStatus.Empty)">
+        <div class="readiness-status-badge">
+            <span class="status-icon">@GetStatusIcon(Model?.ReadinessStatus ?? ReviewStatus.Empty)</span>
+            <span class="status-label">@GetStatusLabel(Model?.ReadinessStatus ?? ReviewStatus.Empty)</span>
+        </div>
+        <div class="readiness-message">
+            @if (Model?.Summary is not null)
+            {
+                <p>@Model.Summary.StatusMessage</p>
+            }
+        </div>
+    </div>
+
+    <!-- ── Missing Inputs Section ─────────────────────────────────────── -->
+    @if (Model?.MissingInputs.Count > 0)
+    {
+        <div class="missing-inputs-section">
+            <h3 class="section-title">Required Inputs Missing</h3>
+            <ul class="missing-inputs-list">
+                @foreach (var missing in Model.MissingInputs)
+                {
+                    <li class="missing-input-item">
+                        <span class="icon">📋</span>
+                        <span class="text">@missing</span>
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+
+    <!-- ── Summary Stats ──────────────────────────────────────────────── -->
+    @if (Model?.Summary is not null)
+    {
+        <div class="summary-stats">
+            @if (Model.Summary.TotalResults > 0)
+            {
+                <div class="stat-item">
+                    <span class="stat-label">Results</span>
+                    <span class="stat-value">@Model.Summary.TotalResults</span>
+                </div>
+            }
+
+            @if (Model.Summary.CriticalCount > 0)
+            {
+                <div class="stat-item critical">
+                    <span class="stat-label">🔴 Critical: @Model.Summary.CriticalCount</span>
+                </div>
+            }
+
+            @if (Model.Summary.WarningCount > 0)
+            {
+                <div class="stat-item warning">
+                    <span class="stat-label">⚠️ Warnings: @Model.Summary.WarningCount</span>
+                </div>
+            }
+
+            @if (Model.Summary.InfoCount > 0)
+            {
+                <div class="stat-item info">
+                    <span class="stat-label">ℹ️ Info: @Model.Summary.InfoCount</span>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- ── Action Buttons ─────────────────────────────────────────────── -->
+    @if (Model?.Actions.Count > 0)
+    {
+        <div class="action-buttons">
+            @foreach (var action in Model.Actions)
+            {
+                <button type="button"
+                        class="action-button @(action.Enabled ? "" : "is-disabled")"
+                        disabled="@(!action.Enabled)"
+                        title="@(action.Reason ?? action.ExpectedEffect ?? action.Name)">
+                    @action.Name
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public ReviewPageModel? Model { get; set; }
+
+    private string GetStatusClass(ReviewStatus status) => status switch
+    {
+        ReviewStatus.Ready => "status-ready",
+        ReviewStatus.Empty => "status-empty",
+        ReviewStatus.Blocked => "status-blocked",
+        ReviewStatus.Warning => "status-warning",
+        ReviewStatus.Fail => "status-fail",
+        _ => "status-unknown"
+    };
+
+    private string GetStatusLabel(ReviewStatus status) => status switch
+    {
+        ReviewStatus.Ready => "Ready",
+        ReviewStatus.Empty => "Empty",
+        ReviewStatus.Blocked => "Blocked",
+        ReviewStatus.Warning => "Warning",
+        ReviewStatus.Fail => "Failed",
+        _ => "Unknown"
+    };
+
+    private string GetStatusIcon(ReviewStatus status) => status switch
+    {
+        ReviewStatus.Ready => "✓",
+        ReviewStatus.Empty => "∅",
+        ReviewStatus.Blocked => "🔒",
+        ReviewStatus.Warning => "⚠️",
+        ReviewStatus.Fail => "❌",
+        _ => "?"
+    };
+}
+
+<style>
+.review-readiness-panel {
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    padding: 20px;
+    margin-bottom: 24px;
+}
+
+.readiness-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+    padding: 12px;
+    border-radius: 6px;
+}
+
+.readiness-header.status-ready {
+    background-color: #f0fdf4;
+    border-left: 4px solid #22c55e;
+}
+
+.readiness-header.status-empty {
+    background-color: #f3f4f6;
+    border-left: 4px solid #6b7280;
+}
+
+.readiness-header.status-blocked {
+    background-color: #fef2f2;
+    border-left: 4px solid #ef4444;
+}
+
+.readiness-header.status-warning {
+    background-color: #fffbeb;
+    border-left: 4px solid #f59e0b;
+}
+
+.readiness-header.status-fail {
+    background-color: #fef2f2;
+    border-left: 4px solid #dc2626;
+}
+
+.readiness-status-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.status-icon {
+    font-size: 20px;
+}
+
+.readiness-message {
+    flex: 1;
+}
+
+.readiness-message p {
+    margin: 0;
+    color: #374151;
+    font-size: 14px;
+}
+
+.missing-inputs-section {
+    background-color: #fef2f2;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 16px;
+}
+
+.section-title {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #991b1b;
+    text-transform: uppercase;
+}
+
+.missing-inputs-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.missing-input-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 14px;
+    color: #7f1d1d;
+}
+
+.summary-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.stat-item {
+    background-color: #f9fafb;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+.stat-item.critical {
+    background-color: #fef2f2;
+    color: #991b1b;
+}
+
+.stat-item.warning {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+.stat-item.info {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+
+.stat-label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.stat-value {
+    display: block;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.action-button {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    background-color: #ffffff;
+    color: #374151;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.action-button:hover:not(.is-disabled) {
+    background-color: #f3f4f6;
+    border-color: #9ca3af;
+}
+
+.action-button.is-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+</style>

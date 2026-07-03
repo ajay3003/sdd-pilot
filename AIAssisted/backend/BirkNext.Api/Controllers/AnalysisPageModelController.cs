@@ -8,7 +8,7 @@ namespace BirkNext.Api.Controllers;
 /// Each analysis page receives a consistent AnalysisPageModel with readiness status and prerequisites.
 /// </summary>
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/analysis-page-model")]
 public class AnalysisPageModelController : ControllerBase
 {
     private readonly IAnalysisPageModelService _modelService;

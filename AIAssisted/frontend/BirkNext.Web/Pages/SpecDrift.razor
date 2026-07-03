@@ -29,9 +29,64 @@
     @if (PageModel?.Summary.CanRun == true)
     {
         <div class="drift-content">
-            @* Placeholder for existing Spec Drift UI components *@
-            @* To be filled with existing SpecChangesPanel, drift findings, etc. *@
-            <p class="placeholder-text">Detailed Spec Drift analysis will be displayed here.</p>
+            <!-- Results Section -->
+            @if (PageModel.Results.Count > 0)
+            {
+                <section class="results-section">
+                    <h2 class="section-title">Analysis Results</h2>
+                    <div class="results-grid">
+                        @foreach (var result in PageModel.Results)
+                        {
+                            <div class="result-card">
+                                <div class="result-header">
+                                    <h3>@result.Name</h3>
+                                    <span class="severity @GetSeverityClass(result.Severity.ToString())">@result.Severity</span>
+                                </div>
+                                @if (!string.IsNullOrEmpty(result.Summary))
+                                {
+                                    <p class="summary">@result.Summary</p>
+                                }
+                                @if (!string.IsNullOrEmpty(result.Details))
+                                {
+                                    <div class="details">@result.Details</div>
+                                }
+                                @if (!string.IsNullOrEmpty(result.Recommendation))
+                                {
+                                    <div class="recommendation">
+                                        <strong>Recommendation:</strong> @result.Recommendation
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </section>
+            }
+
+            <!-- Summary Section -->
+            @if (PageModel.Summary is not null)
+            {
+                <section class="summary-section">
+                    <h2 class="section-title">Summary</h2>
+                    <div class="summary-card">
+                        <div class="summary-stat">
+                            <span class="stat-label">Total Findings</span>
+                            <span class="stat-value">@PageModel.Results.Count</span>
+                        </div>
+                        @if (!string.IsNullOrEmpty(PageModel.Summary.ReadinessMessage))
+                        {
+                            <div class="summary-text">@PageModel.Summary.ReadinessMessage</div>
+                        }
+                    </div>
+                </section>
+            }
+        </div>
+    }
+    else if (PageModel?.ReadinessStatus == AnalysisStatus.Blocked)
+    {
+        <div class="blocked-state">
+            <div class="blocked-icon">🔒</div>
+            <h2>Load Artifacts First</h2>
+            <p>Load specification and plan artifacts to analyze specification drift.</p>
         </div>
     }
 </div>
@@ -72,6 +127,14 @@
             IsLoading = false;
         }
     }
+
+    private string GetSeverityClass(string? severity) => severity?.ToLower() switch
+    {
+        "critical" => "critical",
+        "warning" => "warning",
+        "info" => "info",
+        _ => "default"
+    };
 }
 
 <style>
@@ -85,11 +148,158 @@
     padding: 40px 20px;
 }
 
-.placeholder-text {
-    text-align: center;
-    color: #9ca3af;
+.drift-content {
+    margin-top: 32px;
+}
+
+.section-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 16px;
+    border-bottom: 2px solid #e5e7eb;
+    padding-bottom: 12px;
+}
+
+.results-section {
+    margin-bottom: 40px;
+}
+
+.results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+}
+
+.result-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    background: white;
+    transition: all 0.2s ease;
+}
+
+.result-card:hover {
+    border-color: #d1d5db;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+}
+
+.result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    margin-bottom: 12px;
+}
+
+.result-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #111827;
+}
+
+.severity {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.severity.critical {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.severity.warning {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.severity.info {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.summary {
+    margin: 8px 0;
+    font-size: 14px;
+    color: #374151;
+}
+
+.details {
+    margin: 8px 0;
+    padding: 8px;
+    background: #f9fafb;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.recommendation {
+    margin-top: 8px;
+    padding: 8px;
+    background: #fef3c7;
+    border-left: 3px solid #f59e0b;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.summary-section {
+    margin-bottom: 40px;
+}
+
+.summary-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
     padding: 20px;
-    background-color: #f9fafb;
-    border-radius: 6px;
+    background: white;
+}
+
+.summary-stat {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.stat-label {
+    font-size: 13px;
+    color: #6b7280;
+    font-weight: 500;
+}
+
+.stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #3b82f6;
+}
+
+.summary-text {
+    color: #374151;
+    line-height: 1.6;
+}
+
+.blocked-state {
+    text-align: center;
+    padding: 80px 20px;
+    background: #fef2f2;
+    border-radius: 8px;
+    margin: 32px 0;
+}
+
+.blocked-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.blocked-state h2 {
+    font-size: 24px;
+    color: #991b1b;
+    margin-bottom: 8px;
+}
+
+.blocked-state p {
+    color: #7f1d1d;
 }
 </style>

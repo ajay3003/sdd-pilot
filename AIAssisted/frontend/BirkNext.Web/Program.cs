@@ -78,6 +78,10 @@ builder.Services.AddHttpClient<IQualityReviewPageModelService, QualityReviewPage
     client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddHttpClient<IAnalysisPageModelService, AnalysisPageModelService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
+builder.Services.AddHttpClient<ILibraryPageModelService, LibraryPageModelService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
+builder.Services.AddHttpClient<ReviewPageModelService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
 builder.Services.AddScoped<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
 builder.Services.AddSingleton<WorkspaceArtifactRepository>();
