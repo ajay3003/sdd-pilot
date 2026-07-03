@@ -60,15 +60,16 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         ClickRunDiagnostics(cut);
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Diagnostics completed"));
-        cut.Markup.Should().Contain("5 checks executed");
-        cut.Markup.Should().Contain("3 Passed");
+        cut.Markup.Should().Contain("6 checks executed");
+        cut.Markup.Should().Contain("4 Passed");
         cut.Markup.Should().Contain("1 Warnings");
         cut.Markup.Should().Contain("0 Failed");
         cut.Markup.Should().Contain("Environment");
         cut.Markup.Should().Contain("Database");
-        cut.Markup.Should().Contain("Backend/API");
+        cut.Markup.Should().Contain("Backend / API");
         cut.Markup.Should().Contain("Workspace");
-        cut.Markup.Should().Contain("Review Context");
+        cut.Markup.Should().Contain("ReviewContext");
+        cut.Markup.Should().Contain("Export / Reports");
         cut.Markup.Should().Contain("Hosting Environment");
         cut.Markup.Should().Contain("Database Reachable");
         cut.Markup.Should().Contain("Backend Reachable");
@@ -211,13 +212,14 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
           "generatedAt": "2026-07-03T12:34:56Z",
           "environment": "Development",
           "overallStatus": "Warning",
-          "summary": { "passCount": 3, "warningCount": 1, "failCount": 0, "unavailableCount": 1, "overallStatus": "Warning" },
+          "summary": { "passCount": 4, "warningCount": 1, "failCount": 0, "unavailableCount": 1, "overallStatus": "Warning" },
           "sections": [
             { "title": "Environment", "description": "Environment checks", "status": "Pass", "items": [{ "name": "Hosting Environment", "value": "Development", "status": "Pass", "description": "Development", "recommendation": "", "isRequired": true }], "isRequired": true },
             { "title": "Database", "description": "Database checks", "status": "Pass", "items": [{ "name": "Database Reachable", "value": "Connected successfully", "status": "Pass", "description": "Connected successfully", "recommendation": "", "isRequired": true }], "isRequired": true },
-            { "title": "Backend/API", "description": "Backend checks", "status": "Pass", "items": [{ "name": "Backend Reachable", "value": "http://localhost:5000", "status": "Pass", "description": "http://localhost:5000", "recommendation": "", "isRequired": true }], "isRequired": true },
+            { "title": "Backend / API", "description": "Backend checks", "status": "Pass", "items": [{ "name": "Backend Reachable", "value": "http://localhost:5000", "status": "Pass", "description": "http://localhost:5000", "recommendation": "", "isRequired": true }], "isRequired": true },
             { "title": "Workspace", "description": "Workspace checks", "status": "Warning", "items": [{ "name": "Workspace Persistence Tables", "value": "Missing optional data", "status": "Warning", "description": "Missing optional data", "recommendation": "Review workspace storage", "isRequired": false }], "isRequired": false },
-            { "title": "Review Context", "description": "ReviewContext checks", "status": "Unavailable", "items": [{ "name": "ReviewContext Available", "value": "Active browser state unavailable", "status": "Unavailable", "description": "Active browser state unavailable", "recommendation": "", "isRequired": false }], "isRequired": false }
+            { "title": "ReviewContext", "description": "ReviewContext checks", "status": "Unavailable", "items": [{ "name": "ReviewContext Available", "value": "Active browser state unavailable", "status": "Unavailable", "description": "Active browser state unavailable", "recommendation": "", "isRequired": false }], "isRequired": false },
+            { "title": "Export / Reports", "description": "Export checks", "status": "Pass", "items": [{ "name": "JSON Export", "value": "Available", "status": "Pass", "description": "Available", "recommendation": "", "isRequired": false }], "isRequired": false }
           ]
         }
         """;
@@ -231,9 +233,10 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
           "sections": [
             { "title": "Environment", "description": "Environment checks", "status": "Unavailable", "items": [], "isRequired": true },
             { "title": "Database", "description": "Database checks", "status": "Unavailable", "items": [], "isRequired": true },
-            { "title": "Backend/API", "description": "Backend checks", "status": "Unavailable", "items": [], "isRequired": true },
+            { "title": "Backend / API", "description": "Backend checks", "status": "Unavailable", "items": [], "isRequired": true },
             { "title": "Workspace", "description": "Workspace checks", "status": "Unavailable", "items": [], "isRequired": false },
-            { "title": "Review Context", "description": "ReviewContext checks", "status": "Unavailable", "items": [], "isRequired": false }
+            { "title": "ReviewContext", "description": "ReviewContext checks", "status": "Unavailable", "items": [], "isRequired": false },
+            { "title": "Export / Reports", "description": "Export checks", "status": "Unavailable", "items": [], "isRequired": false }
           ]
         }
         """;

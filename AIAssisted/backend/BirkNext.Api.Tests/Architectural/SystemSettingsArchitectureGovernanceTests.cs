@@ -355,6 +355,54 @@ public class SystemSettingsArchitectureGovernanceTests
         Assert.True(result == SystemSettingsStatus.Warning || result == SystemSettingsStatus.Pass,
             "UNAVAILABLE should result in Warning or Pass, never Fail");
     }
+
+    [Fact]
+    public void DiagnosticPageServices_UseSharedSectionAndSummaryContract()
+    {
+        var serviceTypes = new[]
+        {
+            typeof(EnvironmentDiagnosticsPageService),
+            typeof(RuntimeDiagnosticsPageService),
+            typeof(SystemDiagnosticsPageService),
+            typeof(ReviewContextValidationPageService),
+            typeof(DocumentationHealthPageService),
+            typeof(MaintenancePageService)
+        };
+
+        foreach (var serviceType in serviceTypes)
+        {
+            var sectionsMethod = serviceType.GetMethod("GetSectionsAsync");
+            var summaryMethod = serviceType.GetMethod("GetStatusSummaryAsync");
+
+            Assert.NotNull(sectionsMethod);
+            Assert.NotNull(summaryMethod);
+            Assert.Equal(typeof(Task<List<SettingsSection>>), sectionsMethod!.ReturnType);
+            Assert.Equal(typeof(Task<StatusSummary>), summaryMethod!.ReturnType);
+        }
+    }
+
+    [Fact]
+    public void DiagnosticPageServices_DoNotExposeCustomReportHierarchyMethods()
+    {
+        var serviceTypes = new[]
+        {
+            typeof(RuntimeDiagnosticsPageService),
+            typeof(SystemDiagnosticsPageService),
+            typeof(ReviewContextValidationPageService),
+            typeof(DocumentationHealthPageService),
+            typeof(MaintenancePageService)
+        };
+
+        foreach (var serviceType in serviceTypes)
+        {
+            var publicMethods = serviceType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(method => method.DeclaringType == serviceType)
+                .Select(method => method.Name)
+                .ToList();
+
+            Assert.DoesNotContain(publicMethods, name => name.Contains("Report") || name.Contains("Check"));
+        }
+    }
 }
 
 // Helper extension

@@ -1117,223 +1117,30 @@ else if (_settings is not null)
             @* â•â• Documentation Health â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "doc-health")
             {
-                <div class="settings-card settings-card-full-width">
-                    <div class="settings-card-title">Documentation Health</div>
-                    <p class="settings-card-note">Developer-only diagnostic. Validates navigation links, documentation cross-links, removed-page references, and menu synchronisation across the application's documentation pages.</p>
-
-                    @if (!_docHealthComputed)
-                    {
-                        <div class="db-section-empty">Loadingâ€¦</div>
-                    }
-                    else if (_docHealthFindings.Count == 0)
-                    {
-                        <p class="ss-health-all-good" role="status">
-                            âœ“ All documentation health checks passed. No issues detected.
-                        </p>
-                    }
-                    else
-                    {
-                        <div class="ss-health-cards" role="list">
-                            @foreach (var f in _docHealthFindings)
-                            {
-                                <div class="ss-health-card" role="listitem">
-                                    <span class="ss-health-sev @(f.Severity == "Error" ? "ss-health-sev-error" : "ss-health-sev-warn")">@f.Severity</span>
-                                    <div class="ss-health-body">
-                                        <div class="ss-health-component">@f.Category</div>
-                                        <p class="ss-health-desc">@f.Description</p>
-                                        @if (!string.IsNullOrWhiteSpace(f.Detail))
-                                        {
-                                            <p class="settings-card-note" style="margin-top:0.25rem">@f.Detail</p>
-                                        }
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    }
-
-                    <!-- Summary table -->
-                    @if (_docHealthComputed)
-                    {
-                        <div class="fv-sync-stats" style="margin-top:1.5rem">
-                            <div class="fv-sync-stat @(_docHealthFindings.Count == 0 ? "fv-sync-stat-on" : "fv-sync-stat-off")">
-                                <span class="fv-sync-stat-value">@_docHealthFindings.Count</span>
-                                <span class="fv-sync-stat-label">Issues</span>
-                            </div>
-                            <div class="fv-sync-stat">
-                                <span class="fv-sync-stat-value">@DocNavLinks.Length</span>
-                                <span class="fv-sync-stat-label">Nav Links Checked</span>
-                            </div>
-                            <div class="fv-sync-stat">
-                                <span class="fv-sync-stat-value">@DocPageLinks.Length</span>
-                                <span class="fv-sync-stat-label">Doc Page Links Checked</span>
-                            </div>
-                            <div class="fv-sync-stat">
-                                <span class="fv-sync-stat-value">@KnownRoutes.Count</span>
-                                <span class="fv-sync-stat-label">Known Routes</span>
-                            </div>
-                        </div>
-                    }
-                </div>
+                <DiagnosticPageRenderer
+                    Title="Documentation Health"
+                    Description="Developer-only diagnostic. Validates navigation links, documentation cross-links, removed-page references, and menu synchronisation across the application's documentation pages."
+                    HasRun="@_docHealthComputed"
+                    ShowRunArea="false"
+                    OverallStatus="@DocumentationHealthSummary.OverallStatus"
+                    Summary="@DocumentationHealthSummary"
+                    Sections="@DocumentationHealthSections"
+                    NotRunText="Documentation health checks have not been executed yet." />
             }
 
             @* Runtime Diagnostics *@
             @if (_activeSection == "ui-migration")
             {
-                <div class="settings-card settings-card-full-width">
-                    <div class="settings-card-title">Runtime Diagnostics</div>
-                    <p class="settings-card-note">Live runtime state for the current QA Review Studio session.</p>
-
-                    @if (_runtimeActionMessage is not null)
-                    {
-                        <div class="notification notification-success" role="status">@_runtimeActionMessage</div>
-                    }
-
-                    <div class="runtime-summary-grid" aria-label="Runtime diagnostics summary">
-                        @foreach (var metric in RuntimeSummaryRows)
-                        {
-                            <div class="runtime-summary-card">
-                                <span class="runtime-summary-label">@metric.Label</span>
-                                <strong class="runtime-summary-value">@metric.Value</strong>
-                                <span class="ss-health-sev @StatusClass(metric.Status)">@metric.Status</span>
-                                @if (!string.IsNullOrWhiteSpace(metric.Detail))
-                                {
-                                    <span class="runtime-summary-detail">@metric.Detail</span>
-                                }
-                            </div>
-                        }
-                    </div>
-
-                    <div class="dev-diag-subgrid">
-                        <div class="dev-diag-section">
-                            <div class="dev-diag-section-title">Workspace</div>
-                            <table class="dev-diag-table">
-                                <tbody>
-                                    @foreach (var row in WorkspaceDiagnosticRows)
-                                    {
-                                        <tr>
-                                            <td>@row.Name</td>
-                                            <td>
-                                                <span class="ss-health-sev @StatusClass(row.Status)">@row.Status</span>
-                                                <div class="runtime-row-value">@row.Value</div>
-                                                <div class="runtime-row-reason">@row.Reason</div>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div class="dev-diag-section">
-                            <div class="dev-diag-section-title">Markdown Engine</div>
-                            <table class="dev-diag-table">
-                                <tbody>
-                                    @foreach (var row in MarkdownEngineDiagnosticRows)
-                                    {
-                                        <tr>
-                                            <td>@row.Name</td>
-                                            <td>
-                                                <span class="ss-health-sev @StatusClass(row.Status)">@row.Status</span>
-                                                <div class="runtime-row-value">@row.Value</div>
-                                                <div class="runtime-row-reason">@row.Reason</div>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div class="dev-diag-section">
-                            <div class="dev-diag-section-title">Runtime Services</div>
-                            @foreach (var group in RuntimeServiceGroups)
-                            {
-                                <div class="runtime-service-group">
-                                    <div class="runtime-service-group-title">@group.Label</div>
-                                    @if (!group.Rows.Any())
-                                    {
-                                        <div class="runtime-empty-state">No services in this state.</div>
-                                    }
-                                    else
-                                    {
-                                        <table class="dev-diag-table">
-                                            <tbody>
-                                                @foreach (var service in group.Rows)
-                                                {
-                                                    <tr>
-                                                        <td>@service.Name</td>
-                                                        <td>
-                                                            <span class="ss-health-sev @StatusClass(service.Status)">@service.Status</span>
-                                                            <div class="runtime-row-reason">@service.Reason</div>
-                                                            <div class="runtime-row-value">Last updated: @FormatTimestamp(service.LastUpdated)</div>
-                                                        </td>
-                                                    </tr>
-                                                }
-                                            </tbody>
-                                        </table>
-                                    }
-                                </div>
-                            }
-                        </div>
-
-                        <div class="dev-diag-section">
-                            <div class="dev-diag-section-title">Recommended Workflow</div>
-                            <table class="dev-diag-table">
-                                <tbody>
-                                    @foreach (var check in WorkflowDiagnosticRows)
-                                    {
-                                        <tr>
-                                            <td>@check.Name</td>
-                                            <td>
-                                                <span class="ss-health-sev @StatusClass(check.Status)">@check.Status</span>
-                                                <div class="runtime-row-reason">@check.Reason</div>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div class="dev-diag-section">
-                            <div class="dev-diag-section-title">Application</div>
-                            <table class="dev-diag-table">
-                                <tbody>
-                                    <tr><td>Build version</td><td>@OrUnavailable(_settings?.Application.Version)</td></tr>
-                                    <tr><td>Build number</td><td>@OrUnavailable(_settings?.Application.BuildNumber)</td></tr>
-                                    <tr><td>Environment</td><td>@OrUnavailable(_settings?.Application.Environment)</td></tr>
-                                    <tr><td>Host environment</td><td>@OrUnavailable(HostEnvironment.Environment)</td></tr>
-                                    <tr><td>Current project</td><td>@OrUnavailable(Workspace.CurrentProject)</td></tr>
-                                    <tr><td>Feature flags</td><td>@FeatureFlagSummary</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="settings-card" style="margin-top:1.5rem;background:var(--surface-subtle,#f8f9fa)">
-                        <div class="settings-card-title" style="font-size:0.95rem">Analysis Sessions</div>
-                        <table class="dev-diag-table">
-                            <thead>
-                                <tr>
-                                    <th>Session</th>
-                                    <th>Status</th>
-                                    <th>Reason</th>
-                                    <th>Prerequisites</th>
-                                    <th>Last run</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var session in AnalysisSessionRows)
-                                {
-                                    <tr>
-                                        <td>@session.Name</td>
-                                        <td><span class="ss-health-sev @StatusClass(session.Status)">@session.Status</span></td>
-                                        <td>@session.Reason</td>
-                                        <td>@session.Prerequisites</td>
-                                        <td>@FormatTimestamp(session.LastRun)</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-
+                <DiagnosticPageRenderer
+                    Title="Runtime Diagnostics"
+                    Description="Live runtime state for the current QA Review Studio session."
+                    Message="@_runtimeActionMessage"
+                    HasRun="true"
+                    ShowRunArea="false"
+                    OverallStatus="@RuntimeDiagnosticSummary.OverallStatus"
+                    Summary="@RuntimeDiagnosticSummary"
+                    Sections="@RuntimeDiagnosticSections">
+                    <ChildContent>
                     <div class="settings-card" style="margin-top:1.5rem;background:var(--surface-subtle,#f8f9fa)">
                         <div class="settings-card-title" style="font-size:0.95rem">Developer Actions</div>
                         <div class="runtime-action-grid">
@@ -1364,277 +1171,86 @@ else if (_settings is not null)
                             </div>
                         </div>
                     </div>
-                </div>
+                    </ChildContent>
+                </DiagnosticPageRenderer>
             }
             @* â•â• Environment Diagnostics â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "environment-diagnostics")
             {
-                <div class="settings-card settings-card-full-width">
-                    <div class="settings-card-title">Environment Diagnostics</div>
-                    <p class="settings-card-note">Comprehensive system health check: database connectivity, migrations, required tables/columns, backend API status, workspace artifacts, and ReviewContext availability.</p>
-
-                    @if (_envDiagMessage is not null)
-                    {
-                        <div class="notification notification-success" role="status">@_envDiagMessage</div>
-                    }
-
-                    <div class="settings-card" style="margin-bottom:1.5rem;background:var(--surface-subtle,#f8f9fa)">
-                        <div class="settings-card-title" style="font-size:0.95rem">Run Diagnostics</div>
-                        <div style="display:flex;flex-wrap:wrap;gap:.5rem">
-                            <PrimaryButton OnClick="RunEnvironmentDiagnosticsAsync" Disabled="@_envDiagRunning">
-                                @(_envDiagRunning ? "Runningâ€¦" : "Run Diagnostics")
-                            </PrimaryButton>
-                            <SecondaryButton OnClick="ExportEnvironmentDiagnosticsJsonAsync" Disabled="@(_envDiagReport is null)">Export JSON</SecondaryButton>
-                            <SecondaryButton OnClick="ExportEnvironmentDiagnosticsHtmlAsync" Disabled="@(_envDiagReport is null)">Export HTML</SecondaryButton>
-                        </div>
-                    </div>
-
-                    @if (_envDiagErrorDetails is not null)
-                    {
-                        <div style="margin-bottom:1.5rem;padding:1rem;background:#fee2e2;border:1px solid #fecaca;border-radius:var(--radius-default)">
-                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
-                                <span style="font-weight:600;color:#991b1b">âš ï¸ Diagnostics Failed</span>
-                            </div>
-                            <div style="font-size:0.9rem;color:#7c2d12;font-family:monospace;white-space:pre-wrap;word-break:break-word;margin-bottom:0.75rem">@_envDiagErrorDetails</div>
-                            @if (!string.IsNullOrWhiteSpace(_envDiagStackTrace))
-                            {
-                                <button class="btn-text" style="color:#991b1b;font-size:0.85rem;padding:0;margin-top:0.5rem"
-                                        @onclick='() => _envDiagShowStackTrace = !_envDiagShowStackTrace'>
-                                    @(_envDiagShowStackTrace ? "â–¼ Hide Stack Trace" : "â–¶ Show Stack Trace")
-                                </button>
-                                @if (_envDiagShowStackTrace)
-                                {
-                                    <div style="font-size:0.8rem;color:#7c2d12;font-family:monospace;white-space:pre-wrap;word-break:break-word;margin-top:0.5rem;padding:0.5rem;background:#fee2e2;border-radius:0.25rem;max-height:400px;overflow-y:auto">@_envDiagStackTrace</div>
-                                }
-                            }
-                        </div>
-                    }
-
-                    @if (_envDiagReport is not null)
-                    {
-                        <div class="ss-status-bar" style="margin-bottom:1.5rem">
-                            <span class="ss-status-pill ss-status-pill-ok">
-                                <span class="ss-status-label">Overall Status</span>
-                                <span class="ss-status-value">@GetDiagnosticStatusBadge(_envDiagReport.OverallStatus)</span>
-                            </span>
-                            <span class="ss-status-pill">
-                                <span class="ss-status-label">Generated</span>
-                                <span class="ss-status-value">@FormatEnvironmentDiagnosticsTimestamp(_envDiagReport.GeneratedAt)</span>
-                            </span>
-                            <span class="ss-status-pill">
-                                <span class="ss-status-label">Environment</span>
-                                <span class="ss-status-value">@_envDiagReport.Environment</span>
-                            </span>
-                        </div>
-
-                        @if (_envDiagReport.Summary is not null)
+                <DiagnosticPageRenderer
+                    Title="Environment Diagnostics"
+                    Description="Comprehensive system health check: database connectivity, migrations, required tables/columns, backend API status, workspace artifacts, and ReviewContext availability."
+                    Message="@_envDiagMessage"
+                    HasRun="@(_envDiagReport is not null)"
+                    IsRunning="@_envDiagRunning"
+                    OverallStatus="@(_envDiagReport?.OverallStatus ?? SystemSettingsStatus.Unavailable)"
+                    Summary="@_envDiagReport?.Summary"
+                    Sections="@(_envDiagReport?.Sections ?? [])"
+                    GeneratedAt="@_envDiagReport?.GeneratedAt"
+                    EnvironmentName="@_envDiagReport?.Environment"
+                    OnRun="RunEnvironmentDiagnosticsAsync">
+                    <Actions>
+                        <SecondaryButton OnClick="ExportEnvironmentDiagnosticsJsonAsync" Disabled="@(_envDiagReport is null)">Export JSON</SecondaryButton>
+                        <SecondaryButton OnClick="ExportEnvironmentDiagnosticsHtmlAsync" Disabled="@(_envDiagReport is null)">Export HTML</SecondaryButton>
+                    </Actions>
+                    <ChildContent>
+                        @if (_envDiagErrorDetails is not null)
                         {
-                            <div class="ss-status-bar" style="margin-bottom:1.5rem">
-                                <span class="ss-status-pill">
-                                    <span class="ss-status-label">Checks Executed</span>
-                                    <span class="ss-status-value">@_envDiagReport.Summary.TotalCount</span>
-                                </span>
-                                <span class="ss-status-pill ss-status-pill-ok">
-                                    <span class="ss-status-label">Passed</span>
-                                    <span class="ss-status-value">@_envDiagReport.Summary.PassCount</span>
-                                </span>
-                                <span class="ss-status-pill ss-status-pill-warn">
-                                    <span class="ss-status-label">Warnings</span>
-                                    <span class="ss-status-value">@_envDiagReport.Summary.WarningCount</span>
-                                </span>
-                                <span class="ss-status-pill ss-status-pill-error">
-                                    <span class="ss-status-label">Failed</span>
-                                    <span class="ss-status-value">@_envDiagReport.Summary.FailCount</span>
-                                </span>
+                            <div style="margin-bottom:1.5rem;padding:1rem;background:#fee2e2;border:1px solid #fecaca;border-radius:var(--radius-default)">
+                                <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+                                    <span style="font-weight:600;color:#991b1b">Diagnostics Failed</span>
+                                </div>
+                                <div style="font-size:0.9rem;color:#7c2d12;font-family:monospace;white-space:pre-wrap;word-break:break-word;margin-bottom:0.75rem">@_envDiagErrorDetails</div>
+                                @if (!string.IsNullOrWhiteSpace(_envDiagStackTrace))
+                                {
+                                    <button class="btn-text" style="color:#991b1b;font-size:0.85rem;padding:0;margin-top:0.5rem"
+                                            @onclick='() => _envDiagShowStackTrace = !_envDiagShowStackTrace'>
+                                        @(_envDiagShowStackTrace ? "Hide Stack Trace" : "Show Stack Trace")
+                                    </button>
+                                    @if (_envDiagShowStackTrace)
+                                    {
+                                        <div style="font-size:0.8rem;color:#7c2d12;font-family:monospace;white-space:pre-wrap;word-break:break-word;margin-top:0.5rem;padding:0.5rem;background:#fee2e2;border-radius:0.25rem;max-height:400px;overflow-y:auto">@_envDiagStackTrace</div>
+                                    }
+                                }
                             </div>
                         }
-
-                        <div class="dev-diag-subgrid">
-                            @foreach (var diagSection in _envDiagReport.Sections)
-                            {
-                                <div class="dev-diag-section">
-                                    <div class="dev-diag-section-title">@diagSection.Title</div>
-                                    @if (!string.IsNullOrWhiteSpace(diagSection.Description))
-                                    {
-                                        <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0 0 0.75rem">@diagSection.Description</p>
-                                    }
-                                    @if (diagSection.Items.Count == 0)
-                                    {
-                                        <div class="db-section-empty">No diagnostics returned for this section.</div>
-                                    }
-                                    @foreach (var item in diagSection.Items)
-                                    {
-                                        <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface-subtle);border-radius:var(--radius-default)">
-                                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">
-                                                <span style="font-weight:600;flex:1">@item.Name</span>
-                                                <span class="ss-health-sev @GetCheckStatusClass(item.Status)">@item.Status</span>
-                                            </div>
-                                            @if (!string.IsNullOrWhiteSpace(item.Value))
-                                            {
-                                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@item.Value</p>
-                                            }
-                                            @if (!string.IsNullOrWhiteSpace(item.Recommendation))
-                                            {
-                                                <p style="font-size:0.85rem;color:var(--clr-text-placeholder);margin:0.25rem 0 0">-> @item.Recommendation</p>
-                                            }
-                                        </div>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    }
-                    else if (!_envDiagRunning)
-                    {
-                        <div class="ss-status-bar" style="margin-bottom:1.5rem">
-                            <span class="ss-status-pill">
-                                <span class="ss-status-label">Overall Status</span>
-                                <span class="ss-status-value">Not Run</span>
-                            </span>
-                        </div>
-                        <div class="db-section-empty">Diagnostics have not been executed yet.</div>
-                    }
-                </div>
+                    </ChildContent>
+                </DiagnosticPageRenderer>
             }
 
             @* â•â• Maintenance â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "review-context-validation" && IsDeveloperDiagnosticsVisible)
             {
-                <div class="settings-card settings-card-full-width">
-                    <div class="settings-card-title">ReviewContext Validation</div>
-                    <p class="settings-card-note">Developer-only diagnostic for validating ReviewContext as the canonical source of truth against downstream review models.</p>
-
-                    @if (_reviewContextValidationMessage is not null)
-                    {
-                        <div class="notification notification-success" role="status">@_reviewContextValidationMessage</div>
-                    }
-
-                    @if (WorkspaceArtifacts.Count == 0)
-                    {
-                        <div class="db-section-empty" role="status">
-                            No workspace artifacts are loaded. Load constitution.md, spec.md, plan.md, or tasks.md from a workspace before running ReviewContext validation.
-                        </div>
-                    }
-
-                    <div class="settings-card" style="margin-top:1rem;background:var(--surface-subtle,#f8f9fa)">
-                        <div class="settings-card-title" style="font-size:0.95rem">Run Validation</div>
-                        <div style="display:flex;flex-wrap:wrap;gap:.5rem">
-                            <PrimaryButton OnClick="RunReviewContextValidationAsync">Run Validation</PrimaryButton>
-                            <SecondaryButton OnClick="ExportReviewContextValidationJsonAsync" Disabled="@(_reviewContextReport is null)">Export JSON</SecondaryButton>
-                            <SecondaryButton OnClick="ExportReviewContextValidationHtmlAsync" Disabled="@(_reviewContextReport is null)">Export HTML</SecondaryButton>
-                        </div>
-                    </div>
-
-                    <div class="dev-diag-subgrid" style="margin-top:1.5rem">
-                        <div class="dev-diag-section">
-                            <div class="dev-diag-section-title">Loaded Artifacts</div>
-                            <table class="dev-diag-table">
-                                <thead>
-                                    <tr>
-                                        <th>Artifact</th>
-                                        <th>Status</th>
-                                        <th>Loaded</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var row in ReviewContextArtifactRows)
-                                    {
-                                        <tr>
-                                            <td>@row.Label</td>
-                                            <td><span class="ss-health-sev @(row.Loaded ? "ss-health-sev-ok" : "ss-health-sev-warn")">@(row.Loaded ? "Loaded" : "Missing")</span></td>
-                                            <td>@FormatTimestamp(row.LoadedAt)</td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div class="dev-diag-section">
-                            <div class="dev-diag-section-title">Canonical Metrics</div>
-                            @if (_reviewContextReport?.CanonicalMetrics.Count > 0)
-                            {
-                                <table class="dev-diag-table">
-                                    <tbody>
-                                        @foreach (var metric in _reviewContextReport.CanonicalMetrics)
-                                        {
-                                            <tr><td>@metric.Name</td><td>@DisplayValue(metric.Value)</td></tr>
-                                        }
-                                    </tbody>
-                                </table>
-                            }
-                            else
-                            {
-                                <div class="db-section-empty">Run validation to populate canonical metrics.</div>
-                            }
-                        </div>
-
-                        <div class="dev-diag-section">
-                            <div class="dev-diag-section-title">Source Comparisons</div>
-                            @if (_reviewContextReport?.SourceComparisons.Count > 0)
-                            {
-                                <table class="dev-diag-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Metric</th>
-                                            <th>ReviewContext</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (var comparison in _reviewContextReport.SourceComparisons)
-                                        {
-                                            <tr>
-                                                <td>@comparison.Metric</td>
-                                                <td>@DisplayValue(comparison.ReviewContextValue)</td>
-                                                <td><span class="ss-health-sev @(comparison.AllMatch ? "ss-health-sev-ok" : "ss-health-sev-warn")">@(comparison.AllMatch ? "Match" : "Mismatch")</span></td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </table>
-                            }
-                            else
-                            {
-                                <div class="db-section-empty">No source comparisons available yet.</div>
-                            }
-                        </div>
-
-                        <div class="dev-diag-section">
-                            <div class="dev-diag-section-title">Findings</div>
-                            @if (_reviewContextReport?.Findings.Count > 0)
-                            {
-                                <div class="ss-health-cards" role="list">
-                                    @foreach (var finding in _reviewContextReport.Findings)
-                                    {
-                                        <div class="ss-health-card" role="listitem">
-                                            <span class="ss-health-sev @ReviewContextSeverityClass(finding.Severity)">@finding.Severity</span>
-                                            <div class="ss-health-body">
-                                                <div class="ss-health-component">@finding.Source - @finding.MetricName</div>
-                                                <p class="ss-health-desc">@finding.Message</p>
-                                            </div>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="db-section-empty">Run validation to populate findings.</div>
-                            }
-                        </div>
-                    </div>
-                </div>
+                <DiagnosticPageRenderer
+                    Title="ReviewContext Validation"
+                    Description="Developer-only diagnostic for validating ReviewContext as the canonical source of truth against downstream review models."
+                    Message="@_reviewContextValidationMessage"
+                    HasRun="@(_reviewContextReport is not null)"
+                    RunAreaTitle="Run Validation"
+                    RunLabel="Run Validation"
+                    OverallStatus="@ReviewContextValidationSummary.OverallStatus"
+                    Summary="@ReviewContextValidationSummary"
+                    Sections="@ReviewContextValidationSections"
+                    OnRun="RunReviewContextValidationAsync">
+                    <Actions>
+                        <SecondaryButton OnClick="ExportReviewContextValidationJsonAsync" Disabled="@(_reviewContextReport is null)">Export JSON</SecondaryButton>
+                        <SecondaryButton OnClick="ExportReviewContextValidationHtmlAsync" Disabled="@(_reviewContextReport is null)">Export HTML</SecondaryButton>
+                    </Actions>
+                </DiagnosticPageRenderer>
             }
 
             @if (_activeSection == "maintenance")
             {
-                <div class="settings-card settings-card-full-width">
-                    <div class="settings-card-title">Maintenance</div>
-
-                    @if (_resetResultMessage is not null)
-                    {
-                        <div class="notification @(_resetSuccess ? "notification-success" : "notification-error")" role="alert">
-                            @_resetResultMessage
-                        </div>
-                    }
-
+                <DiagnosticPageRenderer
+                    Title="Maintenance"
+                    Description="System maintenance and reset controls."
+                    Message="@_resetResultMessage"
+                    HasRun="true"
+                    ShowRunArea="false"
+                    OverallStatus="@MaintenanceDiagnosticSummary.OverallStatus"
+                    Summary="@MaintenanceDiagnosticSummary"
+                    Sections="@MaintenanceDiagnosticSections">
+                    <ChildContent>
                     <div class="danger-zone">
                         <div class="danger-zone-header">
                             <span class="danger-zone-label">Danger Zone</span>
@@ -1656,7 +1272,8 @@ else if (_settings is not null)
                             </button>
                         </div>
                     </div>
-                </div>
+                    </ChildContent>
+                </DiagnosticPageRenderer>
             }
 
         </div>
@@ -1959,6 +1576,116 @@ else if (_settings is not null)
         RuntimeFailureCount > 0 ? StatusFail :
         RuntimeWarningCount > 0 ? StatusWarning :
         StatusPass;
+
+    private IReadOnlyList<SettingsSectionDto> DocumentationHealthSections =>
+        _docHealthFindings.Count == 0
+            ?
+            [
+                DiagnosticSection("Documentation Health", "Documentation navigation and cross-link health",
+                [
+                    DiagnosticItem("Documentation Health", "No issues detected", SystemSettingsStatus.Pass, "All documentation health checks passed.", "")
+                ])
+            ]
+            : _docHealthFindings
+                .GroupBy(finding => finding.Category)
+                .Select(group => DiagnosticSection(group.Key, "Documentation health findings",
+                    group.Select(finding => DiagnosticItem(
+                        finding.Description,
+                        finding.Detail ?? "",
+                        finding.Severity == "Error" ? SystemSettingsStatus.Fail : SystemSettingsStatus.Warning,
+                        finding.Description,
+                        ""))))
+                .ToList();
+
+    private StatusSummaryDto DocumentationHealthSummary => SummarizeDiagnosticSections(DocumentationHealthSections);
+
+    private IReadOnlyList<SettingsSectionDto> RuntimeDiagnosticSections =>
+    [
+        DiagnosticSection("Runtime Summary", "Runtime status summary",
+            RuntimeSummaryRows.Select(row => DiagnosticItem(row.Label, row.Value, ToSystemSettingsStatus(row.Status), row.Detail, ""))),
+        DiagnosticSection("Workspace", "Current browser/session workspace diagnostics",
+            WorkspaceDiagnosticRows.Select(row => DiagnosticItem(row.Name, row.Value, ToSystemSettingsStatus(row.Status), row.Reason, ""))),
+        DiagnosticSection("Markdown Engine", "Markdown parser diagnostics",
+            MarkdownEngineDiagnosticRows.Select(row => DiagnosticItem(row.Name, row.Value, ToSystemSettingsStatus(row.Status), row.Reason, ""))),
+        DiagnosticSection("Runtime Services", "Runtime service state",
+            RuntimeServiceRows.Select(row => DiagnosticItem(row.Name, row.Reason, ToSystemSettingsStatus(row.Status), row.Reason, ""))),
+        DiagnosticSection("Recommended Workflow", "Recommended workflow diagnostics",
+            WorkflowDiagnosticRows.Select(row => DiagnosticItem(row.Name, row.Value, ToSystemSettingsStatus(row.Status), row.Reason, ""))),
+        DiagnosticSection("Analysis Sessions", "Analysis session state",
+            AnalysisSessionRows.Select(row => DiagnosticItem(row.Name, row.Reason, ToSystemSettingsStatus(row.Status), row.Prerequisites, ""))),
+        DiagnosticSection("Application", "Application runtime details",
+        [
+            DiagnosticItem("Build version", OrUnavailable(_settings?.Application.Version), SystemSettingsStatus.Pass, "Configured application version.", ""),
+            DiagnosticItem("Build number", OrUnavailable(_settings?.Application.BuildNumber), SystemSettingsStatus.Pass, "Configured application build number.", ""),
+            DiagnosticItem("Environment", OrUnavailable(_settings?.Application.Environment), SystemSettingsStatus.Pass, "Configured application environment.", ""),
+            DiagnosticItem("Host environment", OrUnavailable(HostEnvironment.Environment), SystemSettingsStatus.Pass, "Current frontend host environment.", ""),
+            DiagnosticItem("Current project", OrUnavailable(Workspace.CurrentProject), string.IsNullOrWhiteSpace(Workspace.CurrentProject) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Current browser/session project.", ""),
+            DiagnosticItem("Feature flags", FeatureFlagSummary, AllEditableFeatures.Any() ? SystemSettingsStatus.Pass : SystemSettingsStatus.Unavailable, "Feature visibility summary.", "")
+        ])
+    ];
+
+    private StatusSummaryDto RuntimeDiagnosticSummary => SummarizeDiagnosticSections(RuntimeDiagnosticSections);
+
+    private IReadOnlyList<SettingsSectionDto> ReviewContextValidationSections
+    {
+        get
+        {
+            var sections = new List<SettingsSectionDto>
+            {
+                DiagnosticSection("Loaded Artifacts", "Artifacts available to ReviewContext validation",
+                    ReviewContextArtifactRows.Select(row => DiagnosticItem(
+                        row.Label,
+                        row.Loaded ? FormatTimestamp(row.LoadedAt) : "Not loaded",
+                        row.Loaded ? SystemSettingsStatus.Pass : SystemSettingsStatus.Unavailable,
+                        row.Loaded ? "Artifact is loaded in the current browser/session workspace." : "Artifact is not loaded.",
+                        "")))
+            };
+
+            if (_reviewContextReport is not null)
+            {
+                sections.Add(DiagnosticSection("Canonical Metrics", "Canonical ReviewContext metrics",
+                    _reviewContextReport.CanonicalMetrics.Select(metric => DiagnosticItem(
+                        metric.Name,
+                        DisplayValue(metric.Value),
+                        SystemSettingsStatus.Pass,
+                        $"Source: {metric.Source}",
+                        ""))));
+
+                sections.Add(DiagnosticSection("Source Comparisons", "ReviewContext source comparison checks",
+                    _reviewContextReport.SourceComparisons.Select(comparison => DiagnosticItem(
+                        comparison.Metric,
+                        DisplayValue(comparison.ReviewContextValue),
+                        comparison.AllMatch ? SystemSettingsStatus.Pass : SystemSettingsStatus.Warning,
+                        $"ReviewContext value: {comparison.ReviewContextValue}",
+                        comparison.AllMatch ? "" : "Review source values differ from the canonical ReviewContext value."))));
+
+                sections.Add(DiagnosticSection("Findings", "ReviewContext validation findings",
+                    _reviewContextReport.Findings.Count == 0
+                        ? [DiagnosticItem("Findings", "No findings", SystemSettingsStatus.Pass, "No ReviewContext validation findings.", "")]
+                        : _reviewContextReport.Findings.Select(finding => DiagnosticItem(
+                            finding.MetricName,
+                            finding.Message,
+                            finding.Severity == ReviewContextValidationStatus.Fail ? SystemSettingsStatus.Fail : SystemSettingsStatus.Warning,
+                            finding.Source,
+                            finding.Message))));
+            }
+
+            return sections;
+        }
+    }
+
+    private StatusSummaryDto ReviewContextValidationSummary => SummarizeDiagnosticSections(ReviewContextValidationSections);
+
+    private IReadOnlyList<SettingsSectionDto> MaintenanceDiagnosticSections =>
+    [
+        DiagnosticSection("Maintenance", "System maintenance and reset controls",
+        [
+            DiagnosticItem("Database Reset", _settings?.Maintenance.ResetAllowed == true ? "Allowed" : "Not allowed", _settings?.Maintenance.ResetAllowed == true ? SystemSettingsStatus.Warning : SystemSettingsStatus.Unavailable, _settings?.Maintenance.ResetNotAllowedReason ?? "Local database reset availability.", ""),
+            DiagnosticItem("Database Mode", OrUnavailable(_settings?.Maintenance.DatabaseMode), string.IsNullOrWhiteSpace(_settings?.Maintenance.DatabaseMode) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Configured maintenance database mode.", "")
+        ])
+    ];
+
+    private StatusSummaryDto MaintenanceDiagnosticSummary => SummarizeDiagnosticSections(MaintenanceDiagnosticSections);
 
     private IReadOnlyList<RuntimeSummaryRow> RuntimeSummaryRows =>
     [
@@ -2621,6 +2348,82 @@ else if (_settings is not null)
         SystemSettingsStatus.Warning => "Warning",
         SystemSettingsStatus.Fail => "Fail",
         _ => "Unavailable"
+    };
+
+    private static SettingsSectionDto DiagnosticSection(
+        string title,
+        string description,
+        IEnumerable<SettingsItemDto> items)
+    {
+        var sectionItems = items.ToList();
+        return new SettingsSectionDto
+        {
+            Title = title,
+            Description = description,
+            Items = sectionItems,
+            Status = OverallStatusFor(sectionItems.Select(item => item.Status)),
+            IsRequired = false
+        };
+    }
+
+    private static SettingsItemDto DiagnosticItem(
+        string name,
+        string value,
+        SystemSettingsStatus status,
+        string description,
+        string? recommendation)
+    {
+        return new SettingsItemDto
+        {
+            Name = name,
+            Value = value,
+            Status = status,
+            Description = description,
+            Recommendation = recommendation,
+            IsRequired = false
+        };
+    }
+
+    private static StatusSummaryDto SummarizeDiagnosticSections(IEnumerable<SettingsSectionDto> sections)
+    {
+        var summary = new StatusSummaryDto();
+        foreach (var status in sections.SelectMany(section => section.Items).Select(item => item.Status))
+        {
+            switch (status)
+            {
+                case SystemSettingsStatus.Pass:
+                    summary.PassCount++;
+                    break;
+                case SystemSettingsStatus.Warning:
+                    summary.WarningCount++;
+                    break;
+                case SystemSettingsStatus.Fail:
+                    summary.FailCount++;
+                    break;
+                case SystemSettingsStatus.Unavailable:
+                    summary.UnavailableCount++;
+                    break;
+            }
+        }
+
+        summary.OverallStatus = OverallStatusFor(sections.SelectMany(section => section.Items).Select(item => item.Status));
+        return summary;
+    }
+
+    private static SystemSettingsStatus OverallStatusFor(IEnumerable<SystemSettingsStatus> statuses)
+    {
+        var statusList = statuses.ToList();
+        if (statusList.Any(status => status == SystemSettingsStatus.Fail)) return SystemSettingsStatus.Fail;
+        if (statusList.Any(status => status is SystemSettingsStatus.Warning or SystemSettingsStatus.Unavailable)) return SystemSettingsStatus.Warning;
+        return statusList.Count == 0 ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass;
+    }
+
+    private static SystemSettingsStatus ToSystemSettingsStatus(string status) => status switch
+    {
+        StatusPass => SystemSettingsStatus.Pass,
+        StatusWarning => SystemSettingsStatus.Warning,
+        StatusFail => SystemSettingsStatus.Fail,
+        _ => SystemSettingsStatus.Unavailable
     };
 
     private static string DisplayValue(object? value) =>

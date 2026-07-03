@@ -32,12 +32,9 @@
     <div class="qr-input-panel">
         <div class="qr-input-panel-header">
             <span class="qr-input-panel-title"><span class="qr-step-badge">1</span> Load Artifacts</span>
-            @if (_report is not null)
-            {
-                <button class="qr-input-panel-toggle" @onclick="() => _inputExpanded = !_inputExpanded">
-                    @(_inputExpanded ? "▾ Collapse" : "▸ Expand")
-                </button>
-            }
+            <button class="qr-input-panel-toggle" @onclick="() => _inputExpanded = !_inputExpanded">
+                @(_inputExpanded ? "▾ Collapse" : "▸ Expand")
+            </button>
         </div>
 
         @if (_inputExpanded && PageModel is not null)
@@ -202,7 +199,6 @@
     private string? LoadError;
     private bool IsRunning;
     private bool _inputExpanded;
-    private QualityReviewReport? _report;
 
     // Artifact state - read from workspace on init
     private string _specificationText = string.Empty;
@@ -220,7 +216,7 @@
     protected override async Task OnInitializedAsync()
     {
         // Subscribe to workspace changes
-        Workspace.ReviewContextRebuildNeeded += RefreshPageModel;
+        Workspace.ReviewContextRebuildNeeded += (s, e) => _ = RefreshPageModel();
 
         // Load initial artifact state
         _specificationText = Workspace.Get(WorkspaceArtifactKind.Specification)?.Text ?? string.Empty;
@@ -374,8 +370,4 @@
         }
     }
 
-    void IAsyncDisposable.Dispose()
-    {
-        Workspace.ReviewContextRebuildNeeded -= RefreshPageModel;
-    }
 }

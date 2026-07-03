@@ -4,7 +4,6 @@
 @using BirkNext.Web.Services
 @inject IQualityReviewPageModelService PageModelService
 @inject IFrontendAnalysisContextFactory ContextFactory
-@inject RuntimeReviewSessionService RuntimeReviews
 @inject IJSRuntime JS
 
 <PageTitle>Frontend Quality Review</PageTitle>
@@ -41,14 +40,6 @@
         </div>
     }
 
-    <!-- ── Results Area ────────────────────────────────────────── -->
-    @if (_report is not null)
-    {
-        <div class="fqr-results">
-            <!-- Results would be rendered here -->
-            <!-- This is a placeholder for the report display -->
-        </div>
-    }
 </div>
 
 @code {
@@ -56,13 +47,9 @@
     private bool IsLoading = true;
     private string? LoadError;
     private bool IsRunning;
-    private FrontendQualityReviewReport? _report;
 
     protected override async Task OnInitializedAsync()
     {
-        // Subscribe to workspace/target environment changes
-        RuntimeReviews.ReviewStarted += RefreshPageModel;
-
         // Load initial page model
         await RefreshPageModel();
     }
@@ -107,8 +94,4 @@
         }
     }
 
-    void IAsyncDisposable.Dispose()
-    {
-        RuntimeReviews.ReviewStarted -= RefreshPageModel;
-    }
 }
