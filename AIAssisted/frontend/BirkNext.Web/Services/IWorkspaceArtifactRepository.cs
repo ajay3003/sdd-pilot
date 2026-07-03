@@ -20,4 +20,5 @@ public interface IWorkspaceArtifactRepository
     WorkspaceArtifact? Get(WorkspaceArtifactType type);
     bool Has(WorkspaceArtifactType type);
     void Clear(WorkspaceArtifactType type);
+    IEnumerable<(WorkspaceArtifactType Type, WorkspaceArtifact Artifact)> GetAllArtifacts();
 }

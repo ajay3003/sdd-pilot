@@ -1,0 +1,363 @@
+@using BirkNext.Web.Services
+@implements IAsyncDisposable
+@inject IWorkspacePersistenceApiService WorkspacePersistence
+@inject IWorkspaceSessionRestoreService WorkspaceRestore
+@inject ILogger<WorkspaceManager> Logger
+
+<div class="wm-modal-overlay" @onclick="OnOverlayClickAsync">
+    <div class="wm-modal-dialog" @onclick:stopPropagation>
+        <div class="wm-modal-header">
+            <h2 class="wm-modal-title">📂 Workspace Manager</h2>
+            <button class="wm-modal-close" @onclick="CloseAsync" title="Close">✕</button>
+        </div>
+
+        <div class="wm-modal-body">
+            @if (_isLoading)
+            {
+                <div class="wm-loading">
+                    <div class="wm-spinner"></div>
+                    <p>Loading workspaces...</p>
+                </div>
+            }
+            else if (_workspaces.Count == 0)
+            {
+                <div class="wm-empty">
+                    <div class="wm-empty-icon">📭</div>
+                    <p>No saved workspaces yet.</p>
+                    <p class="wm-empty-hint">Save a workspace from Recommended Workflow to see it here.</p>
+                </div>
+            }
+            else
+            {
+                <div class="wm-workspace-list">
+                    @foreach (var workspace in _workspaces)
+                    {
+                        <div class="wm-workspace-item @(workspace.Id == _selectedWorkspaceId ? "is-selected" : "")">
+                            <div class="wm-item-header" @onclick="() => SelectWorkspaceAsync(workspace.Id)">
+                                <div class="wm-item-info">
+                                    <div class="wm-item-name">
+                                        @workspace.Name
+                                        @if (workspace.AutoSaved)
+                                        {
+                                            <span class="wm-auto-saved-badge">auto-saved</span>
+                                        }
+                                        @if (workspace.Favorite)
+                                        {
+                                            <span class="wm-favorite-badge">★</span>
+                                        }
+                                    </div>
+                                    <div class="wm-item-meta">
+                                        <span class="wm-meta-item">📁 @workspace.ProjectName</span>
+                                        <span class="wm-meta-item">📦 @workspace.Artifacts.Count artifacts</span>
+                                        <span class="wm-meta-item">🕐 @FormatDate(workspace.UpdatedAt)</span>
+                                    </div>
+                                </div>
+                                <input type="radio" name="workspace" class="wm-item-radio"
+                                       @onchange="() => SelectWorkspaceAsync(workspace.Id)"
+                                       checked="@(workspace.Id == _selectedWorkspaceId)" />
+                            </div>
+
+                            @if (workspace.Id == _selectedWorkspaceId)
+                            {
+                                <div class="wm-item-actions">
+                                    <button class="wm-action-btn wm-btn-primary"
+                                            @onclick="() => OpenWorkspaceAsync(workspace.Id)"
+                                            disabled="@_isActioning">
+                                        📂 Open
+                                    </button>
+                                    <button class="wm-action-btn"
+                                            @onclick="() => RenameWorkspaceAsync(workspace.Id, workspace.Name)"
+                                            disabled="@_isActioning">
+                                        ✏️ Rename
+                                    </button>
+                                    <button class="wm-action-btn"
+                                            @onclick="() => DuplicateWorkspaceAsync(workspace.Id, workspace.Name)"
+                                            disabled="@_isActioning">
+                                        📋 Duplicate
+                                    </button>
+                                    <button class="wm-action-btn"
+                                            @onclick="() => ExportWorkspaceAsync(workspace.Id)"
+                                            disabled="@_isActioning">
+                                        💾 Export
+                                    </button>
+                                    <button class="wm-action-btn wm-btn-danger"
+                                            @onclick="() => DeleteWorkspaceAsync(workspace.Id)"
+                                            disabled="@_isActioning">
+                                        🗑️ Delete
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="wm-modal-footer">
+            <div class="wm-footer-actions">
+                <button class="wm-btn wm-btn-secondary" @onclick="ImportWorkspaceAsync" disabled="@_isActioning">
+                    📥 Import JSON
+                </button>
+                <button class="wm-btn wm-btn-secondary" @onclick="CloseAsync" disabled="@_isActioning">
+                    Cancel
+                </button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <div class="wm-error-toast">
+                <span class="wm-error-icon">⚠️</span>
+                <span>@_errorMessage</span>
+                <button class="wm-error-close" @onclick="() => _errorMessage = null">✕</button>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(_successMessage))
+        {
+            <div class="wm-success-toast">
+                <span class="wm-success-icon">✓</span>
+                <span>@_successMessage</span>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private List<SavedWorkspaceDto> _workspaces = new();
+    private Guid? _selectedWorkspaceId;
+    private bool _isLoading = true;
+    private bool _isActioning = false;
+    private string? _errorMessage;
+    private string? _successMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadWorkspacesAsync();
+    }
+
+    private async Task LoadWorkspacesAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _workspaces = await WorkspacePersistence.ListAsync();
+            if (_workspaces.Any())
+            {
+                _selectedWorkspaceId = _workspaces.First().Id;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading workspaces");
+            _errorMessage = "Failed to load workspaces";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SelectWorkspaceAsync(Guid workspaceId)
+    {
+        _selectedWorkspaceId = workspaceId;
+        await Task.CompletedTask;
+    }
+
+    private async Task OpenWorkspaceAsync(Guid workspaceId)
+    {
+        _isActioning = true;
+        try
+        {
+            var workspace = await WorkspacePersistence.LoadAsync(workspaceId);
+            if (workspace != null)
+            {
+                await WorkspaceRestore.RestoreWorkspaceAsync(workspace);
+                _successMessage = $"Opened '{workspace.Name}'";
+                await Task.Delay(1000);
+                await CloseAsync();
+            }
+            else
+            {
+                _errorMessage = "Failed to load workspace";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error opening workspace");
+            _errorMessage = "Failed to open workspace";
+        }
+        finally
+        {
+            _isActioning = false;
+        }
+    }
+
+    private async Task RenameWorkspaceAsync(Guid workspaceId, string currentName)
+    {
+        var newName = await GetWorkspaceNameFromUserAsync("Enter new workspace name:", currentName);
+        if (string.IsNullOrWhiteSpace(newName) || newName == currentName) return;
+
+        _isActioning = true;
+        try
+        {
+            var result = await WorkspacePersistence.RenameAsync(workspaceId, newName);
+            if (result != null)
+            {
+                _successMessage = "Workspace renamed";
+                await LoadWorkspacesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error renaming workspace");
+            _errorMessage = "Failed to rename workspace";
+        }
+        finally
+        {
+            _isActioning = false;
+        }
+    }
+
+    private async Task DuplicateWorkspaceAsync(Guid workspaceId, string baseName)
+    {
+        var newName = await GetWorkspaceNameFromUserAsync("Enter name for duplicate workspace:", $"{baseName} (copy)");
+        if (string.IsNullOrWhiteSpace(newName)) return;
+
+        _isActioning = true;
+        try
+        {
+            var result = await WorkspacePersistence.DuplicateAsync(workspaceId, newName);
+            if (result != null)
+            {
+                _successMessage = "Workspace duplicated";
+                await LoadWorkspacesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error duplicating workspace");
+            _errorMessage = "Failed to duplicate workspace";
+        }
+        finally
+        {
+            _isActioning = false;
+        }
+    }
+
+    private async Task DeleteWorkspaceAsync(Guid workspaceId)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm",
+            "Delete this workspace? It will be hidden but can be restored if needed.");
+        if (!confirmed) return;
+
+        _isActioning = true;
+        try
+        {
+            await WorkspacePersistence.DeleteAsync(workspaceId);
+            _successMessage = "Workspace deleted";
+            await LoadWorkspacesAsync();
+            _selectedWorkspaceId = _workspaces.FirstOrDefault()?.Id;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error deleting workspace");
+            _errorMessage = "Failed to delete workspace";
+        }
+        finally
+        {
+            _isActioning = false;
+        }
+    }
+
+    private async Task ExportWorkspaceAsync(Guid workspaceId)
+    {
+        _isActioning = true;
+        try
+        {
+            var json = await WorkspacePersistence.ExportJsonAsync(workspaceId);
+            if (!string.IsNullOrEmpty(json))
+            {
+                await JSRuntime.InvokeVoidAsync("downloadJson", json, $"workspace-{workspaceId:N}.json");
+                _successMessage = "Workspace exported";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error exporting workspace");
+            _errorMessage = "Failed to export workspace";
+        }
+        finally
+        {
+            _isActioning = false;
+        }
+    }
+
+    private async Task ImportWorkspaceAsync()
+    {
+        var json = await GetJsonFromUserAsync();
+        if (string.IsNullOrWhiteSpace(json)) return;
+
+        _isActioning = true;
+        try
+        {
+            var result = await WorkspacePersistence.ImportJsonAsync(json);
+            if (result != null)
+            {
+                _successMessage = $"Workspace imported: {result.Name}";
+                await LoadWorkspacesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error importing workspace");
+            _errorMessage = "Failed to import workspace";
+        }
+        finally
+        {
+            _isActioning = false;
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task OnOverlayClickAsync()
+    {
+        await CloseAsync();
+    }
+
+    private async Task<string?> GetWorkspaceNameFromUserAsync(string prompt, string defaultValue)
+    {
+        var name = await JSRuntime.InvokeAsync<string>("prompt", prompt, defaultValue);
+        return string.IsNullOrWhiteSpace(name) ? null : name;
+    }
+
+    private async Task<string?> GetJsonFromUserAsync()
+    {
+        var json = await JSRuntime.InvokeAsync<string>("prompt", "Paste workspace JSON to import:");
+        return string.IsNullOrWhiteSpace(json) ? null : json;
+    }
+
+    private string FormatDate(DateTimeOffset date)
+    {
+        var elapsed = DateTimeOffset.UtcNow - date;
+        return elapsed.TotalSeconds < 60 ? "just now"
+             : elapsed.TotalMinutes < 60 ? $"{(int)elapsed.TotalMinutes}m ago"
+             : elapsed.TotalHours < 24 ? $"{(int)elapsed.TotalHours}h ago"
+             : elapsed.TotalDays < 30 ? $"{(int)elapsed.TotalDays}d ago"
+             : date.ToString("MMM d, yyyy");
+    }
+
+    @inject IJSRuntime JSRuntime
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        await Task.CompletedTask;
+    }
+}

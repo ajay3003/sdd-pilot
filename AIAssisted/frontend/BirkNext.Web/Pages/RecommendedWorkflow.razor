@@ -1,301 +1,365 @@
 @page "/getting-started"
+@using BirkNext.Web.Components
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@using Microsoft.AspNetCore.Components.Rendering
 @implements IDisposable
-@inject IWorkspaceArtifactStatusService ArtifactStatus
-@inject IWorkspaceSessionService Workspace
-@inject FeatureVisibilityService FeatureViz
-@inject IExtractionSessionService ExtractionSession
-@inject IDashboardSnapshotService DashboardSnapshot
-@inject TaskAlignmentSessionService AlignmentSession
+@inject IWorkflowReadinessService WorkflowReadiness
+@inject IWorkspacePersistenceApiService WorkspacePersistence
+@inject IWorkspaceSessionRestoreService WorkspaceRestore
+@inject IWorkspaceAutoSaveService AutoSave
+@inject IRecommendedWorkflowApiService WorkflowApi
+@inject ILogger<RecommendedWorkflow> Logger
+@inject IJSRuntime JSRuntime
 
-<PageTitle>Recommended Workflow — QA Review Studio</PageTitle>
+<PageTitle>Recommended Workflow - QA Review Studio</PageTitle>
 
 <div class="rw-page">
 
     <PageHeader Title="Recommended Workflow"
-                Description="A live workspace-aware guide that recommends the next action from loaded artifacts, completed analysis sessions, Feature Visibility, and the current navigation." />
+                Description="A live workspace-aware guide that recommends the next action from the current workflow readiness state." />
 
-    <div class="rw-workspace-status" role="status" aria-live="polite">
-        <div class="rw-status-header">
-            <span class="rw-project-badge">📁 @ProjectName</span>
-            <span class="rw-artifact-count">@_status.ArtifactCount of 5 artifacts loaded</span>
-        </div>
-        <div class="rw-status-indicators">
-            @foreach (var artifact in _artifactReadiness)
-            {
-                <span class="rw-artifact-badge @(artifact.IsLoaded ? "is-loaded" : "is-missing")">
-                    <span class="rw-badge-icon">@(artifact.IsLoaded ? "✓" : "○")</span>
-                    @artifact.Name
+    @if (_readiness is null)
+    {
+        <p class="loading-state">Loading workflow...</p>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_approvalErrorMessage))
+        {
+            <div class="rw-error-alert" role="alert">
+                <span class="rw-error-icon">!</span>
+                <span class="rw-error-message">@_approvalErrorMessage</span>
+                <button class="rw-error-close" @onclick="@(() => _approvalErrorMessage = null)">&times;</button>
+            </div>
+        }
+
+        <div class="rw-workspace-status" role="status" aria-live="polite">
+            <div class="rw-status-header">
+                <span class="rw-section-label">Automatic State</span>
+                <span class="rw-artifact-count">Detection unlocks pages; it does not approve review work.</span>
+            </div>
+            <div class="rw-status-indicators">
+                <span class="rw-artifact-badge @(_readiness.WorkspaceLoaded ? "is-detected" : "is-missing")">
+                    <span class="rw-badge-icon">@(_readiness.WorkspaceLoaded ? "✓" : "-")</span>
+                    Workspace
                 </span>
+                @foreach (var artifact in _readiness.Artifacts)
+                {
+                    <span class="rw-artifact-badge @(artifact.IsLoaded ? "is-detected" : "is-missing")">
+                        <span class="rw-badge-icon">@(artifact.IsLoaded ? "✓" : "○")</span>
+                        @artifact.Name
+                    </span>
+                }
+            </div>
+        </div>
+
+        <div class="rw-layout">
+            <main class="rw-main" aria-label="Recommended workflow">
+        @if (_readiness.NextRecommendedAction is not null)
+        {
+            <div class="rw-next-action">
+                <div class="rw-next-action-header">
+                    <span class="rw-next-action-icon">▶</span>
+                    <div>
+                        <div class="rw-next-action-label">Current Recommendation</div>
+                        <div class="rw-next-action-title">@_readiness.NextRecommendedAction.Title</div>
+                    </div>
+                </div>
+                <div class="rw-next-action-label">Why this is the next step</div>
+                <p class="rw-next-action-desc">@_readiness.NextRecommendedAction.Description</p>
+                @RenderQuickAction(_readiness.NextRecommendedAction)
+            </div>
+        }
+
+        <div class="rw-phases">
+            @foreach (var step in _readiness.Steps)
+            {
+                <div class="rw-phase @GetStepCardClass(step) @(step.IsCurrent ? "is-current" : "") @(step.IsFuture ? "is-disabled" : "") @(step.Status == WorkflowStepStatus.NeedsAttention ? "is-invalidated" : "")" style="--rw-phase-color: @GetStepColor(step);">
+                    <div class="rw-phase-header">
+                        <div class="rw-phase-num">
+                            @if (step.Status == WorkflowStepStatus.NeedsAttention)
+                            {
+                                <span class="rw-phase-num-warning">!</span>
+                            }
+                            else
+                            {
+                                @(step.Status == WorkflowStepStatus.Approved ? "✓" : step.Number.ToString())
+                            }
+                        </div>
+                        <div class="rw-phase-titles">
+                            <div class="rw-phase-label">Step @step.Number</div>
+                            <div class="rw-phase-name">@step.Title</div>
+                        </div>
+                        <span class="badge rw-step-badge @GetStepBadgeClass(step)">@GetStepStateLabel(step)</span>
+                    </div>
+                    @if (step.Status == WorkflowStepStatus.NeedsAttention)
+                    {
+                        <div class="rw-invalidation-alert">
+                            <span class="rw-invalidation-icon">!</span>
+                            <div class="rw-invalidation-content">
+                                <div class="rw-invalidation-title">Approval Invalidated</div>
+                                <div class="rw-invalidation-reason">An artifact changed since this step was approved. Please review and re-approve.</div>
+                            </div>
+                        </div>
+                    }
+                    <div class="rw-phase-body">
+                        <p class="rw-goal">@step.Description</p>
+                        <div class="rw-phase-footer">
+                            @RenderAction(step, "rw-cta")
+                        </div>
+                    </div>
+                </div>
+
+                @if (step.Number < _readiness.Steps.Count)
+                {
+                    <div class="rw-phase-connector" aria-hidden="true">↓</div>
+                }
             }
         </div>
-    </div>
 
-    @if (_currentStep is not null)
-    {
-        <div class="rw-next-action">
-            <div class="rw-next-action-header">
-                <span class="rw-next-action-icon">▶</span>
-                <div>
-                    <div class="rw-next-action-label">Next Recommended Action</div>
-                    <div class="rw-next-action-title">@_currentStep.Title</div>
+        @if (_readiness.CanRelease)
+        {
+            <div class="rw-release">
+                <span class="rw-release-icon" aria-hidden="true">✓</span>
+                <div class="rw-release-content">
+                    <div class="rw-release-label">Release</div>
+                    <p class="rw-release-desc">@_readiness.ReleaseReason</p>
                 </div>
             </div>
-            <p class="rw-next-action-desc">@_currentStep.Description</p>
-            @RenderAction(_currentStep, "rw-next-action-btn")
+        }
+
+            </main>
+
+            <aside class="rw-sidebar" aria-label="Workspace review dashboard">
+                <div class="rw-sidebar-inner">
+                    <div class="rw-workspace-actions">
+                        <div class="rw-workspace-header">
+                            <div>
+                                <div class="rw-workspace-actions-header">Current Workspace</div>
+                                <div class="rw-workspace-title">@_readiness.WorkspaceName</div>
+                            </div>
+                            <details class="rw-workspace-menu" @ref="_workspaceMenuRef">
+                                <summary class="btn-secondary rw-workspace-menu-trigger">Workspace</summary>
+                                <div class="rw-workspace-menu-list">
+                                    <button type="button" @onclick="SaveWorkspaceAsync" disabled="@(_isSaving || !_readiness.WorkspaceLoaded)">
+                                        @(_isSaving ? "Saving..." : "Save")
+                                    </button>
+                                    <button type="button" @onclick="SaveAsWorkspaceAsync" disabled="@(_isSaving || !_readiness.WorkspaceLoaded)">Save As</button>
+                                    <button type="button" @onclick="@(() => ShowManageWorkspacesAsync())" disabled="@_isSaving">Manage Workspaces</button>
+                                    <button type="button" class="is-danger" @onclick="ClearWorkspaceAsync" disabled="@(_isSaving || !_readiness.WorkspaceLoaded)">Clear Workspace</button>
+                                </div>
+                            </details>
+                        </div>
+
+                        <div class="rw-workspace-info">
+                            <div class="rw-workspace-details">
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Workspace</span>
+                                    <span class="rw-detail-value">@_readiness.WorkspaceName</span>
+                                </div>
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Project</span>
+                                    <span class="rw-detail-value">@_readiness.ProjectName</span>
+                                </div>
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Artifacts</span>
+                                    <span class="rw-detail-value">@_readiness.ArtifactStatus.ArtifactCount of 5</span>
+                                </div>
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Manual Review</span>
+                                    <span class="rw-detail-value">@ManualApprovalValue</span>
+                                </div>
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Release Readiness</span>
+                                    <span class="rw-detail-value">@($"{_readiness.OverallReadiness.OverallReadiness}%")</span>
+                                </div>
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Status</span>
+                                    <span class="rw-detail-value @_readiness.WorkspaceStatusClass">@_readiness.WorkspaceStatus</span>
+                                </div>
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Last Saved</span>
+                                    <span class="rw-detail-value">@_readiness.LastSavedText</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (!_readiness.WorkspaceLoaded)
+                        {
+                            <div class="rw-no-workspace">
+                                <p>No workspace loaded.</p>
+                                <SecondaryButton OnClick="ShowManageWorkspacesAsync">Resume Workspace</SecondaryButton>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="rw-summary metric-strip" role="status" aria-live="polite">
+                        <MetricCard Value="@AutomaticSetupValue" Label="Automatic Setup" Sublabel="@AutomaticSetupSublabel" Variant="@AutomaticSetupVariant" />
+                        <MetricCard Value="@ManualApprovalValue" Label="Manual Review" Sublabel="Approved" Variant="@ManualApprovalVariant" />
+                        <MetricCard Value="@($"{_readiness.OverallReadiness.OverallReadiness}%")" Label="Release Readiness" Sublabel="@ReleaseReadinessSublabel" Variant="@ReleaseReadinessVariant" />
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <div class="rw-footer-note">
+            For detailed reference documentation on any feature, see the <a href="user-guide" class="rw-inline-link">User Guide</a>.
         </div>
     }
-
-    <div class="rw-phases">
-        @foreach (var step in _steps)
-        {
-            <div class="rw-phase @step.StatusClass @(step.IsCurrent ? "is-current" : "") @(step.IsFuture ? "is-disabled" : "")" style="--rw-phase-color: @step.Color;">
-                <div class="rw-phase-header">
-                    <div class="rw-phase-num">@(step.IsComplete ? "✓" : step.Number.ToString())</div>
-                    <div class="rw-phase-titles">
-                        <div class="rw-phase-label">Step @step.Number</div>
-                        <div class="rw-phase-name">@step.Title</div>
-                    </div>
-                    <span class="rw-step-badge @step.BadgeClass">@step.StatusText</span>
-                </div>
-                <div class="rw-phase-body">
-                    <p class="rw-goal">@step.Description</p>
-                    <div class="rw-phase-footer">
-                        @RenderAction(step, "rw-cta")
-                    </div>
-                </div>
-            </div>
-
-            @if (step.Number < _steps.Count)
-            {
-                <div class="rw-phase-connector" aria-hidden="true">↓</div>
-            }
-        }
-    </div>
-
-    <div class="rw-release">
-        <span class="rw-release-icon" aria-hidden="true">✓</span>
-        <div class="rw-release-content">
-            <div class="rw-release-label">Release</div>
-            <p class="rw-release-desc">Specification reviewed. Traceability analyzed. Implementation aligned. Run any remaining quality gates required by your team before release sign-off.</p>
-        </div>
-    </div>
-
-    <div class="rw-maintenance">
-        <div class="rw-maintenance-header">Developer Maintenance</div>
-        <p class="rw-maintenance-text">This page is dynamic. Keep workflow state sourced from existing services; do not duplicate artifact detection or add a separate workflow store.</p>
-        <ul class="rw-maintenance-rules">
-            <li>Artifact readiness comes from <code>WorkspaceArtifactStatusService</code>.</li>
-            <li>Navigation availability comes from <code>FeatureVisibilityService</code>.</li>
-            <li>Specification Review completion comes from <code>ExtractionSessionService</code>.</li>
-            <li>Artifact Traceability completion comes from <code>IDashboardSnapshotService.TraceabilityReport</code>.</li>
-            <li>Implementation Review completion comes from <code>TaskAlignmentSessionService</code>.</li>
-        </ul>
-        <div class="rw-maintenance-routes">
-            <span class="rw-maintenance-routes-label">Active routes:</span>
-            <code>sample-projects</code><code>constitution-explorer</code><code>extract</code>
-            <code>artifact-traceability</code><code>task-alignment</code><code>impact-analysis</code>
-        </div>
-    </div>
-
-    <div class="rw-footer-note">
-        For detailed reference documentation on any feature, see the <a href="user-guide" class="rw-inline-link">User Guide</a>.
-    </div>
 
 </div>
 
-@code {
-    private WorkspaceArtifactStatus _status = new(false, false, false, false, false, 0, null);
-    private ExtractionSessionSnapshot? _extractionSnapshot;
-    private IReadOnlyList<ArtifactReadiness> _artifactReadiness = [];
-    private IReadOnlyList<WorkflowStep> _steps = [];
-    private WorkflowStep? _currentStep;
+@if (_showWorkspaceManager)
+{
+    <WorkspaceManager OnClose="OnWorkspaceManagerCloseAsync" />
+}
 
-    private string ProjectName =>
-        string.IsNullOrWhiteSpace(_status.ActiveProjectName)
-            ? "No project loaded"
-            : _status.ActiveProjectName!;
+@code {
+    private WorkflowReadiness? _readiness;
+    private bool _isSaving;
+    private bool _showWorkspaceManager;
+    private string? _approvingStepId;
+    private string? _approvalErrorMessage;
+    private ElementReference _workspaceMenuRef;
 
     protected override async Task OnInitializedAsync()
     {
-        ArtifactStatus.StatusChanged += OnWorkspaceChanged;
-        await RefreshWorkflowAsync();
+        try
+        {
+            WorkflowReadiness.ReadinessChanged += OnReadinessChanged;
+            await AutoSave.StartMonitoringAsync();
+            await RefreshReadinessAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error initializing RecommendedWorkflow page");
+            _approvalErrorMessage = $"Failed to load workflow: {ex.Message}";
+        }
     }
 
-    private async void OnWorkspaceChanged()
+    private async void OnReadinessChanged()
     {
         await InvokeAsync(async () =>
         {
-            await RefreshWorkflowAsync();
+            AutoSave.OnArtifactChanged();
+            await RefreshReadinessAsync();
             StateHasChanged();
         });
     }
 
-    private async Task RefreshWorkflowAsync()
+    private async Task RefreshReadinessAsync()
     {
-        _status = ArtifactStatus.GetStatus();
-        _extractionSnapshot = await ExtractionSession.LoadAsync();
-        _artifactReadiness = BuildArtifactReadiness();
-        _steps = BuildWorkflowSteps();
-        _currentStep = _steps.FirstOrDefault(step => step.IsCurrent);
+        _readiness = await WorkflowReadiness.GetReadinessAsync();
     }
 
-    private IReadOnlyList<ArtifactReadiness> BuildArtifactReadiness() =>
-    [
-        new("Constitution", _status.HasConstitution),
-        new("Specification", _status.HasSpecification),
-        new("Plan", _status.HasPlan),
-        new("Tasks", _status.HasTasks),
-        new("Data Model", _status.HasDataModel)
-    ];
+    private IReadOnlyList<WorkflowStepViewModel> ManualReviewSteps =>
+        _readiness?.Steps.Where(IsManualReviewStep).ToList() ?? [];
 
-    private IReadOnlyList<WorkflowStep> BuildWorkflowSteps()
+    private int ManualApprovedCount =>
+        ManualReviewSteps.Count(step => step.ApprovalState == ApprovalState.Approved);
+
+    private string ManualApprovalValue => $"{ManualApprovedCount} / {ManualReviewSteps.Count}";
+
+    private string ManualApprovalVariant =>
+        ManualReviewSteps.Count > 0 && ManualApprovedCount == ManualReviewSteps.Count ? "success" : "warning";
+
+    private string AutomaticSetupValue =>
+        _readiness?.WorkspaceLoaded == true && _readiness.ArtifactStatus.ArtifactCount > 0 ? "Ready" : "Missing";
+
+    private string AutomaticSetupSublabel =>
+        _readiness?.WorkspaceLoaded == true
+            ? $"Workspace, {_readiness.ArtifactStatus.ArtifactCount} / 5 artifacts"
+            : "No workspace loaded";
+
+    private string AutomaticSetupVariant =>
+        _readiness?.WorkspaceLoaded == true && _readiness.ArtifactStatus.ArtifactCount > 0 ? "info" : "warning";
+
+    private string ReleaseReadinessSublabel =>
+        _readiness?.CanRelease == true ? "Release recommended" : "Manual approvals required";
+
+    private string ReleaseReadinessVariant =>
+        _readiness?.CanRelease == true ? "success" : "info";
+
+    private static bool IsManualReviewStep(WorkflowStepViewModel step) =>
+        !IsLoadWorkspaceStep(step) && (step.RequiresManualReview || step.RequiresApproval);
+
+    private static bool IsLoadWorkspaceStep(WorkflowStepViewModel step) =>
+        step.Key.Equals("LoadSampleProject", StringComparison.OrdinalIgnoreCase)
+        || step.Key.Equals("LoadWorkspace", StringComparison.OrdinalIgnoreCase);
+
+    private string GetStepStateLabel(WorkflowStepViewModel step)
     {
-        var specText = Workspace.Get(WorkspaceArtifactKind.Specification)?.Text ?? string.Empty;
-        var taskText = Workspace.Get(WorkspaceArtifactKind.Tasks)?.Text ?? string.Empty;
-
-        var specReviewComplete = _status.HasSpecification
-                                 && _extractionSnapshot is not null
-                                 && !string.IsNullOrWhiteSpace(_extractionSnapshot.SpecMarkdown);
-
-        var traceabilityComplete = DashboardSnapshot.TraceabilityReport is not null;
-        var implementationComplete = _status.HasSpecification
-                                     && _status.HasTasks
-                                     && AlignmentSession.HasCurrentResult(_status.ActiveProjectName, specText, taskText);
-
-        var definitions = new List<StepDefinition>
+        if (IsLoadWorkspaceStep(step) && _readiness?.WorkspaceLoaded == true)
         {
-            new(
-                "Load Sample Project",
-                "Load a sample project or import workspace artifacts so the guide can recommend the next review step.",
-                "sample-projects",
-                "Open Sample Projects",
-                "#15803d",
-                FeatureViz.SampleProjects,
-                true,
-                _status.ArtifactCount > 0,
-                "Sample Projects is hidden by Feature Visibility"),
-            new(
-                "Constitution Explorer",
-                "Review governance rules and quality standards after a specification is available. If constitution.md is missing, open this step to load or inspect it.",
-                "constitution-explorer",
-                "Open Constitution Explorer",
-                "#1e40af",
-                FeatureViz.ConstitutionExplorer,
-                _status.HasSpecification,
-                _status.HasConstitution,
-                "Load a specification first"),
-            new(
-                "Plan Explorer",
-                "Inspect the implementation plan, architecture decisions, phases, risks, and quality gates when plan.md exists.",
-                "plan-explorer",
-                "Open Plan Explorer",
-                "#6d28d9",
-                FeatureViz.PlanExplorer,
-                _status.HasPlan,
-                _status.HasPlan,
-                "Load plan.md to enable this explorer"),
-            new(
-                "Task Explorer",
-                "Review task coverage and delivery risk when tasks.md exists.",
-                "task-explorer",
-                "Open Task Explorer",
-                "#b45309",
-                FeatureViz.TaskExplorer,
-                _status.HasTasks,
-                _status.HasTasks,
-                "Load tasks.md to enable this explorer"),
-            new(
-                "Data Model Explorer",
-                "Review entities, relationships, constraints, indexes, and data-model traceability when data-model.md exists.",
-                "data-model-explorer",
-                "Open Data Model Explorer",
-                "#065f46",
-                FeatureViz.DataModelExplorer,
-                _status.HasDataModel,
-                _status.HasDataModel,
-                "Load data-model.md to enable this explorer"),
-            new(
-                "Specification Review",
-                "Run Specification Review to extract requirements, acceptance tests, clarifications, Flow View, Spec Explorer, and Traceability & Coverage.",
-                "extract",
-                "Run Specification Review",
-                "#0f766e",
-                FeatureViz.SpecificationReview,
-                _status.HasSpecification,
-                specReviewComplete,
-                "Load spec.md to enable Specification Review"),
-            new(
-                "Artifact Traceability",
-                "Analyze end-to-end coverage across Constitution, Specification, Plan, and Tasks once Specification Review has completed.",
-                "artifact-traceability",
-                "Run Artifact Traceability",
-                "#2563eb",
-                FeatureViz.ArtifactTraceability,
-                specReviewComplete && AtLeastTwoCoreArtifactsLoaded(),
-                traceabilityComplete,
-                "Complete Specification Review and load at least two core artifacts"),
-            new(
-                "Implementation Review",
-                "Validate tasks.md against spec.md to find alignment gaps, risky work, and regression candidates.",
-                "task-alignment",
-                "Run Implementation Review",
-                "#c2410c",
-                FeatureViz.ImplementationReview,
-                traceabilityComplete && _status.HasSpecification && _status.HasTasks,
-                implementationComplete,
-                "Run Artifact Traceability with spec.md and tasks.md loaded"),
-            new(
-                "Impact Analysis",
-                "Assess regression scope and high-risk areas after implementation alignment is known.",
-                "impact-analysis",
-                "Run Impact Analysis",
-                "#be185d",
-                FeatureViz.ImpactAnalysis,
-                implementationComplete,
-                false,
-                "Complete Implementation Review first")
-        };
-
-        var visibleDefinitions = definitions
-            .Where(definition => definition.IsVisible)
-            .ToList();
-
-        var currentAssigned = false;
-        var steps = new List<WorkflowStep>(visibleDefinitions.Count);
-
-        for (var i = 0; i < visibleDefinitions.Count; i++)
-        {
-            var definition = visibleDefinitions[i];
-            var isCurrent = !currentAssigned && !definition.IsComplete && definition.PrerequisitesMet;
-            if (isCurrent)
-                currentAssigned = true;
-
-            var state = definition.IsComplete
-                ? WorkflowStepState.Complete
-                : isCurrent
-                    ? WorkflowStepState.Current
-                    : WorkflowStepState.Future;
-
-            steps.Add(WorkflowStep.FromDefinition(i + 1, definition, state));
+            return "Reviewed";
         }
 
-        return steps;
+        if (step.ApprovalState == ApprovalState.NeedsChanges ||
+            step.ApprovalState == ApprovalState.InvalidatedByArtifactChange ||
+            step.Status == WorkflowStepStatus.NeedsAttention)
+        {
+            return "Needs Changes";
+        }
+
+        return step.Status switch
+        {
+            WorkflowStepStatus.Locked => "Locked",
+            WorkflowStepStatus.Available => "Available",
+            WorkflowStepStatus.InProgress => "In Review",
+            WorkflowStepStatus.Reviewed when step.RequiresApproval => "Pending Approval",
+            WorkflowStepStatus.Reviewed => "Reviewed",
+            WorkflowStepStatus.Approved => "Approved",
+            _ => "Available"
+        };
     }
 
-    private bool AtLeastTwoCoreArtifactsLoaded()
+    private string GetStepBadgeClass(WorkflowStepViewModel step) => GetStepStateLabel(step) switch
     {
-        var loaded = 0;
-        if (_status.HasConstitution) loaded++;
-        if (_status.HasSpecification) loaded++;
-        if (_status.HasPlan) loaded++;
-        if (_status.HasTasks) loaded++;
-        return loaded >= 2;
-    }
+        "Approved" => "rw-badge-approved",
+        "Needs Changes" => "rw-badge-needs-changes",
+        "In Review" => "rw-badge-in-review",
+        "Pending Approval" => "rw-badge-pending",
+        "Reviewed" => "rw-badge-reviewed",
+        "Locked" => "rw-badge-locked",
+        _ => "rw-badge-available"
+    };
 
-    private RenderFragment RenderAction(WorkflowStep step, string cssClass) => builder =>
+    private string GetStepCardClass(WorkflowStepViewModel step) => GetStepStateLabel(step) switch
     {
+        "Approved" => "is-approved",
+        "Needs Changes" => "is-attention",
+        "In Review" => "is-current",
+        "Pending Approval" => "is-reviewed",
+        "Reviewed" => "is-reviewed",
+        "Locked" => "is-disabled",
+        _ => ""
+    };
+
+    private string GetStepColor(WorkflowStepViewModel step) =>
+        GetStepStateLabel(step) == "Approved" ? "#15803d" : step.Color;
+
+    private RenderFragment RenderQuickAction(WorkflowStepViewModel step) => builder =>
+    {
+        if (!step.CanOpen)
+        {
+            return;
+        }
+
+        builder.OpenElement(0, "a");
+        builder.AddAttribute(1, "href", step.Route);
+        builder.AddAttribute(2, "class", "rw-next-action-btn");
+        builder.AddContent(3, $"{step.ActionLabel} ->");
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderAction(WorkflowStepViewModel step, string cssClass) => builder =>
+    {
+        if (IsLoadWorkspaceStep(step) && _readiness?.WorkspaceLoaded == true)
+        {
+            return;
+        }
+
         if (step.CanOpen)
         {
             builder.OpenElement(0, "a");
@@ -303,79 +367,244 @@
             builder.AddAttribute(2, "class", cssClass);
             builder.AddContent(3, $"{step.ActionLabel} →");
             builder.CloseElement();
-            return;
+        }
+        else
+        {
+            builder.OpenElement(4, "button");
+            builder.AddAttribute(5, "type", "button");
+            builder.AddAttribute(6, "class", $"{cssClass} is-disabled");
+            builder.AddAttribute(7, "disabled", true);
+            builder.AddContent(8, step.DisabledReason);
+            builder.CloseElement();
         }
 
-        builder.OpenElement(4, "button");
-        builder.AddAttribute(5, "type", "button");
-        builder.AddAttribute(6, "class", $"{cssClass} is-disabled");
-        builder.AddAttribute(7, "disabled", true);
-        builder.AddContent(8, step.DisabledReason);
-        builder.CloseElement();
+        if (step.RequiresManualReview || step.RequiresApproval)
+        {
+            RenderApprovalButtons(builder, step);
+        }
     };
+
+    private void RenderApprovalButtons(RenderTreeBuilder builder, WorkflowStepViewModel step)
+    {
+        builder.OpenElement(100, "div");
+        builder.AddAttribute(101, "class", "rw-approval-buttons");
+
+        if (step.RequiresManualReview && step.ReviewState != ReviewState.Reviewed)
+        {
+            builder.OpenComponent<SecondaryButton>(102);
+            builder.AddAttribute(103, "Class", "rw-review-button");
+            builder.AddAttribute(104, "Disabled", _approvingStepId == step.Key);
+            builder.AddAttribute(105, "OnClick", EventCallback.Factory.Create(this, () => MarkReviewedAsync(step)));
+            builder.AddAttribute(106, "ChildContent", (RenderFragment)(childBuilder =>
+            {
+                childBuilder.AddContent(107, _approvingStepId == step.Key ? "Marking..." : "Mark Reviewed");
+            }));
+            builder.CloseComponent();
+        }
+
+        if (step.RequiresApproval && step.ApprovalState != ApprovalState.Approved)
+        {
+            builder.OpenComponent<PrimaryButton>(108);
+            builder.AddAttribute(109, "Class", "rw-approve-button");
+            builder.AddAttribute(110, "Disabled", _approvingStepId == step.Key);
+            builder.AddAttribute(111, "OnClick", EventCallback.Factory.Create(this, () => ApproveStepAsync(step)));
+            builder.AddAttribute(112, "ChildContent", (RenderFragment)(childBuilder =>
+            {
+                childBuilder.AddContent(113, _approvingStepId == step.Key ? "Approving..." : "Approve");
+            }));
+            builder.CloseComponent();
+        }
+
+        if (step.ApprovalState == ApprovalState.Approved || step.ApprovalState == ApprovalState.Pending)
+        {
+            builder.OpenComponent<DangerButton>(114);
+            builder.AddAttribute(115, "Class", "rw-needs-changes-button");
+            builder.AddAttribute(116, "Disabled", _approvingStepId == step.Key);
+            builder.AddAttribute(117, "OnClick", EventCallback.Factory.Create(this, () => RejectStepAsync(step)));
+            builder.AddAttribute(118, "ChildContent", (RenderFragment)(childBuilder =>
+            {
+                childBuilder.AddContent(119, _approvingStepId == step.Key ? "Rejecting..." : "Needs Changes");
+            }));
+            builder.CloseComponent();
+        }
+
+        builder.CloseElement();
+    }
 
     public void Dispose()
     {
-        ArtifactStatus.StatusChanged -= OnWorkspaceChanged;
+        WorkflowReadiness.ReadinessChanged -= OnReadinessChanged;
     }
 
-    private sealed record ArtifactReadiness(string Name, bool IsLoaded);
-
-    private sealed record StepDefinition(
-        string Title,
-        string Description,
-        string Route,
-        string ActionLabel,
-        string Color,
-        bool IsVisible,
-        bool PrerequisitesMet,
-        bool IsComplete,
-        string DisabledReason);
-
-    private enum WorkflowStepState
+    private async Task SaveWorkspaceAsync()
     {
-        Complete,
-        Current,
-        Future
-    }
+        if (_isSaving) return;
+        _isSaving = true;
 
-    private sealed record WorkflowStep(
-        int Number,
-        string Title,
-        string Description,
-        string Route,
-        string ActionLabel,
-        string Color,
-        bool IsComplete,
-        bool IsCurrent,
-        bool IsFuture,
-        bool CanOpen,
-        string StatusText,
-        string StatusClass,
-        string BadgeClass,
-        string DisabledReason)
-    {
-        public static WorkflowStep FromDefinition(int number, StepDefinition definition, WorkflowStepState state)
+        try
         {
-            var isComplete = state == WorkflowStepState.Complete;
-            var isCurrent = state == WorkflowStepState.Current;
-            var isFuture = state == WorkflowStepState.Future;
-
-            return new WorkflowStep(
-                number,
-                definition.Title,
-                definition.Description,
-                definition.Route,
-                definition.ActionLabel,
-                definition.Color,
-                isComplete,
-                isCurrent,
-                isFuture,
-                definition.PrerequisitesMet,
-                isComplete ? "Complete" : isCurrent ? "Current" : "Locked",
-                isComplete ? "is-complete" : isCurrent ? "is-current" : "is-future",
-                isComplete ? "is-complete" : isCurrent ? "is-current" : "is-future",
-                definition.IsVisible ? definition.DisabledReason : "Hidden by Feature Visibility");
+            var result = await WorkspacePersistence.SaveCurrentAsync();
+            if (result != null)
+            {
+                await RefreshReadinessAsync();
+                StateHasChanged();
+                await CloseWorkspaceMenuAsync();
+            }
         }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving workspace");
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SaveAsWorkspaceAsync()
+    {
+        var name = await GetWorkspaceNameFromUserAsync();
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        _isSaving = true;
+        try
+        {
+            var result = await WorkspacePersistence.SaveAsAsync(name);
+            if (result != null)
+            {
+                await RefreshReadinessAsync();
+                StateHasChanged();
+                await CloseWorkspaceMenuAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving workspace as {Name}", name);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task ShowManageWorkspacesAsync()
+    {
+        _showWorkspaceManager = true;
+        StateHasChanged();
+        await CloseWorkspaceMenuAsync();
+    }
+
+    private async Task OnWorkspaceManagerCloseAsync()
+    {
+        _showWorkspaceManager = false;
+        await RefreshReadinessAsync();
+        StateHasChanged();
+    }
+
+    private async Task ClearWorkspaceAsync()
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Clear current workspace? You can resume it later from Manage Workspaces.");
+        if (!confirmed) return;
+
+        try
+        {
+            await WorkspaceRestore.ClearWorkspaceAsync();
+            await RefreshReadinessAsync();
+            StateHasChanged();
+            await CloseWorkspaceMenuAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error clearing workspace");
+        }
+    }
+
+    private async Task CloseWorkspaceMenuAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("closeDetailsElement", _workspaceMenuRef);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Error closing workspace menu");
+        }
+    }
+
+    private async Task MarkReviewedAsync(WorkflowStepViewModel step)
+    {
+        if (_approvingStepId != null) return;
+        _approvingStepId = step.Key;
+        _approvalErrorMessage = null;
+
+        try
+        {
+            await WorkflowApi.MarkStepReviewedAsync(GetWorkspaceId(), step.Key);
+            await RefreshReadinessAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error marking step {StepKey} as reviewed", step.Key);
+            _approvalErrorMessage = $"Failed to mark reviewed: {ex.Message}";
+        }
+        finally
+        {
+            _approvingStepId = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ApproveStepAsync(WorkflowStepViewModel step)
+    {
+        if (_approvingStepId != null) return;
+        _approvingStepId = step.Key;
+        _approvalErrorMessage = null;
+
+        try
+        {
+            await WorkflowApi.ApproveStepAsync(GetWorkspaceId(), step.Key);
+            await RefreshReadinessAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error approving step {StepKey}", step.Key);
+            _approvalErrorMessage = $"Failed to approve: {ex.Message}";
+        }
+        finally
+        {
+            _approvingStepId = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RejectStepAsync(WorkflowStepViewModel step)
+    {
+        if (_approvingStepId != null) return;
+        _approvingStepId = step.Key;
+        _approvalErrorMessage = null;
+
+        try
+        {
+            await WorkflowApi.RejectStepAsync(GetWorkspaceId(), step.Key);
+            await RefreshReadinessAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error rejecting step {StepKey}", step.Key);
+            _approvalErrorMessage = $"Failed to reject: {ex.Message}";
+        }
+        finally
+        {
+            _approvingStepId = null;
+            StateHasChanged();
+        }
+    }
+
+    private Guid GetWorkspaceId() => _readiness?.CurrentWorkspace?.WorkspaceId ?? Guid.Empty;
+
+    private async Task<string?> GetWorkspaceNameFromUserAsync()
+    {
+        var name = await JSRuntime.InvokeAsync<string>("prompt", "Enter workspace name:");
+        return string.IsNullOrWhiteSpace(name) ? null : name;
     }
 }

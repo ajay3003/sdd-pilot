@@ -11,9 +11,24 @@ namespace BirkNext.Web.Tests.Pages;
 
 public class DashboardPageTests : BunitContext
 {
+    private readonly Mock<IWorkflowReadinessService> _workflowReadiness = new();
+
     public DashboardPageTests()
     {
         Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
+        Services.AddSingleton(new Mock<IReportExportService>().Object);
+        var artifactStatus = new Mock<IWorkspaceArtifactStatusService>();
+        artifactStatus.Setup(service => service.GetStatus())
+            .Returns(new WorkspaceArtifactStatus(false, false, false, false, false, 0, null));
+        Services.AddSingleton(artifactStatus.Object);
+        Services.AddSingleton(new Mock<IWorkspaceSessionService>().Object);
+        Services.AddSingleton(new Mock<IDashboardSnapshotService>().Object);
+        Services.AddSingleton(new RuntimeReviewSessionService());
+        Services.AddSingleton(new QualityReviewSessionService());
+        _workflowReadiness
+            .Setup(service => service.GetReadinessAsync())
+            .ReturnsAsync(EmptyWorkflowReadiness());
+        Services.AddSingleton(_workflowReadiness.Object);
     }
 
     [Fact]
@@ -26,8 +41,11 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find("[data-testid='coverage-dashboard']").TextContent.Should().Contain("Coverage Requirements");
-            cut.Markup.Should().Contain("Dashboard");
+            cut.Markup.Should().Contain("SDD Governance Dashboard");
+            cut.Markup.Should().Contain("Project Health");
+            cut.Markup.Should().Contain("Workflow");
+            cut.Markup.Should().Contain("0%");
+            cut.Markup.Should().Contain("Not Started");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -40,13 +58,29 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            var dashboard = cut.Find("[data-testid='coverage-dashboard']").TextContent;
-            dashboard.Should().Contain("--");
-            dashboard.Should().Contain("Coverage");
-            dashboard.Should().Contain("Coverage Requirements");
-            dashboard.Should().Contain("Traceability");
-            dashboard.Should().Contain("Top QA Risks");
-            cut.FindAll("[data-testid='dashboard-health-card']").Should().HaveCount(4);
+            cut.Markup.Should().Contain("0%");
+            cut.Markup.Should().Contain("Not Started");
+            cut.Markup.Should().Contain("No workspace loaded");
+            cut.Markup.Should().Contain("Project Health");
+            cut.Markup.Should().Contain("Traceability");
+            cut.Markup.Should().Contain("Top Risks");
+        }, timeout: TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public void DashboardWorkflowMetric_UsesSharedReadinessForLoadedWorkspace()
+    {
+        _workflowReadiness
+            .Setup(service => service.GetReadinessAsync())
+            .ReturnsAsync(LoadedWorkflowReadiness());
+        RegisterClient([], []);
+
+        var cut = Render<Dashboard>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("30%");
+            cut.Markup.Should().Contain("Started");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -72,16 +106,11 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            var dashboard = cut.Find("[data-testid='coverage-dashboard']").TextContent;
-            dashboard.Should().Contain("Coverage");
-            dashboard.Should().Contain("Coverage Requirements");
-            dashboard.Should().Contain("Traceability");
-            dashboard.Should().Contain("Top QA Risks");
-            dashboard.Should().Contain("Test coverage below 70%");
-            dashboard.Should().Contain("clarification item");
-            dashboard.Should().Contain("Covered");
-            dashboard.Should().Contain("Missing Tests");
-            cut.FindAll("[data-testid='dashboard-health-card']").Should().HaveCount(4);
+            cut.Markup.Should().Contain("SDD Governance Dashboard");
+            cut.Markup.Should().Contain("Governance Status");
+            cut.Markup.Should().Contain("Readiness Summary");
+            cut.Markup.Should().Contain("Analysis Summary");
+            cut.Markup.Should().Contain("Quick Actions");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -103,9 +132,9 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find("[data-testid='dashboard-load-error']")
-                .TextContent.Should().Contain("couldn't load dashboard data");
-            cut.Find("[data-testid='coverage-dashboard']").TextContent.Should().Contain("--");
+            cut.Markup.Should().Contain("SDD Governance Dashboard");
+            cut.Markup.Should().Contain("No workspace loaded");
+            cut.Markup.Should().Contain("Not Started");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -178,4 +207,51 @@ public class DashboardPageTests : BunitContext
         link.Setup(l => l.LinkType).Returns(linkType);
         return link.Object;
     }
+
+    private static WorkflowReadiness EmptyWorkflowReadiness() =>
+        new(
+            CurrentWorkspace: null,
+            WorkspaceLoaded: false,
+            WorkspaceName: "No workspace loaded",
+            ProjectName: "No project loaded",
+            WorkspaceStatus: "Not Saved",
+            WorkspaceStatusClass: "status-not-saved",
+            LastSavedAt: null,
+            LastSavedText: "-",
+            ArtifactStatus: new WorkspaceArtifactStatus(false, false, false, false, false, 0, null),
+            Artifacts: [],
+            SpecificationReviewState: null,
+            TraceabilityState: null,
+            ImplementationReviewState: null,
+            QualityGateState: null,
+            NextRecommendedAction: null,
+            OverallReadiness: new WorkflowReadinessBreakdown(),
+            Steps: [],
+            CanRelease: false,
+            ReleaseReason: "Load a workspace before release readiness can be evaluated.",
+            Warnings: []);
+
+    private static WorkflowReadiness LoadedWorkflowReadiness() =>
+        EmptyWorkflowReadiness() with
+        {
+            CurrentWorkspace = new WorkflowWorkspace(
+                WorkspaceId: Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                WorkspaceName: "Saved workspace",
+                ProjectName: "Sample Project",
+                ArtifactCount: 3,
+                LoadedAt: DateTimeOffset.UtcNow,
+                ArtifactSetHash: null,
+                AutoSaved: false),
+            WorkspaceLoaded = true,
+            WorkspaceName = "Saved workspace",
+            ProjectName = "Sample Project",
+            ArtifactStatus = new WorkspaceArtifactStatus(true, true, true, false, false, 3, "Sample Project"),
+            OverallReadiness = new WorkflowReadinessBreakdown
+            {
+                ArtifactReadiness = 60,
+                ReviewReadiness = 0,
+                ApprovalReadiness = 0,
+                OverallReadiness = 30
+            }
+        };
 }

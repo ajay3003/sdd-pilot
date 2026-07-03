@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace BirkNext.Web.Services;
 
 /// <summary>
@@ -8,6 +10,8 @@ namespace BirkNext.Web.Services;
 public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
 {
     private readonly Dictionary<WorkspaceArtifactType, WorkspaceArtifact> _artifacts = new();
+
+    public event EventHandler? ReviewContextRebuildNeeded;
 
     public string? ProjectName { get; set; }
     public string? CurrentProject
@@ -30,7 +34,11 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
                     string? fileName = null, string? sourcePath = null, DateTime? lastModified = null)
     {
         if (!string.IsNullOrWhiteSpace(text))
+        {
+            var hash = RuntimeHelpers.GetHashCode(this);
+            System.Diagnostics.Debug.WriteLine($"DIAG: [Repository] Set({type}) hash={hash}");
             _artifacts[type] = new WorkspaceArtifact(text, DateTime.UtcNow, fileName, sourcePath, lastModified);
+        }
     }
 
     public WorkspaceArtifact? Get(WorkspaceArtifactType type)
@@ -39,6 +47,14 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     public bool Has(WorkspaceArtifactType type) => _artifacts.ContainsKey(type);
 
     public void Clear(WorkspaceArtifactType type) => _artifacts.Remove(type);
+
+    public IEnumerable<(WorkspaceArtifactType Type, WorkspaceArtifact Artifact)> GetAllArtifacts()
+    {
+        var hash = RuntimeHelpers.GetHashCode(this);
+        var count = _artifacts.Count;
+        System.Diagnostics.Debug.WriteLine($"DIAG: [Repository] GetAllArtifacts() hash={hash}, count={count}");
+        return _artifacts.Select(kvp => (kvp.Key, kvp.Value));
+    }
 
     // ── IWorkspaceSessionService (WorkspaceArtifactKind) ─────────────────────
     // WorkspaceArtifactKind and WorkspaceArtifactType share identical integer values,
@@ -54,4 +70,9 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     public bool Has(WorkspaceArtifactKind kind) => Has((WorkspaceArtifactType)(int)kind);
 
     public void Clear(WorkspaceArtifactKind kind) => Clear((WorkspaceArtifactType)(int)kind);
+
+    public void NotifyArtifactsChanged()
+    {
+        ReviewContextRebuildNeeded?.Invoke(this, EventArgs.Empty);
+    }
 }

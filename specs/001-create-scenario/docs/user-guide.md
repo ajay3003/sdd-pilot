@@ -60,6 +60,177 @@ Example:
 | System MUST display all stored scenarios | REQUIREMENT |
 | What happens if backend is unavailable? | NEEDS_CLARIFICATION |
 
+---
+
+## Workspace Persistence
+
+Workspace Persistence allows you to save and resume your work across sessions. A workspace is a collection of artifacts (constitution.md, spec.md, plan.md, tasks.md, data-model.md) plus the metadata about your review progress.
+
+### Key Concepts
+
+| Term | Meaning |
+|---|---|
+| Workspace | A saved collection of artifacts plus project metadata |
+| Artifact | A source document (spec.md, plan.md, tasks.md, etc.) |
+| Workspace Metadata | Name, project name, artifact count, save status, last modified date |
+| Dirty State | Indicates that artifacts have changed since the last save (shown in amber) |
+| Auto-Save | Automatic save triggered after 3 seconds of inactivity, throttled to once every 30 seconds |
+| Soft Delete | Workspaces are hidden but recoverable; not permanently deleted |
+
+### Workspace Status Indicators
+
+The Recommended Workflow page shows the current workspace status with a color indicator:
+
+| Status | Color | Meaning |
+|---|---|---|
+| **Saved** | Green | Workspace was manually saved and matches the saved version |
+| **Auto-Saved** | Amber | Workspace was auto-saved (triggered by inactivity after artifact changes) |
+| **Unsaved Changes** | Amber | Artifacts have changed but the workspace has not been saved |
+| **Not Saved** | Gray | No workspace is currently loaded |
+
+### Saving a Workspace
+
+#### Manual Save
+
+1. Click **Save** in the Recommended Workflow workspace actions section
+2. If a workspace is already loaded, it will be updated with the current artifacts
+3. If no workspace is loaded, you will be prompted to enter a workspace name
+4. After saving, the status will change to **Saved** (green)
+
+#### Save As (Save with a new name)
+
+1. Click **Save As** in the workspace actions section
+2. Enter a new workspace name in the dialog
+3. A new workspace will be created with this name and the current artifacts
+4. The new workspace becomes the current workspace
+
+#### Auto-Save
+
+Auto-save happens automatically when:
+
+1. You load or modify artifacts
+2. 3 seconds pass without any artifact changes
+3. At least 30 seconds have passed since the last auto-save (throttle window)
+
+Auto-saved workspaces show **Auto-Saved** status in amber. You can manually save to create a **Saved** version.
+
+### Loading a Workspace
+
+1. Click **Manage** in the workspace actions section (or **Resume Workspace** if no workspace is loaded)
+2. The Workspace Manager modal will open, showing all saved workspaces
+3. Click on a workspace to select it (indicated by a radio button)
+4. Click **Open** to load the workspace
+5. The artifacts will be restored to the in-memory session and ReviewContext will rebuild
+6. The workspace status will show as **Saved** or **Auto-Saved** depending on the last save
+
+### Workspace Manager
+
+The Workspace Manager is a modal dialog accessible from the Recommended Workflow page. It shows:
+
+#### Workspace List
+
+Each workspace displays:
+
+- **Name** — the workspace name (with badges if auto-saved or marked as favorite)
+- **Project** — the project name associated with the workspace
+- **Artifacts** — count of imported artifacts (0–5)
+- **Updated** — relative time since last modification (e.g., "2h ago")
+
+#### Workspace Actions (per workspace)
+
+After selecting a workspace with the radio button, the following actions appear:
+
+| Action | What it does |
+|---|---|
+| **Open** | Load the workspace (blue button) |
+| **Rename** | Change the workspace name |
+| **Duplicate** | Create a copy with a new name |
+| **Export** | Download workspace as JSON file |
+| **Delete** | Hide the workspace (soft delete, can be recovered) |
+
+#### Import Workspace
+
+At the bottom of the Workspace Manager:
+
+- Click **Import JSON** to restore a previously exported workspace
+- Paste the JSON content in the dialog
+- The workspace will be imported with a new ID and become the current workspace
+
+### Clearing the Current Workspace
+
+1. Click **Clear** in the workspace actions section (red button)
+2. Confirm the action — you can resume this workspace later from Manage Workspaces
+3. The current workspace metadata will be removed, but the workspace is not deleted from the database
+
+This is useful for:
+
+- Starting a fresh analysis of a different project
+- Temporarily switching between projects
+- Clearing the in-memory artifact cache
+
+### Exporting and Importing Workspaces
+
+#### Export Workspace
+
+1. Open the Workspace Manager
+2. Select a workspace
+3. Click **Export**
+4. A JSON file will be downloaded to your computer
+5. Share this file with colleagues or save it as a backup
+
+#### Import Workspace
+
+1. Open the Workspace Manager
+2. Click **Import JSON** at the bottom
+3. Paste the JSON content from an exported workspace
+4. The workspace will be created with a new ID
+5. It becomes the current workspace
+
+**Import Validation:**
+
+The import process validates:
+
+- **Schema version** — must be "1.0" (compatible with this application version)
+- **Required fields** — workspace name and metadata are required
+- **Artifact types** — unrecognized artifact types are skipped with a warning
+- **Content integrity** — artifact content is validated and hashes are computed
+
+If validation fails, an error message will explain what went wrong. Common issues:
+
+- **"Unsupported schema version"** — the JSON was exported from a different or incompatible version
+- **"Missing required field"** — the JSON is missing essential data
+- **"Invalid JSON format"** — the JSON is malformed or corrupted
+
+### Workspace Dirty Tracking
+
+Artifacts are tracked using SHA256 hashes. When you load a workspace:
+
+1. The artifacts are compared to the saved version using content hashes
+2. If the hashes match, the status shows **Saved**
+3. If they differ, the status shows **Unsaved Changes** (amber)
+
+Dirty state is **computed on-the-fly** — it is not stored in the database. This ensures the status always reflects the true state of your current artifacts.
+
+### Multi-Workspace Support
+
+You can save and manage multiple workspaces:
+
+- Each workspace is independent
+- Only one workspace is "current" at a time
+- Switch between workspaces using the Workspace Manager
+- Workspaces are per-user (each user has their own saved workspaces)
+- Deleted workspaces are soft-deleted and can be recovered if needed
+
+### Auto-Save Configuration
+
+Auto-save is controlled by two settings (visible in Admin → System Settings):
+
+| Setting | Default | Purpose |
+|---|---|---|
+| **AutoSaveIntervalMs** | 3000 (3 seconds) | How long to wait after artifact changes before auto-saving |
+| **AutoSaveThrottleMs** | 30000 (30 seconds) | Minimum time between auto-saves to prevent excessive database writes |
+
+---
 
 ## Main Workflow
 
@@ -368,6 +539,94 @@ Feature visibility is useful for:
 
 After saving feature visibility changes from the UI, the backend applies the new settings immediately. The sidebar in the frontend will not update until the page is refreshed. A full browser refresh (F5) is required to reload the Blazor application and pick up the updated feature flags.
 
+
+---
+
+## Recommended Workflow — Manual Review and Approval
+
+The Recommended Workflow page guides you through QA review steps. Each step progresses through explicit states to ensure quality control.
+
+### Step States
+
+Steps progress through defined states, not automatically by loading artifacts:
+
+| State | Meaning | Color | Action |
+|---|---|---|---|
+| **Locked** | Prerequisites not met | Grey | Cannot open |
+| **Available** | Ready to review (prerequisites met) | Blue | Open page |
+| **In Progress** | User is currently reviewing | Blue | (automatic) |
+| **Reviewed** | User completed review | Purple | Awaiting approval |
+| **Pending Approval** | Reviewed, awaiting manual approval | Neutral | Approve or Reject |
+| **Approved** | Manually approved by user | Green | ✓ Complete |
+| **Needs Attention** | Artifact changed after approval, or user rejected | Orange/Red | Reopen and re-approve |
+
+### Key Principle
+
+**Loaded artifacts ≠ Approved**
+
+Simply having artifacts (constitution.md, spec.md, plan.md, tasks.md, data-model.md) means a step is **Available**, not **Approved**.
+
+Only **explicit user approval** makes a step green and complete.
+
+### Approval Workflow
+
+#### 1. Open the page
+Click the step's action button to open the corresponding analysis page.
+
+#### 2. Review
+Review the artifacts, analysis results, or findings as appropriate for that step.
+Click **Mark Reviewed** when you've completed the review.
+
+#### 3. Approve
+After reviewing, click **Approve** to mark the step as complete.
+- You may add an optional comment
+- The approval is recorded with timestamp and your user identity
+- The step turns green
+
+#### 4. Reject or Request Changes
+If the step needs work, click **Reject** or **Needs Changes**.
+- The step turns orange/red
+- Add a comment explaining what needs to be fixed
+- The workflow stays on this step until re-approved
+
+### Step Dependencies
+
+Some steps are **locked** until others are approved:
+
+- **Artifact Traceability** is locked until Specification Review is approved
+- **Implementation Review** is locked until Artifact Traceability is approved
+- **Data Model Explorer** is locked until data-model.md is loaded
+
+This ensures you follow the recommended workflow order and don't skip critical reviews.
+
+### Artifact Changes Invalidate Approvals
+
+If you modify an artifact after approving a step, dependent approvals are invalidated:
+
+- **Spec changes** → invalidates Specification Review, Artifact Traceability, Implementation Review
+- **Plan changes** → invalidates Plan Explorer, Artifact Traceability
+- **Task changes** → invalidates Task Explorer, Artifact Traceability, Implementation Review
+- **Constitution changes** → invalidates Constitution Explorer, Artifact Traceability
+
+An invalidated step shows **Needs Attention** in orange and must be re-reviewed and re-approved.
+
+### Approval History
+
+All approvals are recorded with:
+- **Timestamp** (when approved)
+- **User** (who approved, or "Local Developer")
+- **Comment** (optional notes from reviewer)
+
+Reordering approvals (e.g., loading a new artifact and re-approving) does not erase the previous approval history.
+
+### Using Approvals with Workspaces
+
+Approvals are saved **per workspace**:
+- When you save a workspace, approvals are persisted
+- When you reopen a workspace, all approvals are restored
+- Each workspace has independent approval history
+
+---
 
 ## Troubleshooting
 

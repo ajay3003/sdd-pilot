@@ -443,35 +443,42 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await QrService.InitializeAsync();
-
-        // Restore any artifacts already in the workspace from this session.
-        _constitutionText = Workspace.Get(WorkspaceArtifactKind.Constitution)?.Text ?? string.Empty;
-        _specText         = Workspace.Get(WorkspaceArtifactKind.Specification)?.Text ?? string.Empty;
-        _planText         = Workspace.Get(WorkspaceArtifactKind.Plan)?.Text          ?? string.Empty;
-        _taskText         = Workspace.Get(WorkspaceArtifactKind.Tasks)?.Text         ?? string.Empty;
-        _dataModelText    = Workspace.Get(WorkspaceArtifactKind.DataModel)?.Text     ?? string.Empty;
-
-        // Check if there's a prior session with selected packs
-        if (QualitySession.SelectedPackIds.Count > 0)
+        try
         {
-            // Use the prior session's pack selections
-            _selectedPacks.Clear();
-            foreach (var packId in QualitySession.SelectedPackIds)
+            await QrService.InitializeAsync();
+
+            // Restore any artifacts already in the workspace from this session.
+            _constitutionText = Workspace.Get(WorkspaceArtifactKind.Constitution)?.Text ?? string.Empty;
+            _specText         = Workspace.Get(WorkspaceArtifactKind.Specification)?.Text ?? string.Empty;
+            _planText         = Workspace.Get(WorkspaceArtifactKind.Plan)?.Text          ?? string.Empty;
+            _taskText         = Workspace.Get(WorkspaceArtifactKind.Tasks)?.Text         ?? string.Empty;
+            _dataModelText    = Workspace.Get(WorkspaceArtifactKind.DataModel)?.Text     ?? string.Empty;
+
+            // Check if there's a prior session with selected packs
+            if (QualitySession.SelectedPackIds.Count > 0)
             {
-                var pack = QrService.AvailablePacks.FirstOrDefault(p => p.PackId == packId);
-                if (pack is not null && IsPackAvailable(pack))
-                    _selectedPacks.Add(packId);
+                // Use the prior session's pack selections
+                _selectedPacks.Clear();
+                foreach (var packId in QualitySession.SelectedPackIds)
+                {
+                    var pack = QrService.AvailablePacks.FirstOrDefault(p => p.PackId == packId);
+                    if (pack is not null && IsPackAvailable(pack))
+                        _selectedPacks.Add(packId);
+                }
             }
-        }
-        else
-        {
-            // Apply default selections based on loaded artifacts
-            ApplyDefaultPackSelections();
-        }
+            else
+            {
+                // Apply default selections based on loaded artifacts
+                ApplyDefaultPackSelections();
+            }
 
-        if (QualitySession.HasResult && IsSessionForCurrentWorkspace())
-            RestoreReport(QualitySession.Report!);
+            if (QualitySession.HasResult && IsSessionForCurrentWorkspace())
+                RestoreReport(QualitySession.Report!);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error initializing QualityReview: {ex.Message}");
+        }
     }
 
     // ── Workspace-syncing text setters ────────────────────────────────────────

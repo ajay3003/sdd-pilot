@@ -163,7 +163,7 @@
     <!-- ── Section 4: SDD Workflow ─────────────────────────────────────── -->
     <section id="workflow" class="ug-section">
         <h2 class="ug-section-title">SDD Workflow</h2>
-        <p class="ug-section-lead">The workflow is dynamic and workspace-aware. The <a href="/getting-started" class="ug-inline-link">Recommended Workflow</a> page adapts automatically based on what you've loaded, what you've completed, and what's available next. It shows your current workspace status, next recommended action, and which steps are ready, in progress, or locked pending prerequisites.</p>
+        <p class="ug-section-lead">The workflow is dynamic and workspace-aware. The <a href="/getting-started" class="ug-inline-link">Recommended Workflow</a> page is the reviewer/release workflow: it adapts based on loaded artifacts, explicit manual review, and release approval progress. Developer diagnostics are kept under System Settings -> Developer and do not count as workflow approvals.</p>
 
         <h3 class="ug-subsection-title">The Recommended Workflow Page</h3>
         <p>Visit <a href="/getting-started" class="ug-inline-link">/getting-started</a> for a live, interactive guide that:</p>
@@ -172,7 +172,8 @@
             <li><strong>Recommends your next action</strong> — a "Next Recommended Action" card shows the most valuable step based on what's loaded and what you've completed</li>
             <li><strong>Highlights the current step</strong> — the workflow step you should focus on is visually emphasized</li>
             <li><strong>Locks unavailable steps</strong> — steps that require artifacts you haven't loaded yet are marked as "Locked" until their prerequisites are met</li>
-            <li><strong>Shows completion status</strong> — steps mark as "Complete" when you've run them, "Available" when prerequisites are met, "In Progress" when active, or "Locked" when awaiting prerequisites</li>
+            <li><strong>Shows manual approval status</strong> — artifacts can unlock pages automatically, but only reviewer actions mark steps as reviewed, pending approval, approved, or needing changes</li>
+            <li><strong>Excludes developer diagnostics</strong> — Environment Diagnostics, ReviewContext Validation, Runtime Diagnostics, and Documentation Health stay under System Settings → Developer</li>
             <li><strong>Updates in real-time</strong> — the workflow refreshes automatically when you load artifacts, run analysis, or toggle features from Feature Visibility</li>
         </ul>
 
@@ -203,13 +204,13 @@
                 </div>
                 <div class="ug-branch-item">
                     <span class="ug-branch-badge">Developer Tools</span>
-                    <span class="ug-branch-when">System Settings includes ReviewContext Validation for developer/admin use only — visible in Development mode.</span>
+                    <span class="ug-branch-when">System Settings → Developer includes ReviewContext Validation and runtime diagnostics for developer/admin use only. These checks are not release approval steps.</span>
                 </div>
             </div>
         </div>
 
         <div class="ug-callout ug-callout-tip">
-            <strong>Key insight:</strong> The Recommended Workflow is not a fixed checklist. It's a guide that evolves with your work. Start by loading artifacts, then follow the "Next Recommended Action" card at the top of the page. Each completed step opens new capabilities and suggests the next valuable action.
+            <strong>Key insight:</strong> The Recommended Workflow is not a diagnostics console. It is a release-review guide that evolves with your workspace. Start by loading artifacts, then follow the "Next Recommended Action" card. Use System Settings → Developer for internal consistency checks.
         </div>
     </section>
 

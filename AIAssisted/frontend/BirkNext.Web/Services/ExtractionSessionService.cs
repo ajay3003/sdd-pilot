@@ -25,16 +25,30 @@ public sealed class ExtractionSessionService : IExtractionSessionService
     };
 
     private readonly IJSRuntime _js;
+    private readonly IWorkspaceStateManager _stateManager;
+    private Guid? _loadedForWorkspaceId;
 
-    public ExtractionSessionService(IJSRuntime js)
+    public ExtractionSessionService(IJSRuntime js, IWorkspaceStateManager stateManager)
     {
         _js = js;
+        _stateManager = stateManager;
+        _stateManager.WorkspaceChanged += OnWorkspaceChanged;
+    }
+
+    private void OnWorkspaceChanged(Guid? newWorkspaceId)
+    {
+        // Clear cached extraction if workspace changed
+        _loadedForWorkspaceId = null;
     }
 
     public async Task<ExtractionSessionSnapshot?> LoadAsync()
     {
         try
         {
+            // If workspace changed since we loaded, invalidate cache
+            if (!_stateManager.IsValidForCurrentWorkspace(_loadedForWorkspaceId))
+                return null;
+
             var json = await _js.InvokeAsync<string?>("birkNextStorage.getItem", StorageKey);
             if (string.IsNullOrEmpty(json))
                 return null;
@@ -43,7 +57,11 @@ public sealed class ExtractionSessionService : IExtractionSessionService
             if (snapshot is null)
                 return null;
 
-            return IsExpired(snapshot) ? null : snapshot;
+            if (IsExpired(snapshot))
+                return null;
+
+            _loadedForWorkspaceId = _stateManager.CurrentWorkspaceId;
+            return snapshot;
         }
         catch
         {

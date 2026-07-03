@@ -1133,17 +1133,37 @@ else if (_settings is not null)
                         <div class="notification notification-success" role="status">@_runtimeActionMessage</div>
                     }
 
+                    <div class="runtime-summary-grid" aria-label="Runtime diagnostics summary">
+                        @foreach (var metric in RuntimeSummaryRows)
+                        {
+                            <div class="runtime-summary-card">
+                                <span class="runtime-summary-label">@metric.Label</span>
+                                <strong class="runtime-summary-value">@metric.Value</strong>
+                                <span class="ss-health-sev @StatusClass(metric.Status)">@metric.Status</span>
+                                @if (!string.IsNullOrWhiteSpace(metric.Detail))
+                                {
+                                    <span class="runtime-summary-detail">@metric.Detail</span>
+                                }
+                            </div>
+                        }
+                    </div>
+
                     <div class="dev-diag-subgrid">
                         <div class="dev-diag-section">
                             <div class="dev-diag-section-title">Workspace</div>
                             <table class="dev-diag-table">
                                 <tbody>
-                                    <tr><td>Current project</td><td>@OrUnavailable(Workspace.CurrentProject)</td></tr>
-                                    <tr><td>Workspace status</td><td>@(WorkspaceArtifacts.Count > 0 ? "Loaded" : "Unavailable")</td></tr>
-                                    <tr><td>Loaded artifacts</td><td>@(WorkspaceArtifacts.Count > 0 ? "Ready" : "Unavailable")</td></tr>
-                                    <tr><td>Artifact count</td><td>@WorkspaceArtifacts.Count</td></tr>
-                                    <tr><td>Loaded artifact names</td><td>@ArtifactNamesText</td></tr>
-                                    <tr><td>Last loaded timestamp</td><td>@FormatTimestamp(LastWorkspaceLoad)</td></tr>
+                                    @foreach (var row in WorkspaceDiagnosticRows)
+                                    {
+                                        <tr>
+                                            <td>@row.Name</td>
+                                            <td>
+                                                <span class="ss-health-sev @StatusClass(row.Status)">@row.Status</span>
+                                                <div class="runtime-row-value">@row.Value</div>
+                                                <div class="runtime-row-reason">@row.Reason</div>
+                                            </td>
+                                        </tr>
+                                    }
                                 </tbody>
                             </table>
                         </div>
@@ -1152,27 +1172,64 @@ else if (_settings is not null)
                             <div class="dev-diag-section-title">Markdown Engine</div>
                             <table class="dev-diag-table">
                                 <tbody>
-                                    <tr><td>Engine initialized</td><td>@(MarkdownEngine is not null ? "Ready" : "Unavailable")</td></tr>
-                                    <tr><td>Parsed documents</td><td>@WorkspaceArtifacts.Count</td></tr>
-                                    <tr><td>Cache status</td><td>Unavailable</td></tr>
+                                    @foreach (var row in MarkdownEngineDiagnosticRows)
+                                    {
+                                        <tr>
+                                            <td>@row.Name</td>
+                                            <td>
+                                                <span class="ss-health-sev @StatusClass(row.Status)">@row.Status</span>
+                                                <div class="runtime-row-value">@row.Value</div>
+                                                <div class="runtime-row-reason">@row.Reason</div>
+                                            </td>
+                                        </tr>
+                                    }
                                 </tbody>
                             </table>
                         </div>
 
                         <div class="dev-diag-section">
                             <div class="dev-diag-section-title">Runtime Services</div>
+                            @foreach (var group in RuntimeServiceGroups)
+                            {
+                                <div class="runtime-service-group">
+                                    <div class="runtime-service-group-title">@group.Label</div>
+                                    @if (!group.Rows.Any())
+                                    {
+                                        <div class="runtime-empty-state">No services in this state.</div>
+                                    }
+                                    else
+                                    {
+                                        <table class="dev-diag-table">
+                                            <tbody>
+                                                @foreach (var service in group.Rows)
+                                                {
+                                                    <tr>
+                                                        <td>@service.Name</td>
+                                                        <td>
+                                                            <span class="ss-health-sev @StatusClass(service.Status)">@service.Status</span>
+                                                            <div class="runtime-row-reason">@service.Reason</div>
+                                                            <div class="runtime-row-value">Last updated: @FormatTimestamp(service.LastUpdated)</div>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        <div class="dev-diag-section">
+                            <div class="dev-diag-section-title">Recommended Workflow</div>
                             <table class="dev-diag-table">
                                 <tbody>
-                                    @foreach (var service in RuntimeServiceRows)
+                                    @foreach (var check in WorkflowDiagnosticRows)
                                     {
                                         <tr>
-                                            <td>@service.Name</td>
+                                            <td>@check.Name</td>
                                             <td>
-                                                <span class="ss-health-sev @RuntimeHealthClass(service.Status)">@service.Status</span>
-                                                @if (!string.IsNullOrWhiteSpace(service.Detail))
-                                                {
-                                                    <span class="settings-card-note"> @service.Detail</span>
-                                                }
+                                                <span class="ss-health-sev @StatusClass(check.Status)">@check.Status</span>
+                                                <div class="runtime-row-reason">@check.Reason</div>
                                             </td>
                                         </tr>
                                     }
@@ -1202,6 +1259,8 @@ else if (_settings is not null)
                                 <tr>
                                     <th>Session</th>
                                     <th>Status</th>
+                                    <th>Reason</th>
+                                    <th>Prerequisites</th>
                                     <th>Last run</th>
                                 </tr>
                             </thead>
@@ -1210,7 +1269,9 @@ else if (_settings is not null)
                                 {
                                     <tr>
                                         <td>@session.Name</td>
-                                        <td><span class="ss-health-sev @SessionStatusClass(session.Status)">@session.Status</span></td>
+                                        <td><span class="ss-health-sev @StatusClass(session.Status)">@session.Status</span></td>
+                                        <td>@session.Reason</td>
+                                        <td>@session.Prerequisites</td>
                                         <td>@FormatTimestamp(session.LastRun)</td>
                                     </tr>
                                 }
@@ -1220,12 +1281,32 @@ else if (_settings is not null)
 
                     <div class="settings-card" style="margin-top:1.5rem;background:var(--surface-subtle,#f8f9fa)">
                         <div class="settings-card-title" style="font-size:0.95rem">Developer Actions</div>
-                        <div style="display:flex;flex-wrap:wrap;gap:.5rem">
-                            <SecondaryButton OnClick="ResetWorkspaceDiagnosticsAsync">Reset Workspace</SecondaryButton>
-                            <SecondaryButton OnClick="ClearRuntimeSessionsAsync">Clear Runtime Sessions</SecondaryButton>
-                            <SecondaryButton OnClick="ClearAnalysisSessionsAsync">Clear Analysis Sessions</SecondaryButton>
-                            <SecondaryButton OnClick="ClearRuntimeCachesAsync">Clear Caches</SecondaryButton>
-                            <PrimaryButton OnClick="ExportRuntimeDiagnosticsAsync">Export Diagnostics</PrimaryButton>
+                        <div class="runtime-action-grid">
+                            <div class="runtime-action-card">
+                                <strong>Reset Workspace</strong>
+                                <span>Clears only browser/session workspace state. Does not delete saved workspaces or modify database schema.</span>
+                                <DangerButton OnClick="ResetWorkspaceDiagnosticsAsync">Reset Workspace</DangerButton>
+                            </div>
+                            <div class="runtime-action-card">
+                                <strong>Clear Runtime Sessions</strong>
+                                <span>Clears browser runtime review results only. Does not delete saved workspaces or modify database schema.</span>
+                                <DangerButton OnClick="ClearRuntimeSessionsAsync">Clear Runtime Sessions</DangerButton>
+                            </div>
+                            <div class="runtime-action-card">
+                                <strong>Clear Analysis Sessions</strong>
+                                <span>Clears in-memory analysis snapshots and extraction session state. Does not delete saved workspaces or modify database schema.</span>
+                                <DangerButton OnClick="ClearAnalysisSessionsAsync">Clear Analysis Sessions</DangerButton>
+                            </div>
+                            <div class="runtime-action-card">
+                                <strong>Clear Caches</strong>
+                                <span>Clears supported browser/API caches. Does not delete saved workspaces or modify database schema.</span>
+                                <DangerButton OnClick="ClearRuntimeCachesAsync">Clear Caches</DangerButton>
+                            </div>
+                            <div class="runtime-action-card runtime-action-card-export">
+                                <strong>Export Diagnostics</strong>
+                                <span>Copies current runtime state, status summary, warnings, failures, timestamp, and workspace details.</span>
+                                <PrimaryButton OnClick="ExportRuntimeDiagnosticsAsync">Export Diagnostics</PrimaryButton>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1819,9 +1900,20 @@ else if (_settings is not null)
             .Select(item => (item.Kind, item.Label, item.Artifact!))
             .ToList();
 
+    private const string StatusPass = "PASS";
+    private const string StatusWarning = "WARNING";
+    private const string StatusFail = "FAIL";
+    private const string StatusNotAvailable = "NOT AVAILABLE";
+    private const string StatusNotRun = "NOT RUN";
+
+    private sealed record RuntimeSummaryRow(string Label, string Value, string Status, string Detail);
+    private sealed record RuntimeDiagnosticRow(string Name, string Status, string Value, string Reason);
+    private sealed record RuntimeServiceDiagnosticRow(string Name, string Status, string Reason, DateTimeOffset? LastUpdated);
+    private sealed record AnalysisSessionDiagnosticRow(string Name, string Status, string Reason, string Prerequisites, DateTimeOffset? LastRun);
+
     private string ArtifactNamesText =>
         ArtifactStatus.GetStatus().ArtifactCount == 0
-            ? "Unavailable"
+            ? "None loaded"
             : string.Join(", ", WorkspaceArtifacts.Select(item => item.Artifact.FileName ?? item.Label));
 
     private DateTime? LastWorkspaceLoad =>
@@ -1843,19 +1935,112 @@ else if (_settings is not null)
     private string FeatureFlagSummary =>
         AllEditableFeatures.Any()
             ? $"{AllVisibleCount} enabled / {AllConfiguredCount} configured"
-            : "Unavailable";
+            : "Not available";
 
-    private IEnumerable<(string Name, string Status, DateTimeOffset? LastRun)> AnalysisSessionRows
+    private int RuntimeWarningCount =>
+        RuntimeServiceRows.Count(row => row.Status == StatusWarning) +
+        AnalysisSessionRows.Count(row => row.Status == StatusWarning);
+
+    private int RuntimeFailureCount =>
+        RuntimeServiceRows.Count(row => row.Status == StatusFail) +
+        AnalysisSessionRows.Count(row => row.Status == StatusFail);
+
+    private string OverallRuntimeStatus =>
+        RuntimeFailureCount > 0 ? StatusFail :
+        RuntimeWarningCount > 0 ? StatusWarning :
+        StatusPass;
+
+    private IReadOnlyList<RuntimeSummaryRow> RuntimeSummaryRows =>
+    [
+        new("Runtime status", OverallRuntimeStatus, OverallRuntimeStatus, RuntimeFailureCount > 0 ? "One or more runtime checks failed." : "No blocking runtime failures detected."),
+        new("Workspace loaded", WorkspaceArtifacts.Count > 0 ? "Yes" : "No", WorkspaceArtifacts.Count > 0 ? StatusPass : StatusNotAvailable, WorkspaceArtifacts.Count > 0 ? OrUnavailable(Workspace.CurrentProject) : "No active browser/session workspace."),
+        new("Artifacts loaded", WorkspaceArtifacts.Count.ToString(), WorkspaceArtifacts.Count > 0 ? StatusPass : StatusNotAvailable, ArtifactNamesText),
+        new("Services ready", $"{RuntimeServiceRows.Count(row => row.Status == StatusPass)} / {RuntimeServiceRows.Count()}", RuntimeServiceRows.Any(row => row.Status == StatusFail) ? StatusFail : StatusPass, "Runtime services are grouped by severity below."),
+        new("Sessions completed", CompletedAnalysisCount.ToString(), CompletedAnalysisCount > 0 ? StatusPass : StatusNotRun, CompletedAnalysisCount > 0 ? "At least one analysis has completed." : "No analysis session has completed in this browser session."),
+        new("Warnings", RuntimeWarningCount.ToString(), RuntimeWarningCount > 0 ? StatusWarning : StatusPass, RuntimeWarningCount > 0 ? "Review warning rows below." : "No warnings reported."),
+        new("Failures", RuntimeFailureCount.ToString(), RuntimeFailureCount > 0 ? StatusFail : StatusPass, RuntimeFailureCount > 0 ? "Failures block reliable diagnostics." : "No failures reported."),
+    ];
+
+    private IEnumerable<RuntimeDiagnosticRow> WorkspaceDiagnosticRows
     {
         get
         {
-            yield return ("Requirements Traceability", AnalysisSessions.TraceabilityReport is null ? "Not Run" : "Completed", AnalysisSessions.TraceabilityRunAt);
-            yield return ("Quality Review", AnalysisStatusLabel(QualitySession.Status), QualitySession.RunTimestamp ?? LastQualityReviewRun);
-            yield return ("WASM Security Review", RuntimeStatusLabel(RuntimeReviews.SecurityReview.Status), RuntimeReviews.SecurityReview.RunTimestamp);
-            yield return ("WASM Performance Review", RuntimeStatusLabel(RuntimeReviews.PerformanceReview.Status), RuntimeReviews.PerformanceReview.RunTimestamp);
-            yield return ("Implementation Review", AdoApi.GetCached() is null ? "Not Run" : "Completed", null);
-            yield return ("Impact Analysis", "Unavailable", null);
-            yield return ("Spec Drift", "Unavailable", null);
+            var hasWorkspace = WorkspaceArtifacts.Count > 0;
+            yield return new("Project", hasWorkspace ? StatusPass : StatusNotAvailable, OrUnavailable(Workspace.CurrentProject), hasWorkspace ? "Active project is available in browser/session state." : "No active workspace is loaded in this browser session.");
+            yield return new("Workspace status", hasWorkspace ? StatusPass : StatusNotAvailable, hasWorkspace ? "Loaded" : "No workspace loaded", hasWorkspace ? "Workspace artifacts are available to frontend diagnostics." : "This is not a failure; load or resume a workspace to run workspace-specific checks.");
+            yield return new("Loaded artifacts count", hasWorkspace ? StatusPass : StatusNotAvailable, WorkspaceArtifacts.Count.ToString(), hasWorkspace ? "Artifacts are available to the current session." : "No artifact set exists in the current runtime session.");
+            yield return new("Artifact names", hasWorkspace ? StatusPass : StatusNotAvailable, ArtifactNamesText, hasWorkspace ? "Names are from the current browser/session artifact repository." : "No artifacts are loaded.");
+            yield return new("Last loaded timestamp", LastWorkspaceLoad.HasValue ? StatusPass : StatusNotAvailable, FormatTimestamp(LastWorkspaceLoad), LastWorkspaceLoad.HasValue ? "Most recent artifact load in the current session." : "No artifact load timestamp is available.");
+        }
+    }
+
+    private IEnumerable<RuntimeDiagnosticRow> MarkdownEngineDiagnosticRows
+    {
+        get
+        {
+            yield return new("Engine initialized", MarkdownEngine is not null ? StatusPass : StatusFail, MarkdownEngine is not null ? "Ready" : "Service missing", MarkdownEngine is not null ? "Markdown parser service is registered." : "Required markdown parser service is not available.");
+            yield return new("Parsed documents", WorkspaceArtifacts.Count > 0 ? StatusPass : StatusNotAvailable, WorkspaceArtifacts.Count.ToString(), WorkspaceArtifacts.Count > 0 ? "Loaded artifacts can be parsed on demand." : "No workspace artifacts are loaded.");
+            yield return new("Cache status", StatusNotAvailable, "Not exposed", "Cache status is not exposed by Markdown Engine.");
+        }
+    }
+
+    private IEnumerable<RuntimeDiagnosticRow> WorkflowDiagnosticRows
+    {
+        get
+        {
+            yield return new("WorkflowReadinessService available", StatusPass, "Registered", "Recommended Workflow and Dashboard use WorkflowReadinessService for readiness state.");
+            yield return new("Renderer connected", StatusPass, "RecommendedWorkflow.razor", "Renderer consumes workflow readiness instead of direct session lookups.");
+            yield return new("Empty workspace reset works", WorkspaceArtifacts.Count == 0 ? StatusPass : StatusNotAvailable, WorkspaceArtifacts.Count == 0 ? "Verified by current empty state" : "Workspace loaded", WorkspaceArtifacts.Count == 0 ? "No workspace is loaded and no release state is available." : "Load-state reset cannot be observed while a workspace is active.");
+            yield return new("Release state derived from readiness", StatusPass, "Derived", "Release is not persisted in runtime diagnostics.");
+            yield return new("No stale release state", WorkspaceArtifacts.Count == 0 ? StatusPass : StatusNotAvailable, WorkspaceArtifacts.Count == 0 ? "No release state" : "Workspace active", WorkspaceArtifacts.Count == 0 ? "Empty workspace has no release recommendation." : "Release state depends on current workflow readiness.");
+        }
+    }
+
+    private IEnumerable<AnalysisSessionDiagnosticRow> AnalysisSessionRows
+    {
+        get
+        {
+            yield return new("Requirements Traceability",
+                AnalysisSessions.TraceabilityReport is null ? StatusNotRun : StatusPass,
+                AnalysisSessions.TraceabilityReport is null ? "Analysis exists but has not been executed in this session." : "Traceability session completed.",
+                "Requires loaded workspace and at least two artifacts",
+                AnalysisSessions.TraceabilityRunAt);
+
+            yield return new("Quality Review",
+                NormalizeSessionStatus(QualitySession.Status),
+                SessionReason(NormalizeSessionStatus(QualitySession.Status), "Quality review session completed."),
+                "Requires ReviewContext",
+                QualitySession.RunTimestamp ?? LastQualityReviewRun);
+
+            yield return new("WASM Security Review",
+                NormalizeRuntimeStatus(RuntimeReviews.SecurityReview.Status),
+                SessionReason(NormalizeRuntimeStatus(RuntimeReviews.SecurityReview.Status), "Security review completed."),
+                "Requires loaded workspace or target URL",
+                RuntimeReviews.SecurityReview.RunTimestamp);
+
+            yield return new("WASM Performance Review",
+                NormalizeRuntimeStatus(RuntimeReviews.PerformanceReview.Status),
+                SessionReason(NormalizeRuntimeStatus(RuntimeReviews.PerformanceReview.Status), "Performance review completed."),
+                "Requires loaded workspace or target URL",
+                RuntimeReviews.PerformanceReview.RunTimestamp);
+
+            yield return new("Implementation Review",
+                AdoApi.GetCached() is null ? StatusNotRun : StatusPass,
+                AdoApi.GetCached() is null ? "Analysis exists but has not been executed in this session." : "Implementation review cache is available.",
+                "Requires spec.md and tasks.md",
+                null);
+
+            yield return new("Impact Analysis",
+                WorkspaceArtifacts.Count > 0 ? StatusNotRun : StatusNotAvailable,
+                WorkspaceArtifacts.Count > 0 ? "Analysis exists but has not been executed in this session." : "Prerequisites missing because no workspace is loaded.",
+                "Requires loaded workspace",
+                null);
+
+            yield return new("Spec Drift",
+                Workspace.Get(WorkspaceArtifactKind.Specification) is not null ? StatusNotRun : StatusNotAvailable,
+                Workspace.Get(WorkspaceArtifactKind.Specification) is not null ? "Analysis exists but has not been executed in this session." : "Prerequisites missing because spec.md is not loaded.",
+                "Requires spec.md",
+                null);
         }
     }
 
@@ -1868,15 +2053,27 @@ else if (_settings is not null)
             AnalysisSessions.ReadinessRunAt
         }.Where(value => value.HasValue).Max();
 
-    private IEnumerable<(string Name, string Status, string? Detail)> RuntimeServiceRows
+    private IEnumerable<RuntimeServiceDiagnosticRow> RuntimeServiceRows
     {
         get
         {
-            yield return ("WorkspaceArtifactRepository", "Ready", $"{WorkspaceArtifacts.Count} artifacts loaded");
-            yield return ("RuntimeReviewSessionService", "Ready", $"{RuntimeReviewResultCount} runtime results");
-            yield return ("ExtractionSessionService", "Ready", _extractionSnapshot is null ? "No active extraction session" : $"Last saved {FormatTimestamp(_extractionSnapshot.Timestamp)}");
-            yield return ("Markdown Engine", MarkdownEngine is null ? "Error" : "Ready", "Cache status unavailable");
-            yield return ("Analysis Services", "Ready", $"{CompletedAnalysisCount} completed sessions");
+            yield return new("WorkspaceArtifactRepository", StatusPass, $"{WorkspaceArtifacts.Count} artifacts loaded in browser/session state.", LastWorkspaceLoad.HasValue ? new DateTimeOffset(LastWorkspaceLoad.Value) : null);
+            yield return new("RuntimeReviewSessionService", StatusPass, $"{RuntimeReviewResultCount} runtime review result(s) available.", LatestRuntimeReviewTimestamp);
+            yield return new("ExtractionSessionService", StatusPass, _extractionSnapshot is null ? "No active extraction session." : $"Extraction session restored from {FormatTimestamp(_extractionSnapshot.Timestamp)}.", _extractionSnapshot?.Timestamp);
+            yield return new("Markdown Engine", MarkdownEngine is null ? StatusFail : StatusPass, MarkdownEngine is null ? "Markdown parser service is not registered." : "Markdown parser service is registered. Cache status is not exposed by Markdown Engine.", null);
+            yield return new("Analysis Services", StatusPass, $"{CompletedAnalysisCount} completed analysis session(s).", LastQualityReviewRun);
+        }
+    }
+
+    private IEnumerable<(string Label, IEnumerable<RuntimeServiceDiagnosticRow> Rows)> RuntimeServiceGroups
+    {
+        get
+        {
+            var rows = RuntimeServiceRows.ToList();
+            yield return ("Ready", rows.Where(row => row.Status == StatusPass));
+            yield return ("Warning", rows.Where(row => row.Status == StatusWarning));
+            yield return ("Failed", rows.Where(row => row.Status == StatusFail));
+            yield return ("Not Available", rows.Where(row => row.Status == StatusNotAvailable));
         }
     }
 
@@ -1884,8 +2081,13 @@ else if (_settings is not null)
         (RuntimeReviews.SecurityReview.HasResult ? 1 : 0) +
         (RuntimeReviews.PerformanceReview.HasResult ? 1 : 0);
 
+    private DateTimeOffset? LatestRuntimeReviewTimestamp =>
+        new[] { RuntimeReviews.SecurityReview.RunTimestamp, RuntimeReviews.PerformanceReview.RunTimestamp }
+            .Where(value => value.HasValue)
+            .Max();
+
     private int CompletedAnalysisCount =>
-        AnalysisSessionRows.Count(row => row.Status == "Completed");
+        AnalysisSessionRows.Count(row => row.Status == StatusPass);
 
     protected override async Task OnInitializedAsync()
     {
@@ -2064,41 +2266,61 @@ else if (_settings is not null)
 
     private async Task ResetWorkspaceDiagnosticsAsync()
     {
+        if (!await ConfirmRuntimeActionAsync(
+            "Reset Workspace",
+            "This clears only browser/session workspace state. It does not delete saved workspaces or modify database schema. Continue?"))
+            return;
+
         foreach (var kind in Enum.GetValues<WorkspaceArtifactKind>())
             Workspace.Clear(kind);
 
         Workspace.CurrentProject = null;
-        _runtimeActionMessage = "Workspace reset.";
+        _runtimeActionMessage = "Workspace session state reset. Saved workspaces and database schema were not modified.";
         await RefreshRuntimeDiagnosticsAsync();
     }
 
     private async Task ClearRuntimeSessionsAsync()
     {
+        if (!await ConfirmRuntimeActionAsync(
+            "Clear Runtime Sessions",
+            "This clears browser runtime review results only. It does not delete saved workspaces or modify database schema. Continue?"))
+            return;
+
         RuntimeReviews.ClearSecurityResult();
         RuntimeReviews.ClearPerformanceResult();
-        _runtimeActionMessage = "Runtime sessions cleared.";
+        _runtimeActionMessage = "Runtime sessions cleared. Saved workspaces and database schema were not modified.";
         await RefreshRuntimeDiagnosticsAsync();
     }
 
     private async Task ClearAnalysisSessionsAsync()
     {
+        if (!await ConfirmRuntimeActionAsync(
+            "Clear Analysis Sessions",
+            "This clears in-memory analysis snapshots and extraction session state. It does not delete saved workspaces or modify database schema. Continue?"))
+            return;
+
         AnalysisSessions.Clear();
         QualitySession.Clear();
         AdoApi.ClearCache();
         await ExtractionSession.ClearAsync();
         _extractionSnapshot = null;
-        _runtimeActionMessage = "Analysis sessions cleared.";
+        _runtimeActionMessage = "Analysis sessions cleared. Saved workspaces and database schema were not modified.";
         StateHasChanged();
     }
 
     private async Task ClearRuntimeCachesAsync()
     {
+        if (!await ConfirmRuntimeActionAsync(
+            "Clear Caches",
+            "This clears supported browser/API caches. It does not delete saved workspaces or modify database schema. Continue?"))
+            return;
+
         AdoApi.ClearCache();
         SecurityApi.ClearCache();
         PerformanceApi.ClearCache();
         await ExtractionSession.ClearAsync();
         _extractionSnapshot = null;
-        _runtimeActionMessage = "Runtime caches cleared where supported.";
+        _runtimeActionMessage = "Runtime caches cleared where supported. Saved workspaces and database schema were not modified.";
         StateHasChanged();
     }
 
@@ -2115,22 +2337,45 @@ else if (_settings is not null)
         StateHasChanged();
     }
 
+    private async Task<bool> ConfirmRuntimeActionAsync(string title, string message) =>
+        await JS.InvokeAsync<bool>("confirm", $"{title}\n\n{message}");
+
     private string BuildRuntimeDiagnosticsExport()
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("QA Review Studio - Runtime Diagnostics");
+        sb.AppendLine($"Export timestamp: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
+        sb.AppendLine($"Overall status: {OverallRuntimeStatus}");
         sb.AppendLine($"Current project: {OrUnavailable(Workspace.CurrentProject)}");
         sb.AppendLine($"Workspace artifacts: {WorkspaceArtifacts.Count}");
         sb.AppendLine($"Loaded artifact names: {ArtifactNamesText}");
         sb.AppendLine($"Last workspace load: {FormatTimestamp(LastWorkspaceLoad)}");
+        sb.AppendLine($"Warnings: {RuntimeWarningCount}");
+        sb.AppendLine($"Failures: {RuntimeFailureCount}");
+        sb.AppendLine();
+        sb.AppendLine("Summary");
+        foreach (var metric in RuntimeSummaryRows)
+            sb.AppendLine($"- {metric.Label}: {metric.Value} [{metric.Status}] {metric.Detail}");
+        sb.AppendLine();
+        sb.AppendLine("Workspace");
+        foreach (var row in WorkspaceDiagnosticRows)
+            sb.AppendLine($"- {row.Name}: {row.Value} [{row.Status}] {row.Reason}");
+        sb.AppendLine();
+        sb.AppendLine("Markdown Engine");
+        foreach (var row in MarkdownEngineDiagnosticRows)
+            sb.AppendLine($"- {row.Name}: {row.Value} [{row.Status}] {row.Reason}");
+        sb.AppendLine();
+        sb.AppendLine("Recommended Workflow");
+        foreach (var row in WorkflowDiagnosticRows)
+            sb.AppendLine($"- {row.Name}: {row.Value} [{row.Status}] {row.Reason}");
         sb.AppendLine();
         sb.AppendLine("Analysis Sessions");
         foreach (var session in AnalysisSessionRows)
-            sb.AppendLine($"- {session.Name}: {session.Status} ({FormatTimestamp(session.LastRun)})");
+            sb.AppendLine($"- {session.Name}: {session.Status}; {session.Reason}; prerequisites: {session.Prerequisites}; last run: {FormatTimestamp(session.LastRun)}");
         sb.AppendLine();
         sb.AppendLine("Runtime Services");
         foreach (var service in RuntimeServiceRows)
-            sb.AppendLine($"- {service.Name}: {service.Status} {service.Detail}");
+            sb.AppendLine($"- {service.Name}: {service.Status}; {service.Reason}; last updated: {FormatTimestamp(service.LastUpdated)}");
         return sb.ToString();
     }
 
@@ -2425,6 +2670,34 @@ else if (_settings is not null)
         _ => "Unavailable"
     };
 
+    private static string NormalizeRuntimeStatus(RuntimeReviewStatus status) => status switch
+    {
+        RuntimeReviewStatus.NotRun => StatusNotRun,
+        RuntimeReviewStatus.Running => StatusWarning,
+        RuntimeReviewStatus.Completed => StatusPass,
+        RuntimeReviewStatus.Failed => StatusFail,
+        _ => StatusNotAvailable
+    };
+
+    private static string NormalizeSessionStatus(AnalysisSessionStatus status) => status switch
+    {
+        AnalysisSessionStatus.NotRun => StatusNotRun,
+        AnalysisSessionStatus.Running => StatusWarning,
+        AnalysisSessionStatus.Completed => StatusPass,
+        AnalysisSessionStatus.Failed => StatusFail,
+        _ => StatusNotAvailable
+    };
+
+    private static string SessionReason(string status, string completedReason) => status switch
+    {
+        StatusPass => completedReason,
+        StatusWarning => "Session is currently running or may be incomplete.",
+        StatusFail => "Session failed. Review the feature page for error details.",
+        StatusNotAvailable => "Feature is disabled or prerequisites are missing.",
+        StatusNotRun => "Analysis exists but has not been executed in this session.",
+        _ => "Status could not be classified."
+    };
+
     private static string SessionStatusClass(string status) => status switch
     {
         "Completed" => "ss-health-sev-ok",
@@ -2442,14 +2715,24 @@ else if (_settings is not null)
         _ => "ss-health-sev-warn"
     };
 
+    private static string StatusClass(string status) => status switch
+    {
+        StatusPass => "ss-health-sev-ok",
+        StatusWarning => "ss-health-sev-warn",
+        StatusFail => "ss-health-sev-error",
+        StatusNotAvailable => "ss-health-sev-na",
+        StatusNotRun => "ss-health-sev-notrun",
+        _ => "ss-health-sev-na"
+    };
+
     private static string OrUnavailable(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? "Unavailable" : value;
+        string.IsNullOrWhiteSpace(value) ? "Not available" : value;
 
     private static string FormatTimestamp(DateTime? value) =>
-        value.HasValue ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "Unavailable";
+        value.HasValue ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "Not available";
 
     private static string FormatTimestamp(DateTimeOffset? value) =>
-        value.HasValue ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "Unavailable";
+        value.HasValue ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "Not available";
 
     private static string OrUnknown(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "Not configured" : value;

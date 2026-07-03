@@ -1,4 +1,5 @@
 using BirkNext.Api.Data;
+using BirkNext.Api.Data.Migrations;
 using BirkNext.Api.Configuration;
 using BirkNext.Api.GraphQL;
 using BirkNext.Api.Middleware;
@@ -61,7 +62,12 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AdminService>();
+builder.Services.AddScoped<IMigrationIntegrityValidator, MigrationIntegrityValidator>();
 builder.Services.AddScoped<IEnvironmentDiagnosticsService, EnvironmentDiagnosticsService>();
+builder.Services.AddScoped<IWorkspacePersistenceService, WorkspacePersistenceService>();
+builder.Services.AddScoped<IAutoSaveService, AutoSaveService>();
+builder.Services.AddScoped<IWorkspaceArtifactStatusService, WorkspaceArtifactStatusService>();
+builder.Services.AddScoped<IRecommendedWorkflowService, RecommendedWorkflowService>();
 builder.Services.AddScoped<ScenarioService>();
 builder.Services.AddScoped<ReviewedCandidateService>();
 builder.Services.AddScoped<CandidateLinkService>();

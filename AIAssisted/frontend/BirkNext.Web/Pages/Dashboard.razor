@@ -8,6 +8,7 @@
 @inject IWorkspaceSessionService Workspace
 @inject IWorkspaceArtifactStatusService ArtifactStatus
 @inject IReportExportService ExportService
+@inject IWorkflowReadinessService WorkflowReadiness
 @inject IJSRuntime JS
 
 <PageTitle>Dashboard</PageTitle>
@@ -148,6 +149,13 @@
         else
         {
             <MetricCard Value="—" Label="Performance" Sublabel="@RuntimeStatusLabel(RuntimeReviews.PerformanceReview.Status)" />
+        }
+        @if (_workflowReadiness is not null)
+        {
+            <MetricCard Value="@($"{_workflowReadiness.OverallReadiness.OverallReadiness}%")"
+                        Label="Workflow"
+                        Sublabel="@WorkflowStatusLabel"
+                        Variant="@WorkflowStatusVariant" />
         }
     </div>
 
@@ -800,10 +808,55 @@
         ArtifactStatus.StatusChanged += OnWorkspaceStatusChanged;
     }
 
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await RefreshWorkflowReadinessAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error initializing Dashboard: {ex.Message}");
+        }
+    }
+
     private void OnWorkspaceStatusChanged()
     {
         _workspaceStatus = ArtifactStatus.GetStatus();
+        _ = RefreshWorkflowReadinessAsync();
         StateHasChanged();
+    }
+
+    // ── Workflow readiness ────────────────────────────────────────────────────
+
+    private WorkflowReadiness? _workflowReadiness;
+
+    private string WorkflowStatusLabel => _workflowReadiness?.OverallReadiness.OverallReadiness switch
+    {
+        100 => "Complete",
+        >= 50 => "In Progress",
+        > 0 => "Started",
+        _ => "Not Started"
+    };
+
+    private string? WorkflowStatusVariant => _workflowReadiness?.OverallReadiness.OverallReadiness switch
+    {
+        100 => "success",
+        >= 50 => "warning",
+        _ => null
+    };
+
+    private async Task RefreshWorkflowReadinessAsync()
+    {
+        try
+        {
+            _workflowReadiness = await WorkflowReadiness.GetReadinessAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading workflow readiness: {ex.Message}");
+        }
     }
 
     // ── Runtime review session ────────────────────────────────────────────────
