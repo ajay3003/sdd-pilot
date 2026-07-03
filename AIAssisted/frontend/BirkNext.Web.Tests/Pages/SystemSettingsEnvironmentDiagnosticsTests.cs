@@ -34,6 +34,8 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         Services.AddSingleton<WorkspaceArtifactRepository>();
         Services.AddSingleton<IWorkspaceArtifactRepository>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
         Services.AddSingleton<IWorkspaceSessionService>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
+        Services.AddSingleton<IWorkspaceStateManager, WorkspaceStateManager>();
+        Services.AddSingleton<IWorkspaceArtifactStatusService, WorkspaceArtifactStatusService>();
         Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
         Services.AddScoped<RuntimeReviewSessionService>();
         Services.AddScoped<QualityReviewSessionService>();
@@ -61,9 +63,10 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Diagnostics completed"));
         cut.Markup.Should().Contain("6 checks executed");
-        cut.Markup.Should().Contain("4 Passed");
-        cut.Markup.Should().Contain("1 Warnings");
-        cut.Markup.Should().Contain("0 Failed");
+        cut.Markup.Should().Contain("4 passed");
+        cut.Markup.Should().Contain("1 warnings");
+        cut.Markup.Should().Contain("0 failed");
+        cut.Markup.Should().Contain("1 unavailable");
         cut.Markup.Should().Contain("Environment");
         cut.Markup.Should().Contain("Database");
         cut.Markup.Should().Contain("Backend / API");
@@ -115,7 +118,7 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         };
 
         SystemSettings.BuildEnvironmentDiagnosticsSummary(report)
-            .Should().Be("Diagnostics completed\n15 checks executed\n13 Passed\n2 Warnings\n0 Failed");
+            .Should().Be("Diagnostics completed: 15 checks executed - 13 passed, 2 warnings, 0 failed, 0 unavailable.");
     }
 
     [Fact]
@@ -128,6 +131,29 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Environment"));
         cut.Markup.Should().Contain("No diagnostics returned for this section.");
+    }
+
+    [Fact]
+    public void SystemDiagnostics_RendersSharedSectionsAndSummary()
+    {
+        var cut = Render<SystemSettings>();
+        cut.WaitForAssertion(() =>
+            cut.FindAll("button").Any(button => button.TextContent.Contains("System Diagnostics"))
+                .Should().BeTrue());
+
+        cut.FindAll("button")
+            .First(button => button.TextContent.Contains("System Diagnostics"))
+            .Click();
+
+        cut.Markup.Should().Contain("Developer Diagnostics");
+        cut.Markup.Should().Contain("Checks Executed");
+        cut.Markup.Should().Contain("Application");
+        cut.Markup.Should().Contain("Frontend");
+        cut.Markup.Should().Contain("Backend");
+        cut.Markup.Should().Contain("Database");
+        cut.Markup.Should().Contain("Logging");
+        cut.Markup.Should().Contain("Container / Runtime");
+        cut.Markup.Should().Contain("Project Documents");
     }
 
     private IRenderedComponent<SystemSettings> RenderEnvironmentDiagnostics()

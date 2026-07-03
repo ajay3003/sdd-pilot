@@ -1,418 +1,96 @@
 @page "/impact-analysis"
-@using BirkNext.Web.GraphQL
-@inject IBirkNextClient Client
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models.Analysis
+@using BirkNext.Web.Services
+
+@inject IAnalysisPageModelService AnalysisPageModelService
+@inject IWorkspaceSessionService Workspace
 
 <PageTitle>Impact Analysis</PageTitle>
 
 <div class="impact-page">
-
     <PageHeader Title="Impact Analysis"
                 Description="Understand what needs testing before you accept a change. Select a requirement to see its risk level and regression recommendation." />
 
-    @if (_isLoading)
+    <!-- ── Readiness Panel ────────────────────────────────────────── -->
+    @if (PageModel is not null)
     {
-        <p class="loading-state">Loading impact data...</p>
+        <AnalysisReadinessPanel Model="PageModel" />
     }
-    else if (_loadError is not null)
+    else if (IsLoading)
     {
-        <div class="notification notification-error" role="alert">@_loadError</div>
+        <div class="loading-state" role="status">Loading page configuration...</div>
     }
-    else
+    else if (LoadError is not null)
     {
-        @* ── Summary filter cards ────────────────────────────────────────────── *@
-        <div class="metric-grid-4" role="group" aria-label="Risk summary — click to filter">
+        <div class="notification notification-error" role="alert">@LoadError</div>
+    }
 
-            <button class="ia-filter-btn @(_riskFilter == "High" ? "is-active" : "")"
-                    @onclick='() => ToggleRiskFilter("High")'
-                    aria-pressed="@(_riskFilter == "High" ? "true" : "false")">
-                <MetricCard Value="@_summary.HighRiskCount.ToString()"
-                            Label="High Risk"
-                            Sublabel="no tests linked"
-                            Variant="danger" />
-            </button>
-
-            <button class="ia-filter-btn @(_riskFilter == "Medium" ? "is-active" : "")"
-                    @onclick='() => ToggleRiskFilter("Medium")'
-                    aria-pressed="@(_riskFilter == "Medium" ? "true" : "false")">
-                <MetricCard Value="@_summary.MediumRiskCount.ToString()"
-                            Label="Medium Risk"
-                            Sublabel="one test linked"
-                            Variant="warning" />
-            </button>
-
-            <button class="ia-filter-btn @(_riskFilter == "Low" ? "is-active" : "")"
-                    @onclick='() => ToggleRiskFilter("Low")'
-                    aria-pressed="@(_riskFilter == "Low" ? "true" : "false")">
-                <MetricCard Value="@_summary.LowRiskCount.ToString()"
-                            Label="Low Risk"
-                            Sublabel="2+ tests linked"
-                            Variant="success" />
-            </button>
-
-            <button class="ia-filter-btn @(string.IsNullOrEmpty(_riskFilter) ? "is-active" : "")"
-                    @onclick='() => ToggleRiskFilter("")'
-                    aria-pressed="@(string.IsNullOrEmpty(_riskFilter) ? "true" : "false")">
-                <MetricCard Value="@_summary.TotalRequirements.ToString()"
-                            Label="Total Requirements"
-                            Sublabel="show all" />
-            </button>
-
-        </div>
-
-        @* ── Master–detail layout ─────────────────────────────────────────────── *@
-        <div class="impact-layout">
-
-            @* ── Left: requirement list ── *@
-            <Card NoPadding="true">
-                <Header>
-                    <SectionHeader Title="Requirements by Risk"
-                                   Description="Click a requirement to analyse it">
-                        <Actions><span class="ia-count-label">@FilteredRequirements.Count shown</span></Actions>
-                    </SectionHeader>
-                </Header>
-                <ChildContent>
-                    @if (_summary.TotalRequirements == 0)
-                    {
-                        <EmptyState Title="No requirements yet"
-                                    Description="Add requirement scenarios to the library to see their risk profile here."
-                                    Dashed="true">
-                            <a href="/scenarios">Go to QA Artifact Library</a>
-                        </EmptyState>
-                    }
-                    else if (FilteredRequirements.Count == 0)
-                    {
-                        <EmptyState Title="No requirements match this filter."
-                                    Description="Try a different risk level or clear the filter to show all." />
-                    }
-                    else
-                    {
-                        <div class="impact-requirement-list">
-                            @foreach (var item in FilteredRequirements)
-                            {
-                                var label = ReqLabel(item.Id);
-                                var isSelected = _selectedRequirementId == item.Id;
-                                <button type="button"
-                                        class="impact-req-row @RiskClass(item.RiskLevel) @(isSelected ? "impact-req-row-selected" : "")"
-                                        @onclick="() => SelectRequirementAsync(item.Id)"
-                                        aria-selected="@isSelected"
-                                        aria-label="Analyse @label — @item.Title">
-                                    <div class="impact-req-left">
-                                        <span class="artifact-display-label">@label</span>
-                                        <span class="impact-req-title">@item.Title</span>
-                                    </div>
-                                    <div class="impact-req-right">
-                                        <StatusChip Status="@(item.RiskLevel.ToLower() switch { "high" => "critical", "medium" => "warning", _ => "healthy" })"
-                                                    Label="@RiskLabel(item.RiskLevel)" />
-                                        <span class="impact-test-count">@item.LinkedTestCount test@(Plural(item.LinkedTestCount))</span>
-                                    </div>
-                                </button>
-                            }
-                        </div>
-                    }
-                </ChildContent>
-            </Card>
-
-            @* ── Right: impact detail ── *@
-            <section aria-label="Requirement impact detail" aria-live="polite">
-                <Card NoPadding="true">
-                    @if (_isLoadingDetail)
-                    {
-                        <div class="ia-panel-placeholder">
-                            <p class="loading-state">Loading impact detail...</p>
-                        </div>
-                    }
-                    else if (_detailError is not null)
-                    {
-                        <div class="ia-panel-placeholder">
-                            <div class="notification notification-error" role="alert">@_detailError</div>
-                        </div>
-                    }
-                    else if (_detail is null)
-                    {
-                        <div class="ia-panel-placeholder">
-                            <EmptyState Title="Select a requirement"
-                                        Description="Click any requirement in the list to view its impact analysis and regression recommendation." />
-                        </div>
-                    }
-                    else
-                    {
-                        var reqLabel = ReqLabel(_detail.RequirementId);
-                        <div class="impact-detail-content">
-                            <div class="impact-detail-header">
-                                <span class="artifact-display-label">@reqLabel</span>
-                                <span class="badge badge-requirement">Requirement</span>
-                                <StatusChip Status="@(_detail.RiskLevel.ToLower() switch { "high" => "critical", "medium" => "warning", _ => "healthy" })"
-                                            Label="@RiskLabel(_detail.RiskLevel)" />
-                            </div>
-                            <h2 class="impact-detail-title">@_detail.RequirementTitle</h2>
-                            @if (!string.IsNullOrWhiteSpace(_detail.RequirementDescription))
-                            {
-                                <p class="impact-detail-desc">@_detail.RequirementDescription</p>
-                            }
-
-                            <div class="metric-grid-3" aria-label="Impact metrics">
-                                <MetricCard Value="@_detail.TotalLinkedTests.ToString()"
-                                            Label="Linked Tests"
-                                            Variant="@(_detail.TotalLinkedTests > 0 ? "success" : "danger")" />
-                                <MetricCard Value="@_detail.AcceptedTests.ToString()"
-                                            Label="Accepted Tests"
-                                            Variant="success" />
-                                <MetricCard Value="@_detail.MissingCoverage.ToString()"
-                                            Label="Missing Coverage"
-                                            Variant="@(_detail.MissingCoverage > 0 ? "danger" : null)" />
-                            </div>
-
-                            <div class="impact-regression-section">
-                                <SectionHeader Title="Regression Recommendation"
-                                               Description="Deterministic — no AI involved" />
-                                @if (_detail.RegressionItems.Count == 0)
-                                {
-                                    <div class="impact-regression-empty">
-                                        <StatusChip Status="critical" Label="High Risk" />
-                                        <p>No tests are linked to this requirement.</p>
-                                        <p>Manual testing is required before accepting any change to this requirement.</p>
-                                        <a href="/traceability" class="btn-primary">Go to Traceability &amp; Coverage to add tests</a>
-                                    </div>
-                                }
-                                else
-                                {
-                                    <ul class="impact-regression-list" aria-label="Tests to run for regression">
-                                        @foreach (var item in _detail.RegressionItems)
-                                        {
-                                            var testLabel = TestLabel(item.TestId);
-                                            <li class="impact-regression-item">
-                                                <div class="impact-regression-item-header">
-                                                    <span class="impact-check" aria-hidden="true">✓</span>
-                                                    <span class="artifact-display-label">@testLabel</span>
-                                                    <span class="badge badge-test">Test</span>
-                                                    <strong>@item.TestTitle</strong>
-                                                </div>
-                                                <p class="impact-regression-reason">@item.Reason</p>
-                                            </li>
-                                        }
-                                    </ul>
-                                }
-                            </div>
-                        </div>
-                    }
-                </Card>
-            </section>
-
+    <!-- ── Analysis Content (only if ready) ────────────────────────── -->
+    @if (PageModel?.Summary.CanRun == true)
+    {
+        <div class="impact-content">
+            @* Placeholder for existing Impact Analysis UI *@
+            @* To be filled with existing requirement list, master-detail, metric cards, etc. *@
+            <p class="placeholder-text">Detailed Impact Analysis will be displayed here.</p>
         </div>
     }
-
 </div>
 
 @code {
-    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+    private AnalysisPageModel? PageModel;
+    private bool IsLoading = true;
+    private string? LoadError;
 
-    private bool _isLoading = true;
-    private string? _loadError;
-    private SummaryViewModel _summary = new();
-    private IReadOnlyList<RequirementRiskViewModel> _requirements = [];
-    private string _riskFilter = string.Empty;
-
-    private string? _selectedRequirementId;
-    private bool _isLoadingDetail;
-    private string? _detailError;
-    private ImpactDetailViewModel? _detail;
-
-    // Display labels shared with Traceability page (same alphabetical ordering)
-    private Dictionary<string, string> _requirementLabels = new();
-    private Dictionary<string, string> _testLabels = new();
-
-    private IReadOnlyList<RequirementRiskViewModel> FilteredRequirements => string.IsNullOrEmpty(_riskFilter)
-        ? _requirements
-        : _requirements.Where(r => r.RiskLevel == _riskFilter).ToList();
-
-    private string ReqLabel(string id) => _requirementLabels.TryGetValue(id, out var l) ? l : id[..Math.Min(8, id.Length)];
-    private string TestLabel(string id) => _testLabels.TryGetValue(id, out var l) ? l : id[..Math.Min(8, id.Length)];
-
-    private static string RiskLabel(string riskLevel) => riskLevel switch
+    protected override async Task OnInitializedAsync()
     {
-        "High" => "High Risk",
-        "Medium" => "Medium Risk",
-        "Low" => "Low Risk",
-        _ => riskLevel,
-    };
+        // Subscribe to workspace changes
+        Workspace.ReviewContextRebuildNeeded += (s, e) => _ = RefreshPageModel();
 
-    private static string RiskClass(string riskLevel) => riskLevel switch
-    {
-        "High" => "impact-req-high",
-        "Medium" => "impact-req-medium",
-        "Low" => "impact-req-low",
-        _ => string.Empty,
-    };
-
-    private async Task ToggleRiskFilter(string risk)
-    {
-        _riskFilter = _riskFilter == risk ? string.Empty : risk;
-        var first = FilteredRequirements.FirstOrDefault(r => r.Id != _selectedRequirementId)
-                 ?? FilteredRequirements.FirstOrDefault();
-        if (first is not null)
-            await SelectRequirementAsync(first.Id);
-        else
-        {
-            _selectedRequirementId = null;
-            _detail = null;
-        }
+        // Load initial model
+        await RefreshPageModel();
     }
 
-    protected override async Task OnInitializedAsync() => await LoadSummaryAsync();
-
-    private async Task LoadSummaryAsync()
+    private async Task RefreshPageModel()
     {
-        _isLoading = true;
-        _loadError = null;
-        StateHasChanged();
-
         try
         {
-            var summaryTask = Client.GetImpactSummary.ExecuteAsync(ProjectId);
-            var scenariosTask = Client.GetScenarios.ExecuteAsync(ProjectId);
-            await Task.WhenAll(summaryTask, scenariosTask);
+            IsLoading = true;
+            LoadError = null;
+            PageModel = await AnalysisPageModelService.GetImpactAnalysisModelAsync();
 
-            var summaryResult = summaryTask.Result;
-            if (summaryResult.Errors is { Count: > 0 })
+            if (PageModel is null)
             {
-                _loadError = "We couldn't load impact data right now. Please try again later.";
-                return;
+                LoadError = "Failed to load page configuration";
             }
-
-            if (summaryResult.Data is { } sd)
-            {
-                _summary = new SummaryViewModel
-                {
-                    TotalRequirements = sd.ImpactSummary.TotalRequirements,
-                    HighRiskCount = sd.ImpactSummary.HighRiskCount,
-                    MediumRiskCount = sd.ImpactSummary.MediumRiskCount,
-                    LowRiskCount = sd.ImpactSummary.LowRiskCount,
-                };
-
-                _requirements = sd.ImpactSummary.Requirements
-                    .Select(r => new RequirementRiskViewModel(
-                        r.Requirement.Id,
-                        r.Requirement.Title,
-                        r.RiskLevel.ToString(),
-                        r.LinkedTestCount))
-                    .ToList();
-            }
-
-            // Load all scenarios to compute stable display labels
-            var scenarios = scenariosTask.Result.Data?.Scenarios ?? [];
-            var reqsOrdered = _requirements
-                .OrderBy(r => r.Title, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            _requirementLabels = reqsOrdered
-                .Select((r, i) => (r.Id, Label: $"REQ-{i + 1:D3}"))
-                .ToDictionary(x => x.Id, x => x.Label);
-
-            var testsOrdered = scenarios
-                .Where(s => s.Kind == ScenarioKind.Test)
-                .OrderBy(s => s.Title, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            _testLabels = testsOrdered
-                .Select((t, i) => (t.Id, Label: $"TEST-{i + 1:D3}"))
-                .ToDictionary(x => x.Id, x => x.Label);
-
-            // Auto-select the highest-risk requirement so the detail panel
-            // is populated immediately without requiring a manual click.
-            var autoSelect = _requirements
-                .OrderBy(r => r.RiskLevel switch { "High" => 0, "Medium" => 1, _ => 2 })
-                .FirstOrDefault();
-            if (autoSelect is not null)
-                await SelectRequirementAsync(autoSelect.Id);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _loadError = "We couldn't load impact data right now. Please try again later.";
+            LoadError = $"Error loading configuration: {ex.Message}";
         }
         finally
         {
-            _isLoading = false;
+            IsLoading = false;
         }
     }
-
-    private async Task SelectRequirementAsync(string requirementId)
-    {
-        if (_selectedRequirementId == requirementId) return;
-
-        _selectedRequirementId = requirementId;
-        _isLoadingDetail = true;
-        _detailError = null;
-        _detail = null;
-        StateHasChanged();
-
-        try
-        {
-            var result = await Client.GetRequirementImpact.ExecuteAsync(ProjectId, requirementId);
-
-            if (result.Errors is { Count: > 0 })
-            {
-                _detailError = "We couldn't load impact details right now. Please try again.";
-                return;
-            }
-
-            var impact = result.Data?.RequirementImpact;
-            if (impact is null)
-            {
-                _detailError = "Requirement not found.";
-                return;
-            }
-
-            _detail = new ImpactDetailViewModel
-            {
-                RequirementId = impact.Requirement.Id,
-                RequirementTitle = impact.Requirement.Title,
-                RequirementDescription = impact.Requirement.Description,
-                TotalLinkedTests = impact.Summary.TotalLinkedTests,
-                AcceptedTests = impact.Summary.AcceptedTests,
-                MissingCoverage = impact.Summary.MissingCoverage,
-                RiskLevel = impact.Summary.RiskLevel.ToString(),
-                RegressionItems = impact.RegressionRecommendation
-                    .Select(r => new RegressionItemViewModel(r.Test.Id, r.Test.Title, r.Reason))
-                    .ToList(),
-            };
-        }
-        catch (Exception)
-        {
-            _detailError = "We couldn't load impact details right now. Please try again.";
-        }
-        finally
-        {
-            _isLoadingDetail = false;
-        }
-    }
-
-    private static string Plural(int count) => count == 1 ? string.Empty : "s";
-
-    // ─── View models ─────────────────────────────────────────────────────────
-
-    private sealed class SummaryViewModel
-    {
-        public int TotalRequirements { get; init; }
-        public int HighRiskCount { get; init; }
-        public int MediumRiskCount { get; init; }
-        public int LowRiskCount { get; init; }
-    }
-
-    private sealed record RequirementRiskViewModel(
-        string Id,
-        string Title,
-        string RiskLevel,
-        int LinkedTestCount);
-
-    private sealed class ImpactDetailViewModel
-    {
-        public string RequirementId { get; init; } = string.Empty;
-        public string RequirementTitle { get; init; } = string.Empty;
-        public string? RequirementDescription { get; init; }
-        public int TotalLinkedTests { get; init; }
-        public int AcceptedTests { get; init; }
-        public int MissingCoverage { get; init; }
-        public string RiskLevel { get; init; } = string.Empty;
-        public IReadOnlyList<RegressionItemViewModel> RegressionItems { get; init; } = [];
-    }
-
-    private sealed record RegressionItemViewModel(string TestId, string TestTitle, string Reason);
 }
+
+<style>
+.impact-page {
+    padding: 0 20px;
+}
+
+.loading-state {
+    text-align: center;
+    color: #6b7280;
+    padding: 40px 20px;
+}
+
+.placeholder-text {
+    text-align: center;
+    color: #9ca3af;
+    padding: 20px;
+    background-color: #f9fafb;
+    border-radius: 6px;
+}
+</style>

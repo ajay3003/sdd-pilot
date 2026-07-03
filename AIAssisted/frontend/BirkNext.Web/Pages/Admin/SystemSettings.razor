@@ -785,6 +785,17 @@ else if (_settings is not null)
             @* â•â• Diagnostics â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "diagnostics")
             {
+                <DiagnosticPageRenderer
+                    Title="Developer Diagnostics"
+                    Description="Backend, frontend, database, and runtime configuration. Sensitive values are never shown - use Copy Diagnostics in the top-right to export a safe summary."
+                    HasRun="true"
+                    ShowRunArea="false"
+                    OverallStatus="@SystemDiagnosticSummary.OverallStatus"
+                    Summary="@SystemDiagnosticSummary"
+                    Sections="@SystemDiagnosticSections" />
+            }
+            @if (_activeSection == "diagnostics-legacy")
+            {
                 <div class="settings-card settings-card-full-width">
                     <div class="settings-card-title">Developer Diagnostics</div>
                     <p class="settings-card-note">Backend, frontend, database, and runtime configuration. Sensitive values are never shown â€” use Copy Diagnostics in the top-right to export a safe summary.</p>
@@ -1577,6 +1588,58 @@ else if (_settings is not null)
         RuntimeWarningCount > 0 ? StatusWarning :
         StatusPass;
 
+    private IReadOnlyList<SettingsSectionDto> SystemDiagnosticSections =>
+    [
+        DiagnosticSection("Application", "Application identity and package metadata",
+        [
+            DiagnosticItem("Name", OrUnknown(_settings.Application.ApplicationName), SystemSettingsStatus.Pass, "Configured application name.", ""),
+            DiagnosticItem("Environment", OrUnknown(_settings.Application.Environment), SystemSettingsStatus.Pass, "Configured application environment.", ""),
+            DiagnosticItem("Version", OrUnknown(_settings.Application.Version), SystemSettingsStatus.Pass, "Application version.", ""),
+            DiagnosticItem("Build", OrUnknown(_settings.Application.BuildNumber), string.IsNullOrWhiteSpace(_settings.Application.BuildNumber) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Build number.", ""),
+            DiagnosticItem("Commit", OrUnknown(_settings.Application.CommitSha), string.IsNullOrWhiteSpace(_settings.Application.CommitSha) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Source commit SHA.", ""),
+            DiagnosticItem("Package Mode", OrUnknown(_settings.Application.PackageMode), SystemSettingsStatus.Pass, "Application package mode.", "")
+        ]),
+        DiagnosticSection("Frontend", "Frontend endpoint and hosting configuration",
+        [
+            DiagnosticItem("Frontend URL", OrUnknown(_settings.Frontend.FrontendBaseUrl), string.IsNullOrWhiteSpace(_settings.Frontend.FrontendBaseUrl) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Configured frontend base URL.", ""),
+            DiagnosticItem("API Base URL", OrUnknown(_settings.Frontend.ApiBaseUrl), string.IsNullOrWhiteSpace(_settings.Frontend.ApiBaseUrl) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Configured API base URL.", ""),
+            DiagnosticItem("GraphQL", OrUnknown(_settings.Frontend.GraphQlEndpoint), string.IsNullOrWhiteSpace(_settings.Frontend.GraphQlEndpoint) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Configured GraphQL endpoint.", ""),
+            DiagnosticItem("Environment", OrUnknown(_settings.Frontend.EnvironmentName), SystemSettingsStatus.Pass, "Frontend environment name.", ""),
+            DiagnosticItem("Hosting", _settings.Frontend.StaticHostingMode ? "Blazor WASM" : "Server-side", SystemSettingsStatus.Pass, "Frontend hosting mode.", "")
+        ]),
+        DiagnosticSection("Backend", "Backend endpoint and runtime configuration",
+        [
+            DiagnosticItem("Base URL", OrUnknown(_settings.Backend.BackendBaseUrl), string.IsNullOrWhiteSpace(_settings.Backend.BackendBaseUrl) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Configured backend base URL.", ""),
+            DiagnosticItem("Environment", OrUnknown(_settings.Backend.AspNetCoreEnvironment), SystemSettingsStatus.Pass, "ASP.NET Core environment.", ""),
+            DiagnosticItem("Listening URLs", OrUnknown(_settings.Backend.ListeningUrls), string.IsNullOrWhiteSpace(_settings.Backend.ListeningUrls) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Backend listening URLs.", ""),
+            DiagnosticItem("CORS Origins", OrUnknown(_settings.Backend.CorsAllowedOrigins), string.IsNullOrWhiteSpace(_settings.Backend.CorsAllowedOrigins) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Configured CORS origins.", "")
+        ]),
+        DiagnosticSection("Database", "Database connection metadata without sensitive values",
+        [
+            DiagnosticItem("Mode", OrUnknown(_settings.Database.Mode), SystemSettingsStatus.Pass, "Database mode.", ""),
+            DiagnosticItem("Provider", OrUnknown(_settings.Database.Provider), SystemSettingsStatus.Pass, "Database provider.", ""),
+            DiagnosticItem("Host", OrUnknown(_settings.Database.Host), string.IsNullOrWhiteSpace(_settings.Database.Host) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Database host.", ""),
+            DiagnosticItem("Port", _settings.Database.Port > 0 ? _settings.Database.Port.ToString() : "Not configured", _settings.Database.Port > 0 ? SystemSettingsStatus.Pass : SystemSettingsStatus.Unavailable, "Database port.", ""),
+            DiagnosticItem("Database", OrUnknown(_settings.Database.DatabaseName), string.IsNullOrWhiteSpace(_settings.Database.DatabaseName) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Database name.", ""),
+            DiagnosticItem("Username", OrUnknown(_settings.Database.Username), string.IsNullOrWhiteSpace(_settings.Database.Username) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Database username.", ""),
+            DiagnosticItem("Migrations", OrUnknown(_settings.Database.MigrationStatus), _settings.Database.MigrationStatus == "Up to date" ? SystemSettingsStatus.Pass : SystemSettingsStatus.Warning, "Migration status.", _settings.Database.MigrationStatus == "Up to date" ? "" : "Review migration status before release.")
+        ]),
+        DiagnosticSection("Logging", "Logging provider, sinks, and log file availability",
+            BuildLoggingDiagnosticItems()),
+        DiagnosticSection("Container / Runtime", "Container and runtime package metadata",
+        [
+            DiagnosticItem("Compose Project", OrUnknown(_settings.Runtime.ComposeProjectName), string.IsNullOrWhiteSpace(_settings.Runtime.ComposeProjectName) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Docker Compose project name.", ""),
+            DiagnosticItem("Expected Volume", OrUnknown(_settings.Runtime.ExpectedDatabaseVolume), string.IsNullOrWhiteSpace(_settings.Runtime.ExpectedDatabaseVolume) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Expected database volume.", ""),
+            DiagnosticItem("Package Mode", OrUnknown(_settings.Runtime.PackageMode), SystemSettingsStatus.Pass, "Runtime package mode.", ""),
+            DiagnosticItem("Package Root", OrUnknown(_settings.Runtime.LocalPackageRoot), string.IsNullOrWhiteSpace(_settings.Runtime.LocalPackageRoot) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Local package root.", ""),
+            DiagnosticItem("Published", _settings.Runtime.RunningFromPublishedArtifact ? "Yes" : "No", SystemSettingsStatus.Pass, "Whether the app is running from a published artifact.", "")
+        ]),
+        DiagnosticSection("Project Documents", "Stored project document availability",
+            BuildProjectDocumentDiagnosticItems())
+    ];
+
+    private StatusSummaryDto SystemDiagnosticSummary => SummarizeDiagnosticSections(SystemDiagnosticSections);
+
     private IReadOnlyList<SettingsSectionDto> DocumentationHealthSections =>
         _docHealthFindings.Count == 0
             ?
@@ -2308,10 +2371,10 @@ else if (_settings is not null)
         var summary = report.Summary;
         if (summary is null || summary.TotalCount == 0)
         {
-            return "Diagnostics completed\n0 checks executed\n0 Passed\n0 Warnings\n0 Failed";
+            return "Diagnostics completed: 0 checks executed - 0 passed, 0 warnings, 0 failed, 0 unavailable.";
         }
 
-        return $"Diagnostics completed\n{summary.TotalCount} checks executed\n{summary.PassCount} Passed\n{summary.WarningCount} Warnings\n{summary.FailCount} Failed";
+        return $"Diagnostics completed: {summary.TotalCount} checks executed - {summary.PassCount} passed, {summary.WarningCount} warnings, {summary.FailCount} failed, {summary.UnavailableCount} unavailable.";
     }
 
     internal static string FormatEnvironmentDiagnosticsTimestamp(DateTime timestamp) =>
@@ -2382,6 +2445,59 @@ else if (_settings is not null)
             Recommendation = recommendation,
             IsRequired = false
         };
+    }
+
+    private IReadOnlyList<SettingsItemDto> BuildLoggingDiagnosticItems()
+    {
+        var items = new List<SettingsItemDto>
+        {
+            DiagnosticItem("Provider", OrUnknown(_settings.Logging.Provider), string.IsNullOrWhiteSpace(_settings.Logging.Provider) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Logging provider.", ""),
+            DiagnosticItem("Level", OrUnknown(_settings.Logging.MinimumLevel), SystemSettingsStatus.Pass, "Minimum logging level.", ""),
+            DiagnosticItem("Sinks", _settings.Logging.Sinks.Count > 0 ? string.Join(", ", _settings.Logging.Sinks) : "Not configured", _settings.Logging.Sinks.Count > 0 ? SystemSettingsStatus.Pass : SystemSettingsStatus.Unavailable, "Configured logging sinks.", ""),
+            DiagnosticItem("Log Path", OrUnknown(_settings.Logging.LogPath), string.IsNullOrWhiteSpace(_settings.Logging.LogPath) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Configured log path.", ""),
+            DiagnosticItem("Structured", _settings.Logging.StructuredLogging ? "Enabled" : "Disabled", _settings.Logging.StructuredLogging ? SystemSettingsStatus.Pass : SystemSettingsStatus.Warning, "Structured logging state.", _settings.Logging.StructuredLogging ? "" : "Enable structured logging for richer diagnostics.")
+        };
+
+        if (!string.IsNullOrWhiteSpace(_settings.Logging.SeqUrl))
+        {
+            items.Add(DiagnosticItem("Seq URL", _settings.Logging.SeqUrl, SystemSettingsStatus.Pass, "Configured Seq URL.", ""));
+        }
+
+        foreach (var logFile in _settings.Logging.LogFiles)
+        {
+            items.Add(DiagnosticItem(
+                $"Log File: {logFile.Label}",
+                logFile.Path,
+                logFile.Exists ? SystemSettingsStatus.Pass : SystemSettingsStatus.Unavailable,
+                "Known log file path.",
+                logFile.Exists ? "" : "The log file has not been created yet."));
+        }
+
+        return items;
+    }
+
+    private IReadOnlyList<SettingsItemDto> BuildProjectDocumentDiagnosticItems()
+    {
+        if (!_diagDocLoaded)
+        {
+            return
+            [
+                DiagnosticItem("Project documents", "Loading", SystemSettingsStatus.Unavailable, "Project document diagnostics have not loaded yet.", "")
+            ];
+        }
+
+        return new[] { "constitution", "plan", "tasks" }
+            .Select(kind =>
+            {
+                var doc = _diagDocSummary.FirstOrDefault(d => string.Equals(d.DocumentKind, kind, StringComparison.OrdinalIgnoreCase));
+                return DiagnosticItem(
+                    kind,
+                    doc is not null ? $"{doc.ContentLengthChars:N0} chars" : "Empty",
+                    doc is not null ? SystemSettingsStatus.Pass : SystemSettingsStatus.Unavailable,
+                    "Stored project document availability.",
+                    doc is null ? "Load or save this project document if it is required for the current workflow." : "");
+            })
+            .ToList();
     }
 
     private static StatusSummaryDto SummarizeDiagnosticSections(IEnumerable<SettingsSectionDto> sections)

@@ -1,0 +1,305 @@
+@using BirkNext.Web.Models.Analysis
+
+<div class="analysis-readiness-panel">
+    <!-- ── Status Header ────────────────────────────────────────────────── -->
+    <div class="readiness-header @GetStatusClass(Model?.ReadinessStatus ?? AnalysisStatus.Empty)">
+        <div class="readiness-status-badge" aria-label="@GetStatusLabel(Model?.ReadinessStatus ?? AnalysisStatus.Empty)">
+            <span class="status-icon">@GetStatusIcon(Model?.ReadinessStatus ?? AnalysisStatus.Empty)</span>
+            <span class="status-label">@GetStatusLabel(Model?.ReadinessStatus ?? AnalysisStatus.Empty)</span>
+        </div>
+        <div class="readiness-message">
+            @if (Model?.Summary is not null)
+            {
+                <p>@Model.Summary.ReadinessMessage</p>
+            }
+        </div>
+    </div>
+
+    <!-- ── Missing Inputs Section ─────────────────────────────────────── -->
+    @if (Model?.MissingInputs.Count > 0)
+    {
+        <div class="missing-inputs-section">
+            <h3 class="section-title">Required Inputs Missing</h3>
+            <ul class="missing-inputs-list">
+                @foreach (var missing in Model.MissingInputs)
+                {
+                    <li class="missing-input-item">
+                        <span class="icon">📋</span>
+                        <span class="text">@missing</span>
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+
+    <!-- ── Summary Stats ──────────────────────────────────────────────── -->
+    @if (Model?.Summary is not null)
+    {
+        <div class="summary-stats">
+            @if (Model.Summary.TotalResults > 0)
+            {
+                <div class="stat-item">
+                    <span class="stat-label">Total Results</span>
+                    <span class="stat-value">@Model.Summary.TotalResults</span>
+                </div>
+            }
+
+            @if (Model.Summary.CriticalCount > 0 || Model.Summary.HighCount > 0)
+            {
+                <div class="stat-item critical">
+                    <span class="stat-label">
+                        @if (Model.Summary.CriticalCount > 0)
+                        {
+                            <span>🔴 Critical: @Model.Summary.CriticalCount</span>
+                        }
+                        @if (Model.Summary.HighCount > 0)
+                        {
+                            <span>⚠️ High: @Model.Summary.HighCount</span>
+                        }
+                    </span>
+                </div>
+            }
+
+            @if (Model.Summary.MediumCount > 0)
+            {
+                <div class="stat-item medium">
+                    <span class="stat-label">🟡 Medium: @Model.Summary.MediumCount</span>
+                </div>
+            }
+
+            @if (Model.Summary.HealthPercent > 0)
+            {
+                <div class="stat-item">
+                    <span class="stat-label">Health</span>
+                    <span class="stat-value">@Model.Summary.HealthPercent%</span>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- ── Action Buttons ─────────────────────────────────────────────── -->
+    @if (Model?.Actions.Count > 0)
+    {
+        <div class="action-buttons">
+            @foreach (var action in Model.Actions)
+            {
+                @if (action.NavigationUrl is not null)
+                {
+                    <a href="@action.NavigationUrl" class="action-button @(action.IsPrimary ? "is-primary" : "")">
+                        @action.Label
+                    </a>
+                }
+                else
+                {
+                    <button type="button" class="action-button @(action.IsPrimary ? "is-primary" : "")" title="@action.Description">
+                        @action.Label
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public AnalysisPageModel? Model { get; set; }
+
+    private string GetStatusClass(AnalysisStatus status) => status switch
+    {
+        AnalysisStatus.Ready => "status-ready",
+        AnalysisStatus.Blocked => "status-blocked",
+        AnalysisStatus.Warning => "status-warning",
+        AnalysisStatus.Fail => "status-fail",
+        AnalysisStatus.Empty => "status-empty",
+        _ => "status-unknown"
+    };
+
+    private string GetStatusLabel(AnalysisStatus status) => status switch
+    {
+        AnalysisStatus.Ready => "Ready",
+        AnalysisStatus.Blocked => "Blocked",
+        AnalysisStatus.Warning => "Warning",
+        AnalysisStatus.Fail => "Failed",
+        AnalysisStatus.Empty => "No Results Yet",
+        _ => "Unknown"
+    };
+
+    private string GetStatusIcon(AnalysisStatus status) => status switch
+    {
+        AnalysisStatus.Ready => "✓",
+        AnalysisStatus.Blocked => "🔒",
+        AnalysisStatus.Warning => "⚠️",
+        AnalysisStatus.Fail => "❌",
+        AnalysisStatus.Empty => "∅",
+        _ => "?"
+    };
+}
+
+<style>
+.analysis-readiness-panel {
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    padding: 20px;
+    margin-bottom: 24px;
+}
+
+.readiness-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.readiness-header.status-ready {
+    background-color: #f0fdf4;
+    border-left: 4px solid #22c55e;
+}
+
+.readiness-header.status-blocked {
+    background-color: #fef2f2;
+    border-left: 4px solid #ef4444;
+}
+
+.readiness-header.status-warning {
+    background-color: #fffbeb;
+    border-left: 4px solid #f59e0b;
+}
+
+.readiness-header.status-fail {
+    background-color: #fef2f2;
+    border-left: 4px solid #dc2626;
+}
+
+.readiness-header.status-empty {
+    background-color: #f3f4f6;
+    border-left: 4px solid #6b7280;
+}
+
+.readiness-status-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.status-icon {
+    font-size: 20px;
+}
+
+.readiness-message {
+    flex: 1;
+}
+
+.readiness-message p {
+    margin: 0;
+    color: #374151;
+    font-size: 14px;
+}
+
+.missing-inputs-section {
+    background-color: #fef2f2;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 16px;
+}
+
+.section-title {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #991b1b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.missing-inputs-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.missing-input-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 14px;
+    color: #7f1d1d;
+}
+
+.missing-input-item .icon {
+    flex-shrink: 0;
+}
+
+.summary-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.stat-item {
+    background-color: #f9fafb;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+.stat-item.critical {
+    background-color: #fee2e2;
+    color: #991b1b;
+}
+
+.stat-item.medium {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+.stat-label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.stat-value {
+    display: block;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.action-button {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    background-color: #ffffff;
+    color: #374151;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.action-button:hover {
+    background-color: #f3f4f6;
+    border-color: #9ca3af;
+}
+
+.action-button.is-primary {
+    background-color: #3b82f6;
+    color: #ffffff;
+    border-color: #3b82f6;
+}
+
+.action-button.is-primary:hover {
+    background-color: #2563eb;
+    border-color: #2563eb;
+}
+</style>

@@ -76,6 +76,8 @@ builder.Services.AddSingleton<IReportExportService, ReportExportService>();
 builder.Services.AddSingleton<IFrontendQualityReviewService, FrontendQualityReviewService>();
 builder.Services.AddHttpClient<IQualityReviewPageModelService, QualityReviewPageModelService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
+builder.Services.AddHttpClient<IAnalysisPageModelService, AnalysisPageModelService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
 builder.Services.AddScoped<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
 builder.Services.AddSingleton<WorkspaceArtifactRepository>();

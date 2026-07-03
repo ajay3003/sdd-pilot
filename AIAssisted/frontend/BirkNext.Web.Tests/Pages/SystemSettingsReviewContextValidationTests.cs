@@ -33,6 +33,8 @@ public class SystemSettingsReviewContextValidationTests : BunitContext
         Services.AddSingleton<WorkspaceArtifactRepository>();
         Services.AddSingleton<IWorkspaceArtifactRepository>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
         Services.AddSingleton<IWorkspaceSessionService>(sp => sp.GetRequiredService<WorkspaceArtifactRepository>());
+        Services.AddSingleton<IWorkspaceStateManager, WorkspaceStateManager>();
+        Services.AddSingleton<IWorkspaceArtifactStatusService, WorkspaceArtifactStatusService>();
         Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
         Services.AddScoped<RuntimeReviewSessionService>();
         Services.AddScoped<QualityReviewSessionService>();
@@ -53,13 +55,19 @@ public class SystemSettingsReviewContextValidationTests : BunitContext
             .Click();
 
         cut.Markup.Should().Contain("Run Validation");
+        cut.Markup.Should().Contain("Diagnostics have not been executed yet.");
+
+        cut.FindAll("button")
+            .First(button => button.TextContent.Contains("Run Validation"))
+            .Click();
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("No workspace artifacts are loaded"));
         cut.Markup.Should().Contain("Loaded Artifacts");
         cut.Markup.Should().Contain("Canonical Metrics");
         cut.Markup.Should().Contain("Source Comparisons");
         cut.Markup.Should().Contain("Findings");
         cut.Markup.Should().Contain("Export JSON");
         cut.Markup.Should().Contain("Export HTML");
-        cut.Markup.Should().Contain("No workspace artifacts are loaded");
     }
 
     private sealed class TestHostEnvironment : IWebAssemblyHostEnvironment

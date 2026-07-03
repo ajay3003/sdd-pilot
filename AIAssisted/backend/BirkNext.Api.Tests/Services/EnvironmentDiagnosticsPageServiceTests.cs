@@ -95,7 +95,7 @@ public class EnvironmentDiagnosticsPageServiceTests
             SystemSettingsStatus.Pass
         ]);
 
-        Assert.Equal(2, summary.PassCount);
+        Assert.Equal(3, summary.PassCount);
         Assert.Equal(1, summary.WarningCount);
         Assert.Equal(0, summary.FailCount);
         Assert.Equal(1, summary.UnavailableCount);
@@ -117,7 +117,8 @@ public class EnvironmentDiagnosticsPageServiceTests
             SystemSettingsStatus.Pass,
             SystemSettingsStatus.Pass,
             SystemSettingsStatus.Warning,
-            SystemSettingsStatus.Unavailable
+            SystemSettingsStatus.Unavailable,
+            SystemSettingsStatus.Pass
         ]);
 
         return new EnvironmentDiagnosticsReport

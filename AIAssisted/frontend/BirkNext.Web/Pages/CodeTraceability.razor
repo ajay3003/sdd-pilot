@@ -1,6 +1,10 @@
 @page "/code-traceability"
-@using BirkNext.Web.GraphQL
-@inject IBirkNextClient Client
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models.Analysis
+@using BirkNext.Web.Services
+
+@inject IAnalysisPageModelService AnalysisPageModelService
+@inject IWorkspaceSessionService Workspace
 
 <PageTitle>Code Traceability</PageTitle>
 
@@ -8,558 +12,85 @@
     <PageHeader Title="Code Traceability"
                 Description='Register source-code files and link them to requirements and tests. Answer "if this file changes, what must I retest?" and "which files implement this requirement?"' />
 
-    @if (_isLoading)
+    <!-- ── Readiness Panel ────────────────────────────────────────── -->
+    @if (PageModel is not null)
     {
-        <p class="loading-state">Loading code registry…</p>
+        <AnalysisReadinessPanel Model="PageModel" />
     }
-    else if (_loadError is not null)
+    else if (IsLoading)
     {
-        <div class="notification notification-error" role="alert">@_loadError</div>
+        <div class="loading-state" role="status">Loading page configuration...</div>
     }
-    else
+    else if (LoadError is not null)
     {
-        <div class="kpi-row" aria-label="Code traceability summary">
-            <div class="kpi-card kpi-card-traceability">
-                <span class="kpi-marker" aria-hidden="true"></span>
-                <span class="kpi-value">@_totalFiles</span>
-                <span class="kpi-label">Tracked Files</span>
-            </div>
-            <div class="kpi-card kpi-card-coverage">
-                <span class="kpi-marker" aria-hidden="true"></span>
-                <span class="kpi-value">@_linkedRequirements</span>
-                <span class="kpi-label">Requirements Implemented</span>
-            </div>
-            <div class="kpi-card kpi-card-coverage">
-                <span class="kpi-marker" aria-hidden="true"></span>
-                <span class="kpi-value">@_linkedTests</span>
-                <span class="kpi-label">Tests Implemented</span>
-            </div>
-            <div class="kpi-card @(_unlinkedFiles > 0 ? "kpi-card-risks" : "kpi-card-traceability")">
-                <span class="kpi-marker" aria-hidden="true"></span>
-                <span class="kpi-value">@_unlinkedFiles</span>
-                <span class="kpi-label">Files Missing Links</span>
-                <span class="kpi-hint">no QA links yet</span>
-            </div>
-        </div>
+        <div class="notification notification-error" role="alert">@LoadError</div>
+    }
 
-        <div class="code-trace-layout">
-
-            @* ── Left: Code file registry ───────────────────────────────────── *@
-            <Card NoPadding="true">
-                <Header>
-                    <SectionHeader Title="Tracked Source Files" Description="Source files">
-                        <Actions>
-                            <button class="code-register-toggle"
-                                    @onclick="ToggleRegisterForm"
-                                    aria-expanded="@_showRegisterForm">
-                                @(_showRegisterForm ? "Cancel" : "+ Track File")
-                            </button>
-                        </Actions>
-                    </SectionHeader>
-                </Header>
-                <ChildContent>
-                    @if (_showRegisterForm)
-                    {
-                        <div class="code-register-form" role="form" aria-label="Register new code file">
-                            <label class="code-form-label" for="file-path">File path</label>
-                            <input id="file-path"
-                                   class="code-form-input"
-                                   type="text"
-                                   placeholder="e.g. backend/Services/ScenarioService.cs"
-                                   @bind="_newFilePath"
-                                   @bind:event="oninput"
-                                   disabled="@_isRegistering" />
-                            <label class="code-form-label" for="file-desc">Description (optional)</label>
-                            <input id="file-desc"
-                                   class="code-form-input"
-                                   type="text"
-                                   placeholder="What this file does"
-                                   @bind="_newFileDescription"
-                                   @bind:event="oninput"
-                                   disabled="@_isRegistering" />
-                            @if (_registerError is not null)
-                            {
-                                <p class="code-form-error" role="alert">@_registerError</p>
-                            }
-                            <PrimaryButton Class="code-register-btn"
-                                           OnClick="RegisterFileAsync"
-                                           Disabled="@(_isRegistering || string.IsNullOrWhiteSpace(_newFilePath))">
-                                @(_isRegistering ? "Registering…" : "Register")
-                            </PrimaryButton>
-                        </div>
-                    }
-
-                    @if (_files.Count == 0)
-                    {
-                        <div class="code-file-empty">
-                            <p>Register your first source file to begin linking requirements and tests to implementation.</p>
-                            <div class="code-getting-started">
-                                <p class="code-gs-label">Example file paths to track:</p>
-                                <div class="code-gs-examples">
-                                    <span class="code-gs-example">ScenarioService.cs</span>
-                                    <span class="code-gs-example">ScenarioValidator.cs</span>
-                                    <span class="code-gs-example">TraceabilityPage.razor</span>
-                                </div>
-                            </div>
-                        </div>
-                    }
-                    else
-                    {
-                        <ul class="code-file-list" aria-label="Registered code files">
-                            @foreach (var file in _files)
-                            {
-                                var isSelected = _selectedFileId == file.Id;
-                                <li class="code-file-row @(isSelected ? "code-file-row-selected" : "")"
-                                    role="button"
-                                    tabindex="0"
-                                    @onclick="() => SelectFileAsync(file.Id)"
-                                    @onkeydown='async e => { if (e.Key == "Enter" || e.Key == " ") await SelectFileAsync(file.Id); }'
-                                    aria-selected="@isSelected"
-                                    aria-label="Select @file.FileName">
-                                    <div class="code-file-row-main">
-                                        <span class="code-file-name">@file.FileName</span>
-                                        <button class="code-file-delete"
-                                                @onclick:stopPropagation="true"
-                                                @onclick="() => DeleteFileAsync(file.Id)"
-                                                aria-label="Remove @file.FileName"
-                                                title="Remove file">×</button>
-                                    </div>
-                                    <span class="code-file-path">@file.FilePath</span>
-                                    @if (!string.IsNullOrWhiteSpace(file.Description))
-                                    {
-                                        <span class="code-file-desc">@file.Description</span>
-                                    }
-                                </li>
-                            }
-                        </ul>
-                    }
-                </ChildContent>
-            </Card>
-
-            @* ── Right: Code impact detail ──────────────────────────────────── *@
-            <section class="code-impact-panel" aria-label="Code impact detail" aria-live="polite">
-                @if (_isLoadingImpact)
-                {
-                    <p class="loading-state">Loading impact…</p>
-                }
-                else if (_impactError is not null)
-                {
-                    <div class="notification notification-error" role="alert">@_impactError</div>
-                }
-                else if (_impact is null)
-                {
-                    <div class="code-onboarding">
-                        <div class="code-ob-intro">
-                            <h3 class="code-ob-heading">What is Code Traceability?</h3>
-                            <p class="code-ob-lead">Connect your QA artefacts to your implementation. Track which source files implement each requirement and which tests validate them — so you always know what to retest when code changes.</p>
-                        </div>
-
-                        <div class="code-ob-diagram" aria-label="Traceability diagram: Requirement to Test to Code File">
-                            <div class="ob-node ob-node--req">
-                                <span class="ob-node-label">Requirement</span>
-                                <span class="ob-node-example">FR-001: Validate input</span>
-                            </div>
-                            <div class="ob-connector">
-                                <span class="ob-connector-line"></span>
-                                <span class="ob-connector-label">tested by</span>
-                                <span class="ob-connector-line"></span>
-                            </div>
-                            <div class="ob-node ob-node--test">
-                                <span class="ob-node-label">Test</span>
-                                <span class="ob-node-example">Validates input rejection</span>
-                            </div>
-                            <div class="ob-connector">
-                                <span class="ob-connector-line"></span>
-                                <span class="ob-connector-label">implemented in</span>
-                                <span class="ob-connector-line"></span>
-                            </div>
-                            <div class="ob-node ob-node--code">
-                                <span class="ob-node-label">Code File</span>
-                                <span class="ob-node-example">ScenarioValidator.cs</span>
-                            </div>
-                        </div>
-
-                        <div class="code-ob-why">
-                            <div class="code-ob-why-card">
-                                <strong>Change impact</strong>
-                                <p>When a file changes, instantly see which requirements and tests are affected — no guesswork.</p>
-                            </div>
-                            <div class="code-ob-why-card">
-                                <strong>Implementation coverage</strong>
-                                <p>Confirm every requirement is backed by registered code, not just described in a document.</p>
-                            </div>
-                        </div>
-
-                        <div class="code-ob-steps">
-                            <h4 class="code-ob-steps-heading">How to get started</h4>
-                            <ol class="code-ob-steps-list">
-                                <li><strong>Track a file</strong> — click <em>+ Track File</em> in the left panel and enter a file path.</li>
-                                <li><strong>Select the file</strong> — click it in the list to open the impact panel here.</li>
-                                <li><strong>Link requirements</strong> — choose which requirements this file implements.</li>
-                                <li><strong>Link tests</strong> — choose which tests validate this file.</li>
-                            </ol>
-                        </div>
-                    </div>
-                }
-                else
-                {
-                    var impact = _impact;
-                    <div class="code-impact-content">
-                        <div class="code-impact-file-header">
-                            <span class="code-impact-filename">@impact.File.FileName</span>
-                            <span class="code-path-pill">@impact.File.FilePath</span>
-                        </div>
-                        @if (!string.IsNullOrWhiteSpace(impact.File.Description))
-                        {
-                            <p class="code-impact-file-desc">@impact.File.Description</p>
-                        }
-
-                        @* Linked Requirements *@
-                        <div class="code-link-section">
-                            <SectionHeader Title="Requirements Implemented">
-                                <Actions><span class="count-badge">@impact.LinkedRequirements.Count</span></Actions>
-                            </SectionHeader>
-                            <div class="code-link-add-row">
-                                <select class="code-link-select"
-                                        @bind="_selectedRequirementId"
-                                        disabled="@_isLinking">
-                                    <option value="">— select requirement —</option>
-                                    @foreach (var req in AvailableRequirements(impact))
-                                    {
-                                        <option value="@req.Id">@req.Title</option>
-                                    }
-                                </select>
-                                <button class="code-link-btn"
-                                        @onclick="LinkRequirementAsync"
-                                        disabled="@(_isLinking || string.IsNullOrEmpty(_selectedRequirementId))">
-                                    Link
-                                </button>
-                            </div>
-                            @if (_linkError is not null)
-                            {
-                                <p class="code-form-error" role="alert">@_linkError</p>
-                            }
-                            @if (impact.LinkedRequirements.Count == 0)
-                            {
-                                <p class="code-link-empty">No requirements linked yet.</p>
-                            }
-                            else
-                            {
-                                <ul class="code-linked-list">
-                                    @foreach (var lws in impact.LinkedRequirements)
-                                    {
-                                        <li class="code-linked-item">
-                                            <span class="badge badge-requirement">Requirement</span>
-                                            <span class="code-linked-title">@lws.Scenario.Title</span>
-                                            <button class="code-unlink-btn"
-                                                    @onclick="() => DeleteLinkAsync(lws.Link.Id)"
-                                                    aria-label="Unlink @lws.Scenario.Title"
-                                                    title="Remove link">×</button>
-                                        </li>
-                                    }
-                                </ul>
-                            }
-                        </div>
-
-                        @* Linked Tests *@
-                        <div class="code-link-section">
-                            <SectionHeader Title="Tests Implemented">
-                                <Actions><span class="count-badge">@impact.LinkedTests.Count</span></Actions>
-                            </SectionHeader>
-                            <div class="code-link-add-row">
-                                <select class="code-link-select"
-                                        @bind="_selectedTestId"
-                                        disabled="@_isLinking">
-                                    <option value="">— select test —</option>
-                                    @foreach (var test in AvailableTests(impact))
-                                    {
-                                        <option value="@test.Id">@test.Title</option>
-                                    }
-                                </select>
-                                <button class="code-link-btn"
-                                        @onclick="LinkTestAsync"
-                                        disabled="@(_isLinking || string.IsNullOrEmpty(_selectedTestId))">
-                                    Link
-                                </button>
-                            </div>
-                            @if (impact.LinkedTests.Count == 0)
-                            {
-                                <p class="code-link-empty">No tests linked yet.</p>
-                            }
-                            else
-                            {
-                                <ul class="code-linked-list">
-                                    @foreach (var lws in impact.LinkedTests)
-                                    {
-                                        <li class="code-linked-item">
-                                            <span class="badge badge-test">Test</span>
-                                            <span class="code-linked-title">@lws.Scenario.Title</span>
-                                            <button class="code-unlink-btn"
-                                                    @onclick="() => DeleteLinkAsync(lws.Link.Id)"
-                                                    aria-label="Unlink @lws.Scenario.Title"
-                                                    title="Remove link">×</button>
-                                        </li>
-                                    }
-                                </ul>
-                            }
-                        </div>
-                    </div>
-                }
-            </section>
+    <!-- ── Analysis Content (only if ready) ────────────────────────── -->
+    @if (PageModel?.Summary.CanRun == true)
+    {
+        <div class="code-trace-content">
+            @* Placeholder for existing Code Traceability UI *@
+            @* To be filled with existing code registry, file list, master-detail, etc. *@
+            <p class="placeholder-text">Detailed Code Traceability will be displayed here.</p>
         </div>
     }
 </div>
 
 @code {
-    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+    private AnalysisPageModel? PageModel;
+    private bool IsLoading = true;
+    private string? LoadError;
 
-    // ── Loading state ──────────────────────────────────────────────────────────
-    private bool _isLoading = true;
-    private string? _loadError;
-
-    // ── Summary (plain integers — avoids interface implementation complexity) ──
-    private int _totalFiles;
-    private int _linkedRequirements;
-    private int _linkedTests;
-    private int _unlinkedFiles;
-
-    // ── File list ──────────────────────────────────────────────────────────────
-    private IReadOnlyList<IGetCodeOverview_CodeFiles> _files = [];
-
-    // ── Register form ──────────────────────────────────────────────────────────
-    private bool _showRegisterForm;
-    private string _newFilePath = string.Empty;
-    private string _newFileDescription = string.Empty;
-    private bool _isRegistering;
-    private string? _registerError;
-
-    // ── Impact panel ──────────────────────────────────────────────────────────
-    private string? _selectedFileId;
-    private bool _isLoadingImpact;
-    private string? _impactError;
-    private IGetCodeImpact_CodeImpact? _impact;
-
-    // ── Link controls ─────────────────────────────────────────────────────────
-    private string _selectedRequirementId = string.Empty;
-    private string _selectedTestId = string.Empty;
-    private bool _isLinking;
-    private string? _linkError;
-
-    // ── All scenarios (for dropdowns) ─────────────────────────────────────────
-    private IReadOnlyList<IGetScenarios_Scenarios> _allScenarios = [];
-
-    protected override async Task OnInitializedAsync() => await LoadOverviewAsync();
-
-    private async Task LoadOverviewAsync()
+    protected override async Task OnInitializedAsync()
     {
-        _isLoading = true;
-        _loadError = null;
-        StateHasChanged();
+        // Subscribe to workspace changes
+        Workspace.ReviewContextRebuildNeeded += (s, e) => _ = RefreshPageModel();
 
+        // Load initial model
+        await RefreshPageModel();
+    }
+
+    private async Task RefreshPageModel()
+    {
         try
         {
-            var overviewTask = Client.GetCodeOverview.ExecuteAsync(ProjectId);
-            var scenariosTask = Client.GetScenarios.ExecuteAsync(ProjectId);
-            await Task.WhenAll(overviewTask, scenariosTask);
+            IsLoading = true;
+            LoadError = null;
+            PageModel = await AnalysisPageModelService.GetImplementationReviewModelAsync();
 
-            var overview = overviewTask.Result;
-            if (overview.Errors is { Count: > 0 })
+            if (PageModel is null)
             {
-                _loadError = "Could not load code registry. Please try again.";
-                return;
+                LoadError = "Failed to load page configuration";
             }
-
-            _files = overview.Data?.CodeFiles ?? [];
-            var s = overview.Data?.CodeSummary;
-            _totalFiles = s?.TotalFiles ?? 0;
-            _linkedRequirements = s?.LinkedRequirements ?? 0;
-            _linkedTests = s?.LinkedTests ?? 0;
-            _unlinkedFiles = s?.UnlinkedFiles ?? 0;
-            _allScenarios = scenariosTask.Result.Data?.Scenarios ?? [];
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _loadError = "An unexpected error occurred. Check that the backend is running.";
+            LoadError = $"Error loading configuration: {ex.Message}";
         }
         finally
         {
-            _isLoading = false;
+            IsLoading = false;
         }
     }
-
-    private void ToggleRegisterForm()
-    {
-        _showRegisterForm = !_showRegisterForm;
-        _registerError = null;
-        _newFilePath = string.Empty;
-        _newFileDescription = string.Empty;
-    }
-
-    private async Task RegisterFileAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_newFilePath)) return;
-
-        _isRegistering = true;
-        _registerError = null;
-        StateHasChanged();
-
-        try
-        {
-            var result = await Client.RegisterCodeFile.ExecuteAsync(
-                ProjectId, _newFilePath.Trim(),
-                string.IsNullOrWhiteSpace(_newFileDescription) ? null : _newFileDescription.Trim());
-
-            var payload = result.Data?.RegisterCodeFile;
-            if (payload?.Errors is { Count: > 0 } errors)
-            {
-                _registerError = errors[0].Message;
-                return;
-            }
-
-            _newFilePath = string.Empty;
-            _newFileDescription = string.Empty;
-            _showRegisterForm = false;
-            await LoadOverviewAsync();
-        }
-        catch (Exception)
-        {
-            _registerError = "Registration failed. Please try again.";
-        }
-        finally
-        {
-            _isRegistering = false;
-        }
-    }
-
-    private async Task DeleteFileAsync(string fileId)
-    {
-        var result = await Client.DeleteCodeFile.ExecuteAsync(fileId, ProjectId);
-        if (result.Data?.DeleteCodeFile?.Success == true)
-        {
-            if (_selectedFileId == fileId)
-            {
-                _selectedFileId = null;
-                _impact = null;
-            }
-            await LoadOverviewAsync();
-        }
-    }
-
-    private async Task SelectFileAsync(string fileId)
-    {
-        if (_selectedFileId == fileId) return;
-
-        _selectedFileId = fileId;
-        _selectedRequirementId = string.Empty;
-        _selectedTestId = string.Empty;
-        _linkError = null;
-        _isLoadingImpact = true;
-        _impact = null;
-        StateHasChanged();
-
-        try
-        {
-            var result = await Client.GetCodeImpact.ExecuteAsync(ProjectId, fileId);
-            _impact = result.Data?.CodeImpact;
-            if (_impact is null && result.Errors?.Count == 0)
-                _impactError = "File not found.";
-        }
-        catch (Exception)
-        {
-            _impactError = "Could not load impact data.";
-        }
-        finally
-        {
-            _isLoadingImpact = false;
-        }
-    }
-
-    private async Task LinkRequirementAsync()
-    {
-        if (string.IsNullOrEmpty(_selectedRequirementId) || _selectedFileId is null) return;
-        await CreateLinkAsync(_selectedRequirementId);
-        _selectedRequirementId = string.Empty;
-    }
-
-    private async Task LinkTestAsync()
-    {
-        if (string.IsNullOrEmpty(_selectedTestId) || _selectedFileId is null) return;
-        await CreateLinkAsync(_selectedTestId);
-        _selectedTestId = string.Empty;
-    }
-
-    private async Task CreateLinkAsync(string scenarioId)
-    {
-        _isLinking = true;
-        _linkError = null;
-        StateHasChanged();
-
-        try
-        {
-            var result = await Client.CreateCodeLink.ExecuteAsync(ProjectId, _selectedFileId!, scenarioId);
-            var payload = result.Data?.CreateCodeLink;
-
-            if (payload?.Errors is { Count: > 0 } errors)
-            {
-                _linkError = errors[0].Message;
-                return;
-            }
-
-            await Task.WhenAll(
-                SelectFileAsync(_selectedFileId!),
-                RefreshSummaryAsync());
-        }
-        catch (Exception)
-        {
-            _linkError = "Failed to create link. Please try again.";
-        }
-        finally
-        {
-            _isLinking = false;
-        }
-    }
-
-    private async Task DeleteLinkAsync(string linkId)
-    {
-        _linkError = null;
-        var result = await Client.DeleteCodeLink.ExecuteAsync(linkId, ProjectId);
-        if (result.Data?.DeleteCodeLink?.Success == true && _selectedFileId is not null)
-        {
-            await Task.WhenAll(
-                SelectFileAsync(_selectedFileId),
-                RefreshSummaryAsync());
-        }
-    }
-
-    private async Task RefreshSummaryAsync()
-    {
-        var result = await Client.GetCodeOverview.ExecuteAsync(ProjectId);
-        if (result.Data is { } d)
-        {
-            _files = d.CodeFiles;
-            var s = d.CodeSummary;
-            _totalFiles = s.TotalFiles;
-            _linkedRequirements = s.LinkedRequirements;
-            _linkedTests = s.LinkedTests;
-            _unlinkedFiles = s.UnlinkedFiles;
-        }
-    }
-
-    // Scenarios not already linked to this file (for dropdowns)
-    private IEnumerable<IGetScenarios_Scenarios> AvailableRequirements(IGetCodeImpact_CodeImpact impact)
-    {
-        var linked = impact.LinkedRequirements.Select(x => x.Scenario.Id).ToHashSet();
-        return _allScenarios
-            .Where(s => s.Kind == ScenarioKind.Requirement && !linked.Contains(s.Id))
-            .OrderBy(s => s.Title);
-    }
-
-    private IEnumerable<IGetScenarios_Scenarios> AvailableTests(IGetCodeImpact_CodeImpact impact)
-    {
-        var linked = impact.LinkedTests.Select(x => x.Scenario.Id).ToHashSet();
-        return _allScenarios
-            .Where(s => s.Kind == ScenarioKind.Test && !linked.Contains(s.Id))
-            .OrderBy(s => s.Title);
-    }
-
 }
+
+<style>
+.code-trace-page {
+    padding: 0 20px;
+}
+
+.loading-state {
+    text-align: center;
+    color: #6b7280;
+    padding: 40px 20px;
+}
+
+.placeholder-text {
+    text-align: center;
+    color: #9ca3af;
+    padding: 20px;
+    background-color: #f9fafb;
+    border-radius: 6px;
+}
+</style>
