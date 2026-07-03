@@ -1,5 +1,6 @@
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using Xunit.Abstractions;
@@ -34,7 +35,30 @@ public class ReviewContextLifecycleIntegrationTest
     {
         var repository = new WorkspaceArtifactRepository();
         var coordinator = new WorkspaceUpdateCoordinator();
-        var provider = new ReviewContextProvider(repository, coordinator, new MockLogger<ReviewContextProvider>());
+
+        // Create mocks for analysis services
+        var constitutionService = new Mock<IConstitutionAnalysisService>();
+        constitutionService
+            .Setup(x => x.Parse(It.IsAny<string>()))
+            .Returns((string _) => new ConstitutionDocument());
+
+        var planService = new Mock<IPlanAnalysisService>();
+        planService
+            .Setup(x => x.Parse(It.IsAny<string>()))
+            .Returns((string _) => new PlanDocument());
+
+        var dataModelService = new Mock<IDataModelAnalysisService>();
+        dataModelService
+            .Setup(x => x.Parse(It.IsAny<string>()))
+            .Returns((string _) => new DataModelDocument());
+
+        var provider = new ReviewContextProvider(
+            repository,
+            coordinator,
+            constitutionService.Object,
+            planService.Object,
+            dataModelService.Object,
+            new MockLogger<ReviewContextProvider>());
 
         var rebuilds = new Mock<EventHandler>();
         provider.ReviewContextChanged += rebuilds.Object;
@@ -109,7 +133,7 @@ public class ReviewContextLifecycleIntegrationTest
 
         var context = provider.GetCurrent();
         Assert.NotNull(context);
-        Assert.Equal(2, context.GetRequirementsWithoutTests().Count); // Both artifacts loaded
+        Assert.Equal(2, context.GetRequirementsWithoutTests().Count()); // Both artifacts loaded
         _output.WriteLine("✓ ReviewContext contains both artifacts");
     }
 
@@ -167,7 +191,7 @@ public class ReviewContextLifecycleIntegrationTest
         coordinator.EndUpdate();
 
         // Assert: No rebuild occurred
-        rebuildsMock.Verify(h => h(It.IsAny<object>(), It.IsAny<EventArgs>()), Times.Never);
+        rebuildsMock.Verify(x => x(It.IsAny<object>(), It.IsAny<EventArgs>()), Times.Never);
         _output.WriteLine("✓ ReviewContextChanged was not fired");
 
         var context = provider.GetCurrent();
@@ -186,7 +210,31 @@ public class ReviewContextLifecycleIntegrationTest
 
         var repository = new WorkspaceArtifactRepository();
         var coordinator = new WorkspaceUpdateCoordinator();
-        var provider = new ReviewContextProvider(repository, coordinator, new MockLogger<ReviewContextProvider>());
+
+        // Create mocks for analysis services
+        var constitutionService = new Mock<IConstitutionAnalysisService>();
+        constitutionService
+            .Setup(x => x.Parse(It.IsAny<string>()))
+            .Returns((string _) => new ConstitutionDocument());
+
+        var planService = new Mock<IPlanAnalysisService>();
+        planService
+            .Setup(x => x.Parse(It.IsAny<string>()))
+            .Returns((string _) => new PlanDocument());
+
+        var dataModelService = new Mock<IDataModelAnalysisService>();
+        dataModelService
+            .Setup(x => x.Parse(It.IsAny<string>()))
+            .Returns((string _) => new DataModelDocument());
+
+        var provider = new ReviewContextProvider(
+            repository,
+            coordinator,
+            constitutionService.Object,
+            planService.Object,
+            dataModelService.Object,
+            new MockLogger<ReviewContextProvider>());
+
         var stateManager = new Mock<IWorkspaceStateManager>();
         var restoreService = new WorkspaceSessionRestoreService(
             repository, stateManager.Object, provider, new MockLogger<WorkspaceSessionRestoreService>());
@@ -200,7 +248,7 @@ public class ReviewContextLifecycleIntegrationTest
             Id = Guid.NewGuid(),
             Name = "Test Workspace",
             ProjectName = "Test Project",
-            Artifacts = new List<SavedWorkspaceArtifactResponseDto>
+            Artifacts = new List<SavedWorkspaceArtifactDto>
             {
                 new() { ArtifactType = "Constitution", Content = "constitution", FileName = "constitution.md" },
                 new() { ArtifactType = "Specification", Content = "specification", FileName = "spec.md" }

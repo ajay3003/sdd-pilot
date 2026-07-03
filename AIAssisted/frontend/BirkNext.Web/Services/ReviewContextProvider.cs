@@ -1,3 +1,5 @@
+using BirkNext.Web.Models;
+
 namespace BirkNext.Web.Services;
 
 /// <summary>
@@ -34,6 +36,9 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
 {
     private readonly IWorkspaceArtifactRepository _artifacts;
     private readonly IWorkspaceUpdateCoordinator _updates;
+    private readonly IConstitutionAnalysisService _constitutionService;
+    private readonly IPlanAnalysisService _planService;
+    private readonly IDataModelAnalysisService _dataModelService;
     private readonly ILogger<ReviewContextProvider> _logger;
 
     private ReviewContext? _current;
@@ -44,10 +49,16 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
     public ReviewContextProvider(
         IWorkspaceArtifactRepository artifacts,
         IWorkspaceUpdateCoordinator updates,
+        IConstitutionAnalysisService constitutionService,
+        IPlanAnalysisService planService,
+        IDataModelAnalysisService dataModelService,
         ILogger<ReviewContextProvider> logger)
     {
         _artifacts = artifacts;
         _updates = updates;
+        _constitutionService = constitutionService;
+        _planService = planService;
+        _dataModelService = dataModelService;
         _logger = logger;
 
         // Subscribe to workspace changes
@@ -58,12 +69,12 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
 
     public ReviewContext? GetCurrent() => _current;
 
-    public async Task RebuildAsync()
+    public Task RebuildAsync()
     {
         if (_isRebuilding)
         {
             _logger.LogWarning("ReviewContext rebuild already in progress, skipping");
-            return;
+            return Task.CompletedTask;
         }
 
         _isRebuilding = true;
@@ -100,6 +111,8 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
         {
             _isRebuilding = false;
         }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -123,7 +136,7 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
                 return new ConstitutionSemanticModel();
             }
 
-            var document = ConstitutionDocumentParser.Parse(artifact.Text);
+            var document = _constitutionService.Parse(artifact.Text);
             var model = ConstitutionAnalysisService.BuildSemanticModel(document);
             _logger.LogInformation("Constitution model built: {RuleCount} rules", model.Rules.Count);
             return model;
@@ -156,7 +169,7 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
                 return new SpecificationSemanticModel();
             }
 
-            var specTree = SpecificationParser.Parse(artifact.Text);
+            var specTree = SpecExplorerService.Parse(artifact.Text);
             var model = SpecExplorerService.BuildSemanticModel(specTree, artifact.Text);
             _logger.LogInformation("Specification model built: {ReqCount} requirements", model.Requirements.Count);
             return model;
@@ -189,7 +202,7 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
                 return new PlanSemanticModel();
             }
 
-            var document = PlanDocumentParser.Parse(artifact.Text);
+            var document = _planService.Parse(artifact.Text);
             var model = PlanAnalysisService.BuildSemanticModel(document);
             _logger.LogInformation("Plan model built: {PhaseCount} phases", model.Phases.Count);
             return model;
@@ -222,7 +235,7 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
                 return new TaskSemanticModel();
             }
 
-            var taskTree = TaskTreeParser.Parse(artifact.Text);
+            var taskTree = TaskExplorerService.Parse(artifact.Text);
             var model = TaskExplorerService.BuildSemanticModel(taskTree);
             _logger.LogInformation("Tasks model built: {TaskCount} tasks", model.AllTasks.Count);
             return model;
@@ -255,7 +268,7 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
                 return new DataModelSemanticModel();
             }
 
-            var document = DataModelDocumentParser.Parse(artifact.Text);
+            var document = _dataModelService.Parse(artifact.Text);
             var model = DataModelAnalysisService.BuildSemanticModel(document);
             _logger.LogInformation("DataModel model built: {EntityCount} entities", model.Entities.Count);
             return model;
