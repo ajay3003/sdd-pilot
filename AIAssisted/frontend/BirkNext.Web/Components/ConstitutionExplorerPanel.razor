@@ -99,12 +99,17 @@
         @if (_activeTab == "traceability")
         {
             <div class="ce-type-filter-strip" role="group" aria-label="Filter by rule type">
-                <button class='ce-type-chip @(_traceTypeFilter is null ? "is-active" : "")' @onclick='() => SetTraceType(null)'>All</button>
+                <button class='ce-type-chip @(_traceTypeFilter is null && !_showOrphanOnly ? "is-active" : "")' @onclick='() => SetTraceType(null)'>All</button>
                 <button class='ce-type-chip ce-tc-principle @(_traceTypeFilter == ConstitutionRuleType.Principle ? "is-active" : "")' @onclick='() => SetTraceType(ConstitutionRuleType.Principle)'>Principles</button>
                 <button class='ce-type-chip ce-tc-standard @(_traceTypeFilter == ConstitutionRuleType.Standard ? "is-active" : "")' @onclick='() => SetTraceType(ConstitutionRuleType.Standard)'>Standards</button>
                 <button class='ce-type-chip ce-tc-guideline @(_traceTypeFilter == ConstitutionRuleType.Guideline ? "is-active" : "")' @onclick='() => SetTraceType(ConstitutionRuleType.Guideline)'>Guidelines</button>
                 <button class='ce-type-chip ce-tc-constraint @(_traceTypeFilter == ConstitutionRuleType.Constraint ? "is-active" : "")' @onclick='() => SetTraceType(ConstitutionRuleType.Constraint)'>Constraints</button>
                 <button class='ce-type-chip ce-tc-governance @(_traceTypeFilter == ConstitutionRuleType.Governance ? "is-active" : "")' @onclick='() => SetTraceType(ConstitutionRuleType.Governance)'>Governance</button>
+                <button class='ce-type-chip @(_showOrphanOnly ? "is-active" : "")' @onclick='() => SetOrphanFilter(!_showOrphanOnly)'>Orphan Only</button>
+                @if (_showOrphanOnly || _traceTypeFilter is not null)
+                {
+                    <button class='ce-type-chip ce-clear-btn' @onclick='ClearFilters' title="Clear all filters">Clear</button>
+                }
             </div>
         }
 
@@ -468,7 +473,12 @@
                                 <li>@_document.Health.TotalReferences cross-reference@(_document.Health.TotalReferences != 1 ? "s" : "") between rules</li>
                                 @if (_document.Health.OrphanRules > 0)
                                 {
-                                    <li>⚠ @_document.Health.OrphanRules orphan rule@(_document.Health.OrphanRules != 1 ? "s" : "") — not referenced by any other rule</li>
+                                    <li>
+                                        <button class="ce-health-link" @onclick="ViewOrphanRules" title="Click to view orphan rules in Rule Catalog">
+                                            ⚠ @_document.Health.OrphanRules orphan rule@(_document.Health.OrphanRules != 1 ? "s" : "") — not referenced by any other rule
+                                            <span class="ce-link-action">View orphan rules →</span>
+                                        </button>
+                                    </li>
                                 }
                                 @if (_document.Health.BrokenReferences > 0)
                                 {
@@ -796,6 +806,9 @@
     // Traceability type filter
     private ConstitutionRuleType? _traceTypeFilter;
 
+    // Orphan-only filter
+    private bool _showOrphanOnly = false;
+
     // Map tree (built lazily on first access)
     private List<ConstitutionMapNode>? _mapRoots;
     private HashSet<string> _mapExpandedIds = [];
@@ -827,6 +840,13 @@
         {
             if (_document is null) return [];
             var rules = AnalysisService.FilterRulesByType(_document.RuleCatalog, _traceTypeFilter);
+
+            // Filter for orphan rules if orphan-only mode is active
+            if (_showOrphanOnly)
+            {
+                rules = rules.Where(r => r.References.Count == 0 && r.ReferencedBy.Count == 0);
+            }
+
             return AnalysisService.SearchRules(rules, _searchQuery);
         }
     }
@@ -949,6 +969,28 @@
     {
         _traceTypeFilter = type;
         _searchQuery = string.Empty;
+    }
+
+    private void SetOrphanFilter(bool orphanOnly)
+    {
+        _showOrphanOnly = orphanOnly;
+        if (orphanOnly)
+        {
+            _traceTypeFilter = null; // Clear type filter when showing orphans only
+        }
+    }
+
+    private void ClearFilters()
+    {
+        _traceTypeFilter = null;
+        _showOrphanOnly = false;
+        _searchQuery = string.Empty;
+    }
+
+    private void ViewOrphanRules()
+    {
+        SetOrphanFilter(true);
+        SetTab("catalog");
     }
 
     private void SetCatalogSort(string column)

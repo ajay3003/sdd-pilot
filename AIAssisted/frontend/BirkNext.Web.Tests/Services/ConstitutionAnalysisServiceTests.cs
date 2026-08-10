@@ -618,4 +618,630 @@ public sealed class ConstitutionAnalysisServiceTests
         // Parser should recognize binding keywords
         doc.Principles.Should().NotBeEmpty();
     }
+
+    // ── Changelog with Markdown table (bug: should not create "vChangelog" entry) ──
+
+    [Fact]
+    public void Changelog_WithMarkdownTable_ParsesVersionsCorrectly()
+    {
+        var markdown = """
+            <!--
+            SYNC IMPACT REPORT
+            ==================
+            Version change: 1.1.0 → 1.1.1  [PATCH — clarification]
+
+            Modified principles: None
+            -->
+
+            # Constitution
+
+            ## Core Principles
+
+            ### PP-01 Core Principle
+            Core content.
+
+            ## Changelog
+
+            | Version | Date       | Change                       | Approver          |
+            |---------|------------|------------------------------|-------------------|
+            | 1.0.0   | 2024-01-01 | Initial version              | Solution Architect |
+            | 1.1.0   | 2024-02-01 | Added new standard           | Solution Architect |
+            | 1.1.1   | 2024-03-01 | Clarification to standard    | Solution Architect |
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Should have exactly 3 changelog entries from the table, not 4 (no "vChangelog")
+        doc.Changelog.Should().HaveCount(3);
+
+        // Versions should be exactly as in the table
+        doc.Changelog.Select(c => c.Version).Should()
+            .ContainInOrder("1.0.0", "1.1.0", "1.1.1");
+
+        // No fake "Changelog" version
+        doc.Changelog.Should().NotContain(c => c.Version.Contains("Changelog", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Changelog_SyncImpactReportVersion_NotAddedAsChangelogEntry()
+    {
+        var markdown = """
+            <!--
+            SYNC IMPACT REPORT
+            Version change: 1.0.0 → 1.1.0  [MINOR — new feature]
+            -->
+
+            # Constitution
+
+            ## Core Principles
+
+            ### PP-01 Core
+            Content.
+
+            ## Changelog
+
+            ### 1.0.0 - 2024-01-01
+            - Initial release
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Should have only 1 entry from explicit changelog section, not 2 (no metadata version)
+        doc.Changelog.Should().HaveCount(1);
+        doc.Changelog[0].Version.Should().Be("1.0.0");
+    }
+
+    [Fact]
+    public void Changelog_TableWithoutLevelThreeHeadings_ParsesAllRows()
+    {
+        var markdown = """
+            # Authorization Constitution
+
+            ## Core Principles
+
+            ### PP-01 Zero Trust
+            All access requires verification.
+
+            ## Changelog
+
+            | Version | Date       | Change                  | Approver |
+            |---------|------------|-------------------------|----------|
+            | 1.0.0   | 2024-01-15 | Initial release         | Admin    |
+            | 1.0.1   | 2024-01-20 | Security fix            | Admin    |
+            | 1.1.0   | 2024-02-01 | Added new constraint    | Admin    |
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // All 3 table rows should be parsed
+        doc.Changelog.Should().HaveCount(3);
+        doc.Changelog[0].Version.Should().Be("1.0.0");
+        doc.Changelog[0].Date.Should().Be("2024-01-15");
+        doc.Changelog[0].Changes.Should().ContainSingle(c => c == "Initial release");
+
+        doc.Changelog[1].Version.Should().Be("1.0.1");
+        doc.Changelog[1].Author.Should().Be("Admin");
+
+        doc.Changelog[2].Version.Should().Be("1.1.0");
+
+        // No "Changelog" entry should exist
+        doc.Changelog.Should().NotContain(c => c.Version.Equals("Changelog", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // ── Reference range expansion (bug: "PP-01 through PP-09" should expand to all 9) ──
+
+    [Fact]
+    public void RuleReferences_RangeWithThrough_ExpandsAllIntermediateIds()
+    {
+        var markdown = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### PP-01 First Principle
+            Content here.
+
+            ### PP-02 Second Principle
+            Content here.
+
+            ### PP-03 Third Principle
+            Content here.
+
+            ### PP-04 Fourth Principle
+            Content here.
+
+            ### PP-05 Fifth Principle
+            Content here.
+
+            ## Governance
+
+            This references PP-01 through PP-05 as examples.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Find the Governance rule
+        var govRule = doc.RuleCatalog.FirstOrDefault(r => r.RuleId.StartsWith("GOV-"));
+        govRule.Should().NotBeNull("Governance item should be in catalog");
+
+        // Governance should reference ALL principles in the range, not just endpoints
+        var ppRefs = govRule!.References.Where(r => r.StartsWith("PP-")).ToList();
+        ppRefs.Should().Contain("PP-01");
+        ppRefs.Should().Contain("PP-02");
+        ppRefs.Should().Contain("PP-03");
+        ppRefs.Should().Contain("PP-04");
+        ppRefs.Should().Contain("PP-05");
+        ppRefs.Should().HaveCount(5, because: "All 5 principles should be referenced, not just 2 endpoints");
+    }
+
+    [Fact]
+    public void RuleReferences_RangeWithEnDash_ExpandsAllIntermediateIds()
+    {
+        var markdown = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### PP-01 Principle
+            Content.
+
+            ### PP-02 Principle
+            Content.
+
+            ### PP-03 Principle
+            Content.
+
+            ## Governance
+
+            References PP-01–PP-03 in development guidance.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        var govRule = doc.RuleCatalog.FirstOrDefault(r => r.RuleId.StartsWith("GOV-"));
+        govRule.Should().NotBeNull();
+
+        // En dash range should also expand
+        govRule!.References.Should().Contain("PP-01");
+        govRule.References.Should().Contain("PP-02");
+        govRule.References.Should().Contain("PP-03");
+        govRule.References.Where(r => r.StartsWith("PP-")).Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void RuleReferences_MultipleRanges_ExpandsEachRange()
+    {
+        var markdown = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### PP-01 P1
+            Content.
+
+            ### PP-02 P2
+            Content.
+
+            ### PP-03 P3
+            Content.
+
+            ## Platform Standards
+
+            ### PS-01 S1
+            Content.
+
+            ### PS-02 S2
+            Content.
+
+            ## Governance
+
+            Platform principles PP-01 through PP-03 and platform standards PS-01 through PS-02 apply.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        var govRule = doc.RuleCatalog.FirstOrDefault(r => r.RuleId.StartsWith("GOV-"));
+        govRule.Should().NotBeNull();
+
+        var ppRefs = govRule!.References.Where(r => r.StartsWith("PP-")).ToList();
+        var psRefs = govRule!.References.Where(r => r.StartsWith("PS-")).ToList();
+
+        ppRefs.Should().HaveCount(3, because: "PP-01 through PP-03 should expand to 3 references");
+        psRefs.Should().HaveCount(2, because: "PS-01 through PS-02 should expand to 2 references");
+    }
+
+    [Fact]
+    public void RuleReferences_RangeMixedWithSingleIds_HandlesCorrectly()
+    {
+        var markdown = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### PP-01 P1
+            Content.
+
+            ### PP-02 P2
+            Content.
+
+            ### PP-03 P3
+            Content.
+
+            ### PP-05 P5
+            Content.
+
+            ## Governance
+
+            References PP-01 through PP-03 and also PP-05 separately.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        var govRule = doc.RuleCatalog.FirstOrDefault(r => r.RuleId.StartsWith("GOV-"));
+        govRule.Should().NotBeNull();
+
+        var ppRefs = govRule!.References.Where(r => r.StartsWith("PP-")).ToList();
+        ppRefs.Should().Contain("PP-01");
+        ppRefs.Should().Contain("PP-02");
+        ppRefs.Should().Contain("PP-03");
+        ppRefs.Should().Contain("PP-05");
+        ppRefs.Should().HaveCount(4, because: "Range PP-01-PP-03 (3 items) + single PP-05 (1 item) = 4 total");
+    }
+
+    [Fact]
+    public void RuleReferences_InvalidRange_OnlyExtracts()
+    {
+        var markdown = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### PP-01 P1
+            Content.
+
+            ### PP-02 P2
+            Content.
+
+            ## Governance
+
+            References PP-01 only, not PP-01 to GL-05 (incompatible prefixes).
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        var govRule = doc.RuleCatalog.FirstOrDefault(r => r.RuleId.StartsWith("GOV-"));
+        govRule.Should().NotBeNull();
+
+        var refs = govRule!.References.ToList();
+        refs.Should().Contain("PP-01", because: "PP-01 should be extracted as a single reference");
+        refs.Should().Contain("GL-05", because: "GL-05 should be extracted as a single reference");
+        // Range expansion should NOT happen because prefixes differ
+        refs.Should().NotContain("PP-02-GL-04", because: "Range with different prefixes should not be synthesized");
+    }
+
+    // ── Constraint scope/classification (bug: module constraints marked platform-wide) ──
+
+    [Fact]
+    public void Constraints_ModuleConstraintsWithoutId_AreNotPlatformWide()
+    {
+        var markdown = """
+            # Authorization Module Constitution
+
+            ## Authorization Module Constraints
+
+            These constraints are specific to the Autorisasjon service and are binding for all work in this module.
+
+            ### Two-Domain Access Model
+            Description of first constraint.
+
+            ### Strict Role–Operation Separation
+            Description of second constraint.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Should have 2 constraints (the 2 level-3 items)
+        doc.Constraints.Should().HaveCount(2);
+
+        // Both constraints should NOT be platform-wide
+        var twodomainConstraint = doc.Constraints[0];
+        twodomainConstraint.Title.Should().Contain("Two-Domain Access Model");
+        twodomainConstraint.IsPlatformWide.Should().BeFalse(
+            because: "Module-specific constraints should not be marked platform-wide");
+
+        var roleConstraint = doc.Constraints[1];
+        roleConstraint.Title.Should().Contain("Strict Role");
+        roleConstraint.IsPlatformWide.Should().BeFalse(
+            because: "Module-specific constraints should not be marked platform-wide");
+
+        // Health check: no platform-wide constraints in this module-specific section
+        var platformWideCount = doc.Constraints.Count(c => c.IsPlatformWide);
+        platformWideCount.Should().Be(0, because: "Module constraints should not contribute to platform-wide count");
+    }
+
+    [Fact]
+    public void Constraints_ExplicitPlatformKeyword_ArePlatformWide()
+    {
+        var markdown = """
+            # Multi-Section Constitution
+
+            ## Module Constraints
+
+            ### AC-01 Authorization Module Rule
+            Module-specific rule.
+
+            ### Platform Database Connection Standard
+            Even in module section, contains "Platform" keyword so marked platform-wide.
+
+            ## Governance
+
+            Content here.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        doc.Constraints.Should().HaveCount(2);
+
+        // AC-01 has an ID and is in module section, should not be platform-wide
+        var authConstraint = doc.Constraints[0];
+        authConstraint.Title.Should().Contain("Authorization Module Rule");
+        authConstraint.IsPlatformWide.Should().BeFalse(
+            because: "Module constraint with ID in ModuleConstraints section");
+
+        // Platform Database... has "Platform" in title, should be platform-wide
+        var platformConstraint = doc.Constraints[1];
+        platformConstraint.Title.Should().Contain("Platform");
+        platformConstraint.IsPlatformWide.Should().BeTrue(
+            because: "Constraint explicitly contains 'Platform' keyword");
+    }
+
+    // ── Orphan rules definition and filtering ──
+
+    [Fact]
+    public void OrphanRules_BothRefsAndRefByZero_AreOrphaned()
+    {
+        var markdown = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### PP-01 First Principle
+            This principle stands alone.
+
+            ### PP-02 Second Principle
+            This principle also stands alone.
+
+            ## Governance
+
+            Governance rule with content.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // PP-01 is orphaned: it has no references to other rules AND no rules reference it
+        var pp01 = doc.RuleCatalog.FirstOrDefault(r => r.RuleId == "PP-01");
+        pp01.Should().NotBeNull();
+        pp01!.References.Should().BeEmpty(because: "PP-01 references no other rules");
+        pp01!.ReferencedBy.Should().BeEmpty(because: "no other rules reference PP-01");
+
+        // PP-02 is also orphaned: no references to/from
+        var pp02 = doc.RuleCatalog.FirstOrDefault(r => r.RuleId == "PP-02");
+        pp02.Should().NotBeNull();
+        pp02!.References.Should().BeEmpty(because: "PP-02 references no other rules");
+        pp02!.ReferencedBy.Should().BeEmpty(because: "no other rules reference PP-02");
+
+        // Check orphan count in health
+        doc.Health.OrphanRules.Should().Be(3, because: "PP-01, PP-02, and Governance are all orphaned");
+    }
+
+    [Fact]
+    public void OrphanRules_OutgoingReferencesPreventOrphanStatus()
+    {
+        var markdown = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### PP-01 Principle One
+            Content with no references.
+
+            ### PP-02 Principle Two
+            This rule references PP-01, so it's not orphaned even if nothing references it.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        var pp02 = doc.RuleCatalog.FirstOrDefault(r => r.RuleId == "PP-02");
+        pp02.Should().NotBeNull();
+        pp02!.References.Should().Contain("PP-01");
+        pp02!.ReferencedBy.Should().BeEmpty();
+
+        // PP-02 is NOT orphaned because it has outgoing references (References.Count > 0)
+        // PP-01 is NOT orphaned because PP-02 references it (ReferencedBy.Count > 0)
+        doc.Health.OrphanRules.Should().Be(0, because: "PP-02 has outgoing references and PP-01 has incoming references");
+    }
+
+    [Fact]
+    public void OrphanRules_IncomingReferencesPreventOrphanStatus()
+    {
+        var markdown = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### PP-01 Principle One
+            Content.
+
+            ### PP-02 Principle Two
+            Content.
+
+            ## Governance
+
+            This references PP-01, so PP-01 is not orphaned.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        var pp01 = doc.RuleCatalog.FirstOrDefault(r => r.RuleId == "PP-01");
+        pp01.Should().NotBeNull();
+        pp01!.References.Should().BeEmpty();
+        pp01!.ReferencedBy.Should().NotBeEmpty(because: "Governance references PP-01");
+
+        // PP-01 is NOT orphaned because it has incoming references
+        doc.Health.OrphanRules.Should().Be(1, because: "only PP-02 has no references in or out");
+    }
+
+    [Fact]
+    public void OrphanRules_CountMatches_HealthMetric()
+    {
+        var markdown = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### PP-01 Orphan One
+            Content.
+
+            ### PP-02 Connected Principle
+            References PP-01 sometimes.
+
+            ### PP-03 Orphan Two
+            Content.
+
+            ## Platform Standards
+
+            ### PS-01 Standard
+            References PP-02.
+
+            ## Governance
+
+            Governance rules aren't referenced.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Rules with no references in or out: PP-03, PS-01 (referenced by governance), and governance rules
+        // Actually: PP-01 has ref from PP-02, so not orphaned
+        // PP-03 has no refs, governance references it implicitly? No, "Governance rules aren't referenced" means they stand alone
+        // So orphans should be: PP-03 and any governance items
+
+        var orphanRules = doc.RuleCatalog
+            .Where(r => r.References.Count == 0 && r.ReferencedBy.Count == 0)
+            .ToList();
+
+        orphanRules.Count.Should().Be(doc.Health.OrphanRules,
+            because: "Health.OrphanRules must equal count of rules with no refs in or out");
+    }
+
+    [Fact]
+    public void RuleReferences_AutorisasjonConstitution_ExpandsAllRanges()
+    {
+        // This test reproduces the bug from the actual sample constitution
+        var markdown = """
+            # Autorisasjon — Spec Constitution
+
+            ## Core Principles
+
+            ### PP-01 Contract-Driven Communication
+            Content.
+
+            ### PP-02 Zero-Trust Security
+            Content.
+
+            ### PP-03 Domain-Driven Service Design
+            Content.
+
+            ### PP-04 Event-Driven Integration
+            Content.
+
+            ### PP-05 Specification and Tests Are Inseparable
+            Content.
+
+            ### PP-06 Module Principle
+            Content.
+
+            ### PP-07 Module Principle
+            Content.
+
+            ### PP-08 Module Principle
+            Content.
+
+            ### PP-09 Module Principle
+            Content.
+
+            ## Platform Standards
+
+            ### PS-01 Standard
+            Content.
+
+            ### PS-02 Standard
+            Content.
+
+            ### PS-03 Standard
+            Content.
+
+            ### PS-04 Standard
+            Content.
+
+            ### PS-05 Standard
+            Content.
+
+            ### PS-06 Standard
+            Content.
+
+            ### PS-07 Standard
+            Content.
+
+            ### PS-08 Standard
+            Content.
+
+            ### PS-09 Standard
+            Content.
+
+            ## Development Standards
+
+            ### GL-01 Guideline
+            Content.
+
+            ### GL-29 Guideline
+            Content.
+
+            ## Governance
+
+            This constitution is subordinate to the M2LB Platform Constitution.
+            Platform principles PP-01 through PP-09 and platform standards
+            PS-01 through PS-09 apply in full.
+
+            Use docs/m2lb-utviklingsretningslinjer.md for detailed runtime development guidance (GL-01–GL-29).
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        var govRule = doc.RuleCatalog.FirstOrDefault(r => r.RuleId.StartsWith("GOV-"));
+        govRule.Should().NotBeNull("Governance should be in catalog");
+
+        // Verify all PP-01 through PP-09 are referenced
+        var ppRefs = govRule!.References.Where(r => r.StartsWith("PP-")).ToList();
+        ppRefs.Should().HaveCount(9, because: "PP-01 through PP-09 range should expand to 9 references");
+        ppRefs.Should().Contain("PP-01");
+        ppRefs.Should().Contain("PP-05");
+        ppRefs.Should().Contain("PP-09");
+
+        // Verify all PS-01 through PS-09 are referenced
+        var psRefs = govRule.References.Where(r => r.StartsWith("PS-")).ToList();
+        psRefs.Should().HaveCount(9, because: "PS-01 through PS-09 range should expand to 9 references");
+        psRefs.Should().Contain("PS-01");
+        psRefs.Should().Contain("PS-05");
+        psRefs.Should().Contain("PS-09");
+
+        // Verify all GL-01 through GL-29 are referenced
+        var glRefs = govRule.References.Where(r => r.StartsWith("GL-")).ToList();
+        glRefs.Should().HaveCount(29, because: "GL-01 through GL-29 range should expand to 29 references");
+        glRefs.Should().Contain("GL-01");
+        glRefs.Should().Contain("GL-15");
+        glRefs.Should().Contain("GL-29");
+
+        // Total should be 9 + 9 + 29 = 47 references
+        govRule.References.Should().HaveCount(47);
+    }
 }

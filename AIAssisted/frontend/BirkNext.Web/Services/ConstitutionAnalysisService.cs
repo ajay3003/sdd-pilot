@@ -109,11 +109,6 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         var governanceItems = new List<ConstitutionGovernanceItem>();
         var changelog = new List<ConstitutionVersion>();
 
-        // Extract metadata from HTML comments at the beginning (Sync Impact Report, etc.)
-        var metadataVersion = ExtractVersionFromMetadata(markdown);
-        if (!string.IsNullOrEmpty(metadataVersion))
-            changelog.Add(new ConstitutionVersion { Version = metadataVersion, Date = string.Empty, Author = string.Empty, Changes = [] });
-
         ConstitutionSectionType currentSection = ConstitutionSectionType.Other;
         var itemLines = new List<string>();
         string? currentItemHeading = null;
@@ -208,9 +203,23 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 { lastAmendedDate = am.Groups[1].Value.Trim(); continue; }
             }
 
+            // Handle table rows in Changelog section specially
+            if (currentSection == ConstitutionSectionType.Changelog && tok.Kind == MarkdownTokenKind.TableRow)
+            {
+                var changelogEntry = ParseChangelogTableRow(tok.TableCells);
+                if (changelogEntry is not null)
+                    changelog.Add(changelogEntry);
+                continue;
+            }
+
             // If we have content but no explicit item heading, use the implicit section heading
             // This handles sections like "## Governance" that have no level-3 subsections
-            if (currentItemHeading is null && implicitSectionHeading is not null &&
+            // BUT: Skip this for Changelog and ModuleConstraints sections — only parse explicit level-3 headings
+            // (SecurityCompliance can have implicit headings since it's typically platform-wide rules)
+            var shouldUseImplicitHeading = currentSection != ConstitutionSectionType.Changelog
+                && currentSection != ConstitutionSectionType.ModuleConstraints;
+
+            if (currentItemHeading is null && implicitSectionHeading is not null && shouldUseImplicitHeading &&
                 (tok.Kind == MarkdownTokenKind.BulletItem ||
                  (tok.Kind != MarkdownTokenKind.Blank && tok.Kind != MarkdownTokenKind.Heading)))
             {
@@ -684,9 +693,13 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             title = StripMarkdown(heading);
         }
 
+        // Determine scope: platform-wide OR module-specific
+        // A constraint is platform-wide if:
+        // 1. It's in the SecurityCompliance section (default), OR
+        // 2. It explicitly contains "Platform" in its title (override)
+        // Otherwise, if in ModuleConstraints section, it's module-specific
         var isPlatformWide = section == ConstitutionSectionType.SecurityCompliance
-            || title.Contains("Platform", StringComparison.OrdinalIgnoreCase)
-            || string.IsNullOrEmpty(id);
+            || title.Contains("Platform", StringComparison.OrdinalIgnoreCase);
 
         var scope = InferConstraintScope(heading);
 
@@ -768,6 +781,34 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         }
 
         return new ConstitutionVersion { Version = ver, Date = date, Author = author, Changes = changes };
+    }
+
+    private static ConstitutionVersion? ParseChangelogTableRow(IReadOnlyList<string>? cells)
+    {
+        if (cells is null || cells.Count < 2) return null;
+
+        // Table structure: | Version | Date | Change | Approver |
+        // We expect at least: Version (cells[0]) and something else
+        // Skip header and separator rows
+        var version = cells.Count > 0 ? cells[0].Trim() : string.Empty;
+        var date = cells.Count > 1 ? cells[1].Trim() : string.Empty;
+        var change = cells.Count > 2 ? cells[2].Trim() : string.Empty;
+        var approver = cells.Count > 3 ? cells[3].Trim() : string.Empty;
+
+        // Skip if version cell is empty or is a header marker (Version, version, etc.)
+        if (string.IsNullOrEmpty(version) ||
+            version.Equals("Version", StringComparison.OrdinalIgnoreCase) ||
+            version.Equals("---", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        // Parse version: remove leading 'v' or 'V' if present
+        version = version.TrimStart('v', 'V').Trim();
+
+        var changes = new List<string>();
+        if (!string.IsNullOrWhiteSpace(change))
+            changes.Add(change);
+
+        return new ConstitutionVersion { Version = version, Date = date, Author = approver, Changes = changes };
     }
 
     // ── Health builder ─────────────────────────────────────────────────────
@@ -981,10 +1022,74 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
     private static List<string> ExtractRuleIds(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return [];
-        return AnyRuleIdRe.Matches(text)
+
+        var allIds = new List<string>();
+
+        // First, try to extract ranges and expand them
+        var expandedRanges = ExpandRangeReferences(text);
+        allIds.AddRange(expandedRanges);
+
+        // Then extract individual IDs (that aren't part of a range)
+        var individualIds = AnyRuleIdRe.Matches(text)
             .Select(m => m.Groups[1].Value.ToUpperInvariant())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+        // Remove IDs that are already covered by ranges
+        foreach (var id in individualIds)
+        {
+            if (!allIds.Contains(id, StringComparer.OrdinalIgnoreCase))
+                allIds.Add(id);
+        }
+
+        return allIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static List<string> ExpandRangeReferences(string text)
+    {
+        var expandedIds = new List<string>();
+
+        // Match patterns like "PP-01 through PP-09", "PP-01–PP-09", "GL-01–GL-29", etc.
+        var rangePatterns = new[]
+        {
+            @"(PP|PS|GL|MP|HP|FP|MC|AC|FC|GV|SC-C|H|P)-(\d+)\s+through\s+(PP|PS|GL|MP|HP|FP|MC|AC|FC|GV|SC-C|H|P)-(\d+)",  // "PP-01 through PP-09"
+            @"(PP|PS|GL|MP|HP|FP|MC|AC|FC|GV|SC-C|H|P)-(\d+)\s+to\s+(PP|PS|GL|MP|HP|FP|MC|AC|FC|GV|SC-C|H|P)-(\d+)",       // "PP-01 to PP-09"
+            @"(PP|PS|GL|MP|HP|FP|MC|AC|FC|GV|SC-C|H|P)-(\d+)–(PP|PS|GL|MP|HP|FP|MC|AC|FC|GV|SC-C|H|P)-(\d+)",               // "PP-01–PP-09" (en dash)
+            @"(PP|PS|GL|MP|HP|FP|MC|AC|FC|GV|SC-C|H|P)-(\d+)-(PP|PS|GL|MP|HP|FP|MC|AC|FC|GV|SC-C|H|P)-(\d+)",                // "PP-01-PP-09" (hyphen)
+        };
+
+        foreach (var pattern in rangePatterns)
+        {
+            var regex = new Regex(pattern, RegexOptions.IgnoreCase);
+            foreach (Match match in regex.Matches(text))
+            {
+                var startPrefix = match.Groups[1].Value.ToUpperInvariant();
+                if (!int.TryParse(match.Groups[2].Value, out var startNum)) continue;
+
+                var endPrefix = match.Groups[3].Value.ToUpperInvariant();
+                if (!int.TryParse(match.Groups[4].Value, out var endNum)) continue;
+
+                // Only expand if prefixes match (e.g., PP-01 through PP-09, not PP-01 through GL-09)
+                if (!startPrefix.Equals(endPrefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // Expand the range
+                var start = Math.Min(startNum, endNum);
+                var end = Math.Max(startNum, endNum);
+
+                // Determine zero-padding from the original numbers
+                var padding = match.Groups[2].Value.Length;
+
+                for (int i = start; i <= end; i++)
+                {
+                    var paddedNum = i.ToString().PadLeft(padding, '0');
+                    var id = $"{startPrefix}-{paddedNum}";
+                    if (!expandedIds.Contains(id, StringComparer.OrdinalIgnoreCase))
+                        expandedIds.Add(id);
+                }
+            }
+        }
+
+        return expandedIds;
     }
 
     private static string StripMarkdown(string s) =>
