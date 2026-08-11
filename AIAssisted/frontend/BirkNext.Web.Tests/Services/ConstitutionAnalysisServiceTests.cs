@@ -1956,6 +1956,151 @@ All access requires explicit verification. References PP-02 through PP-04, and P
     }
 
     [Fact]
+    public void RealConstitution_GOV001_ReferencesNoDuplicates()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+
+        var gov001 = doc.RuleCatalog.FirstOrDefault(r => r.RuleId == "GOV-001");
+        gov001.Should().NotBeNull();
+
+        // Check if References list has duplicates
+        var refCount = gov001!.References.Count;
+        var uniqueCount = gov001.References.Distinct(StringComparer.OrdinalIgnoreCase).Count();
+
+        // Report findings
+        if (refCount != uniqueCount)
+        {
+            var duplicates = gov001.References
+                .GroupBy(r => r, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            var dupInfo = string.Join(", ", duplicates.Select(kvp => $"{kvp.Key}(×{kvp.Value})"));
+            Assert.True(false, $"GOV-001.References has {refCount} items but only {uniqueCount} unique. Duplicates: {dupInfo}");
+        }
+
+        refCount.Should().Be(uniqueCount,
+            because: "GOV-001.References should not have duplicates before Map construction");
+    }
+
+    [Fact]
+    public void RealConstitution_MapGOV001_DirectChildrenNoDuplicates()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+
+        var mapNodes = _svc.BuildMapTree(doc.RuleCatalog);
+        var gov001Node = FindNodeByRuleId(mapNodes, "GOV-001");
+        gov001Node.Should().NotBeNull("GOV-001 should exist in map tree");
+
+        if (gov001Node == null)
+            return;
+
+        // Check direct children for duplicates
+        var childRuleIds = gov001Node.Children.Select(c => c.Rule.RuleId).ToList();
+        var uniqueChildIds = childRuleIds.Distinct(StringComparer.OrdinalIgnoreCase).Count();
+
+        if (childRuleIds.Count != uniqueChildIds)
+        {
+            var duplicates = childRuleIds
+                .GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            var dupInfo = string.Join(", ", duplicates.Select(kvp => $"{kvp.Key}(×{kvp.Value})"));
+            Assert.True(false, $"GOV-001 map node has {childRuleIds.Count} children but only {uniqueChildIds} unique. Duplicates: {dupInfo}");
+        }
+
+        childRuleIds.Count.Should().Be(uniqueChildIds,
+            because: "GOV-001 direct children in Map should not have duplicates");
+    }
+
+    private static ConstitutionMapNode? FindNodeByRuleId(List<ConstitutionMapNode> nodes, string ruleId)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Rule.RuleId.Equals(ruleId, StringComparison.OrdinalIgnoreCase))
+                return node;
+            var found = FindNodeByRuleId(node.Children, ruleId);
+            if (found != null)
+                return found;
+        }
+        return null;
+    }
+
+    [Fact]
+    public void RealConstitution_MapRoots_NoDuplicateChildren()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+
+        var mapNodes = _svc.BuildMapTree(doc.RuleCatalog);
+
+        // Check all root nodes and their direct children for duplicates
+        foreach (var root in mapNodes)
+        {
+            var childRuleIds = root.Children.Select(c => c.Rule.RuleId).ToList();
+            var uniqueChildIds = childRuleIds.Distinct(StringComparer.OrdinalIgnoreCase).Count();
+
+            childRuleIds.Count.Should().Be(uniqueChildIds,
+                because: $"{root.Rule.RuleId} direct children should not have duplicates. Children: {string.Join(", ", childRuleIds)}");
+        }
+    }
+
+    [Fact]
+    public void RealConstitution_PP02_NotMultiplied_AsDirectChild()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+
+        var mapNodes = _svc.BuildMapTree(doc.RuleCatalog);
+
+        // Find all nodes that have PP-02 as a direct child and count them
+        var pp02Appearances = new Dictionary<string, int>();
+
+        void CountPP02(List<ConstitutionMapNode> nodes)
+        {
+            foreach (var node in nodes)
+            {
+                var pp02Count = node.Children.Count(c => c.Rule.RuleId.Equals("PP-02", StringComparison.OrdinalIgnoreCase));
+                if (pp02Count > 0)
+                {
+                    if (!pp02Appearances.ContainsKey(node.Rule.RuleId))
+                        pp02Appearances[node.Rule.RuleId] = 0;
+                    pp02Appearances[node.Rule.RuleId] += pp02Count;
+                }
+                CountPP02(node.Children);
+            }
+        }
+
+        CountPP02(mapNodes);
+
+        // Each parent should have PP-02 as a child at most once
+        foreach (var kvp in pp02Appearances)
+        {
+            kvp.Value.Should().Be(1,
+                because: $"{kvp.Key} should have PP-02 as a direct child exactly once, not {kvp.Value} times");
+        }
+    }
+
+    [Fact]
     public void StandardInvoicesRawTextNotFlattened_AllTableRowsOnSeparateLines()
     {
         var constitution = """
