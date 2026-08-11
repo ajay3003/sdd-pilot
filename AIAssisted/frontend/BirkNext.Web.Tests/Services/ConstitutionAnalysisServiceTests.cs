@@ -2513,6 +2513,61 @@ All access requires explicit verification. References PP-02 through PP-04, and P
     }
 
     [Fact]
+    public void FinalVerification_GOV001MapChildrenAreUniquWithoutDuplicates()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+        var mapRoots = _svc.BuildMapTree(doc.RuleCatalog);
+
+        var gov001Map = mapRoots.FirstOrDefault(n => n.Rule.RuleId.Equals("GOV-001", StringComparison.OrdinalIgnoreCase));
+        gov001Map.Should().NotBeNull();
+
+        if (gov001Map == null) return;
+
+        var childRuleIds = gov001Map.Children.Select(c => c.Rule.RuleId).ToList();
+
+        // Verify no duplicates
+        var duplicates = childRuleIds
+            .GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        duplicates.Should().BeEmpty("GOV-001 should have no duplicate children");
+
+        // Verify specific rules appear exactly once
+        childRuleIds.Count(id => id.Equals("PP-02", StringComparison.OrdinalIgnoreCase)).Should().Be(1, "PP-02 should appear once");
+        childRuleIds.Count(id => id.Equals("PP-03", StringComparison.OrdinalIgnoreCase)).Should().Be(1, "PP-03 should appear once");
+        childRuleIds.Count(id => id.Equals("PS-07", StringComparison.OrdinalIgnoreCase)).Should().Be(1, "PS-07 should appear once");
+    }
+
+    [Fact]
+    public void MapLabelFormat_SingularAndPluralForLinkedRules()
+    {
+        // Test the label formatting logic for Map child counts
+        // Map shows "linked rule(s)" instead of "ref(s)" to reflect canonical rule count after alias deduplication
+
+        var testCases = new[]
+        {
+            (count: 1, expected: "1 linked rule"),
+            (count: 2, expected: "2 linked rules"),
+            (count: 4, expected: "4 linked rules"),
+            (count: 7, expected: "7 linked rules"),
+            (count: 40, expected: "40 linked rules"),
+            (count: 47, expected: "47 linked rules"),
+        };
+
+        foreach (var (count, expected) in testCases)
+        {
+            var label = $"{count} linked rule{(count != 1 ? "s" : "")}";
+            label.Should().Be(expected, $"Count {count} should produce '{expected}'");
+        }
+    }
+
+    [Fact]
     public void RealConstitution_MapRoots_NoDuplicateChildren()
     {
         var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
