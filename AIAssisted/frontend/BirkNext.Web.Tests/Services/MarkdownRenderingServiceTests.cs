@@ -837,4 +837,146 @@ Backend has no knowledge of the presentation layer.";
         var liCount = System.Text.RegularExpressions.Regex.Matches(html, "<li>").Count;
         Assert.Equal(4, liCount);
     }
+
+    // ── PHASE 2B REGRESSION TESTS: Fragment Integrity & Multi-line Bullets ──
+
+    [Fact]
+    public void Render_SourceCodeLanguage_RawText_PreservesMarkdownTable()
+    {
+        var markdown = @"All source code MUST be written in English.
+
+**Character substitution**: When a retained Norwegian domain term contains the characters
+`æ`, `ø`, or `å`, they MUST be replaced as follows in source code identifiers:
+
+| Character | Replacement |
+|-----------|-------------|
+| `æ`       | `ae`        |
+| `ø`       | `oe`        |
+| `å`       | `aa`        |
+
+Example: a domain concept spelled `nødtilgang` becomes `noedtilgang` in code.";
+
+        var html = _service.Render(markdown);
+
+        // Verify table is rendered as HTML table, not flattened text
+        Assert.Contains("<table>", html);
+        Assert.Contains("<thead>", html);
+        Assert.Contains("<tbody>", html);
+        Assert.Contains("<tr>", html);
+
+        // Verify table header
+        Assert.Contains("<th>", html);
+        Assert.Contains("Character", html);
+        Assert.Contains("Replacement", html);
+
+        // Verify table rows
+        var rows = System.Text.RegularExpressions.Regex.Matches(html, "<tr>").Count;
+        Assert.True(rows >= 3, "Should have at least 3 data rows");
+
+        // Verify special characters in table are rendered
+        Assert.Contains("<code>æ</code>", html);
+        Assert.Contains("<code>ae</code>", html);
+    }
+
+    [Fact]
+    public void Render_StrictRoleOperationSeparation_DoesNotStartWithTrailingFragment()
+    {
+        var markdown = @"- General roles MUST only contain general operations.
+- Child-specific roles MUST only contain child-specific operations.
+- This separation is enforced at the data model level and MUST be validated on every
+  role–operation assignment.";
+
+        var html = _service.Render(markdown);
+
+        // Should NOT start with "role–operation assignment."
+        Assert.False(html.TrimStart().StartsWith("role–operation assignment"),
+            "Content should not start with a trailing fragment");
+
+        // Should start with first rule
+        Assert.Contains("General roles MUST only contain general operations", html);
+    }
+
+    [Fact]
+    public void Render_StrictRoleOperationSeparation_PreservesAllThreeRules()
+    {
+        var markdown = @"- General roles MUST only contain general operations.
+- Child-specific roles MUST only contain child-specific operations.
+- This separation is enforced at the data model level and MUST be validated on every
+  role–operation assignment.";
+
+        var html = _service.Render(markdown);
+
+        // Each rule should appear exactly once
+        var count1 = System.Text.RegularExpressions.Regex.Matches(html, "General roles MUST only contain general operations").Count;
+        Assert.Equal(1, count1);
+
+        var count2 = System.Text.RegularExpressions.Regex.Matches(html, "Child-specific roles MUST only contain child-specific operations").Count;
+        Assert.Equal(1, count2);
+
+        // Third rule MUST include the continuation line
+        var count3 = System.Text.RegularExpressions.Regex.Matches(html, "role–operation assignment").Count;
+        Assert.Equal(1, count3);
+    }
+
+    [Fact]
+    public void Render_TwoDomainAccessModel_PreservesMultilineBulletContinuations()
+    {
+        var markdown = @"All access control is divided into two domains:
+
+- **General access**: Governs operations not tied to a specific child. Determined by the
+  combination of user identity, organizational unit, and general role(s) from the EntraID token.
+- **Child-specific access**: Governs operations related to a specific child. Requires an
+  explicit, managed relation between the user and the child. The relation's character is
+  defined by the assigned child-specific role.
+
+These domains are complementary.";
+
+        var html = _service.Render(markdown);
+
+        // Verify General access includes full continuation
+        Assert.Contains("Determined by the", html);
+        Assert.Contains("combination of user identity", html);
+        Assert.Contains("from the EntraID token", html);
+
+        // Verify they appear together (not separated)
+        var generalAccessMatch = System.Text.RegularExpressions.Regex.Match(html,
+            @"General access.*?Determined by the.*?EntraID token",
+            System.Text.RegularExpressions.RegexOptions.Singleline);
+        Assert.True(generalAccessMatch.Success, "General access continuation should be intact");
+
+        // Verify Child-specific access includes full continuation
+        Assert.Contains("Requires an", html);
+        Assert.Contains("explicit, managed relation", html);
+        Assert.Contains("assigned child-specific role", html);
+
+        // Verify exactly 2 main list items (not more with broken continuations)
+        var liCount = System.Text.RegularExpressions.Regex.Matches(html, "<li>").Count;
+        Assert.Equal(2, liCount);
+    }
+
+    [Fact]
+    public void Render_ConstraintRendering_NoDuplicateContent()
+    {
+        var markdown = @"**Amendment procedure:**
+- Principle changes require written proposal and architecture review
+- Standard changes require written technical justification
+- Every approved change is recorded in the changelog
+
+**Versioning policy:**
+- MAJOR: Backward-incompatible changes
+- MINOR: New principle or section added
+- PATCH: Clarifications and refinements";
+
+        var html = _service.Render(markdown);
+
+        // Each item should appear exactly once
+        var amendPropCount = System.Text.RegularExpressions.Regex.Matches(html, "written proposal").Count;
+        Assert.Equal(1, amendPropCount);
+
+        var majorCount = System.Text.RegularExpressions.Regex.Matches(html, "MAJOR:").Count;
+        Assert.Equal(1, majorCount);
+
+        var patchCount = System.Text.RegularExpressions.Regex.Matches(html, "Clarifications").Count;
+        Assert.Equal(1, patchCount);
+    }
 }

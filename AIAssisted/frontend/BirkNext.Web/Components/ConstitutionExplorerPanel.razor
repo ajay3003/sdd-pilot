@@ -230,11 +230,13 @@
                                 <div class="ce-indicator ce-indicator-@indicator.Level.ToString().ToLowerInvariant()">
                                     @if (indicator.Message.Contains("unconnected rule"))
                                     {
-                                        <button class="ce-indicator-button" @onclick="ViewOrphanRules" title="Click to view unconnected rules in Rule Catalog">
+                                        <div class="ce-indicator-row">
                                             <span class="ce-indicator-icon" aria-hidden="true">@indicator.Icon</span>
                                             <span class="ce-indicator-message">@indicator.Message</span>
-                                            <span class="ce-indicator-action">View rules</span>
-                                        </button>
+                                            <button class="ce-indicator-action-button" @onclick="ViewOrphanRules" title="Click to view unconnected rules in Rule Catalog">
+                                                <span class="ce-indicator-action">View rules</span>
+                                            </button>
+                                        </div>
                                     }
                                     else
                                     {

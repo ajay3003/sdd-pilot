@@ -482,9 +482,17 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 // Resolve alias → primary ID if needed
                 var resolved = aliasToId.TryGetValue(targetId, out var prim) ? prim : targetId;
                 if (referencedBy.TryGetValue(resolved, out var list))
-                    list.Add(srcId);
+                {
+                    // Add only if not already present (dedup)
+                    if (!list.Contains(srcId, StringComparer.OrdinalIgnoreCase))
+                        list.Add(srcId);
+                }
                 else if (referencedBy.TryGetValue(targetId, out var list2))
-                    list2.Add(srcId);
+                {
+                    // Add only if not already present (dedup)
+                    if (!list2.Contains(srcId, StringComparer.OrdinalIgnoreCase))
+                        list2.Add(srcId);
+                }
             }
         }
 
@@ -495,8 +503,12 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             Description = r.Desc,
             RuleType = r.Type,
             Aliases = r.Aliases.Select(a => a.ToUpperInvariant()).ToList(),
-            References = forwardRefs.TryGetValue(r.Id, out var fr) ? fr : [],
-            ReferencedBy = referencedBy.TryGetValue(r.Id, out var rb) ? rb : [],
+            References = forwardRefs.TryGetValue(r.Id, out var fr)
+                ? fr.Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+                : [],
+            ReferencedBy = referencedBy.TryGetValue(r.Id, out var rb)
+                ? rb.Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+                : [],
         })
         .OrderBy(r => r.RuleType)
         .ThenBy(r => r.RuleId)
@@ -590,12 +602,15 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         var description = new StringBuilder();
         var guidelines = new List<string>();
         var referencedStandards = new List<string>();
+        var tokens = MarkdownTokenizer.Tokenize(body).ToList();
         bool inGuidelines = false;
         bool inStandards = false;
 
-        foreach (var tok in MarkdownTokenizer.Tokenize(body))
+        for (int i = 0; i < tokens.Count; i++)
         {
+            var tok = tokens[i];
             var trimmed = tok.RawLine.Trim();
+
             if (tok.Kind == MarkdownTokenKind.Blank) { inGuidelines = false; inStandards = false; continue; }
 
             if (trimmed.StartsWith("**Related Guidelines", StringComparison.OrdinalIgnoreCase) ||
@@ -608,14 +623,40 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
             if (tok.Kind == MarkdownTokenKind.BulletItem)
             {
-                var content = StripMarkdown(tok.Content);
+                // Collect bullet item and continuation lines
+                var bulletText = new StringBuilder(tok.Content);
+                int j = i + 1;
+
+                // Skip blank lines
+                while (j < tokens.Count && tokens[j].Kind == MarkdownTokenKind.Blank)
+                    j++;
+
+                // Check for continuation lines (indented text)
+                while (j < tokens.Count && tokens[j].Kind == MarkdownTokenKind.Text &&
+                       tokens[j].RawLine.StartsWith("  "))
+                {
+                    bulletText.Append(" ");
+                    bulletText.Append(tokens[j].RawLine.Trim());
+                    j++;
+
+                    // Skip blank lines after continuation
+                    while (j < tokens.Count && tokens[j].Kind == MarkdownTokenKind.Blank)
+                        j++;
+                }
+
+                // Move past processed tokens
+                i = j - 1;
+
+                var content = StripMarkdown(bulletText.ToString());
                 if (inGuidelines) guidelines.Add(content);
                 else if (inStandards) referencedStandards.Add(content);
                 else description.AppendLine(content);
                 continue;
             }
 
-            if (!inGuidelines && !inStandards && tok.Kind != MarkdownTokenKind.Heading)
+            if (!inGuidelines && !inStandards && tok.Kind != MarkdownTokenKind.Heading && tok.Kind != MarkdownTokenKind.Text)
+                description.AppendLine(StripMarkdown(trimmed));
+            else if (!inGuidelines && !inStandards && tok.Kind == MarkdownTokenKind.Text && !tok.RawLine.StartsWith("  "))
                 description.AppendLine(StripMarkdown(trimmed));
         }
 
@@ -655,15 +696,46 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         var description = new StringBuilder();
         var rules = new List<string>();
+        var tokens = MarkdownTokenizer.Tokenize(body).ToList();
 
-        foreach (var tok in MarkdownTokenizer.Tokenize(body))
+        for (int i = 0; i < tokens.Count; i++)
         {
+            var tok = tokens[i];
             if (tok.Kind == MarkdownTokenKind.Blank) continue;
 
             if (tok.Kind == MarkdownTokenKind.BulletItem)
-            { rules.Add(StripMarkdown(tok.Content)); continue; }
+            {
+                // Collect the bullet item and any continuation lines
+                var bulletText = new StringBuilder(tok.Content);
+                int j = i + 1;
 
-            if (tok.Kind != MarkdownTokenKind.Heading)
+                // Skip blank lines
+                while (j < tokens.Count && tokens[j].Kind == MarkdownTokenKind.Blank)
+                    j++;
+
+                // Check for continuation lines (indented text)
+                while (j < tokens.Count && tokens[j].Kind == MarkdownTokenKind.Text &&
+                       tokens[j].RawLine.StartsWith("  "))
+                {
+                    bulletText.Append(" ");
+                    bulletText.Append(tokens[j].RawLine.Trim());
+                    j++;
+
+                    // Skip blank lines after continuation
+                    while (j < tokens.Count && tokens[j].Kind == MarkdownTokenKind.Blank)
+                        j++;
+                }
+
+                // Move past the tokens we just processed
+                i = j - 1;
+
+                rules.Add(StripMarkdown(bulletText.ToString()));
+                continue;
+            }
+
+            if (tok.Kind != MarkdownTokenKind.Heading && tok.Kind != MarkdownTokenKind.Text)
+                description.AppendLine(StripMarkdown(tok.RawLine.Trim()));
+            else if (tok.Kind == MarkdownTokenKind.Text && !tok.RawLine.StartsWith("  "))
                 description.AppendLine(StripMarkdown(tok.RawLine.Trim()));
         }
 
@@ -709,15 +781,46 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         var description = new StringBuilder();
         var rules = new List<string>();
+        var tokens = MarkdownTokenizer.Tokenize(body).ToList();
 
-        foreach (var tok in MarkdownTokenizer.Tokenize(body))
+        for (int i = 0; i < tokens.Count; i++)
         {
+            var tok = tokens[i];
             if (tok.Kind == MarkdownTokenKind.Blank) continue;
 
             if (tok.Kind == MarkdownTokenKind.BulletItem)
-            { rules.Add(StripMarkdown(tok.Content)); continue; }
+            {
+                // Collect the bullet item and any continuation lines
+                var bulletText = new StringBuilder(tok.Content);
+                int j = i + 1;
 
-            if (tok.Kind != MarkdownTokenKind.Heading)
+                // Skip blank lines
+                while (j < tokens.Count && tokens[j].Kind == MarkdownTokenKind.Blank)
+                    j++;
+
+                // Check for continuation lines (indented text)
+                while (j < tokens.Count && tokens[j].Kind == MarkdownTokenKind.Text &&
+                       tokens[j].RawLine.StartsWith("  "))
+                {
+                    bulletText.Append(" ");
+                    bulletText.Append(tokens[j].RawLine.Trim());
+                    j++;
+
+                    // Skip blank lines after continuation
+                    while (j < tokens.Count && tokens[j].Kind == MarkdownTokenKind.Blank)
+                        j++;
+                }
+
+                // Move past the tokens we just processed
+                i = j - 1;
+
+                rules.Add(StripMarkdown(bulletText.ToString()));
+                continue;
+            }
+
+            if (tok.Kind != MarkdownTokenKind.Heading && tok.Kind != MarkdownTokenKind.Text)
+                description.AppendLine(StripMarkdown(tok.RawLine.Trim()));
+            else if (tok.Kind == MarkdownTokenKind.Text && !tok.RawLine.StartsWith("  "))
                 description.AppendLine(StripMarkdown(tok.RawLine.Trim()));
         }
 
@@ -742,15 +845,46 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         var description = new StringBuilder();
         var points = new List<string>();
+        var tokens = MarkdownTokenizer.Tokenize(body).ToList();
 
-        foreach (var tok in MarkdownTokenizer.Tokenize(body))
+        for (int i = 0; i < tokens.Count; i++)
         {
+            var tok = tokens[i];
             if (tok.Kind == MarkdownTokenKind.Blank) continue;
 
             if (tok.Kind == MarkdownTokenKind.BulletItem)
-            { points.Add(StripMarkdown(tok.Content)); continue; }
+            {
+                // Collect the bullet item and any continuation lines
+                var pointText = new StringBuilder(tok.Content);
+                int j = i + 1;
 
-            if (tok.Kind != MarkdownTokenKind.Heading)
+                // Skip blank lines
+                while (j < tokens.Count && tokens[j].Kind == MarkdownTokenKind.Blank)
+                    j++;
+
+                // Check for continuation lines (indented text)
+                while (j < tokens.Count && tokens[j].Kind == MarkdownTokenKind.Text &&
+                       tokens[j].RawLine.StartsWith("  "))
+                {
+                    pointText.Append(" ");
+                    pointText.Append(tokens[j].RawLine.Trim());
+                    j++;
+
+                    // Skip blank lines after continuation
+                    while (j < tokens.Count && tokens[j].Kind == MarkdownTokenKind.Blank)
+                        j++;
+                }
+
+                // Move past the tokens we just processed
+                i = j - 1;
+
+                points.Add(StripMarkdown(pointText.ToString()));
+                continue;
+            }
+
+            if (tok.Kind != MarkdownTokenKind.Heading && tok.Kind != MarkdownTokenKind.Text)
+                description.AppendLine(StripMarkdown(tok.RawLine.Trim()));
+            else if (tok.Kind == MarkdownTokenKind.Text && !tok.RawLine.StartsWith("  "))
                 description.AppendLine(StripMarkdown(tok.RawLine.Trim()));
         }
 

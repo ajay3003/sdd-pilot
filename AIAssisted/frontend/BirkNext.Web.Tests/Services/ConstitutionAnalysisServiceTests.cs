@@ -1562,4 +1562,64 @@ public sealed class ConstitutionAnalysisServiceTests
         govNode!.Children.Count.Should().Be(governanceReferences.Length,
             because: "All 17 referenced rules should be rendered as direct children");
     }
+
+    // ── TRACEABILITY DEDUPLICATION TESTS ──────────────────────────────
+
+    [Fact]
+    public void RuleCatalog_ReferencedBy_NosDuplicates_AuthConstitution()
+    {
+        var doc = _svc.Parse(AuthConstitution());
+
+        // All rules should have unique entries in ReferencedBy
+        foreach (var rule in doc.RuleCatalog)
+        {
+            var referrers = rule.ReferencedBy;
+            var uniqueReferrers = referrers.Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            referrers.Count.Should().Be(uniqueReferrers,
+                because: $"Rule {rule.RuleId}'s ReferencedBy should have no duplicates");
+        }
+    }
+
+    [Fact]
+    public void RuleCatalog_References_NoDuplicates_AuthConstitution()
+    {
+        var doc = _svc.Parse(AuthConstitution());
+
+        // All rules should have unique entries in References
+        foreach (var rule in doc.RuleCatalog)
+        {
+            var refs = rule.References;
+            var uniqueRefs = refs.Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            refs.Count.Should().Be(uniqueRefs,
+                because: $"Rule {rule.RuleId}'s References should have no duplicates");
+        }
+    }
+
+    [Fact]
+    public void RuleCatalog_RangeExpansion_WorksWithoutDuplicates()
+    {
+        var constitution = @"# Test Constitution
+
+## Core Principles
+
+### Zero-Trust (PP-01)
+All access requires explicit verification. References PP-02 through PP-04, and PP-03 is critical.
+";
+
+        var doc = _svc.Parse(constitution);
+        var pp01 = doc.RuleCatalog.FirstOrDefault(r => r.RuleId == "PP-01");
+
+        if (pp01 != null)
+        {
+            // PP-03 should be referenced once (from range expansion), not twice
+            var pp03Count = pp01.References.Count(r => r.Equals("PP-03", StringComparison.OrdinalIgnoreCase));
+            pp03Count.Should().Be(1, because: "Range expansion + explicit mention should deduplicate PP-03");
+
+            // Should have PP-02 and PP-04 from the range
+            pp01.References.Any(r => r.Equals("PP-02", StringComparison.OrdinalIgnoreCase))
+                .Should().BeTrue("PP-02 should be in references from range expansion");
+            pp01.References.Any(r => r.Equals("PP-04", StringComparison.OrdinalIgnoreCase))
+                .Should().BeTrue("PP-04 should be in references from range expansion");
+        }
+    }
 }

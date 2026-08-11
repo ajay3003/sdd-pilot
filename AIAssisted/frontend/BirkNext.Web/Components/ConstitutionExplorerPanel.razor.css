@@ -42,34 +42,45 @@
     color: #0052a3;
 }
 
-.ce-indicator-button {
+/* Unconnected rules indicator row */
+.ce-indicator-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 0;
+    gap: 12px;
+}
+
+/* Separate action button for unconnected rules */
+.ce-indicator-action-button {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 0;
+    margin-left: auto;
     border: none;
     background: transparent;
     cursor: pointer;
     font-size: inherit;
-    text-align: left;
-    width: 100%;
+    font-family: inherit;
 }
 
-.ce-indicator-button:hover,
-.ce-indicator-button:focus {
-    text-decoration: underline;
-    outline: 2px solid currentColor;
+.ce-indicator-action-button:hover,
+.ce-indicator-action-button:focus {
+    outline: 2px solid #0066cc;
     outline-offset: 2px;
+    border-radius: 2px;
 }
 
-.ce-indicator-button:active {
+.ce-indicator-action-button:active {
     opacity: 0.8;
 }
 
 .ce-indicator-action {
     font-weight: 600;
     color: #0066cc;
-    margin-left: auto;
     white-space: nowrap;
     text-decoration: underline;
+}
+
+.ce-indicator-action-button:hover .ce-indicator-action,
+.ce-indicator-action-button:focus .ce-indicator-action {
+    color: #0052a3;
 }
