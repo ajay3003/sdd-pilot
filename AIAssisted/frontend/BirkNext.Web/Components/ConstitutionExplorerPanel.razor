@@ -410,19 +410,8 @@
                                         @if (isExpanded)
                                         {
                                             <div class="ce-standard-body">
-                                                @if (standard.Rules.Count > 0)
-                                                {
-                                                    @if (!string.IsNullOrEmpty(standard.Description))
-                                                    { <div class="ce-standard-desc"><p>@standard.Description</p></div> }
-                                                    <ul class="ce-rule-list">
-                                                        @foreach (var rule in standard.Rules) { <li>@rule</li> }
-                                                    </ul>
-                                                }
-                                                else
-                                                {
-                                                    @if (!string.IsNullOrEmpty(standard.RawText) || !string.IsNullOrEmpty(standard.Description))
-                                                    { <div class="ce-standard-desc"><MarkdownContent Content="@standard.RawText" Fallback="@standard.Description" /></div> }
-                                                }
+                                                @if (!string.IsNullOrEmpty(standard.RawText) || !string.IsNullOrEmpty(standard.Description))
+                                                { <div class="ce-standard-desc"><MarkdownContent Content="@standard.RawText" Fallback="@standard.Description" /></div> }
                                             </div>
                                         }
                                     </div>
@@ -465,9 +454,13 @@
                         }
                         @foreach (var group in moduleGroups)
                         {
+                            var groupItems = group.ToList();
                             <div class="ce-constraints-group">
-                                <div class="ce-constraints-group-header">@group.Key Constraints</div>
-                                @foreach (var c in group) { @RenderConstraintCard(c) }
+                                @if (!ShouldSuppressConstraintGroupHeader(group.Key, groupItems))
+                                {
+                                    <div class="ce-constraints-group-header">@group.Key Constraints</div>
+                                }
+                                @foreach (var c in groupItems) { @RenderConstraintCard(c) }
                             </div>
                         }
                     }
@@ -1136,6 +1129,51 @@
 
     private RenderFragment RenderConstraintDescription(ConstitutionConstraint constraint) =>
         @<MarkdownContent Content="@constraint.RawText" Fallback="@constraint.Description" />;
+
+    private static bool ShouldSuppressConstraintGroupHeader(string groupKey, IReadOnlyCollection<ConstitutionConstraint> constraints)
+    {
+        if (constraints.Count != 1)
+            return false;
+
+        var constraint = constraints.First();
+        var normalizedHeading = NormalizeConstraintGroupLabel($"{groupKey} Constraints");
+        var normalizedTitle = NormalizeConstraintGroupLabel(constraint.Title);
+
+        return normalizedTitle.Length > 0 && normalizedHeading == normalizedTitle;
+    }
+
+    private static string NormalizeConstraintGroupLabel(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var tokens = new List<string>();
+        var current = new System.Text.StringBuilder();
+
+        foreach (var ch in value.ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                current.Append(ch);
+                continue;
+            }
+
+            AddToken();
+        }
+
+        AddToken();
+
+        return string.Join(" ", tokens.Where(t => t is not "constraint" and not "constraints"));
+
+        void AddToken()
+        {
+            if (current.Length == 0)
+                return;
+
+            tokens.Add(current.ToString());
+            current.Clear();
+        }
+    }
 
     private RenderFragment RenderConstraintCard(ConstitutionConstraint constraint) => __builder =>
     {

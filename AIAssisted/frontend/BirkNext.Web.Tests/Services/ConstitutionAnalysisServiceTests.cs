@@ -1746,4 +1746,271 @@ All access requires explicit verification. References PP-02 through PP-04, and P
         html.Should().Contain("<table>", because: "Table should be rendered as HTML");
         html.Should().Contain("æ", because: "Special character should be in output");
     }
+
+    [Fact]
+    public void StandardsWithTableAndBullets_PreserveBothInRawText()
+    {
+        // This standard has both bullets AND a table
+        var constitution = """
+            # Test Constitution
+
+            ## Platform Standards
+
+            ### PS-01 Source Code Language
+            All source code MUST be written in English.
+
+            - Follow naming conventions
+            - Use English identifiers
+
+            **Character substitution**: When a retained Norwegian domain term contains the characters:
+
+            | Character | Replacement |
+            |-----------|-------------|
+            | `æ`       | `ae`        |
+            | `ø`       | `oe`        |
+            | `å`       | `aa`        |
+
+            Example: `nødtilgang` becomes `noedtilgang`.
+            """;
+
+        var doc = _svc.Parse(constitution);
+        var standard = doc.Standards.FirstOrDefault();
+        standard.Should().NotBeNull();
+
+        // The standard should have rules (bullets) extracted
+        standard!.Rules.Should().HaveCountGreaterThan(0, because: "Bullets should be extracted as rules");
+
+        // Check that RawText still contains the table properly formatted with line breaks
+        standard.RawText.Should().Contain("| Character | Replacement |", because: "Table header should be in RawText");
+        standard.RawText.Should().Contain("|-----------|-------------|", because: "Table separator should be in RawText");
+        standard.RawText.Should().Contain("| `æ`", because: "Table row with special char should be in RawText");
+
+        // Most importantly: verify each table row is on its own line, not flattened
+        var lines = standard.RawText.Split('\n');
+        var tableLines = lines.Where(l => l.TrimStart().StartsWith("|")).ToList();
+        tableLines.Count.Should().BeGreaterThanOrEqualTo(5, because: "Should have header + separator + 3 data rows on separate lines");
+
+        // Verify the RawText can be rendered as HTML by Markdig
+        var renderService = new MarkdownRenderingService();
+        var html = renderService.Render(standard.RawText);
+        html.Should().Contain("<table>", because: "RawText should contain proper Markdown table that Markdig renders");
+        html.Should().Contain("<ul>", because: "RawText should also contain bullets rendered as <ul>");
+    }
+
+    [Fact]
+    public void RealConstitution_SourceCodeLanguage_TableLinesAreNotFlattened()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+
+        var sourceCodeStandard = doc.Standards.FirstOrDefault(s => s.Title.Contains("Source Code Language"));
+        sourceCodeStandard.Should().NotBeNull();
+
+        // Check that table rows are on separate lines in RawText
+        var rawTextLines = sourceCodeStandard!.RawText.Split('\n');
+        var tableLines = rawTextLines.Where(l => l.TrimStart().StartsWith("|")).ToList();
+
+        // Should have at least 5 table lines: header + separator + 3 rows
+        tableLines.Should().HaveCountGreaterThanOrEqualTo(5, because: "Table should not be flattened - each row should be on its own line");
+
+        // Verify table can be rendered properly
+        var renderService = new MarkdownRenderingService();
+        var html = renderService.Render(sourceCodeStandard.RawText);
+
+        // If properly formatted, Markdig should produce a proper table
+        html.Should().Contain("<table>", because: "Table should be rendered as HTML, not flattened text");
+    }
+
+    [Fact]
+    public void RuleCatalog_NoSelfReferencesFromHeading()
+    {
+        var constitution = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### PP-01 Zero-Trust Security (PP-02, PP-04)
+            All access requires explicit authorization.
+
+            ### PP-02 Least Privilege
+            Grant the minimum permissions required.
+
+            ### PP-03 Separation of Concerns (PP-03, PP-06, PP-07)
+            Authorization logic must not leak into business logic.
+
+            ### PP-04 Audit Everything
+            Every authorization decision must be logged.
+            """;
+
+        var doc = _svc.Parse(constitution);
+
+        // PP-01 should NOT reference itself (PP-02 and PP-04 are in heading but PP-01 is not)
+        var pp01 = doc.RuleCatalog.FirstOrDefault(r => r.RuleId == "PP-01");
+        pp01.Should().NotBeNull();
+        pp01!.References.Should().NotContain("PP-01");
+        pp01.References.Should().Contain("PP-02");
+        pp01.References.Should().Contain("PP-04");
+
+        // PP-03 should NOT reference itself even though PP-03 appears in the heading
+        var pp03 = doc.RuleCatalog.FirstOrDefault(r => r.RuleId == "PP-03");
+        pp03.Should().NotBeNull();
+        pp03!.References.Should().NotContain("PP-03");
+        pp03.References.Should().Contain("PP-06");
+        pp03.References.Should().Contain("PP-07");
+
+        // ReferencedBy should also not contain self-references
+        pp01.ReferencedBy.Should().NotContain("PP-01");
+        pp03.ReferencedBy.Should().NotContain("PP-03");
+    }
+
+    [Fact]
+    public void RuleCatalog_HeadingWithoutExplicitId_ExtractsFromParentheses()
+    {
+        // This tests the case where heading has no explicit ID prefix
+        var constitution = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### II. Zero-Trust Security (PP-01, PP-02, PP-04)
+            All access requires explicit authorization.
+
+            ### III. Least Privilege (PP-02)
+            Grant the minimum permissions required.
+            """;
+
+        var doc = _svc.Parse(constitution);
+
+        // Find the principle - ID should be extracted from parentheses
+        var pp01 = doc.RuleCatalog.FirstOrDefault(r => r.RuleId == "PP-01");
+        pp01.Should().NotBeNull(because: "PP-01 should be found from parentheses in heading");
+
+        // PP-01 should reference PP-02 and PP-04, but NOT itself
+        pp01!.References.Should().Contain("PP-02");
+        pp01.References.Should().Contain("PP-04");
+        pp01.References.Should().NotContain("PP-01",
+            because: "Rule extracted from parentheses in its own heading should not self-reference");
+
+        // ReferencedBy should not contain self
+        pp01.ReferencedBy.Should().NotContain("PP-01",
+            because: "Rule should not appear in its own ReferencedBy list");
+    }
+
+    [Fact]
+    public void RuleCatalog_RomanNumeralWithParentheses_NoSelfReference()
+    {
+        // Exact format from real constitution
+        var constitution = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### II. Zero-Trust Security (PP-02, PP-04)
+            All security requires verification.
+
+            ### III. Domain-Driven Service Design (PP-03, PP-06, PP-07)
+            Services own their data.
+            """;
+
+        var doc = _svc.Parse(constitution);
+
+        // PP-02 should NOT reference itself
+        var pp02 = doc.RuleCatalog.FirstOrDefault(r => r.RuleId == "PP-02");
+        pp02.Should().NotBeNull();
+        pp02!.References.Should().NotContain("PP-02");
+        pp02.References.Should().Contain("PP-04");
+        pp02.ReferencedBy.Should().NotContain("PP-02",
+            because: "PP-02 extracted from heading should not appear in its own ReferencedBy");
+
+        // PP-03 should NOT reference itself
+        var pp03 = doc.RuleCatalog.FirstOrDefault(r => r.RuleId == "PP-03");
+        pp03.Should().NotBeNull();
+        pp03!.References.Should().NotContain("PP-03");
+        pp03.References.Should().Contain("PP-06");
+        pp03.References.Should().Contain("PP-07");
+        pp03.ReferencedBy.Should().NotContain("PP-03");
+    }
+
+    [Fact]
+    public void RuleCatalog_RealConstitution_NoPrinciplesSelfReference()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+
+        // Check that no principle references itself
+        foreach (var rule in doc.RuleCatalog.Where(r => r.RuleType == ConstitutionRuleType.Principle))
+        {
+            rule.References.Should().NotContain(rule.RuleId,
+                because: $"Rule {rule.RuleId} should not reference itself");
+            rule.ReferencedBy.Should().NotContain(rule.RuleId,
+                because: $"Rule {rule.RuleId} should not appear in its own ReferencedBy");
+        }
+    }
+
+    [Fact]
+    public void StandardInvoicesRawTextNotFlattened_AllTableRowsOnSeparateLines()
+    {
+        var constitution = """
+            # Test Constitution
+
+            ## Platform Standards
+
+            ### PS-01 Source Code Language
+            All source code MUST be written in English.
+
+            - Rule 1
+            - Rule 2
+
+            **Character substitution**: When Norwegian characters appear:
+
+            | Character | Replacement |
+            |-----------|-------------|
+            | `æ`       | `ae`        |
+            | `ø`       | `oe`        |
+            | `å`       | `aa`        |
+
+            Example follows.
+            """;
+
+        var doc = _svc.Parse(constitution);
+        var standard = doc.Standards[0];
+
+        // Verify RawText structure
+        var lines = standard.RawText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+
+        // Find table header
+        var headerIdx = Array.FindIndex(lines, l => l.Contains("Character") && l.Contains("Replacement"));
+        headerIdx.Should().BeGreaterThanOrEqualTo(0);
+
+        // Find separator - should be the very next line
+        var sepIdx = Array.FindIndex(lines, headerIdx + 1, l => l.Contains("---"));
+        sepIdx.Should().Be(headerIdx + 1, because: "Separator should be immediately after header");
+
+        // Find data rows - each should be on its own line
+        var firstDataRowIdx = sepIdx + 1;
+        lines[firstDataRowIdx].Should().Contain("æ");
+
+        var secondDataRowIdx = firstDataRowIdx + 1;
+        lines[secondDataRowIdx].Should().Contain("ø");
+
+        var thirdDataRowIdx = secondDataRowIdx + 1;
+        lines[thirdDataRowIdx].Should().Contain("å");
+
+        // Verify NOT flattened: if all pipes were on one line, this would fail
+        var pipeCount = standard.RawText.Count(c => c == '|');
+        var newlineCount = standard.RawText.Count(c => c == '\n');
+
+        // A properly formatted table has ~5 pipes per line (header/sep/data)
+        // If flattened, all pipes would be on one or two lines
+        var linesWithPipes = lines.Count(l => l.Contains("|"));
+        linesWithPipes.Should().BeGreaterThanOrEqualTo(5, because: "Table rows should be on separate lines");
+    }
 }

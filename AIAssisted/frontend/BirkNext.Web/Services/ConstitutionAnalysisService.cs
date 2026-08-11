@@ -481,6 +481,12 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             {
                 // Resolve alias → primary ID if needed
                 var resolved = aliasToId.TryGetValue(targetId, out var prim) ? prim : targetId;
+
+                // Exclude self-references: a rule should not reference itself
+                if (resolved.Equals(srcId, StringComparison.OrdinalIgnoreCase) ||
+                    targetId.Equals(srcId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
                 if (referencedBy.TryGetValue(resolved, out var list))
                 {
                     // Add only if not already present (dedup)
@@ -553,19 +559,20 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
     private static ConstitutionMapNode BuildMapNode(
         ConstitutionRule rule,
         Dictionary<string, ConstitutionRule> byId,
-        HashSet<string> visited,
+        HashSet<string> ancestry,
         int depth)
     {
-        visited.Add(rule.RuleId);
-        foreach (var alias in rule.Aliases) visited.Add(alias);
+        var currentPath = new HashSet<string>(ancestry, StringComparer.OrdinalIgnoreCase);
+        currentPath.Add(rule.RuleId);
+        foreach (var alias in rule.Aliases) currentPath.Add(alias);
 
         var children = new List<ConstitutionMapNode>();
         if (depth < 5)
         {
             foreach (var refId in rule.References)
             {
-                if (!visited.Contains(refId) && byId.TryGetValue(refId, out var child))
-                    children.Add(BuildMapNode(child, byId, visited, depth + 1));
+                if (!currentPath.Contains(refId) && byId.TryGetValue(refId, out var child))
+                    children.Add(BuildMapNode(child, byId, currentPath, depth + 1));
             }
         }
 
