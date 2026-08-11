@@ -1622,4 +1622,128 @@ All access requires explicit verification. References PP-02 through PP-04, and P
                 .Should().BeTrue("PP-04 should be in references from range expansion");
         }
     }
+
+    [Fact]
+    public void StandardRawText_PreservesMarkdownTableRows()
+    {
+        var constitution = """
+            # Test Constitution
+
+            ## Platform Standards
+
+            ### PS-01 Source Code Language
+            All source code MUST be written in English.
+
+            **Character substitution**: When a retained Norwegian domain term contains the characters
+            `æ`, `ø`, or `å`, they MUST be replaced as follows in source code identifiers:
+
+            | Character | Replacement |
+            |-----------|-------------|
+            | `æ`       | `ae`        |
+            | `ø`       | `oe`        |
+            | `å`       | `aa`        |
+
+            Example: a domain concept spelled `nødtilgang` becomes `noedtilgang` in code.
+            """;
+
+        var doc = _svc.Parse(constitution);
+        var standard = doc.Standards.FirstOrDefault();
+
+        standard.Should().NotBeNull();
+        standard!.RawText.Should().NotBeNullOrEmpty();
+
+        // Verify table structure is preserved with line breaks
+        var lines = standard.RawText.Split('\n');
+        var tableHeaderLine = lines.FirstOrDefault(l => l.Contains("Character") && l.Contains("Replacement"));
+        tableHeaderLine.Should().NotBeNull(because: "Table header should exist");
+
+        // Verify separator row exists and is on its own line
+        var separatorLine = lines.FirstOrDefault(l => l.TrimStart().StartsWith("|") && l.Replace("|", "").Replace("-", "").Replace(":", "").Trim().Length == 0);
+        separatorLine.Should().NotBeNull(because: "Separator row should exist on its own line");
+
+        // Verify data rows are on separate lines
+        var dataRows = lines.Where(l => l.TrimStart().StartsWith("|") &&
+                                        !l.Replace("|", "").Replace("-", "").Replace(":", "").Trim().Equals(string.Empty) &&
+                                        (l.Contains("æ") || l.Contains("ø") || l.Contains("å"))).ToList();
+        dataRows.Should().HaveCountGreaterThanOrEqualTo(1, because: "At least one data row with special characters should exist");
+
+        // Verify no flattening: each pipe-delimited row should be on its own line
+        var tableRows = lines.Where(l => l.TrimStart().StartsWith("|")).ToList();
+        tableRows.Should().HaveCountGreaterThanOrEqualTo(5, because: "Should have header + separator + 3 data rows");
+    }
+
+    [Fact]
+    public void StandardRendering_WithMarkdownTable_ProducesHtmlTable()
+    {
+        var constitution = """
+            # Test Constitution
+
+            ## Platform Standards
+
+            ### PS-01 Source Code Language
+            All source code MUST be written in English.
+
+            **Character substitution**: When a retained Norwegian domain term contains the characters
+            `æ`, `ø`, or `å`, they MUST be replaced as follows in source code identifiers:
+
+            | Character | Replacement |
+            |-----------|-------------|
+            | `æ`       | `ae`        |
+            | `ø`       | `oe`        |
+            | `å`       | `aa`        |
+
+            Example: a domain concept spelled `nødtilgang` becomes `noedtilgang` in code.
+            """;
+
+        var doc = _svc.Parse(constitution);
+        var standard = doc.Standards.FirstOrDefault();
+        standard.Should().NotBeNull();
+
+        // Render the RawText using MarkdownRenderingService
+        var renderService = new MarkdownRenderingService();
+        var html = renderService.Render(standard!.RawText);
+
+        // Verify HTML contains table structure
+        html.Should().Contain("<table>", because: "Rendered HTML should contain a table element");
+        html.Should().Contain("<thead>", because: "Table should have a head section");
+        html.Should().Contain("<tbody>", because: "Table should have a body section");
+        html.Should().Contain("<th>Character</th>", because: "Table should have Character header");
+        html.Should().Contain("<th>Replacement</th>", because: "Table should have Replacement header");
+
+        // Verify special characters are rendered in table cells
+        html.Should().Contain("<code>æ</code>", because: "Table should contain æ in code");
+        html.Should().Contain("<code>ae</code>", because: "Table should contain ae in code");
+    }
+
+    [Fact]
+    public void RealConstitution_SourceCodeLanguage_PreservesTable()
+    {
+        // Load the real constitution file
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+        {
+            // Skip if file not found
+            return;
+        }
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+
+        // Find Source Code Language standard
+        var sourceCodeStandard = doc.Standards.FirstOrDefault(s => s.Title.Contains("Source Code Language"));
+        sourceCodeStandard.Should().NotBeNull();
+
+        // Check that RawText contains table rows on separate lines
+        var lines = sourceCodeStandard!.RawText.Split('\n');
+        var tableLines = lines.Where(l => l.TrimStart().StartsWith("|")).ToList();
+        tableLines.Count.Should().BeGreaterThanOrEqualTo(5, because: "Table should have header + separator + data rows");
+
+        // Render the RawText
+        var renderService = new MarkdownRenderingService();
+        var html = renderService.Render(sourceCodeStandard.RawText);
+
+        // Verify table is rendered as HTML
+        html.Should().Contain("<table>", because: "Table should be rendered as HTML");
+        html.Should().Contain("æ", because: "Special character should be in output");
+    }
 }
