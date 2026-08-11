@@ -1,0 +1,211 @@
+/* Markdown Content Rendering Styles */
+
+.markdown-content {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.6;
+    color: #333;
+}
+
+/* Paragraphs */
+.markdown-content :global(p) {
+    margin: 1em 0;
+}
+
+.markdown-content-fallback {
+    margin: 1em 0;
+}
+
+/* Headings */
+.markdown-content :global(h1) {
+    font-size: 1.5em;
+    font-weight: 600;
+    margin: 0.5em 0 0.25em 0;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 0.3em;
+}
+
+.markdown-content :global(h2) {
+    font-size: 1.3em;
+    font-weight: 600;
+    margin: 0.5em 0 0.25em 0;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 0.3em;
+}
+
+.markdown-content :global(h3) {
+    font-size: 1.1em;
+    font-weight: 600;
+    margin: 0.5em 0 0.2em 0;
+}
+
+.markdown-content :global(h4),
+.markdown-content :global(h5),
+.markdown-content :global(h6) {
+    font-size: 1em;
+    font-weight: 600;
+    margin: 0.5em 0 0.2em 0;
+}
+
+/* Unordered lists */
+.markdown-content :global(ul) {
+    margin: 1em 0;
+    padding-left: 2em;
+}
+
+.markdown-content :global(ul) :global(li) {
+    margin: 0.5em 0;
+}
+
+/* Ordered lists */
+.markdown-content :global(ol) {
+    margin: 1em 0;
+    padding-left: 2em;
+}
+
+.markdown-content :global(ol) :global(li) {
+    margin: 0.5em 0;
+}
+
+/* Nested lists */
+.markdown-content :global(ul) :global(ul),
+.markdown-content :global(ul) :global(ol),
+.markdown-content :global(ol) :global(ul),
+.markdown-content :global(ol) :global(ol) {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+}
+
+/* Task lists */
+.markdown-content :global(.task-list) {
+    list-style: none;
+    padding-left: 0;
+}
+
+.markdown-content :global(.task-list) :global(li) {
+    margin-left: 1.5em;
+    position: relative;
+}
+
+.markdown-content :global(.task-list) :global(input[type="checkbox"]) {
+    position: absolute;
+    left: 0;
+    top: 0.3em;
+    cursor: pointer;
+    margin-right: 0.5em;
+    width: 1em;
+    height: 1em;
+}
+
+/* Links */
+.markdown-content :global(a) {
+    color: #0066cc;
+    text-decoration: underline;
+}
+
+.markdown-content :global(a:hover) {
+    color: #0052a3;
+}
+
+.markdown-content :global(a[data-unsafe="true"]) {
+    color: #999;
+    text-decoration: none;
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+/* Inline code */
+.markdown-content :global(code) {
+    background-color: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9em;
+    padding: 0.2em 0.4em;
+    color: #d63384;
+}
+
+/* Code blocks */
+.markdown-content :global(pre) {
+    background-color: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9em;
+    line-height: 1.4;
+    margin: 1em 0;
+    overflow-x: auto;
+    padding: 1em;
+}
+
+.markdown-content :global(pre) :global(code) {
+    background-color: transparent;
+    border: none;
+    color: #333;
+    padding: 0;
+}
+
+/* Tables */
+.markdown-content :global(table) {
+    border-collapse: collapse;
+    margin: 1em 0;
+    width: 100%;
+    border: 1px solid #ddd;
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.markdown-content :global(table) :global(th),
+.markdown-content :global(table) :global(td) {
+    border: 1px solid #ddd;
+    padding: 0.75em;
+    text-align: left;
+}
+
+.markdown-content :global(table) :global(th) {
+    background-color: #f5f5f5;
+    font-weight: 600;
+}
+
+.markdown-content :global(table) :global(tbody) :global(tr:nth-child(odd)) {
+    background-color: #f9f9f9;
+}
+
+.markdown-content :global(table) :global(tbody) :global(tr:hover) {
+    background-color: #f0f0f0;
+}
+
+/* Blockquotes */
+.markdown-content :global(blockquote) {
+    border-left: 4px solid #0066cc;
+    color: #666;
+    margin: 1em 0;
+    padding-left: 1em;
+    font-style: italic;
+}
+
+.markdown-content :global(blockquote) :global(p) {
+    margin: 0.5em 0;
+}
+
+/* Horizontal rule */
+.markdown-content :global(hr) {
+    border: none;
+    border-top: 1px solid #ddd;
+    margin: 2em 0;
+}
+
+/* Strong emphasis */
+.markdown-content :global(strong) {
+    font-weight: 600;
+}
+
+.markdown-content :global(em) {
+    font-style: italic;
+}
+
+/* Strikethrough */
+.markdown-content :global(del) {
+    color: #999;
+    text-decoration: line-through;
+}

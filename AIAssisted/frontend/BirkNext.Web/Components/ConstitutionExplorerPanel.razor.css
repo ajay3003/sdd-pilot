@@ -1,0 +1,75 @@
+/* Constitution Explorer Panel Styles */
+
+.ce-health-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+    text-align: left;
+    gap: 12px;
+}
+
+.ce-health-link:hover,
+.ce-health-link:focus {
+    background-color: rgba(0, 0, 0, 0.05);
+    outline: 2px solid #0066cc;
+    outline-offset: -1px;
+    border-radius: 4px;
+}
+
+.ce-health-link:active {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+.ce-health-link.ce-info-action {
+    color: #333;
+}
+
+.ce-link-action {
+    display: inline;
+    font-weight: 600;
+    color: #0066cc;
+    text-decoration: underline;
+    white-space: nowrap;
+}
+
+.ce-health-link:hover .ce-link-action,
+.ce-health-link:focus .ce-link-action {
+    color: #0052a3;
+}
+
+.ce-indicator-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: inherit;
+    text-align: left;
+    width: 100%;
+}
+
+.ce-indicator-button:hover,
+.ce-indicator-button:focus {
+    text-decoration: underline;
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+.ce-indicator-button:active {
+    opacity: 0.8;
+}
+
+.ce-indicator-action {
+    font-weight: 600;
+    color: #0066cc;
+    margin-left: auto;
+    white-space: nowrap;
+    text-decoration: underline;
+}

@@ -363,10 +363,14 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             roots = allRules.Where(r => r.RuleType == ConstitutionRuleType.Principle).ToList();
 
         var result = new List<ConstitutionMapNode>();
-        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        // Build tree with per-path cycle detection instead of global visited set
+        // This allows rules to appear under multiple parents if referenced by multiple rules
         foreach (var root in roots)
-            result.Add(BuildMapNode(root, byId, visited, 0));
+        {
+            var pathVisited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            result.Add(BuildMapNode(root, byId, pathVisited, 0));
+        }
 
         return result;
     }
@@ -866,9 +870,9 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         if (orphans > 0)
             indicators.Add(new ConstitutionHealthIndicator
             {
-                Icon = "⚠",
-                Message = $"{orphans} orphan rule{(orphans != 1 ? "s" : "")} — not connected to any other rule",
-                Level = HealthIndicatorLevel.Warning,
+                Icon = "ⓘ",
+                Message = $"{orphans} unconnected rule{(orphans != 1 ? "s" : "")} — with no connections to other rules",
+                Level = HealthIndicatorLevel.Good,
             });
 
         if (broken > 0)

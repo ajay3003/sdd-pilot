@@ -1244,4 +1244,322 @@ public sealed class ConstitutionAnalysisServiceTests
         // Total should be 9 + 9 + 29 = 47 references
         govRule.References.Should().HaveCount(47);
     }
+
+    [Fact]
+    public void Changelog_WithAscendingVersions_LatestVersionDeterminedBySemVerNotPosition()
+    {
+        var markdown = """
+            # Authorization Constitution
+
+            Version: 1.1.1
+
+            ## Core Principles
+
+            ### PP-01 Core Principle
+            Core content.
+
+            ## Changelog
+
+            | Version | Date       | Change                       | Approver          |
+            |---------|------------|------------------------------|-------------------|
+            | 1.0.0   | 2026-01-01 | Initial spec constitution    | Solution Architect |
+            | 1.1.0   | 2026-02-01 | Added Development Standard   | Solution Architect |
+            | 1.1.1   | 2026-03-24 | Clarified substitution rules | Solution Architect |
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Constitution declares version 1.1.1
+        doc.Version.Should().Be("1.1.1");
+
+        // Changelog has 3 entries in ascending order: 1.0.0, 1.1.0, 1.1.1
+        doc.Changelog.Should().HaveCount(3);
+        doc.Changelog[0].Version.Should().Be("1.0.0");
+        doc.Changelog[1].Version.Should().Be("1.1.0");
+        doc.Changelog[2].Version.Should().Be("1.1.1");
+
+        // The latest version should be determined by matching the declared version (1.1.1)
+        // NOT by list position (idx == 0 would incorrectly pick 1.0.0)
+        var latestIndex = DetermineLatestVersionIndex(doc);
+        latestIndex.Should().Be(2, because: "v1.1.1 matches the declared document Version");
+        doc.Changelog[latestIndex].Version.Should().Be("1.1.1");
+    }
+
+    [Fact]
+    public void Changelog_WithoutDeclaredVersionMatch_LatestVersionDeterminedBySemanticVersion()
+    {
+        var markdown = """
+            # Authorization Constitution
+
+            Version: 2.0.0
+
+            ## Core Principles
+
+            ### PP-01 Core Principle
+            Core content.
+
+            ## Changelog
+
+            | Version | Date       | Change                       | Approver          |
+            |---------|------------|------------------------------|-------------------|
+            | 1.0.0   | 2026-01-01 | Initial spec constitution    | Solution Architect |
+            | 1.1.0   | 2026-02-01 | Added Development Standard   | Solution Architect |
+            | 1.1.1   | 2026-03-24 | Clarification                | Solution Architect |
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        // Constitution declares version 2.0.0 (not in changelog)
+        doc.Version.Should().Be("2.0.0");
+
+        // Changelog has 3 entries, but 2.0.0 is not there
+        doc.Changelog.Should().HaveCount(3);
+
+        // The latest version should be determined by highest semantic version (1.1.1)
+        // NOT by list position
+        var latestIndex = DetermineLatestVersionIndex(doc);
+        latestIndex.Should().Be(2, because: "v1.1.1 is the highest semantic version in the changelog");
+        doc.Changelog[latestIndex].Version.Should().Be("1.1.1");
+    }
+
+    [Fact]
+    public void Changelog_WithNonSequentialVersions_LatestVersionUsesSemanticOrdering()
+    {
+        var markdown = """
+            # Authorization Constitution
+
+            Version: 1.10.0
+
+            ## Core Principles
+
+            ### PP-01 Core Principle
+            Core content.
+
+            ## Changelog
+
+            | Version | Date       | Change                       | Approver          |
+            |---------|------------|------------------------------|-------------------|
+            | 1.0.0   | 2026-01-01 | Initial                      | Solution Architect |
+            | 1.9.0   | 2026-02-01 | Added feature                | Solution Architect |
+            | 1.10.0  | 2026-03-24 | Enhancement                  | Solution Architect |
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        doc.Version.Should().Be("1.10.0");
+        doc.Changelog.Should().HaveCount(3);
+
+        // Test that 1.10.0 > 1.9.0 (semantic version ordering, not string ordering)
+        // String ordering would incorrectly place 1.9.0 > 1.10.0
+        var latestIndex = DetermineLatestVersionIndex(doc);
+        latestIndex.Should().Be(2, because: "v1.10.0 (semver) is higher than v1.9.0, and matches declared version");
+        doc.Changelog[latestIndex].Version.Should().Be("1.10.0");
+    }
+
+    // Helper method for tests to determine which changelog entry is latest
+    private static int DetermineLatestVersionIndex(ConstitutionDocument doc)
+    {
+        if (doc.Changelog.Count == 0) return -1;
+
+        // First, check if any changelog entry matches the document's declared Version
+        var declaredVersionIndex = doc.Changelog.FindIndex(v => v.Version == doc.Version);
+        if (declaredVersionIndex >= 0)
+            return declaredVersionIndex;
+
+        // Otherwise, find the highest semantic version using Version.TryParse
+        int latestIndex = 0;
+        Version? latestVersion = Version.TryParse(doc.Changelog[0].Version, out var v0) ? v0 : null;
+
+        for (int i = 1; i < doc.Changelog.Count; i++)
+        {
+            if (Version.TryParse(doc.Changelog[i].Version, out var currentVersion))
+            {
+                if (latestVersion is null || currentVersion > latestVersion)
+                {
+                    latestVersion = currentVersion;
+                    latestIndex = i;
+                }
+            }
+        }
+
+        return latestIndex;
+    }
+
+    [Fact]
+    public void MapTree_WithSharedReferences_ShowsRuleUnderMultipleParents()
+    {
+        var markdown = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### PP-01 Principle One
+            References PS-01.
+
+            ### PP-02 Principle Two
+            References PS-01.
+
+            ## Standards
+
+            ### PS-01 Shared Standard
+            Content.
+            """;
+
+        var doc = _svc.Parse(markdown);
+        var mapTree = _svc.BuildMapTree(doc.RuleCatalog);
+
+        // Find PP-01 and PP-02 in the tree
+        var pp01Node = mapTree.FirstOrDefault(n => n.Rule.RuleId == "PP-01");
+        var pp02Node = mapTree.FirstOrDefault(n => n.Rule.RuleId == "PP-02");
+
+        pp01Node.Should().NotBeNull();
+        pp02Node.Should().NotBeNull();
+
+        // PS-01 should appear as a child under BOTH PP-01 and PP-02
+        pp01Node!.Children.Should().Contain(c => c.Rule.RuleId == "PS-01");
+        pp02Node!.Children.Should().Contain(c => c.Rule.RuleId == "PS-01");
+
+        // Each should have PS-01 as a direct child
+        pp01Node.Children.Count(c => c.Rule.RuleId == "PS-01").Should().Be(1);
+        pp02Node.Children.Count(c => c.Rule.RuleId == "PS-01").Should().Be(1);
+    }
+
+    [Fact]
+    public void MapTree_WithCycle_PreventsCycles()
+    {
+        var markdown = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### PP-01 Principle One
+            References PP-02.
+
+            ### PP-02 Principle Two
+            References PP-01.
+            """;
+
+        var doc = _svc.Parse(markdown);
+        var mapTree = _svc.BuildMapTree(doc.RuleCatalog);
+
+        // Find PP-01 in the tree
+        var pp01Node = mapTree.FirstOrDefault(n => n.Rule.RuleId == "PP-01");
+        pp01Node.Should().NotBeNull();
+
+        // PP-01 should have PP-02 as a child
+        var pp02Child = pp01Node!.Children.FirstOrDefault(c => c.Rule.RuleId == "PP-02");
+        pp02Child.Should().NotBeNull();
+
+        // PP-02 should NOT have PP-01 as a child (cycle prevention)
+        pp02Child!.Children.Should().NotContain(c => c.Rule.RuleId == "PP-01");
+    }
+
+    [Fact]
+    public void MapTree_WithDeepSharedReferences_ShowsCompleteHierarchy()
+    {
+        var markdown = """
+            # Test Constitution
+
+            ## Core Principles
+
+            ### PP-01 Principle One
+            References PS-01.
+
+            ### PP-02 Principle Two
+            References PS-01.
+
+            ## Standards
+
+            ### PS-01 Shared Standard
+            References GL-01.
+
+            ## Guidelines
+
+            ### GL-01 Shared Guideline
+            Content.
+            """;
+
+        var doc = _svc.Parse(markdown);
+        var mapTree = _svc.BuildMapTree(doc.RuleCatalog);
+
+        // Find PP-01 and PP-02
+        var pp01Node = mapTree.FirstOrDefault(n => n.Rule.RuleId == "PP-01");
+        var pp02Node = mapTree.FirstOrDefault(n => n.Rule.RuleId == "PP-02");
+
+        // Both should have PS-01 as a child
+        pp01Node!.Children.Should().Contain(c => c.Rule.RuleId == "PS-01");
+        pp02Node!.Children.Should().Contain(c => c.Rule.RuleId == "PS-01");
+
+        // Each PS-01 node should have GL-01 as a child
+        var ps01UnderPp01 = pp01Node.Children.First(c => c.Rule.RuleId == "PS-01");
+        var ps01UnderPp02 = pp02Node.Children.First(c => c.Rule.RuleId == "PS-01");
+
+        ps01UnderPp01.Children.Should().Contain(c => c.Rule.RuleId == "GL-01");
+        ps01UnderPp02.Children.Should().Contain(c => c.Rule.RuleId == "GL-01");
+    }
+
+    [Fact]
+    public void MapTree_AutorisasjonRegression_GovernanceShowsAllReferences()
+    {
+        var markdown = """
+            # Autorisasjon Constitution
+
+            Version: 1.1.1
+
+            ## Core Principles
+
+            ### PP-01 Principle One
+            Content.
+
+            ### PP-02 Principle Two
+            Content.
+
+            ### PP-03 Principle Three
+            Content.
+
+            ### PP-04 Principle Four
+            Content.
+
+            ### PP-05 Principle Five
+            Content.
+
+            ### PP-06 Principle Six
+            Content.
+
+            ### PP-07 Principle Seven
+            Content.
+
+            ### PP-08 Principle Eight
+            Content.
+
+            ### PP-09 Principle Nine
+            Content.
+
+            ## Governance
+
+            This section references PP-01 through PP-09, PS-01 through PS-03, and GL-01 through GL-05.
+            """;
+
+        var doc = _svc.Parse(markdown);
+        var mapTree = _svc.BuildMapTree(doc.RuleCatalog);
+
+        // Find Governance node
+        var govNode = mapTree.FirstOrDefault(n => n.Rule.RuleType == ConstitutionRuleType.Governance);
+        govNode.Should().NotBeNull();
+
+        // Extract the referenced IDs from the markdown
+        var governanceReferences = new[] { "PP-01", "PP-02", "PP-03", "PP-04", "PP-05", "PP-06", "PP-07", "PP-08", "PP-09",
+                                           "PS-01", "PS-02", "PS-03", "GL-01", "GL-02", "GL-03", "GL-04", "GL-05" };
+
+        // Governance should have children for all referenced rules
+        foreach (var refId in governanceReferences)
+        {
+            govNode!.Children.Should().Contain(c => c.Rule.RuleId == refId,
+                because: $"Governance should have {refId} as a direct child");
+        }
+
+        // The count should match the number of actual references (not reduced by visited set)
+        govNode!.Children.Count.Should().Be(governanceReferences.Length,
+            because: "All 17 referenced rules should be rendered as direct children");
+    }
 }

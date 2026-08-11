@@ -1,0 +1,44 @@
+@using BirkNext.Web.Services
+
+@if (!string.IsNullOrEmpty(Content))
+{
+    <div class="markdown-content @CssClass">
+        @((MarkupString)RenderedHtml)
+    </div>
+}
+else if (!string.IsNullOrEmpty(Fallback))
+{
+    <p class="markdown-content-fallback @CssClass">@Fallback</p>
+}
+
+@code {
+    [Parameter]
+    public string? Content { get; set; }
+
+    [Parameter]
+    public string? Fallback { get; set; }
+
+    [Parameter]
+    public string CssClass { get; set; } = string.Empty;
+
+    [Inject]
+    public MarkdownRenderingService MarkdownRenderer { get; set; } = null!;
+
+    private string RenderedHtml { get; set; } = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        if (!string.IsNullOrEmpty(Content))
+        {
+            RenderedHtml = MarkdownRenderer.Render(Content);
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrEmpty(Content))
+        {
+            RenderedHtml = MarkdownRenderer.Render(Content);
+        }
+    }
+}

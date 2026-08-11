@@ -19,6 +19,7 @@ builder.Services.AddHttpClient<AdminApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
 builder.Services.AddSingleton<FeatureVisibilityService>();
+builder.Services.AddSingleton<MarkdownRenderingService>();
 
 // Strawberry Shake registers concrete mutation classes but omits interface mappings.
 // Components that @inject these interfaces need explicit registrations in the root container.
