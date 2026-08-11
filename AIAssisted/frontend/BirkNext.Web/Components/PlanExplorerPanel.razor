@@ -527,7 +527,12 @@
                     {
                         @foreach (var sec in techSections)
                         {
-                            @RenderSectionBlocks(sec)
+                            <div class="pe-section">
+                                <div class="pe-section-title">@sec.Title</div>
+                                <div class="pe-section-content">
+                                    <MarkdownContent Content="@sec.RawContent" />
+                                </div>
+                            </div>
                         }
                     }
                 </div>

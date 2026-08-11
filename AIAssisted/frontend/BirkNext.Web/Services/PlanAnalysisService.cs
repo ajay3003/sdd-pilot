@@ -25,24 +25,24 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         @"^(ADR-\d+)\b\s*[:\-–]?\s*(.*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex VersionRe = new(
-        @"\s+(\d+[\.\d]*(?:[-+]\S*)?)\s*$", RegexOptions.Compiled);
+        @"\s+(\d+[\.\dxX]*(?:[-+]\S*)?)\s*(?:\(.*\))?$", RegexOptions.Compiled);
 
     private static readonly Regex PhaseNumberRe = new(
-        @"^(?:phase\s+)?(\d+)[:\-–.\s]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        @"^(?:(?:phase|step)\s+)?(\d+)[:\-–.\s]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // ── Meta regexes ────────────────────────────────────────────────────────
 
     private static readonly (string Key, Regex Re)[] MetaPatterns =
     [
-        ("status",  new Regex(@"^\s*\*?\*?[Ss]tatus\*?\*?\s*[:=]\s*\*?\*?(.+?)\*?\*?\s*$",  RegexOptions.Compiled)),
-        ("created", new Regex(@"^\s*\*?\*?[Cc]reated?\*?\*?\s*[:=]\s*(.+)$",                RegexOptions.Compiled)),
-        ("updated", new Regex(@"^\s*\*?\*?(?:[Ll]ast[\s_][Uu]pdated?|[Uu]pdated?)\*?\*?\s*[:=]\s*(.+)$", RegexOptions.Compiled)),
-        ("author",  new Regex(@"^\s*\*?\*?[Aa]uthor\*?\*?\s*[:=]\s*(.+)$",                  RegexOptions.Compiled)),
-        ("feature", new Regex(@"^\s*\*?\*?[Ff]eature\*?\*?\s*[:=]\s*(.+)$",                 RegexOptions.Compiled)),
-        ("branch",  new Regex(@"^\s*\*?\*?[Bb]ranch\*?\*?\s*[:=]\s*(.+)$",                  RegexOptions.Compiled)),
-        ("date",    new Regex(@"^\s*\*?\*?[Dd]ate\*?\*?\s*[:=]\s*(.+)$",                    RegexOptions.Compiled)),
-        ("spec",    new Regex(@"^\s*\*?\*?[Ss]pec(?:ification)?\s*(?:[Ll]ink)?\*?\*?\s*[:=]\s*(.+)$", RegexOptions.Compiled)),
-        ("input",   new Regex(@"^\s*\*?\*?[Ii]nput(?:\s+[Ss]ource)?\*?\*?\s*[:=]\s*(.+)$", RegexOptions.Compiled)),
+        ("status",  new Regex(@"^\s*\*?\*?[Ss]tatus\*?\*?\s*[:=]\s*\*?\*?(.+?)\*?\*?\s*(?:\||$)",  RegexOptions.Compiled)),
+        ("created", new Regex(@"^\s*\*?\*?[Cc]reated?\*?\*?\s*[:=]\s*(.+?)(?:\||$)",                RegexOptions.Compiled)),
+        ("updated", new Regex(@"^\s*\*?\*?(?:[Ll]ast[\s_][Uu]pdated?|[Uu]pdated?)\*?\*?\s*[:=]\s*(.+?)(?:\||$)", RegexOptions.Compiled)),
+        ("author",  new Regex(@"^\s*\*?\*?[Aa]uthor\*?\*?\s*[:=]\s*(.+?)(?:\||$)",                  RegexOptions.Compiled)),
+        ("feature", new Regex(@"^\s*\*?\*?[Ff]eature\*?\*?\s*[:=]\s*(.+?)(?:\||$)",                 RegexOptions.Compiled)),
+        ("branch",  new Regex(@"^\s*\*?\*?[Bb]ranch\*?\*?\s*[:=]\s*(.+?)(?:\||$)",                  RegexOptions.Compiled)),
+        ("date",    new Regex(@"^\s*\*?\*?[Dd]ate\*?\*?\s*[:=]\s*(.+?)(?:\||$)",                    RegexOptions.Compiled)),
+        ("spec",    new Regex(@"^\s*\*?\*?[Ss]pec(?:ification)?\s*(?:[Ll]ink)?\*?\*?\s*[:=]\s*(.+?)(?:\||$)", RegexOptions.Compiled)),
+        ("input",   new Regex(@"^\s*\*?\*?[Ii]nput(?:\s+[Ss]ource)?\*?\*?\s*[:=]\s*(.+?)(?:\||$)", RegexOptions.Compiled)),
     ];
 
     // ── Section classifiers ──────────────────────────────────────────────────
@@ -149,6 +149,66 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         "testcontainers", "specflow", "playwright", "selenium", "bunit",
         "bogus", "autofixture", "faker",
     };
+
+    // ── Inline Metadata Parsing ─────────────────────────────────────────────
+
+    private static Dictionary<string, string> ExtractInlineMetadata(string line)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // Check if line contains multiple **label**: value patterns separated by |
+        // e.g., **Branch**: `004-test` | **Date**: 2026-04-23 | **Spec**: [spec.md](spec.md)
+        if (!line.Contains("**") || !line.Contains("|"))
+            return result;
+
+        // Use regex to find all **label**: value pairs
+        var fieldPattern = new Regex(@"\*\*([^\*]+?)\*\*\s*[:=]\s*([^|]+?)(?=\||$)", RegexOptions.Compiled);
+        var matches = fieldPattern.Matches(line);
+
+        foreach (Match m in matches)
+        {
+            if (m.Groups.Count < 3) continue;
+
+            var label = m.Groups[1].Value.Trim().ToLowerInvariant();
+            var rawValue = m.Groups[2].Value.Trim();
+
+            if (string.IsNullOrWhiteSpace(rawValue)) continue;
+
+            // For Markdown links [text](url), extract the display text
+            string value;
+            if (label.Contains("spec") && rawValue.Contains("["))
+            {
+                var linkMatch = Regex.Match(rawValue, @"\[([^\]]+)\]");
+                value = linkMatch.Success ? linkMatch.Groups[1].Value : StripMarkdown(rawValue);
+            }
+            else
+            {
+                value = StripMarkdown(rawValue);
+            }
+
+            if (string.IsNullOrWhiteSpace(value)) continue;
+
+            // Map label to key name
+            string? key = label switch
+            {
+                var l when l.Contains("status") => "status",
+                var l when l.Contains("created") => "created",
+                var l when l.Contains("updated") || l.Contains("last") => "updated",
+                var l when l.Contains("author") => "author",
+                var l when l.Contains("feature") => "feature",
+                var l when l.Contains("branch") => "branch",
+                var l when l.Contains("date") => "date",
+                var l when l.Contains("spec") => "spec",
+                var l when l.Contains("input") => "input",
+                _ => null,
+            };
+
+            if (key is not null && !result.ContainsKey(key))
+                result[key] = value;
+        }
+
+        return result;
+    }
 
     // ── Public API ───────────────────────────────────────────────────────────
 
@@ -287,12 +347,49 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
             if (inMetaBlock && tok.LineIndex < 35)
             {
+                // Try inline metadata parsing first (multiple **label**: value | **label**: value)
+                var inlineMatches = ExtractInlineMetadata(tok.RawLine);
+                if (inlineMatches.Count > 0)
+                {
+                    foreach (var (key, value) in inlineMatches)
+                    {
+                        switch (key)
+                        {
+                            case "status":  status      = value; break;
+                            case "created": createdDate = value; break;
+                            case "updated": lastUpdated = value; break;
+                            case "author":  author      = value; break;
+                            case "feature": featureName = value; break;
+                            case "branch":  branch      = value; break;
+                            case "date":    date        = value; break;
+                            case "spec":    specLink    = value; break;
+                            case "input":   inputSource = value; break;
+                        }
+                    }
+                    continue;
+                }
+
+                // Fall back to single-pattern matching for one field per line
                 bool matched = false;
                 foreach (var (key, re) in MetaPatterns)
                 {
                     var m = re.Match(tok.RawLine);
                     if (!m.Success) continue;
-                    var val = StripMarkdown(m.Groups[1].Value.Trim());
+
+                    var rawVal = m.Groups[1].Value.Trim();
+
+                    // For Markdown links [text](url), extract the display text
+                    string val;
+                    if (key == "spec" && rawVal.Contains("["))
+                    {
+                        var linkMatch = Regex.Match(rawVal, @"\[([^\]]+)\]");
+                        val = linkMatch.Success ? linkMatch.Groups[1].Value : StripMarkdown(rawVal);
+                    }
+                    else
+                    {
+                        val = StripMarkdown(rawVal);
+                    }
+
                     matched = true;
                     switch (key)
                     {
@@ -322,6 +419,18 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         // Detect phases from any section if not already found
         if (phases.Count == 0)
             ExtractPhasesFromSections(sections, phases);
+
+        // Extract testing info from Technical Context and implementation phases if no dedicated Testing section
+        if (testingInfo is null)
+            testingInfo = ExtractTestingInfoFromSectionsAndPhases(sections, phases);
+
+        // Extract dependencies from Technical Context if no dedicated Dependencies section
+        if (dependencies.Count == 0)
+            dependencies.AddRange(ExtractDependenciesFromTechnicalContext(sections));
+
+        // Extract constraints from Technical Context if no dedicated Constraints section
+        if (constraints.Count == 0)
+            constraints.AddRange(ExtractConstraintsFromTechnicalContext(sections));
 
         // Auto-generate complexity items when no dedicated Complexity section exists
         if (complexityItems.Count == 0)
@@ -933,27 +1042,68 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         if (lines.Count < 2) return false;
 
         var headers = SplitCells(lines[0]);
+
+        // Try standard complexity table (Area/Component + Level/Complexity)
         var areaIdx  = headers.FindIndex(h => h.Contains("area", StringComparison.OrdinalIgnoreCase) || h.Contains("component", StringComparison.OrdinalIgnoreCase));
         var levelIdx = headers.FindIndex(h => h.Contains("complex", StringComparison.OrdinalIgnoreCase) || h.Contains("level", StringComparison.OrdinalIgnoreCase));
-        if (areaIdx < 0 || levelIdx < 0) return false;
 
-        var notesIdx = headers.FindIndex(h => h.Contains("note", StringComparison.OrdinalIgnoreCase) || h.Contains("reason", StringComparison.OrdinalIgnoreCase));
-
-        foreach (var line in lines.Skip(1))
+        if (areaIdx >= 0 && levelIdx >= 0)
         {
-            var cells = SplitCells(line);
-            if (cells.All(c => Regex.IsMatch(c, @"^[-:\s]+$"))) continue;
-            if (areaIdx >= cells.Count || levelIdx >= cells.Count) continue;
-            var area = StripMarkdown(cells[areaIdx]);
-            if (!string.IsNullOrWhiteSpace(area))
+            // Standard complexity table format
+            var notesIdx = headers.FindIndex(h => h.Contains("note", StringComparison.OrdinalIgnoreCase) || h.Contains("reason", StringComparison.OrdinalIgnoreCase));
+
+            foreach (var line in lines.Skip(1))
+            {
+                var cells = SplitCells(line);
+                if (cells.All(c => Regex.IsMatch(c, @"^[-:\s]+$"))) continue;
+                if (areaIdx >= cells.Count || levelIdx >= cells.Count) continue;
+                var area = StripMarkdown(cells[areaIdx]);
+                if (!string.IsNullOrWhiteSpace(area))
+                    items.Add(new PlanComplexityItem
+                    {
+                        Area  = area,
+                        Level = ParseComplexityLevel(cells[levelIdx]),
+                        Notes = notesIdx >= 0 && notesIdx < cells.Count ? StripMarkdown(cells[notesIdx]) : null,
+                    });
+            }
+            return items.Count > 0;
+        }
+
+        // Try deviation/violation table (Violation/Deviation + Why Needed + Alternative)
+        var violationIdx = headers.FindIndex(h => h.Contains("violation", StringComparison.OrdinalIgnoreCase) || h.Contains("deviation", StringComparison.OrdinalIgnoreCase));
+        var whyIdx = headers.FindIndex(h => h.Contains("why", StringComparison.OrdinalIgnoreCase) || h.Contains("needed", StringComparison.OrdinalIgnoreCase) || h.Contains("reason", StringComparison.OrdinalIgnoreCase));
+        var altIdx = headers.FindIndex(h => h.Contains("alternative", StringComparison.OrdinalIgnoreCase) || h.Contains("rejected", StringComparison.OrdinalIgnoreCase) || h.Contains("simpler", StringComparison.OrdinalIgnoreCase));
+
+        if (violationIdx >= 0 && whyIdx >= 0)
+        {
+            // Deviation/violation table (documented deviations with justifications)
+            foreach (var line in lines.Skip(1))
+            {
+                var cells = SplitCells(line);
+                if (cells.All(c => Regex.IsMatch(c, @"^[-:\s]+$"))) continue;
+                if (violationIdx >= cells.Count) continue;
+
+                var violation = StripMarkdown(cells[violationIdx]);
+                if (string.IsNullOrWhiteSpace(violation)) continue;
+
+                var why = whyIdx >= 0 && whyIdx < cells.Count ? StripMarkdown(cells[whyIdx]) : null;
+                var alt = altIdx >= 0 && altIdx < cells.Count ? StripMarkdown(cells[altIdx]) : null;
+
+                var factors = new List<string>();
+                if (!string.IsNullOrEmpty(alt)) factors.Add(alt);
+
                 items.Add(new PlanComplexityItem
                 {
-                    Area  = area,
-                    Level = ParseComplexityLevel(cells[levelIdx]),
-                    Notes = notesIdx >= 0 && notesIdx < cells.Count ? StripMarkdown(cells[notesIdx]) : null,
+                    Area  = violation,
+                    Level = ComplexityLevel.Medium,  // Deviations are typically medium complexity (explicitly justified)
+                    Notes = why,
+                    Factors = factors,
                 });
+            }
+            return items.Count > 0;
         }
-        return items.Count > 0;
+
+        return false;
     }
 
     private static PlanComplexityItem? ParseComplexityItem(string heading, string body)
@@ -1205,6 +1355,187 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             Version = version,
             Description = description,
             IsExternal = isExternal,
+        };
+    }
+
+    private static List<PlanDependency> ExtractDependenciesFromTechnicalContext(List<PlanSection> sections)
+    {
+        var deps = new List<PlanDependency>();
+        var techContext = sections.FirstOrDefault(s => s.SectionType == PlanSectionType.TechnicalContext);
+
+        if (techContext is null) return deps;
+
+        var raw = techContext.RawContent;
+        if (string.IsNullOrWhiteSpace(raw)) return deps;
+
+        // Look for explicitly labeled dependency fields: **Primary Dependencies**: or **Dependencies**:
+        // Use regex to match the exact field and extract ONLY its value
+        var fieldPatterns = new[]
+        {
+            @"\*\*Primary\s+Dependencies\*\*\s*:\s*(.+?)(?=\n\*\*|\Z)",
+            @"\*\*Dependencies\*\*\s*:\s*(.+?)(?=\n\*\*|\Z)",
+            @"\*\*Packages\*\*\s*:\s*(.+?)(?=\n\*\*|\Z)",
+            @"\*\*Libraries\*\*\s*:\s*(.+?)(?=\n\*\*|\Z)",
+        };
+
+        foreach (var pattern in fieldPatterns)
+        {
+            var match = Regex.Match(raw, pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            if (!match.Success) continue;
+
+            var value = match.Groups[1].Value.Trim();
+            if (string.IsNullOrWhiteSpace(value)) continue;
+
+            // Split by comma or newline
+            var items = value.Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+
+            foreach (var item in items)
+            {
+                var trimmed = item.Trim();
+                if (string.IsNullOrWhiteSpace(trimmed)) continue;
+
+                var dep = ParseDependencyFromTechnicalContextLine(trimmed);
+                if (dep is not null)
+                {
+                    // Avoid duplicates (case-insensitive name match)
+                    if (!deps.Any(d => d.Name.Equals(dep.Name, StringComparison.OrdinalIgnoreCase)))
+                        deps.Add(dep);
+                }
+            }
+        }
+
+        return deps;
+    }
+
+    private static PlanDependency? ParseDependencyFromTechnicalContextLine(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return null;
+
+        var trimmed = StripMarkdown(content.Trim());
+        if (string.IsNullOrWhiteSpace(trimmed)) return null;
+
+        string name = trimmed;
+        string? version = null;
+
+        // Try to extract version from patterns like:
+        // "EF Core 10"
+        // "Azure.Messaging.ServiceBus 7.x"
+        // "Polly 8.x (new)"
+        var vm = VersionRe.Match(trimmed);
+        if (vm.Success)
+        {
+            version = vm.Groups[1].Value;
+            name = trimmed[..vm.Index].Trim();
+        }
+
+        return new PlanDependency
+        {
+            Name = name,
+            Version = version,
+            Description = null,
+            IsExternal = true, // Dependencies in Technical Context are typically external
+        };
+    }
+
+    // ── Constraint extraction from Technical Context ────────────────────────────
+
+    private static List<PlanConstraint> ExtractConstraintsFromTechnicalContext(List<PlanSection> sections)
+    {
+        var constraints = new List<PlanConstraint>();
+        var techSection = sections.FirstOrDefault(s => s.SectionType == PlanSectionType.TechnicalContext);
+        if (techSection is null) return constraints;
+
+        var raw = techSection.RawContent;
+        if (string.IsNullOrWhiteSpace(raw)) return constraints;
+
+        // Extract explicitly labeled Technical Context fields:
+        // **Performance Goals**: ...
+        // **Constraints**: ...
+        // **Scale/Scope**: ...
+
+        ExtractConstraintField(raw, "Performance Goal", ConstraintType.PerformanceGoal, constraints);
+        ExtractConstraintField(raw, "Constraint", ConstraintType.Constraint, constraints);
+        ExtractConstraintField(raw, "Scale/Scope", ConstraintType.ScaleScope, constraints);
+        ExtractConstraintField(raw, "Scale", ConstraintType.ScaleScope, constraints);
+        ExtractConstraintField(raw, "Scope", ConstraintType.ScaleScope, constraints);
+
+        return constraints;
+    }
+
+    private static void ExtractConstraintField(string raw, string fieldKeyword, ConstraintType type, List<PlanConstraint> constraints)
+    {
+        // Match **fieldKeyword**: value pattern
+        var pattern = $@"\*\*{Regex.Escape(fieldKeyword)}s?\*\*\s*:\s*(.+?)(?=\n\*\*|$)";
+        var match = Regex.Match(raw, pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+        if (!match.Success) return;
+
+        var value = match.Groups[1].Value.Trim();
+        if (string.IsNullOrWhiteSpace(value)) return;
+
+        // Split by semicolon for explicit items (e.g., "Item 1; Item 2")
+        // but be careful to preserve content inside parentheses (references)
+        var items = SplitConstraintItems(value);
+
+        foreach (var item in items)
+        {
+            var trimmed = item.Trim();
+            if (string.IsNullOrEmpty(trimmed)) continue;
+
+            var constraint = ParseConstraintFromTechnicalContextField(trimmed, type);
+            if (constraint is not null)
+            {
+                // Avoid duplicates (case-insensitive title match)
+                if (!constraints.Any(c => c.Title.Equals(constraint.Title, StringComparison.OrdinalIgnoreCase)))
+                    constraints.Add(constraint);
+            }
+        }
+    }
+
+    private static List<string> SplitConstraintItems(string value)
+    {
+        var items = new List<string>();
+        var current = new StringBuilder();
+        var parenDepth = 0;
+
+        foreach (var ch in value)
+        {
+            if (ch == '(') parenDepth++;
+            else if (ch == ')') parenDepth--;
+            else if (ch == ';' && parenDepth == 0)
+            {
+                items.Add(current.ToString());
+                current.Clear();
+                continue;
+            }
+
+            current.Append(ch);
+        }
+
+        if (current.Length > 0)
+            items.Add(current.ToString());
+
+        return items;
+    }
+
+    private static PlanConstraint? ParseConstraintFromTechnicalContextField(string content, ConstraintType type)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return null;
+
+        var stripped = StripMarkdown(content.Trim());
+        if (string.IsNullOrWhiteSpace(stripped)) return null;
+
+        // Extract reference ID if present (e.g., "... (FR-008)" or "... (SC-004)")
+        // Include it in the title for visibility
+        string title = stripped;
+        string description = stripped;
+
+        return new PlanConstraint
+        {
+            Title = title,
+            Description = description,
+            ConstraintType = type,
+            RawText = content.Trim(),
         };
     }
 
@@ -1698,6 +2029,97 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         };
     }
 
+    private static PlanTestingInfo? ExtractTestingInfoFromSectionsAndPhases(List<PlanSection> sections, List<PlanImplementationPhase> phases)
+    {
+        var frameworks  = new List<string>();
+        var blocks      = new List<PlanSectionBlock>();
+
+        // Extract frameworks from Technical Context "**Testing**:" field
+        var techContext = sections.FirstOrDefault(s => s.SectionType == PlanSectionType.TechnicalContext);
+        if (techContext is not null)
+        {
+            // Look for **Testing**: pattern in blocks
+            foreach (var block in techContext.Blocks)
+            {
+                var para = block.Paragraph ?? "";
+                foreach (var fw in TestingFrameworks)
+                    if (para.Contains(fw, StringComparison.OrdinalIgnoreCase) && !frameworks.Contains(fw, StringComparer.OrdinalIgnoreCase))
+                        frameworks.Add(fw);
+            }
+        }
+
+        // Also extract from implementation steps 8 and 9
+        var unitTestPhase = phases.FirstOrDefault(p => p.PhaseNumber == 8);
+        var integrationTestPhase = phases.FirstOrDefault(p => p.PhaseNumber == 9);
+
+        if (unitTestPhase is not null)
+        {
+            foreach (var block in unitTestPhase.Blocks)
+            {
+                var text = block.Paragraph ?? "";
+                foreach (var fw in TestingFrameworks)
+                    if (text.Contains(fw, StringComparison.OrdinalIgnoreCase) && !frameworks.Contains(fw, StringComparer.OrdinalIgnoreCase))
+                        frameworks.Add(fw);
+            }
+            // Add unit test blocks to strategy
+            if (!string.IsNullOrEmpty(unitTestPhase.Description))
+                blocks.Add(new PlanSectionBlock { SubHeading = "Unit Testing", Paragraph = unitTestPhase.Description });
+
+            // Also include existing blocks from the phase
+            foreach (var block in unitTestPhase.Blocks)
+            {
+                if (block.HasContent)
+                    blocks.Add(new PlanSectionBlock
+                    {
+                        SubHeading = block.SubHeading ?? "Unit Testing",
+                        Paragraph = block.Paragraph,
+                        BulletPoints = block.BulletPoints,
+                        CodeBlock = block.CodeBlock
+                    });
+            }
+        }
+
+        if (integrationTestPhase is not null)
+        {
+            foreach (var block in integrationTestPhase.Blocks)
+            {
+                var text = block.Paragraph ?? "";
+                foreach (var fw in TestingFrameworks)
+                    if (text.Contains(fw, StringComparison.OrdinalIgnoreCase) && !frameworks.Contains(fw, StringComparer.OrdinalIgnoreCase))
+                        frameworks.Add(fw);
+            }
+            // Add integration test blocks to strategy
+            if (!string.IsNullOrEmpty(integrationTestPhase.Description))
+                blocks.Add(new PlanSectionBlock { SubHeading = "Integration Testing", Paragraph = integrationTestPhase.Description });
+
+            // Also include existing blocks from the phase
+            foreach (var block in integrationTestPhase.Blocks)
+            {
+                if (block.HasContent)
+                    blocks.Add(new PlanSectionBlock
+                    {
+                        SubHeading = block.SubHeading ?? "Integration Testing",
+                        Paragraph = block.Paragraph,
+                        BulletPoints = block.BulletPoints,
+                        CodeBlock = block.CodeBlock
+                    });
+            }
+        }
+
+        // Return null if nothing was found, otherwise return the extracted testing info
+        if (frameworks.Count == 0 && blocks.Count == 0)
+            return null;
+
+        return new PlanTestingInfo
+        {
+            Frameworks  = frameworks,
+            TestFolders = [],
+            TestClasses = [],
+            GateRefs    = [],
+            Blocks      = blocks,
+        };
+    }
+
     private static void ExtractTestPaths(string text, List<string> folders, List<string> classes)
     {
         foreach (Match m in Regex.Matches(text, @"(?:tests?|specs?|__tests__)[\\/][\w\\/.-]+", RegexOptions.IgnoreCase))
@@ -1975,7 +2397,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         var t = text.ToUpperInvariant().Trim();
         if (t.Contains("PASS") || t.Contains("✅") || t.Contains("✓") || t.Contains("YES") || t == "OK")
             return PlanGateStatus.Pass;
-        if (t.Contains("WARN") || t.Contains("⚠") || t.Contains("PARTIAL"))
+        if (t.Contains("WARN") || t.Contains("⚠") || t.Contains("PARTIAL") || t.Contains("JUSTIFIED"))
             return PlanGateStatus.Warning;
         if (t.Contains("FAIL") || t.Contains("❌") || t.Contains("✗") || t.Contains("NO") || t.Contains("BLOCKED"))
             return PlanGateStatus.Fail;
