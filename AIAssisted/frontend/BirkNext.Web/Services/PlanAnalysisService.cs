@@ -415,9 +415,6 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         FlushSection();
 
-        if (string.IsNullOrEmpty(createdDate) && !string.IsNullOrEmpty(date))
-            createdDate = date;
-
         // Detect phases from any section if not already found
         if (phases.Count == 0)
             ExtractPhasesFromSections(sections, phases);
@@ -1844,27 +1841,63 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         string? blockHeading = null;
         var blockBullets = new List<string>();
+        var codeSb = new StringBuilder();
+        bool inCodeBlock = false;
+        string? codeFence = null;
 
         void FlushPhaseBlock()
         {
             var para = descSb.ToString().Trim();
-            if (!string.IsNullOrEmpty(para) || blockBullets.Count > 0)
+            var code = codeSb.ToString().TrimEnd();
+
+            if (!string.IsNullOrEmpty(para) || blockBullets.Count > 0 || !string.IsNullOrEmpty(code))
             {
                 blocks.Add(new PlanSectionBlock
                 {
                     SubHeading = blockHeading,
                     Paragraph = string.IsNullOrEmpty(para) ? null : para,
                     BulletPoints = [.. blockBullets],
+                    CodeBlock = string.IsNullOrEmpty(code) ? null : code,
                 });
             }
             blockHeading = null;
             blockBullets = [];
             descSb.Clear();
+            codeSb.Clear();
+            inCodeBlock = false;
+            codeFence = null;
         }
 
         foreach (var line in body.Split('\n'))
         {
             var trimmed = line.Trim();
+
+            // Check for code fence (``` or ~~~)
+            if (trimmed.StartsWith("```") || trimmed.StartsWith("~~~"))
+            {
+                if (!inCodeBlock)
+                {
+                    // Start of code block
+                    inCodeBlock = true;
+                    codeFence = trimmed[0].ToString() + trimmed[0] + trimmed[0]; // ``` or ~~~
+                    continue;
+                }
+                else if (trimmed.StartsWith(codeFence))
+                {
+                    // End of code block
+                    inCodeBlock = false;
+                    codeFence = null;
+                    continue;
+                }
+            }
+
+            // Accumulate code block content
+            if (inCodeBlock)
+            {
+                codeSb.AppendLine(line);
+                continue;
+            }
+
             if (string.IsNullOrEmpty(trimmed)) continue;
 
             var hm = HeadingRe.Match(line);

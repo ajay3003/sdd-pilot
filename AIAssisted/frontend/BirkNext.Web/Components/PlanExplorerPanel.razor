@@ -783,9 +783,26 @@
                                                 {
                                                     @foreach (var block in phase.Blocks)
                                                     {
+                                                        @if (!string.IsNullOrEmpty(block.SubHeading))
+                                                        {
+                                                            <h4 class="pe-block-subheading">@block.SubHeading</h4>
+                                                        }
                                                         @if (!string.IsNullOrEmpty(block.Paragraph))
                                                         {
                                                             <MarkdownContent Content="@block.Paragraph" />
+                                                        }
+                                                        @if (block.IsCodeBlock && !string.IsNullOrEmpty(block.CodeBlock))
+                                                        {
+                                                            <pre class="pe-code-block"><code>@block.CodeBlock</code></pre>
+                                                        }
+                                                        @if (block.BulletPoints.Count > 0)
+                                                        {
+                                                            <ul class="pe-block-bullets">
+                                                                @foreach (var bullet in block.BulletPoints)
+                                                                {
+                                                                    <li>@bullet</li>
+                                                                }
+                                                            </ul>
                                                         }
                                                     }
                                                 }

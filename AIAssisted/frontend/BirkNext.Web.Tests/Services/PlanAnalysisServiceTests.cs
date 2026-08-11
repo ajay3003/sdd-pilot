@@ -1866,4 +1866,235 @@ Content.
         html.Should().Contain("https://example.com");
         html.Should().Contain("mailto:test@example.com");
     }
+
+    [Fact]
+    public void Phase_WithCodeBlock_CodeBlockPropertyPopulated()
+    {
+        var markdown = @"
+# Test Plan
+
+## Implementation Steps
+
+### Phase 2 — Build Component
+
+Some narrative text.
+
+#### Create project file
+
+```xml
+<Project Sdk=""Microsoft.NET.Sdk.Web"">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>
+```
+
+More text after code.
+";
+
+        var doc = _svc.Parse(markdown);
+
+        doc.Phases.Should().NotBeEmpty();
+        var phase = doc.Phases.FirstOrDefault(p => p.PhaseNumber == 2);
+        phase.Should().NotBeNull();
+        phase!.Blocks.Should().NotBeEmpty("Phase 2 should have blocks");
+
+        // Verify at least one block is a code block
+        var codeBlock = phase.Blocks.FirstOrDefault(b => b.IsCodeBlock);
+        codeBlock.Should().NotBeNull("Phase should contain a code block");
+        codeBlock!.CodeBlock.Should().Contain("<Project Sdk=");
+        codeBlock.CodeBlock.Should().Contain("net10.0");
+        codeBlock.CodeBlock.Should().Contain("<TargetFramework>");
+    }
+
+    [Fact]
+    public void Phase_WithCodeBlock_PreservesNewlinesAndIndentation()
+    {
+        var markdown = @"
+# Test Plan
+
+## Implementation Steps
+
+### Phase 5 — Implementation
+
+#### Setup code
+
+```csharp
+public async Task HandleRequestAsync()
+{
+    var user = await _context.Users.FindAsync(userId);
+    if (user == null)
+    {
+        throw new NotFoundException();
+    }
+}
+```
+";
+
+        var doc = _svc.Parse(markdown);
+        var phase = doc.Phases.FirstOrDefault(p => p.PhaseNumber == 5);
+        phase.Should().NotBeNull();
+
+        var codeBlock = phase!.Blocks.FirstOrDefault(b => b.IsCodeBlock);
+        codeBlock.Should().NotBeNull();
+        codeBlock!.CodeBlock.Should().Contain("\n", "Code block should preserve newlines");
+        codeBlock.CodeBlock.Should().Contain("    var user", "Code block should preserve indentation");
+    }
+
+    [Fact]
+    public void Phase_WithBulletPoints_BulletPointsPropertyPopulated()
+    {
+        var markdown = @"
+# Test Plan
+
+## Implementation Steps
+
+### Phase 3 — Configuration
+
+#### Setup steps
+
+- First configuration step
+- Second configuration step
+- Third configuration step
+";
+
+        var doc = _svc.Parse(markdown);
+        var phase = doc.Phases.FirstOrDefault(p => p.PhaseNumber == 3);
+        phase.Should().NotBeNull();
+
+        var blockWithBullets = phase!.Blocks.FirstOrDefault(b => b.BulletPoints.Count > 0);
+        blockWithBullets.Should().NotBeNull("Phase should have bullet points");
+        blockWithBullets!.BulletPoints.Count.Should().Be(3);
+        blockWithBullets.BulletPoints[0].Should().Contain("First configuration");
+        blockWithBullets.BulletPoints[1].Should().Contain("Second configuration");
+        blockWithBullets.BulletPoints[2].Should().Contain("Third configuration");
+    }
+
+    [Fact]
+    public void Phase_MixedBlocks_AllBlockTypesRenderCorrectly()
+    {
+        var markdown = @"
+# Test Plan
+
+## Implementation Steps
+
+### Phase 6 — Complex Phase
+
+#### Configuration Section
+
+Narrative paragraph with important context.
+
+- Bullet point 1
+- Bullet point 2
+
+```json
+{
+  ""name"": ""example"",
+  ""version"": ""1.0.0""
+}
+```
+
+Final narrative text.
+";
+
+        var doc = _svc.Parse(markdown);
+        var phase = doc.Phases.FirstOrDefault(p => p.PhaseNumber == 6);
+        phase.Should().NotBeNull();
+
+        var blocks = phase!.Blocks;
+        blocks.Count.Should().BeGreaterThan(2, "Phase should have multiple blocks");
+
+        // Should have at least one paragraph, one bullet list, one code block
+        blocks.Should().Contain(b => !string.IsNullOrEmpty(b.Paragraph) && !b.IsCodeBlock,
+            "Should have paragraph block");
+        blocks.Should().Contain(b => b.BulletPoints.Count > 0,
+            "Should have bullet points block");
+        blocks.Should().Contain(b => b.IsCodeBlock,
+            "Should have code block");
+    }
+
+    [Fact]
+    public void Metadata_DateOnly_DoesNotPopulateCreated()
+    {
+        var markdown = @"
+# Test Plan
+
+**Branch**: test-branch | **Date**: 2026-04-23 | **Spec**: [spec.md](spec.md)
+**Input**: Test input
+";
+
+        var doc = _svc.Parse(markdown);
+
+        doc.Date.Should().Be("2026-04-23", "Date should be parsed from source");
+        string.IsNullOrEmpty(doc.CreatedDate).Should().BeTrue("CreatedDate should be empty when not explicitly in source");
+    }
+
+    [Fact]
+    public void Metadata_ExplicitCreated_IsPreserved()
+    {
+        var markdown = @"
+# Test Plan
+
+**Branch**: test-branch | **Date**: 2026-04-23 | **Created**: 2026-04-20 | **Spec**: [spec.md](spec.md)
+**Input**: Test input
+";
+
+        var doc = _svc.Parse(markdown);
+
+        doc.Date.Should().Be("2026-04-23", "Date should be from source");
+        doc.CreatedDate.Should().Be("2026-04-20", "CreatedDate should be from explicit source field");
+    }
+
+    [Fact]
+    public void Metadata_ExplicitUpdated_IsPreserved()
+    {
+        var markdown = @"
+# Test Plan
+
+**Date**: 2026-04-23 | **Updated**: 2026-04-24 | **Spec**: [spec.md](spec.md)
+";
+
+        var doc = _svc.Parse(markdown);
+
+        doc.Date.Should().Be("2026-04-23", "Date should be from source");
+        doc.LastUpdated.Should().Be("2026-04-24", "LastUpdated should be from explicit source field");
+    }
+
+    [Fact]
+    public void Metadata_SCIMPlan_DateOnlyNoCreatedOrUpdated()
+    {
+        var scimPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        if (!System.IO.File.Exists(scimPath)) return;
+
+        var markdown = File.ReadAllText(scimPath);
+        var doc = _svc.Parse(markdown);
+
+        // SCIM source has only Date, not Created or Updated
+        doc.Date.Should().Be("2026-04-23", "SCIM plan declares Date as 2026-04-23");
+        string.IsNullOrEmpty(doc.CreatedDate).Should().BeTrue("SCIM plan has no explicit Created field");
+        string.IsNullOrEmpty(doc.LastUpdated).Should().BeTrue("SCIM plan has no explicit Updated field");
+    }
+
+    [Fact(Skip = "Diagnostic only")]
+    public void DIAGNOSTIC_Metadata_SCIMPlan()
+    {
+        var scimPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        if (!System.IO.File.Exists(scimPath)) return;
+
+        var markdown = File.ReadAllText(scimPath);
+        var doc = _svc.Parse(markdown);
+
+        Console.WriteLine($"\n=== SCIM PLAN METADATA ===");
+        Console.WriteLine($"Title: {doc.Title}");
+        Console.WriteLine($"Branch: {doc.Branch}");
+        Console.WriteLine($"Date: {doc.Date}");
+        Console.WriteLine($"CreatedDate: {doc.CreatedDate}");
+        Console.WriteLine($"LastUpdated: {doc.LastUpdated}");
+        Console.WriteLine($"Spec: {doc.SpecLink}");
+        Console.WriteLine($"InputSource: {doc.InputSource}");
+        Console.WriteLine($"FeatureName: {doc.FeatureName}");
+        Console.WriteLine($"Status: {doc.Status}");
+        Console.WriteLine($"Author: {doc.Author}");
+    }
+
 }
