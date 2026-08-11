@@ -530,7 +530,7 @@
                             <div class="pe-section">
                                 <div class="pe-section-title">@sec.Title</div>
                                 <div class="pe-section-content">
-                                    <MarkdownContent Content="@sec.RawContent" />
+                                    <MarkdownContent Content="@sec.RawContent" PreserveSoftLineBreaks="true" />
                                 </div>
                             </div>
                         }
@@ -556,7 +556,12 @@
                     {
                         @foreach (var sec in structureSections)
                         {
-                            @RenderSectionBlocks(sec)
+                            <div class="pe-section">
+                                <div class="pe-section-title">@sec.Title</div>
+                                <div class="pe-section-content">
+                                    <MarkdownContent Content="@sec.RawContent" />
+                                </div>
+                            </div>
                         }
                     }
                 </div>
@@ -643,7 +648,8 @@
                                                 <span class="pe-constraint-type-badge pe-cbadge-@ConstraintTypeCss(constraint.ConstraintType)">@ConstraintTypeLabel(constraint.ConstraintType)</span>
                                                 <div class="pe-constraint-body">
                                                     <div class="pe-constraint-title">@constraint.Title</div>
-                                                    @if (!string.IsNullOrEmpty(constraint.Description))
+                                                    @if (!string.IsNullOrEmpty(constraint.Description) &&
+                                                         !constraint.Title?.Trim().Equals(constraint.Description?.Trim(), StringComparison.OrdinalIgnoreCase) == true)
                                                     { <p class="pe-constraint-desc">@constraint.Description</p> }
                                                 </div>
                                             </div>
@@ -773,6 +779,16 @@
                                                         </ul>
                                                     </div>
                                                 }
+                                                else if (phase.Blocks.Count > 0)
+                                                {
+                                                    @foreach (var block in phase.Blocks)
+                                                    {
+                                                        @if (!string.IsNullOrEmpty(block.Paragraph))
+                                                        {
+                                                            <MarkdownContent Content="@block.Paragraph" />
+                                                        }
+                                                    }
+                                                }
                                                 @if (phase.Checks.Count > 0)
                                                 {
                                                     <div class="pe-phase-checks">
@@ -896,7 +912,11 @@
                 <div class="pe-constitution-check">
 
                     <!-- Gate table (table-based, rendered first) -->
-                    @if (VisibleGates.Any())
+                    @{
+                        var visibleGates = VisibleGates.ToList();
+                        var showEvidenceColumn = visibleGates.Any(g => !string.IsNullOrWhiteSpace(g.Evidence));
+                    }
+                    @if (visibleGates.Any())
                     {
                         <div class="pe-gate-table-wrap">
                             <table class="pe-gate-table" aria-label="Constitution gates">
@@ -905,12 +925,15 @@
                                         <th>Gate</th>
                                         <th>Rule</th>
                                         <th>Status</th>
-                                        <th>Evidence</th>
+                                        @if (showEvidenceColumn)
+                                        {
+                                            <th>Evidence</th>
+                                        }
                                         <th>Notes</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (var gate in VisibleGates)
+                                    @foreach (var gate in visibleGates)
                                     {
                                         <tr>
                                             <td class="pe-gate-label">@gate.Gate</td>
@@ -920,7 +943,10 @@
                                                     @GateStatusIcon(gate.Status) @GateStatusLabel(gate.Status)
                                                 </span>
                                             </td>
-                                            <td class="pe-gate-evidence">@(gate.Evidence ?? string.Empty)</td>
+                                            @if (showEvidenceColumn)
+                                            {
+                                                <td class="pe-gate-evidence">@(gate.Evidence ?? string.Empty)</td>
+                                            }
                                             <td class="pe-gate-notes">@(gate.Notes ?? string.Empty)</td>
                                         </tr>
                                     }

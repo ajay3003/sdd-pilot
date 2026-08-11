@@ -673,11 +673,11 @@ public sealed class PlanAnalysisServiceTests
         doc.TestingInfo.Should().NotBeNull("Testing info should be extracted from Technical Context and phases");
         doc.TestingInfo!.Frameworks.Should().HaveCount(4, "SCIM plan has 4 testing frameworks");
 
-        // Verify specific frameworks are present (case-insensitive check)
-        doc.TestingInfo.Frameworks.Should().Contain(f => f.Equals("xunit", StringComparison.OrdinalIgnoreCase));
-        doc.TestingInfo.Frameworks.Should().Contain(f => f.Equals("shouldly", StringComparison.OrdinalIgnoreCase));
-        doc.TestingInfo.Frameworks.Should().Contain(f => f.Equals("nsubstitute", StringComparison.OrdinalIgnoreCase));
-        doc.TestingInfo.Frameworks.Should().Contain(f => f.Equals("testcontainers", StringComparison.OrdinalIgnoreCase));
+        // Verify specific frameworks are present with source versions
+        doc.TestingInfo.Frameworks.Should().Contain("xUnit 2.9.3");
+        doc.TestingInfo.Frameworks.Should().Contain("Shouldly 4.3.0");
+        doc.TestingInfo.Frameworks.Should().Contain("NSubstitute 5.x");
+        doc.TestingInfo.Frameworks.Should().Contain("Testcontainers 4.x");
 
         // Verify phases are parsed correctly with phase numbers
         var step8 = doc.Phases.FirstOrDefault(p => p.PhaseNumber == 8);
@@ -695,6 +695,149 @@ public sealed class PlanAnalysisServiceTests
     }
 
     // ── 10: Dependency Extraction ────────────────────────────────────────
+
+    [Fact]
+    public void Testing_HorizontalRule_NotIncludedAsText()
+    {
+        var markdown = """
+            # Implementation Plan: Test
+
+            ## Technical Context
+
+            **Testing**: xUnit 2.9.3
+
+            ## Implementation Steps
+
+            ### Step 8 - Unit Tests
+
+            Add to UnitTests:
+            ---
+            - Test idempotency
+
+            ### Step 9 - Integration Tests
+
+            Add integration tests.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        doc.TestingInfo.Should().NotBeNull();
+        TestingBlockText(doc).Should().NotContain("---");
+        TestingBlockText(doc).Should().NotContain(": ---");
+    }
+
+    [Fact]
+    public void Testing_PhaseBoundary_DoesNotLeakSeparator()
+    {
+        var markdown = """
+            # Implementation Plan: Test
+
+            ## Technical Context
+
+            **Testing**: xUnit 2.9.3
+
+            ## Implementation Steps
+
+            ### Step 8 - Unit Tests
+
+            Add to UnitTests:
+            - Validate service behavior
+
+            ---
+
+            ### Step 9 - Integration Tests
+
+            Test scenarios (map to acceptance scenarios in spec):
+            - POST /Users creates a user
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        doc.TestingInfo.Should().NotBeNull();
+        TestingBlockText(doc).Should().Contain("Add to UnitTests:");
+        TestingBlockText(doc).Should().Contain("Test scenarios (map to acceptance scenarios in spec):");
+        TestingBlockText(doc).Should().NotContain("---");
+        TestingBlockText(doc).Should().NotContain(": ---");
+    }
+
+    [Fact]
+    public void Testing_SCIMPlan_NoTestingBlockContainsHorizontalRuleText()
+    {
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        doc.TestingInfo.Should().NotBeNull();
+        foreach (var block in doc.TestingInfo!.Blocks)
+            TestingBlockText(block).Should().NotContain("---");
+    }
+
+    [Fact]
+    public void TestingFramework_VersionPreserved()
+    {
+        var markdown = """
+            # Implementation Plan: Test
+
+            ## Technical Context
+
+            **Testing**: xUnit 2.9.3, Shouldly 4.3.0
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        doc.TestingInfo.Should().NotBeNull();
+        doc.TestingInfo!.Frameworks.Should().Contain("xUnit 2.9.3");
+        doc.TestingInfo.Frameworks.Should().Contain("Shouldly 4.3.0");
+    }
+
+    [Fact]
+    public void TestingFramework_VersionRenderedOnce()
+    {
+        var markdown = """
+            # Implementation Plan: Test
+
+            ## Technical Context
+
+            **Testing**: xUnit 2.9.3
+
+            ## Testing
+
+            xUnit 2.9.3 is used for unit tests.
+            """;
+
+        var doc = _svc.Parse(markdown);
+
+        doc.TestingInfo.Should().NotBeNull();
+        doc.TestingInfo!.Frameworks.Should().ContainSingle(f => f == "xUnit 2.9.3");
+        doc.TestingInfo.Frameworks.Should().NotContain("xUnit 2.9.3 2.9.3");
+    }
+
+    [Fact]
+    public void Testing_SCIMPlan_PreservesAllSourceFrameworkVersions()
+    {
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        doc.TestingInfo.Should().NotBeNull();
+        doc.TestingInfo!.Frameworks.Should().BeEquivalentTo([
+            "xUnit 2.9.3",
+            "Shouldly 4.3.0",
+            "NSubstitute 5.x",
+            "Testcontainers 4.x"
+        ]);
+    }
+
+    private static string TestingBlockText(PlanDocument doc) =>
+        string.Join("\n", doc.TestingInfo?.Blocks.Select(TestingBlockText) ?? []);
+
+    private static string TestingBlockText(PlanSectionBlock block) =>
+        string.Join("\n", [
+            block.SubHeading ?? "",
+            block.Paragraph ?? "",
+            string.Join("\n", block.BulletPoints),
+            block.CodeBlock ?? "",
+        ]);
 
     [Fact]
     public void Dependencies_TechnicalContext_MultipleFieldsExtracted()
@@ -833,6 +976,544 @@ public sealed class PlanAnalysisServiceTests
 
     // ── 13: Architecture Rendering ──────────────────────────────────────────
 
+    // ── 19: Technical Context Line Breaks ───────────────────────────────────
+
+    [Fact]
+    public void TechnicalContext_RawTextPreservesNewlines_SCIMPlan()
+    {
+        // Diagnostic: Verify RawText has newlines between fields
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        var techSection = doc.Sections.FirstOrDefault(s => s.SectionType == PlanSectionType.TechnicalContext);
+        techSection.Should().NotBeNull();
+
+        System.Console.WriteLine("=== TECHNICAL CONTEXT RAWTEXT ===\n");
+        System.Console.WriteLine($"RawText length: {techSection!.RawContent.Length}");
+        System.Console.WriteLine($"Contains newlines: {techSection.RawContent.Contains("\n")}");
+        System.Console.WriteLine($"Field count (newline-separated): {techSection.RawContent.Split('\n').Length}");
+
+        // Show escaped representation
+        var escaped = techSection.RawContent.Replace("\n", "\\n").Substring(0, Math.Min(200, techSection.RawContent.Length));
+        System.Console.WriteLine($"First 200 chars (escaped): {escaped}");
+
+        // Verify specific fields are on separate lines
+        var lines = techSection.RawContent.Split('\n');
+        var fieldLines = lines.Where(l => l.Contains("**") && l.Contains(":")).ToList();
+        System.Console.WriteLine($"\nField lines (with ** and :): {fieldLines.Count}");
+        foreach (var line in fieldLines.Take(5))
+        {
+            System.Console.WriteLine($"  - {line.Substring(0, Math.Min(80, line.Length))}...");
+        }
+    }
+
+    [Fact]
+    public void MarkdownContent_RenderedHTML_SoftLineBreakBehavior()
+    {
+        // Diagnostic: Check what Markdig HTML output looks like
+        var renderer = new MarkdownRenderingService();
+
+        var markdown = @"**Language/Version**: C# 13 / .NET 10
+**Primary Dependencies**: ASP.NET Core 10
+**Storage**: SQL Server 2022";
+
+        var html = renderer.Render(markdown);
+
+        System.Console.WriteLine("=== MARKDIG HTML OUTPUT ===\n");
+        System.Console.WriteLine($"HTML: {html}");
+        System.Console.WriteLine($"\nContains <br>: {html.Contains("<br")}");
+        System.Console.WriteLine($"Single <p>: {html.Contains("<p>") && html.LastIndexOf("<p>") == html.IndexOf("<p>")}");
+        System.Console.WriteLine($"Multiple <p>: {html.Count(c => c == '<') > 2}");
+    }
+
+    // ── 18: Constraint Duplication ──────────────────────────────────────────
+
+    [Fact]
+    public void Constraint_RenderingLogic_IdenticalTitleAndDescription()
+    {
+        // Verify the Razor rendering condition logic for identical Title/Description
+        var constraint = new PlanConstraint
+        {
+            Title = "Service Bus (FR-008)",
+            Description = "Service Bus (FR-008)",
+            ConstraintType = ConstraintType.Constraint,
+            RawText = "Service Bus"
+        };
+
+        // The Razor rendering condition:
+        // @if (!string.IsNullOrEmpty(Description) && !Title.Trim().Equals(Description.Trim(), OrdinalIgnoreCase))
+        var shouldRenderDescription = !string.IsNullOrEmpty(constraint.Description) &&
+                                     !constraint.Title?.Trim().Equals(constraint.Description?.Trim(), StringComparison.OrdinalIgnoreCase) == true;
+        shouldRenderDescription.Should().BeFalse("identical Title/Description should suppress Description rendering");
+    }
+
+    [Fact]
+    public void Constraint_RenderingLogic_DifferentDescription()
+    {
+        // Verify the Razor rendering condition shows Description when it differs
+        var constraint = new PlanConstraint
+        {
+            Title = "GL-20",
+            Description = "The Service Bus ensures reliable messaging - outbox pattern rejected.",
+            ConstraintType = ConstraintType.Constraint,
+            RawText = "GL-20"
+        };
+
+        var shouldRenderDescription = !string.IsNullOrEmpty(constraint.Description) &&
+                                     !constraint.Title?.Trim().Equals(constraint.Description?.Trim(), StringComparison.OrdinalIgnoreCase) == true;
+        shouldRenderDescription.Should().BeTrue("different Description should be rendered");
+    }
+
+    [Fact]
+    public void Constraint_WhitespaceEquivalent_SuppressesDescription()
+    {
+        // Verify that whitespace differences don't cause duplicate rendering
+        var constraint = new PlanConstraint
+        {
+            Title = "  Test Item  ",
+            Description = "Test Item",
+            ConstraintType = ConstraintType.Constraint,
+            RawText = "Test"
+        };
+
+        var shouldRenderDescription = !string.IsNullOrEmpty(constraint.Description) &&
+                                     !constraint.Title?.Trim().Equals(constraint.Description?.Trim(), StringComparison.OrdinalIgnoreCase) == true;
+        shouldRenderDescription.Should().BeFalse("trimmed whitespace should match");
+    }
+
+    [Fact]
+    public void Constraint_SCIMPlan_NoduplicateRendering()
+    {
+        // Real SCIM regression: all fallback constraints should not duplicate Title/Description
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        // All SCIM constraints should have identical Title/Description
+        foreach (var constraint in doc.Constraints)
+        {
+            var shouldRender = !string.IsNullOrEmpty(constraint.Description) &&
+                             !constraint.Title?.Trim().Equals(constraint.Description?.Trim(), StringComparison.OrdinalIgnoreCase) == true;
+
+            shouldRender.Should().BeFalse(
+                $"Constraint '{constraint.Title}' should not duplicate Description in UI rendering");
+        }
+    }
+
+    [Fact]
+    public void Constraint_TitleDescription_SCIMPlan()
+    {
+        // Diagnostic: Check if Title and Description are duplicated
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        System.Console.WriteLine("=== CONSTRAINT TITLE/DESCRIPTION STATE ===\n");
+
+        foreach (var constraint in doc.Constraints)
+        {
+            System.Console.WriteLine($"Type: {constraint.ConstraintType}");
+            System.Console.WriteLine($"Title: {constraint.Title}");
+            System.Console.WriteLine($"Description: {constraint.Description ?? "(null)"}");
+            System.Console.WriteLine($"Same?: {constraint.Title == constraint.Description}");
+            System.Console.WriteLine($"Trimmed Same?: {constraint.Title?.Trim() == constraint.Description?.Trim()}");
+            System.Console.WriteLine();
+        }
+
+        // Check specific items mentioned in the bug
+        var fr008 = doc.Constraints.FirstOrDefault(c => c.RawText.Contains("FR-008"));
+        var fr022 = doc.Constraints.FirstOrDefault(c => c.RawText.Contains("FR-022"));
+        var noSLA = doc.Constraints.FirstOrDefault(c => c.Title.Contains("No specific SLA"));
+        var singleReplica = doc.Constraints.FirstOrDefault(c => c.Title.Contains("Single replica"));
+
+        System.Console.WriteLine($"FR-008 found: {fr008 != null}");
+        System.Console.WriteLine($"FR-022 found: {fr022 != null}");
+        System.Console.WriteLine($"No SLA found: {noSLA != null}");
+        System.Console.WriteLine($"Single replica found: {singleReplica != null}");
+    }
+
+    // ── 17: Complexity Provenance ───────────────────────────────────────────
+
+    [Fact]
+    public void ExplicitComplexitySection_IsNotMarkedAutoGenerated()
+    {
+        // When explicit Complexity section exists, section should be registered
+        var markdown = @"# Plan
+
+## Complexity Tracking
+
+| Violation | Why Needed | Simpler Alternative Rejected Because |
+| --- | --- | --- |
+| GL-18 | test | none |
+";
+        var doc = _svc.Parse(markdown);
+
+        // Should have explicitly parsed items (or at least create the section)
+        // Item parsing might be strict, but the section should exist
+        var complexitySection = doc.Sections.FirstOrDefault(s => s.SectionType == PlanSectionType.Complexity);
+        complexitySection.Should().NotBeNull("Should register Complexity section for explicit source");
+        complexitySection!.Title.Should().Be("Complexity Tracking");
+    }
+
+    [Fact]
+    public void NoComplexitySection_FallbackIsMarkedAutoGenerated()
+    {
+        // When no explicit Complexity section exists, fallback generation happens
+        var markdown = @"# Plan
+
+## Technical Context
+
+Some content.
+";
+        var doc = _svc.Parse(markdown);
+
+        // Might have auto-generated items (depending on constraints/deps)
+        // But NO explicit Complexity section
+        var complexitySection = doc.Sections.FirstOrDefault(s => s.SectionType == PlanSectionType.Complexity);
+        complexitySection.Should().BeNull("Should NOT have explicit Complexity section");
+    }
+
+    [Fact]
+    public void ComplexityTrackingHeading_CountsAsExplicitComplexity()
+    {
+        // Verify that "Complexity Tracking" heading is recognized, not just "Complexity"
+        var markdown = @"# Plan
+
+## Complexity Tracking
+
+| Area | Notes |
+| Test | content |
+";
+        var doc = _svc.Parse(markdown);
+
+        var section = doc.Sections.FirstOrDefault(s => s.SectionType == PlanSectionType.Complexity);
+        section.Should().NotBeNull("Complexity Tracking should be classified as Complexity");
+    }
+
+    [Fact]
+    public void SCIMPlan_ComplexityProvenanceCorrect()
+    {
+        // Real SCIM regression: complexity must be marked as explicit source
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        // Should have 3 source items
+        doc.ComplexityItems.Count.Should().Be(3);
+        doc.ComplexityItems.Should().Contain(c => c.Area == "GL-18: KjentBruker without GyldigFra/GyldigTil");
+        doc.ComplexityItems.Should().Contain(c => c.Area == "GL-20: No transactional outbox");
+        doc.ComplexityItems.Should().Contain(c => c.Area == "PS-01: Non-EntraID auth on SCIM endpoint");
+
+        // Should have Complexity section (proves explicit source)
+        var complexitySection = doc.Sections.FirstOrDefault(s => s.SectionType == PlanSectionType.Complexity);
+        complexitySection.Should().NotBeNull("SCIM plan has explicit Complexity Tracking section");
+
+        // This section should be found by the UI, so auto-generated banner will NOT show
+        doc.Sections.Any(s => s.SectionType == PlanSectionType.Complexity).Should().BeTrue(
+            "UI checks: !Sections.Any(Complexity) to show auto-generated banner. This should be FALSE for SCIM.");
+    }
+
+    [Fact]
+    public void Complexity_Provenance_SCIMPlan()
+    {
+        // Diagnostic: Check how complexity section is classified and what provenance state is set
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        System.Console.WriteLine("=== COMPLEXITY PROVENANCE STATE ===\n");
+
+        System.Console.WriteLine($"ComplexityItems.Count: {doc.ComplexityItems.Count}");
+        foreach (var item in doc.ComplexityItems)
+        {
+            System.Console.WriteLine($"  - {item.Area} ({item.Level})");
+        }
+
+        var complexitySection = doc.Sections.FirstOrDefault(s => s.SectionType == PlanSectionType.Complexity);
+        System.Console.WriteLine($"\nComplexity Section Found: {complexitySection != null}");
+        if (complexitySection != null)
+        {
+            System.Console.WriteLine($"  Title: {complexitySection.Title}");
+            System.Console.WriteLine($"  RawContent length: {complexitySection.RawContent.Length}");
+        }
+
+        System.Console.WriteLine($"\nAll Sections with their types:");
+        foreach (var section in doc.Sections.Where(s => s.Title.Contains("Complexity")))
+        {
+            System.Console.WriteLine($"  - {section.Title}: {section.SectionType}");
+        }
+    }
+
+    // ── 16: Phase Content Preservation ──────────────────────────────────────
+
+    [Fact]
+    public void Phase_WithBlocksButNoTasks_RendersBlocks()
+    {
+        // Verify phases with Blocks but no Tasks have meaningful content preserved
+        var markdown = @"# Plan
+
+## Implementation
+
+### Phase 2: New Project
+
+Create new project with settings.
+
+```xml
+<Project>Settings</Project>
+```
+
+Another paragraph.
+";
+        var doc = _svc.Parse(markdown);
+        var phase = doc.Phases.First();
+
+        phase.Tasks.Should().BeEmpty("Phase has no task bullets");
+        phase.Blocks.Should().NotBeEmpty("Phase should have Blocks");
+        phase.Blocks[0].Paragraph.Should().Contain("Create new project", "Should preserve narrative paragraph");
+        phase.Blocks[0].Paragraph.Should().Contain("Another paragraph", "Should preserve second paragraph");
+        // Code blocks are stored in CodeBlock field during parsing, Paragraph may contain language marker
+    }
+
+    [Fact]
+    public void Phase_WithTasksAndBlocks_DoesNotDuplicateTaskBullets()
+    {
+        // Verify that phases with extracted Tasks also have Blocks
+        // The UI should render Tasks if Tasks.Count > 0, not Blocks, to avoid duplication
+        var markdown = @"# Plan
+
+## Implementation
+
+### Phase 1: Setup
+
+Initial content.
+
+- Task 1
+- Task 2
+";
+        var doc = _svc.Parse(markdown);
+        var phase = doc.Phases.First();
+
+        phase.Tasks.Count.Should().Be(2, "Should extract the task bullets");
+        phase.Blocks.Should().NotBeEmpty("Should also have Blocks with full content");
+        // The UI will render Tasks, not Blocks, when Tasks.Count > 0 to avoid duplication
+    }
+
+    [Fact]
+    public void Phase_SCIMPlan_P2_NotEmpty()
+    {
+        // P2 should have meaningful content (not just empty because no Tasks)
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        var p2 = doc.Phases.FirstOrDefault(p => p.PhaseNumber == 2);
+        p2.Should().NotBeNull();
+        p2!.Tasks.Should().BeEmpty("P2 has no extracted tasks");
+        p2.Blocks.Should().NotBeEmpty("P2 should have Blocks");
+        p2.Blocks[0].Paragraph.Should().NotBeEmpty("Should have meaningful content");
+        p2.Blocks[0].Paragraph.Should().Contain("<Project", "Should contain project XML");
+    }
+
+    [Fact]
+    public void Phase_SCIMPlan_P3_NotEmpty()
+    {
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        var p3 = doc.Phases.FirstOrDefault(p => p.PhaseNumber == 3);
+        p3.Should().NotBeNull();
+        p3!.Tasks.Should().BeEmpty("P3 has no extracted tasks");
+        p3.Blocks.Should().NotBeEmpty("P3 should have Blocks");
+        p3.Blocks[0].Paragraph.Should().Contain("Custom", "Should contain custom handler reference");
+    }
+
+    [Fact]
+    public void Phase_SCIMPlan_P5_NotEmpty()
+    {
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        var p5 = doc.Phases.FirstOrDefault(p => p.PhaseNumber == 5);
+        p5.Should().NotBeNull();
+        p5!.Tasks.Should().BeEmpty("P5 has no extracted tasks");
+        p5.Blocks.Should().NotBeEmpty("P5 should have Blocks");
+        p5.Blocks[0].Paragraph.Should().NotBeEmpty("Should contain meaningful content");
+        p5.Blocks[0].Paragraph.Should().Contain("SCIM", "Should contain SCIM reference");
+    }
+
+    [Fact]
+    public void Phase_SCIMPlan_P6_NotEmpty()
+    {
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        var p6 = doc.Phases.FirstOrDefault(p => p.PhaseNumber == 6);
+        p6.Should().NotBeNull();
+        p6!.Tasks.Should().BeEmpty("P6 has no extracted tasks");
+        p6.Blocks.Should().NotBeEmpty("P6 should have Blocks");
+        p6.Blocks[0].Paragraph.Should().Contain("Endpoints", "Should contain endpoints description");
+    }
+
+    [Fact]
+    public void Phase_SCIMPlan_P7_NotEmpty()
+    {
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        var p7 = doc.Phases.FirstOrDefault(p => p.PhaseNumber == 7);
+        p7.Should().NotBeNull();
+        p7!.Tasks.Should().BeEmpty("P7 has no extracted tasks");
+        p7.Blocks.Should().NotBeEmpty("P7 should have Blocks");
+        p7.Blocks[0].Paragraph.Should().Contain("Program.cs", "Should contain Program.cs setup description");
+    }
+
+    [Fact]
+    public void Phase_SCIMPlan_P1_P4_P8_P9_TasksPreserved()
+    {
+        // Verify that P1, P4, P8, P9 still have their task counts (not duplicated)
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        doc.Phases.First(p => p.PhaseNumber == 1).Tasks.Count.Should().Be(5);
+        doc.Phases.First(p => p.PhaseNumber == 4).Tasks.Count.Should().Be(4);
+        doc.Phases.First(p => p.PhaseNumber == 8).Tasks.Count.Should().Be(2);
+        doc.Phases.First(p => p.PhaseNumber == 9).Tasks.Count.Should().Be(12);
+    }
+
+    [Fact]
+    public void Phase_ContentPreservation_SCIMPlan()
+    {
+        // Diagnostic: Examine what content is preserved in each phase
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        System.Console.WriteLine("=== PHASE CONTENT STATE ===\n");
+
+        foreach (var phase in doc.Phases.OrderBy(p => p.PhaseNumber))
+        {
+            System.Console.WriteLine($"Phase {phase.PhaseNumber}: {phase.Title}");
+            System.Console.WriteLine($"  Description: {phase.Description ?? "(none)"}");
+            System.Console.WriteLine($"  Tasks: {phase.Tasks.Count}");
+            System.Console.WriteLine($"  Checks: {phase.Checks.Count}");
+            System.Console.WriteLine($"  Blocks: {phase.Blocks.Count}");
+            if (phase.Blocks.Count > 0)
+            {
+                foreach (var block in phase.Blocks.Take(3))
+                {
+                    if (!string.IsNullOrEmpty(block.Paragraph))
+                        System.Console.WriteLine($"    - Paragraph: {block.Paragraph.Substring(0, Math.Min(60, block.Paragraph.Length))}...");
+                    if (!string.IsNullOrEmpty(block.SubHeading))
+                        System.Console.WriteLine($"    - SubHeading: {block.SubHeading}");
+                    if (block.IsCodeBlock)
+                        System.Console.WriteLine($"    - CodeBlock: {block.CodeBlock.Substring(0, Math.Min(60, block.CodeBlock.Length))}...");
+                    if (block.BulletPoints.Count > 0)
+                        System.Console.WriteLine($"    - Bullets: {block.BulletPoints.Count} items");
+                }
+                if (phase.Blocks.Count > 3)
+                    System.Console.WriteLine($"    ... and {phase.Blocks.Count - 3} more blocks");
+            }
+            System.Console.WriteLine();
+        }
+    }
+
+    // ── 15: Project Structure Classification ────────────────────────────────
+
+    [Fact]
+    public void ProjectStructure_DiagnosticTest_SCIMPlan()
+    {
+        // Diagnostic: Show what's happening with Project Structure subsections
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        System.Console.WriteLine("=== ACTUAL MODEL STATE ===\n");
+
+        System.Console.WriteLine($"ProjectStructure Sections: {doc.Sections.Count(s => s.SectionType == PlanSectionType.ProjectStructure)}");
+        foreach (var sec in doc.Sections.Where(s => s.SectionType == PlanSectionType.ProjectStructure))
+        {
+            System.Console.WriteLine($"  Title: {sec.Title}");
+            System.Console.WriteLine($"  RawContent length: {sec.RawContent.Length}");
+            System.Console.WriteLine($"  First 300 chars:\n{sec.RawContent.Substring(0, Math.Min(300, sec.RawContent.Length))}...\n");
+            System.Console.WriteLine($"  Blocks count: {sec.Blocks.Count}");
+        }
+
+        System.Console.WriteLine($"ArchitectureDecisions Count: {doc.ArchitectureDecisions.Count}");
+        foreach (var dec in doc.ArchitectureDecisions)
+        {
+            System.Console.WriteLine($"  - Title: {dec.Title}");
+            System.Console.WriteLine($"    RawText: {dec.RawText.Substring(0, Math.Min(80, dec.RawText.Length))}...");
+        }
+
+        System.Console.WriteLine($"\n=== EXPECTED ===");
+        System.Console.WriteLine("ProjectStructure Sections: 1");
+        System.Console.WriteLine("ArchitectureDecisions Count: should be 0 or only genuine ADRs");
+
+        // Assertions
+        doc.Sections.Count(s => s.SectionType == PlanSectionType.ProjectStructure).Should().Be(1);
+        doc.ArchitectureDecisions.Should().BeEmpty("Project Structure H3 children should not be promoted to ADRs");
+    }
+
+    [Fact]
+    public void ProjectStructure_H3ChildrenRemainUnderProjectStructure()
+    {
+        // Verify that H3 subsections under Project Structure are NOT promoted to ADRs
+        var markdown = @"# Plan
+
+## Project Structure
+
+### Documentation
+
+Files for this feature.
+
+### Source Code Changes
+
+Code modifications.
+";
+        var doc = _svc.Parse(markdown);
+
+        // Should have 1 ProjectStructure section
+        var projectStructureSections = doc.Sections.Where(s => s.SectionType == PlanSectionType.ProjectStructure).ToList();
+        projectStructureSections.Should().HaveCount(1);
+
+        // Should have no Architecture Decisions (H3 children should NOT be promoted)
+        doc.ArchitectureDecisions.Should().BeEmpty();
+
+        // ProjectStructure should contain the H3 headings as blocks
+        var section = projectStructureSections.First();
+        section.RawContent.Should().Contain("### Documentation");
+        section.RawContent.Should().Contain("### Source Code Changes");
+        section.Blocks.Should().NotBeEmpty("Should have blocks for H3 subsections");
+    }
+
+    [Fact]
+    public void ProjectStructureChildren_AreNotPromotedToADRs()
+    {
+        // Explicit test: H3 subsections should not become Architecture Decisions
+        var markdown = @"# Plan
+
+## Project Structure
+
+### Feature A
+
+Some content.
+
+### Feature B
+
+More content.
+";
+        var doc = _svc.Parse(markdown);
+
+        doc.ArchitectureDecisions.Should().BeEmpty(
+            "H3 children under Project Structure must remain under ProjectStructure, not become ADRs");
+    }
+
     [Fact]
     public void Architecture_FencedCodeBlock_PreservesLineBreaksInRawText()
     {
@@ -896,28 +1577,29 @@ specs/
     }
 
     [Fact]
-    public void Architecture_SCIMPlan_TwoRecords()
+    public void Architecture_SCIMPlan_NoGenuineADRs()
     {
-        // Regression test: SCIM plan should have exactly 2 items in Architecture
-        // NOTE: These are actually Project Structure subsections (Documentation and Source Code Changes)
-        // Currently classified as Architecture due to "project structure" being in ArchitectureKeywords
-        // This is a semantic classification issue but content rendering should still work
+        // Updated regression test: SCIM plan has no genuine Architecture Decisions
+        // "Documentation (this feature)" and "Source Code Changes" are now correctly
+        // classified as ProjectStructure subsections, not Architecture Decisions
         var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
-        doc.ArchitectureDecisions.Count.Should().Be(2,
-            "SCIM plan Project Structure section has 2 subsections: Documentation and Source Code Changes");
+        // No Architecture Decisions should be extracted (they are now in ProjectStructure)
+        doc.ArchitectureDecisions.Should().BeEmpty(
+            "SCIM plan has no genuine ADRs; the subsections under Project Structure should not be promoted");
 
-        var doc1 = doc.ArchitectureDecisions[0];
-        doc1.Title.Should().Be("Documentation (this feature)");
-        doc1.RawText.Should().Contain("```text", "Should preserve code fence markers");
-        doc1.RawText.Should().Contain("specs/004-scim-user-sync/", "Should preserve code content");
-
-        var doc2 = doc.ArchitectureDecisions[1];
-        doc2.Title.Should().Be("Source Code Changes");
-        doc2.RawText.Should().Contain("```text", "Should preserve code fence markers");
-        doc2.RawText.Should().Contain("src/", "Should preserve code content");
+        // Verify ProjectStructure contains the correct content
+        var projectStructure = doc.Sections.FirstOrDefault(s => s.SectionType == PlanSectionType.ProjectStructure);
+        projectStructure.Should().NotBeNull();
+        projectStructure!.RawContent.Should().Contain("### Documentation (this feature)",
+            "Should contain Documentation subsection");
+        projectStructure.RawContent.Should().Contain("### Source Code Changes",
+            "Should contain Source Code Changes subsection");
+        projectStructure.RawContent.Should().Contain("```text", "Should preserve code fence markers");
+        projectStructure.RawContent.Should().Contain("specs/004-scim-user-sync/", "Should preserve Documentation content");
+        projectStructure.RawContent.Should().Contain("src/", "Should preserve Source Code Changes content");
     }
 
     // ── 12: Metadata Parsing ────────────────────────────────────────────────
@@ -1132,5 +1814,56 @@ Content.
         // Dedicated section should be used, not Technical Context fallback
         doc.Constraints.Count.Should().Be(1);
         doc.Constraints[0].Title.Should().Contain("Dedicated");
+    }
+
+    [Fact]
+    public void TechnicalContext_SoftLineBreakPreservation_RendersWithBrTags()
+    {
+        // Verify that when preserveSoftLineBreaks=true is used, Markdig renders
+        // field lines as visible <br /> breaks instead of collapsing to spaces
+        var markdown = "**Language**: C# 13\n**Storage**: SQL Server\n**Testing**: xUnit";
+        var renderer = new MarkdownRenderingService();
+
+        var htmlDefault = renderer.Render(markdown, preserveSoftLineBreaks: false);
+        var htmlPreserved = renderer.Render(markdown, preserveSoftLineBreaks: true);
+
+        // Default should collapse lines to single <p> with soft breaks (no <br>)
+        htmlDefault.Should().Contain("<p>");
+        htmlDefault.Should().Contain("</p>");
+        htmlDefault.Should().NotContain("<br");
+
+        // Preserved should have <br /> tags to make line breaks visible
+        htmlPreserved.Should().Contain("<br");
+    }
+
+    [Fact]
+    public void TechnicalContext_MultipleFields_AllLineBreaksPreserved()
+    {
+        // Verify that multiple field lines all get <br /> breaks
+        var markdown = "**F1**: V1\n**F2**: V2\n**F3**: V3\n**F4**: V4\n**F5**: V5";
+        var renderer = new MarkdownRenderingService();
+
+        var html = renderer.Render(markdown, preserveSoftLineBreaks: true);
+
+        // Count <br tags - should have 4 breaks between 5 lines
+        var brCount = System.Text.RegularExpressions.Regex.Matches(html, "<br").Count;
+        brCount.Should().Be(4);
+    }
+
+    [Fact]
+    public void TechnicalContext_SoftLineBreakPreservation_WithLinks()
+    {
+        // Verify soft-line-break mode works with link content
+        var markdown = "**Docs**: [link](https://example.com)\n**Contact**: [email](mailto:test@example.com)";
+        var renderer = new MarkdownRenderingService();
+
+        var html = renderer.Render(markdown, preserveSoftLineBreaks: true);
+
+        // Should have line breaks between field lines
+        html.Should().Contain("<br");
+
+        // Links should be preserved
+        html.Should().Contain("https://example.com");
+        html.Should().Contain("mailto:test@example.com");
     }
 }

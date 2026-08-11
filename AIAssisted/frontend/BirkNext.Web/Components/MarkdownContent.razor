@@ -21,6 +21,9 @@ else if (!string.IsNullOrEmpty(Fallback))
     [Parameter]
     public string CssClass { get; set; } = string.Empty;
 
+    [Parameter]
+    public bool PreserveSoftLineBreaks { get; set; } = false;
+
     [Inject]
     public MarkdownRenderingService MarkdownRenderer { get; set; } = null!;
 
@@ -30,7 +33,7 @@ else if (!string.IsNullOrEmpty(Fallback))
     {
         if (!string.IsNullOrEmpty(Content))
         {
-            RenderedHtml = MarkdownRenderer.Render(Content);
+            RenderedHtml = MarkdownRenderer.Render(Content, PreserveSoftLineBreaks);
         }
     }
 
@@ -38,7 +41,7 @@ else if (!string.IsNullOrEmpty(Fallback))
     {
         if (!string.IsNullOrEmpty(Content))
         {
-            RenderedHtml = MarkdownRenderer.Render(Content);
+            RenderedHtml = MarkdownRenderer.Render(Content, PreserveSoftLineBreaks);
         }
     }
 }

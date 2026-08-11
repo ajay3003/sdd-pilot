@@ -60,7 +60,6 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         "architecture notes", "architecture overview", "architecture and design",
         "technical decisions", "decision records", "decisions",
         "architecture design", "system architecture", "solution design",
-        "technical context", "project structure",  // Can detect architecture from structure sections
         "structure decision", "repository layout", "architecture decisions",
         "adr references", "repository structure", "folder structure",
         "infrastructure", "deployment architecture", "system boundaries",
@@ -267,6 +266,9 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                     break;
                 case PlanSectionType.Complexity:
                     ParseComplexitySection(raw, complexityItems);
+                    // Create a PlanSection to track that complexity content came from explicit source
+                    var complexitySec = ParseFreeFormSection(sectionHeading, raw, PlanSectionType.Complexity);
+                    if (complexitySec is not null) sections.Add(complexitySec);
                     break;
                 case PlanSectionType.Dependencies:
                     ParseDependenciesSection(raw, dependencies);
@@ -1997,9 +1999,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 case MarkdownTokenKind.BulletItem:
                 {
                     var content = tok.Content;
-                    foreach (var fw in TestingFrameworks)
-                        if (content.Contains(fw, StringComparison.OrdinalIgnoreCase) && !frameworks.Contains(fw, StringComparer.OrdinalIgnoreCase))
-                            frameworks.Add(fw);
+                    AddTestingFrameworksFromText(content, frameworks);
                     foreach (Match m in RuleIdRe.Matches(content))
                     {
                         var rid = m.Groups[1].Value.ToUpperInvariant();
@@ -2011,9 +2011,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                     break;
                 }
                 default:
-                    foreach (var fw in TestingFrameworks)
-                        if (tok.RawLine.Contains(fw, StringComparison.OrdinalIgnoreCase) && !frameworks.Contains(fw, StringComparer.OrdinalIgnoreCase))
-                            frameworks.Add(fw);
+                    AddTestingFrameworksFromText(tok.RawLine, frameworks);
                     break;
             }
         }
@@ -2042,9 +2040,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             foreach (var block in techContext.Blocks)
             {
                 var para = block.Paragraph ?? "";
-                foreach (var fw in TestingFrameworks)
-                    if (para.Contains(fw, StringComparison.OrdinalIgnoreCase) && !frameworks.Contains(fw, StringComparer.OrdinalIgnoreCase))
-                        frameworks.Add(fw);
+                AddTestingFrameworksFromText(para, frameworks);
             }
         }
 
@@ -2057,25 +2053,19 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             foreach (var block in unitTestPhase.Blocks)
             {
                 var text = block.Paragraph ?? "";
-                foreach (var fw in TestingFrameworks)
-                    if (text.Contains(fw, StringComparison.OrdinalIgnoreCase) && !frameworks.Contains(fw, StringComparer.OrdinalIgnoreCase))
-                        frameworks.Add(fw);
+                AddTestingFrameworksFromText(text, frameworks);
             }
             // Add unit test blocks to strategy
-            if (!string.IsNullOrEmpty(unitTestPhase.Description))
-                blocks.Add(new PlanSectionBlock { SubHeading = "Unit Testing", Paragraph = unitTestPhase.Description });
+            var unitDescription = RemoveThematicBreakLines(unitTestPhase.Description);
+            if (!string.IsNullOrEmpty(unitDescription))
+                blocks.Add(new PlanSectionBlock { SubHeading = "Unit Testing", Paragraph = unitDescription });
 
             // Also include existing blocks from the phase
             foreach (var block in unitTestPhase.Blocks)
             {
-                if (block.HasContent)
-                    blocks.Add(new PlanSectionBlock
-                    {
-                        SubHeading = block.SubHeading ?? "Unit Testing",
-                        Paragraph = block.Paragraph,
-                        BulletPoints = block.BulletPoints,
-                        CodeBlock = block.CodeBlock
-                    });
+                var testingBlock = CleanTestingSummaryBlock(block, "Unit Testing");
+                if (testingBlock is not null)
+                    blocks.Add(testingBlock);
             }
         }
 
@@ -2084,25 +2074,19 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             foreach (var block in integrationTestPhase.Blocks)
             {
                 var text = block.Paragraph ?? "";
-                foreach (var fw in TestingFrameworks)
-                    if (text.Contains(fw, StringComparison.OrdinalIgnoreCase) && !frameworks.Contains(fw, StringComparer.OrdinalIgnoreCase))
-                        frameworks.Add(fw);
+                AddTestingFrameworksFromText(text, frameworks);
             }
             // Add integration test blocks to strategy
-            if (!string.IsNullOrEmpty(integrationTestPhase.Description))
-                blocks.Add(new PlanSectionBlock { SubHeading = "Integration Testing", Paragraph = integrationTestPhase.Description });
+            var integrationDescription = RemoveThematicBreakLines(integrationTestPhase.Description);
+            if (!string.IsNullOrEmpty(integrationDescription))
+                blocks.Add(new PlanSectionBlock { SubHeading = "Integration Testing", Paragraph = integrationDescription });
 
             // Also include existing blocks from the phase
             foreach (var block in integrationTestPhase.Blocks)
             {
-                if (block.HasContent)
-                    blocks.Add(new PlanSectionBlock
-                    {
-                        SubHeading = block.SubHeading ?? "Integration Testing",
-                        Paragraph = block.Paragraph,
-                        BulletPoints = block.BulletPoints,
-                        CodeBlock = block.CodeBlock
-                    });
+                var testingBlock = CleanTestingSummaryBlock(block, "Integration Testing");
+                if (testingBlock is not null)
+                    blocks.Add(testingBlock);
             }
         }
 
@@ -2118,6 +2102,89 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             GateRefs    = [],
             Blocks      = blocks,
         };
+    }
+
+    private static void AddTestingFrameworksFromText(string? text, List<string> frameworks)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        foreach (var fw in TestingFrameworks)
+        {
+            var matches = Regex.Matches(
+                text,
+                $@"(?<![\w.])(?<name>{Regex.Escape(fw)})(?![\w.])(?<version>\s+\d+(?:\.[0-9xX]+)*(?:[-+][A-Za-z0-9_.-]+)?)?",
+                RegexOptions.IgnoreCase);
+
+            foreach (Match match in matches)
+            {
+                if (!match.Success) continue;
+
+                var display = match.Groups["name"].Value.Trim();
+                if (match.Groups["version"].Success)
+                    display += " " + match.Groups["version"].Value.Trim();
+
+                AddOrUpdateTestingFramework(frameworks, fw, display);
+            }
+        }
+    }
+
+    private static void AddOrUpdateTestingFramework(List<string> frameworks, string canonicalName, string display)
+    {
+        var existingIndex = frameworks.FindIndex(f => FrameworkDisplayMatches(f, canonicalName));
+        if (existingIndex < 0)
+        {
+            frameworks.Add(display);
+            return;
+        }
+
+        if (FrameworkDisplayHasVersion(display) && !FrameworkDisplayHasVersion(frameworks[existingIndex]))
+            frameworks[existingIndex] = display;
+    }
+
+    private static bool FrameworkDisplayMatches(string value, string canonicalName) =>
+        value.Equals(canonicalName, StringComparison.OrdinalIgnoreCase)
+        || value.StartsWith(canonicalName + " ", StringComparison.OrdinalIgnoreCase);
+
+    private static bool FrameworkDisplayHasVersion(string value) =>
+        Regex.IsMatch(value, @"\s+\d+(?:\.[0-9xX]+)*(?:[-+][A-Za-z0-9_.-]+)?\b");
+
+    private static PlanSectionBlock? CleanTestingSummaryBlock(PlanSectionBlock block, string fallbackHeading)
+    {
+        var paragraph = RemoveThematicBreakLines(block.Paragraph);
+        var bullets = block.BulletPoints
+            .Select(RemoveThematicBreakLines)
+            .Where(b => !string.IsNullOrWhiteSpace(b))
+            .Select(b => b!)
+            .ToList();
+
+        var cleaned = new PlanSectionBlock
+        {
+            SubHeading = block.SubHeading ?? fallbackHeading,
+            Paragraph = paragraph,
+            BulletPoints = bullets,
+            CodeBlock = block.CodeBlock,
+        };
+
+        return cleaned.HasContent ? cleaned : null;
+    }
+
+    private static string? RemoveThematicBreakLines(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        var lines = text.Split('\n')
+            .Select(line => line.TrimEnd('\r'))
+            .Where(line => !IsThematicBreakLine(line))
+            .ToList();
+
+        var cleaned = string.Join('\n', lines).Trim();
+        return string.IsNullOrEmpty(cleaned) ? null : cleaned;
+    }
+
+    private static bool IsThematicBreakLine(string line)
+    {
+        var trimmed = line.Trim();
+        return Regex.IsMatch(trimmed, @"^([-*_])(?:\s*\1){2,}$");
     }
 
     private static void ExtractTestPaths(string text, List<string> folders, List<string> classes)

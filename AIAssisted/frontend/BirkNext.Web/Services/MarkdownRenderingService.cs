@@ -11,6 +11,7 @@ namespace BirkNext.Web.Services;
 public sealed class MarkdownRenderingService
 {
     private readonly MarkdownPipeline _pipeline;
+    private readonly MarkdownPipeline _pipelinePreserveSoftBreaks;
 
     public MarkdownRenderingService()
     {
@@ -22,19 +23,30 @@ public sealed class MarkdownRenderingService
             .UseAutoIdentifiers();
 
         _pipeline = builder.Build();
+
+        // Configure alternate pipeline with soft-line-break preservation (for Technical Context)
+        var builderPreserve = new MarkdownPipelineBuilder()
+            .UseAdvancedExtensions()
+            .UsePipeTables()
+            .UseTaskLists()
+            .UseAutoIdentifiers()
+            .UseSoftlineBreakAsHardlineBreak(); // Convert soft breaks to <br /> tags
+
+        _pipelinePreserveSoftBreaks = builderPreserve.Build();
     }
 
     /// <summary>
     /// Render Markdown to HTML. HTML tags from user Markdown are escaped (not rendered).
     /// Links are validated to only allow safe schemes (http, https, mailto, relative).
     /// </summary>
-    public string Render(string markdown)
+    public string Render(string markdown, bool preserveSoftLineBreaks = false)
     {
         if (string.IsNullOrWhiteSpace(markdown))
             return string.Empty;
 
-        // Use Markdig's built-in HTML rendering
-        var html = Markdown.ToHtml(markdown, _pipeline);
+        // Use Markdig's built-in HTML rendering with appropriate pipeline
+        var pipeline = preserveSoftLineBreaks ? _pipelinePreserveSoftBreaks : _pipeline;
+        var html = Markdown.ToHtml(markdown, pipeline);
 
         // Post-process: sanitize links
         html = SanitizeHtmlLinks(html);
