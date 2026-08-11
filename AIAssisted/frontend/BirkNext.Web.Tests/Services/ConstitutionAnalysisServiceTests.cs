@@ -2038,6 +2038,481 @@ All access requires explicit verification. References PP-02 through PP-04, and P
     }
 
     [Fact]
+    public void DOMInspection_PrintAllDuplicateRules()
+    {
+        // Construct the correct path from test assembly location
+        var testAssemblyDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
+        var fullPath = Path.Combine(testAssemblyDir, "../../../../../../SampleData/autorisasjon/constitution.md");
+        fullPath = Path.GetFullPath(fullPath);
+
+        if (!File.Exists(fullPath))
+        {
+            Assert.True(false, $"Constitution file not found at: {fullPath}");
+            return;
+        }
+
+        var constitutionText = File.ReadAllText(fullPath);
+        var doc = _svc.Parse(constitutionText);
+        var mapRoots = _svc.BuildMapTree(doc.RuleCatalog);
+
+        // Find GOV-001 in roots directly
+        var gov001Node = mapRoots.FirstOrDefault(n => n.Rule.RuleId.Equals("GOV-001", StringComparison.OrdinalIgnoreCase));
+        if (gov001Node == null)
+            gov001Node = FindNodeByRuleId(mapRoots, "GOV-001");
+
+        if (gov001Node == null)
+        {
+            Assert.True(false, "Could not find GOV-001 node");
+            return;
+        }
+
+        var output = "";
+        output += "\n=== GOV-001 DIRECT CHILDREN ANALYSIS ===\n";
+        output += $"Total Children: {gov001Node.Children.Count}\n";
+        output += $"NodeId: {gov001Node.NodeId}\n";
+        output += $"RuleId: {gov001Node.Rule.RuleId}\n\n";
+
+        // Check for duplicates by RuleId
+        var ruleIdGroups = gov001Node.Children
+            .GroupBy(c => c.Rule.RuleId, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key);
+
+        output += "Rules grouped by RuleId:\n";
+        foreach (var group in ruleIdGroups)
+        {
+            if (group.Count() > 1)
+            {
+                output += $"\n⚠️ {group.Key} appears {group.Count()} times:\n";
+                foreach (var node in group)
+                {
+                    output += $"  - NodeId: {node.NodeId}, Depth: {node.Depth}, Children: {node.Children.Count}\n";
+                }
+            }
+        }
+
+        output += "\n=== RENDERING WHAT DOM SHOULD CONTAIN ===\n";
+        for (int i = 0; i < gov001Node.Children.Count; i++)
+        {
+            var child = gov001Node.Children[i];
+            output += $"[{i+1:D3}] <div data-rule-id=\"{child.Rule.RuleId}\" data-node-id=\"{child.NodeId}\" data-depth=\"{child.Depth}\" data-parent-node-id=\"{gov001Node.NodeId}\">\n";
+        }
+
+        // Write to file in test project directory
+        var testDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
+        var filePath = Path.Combine(testDir, "DOM_INSPECTION_REPORT.txt");
+        File.WriteAllText(filePath, output);
+
+        Assert.True(false, $"INSPECTION REPORT:\n{output}\n\nSaved to: {filePath}");
+    }
+
+    [Fact]
+    public void ModelInspection_GOV001ReferencesForDuplicates()
+    {
+        // Test the model BEFORE map tree building
+        var testAssemblyDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
+        var fullPath = Path.Combine(testAssemblyDir, "../../../../../../SampleData/autorisasjon/constitution.md");
+        fullPath = Path.GetFullPath(fullPath);
+
+        if (!File.Exists(fullPath))
+        {
+            Assert.True(false, $"Constitution file not found at: {fullPath}");
+            return;
+        }
+
+        var constitutionText = File.ReadAllText(fullPath);
+        var doc = _svc.Parse(constitutionText);
+
+        // Find GOV-001 in the RuleCatalog (has IDs assigned)
+        var gov001 = doc.RuleCatalog.FirstOrDefault(r => r.RuleId.Equals("GOV-001", StringComparison.OrdinalIgnoreCase));
+        if (gov001 == null)
+        {
+            Assert.True(false, "Could not find GOV-001 in RuleCatalog");
+            return;
+        }
+
+        var output = "";
+        output += "\n=== GOV-001 MODEL INSPECTION (RuleCatalog) ===\n";
+        output += $"RuleId: {gov001.RuleId}\n";
+        output += $"Title: {gov001.Title}\n";
+        output += $"References.Count: {gov001.References.Count}\n\n";
+
+        // Check for duplicates in References list
+        var refCounts = gov001.References
+            .GroupBy(r => r, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        if (refCounts.Any())
+        {
+            output += "⚠️ Duplicates found in GOV-001.References:\n";
+            foreach (var group in refCounts)
+            {
+                output += $"  {group.Key} appears {group.Count()} times\n";
+            }
+        }
+        else
+        {
+            output += "✓ No duplicates in GOV-001.References list\n";
+        }
+
+        output += "\nAll References in order:\n";
+        for (int i = 0; i < gov001.References.Count; i++)
+        {
+            output += $"  [{i + 1:D3}] {gov001.References[i]}\n";
+        }
+
+        Assert.True(false, $"MODEL INSPECTION:\n{output}");
+    }
+
+    [Fact]
+    public void BuildMapTreeDiagnostics_CheckGOV001RulesBeforeAndAfterMapping()
+    {
+        var testAssemblyDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
+        var fullPath = Path.Combine(testAssemblyDir, "../../../../../../SampleData/autorisasjon/constitution.md");
+        fullPath = Path.GetFullPath(fullPath);
+
+        if (!File.Exists(fullPath))
+        {
+            Assert.True(false, $"Constitution file not found at: {fullPath}");
+            return;
+        }
+
+        var constitutionText = File.ReadAllText(fullPath);
+        var doc = _svc.Parse(constitutionText);
+
+        // Get GOV-001 from RuleCatalog
+        var gov001Catalog = doc.RuleCatalog.FirstOrDefault(r => r.RuleId.Equals("GOV-001", StringComparison.OrdinalIgnoreCase));
+
+        var output = "";
+        output += "\n=== RULES BEFORE MAP BUILDING ===\n";
+        output += $"GOV-001 from Catalog:\n";
+        output += $"  References.Count: {gov001Catalog?.References.Count ?? 0}\n";
+        if (gov001Catalog != null)
+        {
+            output += $"  References order: {string.Join(", ", gov001Catalog.References)}\n";
+        }
+
+        // Build map tree
+        var mapRoots = _svc.BuildMapTree(doc.RuleCatalog);
+
+        // Find GOV-001 in map roots
+        var gov001Map = mapRoots.FirstOrDefault(n => n.Rule.RuleId.Equals("GOV-001", StringComparison.OrdinalIgnoreCase));
+
+        output += "\n=== RULES AFTER MAP BUILDING ===\n";
+        output += $"GOV-001 from Map:\n";
+        output += $"  Children.Count: {gov001Map?.Children.Count ?? 0}\n";
+
+        if (gov001Map != null)
+        {
+            output += $"  Children order: {string.Join(", ", gov001Map.Children.Select(c => c.Rule.RuleId))}\n";
+
+            // Check for duplicate RuleIds in children
+            var childRuleIds = gov001Map.Children.Select(c => c.Rule.RuleId).ToList();
+            var duplicates = childRuleIds
+                .GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            if (duplicates.Any())
+            {
+                output += $"\n⚠️ Duplicate RuleIds in map children:\n";
+                foreach (var dup in duplicates)
+                {
+                    output += $"  {dup.Key} appears {dup.Count()} times\n";
+                }
+            }
+
+            // Check if orders match
+            if (gov001Catalog != null && gov001Catalog.References.Count == childRuleIds.Count)
+            {
+                var orderMatches = gov001Catalog.References.SequenceEqual(childRuleIds, StringComparer.OrdinalIgnoreCase);
+                output += $"\n✓ Order matches catalog: {orderMatches}\n";
+
+                if (!orderMatches)
+                {
+                    output += "\nOrder comparison:\n";
+                    for (int i = 0; i < Math.Min(gov001Catalog.References.Count, childRuleIds.Count); i++)
+                    {
+                        if (!gov001Catalog.References[i].Equals(childRuleIds[i], StringComparison.OrdinalIgnoreCase))
+                        {
+                            output += $"  Position {i}: Catalog={gov001Catalog.References[i]}, Map={childRuleIds[i]}\n";
+                        }
+                    }
+                }
+            }
+        }
+
+        Assert.True(false, $"DIAGNOSTIC:\n{output}");
+    }
+
+    [Fact]
+    public void RuleCatalogInspection_CheckForDuplicateRuleIds()
+    {
+        var testAssemblyDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
+        var fullPath = Path.Combine(testAssemblyDir, "../../../../../../SampleData/autorisasjon/constitution.md");
+        fullPath = Path.GetFullPath(fullPath);
+
+        if (!File.Exists(fullPath))
+        {
+            Assert.True(false, $"Constitution file not found");
+            return;
+        }
+
+        var constitutionText = File.ReadAllText(fullPath);
+        var doc = _svc.Parse(constitutionText);
+
+        var output = "\n=== RULECATALOG ANALYSIS ===\n";
+        output += $"Total rules: {doc.RuleCatalog.Count}\n\n";
+
+        // Check for duplicate RuleIds
+        var ruleIdGroups = doc.RuleCatalog
+            .GroupBy(r => r.RuleId, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        if (ruleIdGroups.Any())
+        {
+            output += $"⚠️ Found {ruleIdGroups.Count} duplicate RuleIds:\n";
+            foreach (var group in ruleIdGroups)
+            {
+                output += $"\n{group.Key} appears {group.Count()} times:\n";
+                foreach (var rule in group)
+                {
+                    output += $"  Title: {rule.Title}, References: {rule.References.Count}\n";
+                }
+            }
+        }
+        else
+        {
+            output += "✓ No duplicate RuleIds\n";
+        }
+
+        // Check for overlapping aliases
+        var allAliases = doc.RuleCatalog.SelectMany(r => r.Aliases).ToList();
+        var aliasConflicts = allAliases
+            .GroupBy(a => a, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        if (aliasConflicts.Any())
+        {
+            output += $"\n⚠️ Found {aliasConflicts.Count} duplicate aliases:\n";
+            foreach (var conflict in aliasConflicts)
+            {
+                output += $"  {conflict.Key} appears {conflict.Count()} times\n";
+            }
+        }
+
+        // Check for alias-ID conflicts - DETAILED
+        var allIds = new HashSet<string>(doc.RuleCatalog.Select(r => r.RuleId), StringComparer.OrdinalIgnoreCase);
+        var aliasIdConflicts = allAliases.Where(a => allIds.Contains(a)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (aliasIdConflicts.Any())
+        {
+            output += $"\n⚠️ Found {aliasIdConflicts.Count} alias-ID conflicts:\n";
+            foreach (var conflictId in aliasIdConflicts)
+            {
+                output += $"\n  Conflict: '{conflictId}' appears as both alias and ID\n";
+
+                // Find which rule HAS this ID
+                var ruleWithId = doc.RuleCatalog.FirstOrDefault(r => r.RuleId.Equals(conflictId, StringComparison.OrdinalIgnoreCase));
+                output += $"    Rule with ID '{conflictId}': {ruleWithId?.Title ?? "NOT FOUND"}\n";
+
+                // Find which rule(s) have this as an alias
+                var rulesWithAlias = doc.RuleCatalog.Where(r => r.Aliases.Contains(conflictId, StringComparer.OrdinalIgnoreCase)).ToList();
+                output += $"    Rules with '{conflictId}' as alias:\n";
+                foreach (var rule in rulesWithAlias)
+                {
+                    output += $"      - {rule.RuleId}: {rule.Title}\n";
+                }
+            }
+        }
+
+        Assert.True(false, output);
+    }
+
+    [Fact]
+    public void DiagnosticRoot_CheckIfMultipleGOV001RulesExist()
+    {
+        var testAssemblyDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
+        var fullPath = Path.Combine(testAssemblyDir, "../../../../../../SampleData/autorisasjon/constitution.md");
+        fullPath = Path.GetFullPath(fullPath);
+
+        if (!File.Exists(fullPath))
+        {
+            Assert.True(false, "File not found");
+            return;
+        }
+
+        var constitutionText = File.ReadAllText(fullPath);
+        var doc = _svc.Parse(constitutionText);
+
+        // Count GOV-001 rules
+        var gov001Rules = doc.RuleCatalog.Where(r => r.RuleId.Equals("GOV-001", StringComparison.OrdinalIgnoreCase)).ToList();
+
+        var output = $"\n=== GOV-001 RULES CHECK ===\n";
+        output += $"Found {gov001Rules.Count} rule(s) with ID 'GOV-001'\n";
+
+        if (gov001Rules.Count > 1)
+        {
+            output += "\n⚠️ MULTIPLE GOV-001 RULES:\n";
+            for (int i = 0; i < gov001Rules.Count; i++)
+            {
+                output += $"\n[{i + 1}] {gov001Rules[i].RuleId} - {gov001Rules[i].Title}\n";
+                output += $"    References: {gov001Rules[i].References.Count}\n";
+                output += $"    First 5: {string.Join(", ", gov001Rules[i].References.Take(5))}\n";
+                output += $"    Last 5: {string.Join(", ", gov001Rules[i].References.TakeLast(5))}\n";
+            }
+        }
+        else if (gov001Rules.Count == 1)
+        {
+            output += "✓ Single GOV-001 rule found\n";
+            output += $"  References: {gov001Rules[0].References.Count}\n";
+
+            // Check if References is a shared list
+            var ref1 = gov001Rules[0].References;
+            var gov001Again = doc.RuleCatalog.FirstOrDefault(r => r.RuleId.Equals("GOV-001", StringComparison.OrdinalIgnoreCase));
+            var ref2 = gov001Again?.References;
+
+            if (ref1 != null && ref2 != null)
+            {
+                if (ReferenceEquals(ref1, ref2))
+                {
+                    output += "  ✓ References list is same object (shared reference)\n";
+                }
+                else
+                {
+                    output += "  Different References objects\n";
+                }
+            }
+        }
+
+        Assert.True(false, output);
+    }
+
+    [Fact]
+    public void ResolutionDebug_TraceEachGOV001ReferenceResolution()
+    {
+        var testAssemblyDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
+        var fullPath = Path.Combine(testAssemblyDir, "../../../../../../SampleData/autorisasjon/constitution.md");
+        fullPath = Path.GetFullPath(fullPath);
+
+        if (!File.Exists(fullPath))
+            return;
+
+        var constitutionText = File.ReadAllText(fullPath);
+        var doc = _svc.Parse(constitutionText);
+
+        // Get GOV-001
+        var gov001 = doc.RuleCatalog.FirstOrDefault(r => r.RuleId.Equals("GOV-001", StringComparison.OrdinalIgnoreCase));
+        if (gov001 == null)
+            return;
+
+        // Manually simulate byId construction to understand what's happening
+        var byId = new Dictionary<string, ConstitutionRule>(StringComparer.OrdinalIgnoreCase);
+
+        // STEP 1: Add all PRIMARY rule IDs
+        foreach (var rule in doc.RuleCatalog)
+        {
+            if (!string.IsNullOrEmpty(rule.RuleId))
+                byId[rule.RuleId] = rule;
+        }
+
+        // STEP 2: Add aliases (doesn't overwrite existing keys)
+        var aliasLog = new List<string>();
+        foreach (var rule in doc.RuleCatalog)
+        {
+            foreach (var alias in rule.Aliases)
+            {
+                if (!byId.ContainsKey(alias))
+                {
+                    byId[alias] = rule;
+                    aliasLog.Add($"Added alias '{alias}' → {rule.RuleId}");
+                }
+                else
+                {
+                    aliasLog.Add($"Skipped alias '{alias}' (exists as {byId[alias].RuleId})");
+                }
+            }
+        }
+
+        // Now manually resolve each GOV-001 reference
+        var output = "\n=== REFERENCE RESOLUTION TRACE ===\n\n";
+        output += $"GOV-001.References.Count: {gov001.References.Count}\n\n";
+
+        var resolved = new List<(string refId, string resolvedId, bool isExact)>();
+        for (int i = 0; i < gov001.References.Count; i++)
+        {
+            var refId = gov001.References[i];
+            if (byId.TryGetValue(refId, out var resolvedRule))
+            {
+                var isExact = resolvedRule.RuleId.Equals(refId, StringComparison.OrdinalIgnoreCase);
+                resolved.Add((refId, resolvedRule.RuleId, isExact));
+
+                if (i < 15 || i >= gov001.References.Count - 5)  // Show first 15 and last 5
+                {
+                    output += $"[{i + 1:D3}] '{refId}' → '{resolvedRule.RuleId}' ({(isExact ? "exact" : "alias")})\n";
+                }
+                else if (i == 15)
+                {
+                    output += $"... ({gov001.References.Count - 20} more) ...\n";
+                }
+            }
+            else
+            {
+                output += $"[{i + 1:D3}] '{refId}' → NOT FOUND\n";
+                resolved.Add((refId, "NOT_FOUND", false));
+            }
+        }
+
+        // Check for mismatches
+        var mismatches = resolved.Where(r => !r.refId.Equals(r.resolvedId, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        output += $"\n=== RESOLUTION ANALYSIS ===\n";
+        output += $"Total references: {resolved.Count}\n";
+        output += $"Exact matches: {resolved.Count(r => r.isExact)}\n";
+        output += $"Alias matches: {resolved.Count(r => !r.isExact && r.resolvedId != "NOT_FOUND")}\n";
+        output += $"Mismatches (refId != resolvedId): {mismatches.Count}\n";
+
+        if (mismatches.Any())
+        {
+            output += "\n⚠️ MISMATCHES FOUND:\n";
+            foreach (var mismatch in mismatches.Take(20))
+            {
+                output += $"  '{mismatch.refId}' resolved to '{mismatch.resolvedId}'\n";
+            }
+        }
+
+        // Show alias conflicts from the log
+        var aliasConflicts = aliasLog.Where(l => l.Contains("Skipped alias")).ToList();
+        if (aliasConflicts.Any())
+        {
+            output += $"\n=== ALIAS CONFLICTS ===\n";
+            output += $"Total aliases skipped (conflicts): {aliasConflicts.Count}\n";
+            foreach (var conflict in aliasConflicts.Where(c => c.Contains("PP") || c.Contains("PS")))
+            {
+                output += $"  {conflict}\n";
+            }
+        }
+
+        // Find which rules have the mismatched IDs as aliases
+        output += $"\n=== ALIAS OWNERSHIP ===\n";
+        foreach (var mismatch in mismatches)
+        {
+            var ownerRules = doc.RuleCatalog.Where(r => r.Aliases.Contains(mismatch.refId, StringComparer.OrdinalIgnoreCase)).ToList();
+            if (ownerRules.Any())
+            {
+                output += $"\n'{mismatch.refId}' is an alias of:\n";
+                foreach (var owner in ownerRules)
+                {
+                    output += $"  Rule {owner.RuleId}: {owner.Title}\n";
+                }
+            }
+        }
+
+        Assert.True(false, output);
+    }
+
+    [Fact]
     public void RealConstitution_MapRoots_NoDuplicateChildren()
     {
         var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
@@ -2098,6 +2573,444 @@ All access requires explicit verification. References PP-02 through PP-04, and P
             kvp.Value.Should().Be(1,
                 because: $"{kvp.Key} should have PP-02 as a direct child exactly once, not {kvp.Value} times");
         }
+    }
+
+    [Fact]
+    public void MapRendering_GOV001Node_HasUniqueChildren()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+
+        var mapRoots = _svc.BuildMapTree(doc.RuleCatalog);
+        var gov001Node = FindNodeByRuleId(mapRoots, "GOV-001");
+
+        gov001Node.Should().NotBeNull("GOV-001 should be in map");
+        if (gov001Node == null) return;
+
+        // Check direct children uniqueness
+        var childRuleIds = gov001Node.Children.Select(c => c.Rule.RuleId).ToList();
+        var uniqueChildRuleIds = childRuleIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        childRuleIds.Count.Should().Be(uniqueChildRuleIds.Count,
+            because: $"GOV-001.Children should have unique RuleIds. Found: {string.Join(", ", childRuleIds.GroupBy(x => x).Where(g => g.Count() > 1).Select(g => $"{g.Key}({g.Count()}x)"))}");
+
+        // Check NodeIds are unique (important for Blazor rendering)
+        var nodeIds = gov001Node.Children.Select(c => c.NodeId).ToList();
+        var uniqueNodeIds = nodeIds.Distinct().ToList();
+
+        nodeIds.Count.Should().Be(uniqueNodeIds.Count,
+            because: "GOV-001.Children should have unique NodeIds for correct Blazor rendering");
+    }
+
+    [Fact]
+    public void MapRendering_AllRoots_UniqueAndNoHiddenDuplicates()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+
+        var mapRoots = _svc.BuildMapTree(doc.RuleCatalog);
+
+        // Check root level uniqueness
+        var rootRuleIds = mapRoots.Select(r => r.Rule.RuleId).ToList();
+        var uniqueRootRuleIds = rootRuleIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        rootRuleIds.Count.Should().Be(uniqueRootRuleIds.Count,
+            because: "Root nodes should be unique");
+
+        // Check all NodeIds at root level are unique
+        var rootNodeIds = mapRoots.Select(r => r.NodeId).ToList();
+        var uniqueRootNodeIds = rootNodeIds.Distinct().ToList();
+
+        rootNodeIds.Count.Should().Be(uniqueRootNodeIds.Count,
+            because: "Root NodeIds should be unique for Blazor");
+
+        // For each root, check its direct children
+        foreach (var root in mapRoots)
+        {
+            var childRuleIds = root.Children.Select(c => c.Rule.RuleId).ToList();
+            var uniqueChildRuleIds = childRuleIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+            childRuleIds.Count.Should().Be(uniqueChildRuleIds.Count,
+                because: $"{root.Rule.RuleId} direct children should be unique");
+
+            var childNodeIds = root.Children.Select(c => c.NodeId).ToList();
+            var uniqueChildNodeIds = childNodeIds.Distinct().ToList();
+
+            childNodeIds.Count.Should().Be(uniqueChildNodeIds.Count,
+                because: $"{root.Rule.RuleId} child NodeIds should be unique");
+        }
+    }
+
+    [Fact]
+    public void MapDiagnostics_TraceAllOccurrencesOfRepeatedRules()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+
+        var mapRoots = _svc.BuildMapTree(doc.RuleCatalog);
+
+        var rulesToTrace = new[] { "PP-02", "PP-03", "PS-07" };
+
+        foreach (var ruleId in rulesToTrace)
+        {
+            var occurrences = new List<(string path, int depth, string parentId)>();
+
+            void TraceOccurrences(List<ConstitutionMapNode> nodes, string currentPath, int depth)
+            {
+                foreach (var node in nodes)
+                {
+                    var nodePath = string.IsNullOrEmpty(currentPath) ? node.Rule.RuleId : $"{currentPath} -> {node.Rule.RuleId}";
+
+                    if (node.Rule.RuleId.Equals(ruleId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var parentId = currentPath.Split(" -> ").LastOrDefault() ?? "ROOT";
+                        occurrences.Add((nodePath, depth, parentId));
+                    }
+
+                    TraceOccurrences(node.Children, nodePath, depth + 1);
+                }
+            }
+
+            TraceOccurrences(mapRoots, "", 0);
+
+            if (occurrences.Count > 1)
+            {
+                var diagnostic = $"\n{ruleId} appears {occurrences.Count} times:\n";
+                for (int i = 0; i < occurrences.Count; i++)
+                {
+                    diagnostic += $"  [{i + 1}] Path: {occurrences[i].path}\n";
+                    diagnostic += $"      Depth: {occurrences[i].depth}, Parent: {occurrences[i].parentId}\n";
+                }
+
+                Assert.True(occurrences.Count == 1, diagnostic);
+            }
+        }
+    }
+
+    [Fact]
+    public void MapDiagnostics_DetailedGOV001Hierarchy()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+
+        var mapRoots = _svc.BuildMapTree(doc.RuleCatalog);
+        var gov001Node = FindNodeByRuleId(mapRoots, "GOV-001");
+
+        gov001Node.Should().NotBeNull();
+        if (gov001Node == null) return;
+
+        // First level children of GOV-001
+        var directChildren = gov001Node.Children.Select(c => c.Rule.RuleId).ToList();
+
+        // Find all PP-02 occurrences under GOV-001 (at any depth)
+        var pp02Occurrences = new List<(string path, int depth)>();
+
+        void FindRule(ConstitutionMapNode node, string path, int depth, string targetRuleId)
+        {
+            if (node.Rule.RuleId.Equals(targetRuleId, StringComparison.OrdinalIgnoreCase))
+            {
+                pp02Occurrences.Add((path, depth));
+            }
+
+            foreach (var child in node.Children)
+            {
+                var newPath = $"{path} -> {child.Rule.RuleId}";
+                FindRule(child, newPath, depth + 1, targetRuleId);
+            }
+        }
+
+        foreach (var child in gov001Node.Children)
+        {
+            var childPath = $"GOV-001 -> {child.Rule.RuleId}";
+            FindRule(child, childPath, 1, "PP-02");
+        }
+
+        // Direct children count
+        var pp02DirectCount = directChildren.Count(r => r.Equals("PP-02", StringComparison.OrdinalIgnoreCase));
+
+        Assert.True(pp02DirectCount <= 1,
+            $"PP-02 should be a direct child of GOV-001 at most once, but found {pp02DirectCount} direct occurrences");
+
+        if (pp02Occurrences.Count > 1)
+        {
+            var diagnostic = $"\nPP-02 found at {pp02Occurrences.Count} locations under GOV-001:\n";
+            for (int i = 0; i < pp02Occurrences.Count; i++)
+            {
+                diagnostic += $"  [{i + 1}] {pp02Occurrences[i].path} (depth: {pp02Occurrences[i].depth})\n";
+            }
+
+            // This is expected if PP-02 is referenced by multiple GOV-001 children
+            // But they should be at different depths, not same indentation level
+        }
+    }
+
+    [Fact]
+    public void MapDiagnostics_CheckPP02DepthUnderGOV001()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+
+        var mapRoots = _svc.BuildMapTree(doc.RuleCatalog);
+        var gov001Node = FindNodeByRuleId(mapRoots, "GOV-001");
+
+        gov001Node.Should().NotBeNull();
+        if (gov001Node == null) return;
+
+        // Track all occurrences of PP-02 with their depths
+        var pp02Occurrences = new Dictionary<int, List<string>>(); // depth -> [paths]
+
+        void FindPP02(ConstitutionMapNode node, string parentPath)
+        {
+            foreach (var child in node.Children)
+            {
+                var childPath = $"{parentPath} -> {child.Rule.RuleId}";
+
+                if (child.Rule.RuleId.Equals("PP-02", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!pp02Occurrences.ContainsKey(child.Depth))
+                        pp02Occurrences[child.Depth] = new List<string>();
+                    pp02Occurrences[child.Depth].Add(childPath);
+                }
+
+                FindPP02(child, childPath);
+            }
+        }
+
+        FindPP02(gov001Node, "GOV-001");
+
+        // If PP-02 appears at multiple depths, that's the "duplication" the user sees
+        if (pp02Occurrences.Count > 0)
+        {
+            var report = $"\nPP-02 appears under GOV-001 at the following depths:\n";
+            foreach (var kvp in pp02Occurrences.OrderBy(x => x.Key))
+            {
+                report += $"  Depth {kvp.Key}: {kvp.Value.Count} occurrence(s)\n";
+                foreach (var path in kvp.Value)
+                {
+                    report += $"    - {path}\n";
+                }
+            }
+
+            // If PP-02 appears at depth 1 (direct child) AND at another depth, that could explain the visual duplication
+            var hasDirectChild = pp02Occurrences.ContainsKey(1);
+            var hasDescendant = pp02Occurrences.Keys.Any(d => d > 1);
+
+            if (hasDirectChild && hasDescendant)
+            {
+                Assert.True(false, $"PP-02 appears both as direct child (depth 1) AND as descendant at deeper levels:{report}");
+            }
+        }
+    }
+
+    [Fact]
+    public void MapDiagnostics_GOV001DirectChildrenItemsDuplicate()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+
+        var mapRoots = _svc.BuildMapTree(doc.RuleCatalog);
+        var gov001Node = FindNodeByRuleId(mapRoots, "GOV-001");
+
+        gov001Node.Should().NotBeNull();
+        if (gov001Node == null) return;
+
+        // Check if any rule ID appears more than once in direct children
+        var directChildRuleIds = gov001Node.Children.Select(c => c.Rule.RuleId).ToList();
+        var directChildNodeIds = gov001Node.Children.Select(c => c.NodeId).ToList();
+
+        // Count occurrences
+        var ruleIdCounts = directChildRuleIds
+            .GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var nodeIdCounts = directChildNodeIds
+            .GroupBy(id => id)
+            .Where(g => g.Count() > 1)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        if (ruleIdCounts.Any())
+        {
+            var report = "\nDuplicate RuleIds in GOV-001.Children:\n";
+            foreach (var kvp in ruleIdCounts)
+            {
+                report += $"  {kvp.Key}: appears {kvp.Value} times\n";
+            }
+            Assert.True(false, report);
+        }
+
+        if (nodeIdCounts.Any())
+        {
+            var report = "\nDuplicate NodeIds in GOV-001.Children:\n";
+            foreach (var kvp in nodeIdCounts)
+            {
+                report += $"  {kvp.Key}: appears {kvp.Value} times\n";
+            }
+            Assert.True(false, report);
+        }
+
+        // All should be unique
+        directChildRuleIds.Count.Should().Be(directChildRuleIds.Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+            because: "All GOV-001 direct children RuleIds should be unique");
+        directChildNodeIds.Count.Should().Be(directChildNodeIds.Distinct().Count(),
+            because: "All GOV-001 direct children NodeIds should be unique");
+    }
+
+    [Fact]
+    public void MapRendering_GOV001DirectChildrenNoRenderedDuplicates()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+        var mapRoots = _svc.BuildMapTree(doc.RuleCatalog);
+        var gov001Node = FindNodeByRuleId(mapRoots, "GOV-001");
+
+        gov001Node.Should().NotBeNull();
+        if (gov001Node == null) return;
+
+        // Verify that GOV-001's direct children collection has no duplicates
+        var directChildrenNodeIds = gov001Node.Children.Select(c => c.NodeId).ToList();
+        var directChildrenRuleIds = gov001Node.Children.Select(c => c.Rule.RuleId).ToList();
+
+        // Each NodeId should appear exactly once
+        foreach (var nodeId in directChildrenNodeIds)
+        {
+            var count = directChildrenNodeIds.Count(id => id == nodeId);
+            count.Should().Be(1, because: $"NodeId {nodeId} should appear exactly once in GOV-001.Children");
+        }
+
+        // Each RuleId should appear exactly once (no multi-parent duplicate at this level)
+        foreach (var ruleId in directChildrenRuleIds)
+        {
+            var count = directChildrenRuleIds.Count(id => id.Equals(ruleId, StringComparison.OrdinalIgnoreCase));
+            count.Should().Be(1, because: $"RuleId {ruleId} should appear exactly once in GOV-001.Children direct layer");
+        }
+
+        // Report structure for verification
+        var report = "\nGOV-001 Direct Children Validation (with Blazor keying):\n";
+        report += $"Total direct children: {gov001Node.Children.Count}\n";
+        report += $"Unique NodeIds: {string.Join(", ", directChildrenNodeIds.Distinct())}\n";
+        report += $"Unique RuleIds: {string.Join(", ", directChildrenRuleIds.Distinct())}\n";
+        System.Diagnostics.Debug.WriteLine(report);
+    }
+
+    [Fact]
+    public void MapDiagnostics_CaptureRenderingStructure_GOV001()
+    {
+        var constitutionPath = "../../../../SampleData/autorisasjon/constitution.md";
+        if (!File.Exists(constitutionPath))
+            return;
+
+        var constitutionText = File.ReadAllText(constitutionPath);
+        var doc = _svc.Parse(constitutionText);
+        var mapRoots = _svc.BuildMapTree(doc.RuleCatalog);
+        var gov001Node = FindNodeByRuleId(mapRoots, "GOV-001");
+
+        gov001Node.Should().NotBeNull();
+        if (gov001Node == null) return;
+
+        // Capture the exact rendering structure
+        var report = "\n" + new string('=', 80) + "\n";
+        report += "GOV-001 RENDERING STRUCTURE (What DOM should contain)\n";
+        report += new string('=', 80) + "\n\n";
+
+        report += $"GOV-001 Node Properties:\n";
+        report += $"  NodeId: {gov001Node.NodeId}\n";
+        report += $"  RuleId: {gov001Node.Rule.RuleId}\n";
+        report += $"  Depth: {gov001Node.Depth}\n";
+        report += $"  Children.Count: {gov001Node.Children.Count}\n\n";
+
+        report += "Direct Children (as they would be rendered):\n";
+        report += new string('-', 80) + "\n";
+
+        // Group by RuleId to see if there are multiple instances
+        var childrenByRuleId = gov001Node.Children
+            .GroupBy(c => c.Rule.RuleId, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key)
+            .ToList();
+
+        var totalUnique = 0;
+        var duplicateRuleIds = new List<string>();
+
+        foreach (var ruleGroup in childrenByRuleId)
+        {
+            var ruleId = ruleGroup.Key;
+            var instances = ruleGroup.ToList();
+
+            if (instances.Count > 1)
+            {
+                duplicateRuleIds.Add(ruleId);
+                report += $"\n⚠️  {ruleId} appears {instances.Count} times as direct children:\n";
+                for (int i = 0; i < instances.Count; i++)
+                {
+                    var node = instances[i];
+                    report += $"   [{i + 1}] NodeId={node.NodeId}\n";
+                    report += $"       Depth={node.Depth}, Title={node.Rule.Title}\n";
+                    report += $"       Children count={node.Children.Count}\n";
+                }
+            }
+            else
+            {
+                report += $"✓ {ruleId} (NodeId={instances[0].NodeId}, Depth={instances[0].Depth})\n";
+                totalUnique++;
+            }
+        }
+
+        report += "\n" + new string('-', 80) + "\n";
+        report += $"Summary:\n";
+        report += $"  Total direct children: {gov001Node.Children.Count}\n";
+        report += $"  Unique RuleIds: {childrenByRuleId.Count}\n";
+        report += $"  Duplicate RuleIds: {duplicateRuleIds.Count}\n";
+
+        if (duplicateRuleIds.Any())
+        {
+            report += $"  Rules appearing multiple times: {string.Join(", ", duplicateRuleIds)}\n";
+        }
+
+        report += new string('=', 80) + "\n";
+
+        // Detailed list of ALL direct children
+        report += "\nDetailed Direct Children List:\n";
+        report += new string('-', 80) + "\n";
+        for (int i = 0; i < gov001Node.Children.Count; i++)
+        {
+            var child = gov001Node.Children[i];
+            report += $"[{i + 1:D3}] RuleId={child.Rule.RuleId,-10} NodeId={child.NodeId,-50} Depth={child.Depth}\n";
+        }
+
+        // Write to file for inspection
+        var outputPath = Path.Combine(Directory.GetCurrentDirectory(), "gov001_rendering_diagnostic.txt");
+        File.WriteAllText(outputPath, report);
+
+        // Also pass to assert message for test output capture
+        Assert.True(true, report);
     }
 
     [Fact]

@@ -327,14 +327,42 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
     {
         var allRules = catalog.ToList();
 
-        // Build ID lookup including aliases so references resolve across alias boundaries
+        // Build ID lookup: Primary IDs take precedence over aliases to avoid ambiguity
+        // Example: If PP-02 has alias "PP-04" AND there's a rule with ID "PP-04",
+        // byId["PP-04"] should resolve to the rule with ID "PP-04", not the alias
         var byId = new Dictionary<string, ConstitutionRule>(StringComparer.OrdinalIgnoreCase);
+
+        // STEP 1: Add all PRIMARY rule IDs first (these take precedence)
         foreach (var r in allRules)
         {
             if (!string.IsNullOrEmpty(r.RuleId))
-                byId.TryAdd(r.RuleId, r);
+                byId[r.RuleId] = r;  // Use direct assignment, not TryAdd, to establish primary mapping
+        }
+
+        // STEP 2: Add aliases, but only if the key doesn't already map to a primary rule ID
+        var aliasConflicts = new List<(string alias, string existingRule, string newRule)>();
+        foreach (var r in allRules)
+        {
             foreach (var alias in r.Aliases)
-                byId.TryAdd(alias, r);
+            {
+                if (!byId.ContainsKey(alias))
+                {
+                    byId[alias] = r;
+                }
+                else
+                {
+                    // DIAGNOSTIC: Track conflicts
+                    aliasConflicts.Add((alias, byId[alias].RuleId, r.RuleId));
+                }
+            }
+        }
+
+        // Log conflicts for debugging
+        if (aliasConflicts.Any())
+        {
+            var conflictMsg = "Alias conflicts (kept existing): " +
+                string.Join("; ", aliasConflicts.Select(c => $"{c.alias}(kept {c.existingRule}, skipped {c.newRule})"));
+            System.Diagnostics.Debug.WriteLine($"[BuildMapTree] {conflictMsg}");
         }
 
         // Rules that are not referenced by any other rule are map roots
@@ -442,8 +470,43 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         var forwardRefs = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var (id, title, _, _, raw, _) in mutableRules)
         {
-            forwardRefs[id] = ExtractRuleIds(title + "\n" + raw)
+            var extractedIds = ExtractRuleIds(title + "\n" + raw)
                 .Where(refId => !refId.Equals(id, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            // CRITICAL FIX: Canonicalize aliases to their owner rules
+            // If an extracted ID is an alias (not a primary rule ID), replace it with the owner rule's ID
+            var canonicalIds = new List<string>();
+            foreach (var refId in extractedIds)
+            {
+                // Check if this refId is a primary rule ID
+                var isCanonical = mutableRules.Any(r => r.Id.Equals(refId, StringComparison.OrdinalIgnoreCase));
+
+                if (isCanonical)
+                {
+                    // It's a primary rule ID - use it as-is
+                    canonicalIds.Add(refId);
+                }
+                else
+                {
+                    // It might be an alias - find the owner rule
+                    var ownerRule = mutableRules.FirstOrDefault(r =>
+                        r.Aliases.Any(a => a.Equals(refId, StringComparison.OrdinalIgnoreCase)));
+
+                    if (!string.IsNullOrEmpty(ownerRule.Id))
+                    {
+                        // Replace the alias with the owner's canonical ID
+                        canonicalIds.Add(ownerRule.Id);
+                    }
+                    else
+                    {
+                        // Not a known alias either - might be an implied rule, add as-is
+                        canonicalIds.Add(refId);
+                    }
+                }
+            }
+
+            forwardRefs[id] = canonicalIds
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
@@ -562,6 +625,15 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         HashSet<string> ancestry,
         int depth)
     {
+        // DIAGNOSTIC for GOV-001 only
+        var isGov001 = rule.RuleId.Equals("GOV-001", StringComparison.OrdinalIgnoreCase);
+        if (isGov001 && depth == 0)
+        {
+            System.Diagnostics.Debug.WriteLine($"[BuildMapNode] Processing GOV-001 at depth 0");
+            System.Diagnostics.Debug.WriteLine($"  rule.References.Count = {rule.References.Count}");
+            System.Diagnostics.Debug.WriteLine($"  rule.References = {string.Join(", ", rule.References.Take(10))}...");
+        }
+
         var currentPath = new HashSet<string>(ancestry, StringComparer.OrdinalIgnoreCase);
         currentPath.Add(rule.RuleId);
         foreach (var alias in rule.Aliases) currentPath.Add(alias);
@@ -569,10 +641,39 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         var children = new List<ConstitutionMapNode>();
         if (depth < 5)
         {
+            var refIndex = 0;
             foreach (var refId in rule.References)
             {
+                refIndex++;
+
+                // DIAGNOSTIC: Log each reference resolution for GOV-001
+                if (isGov001 && depth == 0)
+                {
+                    if (byId.TryGetValue(refId, out var resolvedForDiag))
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[BuildMapNode] GOV-001 ref[{refIndex}]: '{refId}' → '{resolvedForDiag.RuleId}' " +
+                            $"({(resolvedForDiag.RuleId.Equals(refId, StringComparison.OrdinalIgnoreCase) ? "exact" : "alias")})");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[BuildMapNode] GOV-001 ref[{refIndex}]: '{refId}' → NOT FOUND");
+                    }
+                }
+
                 if (!currentPath.Contains(refId) && byId.TryGetValue(refId, out var child))
+                {
                     children.Add(BuildMapNode(child, byId, currentPath, depth + 1));
+                }
+            }
+
+            if (isGov001 && depth == 0)
+            {
+                System.Diagnostics.Debug.WriteLine($"\n[BuildMapNode] GOV-001 complete:");
+                System.Diagnostics.Debug.WriteLine($"  rule.References.Count = {rule.References.Count}");
+                System.Diagnostics.Debug.WriteLine($"  children.Count = {children.Count}");
+                var childOrder = string.Join(", ", children.Select(c => c.Rule.RuleId));
+                System.Diagnostics.Debug.WriteLine($"  children RuleIds = {childOrder}");
             }
         }
 

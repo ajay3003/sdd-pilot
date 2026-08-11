@@ -793,7 +793,9 @@
                                         </div>
                                         @foreach (var node in typeGroup)
                                         {
-                                            @RenderMapNode(node)
+                                            <div @key="node.NodeId">
+                                                @RenderMapNode(node)
+                                            </div>
                                         }
                                     </div>
                                 }
@@ -802,7 +804,9 @@
                             {
                                 @foreach (var root in MapRoots)
                                 {
-                                    @RenderMapNode(root)
+                                    <div @key="root.NodeId">
+                                        @RenderMapNode(root)
+                                    </div>
                                 }
                             }
                         </div>
@@ -1250,52 +1254,59 @@
         __builder.CloseElement(); // card
     };
 
-    private RenderFragment RenderMapNode(ConstitutionMapNode node) => __builder =>
+    private RenderFragment RenderMapNode(ConstitutionMapNode node, string? parentNodeId = null) => __builder =>
     {
         var isExpanded = _mapExpandedIds.Contains(node.NodeId);
         var hasChildren = node.Children.Count > 0;
 
+        System.Diagnostics.Debug.WriteLine($"[RenderMapNode] Rendering: NodeId={node.NodeId}, RuleId={node.Rule.RuleId}, Depth={node.Depth}, Parent={parentNodeId}, Children={node.Children.Count}");
+
         __builder.OpenElement(0, "div");
         __builder.AddAttribute(1, "class", $"ce-map-node ce-map-depth-{node.Depth} ce-map-type-{node.Rule.RuleType.ToString().ToLowerInvariant()}");
+        __builder.AddAttribute(2, "data-node-id", node.NodeId);
+        __builder.AddAttribute(3, "data-rule-id", node.Rule.RuleId);
+        __builder.AddAttribute(4, "data-depth", node.Depth);
+        if (!string.IsNullOrEmpty(parentNodeId))
+            __builder.AddAttribute(5, "data-parent-node-id", parentNodeId);
 
-        __builder.OpenElement(2, "div");
-        __builder.AddAttribute(3, "class", "ce-map-node-row");
+        __builder.OpenElement(6, "div");
+        __builder.AddAttribute(7, "class", "ce-map-node-row");
 
         if (hasChildren)
         {
-            __builder.OpenElement(4, "button");
-            __builder.AddAttribute(5, "class", "ce-map-toggle");
-            __builder.AddAttribute(6, "onclick", EventCallback.Factory.Create(this, () => ToggleMapNode(node.NodeId)));
-            __builder.AddAttribute(7, "aria-expanded", isExpanded.ToString().ToLower());
-            __builder.AddContent(8, isExpanded ? "▾" : "▸");
+            __builder.OpenElement(8, "button");
+            __builder.AddAttribute(9, "class", "ce-map-toggle");
+            __builder.AddAttribute(10, "onclick", EventCallback.Factory.Create(this, () => ToggleMapNode(node.NodeId)));
+            __builder.AddAttribute(11, "aria-expanded", isExpanded.ToString().ToLower());
+            __builder.AddContent(12, isExpanded ? "▾" : "▸");
             __builder.CloseElement();
         }
         else
         {
-            __builder.OpenElement(9, "span");
-            __builder.AddAttribute(10, "class", "ce-map-leaf");
-            __builder.AddContent(11, "·");
+            __builder.OpenElement(13, "span");
+            __builder.AddAttribute(14, "class", "ce-map-leaf");
+            __builder.AddContent(15, "·");
             __builder.CloseElement();
         }
 
         if (!string.IsNullOrEmpty(node.Rule.RuleId))
         {
-            __builder.OpenElement(12, "span");
-            __builder.AddAttribute(13, "class", $"ce-rule-id {RuleTypeBadgeClass(node.Rule.RuleType)}");
-            __builder.AddContent(14, node.Rule.RuleId);
+            __builder.OpenElement(16, "span");
+            __builder.AddAttribute(17, "class", $"ce-rule-id {RuleTypeBadgeClass(node.Rule.RuleType)}");
+            __builder.AddContent(18, node.Rule.RuleId);
             __builder.CloseElement();
         }
 
-        __builder.OpenElement(15, "span");
-        __builder.AddAttribute(16, "class", "ce-map-node-title");
-        __builder.AddContent(17, node.Rule.Title);
+        __builder.OpenElement(19, "span");
+        __builder.AddAttribute(20, "class", "ce-map-node-title");
+        __builder.AddContent(21, node.Rule.Title);
         __builder.CloseElement();
 
         if (hasChildren)
         {
-            __builder.OpenElement(18, "span");
-            __builder.AddAttribute(19, "class", "ce-map-child-count");
-            __builder.AddContent(20, $"{node.Children.Count} ref{(node.Children.Count != 1 ? "s" : "")}");
+            __builder.OpenElement(22, "span");
+            __builder.AddAttribute(23, "class", "ce-map-child-count");
+            __builder.AddContent(24, $"{node.Children.Count} ref{(node.Children.Count != 1 ? "s" : "")}");
             __builder.CloseElement();
         }
 
@@ -1303,11 +1314,14 @@
 
         if (hasChildren && isExpanded)
         {
-            __builder.OpenElement(21, "div");
-            __builder.AddAttribute(22, "class", "ce-map-children");
+            __builder.OpenElement(25, "div");
+            __builder.AddAttribute(26, "class", "ce-map-children");
+            var childIndex = 0;
             foreach (var child in node.Children)
             {
-                __builder.AddContent(23, RenderMapNode(child));
+                __builder.SetKey(child.NodeId);
+                __builder.AddContent(27 + childIndex, RenderMapNode(child, node.NodeId));
+                childIndex++;
             }
             __builder.CloseElement(); // children
         }
