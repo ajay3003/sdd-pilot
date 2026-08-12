@@ -176,7 +176,7 @@
         }
 
         <!-- Main layout: tree/map + details panel -->
-        <div class="te-main @(_selectedNodeId is not null ? "has-details" : "")">
+        <div class="te-main @(ShouldShowTaskDetails ? "has-details" : "")">
 
             @if (_isChangesView)
             {
@@ -530,9 +530,9 @@
             }
 
             <!-- ── Details Panel ──────────────────────────────────────────── -->
-            @if (_selectedNodeId is not null && _tree is not null)
+            @if (ShouldShowTaskDetails)
             {
-                var selected = TaskExplorerService.FindNode(_tree.Roots, _selectedNodeId);
+                var selected = SelectedNode;
                 @if (selected is not null)
                 {
                     <div class="te-details">
@@ -936,6 +936,14 @@
     private bool CanBuild => !string.IsNullOrWhiteSpace(EffectiveText);
     private bool HasHealthData => _health.TotalTasks > 0 || _health.TotalPhases > 0 || _health.TablesDetected > 0 || _health.UnresolvedTableRefs > 0;
     private bool HasEnrichmentData => Report is not null || _health.SpecLinked + _health.HighRisk > 0;
+    private bool IsTreeView => !_isMapView && !_isImpactView && !_isChangesView && !_isDependenciesView && !_isParallelView;
+    private TaskNode? SelectedNode => _tree is not null && _selectedNodeId is not null
+        ? TaskExplorerService.FindNode(_tree.Roots, _selectedNodeId)
+        : null;
+    private bool ShouldShowTaskDetails => SelectedNode is { } selected && CurrentViewSupportsTaskDetails(selected);
+
+    private bool CurrentViewSupportsTaskDetails(TaskNode selected) =>
+        IsTreeView || (_isMapView && selected.NodeType == TaskNodeType.Task);
 
     protected override void OnParametersSet()
     {
@@ -1554,30 +1562,43 @@
         var rootNode = _tree.Roots.FirstOrDefault();
         var phasesContainer = rootNode?.NodeType == TaskNodeType.TaskGroup ? rootNode : null;
         var phasesSource = phasesContainer?.Children ?? _tree.Roots;
-
-        var allTasks = AllNodes(phasesSource).Where(n => n.NodeType == TaskNodeType.Task).ToList();
-        var phaseCount = phasesSource.Count(n => n.NodeType == TaskNodeType.Phase);
+        var phases = phasesSource.Where(n => n.NodeType == TaskNodeType.Phase).ToList();
+        var allTasks = phases
+            .SelectMany(p => AllNodes(p.Children))
+            .Where(n => n.NodeType == TaskNodeType.Task)
+            .ToList();
 
         builder.OpenElement(3, "div");
-        builder.AddAttribute(4, "class", "te-map-header");
+        builder.AddAttribute(4, "class", "te-map-header pe-section-block");
 
         if (rootNode is not null && rootNode.NodeType == TaskNodeType.TaskGroup)
         {
-            builder.OpenElement(5, "h2");
-            builder.AddAttribute(6, "class", "te-map-title");
+            builder.OpenElement(5, "div");
+            builder.AddAttribute(6, "class", "te-map-document-title");
             builder.AddContent(7, rootNode.Title);
-            builder.CloseElement(); // h2
+            builder.CloseElement();
         }
 
         builder.OpenElement(8, "div");
-        builder.AddAttribute(9, "class", "te-map-summary");
-        builder.AddContent(10, $"{phaseCount} phases · {allTasks.Count} tasks");
-        builder.CloseElement(); // summary
+        builder.AddAttribute(9, "class", "te-map-kicker pe-section-kicker");
+        builder.AddContent(10, "Execution Map");
+        builder.CloseElement();
 
-        builder.CloseElement(); // te-map-header
+        builder.OpenElement(11, "div");
+        builder.AddAttribute(12, "class", "te-map-header-row");
 
-        // Render phases as cards
-        var phases = phasesSource.Where(n => n.NodeType == TaskNodeType.Phase).ToList();
+        builder.OpenElement(13, "h3");
+        builder.AddAttribute(14, "class", "te-map-title");
+        builder.AddContent(15, "Implementation structure by phase");
+        builder.CloseElement();
+
+        builder.OpenElement(16, "div");
+        builder.AddAttribute(17, "class", "te-map-summary ce-map-child-count");
+        builder.AddContent(18, $"{phases.Count} phases · {allTasks.Count} tasks");
+        builder.CloseElement();
+
+        builder.CloseElement();
+        builder.CloseElement();
 
         if (phases.Count == 0)
         {
@@ -1601,7 +1622,7 @@
     private void RenderPhaseCard(RenderTreeBuilder builder, ref int elemId, TaskNode phase)
     {
         builder.OpenElement(elemId++, "div");
-        builder.AddAttribute(elemId++, "class", "te-map-phase-card");
+        builder.AddAttribute(elemId++, "class", "te-map-phase-card pe-section-block");
 
         // Phase header
         builder.OpenElement(elemId++, "div");
@@ -1621,7 +1642,7 @@
         builder.CloseElement(); // te-map-phase-header
 
         // Phase content: task groups and tasks
-        var taskGroups = phase.Children.Where(n => n.NodeType == TaskNodeType.TaskGroup).ToList();
+        var taskGroups = phase.Children.Where(IsExecutionGroup).ToList();
         var directTasks = phase.Children.Where(n => n.NodeType == TaskNodeType.Task).ToList();
 
         // Render task groups
@@ -1709,19 +1730,20 @@
             builder.CloseElement();
         }
 
-        if (task.IsParallel)
-        {
-            builder.OpenElement(elemId++, "span");
-            builder.AddAttribute(elemId++, "class", "te-chip te-chip-parallel");
-            builder.AddContent(elemId++, "P");
-            builder.CloseElement();
-        }
-
         if (task.IsCompleted)
         {
             builder.OpenElement(elemId++, "span");
-            builder.AddAttribute(elemId++, "class", "te-chip te-chip-status te-chip-status-done");
-            builder.AddContent(elemId++, "✓");
+            builder.AddAttribute(elemId++, "class", "te-map-status-badge");
+            builder.AddAttribute(elemId++, "aria-label", "Completed");
+            builder.AddContent(elemId++, "Complete");
+            builder.CloseElement();
+        }
+
+        if (task.IsParallel)
+        {
+            builder.OpenElement(elemId++, "span");
+            builder.AddAttribute(elemId++, "class", "te-map-parallel-badge");
+            builder.AddContent(elemId++, "Parallel");
             builder.CloseElement();
         }
 
@@ -1729,6 +1751,12 @@
 
         builder.CloseElement(); // te-map-task
     }
+
+    private static bool IsExecutionGroup(TaskNode node) =>
+        (node.NodeType == TaskNodeType.TaskGroup ||
+         node.NodeType == TaskNodeType.UserStoryGroup ||
+         node.NodeType == TaskNodeType.DeepGroup) &&
+        AllNodes(node.Children).Any(n => n.NodeType == TaskNodeType.Task);
 
 
     private RenderFragment RenderParallelView() => builder =>

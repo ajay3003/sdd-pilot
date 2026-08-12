@@ -32,6 +32,7 @@ public class TaskExplorerPageTests : BunitContext
 
     public TaskExplorerPageTests()
     {
+        Services.AddSingleton<MarkdownRenderingService>();
         JSInterop.SetupVoid("localStorage.setItem", _ => true);
         JSInterop.Setup<string?>("localStorage.getItem", _ => true).SetResult(null);
         JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
@@ -45,6 +46,98 @@ public class TaskExplorerPageTests : BunitContext
 
         cut.Find("[data-testid='te-changes-tab-btn']").Should().NotBeNull();
         cut.Find("[data-testid='te-changes-tab-btn']").TextContent.Trim().Should().Be("Changes");
+    }
+
+    [Fact]
+    public void TaskDetails_ShowsInTreeWhenTaskSelected()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SampleTasks));
+
+        ClickTaskRow(cut, "T001");
+
+        cut.Find("[data-testid='te-task-details']").TextContent.Should().Contain("Task Details");
+        cut.Find(".te-main").GetAttribute("class").Should().Contain("has-details");
+    }
+
+    [Fact]
+    public void TaskDetails_HidesWhenSwitchingTreeToImpact()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SampleTasks));
+
+        ClickTaskRow(cut, "T001");
+        ClickTab(cut, "Impact");
+
+        cut.FindAll("[data-testid='te-task-details']").Should().BeEmpty();
+        cut.Find(".te-main").GetAttribute("class").Should().NotContain("has-details");
+    }
+
+    [Fact]
+    public void TaskDetails_HidesInDependencies()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SampleTasks));
+
+        ClickTaskRow(cut, "T001");
+        ClickTab(cut, "Dependencies");
+
+        cut.FindAll("[data-testid='te-task-details']").Should().BeEmpty();
+        cut.Find(".te-main").GetAttribute("class").Should().NotContain("has-details");
+    }
+
+    [Fact]
+    public void TaskDetails_HidesInParallelByDefault()
+    {
+        var parallelTasks = """
+            # Phase 1
+
+            - [ ] T001 Implement login [P]
+            - [ ] T002 Implement logout
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, parallelTasks));
+
+        ClickTaskRow(cut, "T001");
+        ClickTab(cut, "Parallel");
+
+        cut.FindAll("[data-testid='te-task-details']").Should().BeEmpty();
+        cut.Find(".te-main").GetAttribute("class").Should().NotContain("has-details");
+    }
+
+    [Fact]
+    public void TaskDetails_HidesInChanges()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SampleTasks));
+
+        ClickTaskRow(cut, "T001");
+        ClickTab(cut, "Changes");
+
+        cut.FindAll("[data-testid='te-task-details']").Should().BeEmpty();
+        cut.Find(".te-main").GetAttribute("class").Should().NotContain("has-details");
+    }
+
+    [Fact]
+    public void Changes_UsesFullWidthWhenDrawerHidden()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SampleTasks));
+
+        ClickTaskRow(cut, "T001");
+        ClickTab(cut, "Changes");
+
+        cut.Find("[data-testid='te-changes-view']").Should().NotBeNull();
+        cut.Find(".te-main").GetAttribute("class").Should().Be("te-main ");
+    }
+
+    [Fact]
+    public void ReturningToTree_PreservesSelection()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SampleTasks));
+
+        ClickTaskRow(cut, "T001");
+        ClickTab(cut, "Impact");
+        ClickTab(cut, "Tree");
+
+        cut.Find("[data-testid='te-task-details']").TextContent.Should().Contain("Task Details");
+        cut.Find(".te-main").GetAttribute("class").Should().Contain("has-details");
+        cut.FindAll(".te-row.is-selected").Should().ContainSingle(row => row.TextContent.Contains("T001"));
     }
 
     [Fact]
@@ -1640,6 +1733,157 @@ public class TaskExplorerPageTests : BunitContext
     }
 
     [Fact]
+    public void MapView_RendersSevenPhases()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        ClickTab(cut, "Map");
+
+        cut.FindAll(".te-map-phase-card").Should().HaveCount(7);
+        cut.Find(".te-map-summary").TextContent.Should().Contain("7 phases");
+        cut.Find(".te-map-summary").TextContent.Should().Contain("38 tasks");
+    }
+
+    [Fact]
+    public void MapView_RendersPhaseTaskCounts()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        ClickTab(cut, "Map");
+
+        var phaseCards = cut.FindAll(".te-map-phase-card");
+        phaseCards.Any(card =>
+            card.TextContent.Contains("Phase 1") && card.QuerySelector(".te-map-phase-count")?.TextContent.Contains("2 tasks") == true)
+            .Should().BeTrue();
+        phaseCards.Any(card =>
+            card.TextContent.Contains("Phase 2") && card.QuerySelector(".te-map-phase-count")?.TextContent.Contains("15 tasks") == true)
+            .Should().BeTrue();
+        phaseCards.Any(card =>
+            card.TextContent.Contains("Phase 7") && card.QuerySelector(".te-map-phase-count")?.TextContent.Contains("2 tasks") == true)
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void MapView_RendersTaskGroupsWithLabeledCounts()
+    {
+        var tasks = """
+            ## Phase 1
+
+            ### Infrastructure changes
+
+            - [ ] T001 Setup database
+            - [ ] T002 Configure API
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        ClickTab(cut, "Map");
+
+        var group = cut.Find(".te-map-group-header");
+        group.QuerySelector(".te-map-group-title")!.TextContent.Should().Contain("Infrastructure changes");
+        group.QuerySelector(".te-map-group-count")!.TextContent.Trim().Should().Be("2 tasks");
+        group.TextContent.Should().NotContain("(2)");
+    }
+
+    [Fact]
+    public void MapView_TaskIdAndTitleAreSeparateElements()
+    {
+        var tasks = """
+            ## Phase 1
+
+            - [ ] T001 ScimAdapter project setup
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        ClickTab(cut, "Map");
+
+        var task = cut.Find(".te-map-task");
+        task.QuerySelector(".te-map-task-id")!.TextContent.Trim().Should().Be("T001");
+        task.QuerySelector(".te-map-task-title")!.TextContent.Should().Contain("ScimAdapter project setup");
+        task.QuerySelector(".te-map-task-title")!.TextContent.Should().NotContain("T001");
+    }
+
+    [Fact]
+    public void MapView_RendersT033a()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        ClickTab(cut, "Map");
+
+        var taskIds = cut.FindAll(".te-map-task-id").Select(id => id.TextContent.Trim()).ToList();
+        taskIds.Should().Contain("T033");
+        taskIds.Should().Contain("T033a");
+    }
+
+    [Fact]
+    public void MapView_DoesNotRenderDocumentationSupportSections()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        ClickTab(cut, "Map");
+
+        var mapText = cut.Find(".te-map").TextContent;
+        mapText.Should().NotContain("Phase Dependencies");
+        mapText.Should().NotContain("Within Each User Story");
+        mapText.Should().NotContain("Parallel Execution Examples");
+        mapText.Should().NotContain("Implementation Strategy");
+        mapText.Should().NotContain("Summary");
+        mapText.Should().NotContain("Format:");
+    }
+
+    [Fact]
+    public void MapView_DoesNotRenderPhaseMetadata()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        ClickTab(cut, "Map");
+
+        var mapText = cut.Find(".te-map").TextContent;
+        mapText.Should().NotContain("Purpose");
+        mapText.Should().NotContain("Independent Test");
+        mapText.Should().NotContain("Checkpoint");
+        mapText.Should().NotContain("CRITICAL");
+    }
+
+    [Fact]
+    public void MapView_DoesNotRenderRawParallelMarkerText()
+    {
+        var tasks = """
+            ## Phase 1
+
+            - [x] T001 Setup [P]
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        ClickTab(cut, "Map");
+
+        cut.Find(".te-map").TextContent.Should().NotContain("[P]");
+        cut.FindAll(".te-map-task-chips span").Should().NotContain(chip => chip.TextContent.Trim() == "P");
+        cut.Find(".te-map-parallel-badge").TextContent.Trim().Should().Be("Parallel");
+    }
+
+    [Fact]
+    public void MapView_UsesSharedExplorerStyleClasses()
+    {
+        var tasks = """
+            ## Phase 1
+
+            - [ ] T001 Task A
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        ClickTab(cut, "Map");
+
+        cut.Find(".te-map-header").ClassList.Should().Contain("pe-section-block");
+        cut.Find(".te-map-kicker").ClassList.Should().Contain("pe-section-kicker");
+        cut.Find(".te-map-summary").ClassList.Should().Contain("ce-map-child-count");
+        cut.Find(".te-map-phase-card").ClassList.Should().Contain("pe-section-block");
+    }
+
+    [Fact]
     public void MapView_DoesNotRenderDocumentationSections()
     {
         var withDocs = """
@@ -2022,6 +2266,38 @@ public class TaskExplorerPageTests : BunitContext
 
         var depsContent = cut.Find(".te-dependencies-view-content").TextContent;
         depsContent.Should().Contain("No explicit task dependencies", "Should show empty state when no dependencies");
+    }
+
+    private static void ClickTaskRow(IRenderedComponent<TaskExplorerPanel> cut, string taskId)
+    {
+        var row = cut.FindAll(".te-row").FirstOrDefault(r => r.TextContent.Contains(taskId));
+        row.Should().NotBeNull($"task row {taskId} should be rendered in Tree view");
+        row!.Click();
+    }
+
+    private static void ClickTab(IRenderedComponent<TaskExplorerPanel> cut, string label)
+    {
+        var tab = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains(label));
+        tab.Should().NotBeNull($"{label} tab button should exist");
+        tab!.Click();
+    }
+
+    private static string ReadRealScimTasks()
+    {
+        var scimTasksPath = Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "SampleData",
+            "autorisasjon",
+            "tasks.md");
+
+        File.Exists(scimTasksPath).Should().BeTrue($"real SCIM tasks fixture should exist at {scimTasksPath}");
+        return File.ReadAllText(scimTasksPath);
     }
 
 }
