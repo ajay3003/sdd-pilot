@@ -574,10 +574,8 @@
                                             var subsecExpanded = (index == 0) ? !_expanded.Contains(subsecNodeId) : _expanded.Contains(subsecNodeId);
                                             <div class="pe-subsection @(subsecExpanded ? "is-expanded" : "")">
                                                 <button class="pe-subsection-header" @onclick="() => Toggle(subsecNodeId)" aria-expanded="@subsecExpanded.ToString().ToLower()">
-                                                    <span class="pe-subsection-title">
-                                                        <span class="pe-expand-icon" aria-hidden="true">@(subsecExpanded ? "▾" : "▸")</span>
-                                                        @subsec.Heading
-                                                    </span>
+                                                    <span class="pe-subsection-title">@subsec.Heading</span>
+                                                    <span class="pe-expand-icon" aria-hidden="true">@(subsecExpanded ? "▾" : "▸")</span>
                                                 </button>
                                                 @if (subsecExpanded)
                                                 {
