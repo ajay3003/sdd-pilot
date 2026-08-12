@@ -111,4 +111,164 @@ public class TaskExplorerPageTests : BunitContext
         dto.TaskDeltas.Should().BeFalse(
             "Task Deltas is deprecated as a standalone feature — it defaults to hidden");
     }
+
+    // ── Phase Metadata Parsing and Service Tests ──────────────────────────
+
+    [Fact]
+    public void PhasePurpose_IsParsedFromMarkdown()
+    {
+        var markdown = """
+            # Tasks
+
+            ## Phase 1
+
+            **Purpose**: Setup the initial project structure
+
+            - [x] T001 Create project
+            """;
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var phase = tree.Roots.FirstOrDefault()?.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        phase.Should().NotBeNull("Phase should be parsed");
+        phase!.PhasePurpose.Should().NotBeNullOrEmpty("Purpose should be extracted from markdown");
+        phase.PhasePurpose.Should().Contain("Setup the initial");
+    }
+
+    [Fact]
+    public void PhaseGoal_IsParsedFromMarkdown()
+    {
+        var markdown = """
+            # Tasks
+
+            ## Phase 1
+
+            **Goal**: Complete all foundational tasks
+
+            - [x] T001 Create project
+            """;
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var phase = tree.Roots.FirstOrDefault()?.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        phase.Should().NotBeNull();
+        phase!.PhaseGoal.Should().NotBeNullOrEmpty("Goal should be extracted from markdown");
+        phase.PhaseGoal.Should().Contain("foundational");
+    }
+
+    [Fact]
+    public void PhaseIndependentTest_IsParsedFromMarkdown()
+    {
+        var markdown = """
+            # Tasks
+
+            ## Phase 1
+
+            **Independent Test**: Verify project builds successfully
+
+            - [x] T001 Create project
+            """;
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var phase = tree.Roots.FirstOrDefault()?.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        phase.Should().NotBeNull();
+        phase!.PhaseIndependentTest.Should().NotBeNullOrEmpty("Independent Test should be extracted");
+        phase.PhaseIndependentTest.Should().Contain("builds");
+    }
+
+    [Fact]
+    public void PhaseCheckpoint_IsParsedFromMarkdown()
+    {
+        var markdown = """
+            # Tasks
+
+            ## Phase 1
+
+            **Checkpoint**: All foundational setup complete
+
+            - [x] T001 Create project
+            """;
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var phase = tree.Roots.FirstOrDefault()?.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        phase.Should().NotBeNull();
+        phase!.PhaseCheckpoint.Should().NotBeNullOrEmpty("Checkpoint should be extracted");
+        phase.PhaseCheckpoint.Should().Contain("foundational");
+    }
+
+    [Fact]
+    public void MissingMetadata_IsNotStored()
+    {
+        var markdown = """
+            # Tasks
+
+            ## Phase 1
+
+            - [x] T001 Create project
+            """;
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var phase = tree.Roots.FirstOrDefault()?.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        phase.Should().NotBeNull();
+        phase!.PhasePurpose.Should().BeNullOrEmpty("Purpose should not be stored when missing");
+        phase.PhaseGoal.Should().BeNullOrEmpty("Goal should not be stored when missing");
+        phase.PhaseIndependentTest.Should().BeNullOrEmpty("Independent Test should not be stored when missing");
+        phase.PhaseCheckpoint.Should().BeNullOrEmpty("Checkpoint should not be stored when missing");
+    }
+
+    [Fact]
+    public void AllMetadata_IsParsedWhenPresent()
+    {
+        var markdown = """
+            # Tasks
+
+            ## Phase 1
+
+            **Purpose**: Setup phase
+
+            **Goal**: Complete setup
+
+            **Independent Test**: Verify it works
+
+            - [x] T001 Create project
+            - [x] T002 Configure
+
+            **Checkpoint**: Setup complete
+            """;
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var phase = tree.Roots.FirstOrDefault()?.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        phase.Should().NotBeNull();
+        phase!.PhasePurpose.Should().Contain("Setup");
+        phase.PhaseGoal.Should().Contain("Complete");
+        phase.PhaseIndependentTest.Should().Contain("Verify");
+        phase.PhaseCheckpoint.Should().Contain("complete");
+    }
+
+    [Fact]
+    public void Metadata_HandlesMarkdownFormatting()
+    {
+        var markdown = """
+            # Tasks
+
+            ## Phase 1
+
+            **Purpose**: Create a **bold** and *italic* project structure with `code`
+
+            - [x] T001 Create project
+            """;
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var phase = tree.Roots.FirstOrDefault()?.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        phase.Should().NotBeNull();
+        phase!.PhasePurpose.Should().NotBeNullOrEmpty("Markdown formatting should be preserved in metadata");
+        phase.PhasePurpose.Should().Contain("**bold**");
+        phase.PhasePurpose.Should().Contain("*italic*");
+        phase.PhasePurpose.Should().Contain("`code`");
+    }
 }

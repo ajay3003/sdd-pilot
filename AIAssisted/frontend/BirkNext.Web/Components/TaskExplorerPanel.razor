@@ -415,12 +415,14 @@
                 }
                 else
                 {
-                    @foreach (var (node, depth, isMatch) in _flatCache)
+                    @for (var i = 0; i < _flatCache.Count; i++)
                     {
+                        var (node, depth, isMatch) = _flatCache[i];
                         var hasChildren = node.Children.Count > 0;
                         var isExpanded = _expandedIds.Contains(node.Id);
                         var isSelected = _selectedNodeId == node.Id;
                         var isHeading = node.HeadingLevel > 0;
+                        var isPhase = node.NodeType == TaskNodeType.Phase;
 
                         <div class="te-row @(isSelected ? "is-selected" : "") @(isMatch ? "is-match" : "") @(isHeading || node.NodeType == TaskNodeType.TableSection ? "is-heading" : "is-item") @(_isMapView ? "te-row-map" : "")"
                              style="padding-left: @(depth * (_isMapView ? 24 : 16) + 6)px"
@@ -543,6 +545,49 @@
                                 <span class="te-table-link-count">@node.LinkedTaskIds.Count task ref@(node.LinkedTaskIds.Count != 1 ? "s" : "")</span>
                             }
                         </div>
+
+                        <!-- Phase metadata rendering -->
+                        @if (isPhase && isExpanded)
+                        {
+                            @if (!string.IsNullOrEmpty(node.PhasePurpose))
+                            {
+                                <div class="te-metadata-section" style="padding-left: @((depth + 1) * (_isMapView ? 24 : 16) + 6)px">
+                                    <div class="te-metadata-label">Purpose</div>
+                                    <MarkdownContent Content="@node.PhasePurpose" CssClass="te-metadata-content" />
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrEmpty(node.PhaseGoal))
+                            {
+                                <div class="te-metadata-section" style="padding-left: @((depth + 1) * (_isMapView ? 24 : 16) + 6)px">
+                                    <div class="te-metadata-label">Goal</div>
+                                    <MarkdownContent Content="@node.PhaseGoal" CssClass="te-metadata-content" />
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrEmpty(node.PhaseIndependentTest))
+                            {
+                                <div class="te-metadata-section" style="padding-left: @((depth + 1) * (_isMapView ? 24 : 16) + 6)px">
+                                    <div class="te-metadata-label">Independent Test</div>
+                                    <MarkdownContent Content="@node.PhaseIndependentTest" CssClass="te-metadata-content" />
+                                </div>
+                            }
+                        }
+
+                        <!-- Render Checkpoint when transitioning out of phase children -->
+                        @if (isPhase && isExpanded)
+                        {
+                            var isLastChild = i + 1 >= _flatCache.Count;
+                            var nextIsNotChild = !isLastChild && _flatCache[i + 1].Depth <= depth;
+
+                            if ((isLastChild || nextIsNotChild) && !string.IsNullOrEmpty(node.PhaseCheckpoint))
+                            {
+                                <div class="te-metadata-section" style="padding-left: @((depth + 1) * (_isMapView ? 24 : 16) + 6)px">
+                                    <div class="te-metadata-label">Checkpoint</div>
+                                    <MarkdownContent Content="@node.PhaseCheckpoint" CssClass="te-metadata-content" />
+                                </div>
+                            }
+                        }
                     }
                 }
             </div>

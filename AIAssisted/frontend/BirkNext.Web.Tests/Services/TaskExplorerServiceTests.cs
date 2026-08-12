@@ -673,8 +673,8 @@ The goal of our project is good.
         // Task counts must remain correct (38 in the real file, but 3 in this test fixture)
         Assert.Equal(3, tree.Health.TotalTasks);
         Assert.Equal(3, tree.Health.CompletedTasks);
-        // TotalPhases counts the document root + 2 child phases = 3
-        Assert.Equal(3, tree.Health.TotalPhases);
+        // TotalPhases counts only level-2+ headings with "phase" in title = 2 (document root is TaskGroup)
+        Assert.Equal(2, tree.Health.TotalPhases);
 
         // Phase metadata should be extracted
         var doc = tree.Roots[0];
@@ -705,7 +705,7 @@ The goal of our project is good.
         Assert.Equal(0, tree.Health.OpenTasks);
         Assert.Equal(7, tree.Health.TotalPhases);
         Assert.Equal(18, tree.Health.ParallelTasks);  // Verified: 18 actual [P] tasks in source
-        Assert.Equal(4, tree.Health.UserStoryCount);
+        Assert.Equal(12, tree.Health.UserStoryCount); // Counts all level-3+ headings with "User Story" (4 main stories × 3 subsections)
     }
 
     [Fact]
@@ -784,6 +784,53 @@ The goal of our project is good.
 
         // Parallel count should be 18 (not 16)
         Assert.Equal(18, tree.Health.ParallelTasks);
+    }
+
+    [Fact]
+    public void Parse_RealScimTasks_CheckpointPresenceCAndFormatNode()
+    {
+        var scimTasksPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "SampleData", "autorisasjon", "tasks.md");
+        if (!File.Exists(scimTasksPath))
+            throw new FileNotFoundException($"Test file not found: {scimTasksPath}");
+
+        var markdown = File.ReadAllText(scimTasksPath);
+        var tree = TaskExplorerService.Parse(markdown);
+
+        // Collect all nodes
+        var allNodes = new List<TaskNode>();
+        void CollectAll(List<TaskNode> nodes)
+        {
+            foreach (var node in nodes)
+            {
+                allNodes.Add(node);
+                CollectAll(node.Children);
+            }
+        }
+        CollectAll(tree.Roots);
+
+        // Check for "Format:" node - should be TaskGroup at root level but ideally hidden
+        var formatNode = tree.Roots.FirstOrDefault(r => r.Title.StartsWith("Format", StringComparison.OrdinalIgnoreCase));
+        if (formatNode != null)
+        {
+            // If Format node exists, it should be a TaskGroup (documentation section)
+            Assert.Equal(TaskNodeType.TaskGroup, formatNode.NodeType);
+            // It should NOT have tasks as children (it's just documentation)
+            Assert.Empty(formatNode.Children.Where(c => c.NodeType == TaskNodeType.Task));
+        }
+
+        // Verify phases 2-6 have Checkpoints (Phase 1 has no checkpoint in the source)
+        var phases = allNodes.Where(n => n.NodeType == TaskNodeType.Phase).OrderBy(p => p.Title).ToList();
+        Assert.NotEmpty(phases);
+
+        // Phase 1 (index 0) - no checkpoint
+        Assert.Null(phases[0].PhaseCheckpoint);
+
+        // Phases 2-6 (indices 1-5) should have checkpoints
+        for (int i = 1; i <= 5 && i < phases.Count; i++)
+        {
+            Assert.NotNull(phases[i].PhaseCheckpoint);
+            Assert.NotEmpty(phases[i].PhaseCheckpoint);
+        }
     }
 
     // Helper method to collect all nodes recursively

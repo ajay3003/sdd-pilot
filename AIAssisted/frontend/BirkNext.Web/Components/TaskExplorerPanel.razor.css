@@ -1511,3 +1511,26 @@ button.te-ref-chip:hover {
     background: rgba(45, 212, 191, 0.15);
     color: #2dd4bf;
 }
+
+/* ── Phase Metadata Sections ────────────────────────────────────────── */
+
+.te-metadata-section {
+    padding: 0.5rem 0.75rem;
+    background: rgba(255, 255, 255, 0.015);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.te-metadata-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(45, 212, 191, 0.8);
+    margin-bottom: 0.35rem;
+}
+
+.te-metadata-content {
+    font-size: 0.77rem;
+    color: var(--clr-text-subtle);
+    line-height: 1.45;
+}
