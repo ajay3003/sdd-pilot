@@ -435,17 +435,11 @@
                                 </span>
                             }
 
-                            <!-- Heading task counts + progress bar + status badge -->
+                            <!-- Heading task count -->
                             @if (isHeading && node.TaskCount > 0)
                             {
-                                var phasePct = (int)Math.Round((double)node.CompletedCount / node.TaskCount * 100);
-                                var phaseStatusClass = phasePct == 100 ? "complete" : "in-progress";
                                 <span class="te-meta-chips">
                                     <span class="te-meta-chip">@node.CompletedCount / @node.TaskCount</span>
-                                    <span class="te-phase-progress" title="@(phasePct)% complete">
-                                        <span class="te-phase-bar" style="width:@(phasePct)%"></span>
-                                    </span>
-                                    <span class="te-phase-badge te-phase-badge-@phaseStatusClass">@(phasePct)%</span>
                                 </span>
                             }
 
@@ -1401,346 +1395,341 @@
                 .Where(n => n.NodeType == TaskNodeType.Task && !string.IsNullOrEmpty(n.TaskId))
                 .ToDictionary(n => n.TaskId!, StringComparer.OrdinalIgnoreCase);
 
-            // Group dependencies by source task's user story (if available)
-            var depsByStory = new Dictionary<string, List<(string Source, string Target)>>(StringComparer.OrdinalIgnoreCase);
+            // Build BlockedBy and Blocks maps
+            var blockedByMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            var blocksMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var dep in _tree.ExplicitDependencies)
             {
-                var storyKey = "General";
-                if (taskMap.TryGetValue(dep.SourceTaskId, out var sourceTask) && !string.IsNullOrEmpty(sourceTask.UserStoryTag))
-                {
-                    storyKey = sourceTask.UserStoryTag;
-                }
+                // dep.SourceTaskId is blocked by dep.DependsOnTaskId
+                if (!blockedByMap.ContainsKey(dep.SourceTaskId))
+                    blockedByMap[dep.SourceTaskId] = new();
+                blockedByMap[dep.SourceTaskId].Add(dep.DependsOnTaskId);
 
-                if (!depsByStory.ContainsKey(storyKey))
-                    depsByStory[storyKey] = new();
-
-                depsByStory[storyKey].Add((dep.SourceTaskId, dep.DependsOnTaskId));
+                // dep.DependsOnTaskId blocks dep.SourceTaskId
+                if (!blocksMap.ContainsKey(dep.DependsOnTaskId))
+                    blocksMap[dep.DependsOnTaskId] = new();
+                blocksMap[dep.DependsOnTaskId].Add(dep.SourceTaskId);
             }
 
-            // Render each story group
-            var orderedStories = depsByStory.Keys.OrderBy(k => k).ToList();
-            foreach (var story in orderedStories)
-            {
-                builder.OpenElement(5, "div");
-                builder.AddAttribute(6, "class", "te-dep-story-group");
+            // Get all unique tasks involved in dependencies
+            var taskInDeps = new HashSet<string>(blockedByMap.Keys.Union(blocksMap.Keys), StringComparer.OrdinalIgnoreCase);
 
-                // Story title
-                builder.OpenElement(7, "h4");
-                builder.AddAttribute(8, "class", "te-dep-story-title");
-                builder.AddContent(9, story);
+            // Group tasks by user story
+            var tasksByStory = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var taskId in taskInDeps.OrderBy(t => t))
+            {
+                var storyKey = "General";
+                if (taskMap.TryGetValue(taskId, out var task) && !string.IsNullOrEmpty(task.UserStoryTag))
+                    storyKey = task.UserStoryTag;
+
+                if (!tasksByStory.ContainsKey(storyKey))
+                    tasksByStory[storyKey] = new();
+                tasksByStory[storyKey].Add(taskId);
+            }
+
+            // Summary
+            builder.OpenElement(2, "div");
+            builder.AddAttribute(3, "class", "te-dep-summary");
+            builder.AddContent(4, $"{_tree.ExplicitDependencies.Count} explicit dependencies across {tasksByStory.Count} user stories");
+            builder.CloseElement();
+
+            // Render each story group
+            var seq = 5;
+            foreach (var story in tasksByStory.Keys.OrderBy(k => k))
+            {
+                builder.OpenElement(seq++, "div");
+                builder.AddAttribute(seq++, "class", "te-dep-story-card");
+
+                // Story title with task count
+                builder.OpenElement(seq++, "div");
+                builder.AddAttribute(seq++, "class", "te-dep-story-header");
+
+                builder.OpenElement(seq++, "h4");
+                builder.AddAttribute(seq++, "class", "te-dep-story-name");
+                builder.AddContent(seq++, story);
                 builder.CloseElement();
 
-                // Build chains from dependencies
-                var chains = BuildDependencyChains(depsByStory[story]);
-                foreach (var chain in chains)
+                var depCount = tasksByStory[story].Sum(t => (blockedByMap.ContainsKey(t) ? blockedByMap[t].Count : 0) + (blocksMap.ContainsKey(t) ? blocksMap[t].Count : 0));
+                builder.OpenElement(seq++, "span");
+                builder.AddAttribute(seq++, "class", "te-dep-story-count");
+                builder.AddContent(seq++, $"{depCount} dependencies");
+                builder.CloseElement();
+
+                builder.CloseElement(); // header
+
+                // Render tasks in this story
+                foreach (var taskId in tasksByStory[story].OrderBy(t => t))
                 {
-                    RenderDependencyChain(builder, chain, depsByStory[story]);
+                    RenderDependencyTaskRow(builder, taskId, taskMap, blockedByMap, blocksMap, ref seq);
                 }
 
-                builder.CloseElement();
+                builder.CloseElement(); // story card
             }
         }
 
         builder.CloseElement();
     };
 
+    private void RenderDependencyTaskRow(RenderTreeBuilder builder, string taskId, Dictionary<string, TaskNode> taskMap,
+        Dictionary<string, List<string>> blockedByMap, Dictionary<string, List<string>> blocksMap, ref int seq)
+    {
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "te-dep-task-row");
+
+        // Task ID and title
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "te-dep-task-header");
+
+        builder.OpenElement(seq++, "span");
+        builder.AddAttribute(seq++, "class", "te-dep-task-id-badge");
+        builder.AddContent(seq++, taskId);
+        builder.CloseElement();
+
+        if (taskMap.TryGetValue(taskId, out var task) && !string.IsNullOrEmpty(task.ShortTitle))
+        {
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "te-dep-task-title");
+            builder.AddContent(seq++, task.ShortTitle);
+            builder.CloseElement();
+        }
+
+        builder.CloseElement(); // header
+
+        // BlockedBy relationships
+        if (blockedByMap.ContainsKey(taskId) && blockedByMap[taskId].Count > 0)
+        {
+            RenderDependencyLabel(builder, "Blocked by", blockedByMap[taskId].OrderBy(t => t).ToList(), ref seq);
+        }
+
+        // Blocks relationships
+        if (blocksMap.ContainsKey(taskId) && blocksMap[taskId].Count > 0)
+        {
+            RenderDependencyLabel(builder, "Blocks", blocksMap[taskId].OrderBy(t => t).ToList(), ref seq);
+        }
+
+        builder.CloseElement(); // task row
+    }
+
+    private void RenderDependencyLabel(RenderTreeBuilder builder, string label, List<string> relatedTasks, ref int seq)
+    {
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "te-dep-relationship");
+
+        // Label
+        builder.OpenElement(seq++, "span");
+        builder.AddAttribute(seq++, "class", "te-dep-label");
+        builder.AddContent(seq++, label);
+        builder.CloseElement();
+
+        // Related task badges
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "te-dep-related-badges");
+
+        foreach (var relatedTask in relatedTasks)
+        {
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "te-dep-related-badge");
+            builder.AddContent(seq++, relatedTask);
+            builder.CloseElement();
+        }
+
+        builder.CloseElement(); // badges
+        builder.CloseElement(); // relationship
+    }
+
     private RenderFragment RenderMapView() => builder =>
     {
         builder.OpenElement(0, "div");
         builder.AddAttribute(1, "class", "te-map");
-        builder.AddAttribute(2, "role", "tree");
 
-        if (_flatCache.Count == 0)
+        if (_tree is null)
         {
-            builder.OpenElement(3, "div");
-            builder.AddAttribute(4, "class", "te-no-results");
-            if (!string.IsNullOrWhiteSpace(_searchQuery) || _activeFilter is not null)
-            {
-                builder.AddContent(5, "No tasks match the current search or filter.");
-            }
-            else if (_tree.Roots.Count == 0)
-            {
-                builder.AddContent(5, "No tasks detected. Task Explorer expects headings and task IDs such as T001, T002 in tasks.md.");
-            }
-            else
-            {
-                builder.AddContent(5, "No execution structure available.");
-            }
-            builder.CloseElement(); // te-no-results
+            builder.AddContent(2, "No execution structure available.");
+            builder.CloseElement();
+            return;
+        }
+
+        // Determine root document node and phases container
+        var rootNode = _tree.Roots.FirstOrDefault();
+        var phasesContainer = rootNode?.NodeType == TaskNodeType.TaskGroup ? rootNode : null;
+        var phasesSource = phasesContainer?.Children ?? _tree.Roots;
+
+        var allTasks = AllNodes(phasesSource).Where(n => n.NodeType == TaskNodeType.Task).ToList();
+        var phaseCount = phasesSource.Count(n => n.NodeType == TaskNodeType.Phase);
+
+        builder.OpenElement(3, "div");
+        builder.AddAttribute(4, "class", "te-map-header");
+
+        if (rootNode is not null && rootNode.NodeType == TaskNodeType.TaskGroup)
+        {
+            builder.OpenElement(5, "h2");
+            builder.AddAttribute(6, "class", "te-map-title");
+            builder.AddContent(7, rootNode.Title);
+            builder.CloseElement(); // h2
+        }
+
+        builder.OpenElement(8, "div");
+        builder.AddAttribute(9, "class", "te-map-summary");
+        builder.AddContent(10, $"{phaseCount} phases · {allTasks.Count} tasks");
+        builder.CloseElement(); // summary
+
+        builder.CloseElement(); // te-map-header
+
+        // Render phases as cards
+        var phases = phasesSource.Where(n => n.NodeType == TaskNodeType.Phase).ToList();
+
+        if (phases.Count == 0)
+        {
+            builder.OpenElement(11, "div");
+            builder.AddAttribute(12, "class", "te-no-results");
+            builder.AddContent(13, "No execution phases found.");
+            builder.CloseElement();
         }
         else
         {
-            for (var i = 0; i < _flatCache.Count; i++)
+            var elemId = 20;
+            foreach (var phase in phases)
             {
-                var (node, depth, isMatch) = _flatCache[i];
-
-                if (IsFormatGuidanceNode(node))
-                {
-                    continue;
-                }
-
-                // Map View: exclude documentation-only sections at root level
-                if (IsDocumentationOnlyNode(node))
-                {
-                    continue;
-                }
-
-                var hasChildren = node.Children.Count > 0;
-                var isSelected = _selectedNodeId == node.Id;
-                var isHeading = node.HeadingLevel > 0;
-
-                builder.OpenElement(10 + i, "div");
-                builder.AddAttribute(11 + i, "class", $"te-row te-row-map {(isSelected ? "is-selected" : "")} {(isMatch ? "is-match" : "")} {(isHeading || node.NodeType == TaskNodeType.TableSection ? "is-heading" : "is-item")}");
-                builder.AddAttribute(12 + i, "style", $"padding-left: {depth * 24 + 6}px");
-                builder.AddAttribute(13 + i, "role", "treeitem");
-                builder.AddAttribute(14 + i, "aria-selected", isSelected.ToString().ToLower());
-                builder.AddAttribute(15 + i, "onclick", EventCallback.Factory.Create(this, () => HandleNodeClick(node)));
-
-                // Content left border instead of expand button
-                builder.OpenElement(16 + i, "div");
-                builder.AddAttribute(17 + i, "class", "te-map-marker");
-                builder.CloseElement();
-
-                // Icon
-                builder.OpenElement(18 + i, "span");
-                builder.AddAttribute(19 + i, "class", "te-node-icon");
-                builder.AddAttribute(20 + i, "aria-hidden", "true");
-                builder.AddContent(21 + i, GetIcon(node.NodeType));
-                builder.CloseElement();
-
-                // Title
-                builder.OpenElement(22 + i, "span");
-                builder.AddAttribute(23 + i, "class", "te-node-title");
-                builder.AddContent(24 + i, node.ShortTitle ?? node.Title);
-                if (node.TaskId is not null && node.NodeType == TaskNodeType.Task)
-                {
-                    builder.OpenElement(25 + i, "span");
-                    builder.AddAttribute(26 + i, "class", "te-task-id");
-                    builder.AddContent(27 + i, node.TaskId);
-                    builder.CloseElement();
-                }
-                builder.CloseElement();
-
-                // Metadata chips
-                if (node.NodeType == TaskNodeType.Task)
-                {
-                    builder.OpenElement(28 + i, "span");
-                    builder.AddAttribute(29 + i, "class", "te-chips");
-
-                    if (node.UserStoryTag is not null)
-                    {
-                        builder.OpenElement(30 + i, "span");
-                        builder.AddAttribute(31 + i, "class", "te-chip te-chip-us");
-                        builder.AddContent(32 + i, node.UserStoryTag);
-                        builder.CloseElement();
-                    }
-
-                    if (node.IsParallel)
-                    {
-                        builder.OpenElement(33 + i, "span");
-                        builder.AddAttribute(34 + i, "class", "te-chip te-chip-parallel");
-                        builder.AddContent(35 + i, "P");
-                        builder.CloseElement();
-                    }
-
-                    if (node.Status.HasValue)
-                    {
-                        builder.OpenElement(36 + i, "span");
-                        builder.AddAttribute(37 + i, "class", $"te-chip te-chip-status te-chip-status-{StatusKey(node.Status.Value)}");
-                        builder.AddContent(38 + i, StatusLabel(node.Status.Value));
-                        builder.CloseElement();
-                    }
-
-                    builder.CloseElement(); // te-chips
-                }
-
-                // Child count for non-expanded nodes
-                if (!_expandedIds.Contains(node.Id) && hasChildren && node.TotalDescendants > 0)
-                {
-                    builder.OpenElement(40 + i, "span");
-                    builder.AddAttribute(41 + i, "class", "te-child-count");
-                    builder.AddContent(42 + i, $"({node.TotalDescendants})");
-                    builder.CloseElement();
-                }
-
-                builder.CloseElement(); // te-row
+                RenderPhaseCard(builder, ref elemId, phase);
             }
         }
 
         builder.CloseElement(); // te-map
     };
 
-    private List<List<string>> BuildDependencyChains(List<(string Source, string Target)> deps)
+    private void RenderPhaseCard(RenderTreeBuilder builder, ref int elemId, TaskNode phase)
     {
-        // Build chains with explicit segmentation for convergence patterns
-        var chains = new List<List<string>>();
-        var processed = new HashSet<string>();
-        var depsBySource = deps.GroupBy(d => d.Source).ToDictionary(g => g.Key, g => g.ToList());
-        var depsByTarget = deps.GroupBy(d => d.Target).ToDictionary(g => g.Key, g => g.ToList());
+        builder.OpenElement(elemId++, "div");
+        builder.AddAttribute(elemId++, "class", "te-map-phase-card");
 
-        foreach (var (source, target) in deps)
-        {
-            if (processed.Contains($"{source}→{target}")) continue;
+        // Phase header
+        builder.OpenElement(elemId++, "div");
+        builder.AddAttribute(elemId++, "class", "te-map-phase-header");
 
-            var chain = new List<string>();
-            var current = source;
+        builder.OpenElement(elemId++, "h3");
+        builder.AddAttribute(elemId++, "class", "te-map-phase-title");
+        builder.AddContent(elemId++, phase.Title);
+        builder.CloseElement(); // h3
 
-            // Find the true start (first node with no predecessors)
-            while (depsByTarget.ContainsKey(current))
-            {
-                var preds = depsByTarget[current];
-                if (preds.Count > 1) break;  // Convergence point
-                var pred = preds[0].Source;
-                if (processed.Contains($"{pred}→{current}")) break;
-                current = pred;
-            }
-
-            // Build chain forward
-            chain.Add(current);
-
-            while (depsBySource.ContainsKey(current))
-            {
-                var outgoing = depsBySource[current];
-                if (outgoing.Count == 0) break;
-
-                var nextTarget = outgoing[0].Target;
-                processed.Add($"{current}→{nextTarget}");
-
-                // Get all predecessors to this target
-                if (depsByTarget.ContainsKey(nextTarget))
-                {
-                    var allPreds = depsByTarget[nextTarget]
-                        .Select(d => d.Source)
-                        .Distinct()
-                        .OrderBy(s => s)
-                        .ToList();
-
-                    // Add any predecessors we haven't added yet
-                    foreach (var pred in allPreds)
-                    {
-                        if (!chain.Contains(pred))
-                        {
-                            chain.Add(pred);
-                        }
-                        processed.Add($"{pred}→{nextTarget}");
-                    }
-                }
-
-                chain.Add(nextTarget);
-                current = nextTarget;
-            }
-
-            // Only add non-empty unique chains
-            if (chain.Count > 0)
-            {
-                var key = string.Join("→", chain.Distinct());
-                chains = chains
-                    .Where(c => string.Join("→", c.Distinct()) != key)
-                    .ToList();
-                chains.Add(chain);
-            }
-        }
-
-        return chains;
-    }
-
-    private void RenderDependencyChain(RenderTreeBuilder builder, List<string> chain, List<(string Source, string Target)> deps)
-    {
-        builder.OpenElement(10, "div");
-        builder.AddAttribute(11, "class", "te-dep-chain");
-
-        if (chain.Count == 0)
-        {
-            builder.CloseElement();
-            return;
-        }
-
-        // Build a map of which nodes point to which targets
-        var depsBySource = deps.GroupBy(d => d.Source).ToDictionary(g => g.Key, g => g.ToList());
-        var depsByTarget = deps.GroupBy(d => d.Target).ToDictionary(g => g.Key, g => g.ToList());
-
-        // Render chain by identifying groupings based on convergence patterns
-        var rendered = new HashSet<string>();
-        var i = 0;
-        var elementIndex = 0;
-
-        while (i < chain.Count)
-        {
-            if (rendered.Contains(chain[i]))
-            {
-                i++;
-                continue;
-            }
-
-            // Find all nodes that are predecessors to the same target
-            var currentTask = chain[i];
-            var group = new List<string> { currentTask };
-            rendered.Add(currentTask);
-
-            // If this node has outgoing edges, look ahead to find other predecessors to the same target
-            if (depsBySource.ContainsKey(currentTask))
-            {
-                var target = depsBySource[currentTask][0].Target;
-
-                // Find all predecessors to this target
-                if (depsByTarget.ContainsKey(target))
-                {
-                    var allPredecessors = depsByTarget[target]
-                        .Select(d => d.Source)
-                        .OrderBy(s => s)
-                        .ToList();
-
-                    // Add other predecessors that appear in the chain and haven't been rendered
-                    foreach (var pred in allPredecessors)
-                    {
-                        if (pred != currentTask && chain.Contains(pred) && !rendered.Contains(pred))
-                        {
-                            group.Add(pred);
-                            rendered.Add(pred);
-                        }
-                    }
-                }
-            }
-
-            // Sort group deterministically for display
-            group.Sort();
-
-            // Render the group
-            for (var k = 0; k < group.Count; k++)
-            {
-                builder.OpenElement(20 + elementIndex, "span");
-                builder.AddAttribute(21 + elementIndex, "class", "te-dep-task-id");
-                builder.AddContent(22 + elementIndex, group[k]);
-                builder.CloseElement();
-                elementIndex++;
-
-                if (k < group.Count - 1)
-                {
-                    builder.OpenElement(23 + elementIndex, "span");
-                    builder.AddAttribute(24 + elementIndex, "class", "te-dep-separator");
-                    builder.AddContent(25 + elementIndex, " + ");
-                    builder.CloseElement();
-                    elementIndex++;
-                }
-            }
-
-            // Add arrow if not at end
-            if (i < chain.Count - 1 && rendered.Count < chain.Count)
-            {
-                builder.OpenElement(100 + elementIndex, "span");
-                builder.AddAttribute(101 + elementIndex, "class", "te-dep-arrow");
-                builder.AddContent(102 + elementIndex, " → ");
-                builder.CloseElement();
-                elementIndex++;
-            }
-
-            // Move to next unrendered task in chain
-            i++;
-        }
-
+        var phaseTasks = AllNodes(phase.Children).Where(n => n.NodeType == TaskNodeType.Task).ToList();
+        builder.OpenElement(elemId++, "div");
+        builder.AddAttribute(elemId++, "class", "te-map-phase-count");
+        builder.AddContent(elemId++, $"{phaseTasks.Count} task{(phaseTasks.Count != 1 ? "s" : "")}");
         builder.CloseElement();
+
+        builder.CloseElement(); // te-map-phase-header
+
+        // Phase content: task groups and tasks
+        var taskGroups = phase.Children.Where(n => n.NodeType == TaskNodeType.TaskGroup).ToList();
+        var directTasks = phase.Children.Where(n => n.NodeType == TaskNodeType.Task).ToList();
+
+        // Render task groups
+        foreach (var group in taskGroups)
+        {
+            RenderTaskGroup(builder, ref elemId, group);
+        }
+
+        // Render direct task children
+        foreach (var task in directTasks)
+        {
+            RenderMapTask(builder, ref elemId, task);
+        }
+
+        builder.CloseElement(); // te-map-phase-card
     }
+
+    private void RenderTaskGroup(RenderTreeBuilder builder, ref int elemId, TaskNode group)
+    {
+        var groupTasks = AllNodes(group.Children).Where(n => n.NodeType == TaskNodeType.Task).ToList();
+
+        builder.OpenElement(elemId++, "div");
+        builder.AddAttribute(elemId++, "class", "te-map-group");
+
+        builder.OpenElement(elemId++, "div");
+        builder.AddAttribute(elemId++, "class", "te-map-group-header");
+
+        builder.OpenElement(elemId++, "span");
+        builder.AddAttribute(elemId++, "class", "te-map-group-title");
+        builder.AddContent(elemId++, group.Title);
+        builder.CloseElement();
+
+        builder.OpenElement(elemId++, "span");
+        builder.AddAttribute(elemId++, "class", "te-map-group-count");
+        builder.AddContent(elemId++, $"{groupTasks.Count} task{(groupTasks.Count != 1 ? "s" : "")}");
+        builder.CloseElement();
+
+        builder.CloseElement(); // te-map-group-header
+
+        // Render tasks under group
+        foreach (var task in groupTasks)
+        {
+            RenderMapTask(builder, ref elemId, task);
+        }
+
+        builder.CloseElement(); // te-map-group
+    }
+
+    private void RenderMapTask(RenderTreeBuilder builder, ref int elemId, TaskNode task)
+    {
+        var isSelected = _selectedNodeId == task.Id;
+
+        builder.OpenElement(elemId++, "div");
+        builder.AddAttribute(elemId++, "class", $"te-map-task {(isSelected ? "is-selected" : "")}");
+        builder.AddAttribute(elemId++, "role", "treeitem");
+        builder.AddAttribute(elemId++, "aria-selected", isSelected.ToString().ToLower());
+        builder.AddAttribute(elemId++, "onclick", EventCallback.Factory.Create(this, () => HandleNodeClick(task)));
+
+        // Task ID badge
+        builder.OpenElement(elemId++, "span");
+        builder.AddAttribute(elemId++, "class", "te-map-task-id");
+        builder.AddContent(elemId++, task.TaskId ?? "");
+        builder.CloseElement();
+
+        // Task title and secondary
+        builder.OpenElement(elemId++, "div");
+        builder.AddAttribute(elemId++, "class", "te-map-task-content");
+
+        builder.OpenElement(elemId++, "span");
+        builder.AddAttribute(elemId++, "class", "te-map-task-title");
+        builder.AddContent(elemId++, task.ShortTitle ?? task.Title);
+        builder.CloseElement();
+
+        builder.CloseElement(); // te-map-task-content
+
+        // Metadata chips
+        builder.OpenElement(elemId++, "span");
+        builder.AddAttribute(elemId++, "class", "te-map-task-chips");
+
+        if (task.UserStoryTag is not null)
+        {
+            builder.OpenElement(elemId++, "span");
+            builder.AddAttribute(elemId++, "class", "te-chip te-chip-us");
+            builder.AddContent(elemId++, task.UserStoryTag);
+            builder.CloseElement();
+        }
+
+        if (task.IsParallel)
+        {
+            builder.OpenElement(elemId++, "span");
+            builder.AddAttribute(elemId++, "class", "te-chip te-chip-parallel");
+            builder.AddContent(elemId++, "P");
+            builder.CloseElement();
+        }
+
+        if (task.IsCompleted)
+        {
+            builder.OpenElement(elemId++, "span");
+            builder.AddAttribute(elemId++, "class", "te-chip te-chip-status te-chip-status-done");
+            builder.AddContent(elemId++, "✓");
+            builder.CloseElement();
+        }
+
+        builder.CloseElement(); // te-map-task-chips
+
+        builder.CloseElement(); // te-map-task
+    }
+
 
     private RenderFragment RenderParallelView() => builder =>
     {
@@ -1796,34 +1785,48 @@
                 {
                     builder.OpenElement(seq++, "div");
                     builder.AddAttribute(seq++, "class", "te-parallel-task");
-                    builder.AddAttribute(seq++, "style", "display: grid; grid-template-columns: 4.5rem minmax(0, 1fr) auto auto; align-items: center; gap: 0.75rem; padding: 0.625rem 1rem; background: rgba(45, 212, 191, 0.04); border-bottom: 1px solid rgba(45, 212, 191, 0.12); border-left: 3px solid rgba(45, 212, 191, 0.25); font-size: 0.85rem;");
 
+                    // Task ID badge (column 1)
                     builder.OpenElement(seq++, "span");
                     builder.AddAttribute(seq++, "class", "te-ptask-id");
-                    builder.AddAttribute(seq++, "style", "font-weight: 700; color: rgba(45, 212, 191, 0.9); font-family: monospace; text-align: center; padding: 0.25rem 0.35rem; background: rgba(45, 212, 191, 0.08); border-radius: 0.25rem; border: 1px solid rgba(45, 212, 191, 0.2); font-size: 0.8rem; line-height: 1.2; min-width: 3.5rem; white-space: nowrap;");
                     builder.AddContent(seq++, task.TaskId ?? "?");
                     builder.CloseElement();
 
-                    builder.OpenElement(seq++, "span");
-                    builder.AddAttribute(seq++, "class", "te-ptask-title");
-                    builder.AddAttribute(seq++, "style", "min-width: 0; color: var(--clr-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; line-height: 1.4;");
+                    // Title and detail section (column 2)
+                    builder.OpenElement(seq++, "div");
+                    builder.AddAttribute(seq++, "class", "te-ptask-content");
+
+                    // Primary title
+                    builder.OpenElement(seq++, "div");
+                    builder.AddAttribute(seq++, "class", "te-ptask-primary");
                     builder.AddContent(seq++, task.ShortTitle ?? task.Title);
                     builder.CloseElement();
 
+                    // Secondary detail (if different from primary)
+                    if (!string.IsNullOrEmpty(task.Title) && task.Title != (task.ShortTitle ?? task.Title))
+                    {
+                        builder.OpenElement(seq++, "div");
+                        builder.AddAttribute(seq++, "class", "te-ptask-secondary");
+                        builder.AddContent(seq++, task.Title);
+                        builder.CloseElement();
+                    }
+
+                    builder.CloseElement(); // content
+
+                    // User story tag (column 3)
                     if (!string.IsNullOrEmpty(task.UserStoryTag))
                     {
                         builder.OpenElement(seq++, "span");
                         builder.AddAttribute(seq++, "class", "te-ptask-tag");
-                        builder.AddAttribute(seq++, "style", "font-size: 0.7rem; font-weight: 600; color: rgba(251, 191, 36, 0.85); background: rgba(251, 191, 36, 0.12); padding: 0.3rem 0.6rem; border-radius: 0.25rem; white-space: nowrap; border: 1px solid rgba(251, 191, 36, 0.3);");
                         builder.AddContent(seq++, task.UserStoryTag);
                         builder.CloseElement();
                     }
 
+                    // Status (column 4)
                     if (task.IsCompleted)
                     {
                         builder.OpenElement(seq++, "span");
                         builder.AddAttribute(seq++, "class", "te-ptask-status");
-                        builder.AddAttribute(seq++, "style", "font-size: 1rem; color: rgba(74, 222, 128, 0.9); font-weight: 700; text-align: center; width: 1.5rem; height: 1.5rem; display: flex; align-items: center; justify-content: center;");
                         builder.AddContent(seq++, "✓");
                         builder.CloseElement();
                     }

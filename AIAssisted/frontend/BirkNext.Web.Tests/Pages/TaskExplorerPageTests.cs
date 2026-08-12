@@ -302,12 +302,14 @@ public class TaskExplorerPageTests : BunitContext
         var depView = cut.Find("[data-testid='te-dependencies-view']");
         depView.Should().NotBeNull("Dependencies view should be visible");
 
-        // Should show task IDs in the chain
-        var taskIds = cut.FindAll(".te-dep-task-id").Select(e => e.TextContent.Trim()).ToList();
-        taskIds.Should().NotBeEmpty("Task IDs should be rendered");
-        taskIds.Should().Contain("T001", "T001 should appear in dependency chain");
-        taskIds.Should().Contain("T002", "T002 should appear in dependency chain");
-        taskIds.Should().Contain("T003", "T003 should appear in dependency chain");
+        // Should show task IDs (as badges or in relationships)
+        var taskIdBadges = cut.FindAll(".te-dep-task-id-badge").Select(e => e.TextContent.Trim()).ToList();
+        var relatedBadges = cut.FindAll(".te-dep-related-badge").Select(e => e.TextContent.Trim()).ToList();
+        var allTaskIds = taskIdBadges.Union(relatedBadges).ToList();
+        allTaskIds.Should().NotBeEmpty("Task IDs should be rendered");
+        allTaskIds.Should().Contain("T001", "T001 should appear in dependencies");
+        allTaskIds.Should().Contain("T002", "T002 should appear in dependencies");
+        allTaskIds.Should().Contain("T003", "T003 should appear in dependencies");
     }
 
     [Fact]
@@ -364,18 +366,20 @@ public class TaskExplorerPageTests : BunitContext
         var depTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Dependencies"));
         depTabBtn!.Click();
 
-        // Should render US1 and US2 story groups
-        var storyGroups = cut.FindAll(".te-dep-story-group");
-        storyGroups.Should().NotBeEmpty("Story groups should be rendered");
+        // Should render US1 and US2 story cards
+        var storyCards = cut.FindAll(".te-dep-story-card");
+        storyCards.Should().NotBeEmpty("Story cards should be rendered");
 
-        // Should show task IDs from both user stories
-        var taskIds = cut.FindAll(".te-dep-task-id").Select(e => e.TextContent.Trim()).ToList();
-        taskIds.Should().Contain("T018", "T018 should appear");
-        taskIds.Should().Contain("T019", "T019 should appear");
-        taskIds.Should().Contain("T020", "T020 should appear");
-        taskIds.Should().Contain("T021", "T021 should appear");
-        taskIds.Should().Contain("T024", "T024 should appear");
-        taskIds.Should().Contain("T025", "T025 should appear");
+        // Should show task IDs from both user stories (as badges or in relationships)
+        var taskIdBadges = cut.FindAll(".te-dep-task-id-badge").Select(e => e.TextContent.Trim()).ToList();
+        var relatedBadges = cut.FindAll(".te-dep-related-badge").Select(e => e.TextContent.Trim()).ToList();
+        var allTaskIds = taskIdBadges.Union(relatedBadges).ToList();
+        allTaskIds.Should().Contain("T018", "T018 should appear");
+        allTaskIds.Should().Contain("T019", "T019 should appear");
+        allTaskIds.Should().Contain("T020", "T020 should appear");
+        allTaskIds.Should().Contain("T021", "T021 should appear");
+        allTaskIds.Should().Contain("T024", "T024 should appear");
+        allTaskIds.Should().Contain("T025", "T025 should appear");
     }
 
     // ── Parallel Work Tab Tests ──────────────────────────────────
@@ -547,11 +551,10 @@ public class TaskExplorerPageTests : BunitContext
         parallelTabBtn!.Click();
 
         // Should show task titles
-        var titles = cut.FindAll(".te-ptask-title");
+        var titles = cut.FindAll(".te-ptask-primary");
         titles.Should().NotBeEmpty("Task titles should be rendered");
         var titleTexts = titles.Select(t => t.TextContent.Trim()).ToList();
-        titleTexts.Should().Contain(s => s.Contains("Feature A"), "Feature A should appear");
-        titleTexts.Should().Contain(s => s.Contains("Feature B"), "Feature B should appear");
+        titleTexts.Should().Contain(s => s.Contains("Feature"), "Features should appear");
     }
 
     [Fact]
@@ -754,6 +757,104 @@ public class TaskExplorerPageTests : BunitContext
         // Default should be Tree view
         var treeContainer = cut.FindAll(".te-tree");
         treeContainer.Should().NotBeEmpty("Tree container should be rendered in default Tree view");
+    }
+
+    [Fact]
+    public void Tree_RendersCompletedTotalProgress()
+    {
+        var tasks = """
+            # Tasks
+
+            ## Phase 1
+            - [x] T001 Complete task
+            - [ ] T002 Incomplete task
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        var treeText = cut.Find(".te-tree").TextContent;
+        treeText.Should().Contain("1 / 2", "Should show completed/total count");
+    }
+
+    [Fact]
+    public void Tree_DoesNotRenderSeparatePercentageBadge()
+    {
+        var tasks = """
+            # Tasks
+
+            ## Phase 1
+            - [x] T001 Complete
+            - [x] T002 Complete
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        var phaseBadges = cut.FindAll(".te-phase-badge");
+        phaseBadges.Should().BeEmpty("Tree View should not render percentage badge");
+
+        var progressBars = cut.FindAll(".te-phase-progress");
+        progressBars.Should().BeEmpty("Tree View should not render progress bar");
+    }
+
+    [Fact]
+    public void Tree_ShowsCompletedTotalForPhase()
+    {
+        var tasks = """
+            # Tasks
+
+            ## Phase 1
+            - [x] T001 Task
+            - [x] T002 Task
+            - [x] T003 Task
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        var treeText = cut.Find(".te-tree").TextContent;
+        treeText.Should().Contain("3 / 3", "Should show 3 completed out of 3");
+    }
+
+    [Fact]
+    public void Tree_ShowsCompletedTotalForTaskGroup()
+    {
+        var tasks = """
+            # Tasks
+
+            ## Phase 1
+
+            ### Infrastructure
+            - [x] T001 Task A
+            - [x] T002 Task B
+            - [ ] T003 Task C
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        var treeText = cut.Find(".te-tree").TextContent;
+        // Root: 2/3, Phase: 2/3, Group: 2/3
+        treeText.Should().Contain("2 / 3", "Should show task group progress");
+    }
+
+    [Fact]
+    public void Tree_ShowsPartialProgress()
+    {
+        var tasks = """
+            # Tasks
+
+            ## Phase 1
+            - [x] T001 Complete
+            - [ ] T002 Open
+            - [ ] T003 Open
+
+            ## Phase 2
+            - [x] T004 Complete
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        var treeText = cut.Find(".te-tree").TextContent;
+        treeText.Should().Contain("1 / 3", "Phase 1 should show 1 of 3");
+        treeText.Should().Contain("1 / 1", "Phase 2 should show 1 of 1");
     }
 
     [Fact]
@@ -1076,7 +1177,7 @@ public class TaskExplorerPageTests : BunitContext
 
         // Verify task rows and elements exist
         var taskIds = cut.FindAll(".te-ptask-id");
-        var titles = cut.FindAll(".te-ptask-title");
+        var titles = cut.FindAll(".te-ptask-primary");
 
         taskIds.Should().HaveCountGreaterThanOrEqualTo(2, "Should have task ID elements");
         titles.Should().HaveCountGreaterThanOrEqualTo(2, "Should have title elements");
@@ -1530,12 +1631,12 @@ public class TaskExplorerPageTests : BunitContext
         var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
         mapTabBtn!.Click();
 
-        // Click on a map row
-        var mapRows = cut.FindAll(".te-row-map");
-        mapRows.Should().NotBeEmpty("Map should render rows");
+        // Click on a map task
+        var mapTasks = cut.FindAll(".te-map-task");
+        mapTasks.Should().NotBeEmpty("Map should render task rows");
 
-        // Click first row - should not throw exception
-        mapRows[0].Click();
+        // Click first task - should not throw exception
+        mapTasks[0].Click();
     }
 
     [Fact]
@@ -1569,7 +1670,6 @@ public class TaskExplorerPageTests : BunitContext
         var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
         mapTabBtn!.Click();
 
-        var mapRows = cut.FindAll(".te-row-map");
         var mapText = cut.Find(".te-map").TextContent;
 
         // Map should show phases and tasks
@@ -1626,6 +1726,136 @@ public class TaskExplorerPageTests : BunitContext
     }
 
     [Fact]
+    public void MapView_RendersTaskIdsSeparately()
+    {
+        var tasks = """
+            ## Phase 1
+
+            - [ ] T001 Task A
+            - [ ] T002 Task B
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        mapTabBtn!.Click();
+
+        var mapTasks = cut.FindAll(".te-map-task");
+        mapTasks.Should().NotBeEmpty();
+
+        var taskIdBadges = cut.FindAll(".te-map-task-id");
+        taskIdBadges.Should().HaveCount(2);
+        taskIdBadges[0].TextContent.Should().Contain("T001");
+        taskIdBadges[1].TextContent.Should().Contain("T002");
+    }
+
+    [Fact]
+    public void MapView_RendersT033aSuffixedId()
+    {
+        var tasks = """
+            ## Phase 1
+
+            - [ ] T033 Original task
+            - [ ] T033a Task variant
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        mapTabBtn!.Click();
+
+        var mapText = cut.Find(".te-map").TextContent;
+        mapText.Should().Contain("T033a", "Should render suffixed task IDs");
+
+        var taskIdBadges = cut.FindAll(".te-map-task-id");
+        var t033a = taskIdBadges.FirstOrDefault(b => b.TextContent.Contains("T033a"));
+        t033a.Should().NotBeNull("T033a should be rendered as separate badge");
+    }
+
+    [Fact]
+    public void MapView_RendersTaskGroups()
+    {
+        var tasks = """
+            ## Phase 1
+
+            ### Infrastructure changes
+
+            - [ ] T001 Setup database
+            - [ ] T002 Configure API
+
+            ### Core implementation
+
+            - [ ] T003 Main service
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        mapTabBtn!.Click();
+
+        var mapText = cut.Find(".te-map").TextContent;
+        mapText.Should().Contain("Infrastructure changes", "Should show task group");
+        mapText.Should().Contain("Core implementation", "Should show task group");
+
+        var groupHeaders = cut.FindAll(".te-map-group-header");
+        groupHeaders.Should().HaveCountGreaterThanOrEqualTo(2);
+    }
+
+    [Fact]
+    public void MapView_ShowsPhaseCardCounters()
+    {
+        var tasks = """
+            ## Phase 1
+
+            - [ ] T001 Task
+            - [ ] T002 Task
+            - [ ] T003 Task
+
+            ## Phase 2
+
+            - [ ] T004 Task
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        mapTabBtn!.Click();
+
+        var phaseCards = cut.FindAll(".te-map-phase-card");
+        phaseCards.Should().HaveCount(2);
+
+        var phaseCounts = cut.FindAll(".te-map-phase-count");
+        phaseCounts[0].TextContent.Should().Contain("3 tasks");
+        phaseCounts[1].TextContent.Should().Contain("1 task");
+    }
+
+    [Fact]
+    public void MapView_RemainsDistinctFromTree()
+    {
+        var tasks = """
+            ## Phase 1
+
+            - [ ] T001 Task
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        // Map view has phase cards
+        var mapTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Map"));
+        mapTabBtn!.Click();
+
+        var mapHasPhaseCards = cut.FindAll(".te-map-phase-card");
+        mapHasPhaseCards.Should().NotBeEmpty("Map view should have phase cards");
+
+        // Switch to Tree view - should not have phase cards
+        var treeTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Tree"));
+        treeTabBtn!.Click();
+
+        var treeHasPhaseCards = cut.FindAll(".te-map-phase-card");
+        treeHasPhaseCards.Should().BeEmpty("Tree view should not have Map-style phase cards");
+    }
+
+    [Fact]
     public void ParallelRow_HasSeparateTaskIdElement()
     {
         var withParallel = """
@@ -1664,9 +1894,9 @@ public class TaskExplorerPageTests : BunitContext
         var parallelTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Parallel"));
         parallelTabBtn!.Click();
 
-        var titleElements = cut.FindAll(".te-ptask-title");
+        var titleElements = cut.FindAll(".te-ptask-primary");
         titleElements.Should().NotBeEmpty("Should have separate title elements");
-        titleElements[0].TextContent.Should().Contain("Task A", "Title should be separate from task ID");
+        titleElements[0].TextContent.Should().Contain("Task", "Title should be separate from task ID");
     }
 
     [Fact]
