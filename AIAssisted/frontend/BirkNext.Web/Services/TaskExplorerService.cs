@@ -106,6 +106,10 @@ public static class TaskExplorerService
 
         foreach (var tok in tokens)
         {
+            // Skip fenced code blocks entirely
+            if (tok.Kind is MarkdownTokenKind.FencedCodeStart or MarkdownTokenKind.FencedCodeEnd or MarkdownTokenKind.FencedCodeLine)
+                continue;
+
             // Table rows accumulate; flush when a non-table token arrives
             if (tok.Kind is MarkdownTokenKind.TableRow or MarkdownTokenKind.TableSeparator)
             {
@@ -184,11 +188,22 @@ public static class TaskExplorerService
             // Phase metadata: **Purpose**:, **Goal**:, **Independent Test**:, **Checkpoint**:
             if (tok.Kind == MarkdownTokenKind.Text && headingStack.Count > 0)
             {
-                var currentParent = headingStack[^1].Node;
-                if (currentParent.NodeType == TaskNodeType.Phase)
+                var metaMatch = PhaseMetadataRe.Match(tok.Content);
+                if (metaMatch.Success)
                 {
-                    var metaMatch = PhaseMetadataRe.Match(tok.Content);
-                    if (metaMatch.Success)
+                    // Find the enclosing Phase node (search up the stack, not just immediate parent)
+                    // This handles cases where metadata appears after level-3 subheadings
+                    TaskNode? phaseNode = null;
+                    for (var i = headingStack.Count - 1; i >= 0; i--)
+                    {
+                        if (headingStack[i].Node.NodeType == TaskNodeType.Phase)
+                        {
+                            phaseNode = headingStack[i].Node;
+                            break;
+                        }
+                    }
+
+                    if (phaseNode is not null)
                     {
                         var label = metaMatch.Groups[1].Value.Trim().ToUpperInvariant().Replace(" ", "");
                         var value = metaMatch.Groups[2].Value.Trim();
@@ -196,16 +211,16 @@ public static class TaskExplorerService
                         switch (label)
                         {
                             case "PURPOSE":
-                                currentParent.PhasePurpose = value;
+                                phaseNode.PhasePurpose = value;
                                 break;
                             case "GOAL":
-                                currentParent.PhaseGoal = value;
+                                phaseNode.PhaseGoal = value;
                                 break;
                             case "INDEPENDENTTEST":
-                                currentParent.PhaseIndependentTest = value;
+                                phaseNode.PhaseIndependentTest = value;
                                 break;
                             case "CHECKPOINT":
-                                currentParent.PhaseCheckpoint = value;
+                                phaseNode.PhaseCheckpoint = value;
                                 break;
                         }
                     }
@@ -364,13 +379,13 @@ public static class TaskExplorerService
 
     private static TaskNodeType ClassifyHeading(int level, string rawTitle)
     {
-        if (level == 1) return TaskNodeType.Phase;
+        if (level == 1) return TaskNodeType.TaskGroup; // document title, not a phase
         if (level == 2)
         {
             var lower = rawTitle.ToLowerInvariant();
-            if (lower.Contains("phase") || lower.Contains("user stor") || lower.Contains("us"))
+            if (lower.Contains("phase"))
                 return TaskNodeType.Phase;
-            return TaskNodeType.Phase; // treat all ## as Phase
+            return TaskNodeType.TaskGroup; // narrative sections like Dependencies, Summary, etc.
         }
         if (level == 3)
         {

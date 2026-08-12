@@ -689,6 +689,103 @@ The goal of our project is good.
         Assert.NotNull(phase2.PhaseCheckpoint);
     }
 
+    [Fact]
+    public void Parse_RealScimTasks_VerifiesCounts()
+    {
+        var scimTasksPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "SampleData", "autorisasjon", "tasks.md");
+        if (!File.Exists(scimTasksPath))
+            throw new FileNotFoundException($"Test file not found: {scimTasksPath}");
+
+        var markdown = File.ReadAllText(scimTasksPath);
+        var tree = TaskExplorerService.Parse(markdown);
+
+        // Expected verified baseline - CORRECTED PARALLEL COUNT
+        Assert.Equal(38, tree.Health.TotalTasks);
+        Assert.Equal(38, tree.Health.CompletedTasks);
+        Assert.Equal(0, tree.Health.OpenTasks);
+        Assert.Equal(7, tree.Health.TotalPhases);
+        Assert.Equal(18, tree.Health.ParallelTasks);  // Verified: 18 actual [P] tasks in source
+        Assert.Equal(4, tree.Health.UserStoryCount);
+    }
+
+    [Fact]
+    public void Parse_RealScimTasks_VerifiesT033AndT033aAreSeparate()
+    {
+        var scimTasksPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "SampleData", "autorisasjon", "tasks.md");
+        if (!File.Exists(scimTasksPath))
+            throw new FileNotFoundException($"Test file not found: {scimTasksPath}");
+
+        var markdown = File.ReadAllText(scimTasksPath);
+        var tree = TaskExplorerService.Parse(markdown);
+
+        // Collect all task IDs
+        var taskIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var allNodes = new List<TaskNode>();
+        CollectAllNodes(tree.Roots, allNodes);
+        foreach (var node in allNodes.Where(n => n.NodeType == TaskNodeType.Task && !string.IsNullOrEmpty(n.TaskId)))
+            taskIds.Add(node.TaskId!);
+
+        Assert.Contains("T033", taskIds);
+        Assert.Contains("T033a", taskIds);
+    }
+
+    [Fact]
+    public void Parse_RealScimTasks_AllPhaseMetadata()
+    {
+        var scimTasksPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "SampleData", "autorisasjon", "tasks.md");
+        if (!File.Exists(scimTasksPath))
+            throw new FileNotFoundException($"Test file not found: {scimTasksPath}");
+
+        var markdown = File.ReadAllText(scimTasksPath);
+        var tree = TaskExplorerService.Parse(markdown);
+
+        var allNodes = new List<TaskNode>();
+        CollectAllNodes(tree.Roots, allNodes);
+        var phases = allNodes.Where(n => n.NodeType == TaskNodeType.Phase).OrderBy(p => p.Title).ToList();
+
+        var msg = "\n=== ALL PHASES METADATA ===\n";
+        foreach (var phase in phases)
+        {
+            msg += $"\n{phase.Title}\n";
+            msg += $"  Purpose: {(string.IsNullOrEmpty(phase.PhasePurpose) ? "✗" : "✓ " + phase.PhasePurpose[..Math.Min(50, phase.PhasePurpose.Length)])}\n";
+            msg += $"  Goal: {(string.IsNullOrEmpty(phase.PhaseGoal) ? "✗" : "✓ " + phase.PhaseGoal[..Math.Min(50, phase.PhaseGoal.Length)])}\n";
+            msg += $"  IndependentTest: {(string.IsNullOrEmpty(phase.PhaseIndependentTest) ? "✗" : "✓ " + phase.PhaseIndependentTest[..Math.Min(50, phase.PhaseIndependentTest.Length)])}\n";
+            msg += $"  Checkpoint: {(string.IsNullOrEmpty(phase.PhaseCheckpoint) ? "✗" : "✓ " + phase.PhaseCheckpoint[..Math.Min(50, phase.PhaseCheckpoint.Length)])}\n";
+        }
+
+        // Verify Phase 1 and 2 got Purpose
+        Assert.False(string.IsNullOrEmpty(phases[0].PhasePurpose), "Phase 1 should have Purpose");
+        Assert.False(string.IsNullOrEmpty(phases[1].PhasePurpose), "Phase 2 should have Purpose");
+
+        // Verify Phase 2 got Checkpoint
+        Assert.False(string.IsNullOrEmpty(phases[1].PhaseCheckpoint), "Phase 2 should have Checkpoint");
+
+        // Verify Phase 3-6 got Goal and IndependentTest
+        for (int i = 2; i <= 5; i++)
+        {
+            Assert.False(string.IsNullOrEmpty(phases[i].PhaseGoal), $"Phase {i+1} should have Goal");
+            Assert.False(string.IsNullOrEmpty(phases[i].PhaseIndependentTest), $"Phase {i+1} should have IndependentTest");
+            Assert.False(string.IsNullOrEmpty(phases[i].PhaseCheckpoint), $"Phase {i+1} should have Checkpoint");
+        }
+
+        // Verify Phase 7 (if it has metadata)
+        // Phase 7 might not have Purpose/Goal/IndependentTest if it's just Polish
+    }
+
+    [Fact]
+    public void Parse_RealScimTasks_CorrectParallelCount()
+    {
+        var scimTasksPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "SampleData", "autorisasjon", "tasks.md");
+        if (!File.Exists(scimTasksPath))
+            throw new FileNotFoundException($"Test file not found: {scimTasksPath}");
+
+        var markdown = File.ReadAllText(scimTasksPath);
+        var tree = TaskExplorerService.Parse(markdown);
+
+        // Parallel count should be 18 (not 16)
+        Assert.Equal(18, tree.Health.ParallelTasks);
+    }
+
     // Helper method to collect all nodes recursively
     private static void CollectAllNodes(List<TaskNode> roots, List<TaskNode> result)
     {
