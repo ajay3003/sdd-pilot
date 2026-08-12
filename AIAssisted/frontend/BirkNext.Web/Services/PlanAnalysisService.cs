@@ -2328,7 +2328,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             var messageParts = new List<string> { $"{passedG} pass" };
             if (justifiedDeviations > 0) messageParts.Add($"{justifiedDeviations} justified deviation{(justifiedDeviations != 1 ? "s" : "")}");
             if (genuineWarnings > 0) messageParts.Add($"{genuineWarnings} warning{(genuineWarnings != 1 ? "s" : "")}");
-            if (failG > 0) messageParts.Add($"{failG} fail{(failG != 1 ? "s" : "")}");
+            messageParts.Add($"{failG} fail{(failG != 1 ? "s" : "")}");
 
             var hasOnlyJustifiedDeviations = failG == 0 && genuineWarnings == 0 && justifiedDeviations > 0;
 

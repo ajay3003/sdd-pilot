@@ -134,14 +134,22 @@
             @if (_plan.Gates.Count > 0)
             {
                 <div class="pe-filter-strip" role="group" aria-label="Filter gates by status">
+                    @{
+                        var justifiedDeviations = _plan.Gates.Count(g => g.Status == PlanGateStatus.Warning && g.IsJustifiedDeviation);
+                        var genuineWarnings = _plan.Health.WarningGates - justifiedDeviations;
+                    }
                     <button class='pe-filter-chip @(_gateFilter is null ? "is-active" : "")' @onclick='() => SetGateFilter(null)'>All Gates (@_plan.Gates.Count)</button>
                     @if (_plan.Health.PassedGates > 0)
                     {
                         <button class='pe-filter-chip pe-fc-pass @(_gateFilter == PlanGateStatus.Pass ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Pass)'>Pass (@_plan.Health.PassedGates)</button>
                     }
-                    @if (_plan.Health.WarningGates > 0)
+                    @if (genuineWarnings > 0)
                     {
-                        <button class='pe-filter-chip pe-fc-warning @(_gateFilter == PlanGateStatus.Warning ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Warning)'>Warning (@_plan.Health.WarningGates)</button>
+                        <button class='pe-filter-chip pe-fc-warning @(_gateFilter == PlanGateStatus.Warning ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Warning)'>Warning (@genuineWarnings)</button>
+                    }
+                    @if (justifiedDeviations > 0)
+                    {
+                        <button class='pe-filter-chip pe-fc-warning @(_gateFilter == PlanGateStatus.Warning ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Warning)'>Justified Deviations (@justifiedDeviations)</button>
                     }
                     @if (_plan.Health.FailedGates > 0)
                     {
