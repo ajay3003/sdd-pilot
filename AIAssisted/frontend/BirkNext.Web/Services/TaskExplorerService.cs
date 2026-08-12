@@ -67,6 +67,11 @@ public static class TaskExplorerService
     private static readonly Regex TableSepRe = new(
         @"^\|[\s\-\|:]+\|$", RegexOptions.Compiled);
 
+    // Phase metadata label patterns: **Label**: content or Label: content
+    private static readonly Regex PhaseMetadataRe = new(
+        @"^\s*\*{0,2}(Purpose|Goal|Independent\s+Test|Checkpoint)\*{0,2}\s*:+\s*(.*)$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     // Known task group heading keywords (### level)
     private static readonly HashSet<string> TaskGroupKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -174,6 +179,37 @@ public static class TaskExplorerService
                     AddToParent(roots, headingStack, task);
                 }
                 continue;
+            }
+
+            // Phase metadata: **Purpose**:, **Goal**:, **Independent Test**:, **Checkpoint**:
+            if (tok.Kind == MarkdownTokenKind.Text && headingStack.Count > 0)
+            {
+                var currentParent = headingStack[^1].Node;
+                if (currentParent.NodeType == TaskNodeType.Phase)
+                {
+                    var metaMatch = PhaseMetadataRe.Match(tok.Content);
+                    if (metaMatch.Success)
+                    {
+                        var label = metaMatch.Groups[1].Value.Trim().ToUpperInvariant().Replace(" ", "");
+                        var value = metaMatch.Groups[2].Value.Trim();
+
+                        switch (label)
+                        {
+                            case "PURPOSE":
+                                currentParent.PhasePurpose = value;
+                                break;
+                            case "GOAL":
+                                currentParent.PhaseGoal = value;
+                                break;
+                            case "INDEPENDENTTEST":
+                                currentParent.PhaseIndependentTest = value;
+                                break;
+                            case "CHECKPOINT":
+                                currentParent.PhaseCheckpoint = value;
+                                break;
+                        }
+                    }
+                }
             }
         }
 

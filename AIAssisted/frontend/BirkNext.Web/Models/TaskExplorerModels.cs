@@ -69,6 +69,12 @@ public sealed class TaskNode
     public List<string> AffectedAreas { get; set; } = [];
     public List<SpecMatch> SpecMatches { get; set; } = [];
 
+    // Phase-level narrative metadata (only populated for Phase nodes)
+    public string? PhasePurpose { get; set; }          // **Purpose**: ... (raw Markdown source)
+    public string? PhaseGoal { get; set; }              // **Goal**: ... (raw Markdown source)
+    public string? PhaseIndependentTest { get; set; }   // **Independent Test**: ... (raw Markdown source)
+    public string? PhaseCheckpoint { get; set; }        // **Checkpoint**: ... (raw Markdown source)
+
     // Tree structure
     public List<TaskNode> Children { get; } = [];
 

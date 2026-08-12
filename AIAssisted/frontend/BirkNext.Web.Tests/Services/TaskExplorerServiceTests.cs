@@ -450,6 +450,245 @@ public class TaskExplorerServiceTests
         Assert.Equal(0, tree.Health.TotalTasks);
     }
 
+    [Fact]
+    public void ParsePhasePurpose_WithBoldLabel_ExtractsPurpose()
+    {
+        var markdown = """
+# Tasks: Purpose Test
+
+## Phase 1: Setup
+
+**Purpose**: Create the two new projects and add them to the solution.
+
+- [X] T001 Create project
+""";
+
+        var tree = TaskExplorerService.Parse(markdown);
+        Assert.NotEmpty(tree.Roots);
+        var doc = tree.Roots[0];
+        var phase = doc.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        Assert.NotNull(phase);
+        Assert.NotNull(phase.PhasePurpose);
+        Assert.Contains("Create the two new projects", phase.PhasePurpose);
+    }
+
+    [Fact]
+    public void ParsePhaseGoal_WithBoldLabel_ExtractsGoal()
+    {
+        var markdown = """
+# Tasks: Goal Test
+
+## Phase 3: Implementation
+
+**Goal**: Entra's provisioning engine sends POST /Users.
+
+- [X] T018 Implement handler
+""";
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var doc = tree.Roots[0];
+        var phase = doc.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        Assert.NotNull(phase);
+        Assert.NotNull(phase.PhaseGoal);
+        Assert.Contains("provisioning engine", phase.PhaseGoal);
+    }
+
+    [Fact]
+    public void ParsePhaseIndependentTest_WithBoldLabel_ExtractsTest()
+    {
+        var markdown = """
+# Tasks: Test Test
+
+## Phase 3: Implementation
+
+**Independent Test**: POST /scim/v2/Users with a new user ID.
+
+- [X] T018 Implement handler
+""";
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var doc = tree.Roots[0];
+        var phase = doc.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        Assert.NotNull(phase);
+        Assert.NotNull(phase.PhaseIndependentTest);
+        Assert.Contains("/scim/v2/Users", phase.PhaseIndependentTest);
+    }
+
+    [Fact]
+    public void ParsePhaseCheckpoint_WithBoldLabel_ExtractsCheckpoint()
+    {
+        var markdown = """
+# Tasks: Checkpoint Test
+
+## Phase 2: Foundational
+
+**Purpose**: Build infrastructure.
+
+- [X] T003 Setup database
+
+**Checkpoint**: Foundation complete — solution builds.
+""";
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var doc = tree.Roots[0];
+        var phase = doc.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        Assert.NotNull(phase);
+        Assert.NotNull(phase.PhaseCheckpoint);
+        Assert.Contains("Foundation complete", phase.PhaseCheckpoint);
+    }
+
+    [Fact]
+    public void PhaseMetadata_DoesNotLeakBetweenPhases()
+    {
+        var markdown = """
+# Tasks: Isolation Test
+
+## Phase 1: Setup
+
+**Purpose**: Create projects.
+
+- [X] T001 Create project
+
+## Phase 2: Foundational
+
+**Goal**: Build infrastructure.
+
+- [X] T002 Build database
+""";
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var doc = tree.Roots[0];
+        var phases = doc.Children.Where(c => c.NodeType == TaskNodeType.Phase).ToList();
+
+        Assert.True(phases.Count >= 2);
+        var phase1 = phases[0];
+        var phase2 = phases[1];
+
+        Assert.NotNull(phase1.PhasePurpose);
+        Assert.Contains("Create projects", phase1.PhasePurpose);
+
+        // Phase 2 should not have inherited Phase 1's purpose
+        Assert.Null(phase2.PhasePurpose);
+        Assert.NotNull(phase2.PhaseGoal);
+        Assert.Contains("infrastructure", phase2.PhaseGoal);
+    }
+
+    [Fact]
+    public void MissingMetadata_RemainsNull()
+    {
+        var markdown = """
+# Tasks: No Metadata
+
+## Phase 1: Setup
+
+- [X] T001 Create project
+""";
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var doc = tree.Roots[0];
+        var phase = doc.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        Assert.NotNull(phase);
+        Assert.Null(phase.PhasePurpose);
+        Assert.Null(phase.PhaseGoal);
+        Assert.Null(phase.PhaseIndependentTest);
+        Assert.Null(phase.PhaseCheckpoint);
+    }
+
+    [Fact]
+    public void LabelMatching_IsCaseInsensitive()
+    {
+        var markdown = """
+# Tasks: Case Test
+
+## Phase 1: Setup
+
+**purpose**: Create projects.
+
+**GOAL**: Build infrastructure.
+
+- [X] T001 Create project
+""";
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var doc = tree.Roots[0];
+        var phase = doc.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        Assert.NotNull(phase);
+        Assert.NotNull(phase.PhasePurpose);
+        Assert.NotNull(phase.PhaseGoal);
+    }
+
+    [Fact]
+    public void OrdinarySentenceContainingGoalWord_IsNotMisclassified()
+    {
+        var markdown = """
+# Tasks: Word Context Test
+
+## Phase 1: Setup
+
+The goal of our project is good.
+
+- [X] T001 Create project
+""";
+
+        var tree = TaskExplorerService.Parse(markdown);
+        var doc = tree.Roots[0];
+        var phase = doc.Children.FirstOrDefault(c => c.NodeType == TaskNodeType.Phase);
+
+        Assert.NotNull(phase);
+        // Should not match plain "goal" without bold or label colon
+        Assert.Null(phase.PhaseGoal);
+    }
+
+    [Fact]
+    public void RealScimTasks_PreservesAllParsedElements()
+    {
+        // Regression test: ensure adding phase metadata doesn't affect existing parsing
+        var markdown = """
+# Tasks: SCIM User Synchronization Adapter
+
+## Phase 1: Setup (Project Scaffolding)
+
+**Purpose**: Create the two new projects and add them to the solution. No implementation yet.
+
+- [X] T001 Create `src/Autorisasjon.ScimAdapter/...
+- [X] T002 Create `tests/Autorisasjon.ScimAdapter.IntegrationTests/...
+
+## Phase 2: Foundational (Blocking Prerequisites)
+
+**Purpose**: All shared infrastructure that MUST be complete before ANY user story.
+
+- [X] T003 Create `src/Autorisasjon.Infrastructure/Persistence/Entities/KjentBruker.cs`
+
+**Checkpoint**: Foundation complete — solution builds.
+""";
+
+        var tree = TaskExplorerService.Parse(markdown);
+
+        // Task counts must remain correct (38 in the real file, but 3 in this test fixture)
+        Assert.Equal(3, tree.Health.TotalTasks);
+        Assert.Equal(3, tree.Health.CompletedTasks);
+        // TotalPhases counts the document root + 2 child phases = 3
+        Assert.Equal(3, tree.Health.TotalPhases);
+
+        // Phase metadata should be extracted
+        var doc = tree.Roots[0];
+        var phases = doc.Children.Where(c => c.NodeType == TaskNodeType.Phase).ToList();
+
+        var phase1 = phases[0];
+        Assert.NotNull(phase1.PhasePurpose);
+        Assert.Contains("two new projects", phase1.PhasePurpose);
+
+        var phase2 = phases[1];
+        Assert.NotNull(phase2.PhasePurpose);
+        Assert.NotNull(phase2.PhaseCheckpoint);
+    }
+
     // Helper method to collect all nodes recursively
     private static void CollectAllNodes(List<TaskNode> roots, List<TaskNode> result)
     {
