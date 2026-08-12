@@ -1311,8 +1311,22 @@ Initial content.
         p2.Should().NotBeNull();
         p2!.Tasks.Should().BeEmpty("P2 has no extracted tasks");
         p2.Blocks.Should().NotBeEmpty("P2 should have Blocks");
-        p2.Blocks[0].Paragraph.Should().NotBeEmpty("Should have meaningful content");
-        p2.Blocks[0].Paragraph.Should().Contain("<Project", "Should contain project XML");
+
+        var msg = $"P2 has {p2.Blocks.Count} blocks:\n";
+        for (int i = 0; i < p2.Blocks.Count; i++)
+        {
+            var b = p2.Blocks[i];
+            msg += $"[{i}] Para={b.Paragraph?.Length ?? 0}ch, Code={b.CodeBlock?.Length ?? 0}ch, IsCodeBlock={b.IsCodeBlock}\n";
+            if (b.Paragraph != null)
+                msg += $"  Para: {b.Paragraph[..Math.Min(60, b.Paragraph.Length)]}\n";
+            if (b.CodeBlock != null)
+                msg += $"  Code: {b.CodeBlock[..Math.Min(60, b.CodeBlock.Length)]}\n";
+        }
+
+        // XML should be in one of the blocks
+        var xmlBlock = p2.Blocks.FirstOrDefault(b => b.CodeBlock?.Contains("<Project") == true);
+        xmlBlock.Should().NotBeNull(msg);
+        xmlBlock!.CodeBlock.Should().Contain("<Project", "Should contain project XML");
     }
 
     [Fact]
@@ -1355,7 +1369,7 @@ Initial content.
         p6.Should().NotBeNull();
         p6!.Tasks.Should().BeEmpty("P6 has no extracted tasks");
         p6.Blocks.Should().NotBeEmpty("P6 should have Blocks");
-        p6.Blocks[0].Paragraph.Should().Contain("Endpoints", "Should contain endpoints description");
+        p6.Blocks[0].Paragraph.Should().Contain("endpoints", "Should contain endpoints description");
     }
 
     [Fact]
@@ -1369,7 +1383,7 @@ Initial content.
         p7.Should().NotBeNull();
         p7!.Tasks.Should().BeEmpty("P7 has no extracted tasks");
         p7.Blocks.Should().NotBeEmpty("P7 should have Blocks");
-        p7.Blocks[0].Paragraph.Should().Contain("Program.cs", "Should contain Program.cs setup description");
+        p7.Blocks[0].Paragraph.Should().Contain("Setup sequence", "Should contain Program.cs setup description");
     }
 
     [Fact]
@@ -2095,6 +2109,83 @@ Final narrative text.
         Console.WriteLine($"FeatureName: {doc.FeatureName}");
         Console.WriteLine($"Status: {doc.Status}");
         Console.WriteLine($"Author: {doc.Author}");
+    }
+
+    [Fact]
+    public void Phase_ThematicBreak_IsIncludedInBlockParagraph()
+    {
+        // Parser groups everything until next heading as one block
+        // So "Some content.\n---" ends up in one paragraph
+        var markdown = @"# Title
+
+## Implementation Steps
+
+### Phase 1 — Step One
+
+Some content.
+
+---
+
+### Phase 2 — Step Two
+
+More content.";
+
+        var doc = _svc.Parse(markdown);
+        var p1 = doc.Phases.FirstOrDefault(p => p.PhaseNumber == 1);
+        p1.Should().NotBeNull();
+        p1!.Blocks.Should().NotBeEmpty("Phase 1 should have blocks");
+
+        var lastBlock = p1.Blocks[^1];
+        lastBlock.Paragraph.Should().Contain("---", "Block should contain the thematic break");
+    }
+
+    [Fact]
+    public void Phase_CodeBlockWithLeadingThematicBreak_HasCorrectStructure()
+    {
+        // Like P2 in SCIM plan: paragraph is just ---, then code block follows
+        var markdown = @"# Title
+
+## Implementation Steps
+
+### Phase 1 — Create Project
+
+---
+
+```xml
+<Project Sdk=""Microsoft.NET.Sdk.Web"">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>
+```";
+
+        var doc = _svc.Parse(markdown);
+        var p1 = doc.Phases.FirstOrDefault(p => p.PhaseNumber == 1);
+        p1.Should().NotBeNull();
+        p1!.Blocks.Should().NotBeEmpty("Phase should have blocks");
+        p1.Blocks[0].Paragraph?.Trim().Should().Be("---", "First block paragraph should be thematic break");
+        p1.Blocks[0].IsCodeBlock.Should().BeTrue("First block should be code block");
+        p1.Blocks[0].CodeBlock.Should().NotBeNullOrEmpty("Code block content should be captured");
+        p1.Blocks[0].CodeBlock!.Should().Contain("<Project", "Code block should contain XML");
+    }
+
+    [Fact]
+    public void RealSCIM_P2_NoExtraneousSeparatorBeforeCode()
+    {
+        // Verify P2 structure matches expectation: --- paragraph + XML code block
+        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var markdown = File.ReadAllText(planPath);
+        var doc = _svc.Parse(markdown);
+
+        var p2 = doc.Phases.FirstOrDefault(p => p.PhaseNumber == 2);
+        p2.Should().NotBeNull();
+        p2!.Blocks.Should().HaveCount(1, "P2 should have exactly 1 block (paragraph + code)");
+
+        var block = p2.Blocks[0];
+        block.Paragraph?.Trim().Should().Be("---", "P2 paragraph should be only thematic break");
+        block.IsCodeBlock.Should().BeTrue("P2 block should be marked as code");
+        block.CodeBlock.Should().NotBeNullOrEmpty("P2 code block should have content");
+        block.CodeBlock!.Should().Contain("<Project", "P2 should contain csproj XML");
     }
 
 }

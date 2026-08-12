@@ -62,6 +62,7 @@ public enum ConstraintType
 public enum PlanHealthLevel
 {
     Good,
+    Info,
     Warning,
     Error,
 }
@@ -223,6 +224,7 @@ public sealed class PlanGate
     public PlanGateStatus Status { get; init; } = PlanGateStatus.NotApplicable;
     public string? Evidence { get; init; }
     public string? Notes { get; init; }
+    public bool IsJustifiedDeviation { get; init; } = false; // true if status is Warning from "JUSTIFIED DEVIATION"
 }
 
 // ── Implementation Phase ──────────────────────────────────────────────────────

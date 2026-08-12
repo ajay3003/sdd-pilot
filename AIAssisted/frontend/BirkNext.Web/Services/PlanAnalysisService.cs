@@ -1686,14 +1686,18 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             var evidence   = evidenceIdx >= 0 && evidenceIdx < cells.Count ? StripMarkdown(cells[evidenceIdx]) : null;
             var notes      = notesIdx >= 0 && notesIdx < cells.Count ? StripMarkdown(cells[notesIdx]) : null;
 
+            var status = ParseGateStatus(statusText);
+            var isJustifiedDeviation = status == PlanGateStatus.Warning && statusText.ToUpperInvariant().Contains("JUSTIFIED");
+
             gates.Add(new PlanGate
             {
                 Gate      = gateText,
                 RuleId    = ruleId,
                 Principle = StripMarkdown(ruleText),
-                Status    = ParseGateStatus(statusText),
+                Status    = status,
                 Evidence  = string.IsNullOrWhiteSpace(evidence) ? null : evidence,
                 Notes     = string.IsNullOrWhiteSpace(notes) ? null : notes,
+                IsJustifiedDeviation = isJustifiedDeviation,
             });
         }
     }
@@ -2318,11 +2322,21 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         if (gates.Count > 0)
         {
+            var justifiedDeviations = gates.Count(g => g.IsJustifiedDeviation);
+            var genuineWarnings = warnG - justifiedDeviations;
+
+            var messageParts = new List<string> { $"{passedG} pass" };
+            if (justifiedDeviations > 0) messageParts.Add($"{justifiedDeviations} justified deviation{(justifiedDeviations != 1 ? "s" : "")}");
+            if (genuineWarnings > 0) messageParts.Add($"{genuineWarnings} warning{(genuineWarnings != 1 ? "s" : "")}");
+            if (failG > 0) messageParts.Add($"{failG} fail{(failG != 1 ? "s" : "")}");
+
+            var hasOnlyJustifiedDeviations = failG == 0 && genuineWarnings == 0 && justifiedDeviations > 0;
+
             indicators.Add(new PlanHealthIndicator
             {
-                Icon    = failG > 0 ? "✗" : warnG > 0 ? "⚠" : "✓",
-                Message = $"{gates.Count} constitution gates — {passedG} pass, {warnG} warning, {failG} fail",
-                Level   = failG > 0 ? PlanHealthLevel.Error : warnG > 0 ? PlanHealthLevel.Warning : PlanHealthLevel.Good,
+                Icon    = failG > 0 ? "✗" : genuineWarnings > 0 ? "⚠" : hasOnlyJustifiedDeviations ? "ⓘ" : "✓",
+                Message = $"{gates.Count} constitution gates — {string.Join(", ", messageParts)}",
+                Level   = failG > 0 ? PlanHealthLevel.Error : genuineWarnings > 0 ? PlanHealthLevel.Warning : hasOnlyJustifiedDeviations ? PlanHealthLevel.Info : PlanHealthLevel.Good,
             });
         }
 

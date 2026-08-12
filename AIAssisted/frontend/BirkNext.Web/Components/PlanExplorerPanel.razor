@@ -10,7 +10,7 @@
         <div class="pe-empty-state">
             <div class="pe-empty-icon" aria-hidden="true">📐</div>
             <h3 class="pe-empty-title">Plan Explorer</h3>
-            <p class="pe-empty-desc">Transform a plan.md into a navigable view of architecture decisions, risks, implementation phases, constitution gates, and testing strategy. Paste or import a plan file below.</p>
+            <p class="pe-empty-desc">Transform a plan.md into a navigable view of architecture decisions, risks and constraints, implementation phases, constitution gates, and testing strategy. Paste or import a plan file below.</p>
 
             <div class="pe-input-area">
                 <div class="pe-input-header">
@@ -62,7 +62,7 @@
                     <button class='pe-view-btn @(_tab == "architecture"   ? "is-active" : "")' @onclick='() => SetTab("architecture")'>Architecture @AdrBadge</button>
                     <button class='pe-view-btn @(_tab == "tech-context"   ? "is-active" : "")' @onclick='() => SetTab("tech-context")'>Technical Context</button>
                     <button class='pe-view-btn @(_tab == "structure"      ? "is-active" : "")' @onclick='() => SetTab("structure")'>Project Structure</button>
-                    <button class='pe-view-btn @(_tab == "risks"          ? "is-active" : "")' @onclick='() => SetTab("risks")'>Risks @RiskBadge</button>
+                    <button class='pe-view-btn @(_tab == "risks"          ? "is-active" : "")' @onclick='() => SetTab("risks")'>Risks & Constraints @RiskBadge</button>
                     <button class='pe-view-btn @(_tab == "complexity"     ? "is-active" : "")' @onclick='() => SetTab("complexity")'>Complexity @ComplexityBadge</button>
                     <button class='pe-view-btn @(_tab == "phases"         ? "is-active" : "")' @onclick='() => SetTab("phases")'>Phases @PhasesBadge</button>
                     <button class='pe-view-btn @(_tab == "testing"        ? "is-active" : "")' @onclick='() => SetTab("testing")'>Testing @TestingBadge</button>
@@ -95,7 +95,7 @@
         @if (_tab == "risks")
         {
             <div class="pe-filter-strip" role="group" aria-label="Filter by severity">
-                <button class='pe-filter-chip @(_riskFilter is null ? "is-active" : "")' @onclick='() => SetRiskFilter(null)'>All Risks @(_plan.Risks.Count > 0 ? $"({_plan.Risks.Count})" : "")</button>
+                <button class='pe-filter-chip @(_riskFilter is null ? "is-active" : "")' @onclick='() => SetRiskFilter(null)'>All @(_plan.Risks.Count > 0 ? $"({_plan.Risks.Count})" : "")</button>
                 @if (_plan.Health.CriticalRisks > 0)
                 {
                     <button class='pe-filter-chip pe-fc-critical @(_riskFilter == RiskSeverity.Critical ? "is-active" : "")' @onclick='() => SetRiskFilter(RiskSeverity.Critical)'>Critical (@_plan.Health.CriticalRisks)</button>
@@ -559,7 +559,35 @@
                             <div class="pe-section">
                                 <div class="pe-section-title">@sec.Title</div>
                                 <div class="pe-section-content">
-                                    <MarkdownContent Content="@sec.RawContent" />
+                                    @{
+                                        var subsections = ExtractSubsections(sec.RawContent);
+                                    }
+                                    @if (subsections.Count == 0)
+                                    {
+                                        <MarkdownContent Content="@sec.RawContent" />
+                                    }
+                                    else
+                                    {
+                                        @foreach (var (index, subsec) in subsections.Select((s, i) => (i, s)))
+                                        {
+                                            var subsecNodeId = $"structure-subsec-{GenerateNodeId(subsec.Heading)}";
+                                            var subsecExpanded = (index == 0) ? !_expanded.Contains(subsecNodeId) : _expanded.Contains(subsecNodeId);
+                                            <div class="pe-subsection @(subsecExpanded ? "is-expanded" : "")">
+                                                <button class="pe-subsection-header" @onclick="() => Toggle(subsecNodeId)" aria-expanded="@subsecExpanded.ToString().ToLower()">
+                                                    <span class="pe-subsection-title">
+                                                        <span class="pe-expand-icon" aria-hidden="true">@(subsecExpanded ? "▾" : "▸")</span>
+                                                        @subsec.Heading
+                                                    </span>
+                                                </button>
+                                                @if (subsecExpanded)
+                                                {
+                                                    <div class="pe-subsection-body">
+                                                        <MarkdownContent Content="@subsec.Content" />
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    }
                                 </div>
                             </div>
                         }
@@ -582,9 +610,9 @@
                     {
                         <div class="pe-empty-tab">
                             @if (!string.IsNullOrWhiteSpace(_search) || _riskFilter is not null)
-                            { <span>No risks match the current filter.</span> }
+                            { <span>No risks or constraints match the current filter.</span> }
                             else
-                            { <span>No risks found. Add a <code>## Risks</code> section with <code>### High Risk: Title</code> items.</span> }
+                            { <span>No risks or constraints found. Add a <code>## Risks</code> section with <code>### High Risk: Title</code> items or constraint definitions.</span> }
                         </div>
                     }
                     else
@@ -787,7 +815,7 @@
                                                         {
                                                             <h4 class="pe-block-subheading">@block.SubHeading</h4>
                                                         }
-                                                        @if (!string.IsNullOrEmpty(block.Paragraph))
+                                                        @if (!string.IsNullOrEmpty(block.Paragraph) && block.Paragraph.Trim() != "---" && block.Paragraph.Trim() != "***" && block.Paragraph.Trim() != "___")
                                                         {
                                                             <MarkdownContent Content="@block.Paragraph" />
                                                         }
@@ -957,7 +985,7 @@
                                             <td class="pe-gate-rule">@(string.IsNullOrEmpty(gate.RuleId) ? gate.Principle : gate.RuleId)</td>
                                             <td>
                                                 <span class="pe-gate-status @GateStatusCss(gate.Status)">
-                                                    @GateStatusIcon(gate.Status) @GateStatusLabel(gate.Status)
+                                                    @GateStatusIcon(gate.Status) @GateStatusLabel(gate)
                                                 </span>
                                             </td>
                                             @if (showEvidenceColumn)
@@ -1053,7 +1081,7 @@
     private string SearchPlaceholder => _tab switch
     {
         "architecture" => "Search by ADR ID, title, context, or decision...",
-        "risks"        => "Search by title, description, severity, or area...",
+        "risks"        => "Search by title, description, severity, area, or constraint type...",
         "complexity"   => "Search by area, level, or factor...",
         "phases"       => "Search by phase title, description, or task...",
         "testing"      => "Search testing content...",
@@ -1230,14 +1258,20 @@
         _                                      => "other",
     };
 
-    private static string GateStatusLabel(PlanGateStatus s) => s switch
+    private static string GateStatusLabel(PlanGate gate)
     {
-        PlanGateStatus.Pass          => "PASS",
-        PlanGateStatus.Warning       => "WARNING",
-        PlanGateStatus.Fail          => "FAIL",
-        PlanGateStatus.NotApplicable => "N/A",
-        _                            => s.ToString(),
-    };
+        if (gate.Status == PlanGateStatus.Warning && gate.IsJustifiedDeviation)
+            return "JUSTIFIED DEVIATION";
+
+        return gate.Status switch
+        {
+            PlanGateStatus.Pass          => "PASS",
+            PlanGateStatus.Warning       => "WARNING",
+            PlanGateStatus.Fail          => "FAIL",
+            PlanGateStatus.NotApplicable => "N/A",
+            _                            => gate.Status.ToString(),
+        };
+    }
 
     private static string GateStatusCss(PlanGateStatus s) => s switch
     {
@@ -1332,4 +1366,48 @@
 
         __builder.CloseElement(); // section-content
     };
+
+    // ── Project Structure subsection collapsing ────────────────────────────
+
+    private sealed record Subsection(string Heading, string Content);
+
+    private List<Subsection> ExtractSubsections(string markdown)
+    {
+        var subsections = new List<Subsection>();
+        var lines = markdown.Split('\n');
+        string? currentHeading = null;
+        var currentContent = new System.Text.StringBuilder();
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.TrimStart();
+            if (trimmed.StartsWith("### "))
+            {
+                if (currentHeading != null)
+                {
+                    subsections.Add(new Subsection(currentHeading, currentContent.ToString().TrimEnd()));
+                }
+                currentHeading = trimmed[4..].Trim();
+                currentContent.Clear();
+            }
+            else if (currentHeading != null)
+            {
+                currentContent.AppendLine(line);
+            }
+        }
+
+        if (currentHeading != null)
+        {
+            subsections.Add(new Subsection(currentHeading, currentContent.ToString().TrimEnd()));
+        }
+
+        return subsections;
+    }
+
+    private string GenerateNodeId(string text)
+    {
+        var id = System.Text.RegularExpressions.Regex.Replace(text.ToLowerInvariant(), @"[^\w\s-]", "");
+        id = System.Text.RegularExpressions.Regex.Replace(id, @"\s+", "-");
+        return id[..Math.Min(32, id.Length)];
+    }
 }
