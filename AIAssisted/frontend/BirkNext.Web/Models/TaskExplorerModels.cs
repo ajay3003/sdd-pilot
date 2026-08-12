@@ -75,6 +75,10 @@ public sealed class TaskNode
     public string? PhaseIndependentTest { get; set; }   // **Independent Test**: ... (raw Markdown source)
     public string? PhaseCheckpoint { get; set; }        // **Checkpoint**: ... (raw Markdown source)
 
+    // Explicit task dependencies (only for Task nodes)
+    public List<string> BlockedBy { get; init; } = [];   // task IDs that must complete before this task (predecessors)
+    public List<string> Blocks { get; init; } = [];      // task IDs that depend on this task (successors)
+
     // Tree structure
     public List<TaskNode> Children { get; } = [];
 
@@ -122,4 +126,5 @@ public sealed class TaskTree
 {
     public List<TaskNode> Roots { get; init; } = [];
     public TaskHealth Health { get; init; } = new();
+    public List<TaskDependency> ExplicitDependencies { get; init; } = [];
 }

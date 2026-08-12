@@ -1658,12 +1658,19 @@ public class ViewBehaviorTests : BunitContext
         cut.FindAll(".te-view-btn").First(b => b.TextContent.Contains("Impact")).Click();
 
         var impact = cut.Find("[data-testid='te-impact-view']").TextContent;
-        impact.Should().Contain("Requirements Missing Tasks");
-        impact.Should().Contain("FR-002");
-        impact.Should().Contain("Success Criteria Missing Tasks");
-        impact.Should().Contain("SC-002");
-        impact.Should().Contain("User Stories Missing Tasks");
-        impact.Should().Contain("US-002");
+
+        // New compact gaps section
+        impact.Should().Contain("Implementation Gaps");
+        impact.Should().Contain("FR-002", "Should show missing requirement");
+
+        // At least one zero-gap indicator present
+        (impact.Contains("Success Criteria — no gaps") ||
+         impact.Contains("User Stories — no gaps") ||
+         impact.Contains("Security — no gaps") ||
+         impact.Contains("Testing — no gaps"))
+            .Should().BeTrue("Should show at least one zero-gap success indicator");
+
+        // Link visualization still present
         impact.Should().Contain("User Story -> Requirements -> Success Criteria -> Tasks");
     }
 

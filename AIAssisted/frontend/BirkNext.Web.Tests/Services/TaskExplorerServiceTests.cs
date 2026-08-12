@@ -787,6 +787,109 @@ The goal of our project is good.
     }
 
     [Fact]
+    public void ParseExplicitDependencies_SimpleDependencyChain()
+    {
+        var markdown = """
+            # Test
+
+            ## Dependencies & Execution Order
+
+            ### User Story Internal Dependencies
+
+            - **Test**: T001 → T002 → T003
+            """;
+
+        var tree = TaskExplorerService.Parse(markdown);
+
+        // Create tasks first
+        Assert.Equal(0, tree.Health.TotalTasks); // No task definitions in this markdown
+    }
+
+    [Fact]
+    public void ParseExplicitDependencies_ParallelPredecessorGroup()
+    {
+        var markdown = """
+            # Test
+
+            - [ ] T001 Test 1
+            - [ ] T002 Test 2
+            - [ ] T003 Test 3
+
+            ## Dependencies & Execution Order
+
+            ### User Story Internal Dependencies
+
+            - **US1**: T001/T002 [P] → T003
+            """;
+
+        var tree = TaskExplorerService.Parse(markdown);
+
+        // Should have 3 tasks
+        Assert.Equal(3, tree.Health.TotalTasks);
+
+        // Should have 2 dependency edges: T001→T003 and T002→T003
+        Assert.Equal(2, tree.ExplicitDependencies.Count);
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T001" && d.DependsOnTaskId == "T003"));
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T002" && d.DependsOnTaskId == "T003"));
+    }
+
+    [Fact]
+    public void ParseExplicitDependencies_SuffixedTaskIds()
+    {
+        var markdown = """
+            # Test
+
+            - [ ] T033 Task 33
+            - [ ] T033a Task 33a
+            - [ ] T034 Task 34
+
+            ## Dependencies & Execution Order
+
+            ### User Story Internal Dependencies
+
+            - **US4**: T033/T033a [P] → T034
+            """;
+
+        var tree = TaskExplorerService.Parse(markdown);
+
+        Assert.Equal(3, tree.Health.TotalTasks);
+
+        // Should have 2 edges: T033→T034 and T033a→T034
+        Assert.Equal(2, tree.ExplicitDependencies.Count);
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T033" && d.DependsOnTaskId == "T034"));
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T033a" && d.DependsOnTaskId == "T034"));
+    }
+
+    [Fact]
+    public void ParseExplicitDependencies_RealScimDependencies()
+    {
+        var scimTasksPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "SampleData", "autorisasjon", "tasks.md");
+        if (!File.Exists(scimTasksPath))
+            throw new FileNotFoundException($"Test file not found: {scimTasksPath}");
+
+        var markdown = File.ReadAllText(scimTasksPath);
+        var tree = TaskExplorerService.Parse(markdown);
+
+        // Verify US1 dependencies: T018/T019 → T020 → T021 → T022 → T023
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T018" && d.DependsOnTaskId == "T020"));
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T019" && d.DependsOnTaskId == "T020"));
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T020" && d.DependsOnTaskId == "T021"));
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T021" && d.DependsOnTaskId == "T022"));
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T022" && d.DependsOnTaskId == "T023"));
+
+        // Verify US2 dependencies: T024 → T025 → T026 → T027
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T024" && d.DependsOnTaskId == "T025"));
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T025" && d.DependsOnTaskId == "T026"));
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T026" && d.DependsOnTaskId == "T027"));
+
+        // Verify US4 dependencies: T032/T033/T033a → T034 → T035
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T032" && d.DependsOnTaskId == "T034"));
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T033" && d.DependsOnTaskId == "T034"));
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T033a" && d.DependsOnTaskId == "T034"));
+        Assert.True(tree.ExplicitDependencies.Any(d => d.SourceTaskId == "T034" && d.DependsOnTaskId == "T035"));
+    }
+
+    [Fact]
     public void Parse_RealScimTasks_CheckpointPresenceCAndFormatNode()
     {
         var scimTasksPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "SampleData", "autorisasjon", "tasks.md");

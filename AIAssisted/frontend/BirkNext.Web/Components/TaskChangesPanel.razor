@@ -5,6 +5,14 @@
 
     @if (_report is null)
     {
+        @if (string.IsNullOrWhiteSpace(_oldTasksText))
+        {
+            // CASE A: No comparison baseline available (old version not provided)
+            <div class="delta-no-baseline-hint">
+                No comparison available yet. Add a previous tasks.md by uploading a file or pasting its content.
+            </div>
+        }
+
         <div class="delta-inputs-row">
             <div class="delta-input-panel">
                 <div class="delta-input-header">
@@ -19,7 +27,7 @@
                 <textarea
                     class="delta-textarea"
                     placeholder="Or paste previous tasks.md content here..."
-                    rows="10"
+                    rows="6"
                     @bind="_oldTasksText"></textarea>
                 @if (!string.IsNullOrWhiteSpace(_oldTasksText))
                 {
@@ -30,7 +38,6 @@
                 }
             </div>
 
-            <div class="delta-separator" aria-hidden="true">→</div>
 
             <div class="delta-input-panel">
                 <div class="delta-input-header">

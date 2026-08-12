@@ -1,6 +1,7 @@
 @using BirkNext.Web.GraphQL
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@using Microsoft.AspNetCore.Components.Rendering
 
 <div class="te-panel">
 
@@ -49,19 +50,30 @@
     {
         <!-- ── Explorer state ────────────────────────────────────────────── -->
 
-        <!-- Header bar -->
+        <!-- Simplified Header with Compact Summary and Tabs -->
         <div class="te-header">
             <div class="te-header-left">
                 <span class="te-header-title">Task Explorer</span>
-                <span class="te-header-stat">@_health.TotalTasks tasks · @_health.TotalPhases phases</span>
+                @{
+                    var completionPercent = _health.TotalTasks > 0 ? (int)Math.Round((double)_health.CompletedTasks / _health.TotalTasks * 100) : 0;
+                }
+                @if (_health.TotalTasks > 0)
+                {
+                    <span class="te-header-summary">
+                        @_health.TotalTasks task@(_health.TotalTasks != 1 ? "s" : "") ·
+                        @_health.TotalPhases phase@(_health.TotalPhases != 1 ? "s" : "") ·
+                        @_health.ParallelTasks parallel ·
+                        <span class="te-header-completion">@completionPercent% task completion</span>
+                    </span>
+                }
             </div>
             <div class="te-header-right">
                 <div class="te-view-toggle" role="group" aria-label="View mode">
                     <button class='te-view-btn @(!_isMapView && !_isImpactView && !_isChangesView && !_isDependenciesView && !_isParallelView ? "is-active" : "")' @onclick='ShowTreeView'>
-                        Tree View
+                        Tree
                     </button>
                     <button class='te-view-btn @(_isMapView ? "is-active" : "")' @onclick='ShowMapView'>
-                        Map View
+                        Map
                     </button>
                     <button class='te-view-btn @(_isImpactView ? "is-active" : "")' @onclick='ShowImpactView'>
                         Impact
@@ -70,7 +82,7 @@
                         Dependencies
                     </button>
                     <button class='te-view-btn @(_isParallelView ? "is-active" : "")' @onclick='ShowParallelView'>
-                        Parallel Work
+                        Parallel
                     </button>
                     <button class='te-view-btn @(_isChangesView ? "is-active" : "")' @onclick='ShowChangesView' data-testid="te-changes-tab-btn">
                         Changes
@@ -80,266 +92,104 @@
             </div>
         </div>
 
-        <!-- KPI Sections (Simplified) -->
-        @if (HasHealthData)
+        <!-- Tab-Specific Controls (shown only for Tree view) -->
+        @if (!_isMapView && !_isImpactView && !_isChangesView && !_isDependenciesView && !_isParallelView)
         {
-            <div class="te-kpi-sections">
-                <!-- Section A: Progress -->
-                <div class="te-kpi-group">
-                    <div class="te-kpi-header">Progress</div>
-                    <div class="te-kpi-row">
-                        @if (_health.TotalTasks > 0)
-                        {
-                            <div class="te-health-card">
-                                <div class="te-health-value">@_health.TotalTasks</div>
-                                <div class="te-health-label">Total Tasks</div>
-                            </div>
-                        }
-                        @if (_health.CompletedTasks > 0)
-                        {
-                            <div class="te-health-card te-hcard-done">
-                                <div class="te-health-value">@_health.CompletedTasks</div>
-                                <div class="te-health-label">Done</div>
-                            </div>
-                        }
-                        @if (_health.OpenTasks > 0)
-                        {
-                            <div class="te-health-card te-hcard-open">
-                                <div class="te-health-value">@_health.OpenTasks</div>
-                                <div class="te-health-label">Open</div>
-                            </div>
-                        }
-                    </div>
-                </div>
-
-                <!-- Section B: Traceability -->
-                <div class="te-kpi-group">
-                    <div class="te-kpi-header">Traceability</div>
-                    <div class="te-kpi-row">
-                        @if (_health.UserStoryCount > 0)
-                        {
-                            <div class="te-health-card te-hcard-us">
-                                <div class="te-health-value">@_health.UserStoryCount</div>
-                                <div class="te-health-label">User Stories</div>
-                            </div>
-                        }
-                        @if (_health.FrLinkedTasks > 0)
-                        {
-                            <div class="te-health-card te-hcard-fr">
-                                <div class="te-health-value">@_health.FrLinkedTasks</div>
-                                <div class="te-health-label">FR-linked Tasks</div>
-                            </div>
-                        }
-                        @if (_health.ScLinkedTasks > 0)
-                        {
-                            <div class="te-health-card te-hcard-sc">
-                                <div class="te-health-value">@_health.ScLinkedTasks</div>
-                                <div class="te-health-label">SC-linked Tasks</div>
-                            </div>
-                        }
-                        @if (_health.UnlinkedTasks > 0)
-                        {
-                            <div class="te-health-card te-hcard-unlinked">
-                                <div class="te-health-value">@_health.UnlinkedTasks</div>
-                                <div class="te-health-label">Unlinked Tasks</div>
-                            </div>
-                        }
-                    </div>
-                </div>
-
-                <!-- Section C: Quality Signals -->
-                <div class="te-kpi-group">
-                    <div class="te-kpi-header">Quality Signals</div>
-                    <div class="te-kpi-row">
-                        @if (_health.TestingTasks > 0)
-                        {
-                            <div class="te-health-card te-hcard-testing">
-                                <div class="te-health-value">@_health.TestingTasks</div>
-                                <div class="te-health-label">Testing Tasks</div>
-                            </div>
-                        }
-                        @if (_health.SecurityTasks > 0)
-                        {
-                            <div class="te-health-card te-hcard-security">
-                                <div class="te-health-value">@_health.SecurityTasks</div>
-                                <div class="te-health-label">Security Tasks</div>
-                            </div>
-                        }
-                        @if (_health.SpecLinked > 0)
-                        {
-                            <div class="te-health-card te-hcard-linked">
-                                <div class="te-health-value">@_health.SpecLinked</div>
-                                <div class="te-health-label">Spec Linked</div>
-                            </div>
-                        }
-                        @if (_health.HighRisk > 0)
-                        {
-                            <div class="te-health-card te-hcard-risk">
-                                <div class="te-health-value">@_health.HighRisk</div>
-                                <div class="te-health-label">High Risk</div>
-                            </div>
-                        }
-                    </div>
-                </div>
-            </div>
-        }
-
-        @if (_coverage is not null)
-        {
-            <div class="te-implementation-grid" data-testid="te-implementation-coverage" aria-label="Implementation Coverage">
-                <div class="te-implementation-card te-implementation-card-primary">
-                    <div class="te-section-kicker">Implementation Coverage</div>
-                    <div class="te-implementation-percent">@_coverage.ImplementationPercent%</div>
-                    <div class="te-implementation-card-label">Are requirements implemented?</div>
-                    <span class="te-coverage-pill @CoverageStatusClass(_coverage.OverallStatus)">@_coverage.OverallStatus</span>
-                </div>
-                @foreach (var metric in _coverage.Metrics)
-                {
-                    <div class="te-implementation-card">
-                        <div class="te-implementation-value">@metric.Linked / @metric.Total</div>
-                        <div class="te-implementation-card-label">@metric.Label linked</div>
-                        <span class="te-coverage-pill @CoverageStatusClass(metric.Status)">@metric.Status</span>
-                    </div>
-                }
-            </div>
-
-            <div class="te-risk-summary" data-testid="te-delivery-risk" aria-label="Delivery Risk">
-                <div class="te-risk-summary-header">
-                    <div>
-                        <div class="te-section-kicker">Delivery Risk</div>
-                        <h3>Missing implementation work</h3>
-                    </div>
-                    <span class="te-risk-note">Implementation coverage complements Traceability &amp; Coverage validation coverage.</span>
-                </div>
-                <div class="te-risk-items">
-                    @foreach (var risk in _coverage.Risks)
+            <div class="te-tab-controls">
+                <div class="te-search-wrap">
+                    <input type="search"
+                           class="te-search"
+                           placeholder="Search tasks, IDs, phases..."
+                           value="@_searchQuery"
+                           @oninput="HandleSearchInput"
+                           aria-label="Search Task Explorer" />
+                    @if (!string.IsNullOrWhiteSpace(_searchQuery))
                     {
-                        <div class="te-risk-item">
-                            <div>
-                                <div class="te-risk-count">@risk.Count</div>
-                                <div class="te-risk-label">@risk.Label</div>
-                            </div>
-                            <span class="te-risk-severity te-risk-severity-@risk.Severity.ToLowerInvariant()">@risk.Severity</span>
+                        var matchCount = _flatCache.Count(r => r.IsMatch);
+                        <span class="te-search-count">@matchCount match@(matchCount != 1 ? "es" : "")</span>
+                    }
+                </div>
+                <button class="te-ctrl-btn" @onclick="ExpandAll">Expand All</button>
+                <button class="te-ctrl-btn" @onclick="CollapseAll">Collapse All</button>
+
+                <!-- Filter Groups for Tree -->
+                <div class="te-filter-groups">
+                    <!-- Status Filters -->
+                    <div class="te-filter-group">
+                        <div class="te-filter-group-label">Status</div>
+                        <div class="te-filter-row">
+                            <button class='te-filter-chip @(_activeFilter is null ? "is-active" : "")' @onclick='() => SetFilter(null)'>All</button>
+                            <button class='te-filter-chip @(_activeFilter == "Completed" ? "is-active" : "")' @onclick='() => SetFilter("Completed")'>✓ Done</button>
+                            <button class='te-filter-chip @(_activeFilter == "Open" ? "is-active" : "")' @onclick='() => SetFilter("Open")'>○ Open</button>
                         </div>
-                    }
-                </div>
-            </div>
-        }
+                    </div>
 
-        <!-- Phase Dashboard -->
-        @if (_tree is not null && _tree.Roots.Any(r => r.NodeType == TaskNodeType.Phase))
-        {
-            <div class="te-phase-dashboard">
-                <div class="te-phase-dashboard-header">Phase Progress</div>
-                <div class="te-phase-cards">
-                    @foreach (var phase in _tree.Roots.Where(r => r.NodeType == TaskNodeType.Phase).OrderBy(p => p.Title))
-                    {
-                        var phasePct = phase.TaskCount == 0 ? 0 : (int)Math.Round((double)phase.CompletedCount / phase.TaskCount * 100);
-                        var phaseStatus = phase.TaskCount == 0 ? "Not Started" : (phasePct == 100 ? "Complete" : "In Progress");
-                        var phaseStatusClass = phase.TaskCount == 0 ? "not-started" : (phasePct == 100 ? "complete" : "in-progress");
-                        <div class="te-phase-card">
-                            <div class="te-phase-card-header">
-                                <div class="te-phase-name">@phase.Title</div>
-                                <span class="te-phase-status te-phase-status-@phaseStatusClass">@phaseStatus</span>
-                            </div>
-                            <div class="te-phase-counts">@phase.CompletedCount / @phase.TaskCount</div>
-                            <div class="te-phase-bar">
-                                <div class="te-phase-bar-fill" style="width:@(phasePct)%"></div>
-                            </div>
-                            <div class="te-phase-pct">@(phasePct)%</div>
+                    <!-- Coverage Filters -->
+                    <div class="te-filter-group">
+                        <div class="te-filter-group-label">Coverage</div>
+                        <div class="te-filter-row">
+                            <button class='te-filter-chip @(_activeFilter == "OnlyUserStories" ? "is-active" : "")' @onclick='() => SetFilter("OnlyUserStories")'>User Stories</button>
+                            <button class='te-filter-chip @(_activeFilter == "OnlyRequirements" ? "is-active" : "")' @onclick='() => SetFilter("OnlyRequirements")'>Requirements</button>
+                            <button class='te-filter-chip @(_activeFilter == "OnlySuccessCriteria" ? "is-active" : "")' @onclick='() => SetFilter("OnlySuccessCriteria")'>Success Criteria</button>
+                            <button class='te-filter-chip @(_activeFilter == "MissingImplementation" ? "is-active" : "")' @onclick='() => SetFilter("MissingImplementation")'>Missing Implementation</button>
                         </div>
-                    }
+                    </div>
+
+                    <!-- Traceability Filters -->
+                    <div class="te-filter-group">
+                        <div class="te-filter-group-label">Traceability</div>
+                        <div class="te-filter-row">
+                            <button class='te-filter-chip @(_activeFilter == "HasFrLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasFrLinks")'>Has FR Links</button>
+                            <button class='te-filter-chip @(_activeFilter == "HasScLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasScLinks")'>Has SC Links</button>
+                            <button class='te-filter-chip @(_activeFilter == "HasTableLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasTableLinks")'>Has Table Links</button>
+                            @if (_health.UnlinkedTasks > 0)
+                            {
+                                <button class='te-filter-chip @(_activeFilter == "NoLinks" ? "is-active" : "")' @onclick='() => SetFilter("NoLinks")'>Unlinked</button>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Quality Filters -->
+                    <div class="te-filter-group">
+                        <div class="te-filter-group-label">Quality</div>
+                        <div class="te-filter-row">
+                            @if (_health.TestingTasks > 0)
+                            {
+                                <button class='te-filter-chip te-fc-testing @(_activeFilter == "TestingTasks" ? "is-active" : "")' @onclick='() => SetFilter("TestingTasks")'>Testing</button>
+                            }
+                            @if (_health.SecurityTasks > 0)
+                            {
+                                <button class='te-filter-chip te-fc-security @(_activeFilter == "SecurityTasks" ? "is-active" : "")' @onclick='() => SetFilter("SecurityTasks")'>Security</button>
+                            }
+                            @if (HasEnrichmentData)
+                            {
+                                <button class='te-filter-chip te-fc-risk @(_activeFilter == "HighRisk" ? "is-active" : "")' @onclick='() => SetFilter("HighRisk")'>High Risk</button>
+                            }
+                            @if (_health.UnresolvedTableRefs > 0)
+                            {
+                                <button class='te-filter-chip te-fc-unresolved @(_activeFilter == "Unresolved" ? "is-active" : "")' @onclick='() => SetFilter("Unresolved")'>⚠ Unresolved (@_health.UnresolvedTableRefs)</button>
+                            }
+                        </div>
+                    </div>
                 </div>
             </div>
         }
-
-        <!-- Controls bar -->
-        <div class="te-controls">
-            <div class="te-search-wrap">
-                <input type="search"
-                       class="te-search"
-                       placeholder="Search tasks, IDs, phases, SC/FR refs..."
-                       value="@_searchQuery"
-                       @oninput="HandleSearchInput"
-                       aria-label="Search Task Explorer" />
-                @if (!string.IsNullOrWhiteSpace(_searchQuery))
-                {
-                    var matchCount = _flatCache.Count(r => r.IsMatch);
-                    <span class="te-search-count">@matchCount match@(matchCount != 1 ? "es" : "")</span>
-                }
-            </div>
-            <button class="te-ctrl-btn" @onclick="ExpandAll">Expand All</button>
-            <button class="te-ctrl-btn" @onclick="CollapseAll">Collapse All</button>
-        </div>
-
-        <!-- Filter Groups -->
-        <div class="te-filter-groups">
-            <!-- Status Filters -->
-            <div class="te-filter-group">
-                <div class="te-filter-group-label">Status</div>
-                <div class="te-filter-row">
-                    <button class='te-filter-chip @(_activeFilter is null ? "is-active" : "")' @onclick='() => SetFilter(null)'>All</button>
-                    <button class='te-filter-chip @(_activeFilter == "Completed" ? "is-active" : "")' @onclick='() => SetFilter("Completed")'>✓ Completed</button>
-                    <button class='te-filter-chip @(_activeFilter == "Open" ? "is-active" : "")' @onclick='() => SetFilter("Open")'>○ Open</button>
-                </div>
-            </div>
-
-            <!-- Coverage Filters -->
-            <div class="te-filter-group">
-                <div class="te-filter-group-label">Coverage</div>
-                <div class="te-filter-row">
-                    <button class='te-filter-chip @(_activeFilter == "MissingImplementation" ? "is-active" : "")' @onclick='() => SetFilter("MissingImplementation")'>Missing Implementation</button>
-                    <button class='te-filter-chip @(_activeFilter == "PartialCoverage" ? "is-active" : "")' @onclick='() => SetFilter("PartialCoverage")'>Partial Coverage</button>
-                    <button class='te-filter-chip @(_activeFilter == "OnlyUserStories" ? "is-active" : "")' @onclick='() => SetFilter("OnlyUserStories")'>User Stories</button>
-                    <button class='te-filter-chip @(_activeFilter == "OnlyRequirements" ? "is-active" : "")' @onclick='() => SetFilter("OnlyRequirements")'>Requirements</button>
-                    <button class='te-filter-chip @(_activeFilter == "OnlySuccessCriteria" ? "is-active" : "")' @onclick='() => SetFilter("OnlySuccessCriteria")'>Success Criteria</button>
-                </div>
-            </div>
-
-            <!-- Traceability Filters -->
-            <div class="te-filter-group">
-                <div class="te-filter-group-label">Traceability</div>
-                <div class="te-filter-row">
-                    <button class='te-filter-chip @(_activeFilter == "HasFrLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasFrLinks")'>Has FR Links</button>
-                    <button class='te-filter-chip @(_activeFilter == "HasScLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasScLinks")'>Has SC Links</button>
-                    <button class='te-filter-chip @(_activeFilter == "HasTableLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasTableLinks")'>Has Table Links</button>
-                    @if (_health.UnlinkedTasks > 0)
-                    {
-                        <button class='te-filter-chip @(_activeFilter == "NoLinks" ? "is-active" : "")' @onclick='() => SetFilter("NoLinks")'>Unlinked Tasks</button>
-                    }
-                </div>
-            </div>
-
-            <!-- Quality Filters -->
-            <div class="te-filter-group">
-                <div class="te-filter-group-label">Quality</div>
-                <div class="te-filter-row">
-                    @if (_health.TestingTasks > 0)
-                    {
-                        <button class='te-filter-chip te-fc-testing @(_activeFilter == "TestingTasks" ? "is-active" : "")' @onclick='() => SetFilter("TestingTasks")'>Testing</button>
-                    }
-                    @if (_health.SecurityTasks > 0)
-                    {
-                        <button class='te-filter-chip te-fc-security @(_activeFilter == "SecurityTasks" ? "is-active" : "")' @onclick='() => SetFilter("SecurityTasks")'>Security</button>
-                    }
-                    @if (HasEnrichmentData)
-                    {
-                        <button class='te-filter-chip te-fc-risk @(_activeFilter == "HighRisk" ? "is-active" : "")' @onclick='() => SetFilter("HighRisk")'>High Risk</button>
-                    }
-                    @if (_health.UnresolvedTableRefs > 0)
-                    {
-                        <button class='te-filter-chip te-fc-unresolved @(_activeFilter == "Unresolved" ? "is-active" : "")' @onclick='() => SetFilter("Unresolved")'>⚠ Unresolved Refs (@_health.UnresolvedTableRefs)</button>
-                    }
-                </div>
-            </div>
-        </div>
 
         <!-- Main layout: tree/map + details panel -->
         <div class="te-main @(_selectedNodeId is not null ? "has-details" : "")">
 
             @if (_isChangesView)
             {
-                <TaskChangesPanel CurrentTasksText="@(_lastBuiltText)" data-testid="tc-changes-view" />
+                <div class="te-changes-view" data-testid="te-changes-view" aria-label="Changes">
+                    <div class="te-changes-header">
+                        <div>
+                            <div class="te-section-kicker">Changes</div>
+                            <h3>Compare task versions</h3>
+                            <p class="te-changes-subtext">Compare the current tasks.md with a previous version.</p>
+                        </div>
+                    </div>
+                    <TaskChangesPanel CurrentTasksText="@(_lastBuiltText)" />
+                </div>
             }
             else if (_isDependenciesView)
             {
@@ -371,18 +221,99 @@
                     <div class="te-impact-header">
                         <div>
                             <div class="te-section-kicker">Impact</div>
-                            <h3>What is missing from implementation</h3>
+                            <h3>Requirement coverage and implementation gaps</h3>
                         </div>
-                        <span>Use Traceability for validation coverage and Task Explorer for implementation coverage.</span>
+                        <span>Task completion tracks tasks.md status. Requirement implementation coverage measures requirement-to-task linkage.</span>
                     </div>
 
-                    <div class="te-impact-grid">
-                        @RenderImpactGroup("Requirements Missing Tasks", _coverage.MissingRequirements, "No requirements are missing implementation tasks.")
-                        @RenderImpactGroup("Success Criteria Missing Tasks", _coverage.MissingSuccessCriteria, "No success criteria are missing implementation tasks.")
-                        @RenderImpactGroup("User Stories Missing Tasks", _coverage.MissingUserStories, "No user stories are missing implementation tasks.")
-                        @RenderImpactGroup("Security Gaps", _coverage.SecurityGapLabels, "No security implementation gaps detected.")
-                        @RenderImpactGroup("Testing Gaps", _coverage.TestingGapLabels, "No testing implementation gaps detected.")
+                    <!-- Requirement Implementation Coverage and Delivery Risk Analysis -->
+                    <div class="te-implementation-grid" data-testid="te-implementation-coverage" aria-label="Requirement Implementation Coverage">
+                        <div class="te-implementation-card te-implementation-card-primary">
+                            <div class="te-section-kicker">Requirement Implementation Coverage</div>
+                            <div class="te-implementation-percent">@_coverage.ImplementationPercent%</div>
+                            <div class="te-implementation-card-label">Are requirements covered by implementation tasks?</div>
+                            <span class="te-coverage-pill @CoverageStatusClass(_coverage.OverallStatus)">@_coverage.OverallStatus</span>
+                        </div>
+                        @foreach (var metric in _coverage.Metrics)
+                        {
+                            <div class="te-implementation-card">
+                                <div class="te-implementation-value">@metric.Linked / @metric.Total</div>
+                                <div class="te-implementation-card-label">@metric.Label linked</div>
+                                <span class="te-coverage-pill @CoverageStatusClass(metric.Status)">@metric.Status</span>
+                            </div>
+                        }
                     </div>
+
+                    <!-- Implementation Gaps Section -->
+                    <div class="te-gaps-section" data-testid="te-implementation-gaps">
+                        <h3>Implementation Gaps</h3>
+                        @if (_coverage.MissingRequirements.Count > 0)
+                        {
+                            <div class="te-gap-item">
+                                <strong>@_coverage.MissingRequirements.Count</strong> Requirement@(_coverage.MissingRequirements.Count != 1 ? "s" : "") without implementation
+                            </div>
+                            @foreach (var req in _coverage.MissingRequirements)
+                            {
+                                <div class="te-gap-item">
+                                    <span class="te-gap-id">@req</span>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="te-gap-item">✓ All requirements have implementation tasks</div>
+                        }
+                    </div>
+
+                    <!-- Zero-Gap Success Statuses -->
+                    @if (_coverage.MissingSuccessCriteria.Count == 0 || _coverage.MissingUserStories.Count == 0 || _coverage.SecurityGapLabels.Count == 0 || _coverage.TestingGapLabels.Count == 0)
+                    {
+                        <div class="te-zero-gaps">
+                            @if (_coverage.MissingSuccessCriteria.Count == 0)
+                            {
+                                <div class="te-zero-gap-item">✓ Success Criteria — no gaps</div>
+                            }
+                            @if (_coverage.MissingUserStories.Count == 0)
+                            {
+                                <div class="te-zero-gap-item">✓ User Stories — no gaps</div>
+                            }
+                            @if (_coverage.SecurityGapLabels.Count == 0)
+                            {
+                                <div class="te-zero-gap-item">✓ Security — no gaps</div>
+                            }
+                            @if (_coverage.TestingGapLabels.Count == 0)
+                            {
+                                <div class="te-zero-gap-item">✓ Testing — no gaps</div>
+                            }
+                        </div>
+                    }
+
+                    <!-- Phase Progress -->
+                    @if (_tree is not null && _tree.Roots.Any(r => r.NodeType == TaskNodeType.Phase))
+                    {
+                        <div class="te-phase-dashboard">
+                            <div class="te-phase-dashboard-header">Phase Progress</div>
+                            <div class="te-phase-cards">
+                                @foreach (var phase in _tree.Roots.Where(r => r.NodeType == TaskNodeType.Phase).OrderBy(p => p.Title))
+                                {
+                                    var phasePct = phase.TaskCount == 0 ? 0 : (int)Math.Round((double)phase.CompletedCount / phase.TaskCount * 100);
+                                    var phaseStatus = phase.TaskCount == 0 ? "Not Started" : (phasePct == 100 ? "Complete" : "In Progress");
+                                    var phaseStatusClass = phase.TaskCount == 0 ? "not-started" : (phasePct == 100 ? "complete" : "in-progress");
+                                    <div class="te-phase-card">
+                                        <div class="te-phase-card-header">
+                                            <div class="te-phase-name">@phase.Title</div>
+                                            <span class="te-phase-status te-phase-status-@phaseStatusClass">@phaseStatus</span>
+                                        </div>
+                                        <div class="te-phase-counts">@phase.CompletedCount / @phase.TaskCount</div>
+                                        <div class="te-phase-bar">
+                                            <div class="te-phase-bar-fill" style="width:@(phasePct)%"></div>
+                                        </div>
+                                        <div class="te-phase-pct">@(phasePct)%</div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
 
                     <div class="te-link-visualization">
                         <div class="te-section-kicker">Link Visualization</div>
@@ -393,9 +324,13 @@
                     </div>
                 </div>
             }
+            else if (_isMapView)
+            {
+                @RenderMapView()
+            }
             else
             {
-            <div class="@(_isMapView ? "te-map" : "te-tree")" role="tree">
+            <div class="te-tree" role="tree">
                 @if (_flatCache.Count == 0)
                 {
                     <div class="te-no-results">
@@ -418,14 +353,21 @@
                     @for (var i = 0; i < _flatCache.Count; i++)
                     {
                         var (node, depth, isMatch) = _flatCache[i];
+
+                        // Hide Format/documentation-only TaskGroup nodes (presentation-level filtering)
+                        if (IsFormatGuidanceNode(node))
+                        {
+                            continue;
+                        }
+
                         var hasChildren = node.Children.Count > 0;
                         var isExpanded = _expandedIds.Contains(node.Id);
                         var isSelected = _selectedNodeId == node.Id;
                         var isHeading = node.HeadingLevel > 0;
                         var isPhase = node.NodeType == TaskNodeType.Phase;
 
-                        <div class="te-row @(isSelected ? "is-selected" : "") @(isMatch ? "is-match" : "") @(isHeading || node.NodeType == TaskNodeType.TableSection ? "is-heading" : "is-item") @(_isMapView ? "te-row-map" : "")"
-                             style="padding-left: @(depth * (_isMapView ? 24 : 16) + 6)px"
+                        <div class="te-row @(isSelected ? "is-selected" : "") @(isMatch ? "is-match" : "") @(isHeading || node.NodeType == TaskNodeType.TableSection ? "is-heading" : "is-item")"
+                             style="padding-left: @(depth * 16 + 6)px"
                              role="treeitem"
                              aria-selected="@isSelected.ToString().ToLower()"
                              @onclick="() => HandleNodeClick(node)">
@@ -551,7 +493,7 @@
                         {
                             @if (!string.IsNullOrEmpty(node.PhasePurpose))
                             {
-                                <div class="te-metadata-section" style="padding-left: @((depth + 1) * (_isMapView ? 24 : 16) + 6)px">
+                                <div class="te-metadata-section" style="padding-left: @((depth + 1) * 16 + 6)px">
                                     <div class="te-metadata-label">Purpose</div>
                                     <MarkdownContent Content="@node.PhasePurpose" CssClass="te-metadata-content" />
                                 </div>
@@ -559,7 +501,7 @@
 
                             @if (!string.IsNullOrEmpty(node.PhaseGoal))
                             {
-                                <div class="te-metadata-section" style="padding-left: @((depth + 1) * (_isMapView ? 24 : 16) + 6)px">
+                                <div class="te-metadata-section" style="padding-left: @((depth + 1) * 16 + 6)px">
                                     <div class="te-metadata-label">Goal</div>
                                     <MarkdownContent Content="@node.PhaseGoal" CssClass="te-metadata-content" />
                                 </div>
@@ -567,7 +509,7 @@
 
                             @if (!string.IsNullOrEmpty(node.PhaseIndependentTest))
                             {
-                                <div class="te-metadata-section" style="padding-left: @((depth + 1) * (_isMapView ? 24 : 16) + 6)px">
+                                <div class="te-metadata-section" style="padding-left: @((depth + 1) * 16 + 6)px">
                                     <div class="te-metadata-label">Independent Test</div>
                                     <MarkdownContent Content="@node.PhaseIndependentTest" CssClass="te-metadata-content" />
                                 </div>
@@ -582,7 +524,7 @@
 
                             if ((isLastChild || nextIsNotChild) && !string.IsNullOrEmpty(node.PhaseCheckpoint))
                             {
-                                <div class="te-metadata-section" style="padding-left: @((depth + 1) * (_isMapView ? 24 : 16) + 6)px">
+                                <div class="te-metadata-section" style="padding-left: @((depth + 1) * 16 + 6)px">
                                     <div class="te-metadata-label">Checkpoint</div>
                                     <MarkdownContent Content="@node.PhaseCheckpoint" CssClass="te-metadata-content" />
                                 </div>
@@ -1440,60 +1382,365 @@
     private RenderFragment RenderDependenciesView() => builder =>
     {
         if (_tree is null) return;
-        var allNodes = AllNodes(_tree.Roots);
-        var dependencies = new List<(string Type, string Source, string DependsOn, string Note)>();
-
-        foreach (var node in allNodes.Where(n => n.NodeType == TaskNodeType.TaskGroup && !string.IsNullOrWhiteSpace(n.Title)))
-        {
-            if (node.Title.Contains("Dependencies", StringComparison.OrdinalIgnoreCase) ||
-                node.Title.Contains("Execution Order", StringComparison.OrdinalIgnoreCase) ||
-                node.Title.Contains("Phase Dependencies", StringComparison.OrdinalIgnoreCase))
-            {
-                var items = node.Children.Where(c => c.NodeType == TaskNodeType.Task).Select(c => c.Title).ToList();
-                if (items.Count > 0)
-                {
-                    dependencies.Add(("Section", node.Title, "", string.Join(" → ", items.Take(3)) + (items.Count > 3 ? $" (+{items.Count - 3})" : "")));
-                }
-            }
-        }
 
         builder.OpenElement(0, "div");
-        builder.AddAttribute(1, "class", "te-dependencies-list");
+        builder.AddAttribute(1, "class", "te-dependencies-view-content");
 
-        if (dependencies.Count == 0)
+        if (_tree.ExplicitDependencies.Count == 0)
         {
             builder.OpenElement(2, "div");
             builder.AddAttribute(3, "class", "te-empty-message");
-            builder.AddContent(4, "No explicit dependency sections found. Check task descriptions for inline dependency markers.");
+            builder.AddContent(4, "No explicit task dependencies found.");
             builder.CloseElement();
         }
         else
         {
-            foreach (var (type, source, _, note) in dependencies.Take(20))
+            // Build task ID → TaskNode map for lookup
+            var allNodes = AllNodes(_tree.Roots);
+            var taskMap = allNodes
+                .Where(n => n.NodeType == TaskNodeType.Task && !string.IsNullOrEmpty(n.TaskId))
+                .ToDictionary(n => n.TaskId!, StringComparer.OrdinalIgnoreCase);
+
+            // Group dependencies by source task's user story (if available)
+            var depsByStory = new Dictionary<string, List<(string Source, string Target)>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var dep in _tree.ExplicitDependencies)
+            {
+                var storyKey = "General";
+                if (taskMap.TryGetValue(dep.SourceTaskId, out var sourceTask) && !string.IsNullOrEmpty(sourceTask.UserStoryTag))
+                {
+                    storyKey = sourceTask.UserStoryTag;
+                }
+
+                if (!depsByStory.ContainsKey(storyKey))
+                    depsByStory[storyKey] = new();
+
+                depsByStory[storyKey].Add((dep.SourceTaskId, dep.DependsOnTaskId));
+            }
+
+            // Render each story group
+            var orderedStories = depsByStory.Keys.OrderBy(k => k).ToList();
+            foreach (var story in orderedStories)
             {
                 builder.OpenElement(5, "div");
-                builder.AddAttribute(6, "class", "te-dependency-item");
+                builder.AddAttribute(6, "class", "te-dep-story-group");
 
-                builder.OpenElement(7, "div");
-                builder.AddAttribute(8, "class", "te-dep-type");
-                builder.AddContent(9, type);
+                // Story title
+                builder.OpenElement(7, "h4");
+                builder.AddAttribute(8, "class", "te-dep-story-title");
+                builder.AddContent(9, story);
                 builder.CloseElement();
 
-                builder.OpenElement(10, "div");
-                builder.AddAttribute(11, "class", "te-dep-source");
-                builder.AddContent(12, source);
-                builder.CloseElement();
-
-                builder.OpenElement(13, "div");
-                builder.AddAttribute(14, "class", "te-dep-note");
-                builder.AddContent(15, note);
-                builder.CloseElement();
+                // Build chains from dependencies
+                var chains = BuildDependencyChains(depsByStory[story]);
+                foreach (var chain in chains)
+                {
+                    RenderDependencyChain(builder, chain, depsByStory[story]);
+                }
 
                 builder.CloseElement();
             }
         }
+
         builder.CloseElement();
     };
+
+    private RenderFragment RenderMapView() => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "te-map");
+        builder.AddAttribute(2, "role", "tree");
+
+        if (_flatCache.Count == 0)
+        {
+            builder.OpenElement(3, "div");
+            builder.AddAttribute(4, "class", "te-no-results");
+            if (!string.IsNullOrWhiteSpace(_searchQuery) || _activeFilter is not null)
+            {
+                builder.AddContent(5, "No tasks match the current search or filter.");
+            }
+            else if (_tree.Roots.Count == 0)
+            {
+                builder.AddContent(5, "No tasks detected. Task Explorer expects headings and task IDs such as T001, T002 in tasks.md.");
+            }
+            else
+            {
+                builder.AddContent(5, "No execution structure available.");
+            }
+            builder.CloseElement(); // te-no-results
+        }
+        else
+        {
+            for (var i = 0; i < _flatCache.Count; i++)
+            {
+                var (node, depth, isMatch) = _flatCache[i];
+
+                if (IsFormatGuidanceNode(node))
+                {
+                    continue;
+                }
+
+                // Map View: exclude documentation-only sections at root level
+                if (IsDocumentationOnlyNode(node))
+                {
+                    continue;
+                }
+
+                var hasChildren = node.Children.Count > 0;
+                var isSelected = _selectedNodeId == node.Id;
+                var isHeading = node.HeadingLevel > 0;
+
+                builder.OpenElement(10 + i, "div");
+                builder.AddAttribute(11 + i, "class", $"te-row te-row-map {(isSelected ? "is-selected" : "")} {(isMatch ? "is-match" : "")} {(isHeading || node.NodeType == TaskNodeType.TableSection ? "is-heading" : "is-item")}");
+                builder.AddAttribute(12 + i, "style", $"padding-left: {depth * 24 + 6}px");
+                builder.AddAttribute(13 + i, "role", "treeitem");
+                builder.AddAttribute(14 + i, "aria-selected", isSelected.ToString().ToLower());
+                builder.AddAttribute(15 + i, "onclick", EventCallback.Factory.Create(this, () => HandleNodeClick(node)));
+
+                // Content left border instead of expand button
+                builder.OpenElement(16 + i, "div");
+                builder.AddAttribute(17 + i, "class", "te-map-marker");
+                builder.CloseElement();
+
+                // Icon
+                builder.OpenElement(18 + i, "span");
+                builder.AddAttribute(19 + i, "class", "te-node-icon");
+                builder.AddAttribute(20 + i, "aria-hidden", "true");
+                builder.AddContent(21 + i, GetIcon(node.NodeType));
+                builder.CloseElement();
+
+                // Title
+                builder.OpenElement(22 + i, "span");
+                builder.AddAttribute(23 + i, "class", "te-node-title");
+                builder.AddContent(24 + i, node.ShortTitle ?? node.Title);
+                if (node.TaskId is not null && node.NodeType == TaskNodeType.Task)
+                {
+                    builder.OpenElement(25 + i, "span");
+                    builder.AddAttribute(26 + i, "class", "te-task-id");
+                    builder.AddContent(27 + i, node.TaskId);
+                    builder.CloseElement();
+                }
+                builder.CloseElement();
+
+                // Metadata chips
+                if (node.NodeType == TaskNodeType.Task)
+                {
+                    builder.OpenElement(28 + i, "span");
+                    builder.AddAttribute(29 + i, "class", "te-chips");
+
+                    if (node.UserStoryTag is not null)
+                    {
+                        builder.OpenElement(30 + i, "span");
+                        builder.AddAttribute(31 + i, "class", "te-chip te-chip-us");
+                        builder.AddContent(32 + i, node.UserStoryTag);
+                        builder.CloseElement();
+                    }
+
+                    if (node.IsParallel)
+                    {
+                        builder.OpenElement(33 + i, "span");
+                        builder.AddAttribute(34 + i, "class", "te-chip te-chip-parallel");
+                        builder.AddContent(35 + i, "P");
+                        builder.CloseElement();
+                    }
+
+                    if (node.Status.HasValue)
+                    {
+                        builder.OpenElement(36 + i, "span");
+                        builder.AddAttribute(37 + i, "class", $"te-chip te-chip-status te-chip-status-{StatusKey(node.Status.Value)}");
+                        builder.AddContent(38 + i, StatusLabel(node.Status.Value));
+                        builder.CloseElement();
+                    }
+
+                    builder.CloseElement(); // te-chips
+                }
+
+                // Child count for non-expanded nodes
+                if (!_expandedIds.Contains(node.Id) && hasChildren && node.TotalDescendants > 0)
+                {
+                    builder.OpenElement(40 + i, "span");
+                    builder.AddAttribute(41 + i, "class", "te-child-count");
+                    builder.AddContent(42 + i, $"({node.TotalDescendants})");
+                    builder.CloseElement();
+                }
+
+                builder.CloseElement(); // te-row
+            }
+        }
+
+        builder.CloseElement(); // te-map
+    };
+
+    private List<List<string>> BuildDependencyChains(List<(string Source, string Target)> deps)
+    {
+        // Build chains with explicit segmentation for convergence patterns
+        var chains = new List<List<string>>();
+        var processed = new HashSet<string>();
+        var depsBySource = deps.GroupBy(d => d.Source).ToDictionary(g => g.Key, g => g.ToList());
+        var depsByTarget = deps.GroupBy(d => d.Target).ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var (source, target) in deps)
+        {
+            if (processed.Contains($"{source}→{target}")) continue;
+
+            var chain = new List<string>();
+            var current = source;
+
+            // Find the true start (first node with no predecessors)
+            while (depsByTarget.ContainsKey(current))
+            {
+                var preds = depsByTarget[current];
+                if (preds.Count > 1) break;  // Convergence point
+                var pred = preds[0].Source;
+                if (processed.Contains($"{pred}→{current}")) break;
+                current = pred;
+            }
+
+            // Build chain forward
+            chain.Add(current);
+
+            while (depsBySource.ContainsKey(current))
+            {
+                var outgoing = depsBySource[current];
+                if (outgoing.Count == 0) break;
+
+                var nextTarget = outgoing[0].Target;
+                processed.Add($"{current}→{nextTarget}");
+
+                // Get all predecessors to this target
+                if (depsByTarget.ContainsKey(nextTarget))
+                {
+                    var allPreds = depsByTarget[nextTarget]
+                        .Select(d => d.Source)
+                        .Distinct()
+                        .OrderBy(s => s)
+                        .ToList();
+
+                    // Add any predecessors we haven't added yet
+                    foreach (var pred in allPreds)
+                    {
+                        if (!chain.Contains(pred))
+                        {
+                            chain.Add(pred);
+                        }
+                        processed.Add($"{pred}→{nextTarget}");
+                    }
+                }
+
+                chain.Add(nextTarget);
+                current = nextTarget;
+            }
+
+            // Only add non-empty unique chains
+            if (chain.Count > 0)
+            {
+                var key = string.Join("→", chain.Distinct());
+                chains = chains
+                    .Where(c => string.Join("→", c.Distinct()) != key)
+                    .ToList();
+                chains.Add(chain);
+            }
+        }
+
+        return chains;
+    }
+
+    private void RenderDependencyChain(RenderTreeBuilder builder, List<string> chain, List<(string Source, string Target)> deps)
+    {
+        builder.OpenElement(10, "div");
+        builder.AddAttribute(11, "class", "te-dep-chain");
+
+        if (chain.Count == 0)
+        {
+            builder.CloseElement();
+            return;
+        }
+
+        // Build a map of which nodes point to which targets
+        var depsBySource = deps.GroupBy(d => d.Source).ToDictionary(g => g.Key, g => g.ToList());
+        var depsByTarget = deps.GroupBy(d => d.Target).ToDictionary(g => g.Key, g => g.ToList());
+
+        // Render chain by identifying groupings based on convergence patterns
+        var rendered = new HashSet<string>();
+        var i = 0;
+        var elementIndex = 0;
+
+        while (i < chain.Count)
+        {
+            if (rendered.Contains(chain[i]))
+            {
+                i++;
+                continue;
+            }
+
+            // Find all nodes that are predecessors to the same target
+            var currentTask = chain[i];
+            var group = new List<string> { currentTask };
+            rendered.Add(currentTask);
+
+            // If this node has outgoing edges, look ahead to find other predecessors to the same target
+            if (depsBySource.ContainsKey(currentTask))
+            {
+                var target = depsBySource[currentTask][0].Target;
+
+                // Find all predecessors to this target
+                if (depsByTarget.ContainsKey(target))
+                {
+                    var allPredecessors = depsByTarget[target]
+                        .Select(d => d.Source)
+                        .OrderBy(s => s)
+                        .ToList();
+
+                    // Add other predecessors that appear in the chain and haven't been rendered
+                    foreach (var pred in allPredecessors)
+                    {
+                        if (pred != currentTask && chain.Contains(pred) && !rendered.Contains(pred))
+                        {
+                            group.Add(pred);
+                            rendered.Add(pred);
+                        }
+                    }
+                }
+            }
+
+            // Sort group deterministically for display
+            group.Sort();
+
+            // Render the group
+            for (var k = 0; k < group.Count; k++)
+            {
+                builder.OpenElement(20 + elementIndex, "span");
+                builder.AddAttribute(21 + elementIndex, "class", "te-dep-task-id");
+                builder.AddContent(22 + elementIndex, group[k]);
+                builder.CloseElement();
+                elementIndex++;
+
+                if (k < group.Count - 1)
+                {
+                    builder.OpenElement(23 + elementIndex, "span");
+                    builder.AddAttribute(24 + elementIndex, "class", "te-dep-separator");
+                    builder.AddContent(25 + elementIndex, " + ");
+                    builder.CloseElement();
+                    elementIndex++;
+                }
+            }
+
+            // Add arrow if not at end
+            if (i < chain.Count - 1 && rendered.Count < chain.Count)
+            {
+                builder.OpenElement(100 + elementIndex, "span");
+                builder.AddAttribute(101 + elementIndex, "class", "te-dep-arrow");
+                builder.AddContent(102 + elementIndex, " → ");
+                builder.CloseElement();
+                elementIndex++;
+            }
+
+            // Move to next unrendered task in chain
+            i++;
+        }
+
+        builder.CloseElement();
+    }
 
     private RenderFragment RenderParallelView() => builder =>
     {
@@ -1508,48 +1755,82 @@
         {
             builder.OpenElement(2, "div");
             builder.AddAttribute(3, "class", "te-empty-message");
-            builder.AddContent(4, "No parallel tasks marked with [P]. Use [P] prefix in task descriptions to mark tasks that can run in parallel.");
+            builder.AddContent(4, "No parallelizable tasks found.");
             builder.CloseElement();
         }
         else
         {
-            var groups = parallelTasks.GroupBy(t => t.PhaseTitle ?? "Unphased").OrderBy(g => g.Key);
+            // Overall summary
+            var groups = parallelTasks.GroupBy(t => t.PhaseTitle ?? "Unphased").OrderBy(g => g.Key).ToList();
+            builder.OpenElement(5, "div");
+            builder.AddAttribute(6, "class", "te-parallel-summary");
+            builder.AddContent(7, $"{parallelTasks.Count} parallel tasks across {groups.Count} phases");
+            builder.CloseElement();
+
+            // Phase groups
+            var seq = 10;
             foreach (var group in groups)
             {
-                builder.OpenElement(5, "div");
-                builder.AddAttribute(6, "class", "te-parallel-group");
+                builder.OpenElement(seq++, "div");
+                builder.AddAttribute(seq++, "class", "te-parallel-group");
 
-                builder.OpenElement(7, "h4");
-                builder.AddAttribute(8, "class", "te-parallel-group-title");
-                builder.AddContent(9, group.Key);
+                // Group header with count
+                builder.OpenElement(seq++, "div");
+                builder.AddAttribute(seq++, "class", "te-parallel-group-header");
+
+                builder.OpenElement(seq++, "h4");
+                builder.AddAttribute(seq++, "class", "te-parallel-group-title");
+                builder.AddContent(seq++, group.Key);
                 builder.CloseElement();
 
+                var groupCount = group.Count();
+                builder.OpenElement(seq++, "span");
+                builder.AddAttribute(seq++, "class", "te-parallel-group-count");
+                builder.AddContent(seq++, $"{groupCount} parallel task{(groupCount == 1 ? "" : "s")}");
+                builder.CloseElement();
+
+                builder.CloseElement(); // header
+
+                // Tasks in group
                 foreach (var task in group)
                 {
-                    builder.OpenElement(10, "div");
-                    builder.AddAttribute(11, "class", "te-parallel-task");
+                    builder.OpenElement(seq++, "div");
+                    builder.AddAttribute(seq++, "class", "te-parallel-task");
+                    builder.AddAttribute(seq++, "style", "display: grid; grid-template-columns: 4.5rem minmax(0, 1fr) auto auto; align-items: center; gap: 0.75rem; padding: 0.625rem 1rem; background: rgba(45, 212, 191, 0.04); border-bottom: 1px solid rgba(45, 212, 191, 0.12); border-left: 3px solid rgba(45, 212, 191, 0.25); font-size: 0.85rem;");
 
-                    builder.OpenElement(12, "span");
-                    builder.AddAttribute(13, "class", "te-ptask-id");
-                    builder.AddContent(14, task.TaskId ?? "?");
+                    builder.OpenElement(seq++, "span");
+                    builder.AddAttribute(seq++, "class", "te-ptask-id");
+                    builder.AddAttribute(seq++, "style", "font-weight: 700; color: rgba(45, 212, 191, 0.9); font-family: monospace; text-align: center; padding: 0.25rem 0.35rem; background: rgba(45, 212, 191, 0.08); border-radius: 0.25rem; border: 1px solid rgba(45, 212, 191, 0.2); font-size: 0.8rem; line-height: 1.2; min-width: 3.5rem; white-space: nowrap;");
+                    builder.AddContent(seq++, task.TaskId ?? "?");
                     builder.CloseElement();
 
-                    builder.OpenElement(15, "span");
-                    builder.AddAttribute(16, "class", "te-ptask-title");
-                    builder.AddContent(17, task.ShortTitle ?? task.Title);
+                    builder.OpenElement(seq++, "span");
+                    builder.AddAttribute(seq++, "class", "te-ptask-title");
+                    builder.AddAttribute(seq++, "style", "min-width: 0; color: var(--clr-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; line-height: 1.4;");
+                    builder.AddContent(seq++, task.ShortTitle ?? task.Title);
                     builder.CloseElement();
 
-                    if (!string.IsNullOrEmpty(task.UserStoryTitle))
+                    if (!string.IsNullOrEmpty(task.UserStoryTag))
                     {
-                        builder.OpenElement(18, "span");
-                        builder.AddAttribute(19, "class", "te-ptask-story");
-                        builder.AddContent(20, task.UserStoryTitle);
+                        builder.OpenElement(seq++, "span");
+                        builder.AddAttribute(seq++, "class", "te-ptask-tag");
+                        builder.AddAttribute(seq++, "style", "font-size: 0.7rem; font-weight: 600; color: rgba(251, 191, 36, 0.85); background: rgba(251, 191, 36, 0.12); padding: 0.3rem 0.6rem; border-radius: 0.25rem; white-space: nowrap; border: 1px solid rgba(251, 191, 36, 0.3);");
+                        builder.AddContent(seq++, task.UserStoryTag);
                         builder.CloseElement();
                     }
 
-                    builder.CloseElement();
+                    if (task.IsCompleted)
+                    {
+                        builder.OpenElement(seq++, "span");
+                        builder.AddAttribute(seq++, "class", "te-ptask-status");
+                        builder.AddAttribute(seq++, "style", "font-size: 1rem; color: rgba(74, 222, 128, 0.9); font-weight: 700; text-align: center; width: 1.5rem; height: 1.5rem; display: flex; align-items: center; justify-content: center;");
+                        builder.AddContent(seq++, "✓");
+                        builder.CloseElement();
+                    }
+
+                    builder.CloseElement(); // task
                 }
-                builder.CloseElement();
+                builder.CloseElement(); // group
             }
         }
         builder.CloseElement();
@@ -1735,5 +2016,56 @@
             ancestors.RemoveAt(ancestors.Count - 1);
         }
         return null;
+    }
+
+    // Presentation-level filtering: hide Format/documentation-only TaskGroup nodes
+    private bool IsDocumentationOnlyNode(TaskNode node)
+    {
+        // Map View filtering: hide root-level documentation sections that are not phases
+        // Root-level = HeadingLevel == 2 (level 2 headings are top-level structure)
+        // Documentation sections: "Dependencies & Execution Order", "Parallel Execution Examples", etc.
+        // Phase sections: contain "Phase" in title
+
+        if (node.HeadingLevel != 2 || node.NodeType != TaskNodeType.TaskGroup)
+            return false;
+
+        var title = node.Title?.Trim() ?? "";
+
+        // Keep phase sections
+        if (title.Contains("Phase", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Hide other root-level TaskGroups (documentation sections)
+        // These typically include: Dependencies & Execution Order, Parallel Execution Examples, etc.
+        return true;
+    }
+
+    private static bool IsFormatGuidanceNode(TaskNode node)
+    {
+        // Only hide TaskGroup nodes that look like documentation
+        if (node.NodeType != TaskNodeType.TaskGroup)
+            return false;
+
+        // Check if title indicates this is format/schema documentation
+        var title = node.Title?.Trim() ?? "";
+        if (!title.Contains("Format", StringComparison.OrdinalIgnoreCase) &&
+            !title.Contains("Schema", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Only hide if there are no actual Task descendants (pure documentation)
+        var hasTaskDescendants = HasTaskDescendants(node);
+        return !hasTaskDescendants;
+    }
+
+    private static bool HasTaskDescendants(TaskNode node)
+    {
+        foreach (var child in node.Children)
+        {
+            if (child.NodeType == TaskNodeType.Task)
+                return true;
+            if (HasTaskDescendants(child))
+                return true;
+        }
+        return false;
     }
 }

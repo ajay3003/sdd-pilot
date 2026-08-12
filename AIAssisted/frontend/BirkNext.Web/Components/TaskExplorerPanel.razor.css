@@ -148,6 +148,20 @@
     color: var(--clr-text-subtle);
 }
 
+.te-header-summary {
+    font-size: 0.8rem;
+    color: var(--clr-text-secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+}
+
+.te-header-completion {
+    font-weight: 600;
+    color: var(--clr-text-primary);
+}
+
 .te-header-right {
     display: flex;
     align-items: center;
@@ -994,12 +1008,35 @@ button.te-ref-chip:hover {
 }
 
 .te-implementation-card {
-    padding: 0.7rem;
-    min-height: 86px;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
 }
 
 .te-implementation-card-primary {
     border-color: rgba(20, 184, 166, 0.32);
+}
+
+.te-changes-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+}
+
+.te-changes-header h3 {
+    font-size: 0.92rem;
+    margin: 0.1rem 0 0;
+    color: var(--clr-text-primary);
+}
+
+.te-changes-subtext {
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle);
+    font-weight: normal;
+    margin: 0;
+    line-height: 1.4;
 }
 
 .te-section-kicker {
@@ -1011,10 +1048,10 @@ button.te-ref-chip:hover {
 }
 
 .te-implementation-percent {
-    font-size: 1.65rem;
+    font-size: 1.4rem;
     font-weight: 800;
     color: var(--clr-text-primary);
-    margin-top: 0.2rem;
+    margin-top: 0;
 }
 
 .te-implementation-value {
@@ -1061,17 +1098,22 @@ button.te-ref-chip:hover {
 }
 
 .te-risk-summary {
-    padding: 0.8rem;
+    padding: 0.6rem;
     margin-bottom: 0.75rem;
 }
 
 .te-risk-summary-header,
 .te-impact-header {
     display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.4rem;
     margin-bottom: 0.65rem;
+}
+
+.te-impact-header span {
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle);
+    font-weight: normal;
 }
 
 .te-risk-summary h3,
@@ -1083,8 +1125,8 @@ button.te-ref-chip:hover {
 
 .te-risk-items {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.4rem;
 }
 
 .te-risk-item {
@@ -1144,19 +1186,65 @@ button.te-ref-chip:hover {
     font-size: 0.74rem;
 }
 
+.te-gaps-section {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: 0.375rem;
+    padding: 0.6rem;
+    margin: 0.75rem 0;
+}
+
+.te-gaps-section h3 {
+    font-size: 0.78rem;
+    margin: 0 0 0.5rem;
+    color: var(--clr-text-primary);
+    font-weight: 600;
+}
+
+.te-gap-item {
+    font-size: 0.72rem;
+    color: var(--clr-text-primary);
+    margin: 0.3rem 0;
+}
+
+.te-gap-id {
+    font-family: monospace;
+    font-weight: 600;
+    color: rgba(248, 113, 113, 0.85);
+}
+
+.te-zero-gaps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.75rem 0;
+}
+
+.te-zero-gap-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem 0.5rem;
+    background: rgba(74, 222, 128, 0.1);
+    border-radius: 0.25rem;
+    font-size: 0.7rem;
+    color: rgba(74, 222, 128, 0.85);
+}
+
 .te-link-visualization {
-    margin-top: 0.7rem;
-    padding: 0.65rem;
+    margin-top: 0.5rem;
+    padding: 0.5rem 0;
 }
 
 .te-link-chain {
-    display: inline-flex;
-    margin: 0.35rem 0.35rem 0 0;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-    background: rgba(45, 212, 191, 0.08);
+    display: block;
+    margin: 0.25rem 0;
+    padding: 0.2rem 0;
+    border-radius: 0;
+    background: none;
     color: var(--clr-text-subtle);
-    font-size: 0.72rem;
+    font-size: 0.7rem;
+    font-family: monospace;
 }
 
 .te-detail-grid {
@@ -1293,6 +1381,63 @@ button.te-ref-chip:hover {
 .te-phase-status-not-started {
     background: rgba(148, 163, 184, 0.15);
     color: #94a3b8;
+}
+
+/* ── Dependencies View ──────────────────────────────────────────── */
+
+.te-dependencies-view-content {
+    padding: 0.5rem 0;
+}
+
+.te-dep-story-group {
+    margin-bottom: 0.75rem;
+    padding: 0.4rem 0;
+}
+
+.te-dep-story-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    color: rgba(45, 212, 191, 0.85);
+    margin: 0 0 0.3rem 0;
+}
+
+.te-dep-chain {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+    padding: 0.2rem 0;
+    background: none;
+    border-radius: 0;
+    border: none;
+    margin-bottom: 0.2rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+.te-dep-task-id {
+    font-weight: 700;
+    font-family: monospace;
+    background: rgba(20, 184, 166, 0.15);
+    color: rgba(45, 212, 191, 0.9);
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.2rem;
+    white-space: nowrap;
+    font-size: 0.75rem;
+}
+
+.te-dep-separator {
+    color: var(--clr-text-subtle);
+    font-weight: 600;
+    margin: 0 -0.25rem;
+}
+
+.te-dep-arrow {
+    color: rgba(45, 212, 191, 0.7);
+    font-weight: 600;
+    margin: 0 0.1rem;
 }
 
 .te-phase-counts {
@@ -1439,49 +1584,140 @@ button.te-ref-chip:hover {
 .te-parallel-list {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 1.5rem;
+}
+
+.te-parallel-summary {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--clr-text-primary);
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--clr-border);
+    margin-bottom: 0.5rem;
 }
 
 .te-parallel-group {
-    border-left: 3px solid rgba(251, 191, 36, 0.3);
-    padding-left: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.te-parallel-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
 }
 
 .te-parallel-group-title {
-    margin: 0 0 0.4rem 0;
-    font-size: 0.8rem;
+    margin: 0;
+    font-size: 0.85rem;
     font-weight: 600;
-    color: rgba(251, 191, 36, 0.9);
+    color: var(--clr-text-primary);
+    flex: 1;
+}
+
+.te-parallel-group-count {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--clr-text-subtle);
+    background: rgba(45, 212, 191, 0.1);
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.25rem;
 }
 
 .te-parallel-task {
-    display: flex;
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr) auto auto;
+    grid-auto-rows: auto;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem;
-    background: rgba(255, 255, 255, 0.02);
-    border-radius: 0.25rem;
-    font-size: 0.8rem;
+    gap: 0.75rem;
+    padding: 0.625rem 1rem;
+    background: rgba(45, 212, 191, 0.04);
+    border-bottom: 1px solid rgba(45, 212, 191, 0.12);
+    border-left: 3px solid rgba(45, 212, 191, 0.25);
+    border-radius: 0;
+    font-size: 0.85rem;
+    min-height: 2.5rem;
+    transition: background-color 0.15s ease;
+}
+
+.te-parallel-task:hover {
+    background: rgba(45, 212, 191, 0.08);
+    border-left-color: rgba(45, 212, 191, 0.4);
+}
+
+@media (max-width: 768px) {
+    .te-parallel-task {
+        grid-template-columns: 4rem 1fr;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        min-height: auto;
+    }
 }
 
 .te-ptask-id {
     font-weight: 700;
-    color: rgba(45, 212, 191, 0.8);
-    min-width: 45px;
+    color: rgba(45, 212, 191, 0.9);
+    font-family: monospace;
+    text-align: center;
+    padding: 0.25rem 0.35rem;
+    background: rgba(45, 212, 191, 0.08);
+    border-radius: 0.25rem;
+    border: 1px solid rgba(45, 212, 191, 0.2);
+    font-size: 0.8rem;
+    line-height: 1.2;
+    min-width: 3.5rem;
 }
 
 .te-ptask-title {
-    flex: 1;
+    min-width: 0;
     color: var(--clr-text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 0.85rem;
+    line-height: 1.4;
 }
 
-.te-ptask-story {
+.te-ptask-tag {
     font-size: 0.7rem;
-    color: rgba(148, 163, 184, 0.8);
+    font-weight: 600;
+    color: rgba(251, 191, 36, 0.85);
+    background: rgba(251, 191, 36, 0.12);
+    padding: 0.3rem 0.6rem;
+    border-radius: 0.25rem;
     white-space: nowrap;
+    border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.te-ptask-status {
+    font-size: 1rem;
+    color: rgba(74, 222, 128, 0.9);
+    font-weight: 700;
+    text-align: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+@media (max-width: 768px) {
+    .te-ptask-id {
+        font-size: 0.75rem;
+        min-width: 3rem;
+        padding: 0.2rem 0.25rem;
+    }
+
+    .te-ptask-tag {
+        font-size: 0.65rem;
+        padding: 0.2rem 0.35rem;
+    }
+
+    .te-ptask-status {
+        font-size: 0.9rem;
+    }
 }
 
 .te-empty-message {

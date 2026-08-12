@@ -48,6 +48,11 @@ public static class TaskExplorerService
         @"⚠️\s*CRITICAL|CRITICAL.*(?:phase|blocking|prerequisite)|No user story work can begin",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Explicit dependency chain: T001/T002 → T003 → T004
+    private static readonly Regex DependencyChainRe = new(
+        @"(T\d{2,4}[a-zA-Z]*(?:/T\d{2,4}[a-zA-Z]*)*)\s*(?:\[P\])?\s*(?:→|-&gt;|->)\s*",
+        RegexOptions.Compiled);
+
     private static readonly Regex FrontendOnlyKeywordRe = new(
         @"\b(?:frontend[\s-]?only|blazor\s+wasm|spa|webassembly|client[\s-]?side)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -242,6 +247,11 @@ public static class TaskExplorerService
         MarkUnresolvedTableRefs(roots, taskIds, ref hUnresolved);
         var linkedTaskIds = BuildTableLinkedTaskIds(roots);
 
+        // Extract explicit dependencies from markdown
+        var allNodes = ExtractAllTaskNodes(roots);
+        var dependencies = ExtractDependencies(markdown, allNodes);
+        ApplyDependenciesToNodes(roots, dependencies);
+
         var health = new TaskHealth
         {
             TotalTasks = hTasks,
@@ -260,7 +270,7 @@ public static class TaskExplorerService
             ParallelTasks = hParallel,
         };
 
-        return new TaskTree { Roots = roots, Health = health };
+        return new TaskTree { Roots = roots, Health = health, ExplicitDependencies = dependencies };
     }
 
     public static TaskNode? FindNode(IEnumerable<TaskNode> nodes, string id)
@@ -347,6 +357,12 @@ public static class TaskExplorerService
             CompletedTasks = tree.Health.CompletedTasks,
             TotalPhases = tree.Health.TotalPhases,
             UserStoryCount = tree.Health.UserStoryCount,
+            ParallelTasks = tree.Health.ParallelTasks,
+            CriticalTasks = tree.Health.CriticalTasks,
+            FrontendOnlyTasks = tree.Health.FrontendOnlyTasks,
+            WorkerServiceTasks = tree.Health.WorkerServiceTasks,
+            ProxyTasks = tree.Health.ProxyTasks,
+            NoSqlTasks = tree.Health.NoSqlTasks,
             TablesDetected = tables > 0 ? tables : tree.Health.TablesDetected,
             TraceabilityRows = rows > 0 ? rows : tree.Health.TraceabilityRows,
             TasksLinkedFromTables = linkedIds.Count > 0 ? linkedIds.Count : tree.Health.TasksLinkedFromTables,
@@ -1000,12 +1016,107 @@ public static class TaskExplorerService
         return taskIds;
     }
 
-    private static List<TaskDependency> ExtractDependencies(List<TaskNode> allTasks)
+    private static List<TaskDependency> ExtractDependencies(string markdown, List<TaskNode> allTasks)
     {
         var dependencies = new List<TaskDependency>();
-        // Dependencies would be extracted from task relationships if they existed
-        // For now, return empty list
+        var taskIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var task in allTasks.Where(t => !string.IsNullOrEmpty(t.TaskId)))
+            taskIds.Add(task.TaskId!);
+
+        // Find "User Story Internal Dependencies" section
+        var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        var inDependencySection = false;
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+
+            // Detect start of dependency section (### User Story Internal Dependencies)
+            if (line.StartsWith("### User Story Internal Dependencies", StringComparison.OrdinalIgnoreCase))
+            {
+                inDependencySection = true;
+                continue;
+            }
+
+            // Exit section when hitting another heading or fenced code
+            if (inDependencySection && (line.StartsWith("##") || line.StartsWith("```")))
+                break;
+
+            if (!inDependencySection) continue;
+
+            // Parse lines like: - **US1**: T018/T019 [P] → T020 → T021 → T022 → T023
+            if (line.StartsWith("-") && (line.Contains("→") || line.Contains("->")))
+            {
+                ParseDependencyChain(line, taskIds, dependencies);
+            }
+        }
+
         return dependencies;
+    }
+
+    // Overload for semantic model building - returns empty since dependencies are already extracted
+    private static List<TaskDependency> ExtractDependencies(List<TaskNode> allTasks)
+    {
+        return new List<TaskDependency>();
+    }
+
+    private static void ParseDependencyChain(string line, HashSet<string> existingTaskIds, List<TaskDependency> dependencies)
+    {
+        // Extract the chain part (after the label, if any): "- **US1**: T018/T019 [P] → T020 → ..."
+        var colonIdx = line.LastIndexOf(':');
+        var chainPart = colonIdx >= 0 ? line.Substring(colonIdx + 1) : line;
+
+        // Replace various arrow representations with a standard delimiter
+        chainPart = chainPart.Replace("→", " | ").Replace("-&gt;", " | ").Replace("->", " | ");
+
+        // Split by delimiter to get task groups
+        var groups = chainPart.Split('|')
+            .Select(g => g.Trim())
+            .Where(g => !string.IsNullOrEmpty(g))
+            .ToList();
+
+        if (groups.Count < 2) return;
+
+        // Process each arrow transition
+        for (var i = 0; i < groups.Count - 1; i++)
+        {
+            var predecessors = ParseTaskGroup(groups[i]);
+            var successors = ParseTaskGroup(groups[i + 1]);
+
+            if (predecessors.Count == 0 || successors.Count == 0) continue;
+
+            // Create edges: each predecessor → each successor
+            foreach (var pred in predecessors)
+            {
+                foreach (var succ in successors)
+                {
+                    if (existingTaskIds.Contains(pred) && existingTaskIds.Contains(succ))
+                    {
+                        var dep = new TaskDependency
+                        {
+                            SourceTaskId = pred,
+                            DependsOnTaskId = succ,
+                            DependencyType = "Execution"
+                        };
+
+                        // Avoid duplicates
+                        if (!dependencies.Any(d => d.SourceTaskId == dep.SourceTaskId && d.DependsOnTaskId == dep.DependsOnTaskId))
+                            dependencies.Add(dep);
+                    }
+                }
+            }
+        }
+    }
+
+    private static List<string> ParseTaskGroup(string group)
+    {
+        // Parse "T018/T019 [P]" → ["T018", "T019"]
+        var cleaned = group.Replace("[P]", "").Replace("[p]", "").Trim();
+        return TaskIdRe.Matches(cleaned)
+            .Cast<Match>()
+            .Select(m => "T" + m.Groups[1].Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static List<TaskParallelGroup> ExtractParallelGroups(List<TaskPhase> phases, List<TaskNode> allTasks)
@@ -1032,5 +1143,39 @@ public static class TaskExplorerService
         }
 
         return groups;
+    }
+
+    private static void ApplyDependenciesToNodes(List<TaskNode> roots, List<TaskDependency> dependencies)
+    {
+        // Build a map of task ID → task node
+        var taskMap = new Dictionary<string, TaskNode>(StringComparer.OrdinalIgnoreCase);
+        void CollectTaskMap(List<TaskNode> nodes)
+        {
+            foreach (var node in nodes)
+            {
+                if (!string.IsNullOrEmpty(node.TaskId))
+                    taskMap[node.TaskId] = node;
+                CollectTaskMap(node.Children);
+            }
+        }
+        CollectTaskMap(roots);
+
+        // Apply dependencies: SourceTaskId → DependsOnTaskId means SourceTaskId blocks DependsOnTaskId
+        foreach (var dep in dependencies)
+        {
+            if (taskMap.TryGetValue(dep.SourceTaskId, out var sourceTask))
+            {
+                // Add to Blocks list (this task blocks the dependent task)
+                if (!sourceTask.Blocks.Contains(dep.DependsOnTaskId))
+                    ((List<string>)sourceTask.Blocks).Add(dep.DependsOnTaskId);
+            }
+
+            if (taskMap.TryGetValue(dep.DependsOnTaskId, out var dependentTask))
+            {
+                // Add to BlockedBy list (this task is blocked by the source task)
+                if (!dependentTask.BlockedBy.Contains(dep.SourceTaskId))
+                    ((List<string>)dependentTask.BlockedBy).Add(dep.SourceTaskId);
+            }
+        }
     }
 }

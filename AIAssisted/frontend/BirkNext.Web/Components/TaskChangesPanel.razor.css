@@ -4,22 +4,30 @@
     padding: 1.25rem 0 2rem;
 }
 
+/* ── No Baseline Hint ─────────────────────────────────────────────────────── */
+
+.delta-no-baseline-hint {
+    font-size: 0.82rem;
+    color: var(--clr-text-subtle);
+    background: rgba(45, 212, 191, 0.06);
+    border-left: 2px solid rgba(45, 212, 191, 0.25);
+    padding: 0.75rem 1rem;
+    border-radius: 0.25rem;
+    margin-bottom: 1.25rem;
+}
+
 /* ── Two-column input layout ─────────────────────────────────────────────── */
 
 .delta-inputs-row {
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    gap: 1.25rem;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
     align-items: start;
-    margin-bottom: 1.25rem;
+    margin-bottom: 1.5rem;
 }
 
 .delta-separator {
-    font-size: 1.5rem;
-    color: var(--clr-text-subtle);
-    align-self: center;
-    padding-top: 2.5rem;
-    user-select: none;
+    display: none;
 }
 
 .delta-input-panel {
@@ -105,8 +113,9 @@
 .delta-analyse-row {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 1rem;
-    margin-bottom: 2rem;
+    margin-bottom: 1.5rem;
 }
 
 .delta-analyse-btn {
