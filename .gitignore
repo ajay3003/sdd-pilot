@@ -1,1 +1,6 @@
 AIAssisted/.env
+
+# Development scoped CSS - generated during build, never commit
+# The file is auto-generated and copied to wwwroot during build
+# Committing it causes StaticWebAssets duplication errors
+AIAssisted/frontend/BirkNext.Web/wwwroot/BirkNext.Web.styles.css
