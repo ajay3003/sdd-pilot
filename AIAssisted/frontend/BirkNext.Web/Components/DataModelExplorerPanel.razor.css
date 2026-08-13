@@ -462,6 +462,12 @@
     color: var(--text-muted, #555);
     font-weight: 600;
 }
+.dme-rel-type-unspecified {
+    background: transparent;
+    color: var(--text-muted, #aaa);
+    font-weight: 400;
+    font-style: italic;
+}
 
 /* ── Indexes ────────────────────────────────────────────────────────────────── */
 
@@ -518,7 +524,6 @@
     border-bottom: 1px solid var(--border-subtle, #eee);
     flex-wrap: wrap;
 }
-.dme-trace-unlinked { opacity: 0.65; }
 
 .dme-entity-kind-sm {
     font-size: 0.62rem;
@@ -652,7 +657,7 @@
 .dme-dc-badges {
     display: flex;
     gap: 0.18rem;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
 }
 
 .dme-dc-col-type {
@@ -708,9 +713,9 @@
 /* ── DB Design badge system ─────────────────────────────────────────────────── */
 
 .dme-db-badge {
-    font-size: 0.57rem;
+    font-size: 0.65rem;
     font-weight: 800;
-    padding: 0.08rem 0.26rem;
+    padding: 0.1rem 0.3rem;
     border-radius: 2px;
     letter-spacing: 0.04em;
     white-space: nowrap;
@@ -733,5 +738,11 @@
 @media (max-width: 640px) {
     .dme-design-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .dme-search {
+        max-width: none;
     }
 }

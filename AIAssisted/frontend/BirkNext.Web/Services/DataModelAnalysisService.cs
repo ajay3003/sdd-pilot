@@ -997,6 +997,17 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             i.Columns.Any(c => c.ToLowerInvariant().Contains(q)));
     }
 
+    public IEnumerable<DataConstraint> FilterConstraints(IEnumerable<DataConstraint> constraints, string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return constraints;
+        var q = query.Trim().ToLowerInvariant();
+        return constraints.Where(c =>
+            c.Name.ToLowerInvariant().Contains(q) ||
+            c.EntityName.ToLowerInvariant().Contains(q) ||
+            c.ConstraintType.ToLowerInvariant().Contains(q) ||
+            (c.Definition?.ToLowerInvariant().Contains(q) ?? false));
+    }
+
     // ── Build Semantic Model ───────────────────────────────────────────────
 
     public static DataModelSemanticModel BuildSemanticModel(DataModelDocument document)

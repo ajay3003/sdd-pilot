@@ -92,7 +92,7 @@ else
                    placeholder="@SearchPlaceholder"
                    value="@_searchQuery"
                    @oninput="HandleSearch"
-                   aria-label="Search" />
+                   aria-label="@SearchAriaLabel" />
             @if (!string.IsNullOrWhiteSpace(_searchQuery))
             {
                 <button class="dme-search-clear" @onclick="ClearSearch" title="Clear">×</button>
@@ -143,7 +143,7 @@ else
                 {
                     <div class="dme-findings-summary">
                         <div class="dme-section-label">Top Findings</div>
-                        @foreach (var f in _document.Findings.OrderBy(f => f.Severity).Take(5))
+                        @foreach (var f in _document.Findings.OrderBy(f => GetSeverityPriority(f.Severity)).Take(5))
                         {
                             <div class="dme-finding-row">
                                 <span class="dme-sev dme-sev-@f.Severity.ToString().ToLowerInvariant()">@f.Severity</span>
@@ -212,7 +212,7 @@ else
                             <div class="dme-dc @cardMod">
                                 <div class="dme-dc-header">
                                     <span class="dme-dc-kind">@(entity.IsTable ? "TABLE" : "ENTITY")</span>
-                                    <span class="dme-dc-name">@entity.Name</span>
+                                    <span class="dme-dc-name" title="@entity.Name">@entity.Name</span>
                                     @if (eFindings.Count > 0)
                                     {
                                         <span class="dme-dc-issue-count @(hasError ? "is-error" : "is-warn")">@eFindings.Count</span>
@@ -227,7 +227,7 @@ else
                                             var indexed = IsColumnIndexed(entity, col);
                                             var isSens  = AnalysisService.IsSensitiveColumn(col);
                                             <div class="dme-dc-col @(col.IsPrimaryKey ? "is-pk" : col.IsForeignKey ? "is-fk" : "")">
-                                                <span class="dme-dc-col-name">@col.Name</span>
+                                                <span class="dme-dc-col-name" title="@col.Name">@col.Name</span>
                                                 <div class="dme-dc-badges">
                                                     @if (col.IsPrimaryKey)                           { <span class="dme-db-badge dme-db-pk">PK</span> }
                                                     @if (col.IsForeignKey)                           { <span class="dme-db-badge dme-db-fk">FK</span> }
@@ -272,7 +272,7 @@ else
                                 @if (eFindings.Count > 0)
                                 {
                                     <div class="dme-dc-issue-list">
-                                        @foreach (var f in eFindings.OrderByDescending(f => f.Severity))
+                                        @foreach (var f in eFindings.OrderBy(f => GetSeverityPriority(f.Severity)))
                                         {
                                             <div class="dme-dc-issue dme-sev-@f.Severity.ToString().ToLowerInvariant()">
                                                 @f.Description
@@ -351,6 +351,10 @@ else
                             {
                                 <span class="dme-rel-type">@rel.RelationshipType</span>
                             }
+                            else
+                            {
+                                <span class="dme-rel-type dme-rel-type-unspecified">Type not specified</span>
+                            }
                         </div>
                     }
                 </div>
@@ -361,6 +365,7 @@ else
         @if (_activeTab == "indexes")
         {
             var visibleIdx = AnalysisService.FilterIndexes(_document.Indexes, _searchQuery).ToList();
+            var visibleCon = AnalysisService.FilterConstraints(_document.Constraints, _searchQuery).ToList();
 
             <div class="dme-idx-section">
                 <div class="dme-section-label">Indexes (@_document.Indexes.Count)</div>
@@ -396,19 +401,31 @@ else
             {
                 <div class="dme-idx-section" style="margin-top:1.5rem">
                     <div class="dme-section-label">Constraints (@_document.Constraints.Count)</div>
-                    <div class="dme-idx-list" role="list">
-                        @foreach (var con in _document.Constraints)
-                        {
-                            <div class="dme-idx-row" role="listitem">
-                                <span class="dme-con-type dme-con-@con.ConstraintType.ToLowerInvariant()">@con.ConstraintType</span>
-                                <span class="dme-idx-name">@con.Name</span>
-                                @if (!string.IsNullOrEmpty(con.EntityName))
-                                { <span class="dme-idx-entity">@con.EntityName</span> }
-                                @if (!string.IsNullOrEmpty(con.Definition))
-                                { <span class="dme-idx-cols">@con.Definition</span> }
-                            </div>
-                        }
-                    </div>
+                    @if (visibleCon.Count == 0)
+                    {
+                        <div class="dme-empty-tab" style="padding:0.5rem 0">
+                            @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                            { <span>No constraints match "<strong>@_searchQuery</strong>"</span> }
+                            else
+                            { <span>No constraints defined.</span> }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="dme-idx-list" role="list">
+                            @foreach (var con in visibleCon)
+                            {
+                                <div class="dme-idx-row" role="listitem">
+                                    <span class="dme-con-type dme-con-@con.ConstraintType.ToLowerInvariant()" title="@GetConstraintTypeLabel(con.ConstraintType)">@con.ConstraintType</span>
+                                    <span class="dme-idx-name">@con.Name</span>
+                                    @if (!string.IsNullOrEmpty(con.EntityName))
+                                    { <span class="dme-idx-entity">@con.EntityName</span> }
+                                    @if (!string.IsNullOrEmpty(con.Definition))
+                                    { <span class="dme-idx-cols">@con.Definition</span> }
+                                </div>
+                            }
+                        </div>
+                    }
                 </div>
             }
         }
@@ -491,7 +508,7 @@ else
                 {
                     <div class="dme-finding-group">
                         <div class="dme-section-label">@group.Key</div>
-                        @foreach (var f in group.OrderBy(f => f.Severity))
+                        @foreach (var f in group.OrderBy(f => GetSeverityPriority(f.Severity)))
                         {
                             <div class="dme-finding-row">
                                 <span class="dme-sev dme-sev-@f.Severity.ToString().ToLowerInvariant()">@f.Severity</span>
@@ -609,6 +626,13 @@ else
         _               => "Search…",
     };
 
+    private string SearchAriaLabel => _activeTab switch
+    {
+        "relationships" => "Search relationships by source, target, or type",
+        "indexes"       => "Search indexes and constraints",
+        _               => "Search",
+    };
+
     private int SearchResultCount => _activeTab switch
     {
         "relationships" => _document is null ? 0 : AnalysisService.FilterRelationships(_document.Relationships, _searchQuery).Count(),
@@ -631,4 +655,22 @@ else
             r.SourceEntity.Equals(entityName, StringComparison.OrdinalIgnoreCase) ||
             r.TargetEntity.Equals(entityName, StringComparison.OrdinalIgnoreCase))
         .ToList() ?? [];
+
+    private int GetSeverityPriority(DataModelSeverity severity) => severity switch
+    {
+        DataModelSeverity.Critical => 0,
+        DataModelSeverity.Error => 1,
+        DataModelSeverity.Warning => 2,
+        DataModelSeverity.Info => 3,
+        _ => 4,  // fallback for unknown values
+    };
+
+    private string GetConstraintTypeLabel(string constraintType) => constraintType switch
+    {
+        "PK" => "Primary Key",
+        "FK" => "Foreign Key",
+        "UQ" => "Unique",
+        "CK" => "Check Constraint",
+        _ => constraintType,
+    };
 }

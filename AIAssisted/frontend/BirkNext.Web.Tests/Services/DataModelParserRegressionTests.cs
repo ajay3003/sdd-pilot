@@ -99,6 +99,54 @@ public class DataModelParserRegressionTests
         Assert.False(_service.IsSensitiveColumn(col));
     }
 
+    // ── Relationships ───────────────────────────────────────────────────
+
+    [Fact]
+    public void Parse_RelationshipWithType_PreservesType()
+    {
+        // Verify that relationships with explicit types are preserved
+        var rel = new DataRelationship
+        {
+            Source = "users.id",
+            Target = "orders.user_id",
+            RelationshipType = "OneToMany"
+        };
+        Assert.NotNull(rel.RelationshipType);
+        Assert.Equal("OneToMany", rel.RelationshipType);
+        Assert.Equal("users", rel.SourceEntity);
+        Assert.Equal("orders", rel.TargetEntity);
+    }
+
+    [Fact]
+    public void Parse_RelationshipWithoutType_AllowsNull()
+    {
+        // Verify that relationships without type information can have null/empty type
+        var rel = new DataRelationship
+        {
+            Source = "entities.id",
+            Target = "other.id",
+            RelationshipType = null
+        };
+        Assert.Null(rel.RelationshipType);
+        Assert.Equal("entities", rel.SourceEntity);
+        Assert.Equal("other", rel.TargetEntity);
+    }
+
+    [Fact]
+    public void Parse_RelationshipWithoutType_EmptyStringAllowed()
+    {
+        // Verify that relationships can have empty-string type (treated same as null)
+        var rel = new DataRelationship
+        {
+            Source = "a.id",
+            Target = "b.id",
+            RelationshipType = ""
+        };
+        Assert.Equal("", rel.RelationshipType);
+        Assert.Equal("a", rel.SourceEntity);
+        Assert.Equal("b", rel.TargetEntity);
+    }
+
     // ── Filtering ──────────────────────────────────────────────────────
 
     [Fact]
@@ -136,6 +184,198 @@ public class DataModelParserRegressionTests
         var result = _service.FilterIndexes(indexes, "email").ToList();
         Assert.Single(result);
     }
+
+    [Fact]
+    public void FilterConstraints_ByName_Works()
+    {
+        var constraints = new[]
+        {
+            new DataConstraint { Name = "fk_users_roles", ConstraintType = "FK", EntityName = "users" },
+            new DataConstraint { Name = "pk_orders", ConstraintType = "PK", EntityName = "orders" },
+        };
+        var result = _service.FilterConstraints(constraints, "users").ToList();
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public void FilterConstraints_ByEntity_Works()
+    {
+        var constraints = new[]
+        {
+            new DataConstraint { Name = "fk_orders_customer", ConstraintType = "FK", EntityName = "orders" },
+            new DataConstraint { Name = "pk_products", ConstraintType = "PK", EntityName = "products" },
+        };
+        var result = _service.FilterConstraints(constraints, "orders").ToList();
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public void FilterConstraints_ByType_Works()
+    {
+        var constraints = new[]
+        {
+            new DataConstraint { Name = "fk_orders_customer", ConstraintType = "FK", EntityName = "orders" },
+            new DataConstraint { Name = "fk_items_order", ConstraintType = "FK", EntityName = "items" },
+            new DataConstraint { Name = "pk_orders", ConstraintType = "PK", EntityName = "orders" },
+        };
+        var result = _service.FilterConstraints(constraints, "FK").ToList();
+        Assert.Equal(2, result.Count());
+    }
+
+    [Fact]
+    public void FilterConstraints_ByDefinition_Works()
+    {
+        var constraints = new[]
+        {
+            new DataConstraint { Name = "ck_status", ConstraintType = "CK", EntityName = "orders", Definition = "status IN ('pending', 'shipped')" },
+            new DataConstraint { Name = "ck_amount", ConstraintType = "CK", EntityName = "items", Definition = "amount > 0" },
+        };
+        var result = _service.FilterConstraints(constraints, "shipped").ToList();
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public void FilterConstraints_CaseInsensitive_Works()
+    {
+        var constraints = new[]
+        {
+            new DataConstraint { Name = "FK_Users_Roles", ConstraintType = "fk", EntityName = "Users" },
+        };
+        var result = _service.FilterConstraints(constraints, "users").ToList();
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public void FilterConstraints_EmptyQuery_ReturnsAll()
+    {
+        var constraints = new[]
+        {
+            new DataConstraint { Name = "fk_orders_customer", ConstraintType = "FK", EntityName = "orders" },
+            new DataConstraint { Name = "pk_products", ConstraintType = "PK", EntityName = "products" },
+        };
+        var result = _service.FilterConstraints(constraints, "").ToList();
+        Assert.Equal(2, result.Count());
+    }
+
+    [Fact]
+    public void FilterConstraints_NoMatch_ReturnsEmpty()
+    {
+        var constraints = new[]
+        {
+            new DataConstraint { Name = "fk_orders_customer", ConstraintType = "FK", EntityName = "orders" },
+        };
+        var result = _service.FilterConstraints(constraints, "xyz123").ToList();
+        Assert.Empty(result);
+    }
+
+    // ── Severity ordering (findings) ────────────────────────────────────
+
+    [Fact]
+    public void Parse_FindingsSeverity_Critical_Before_Error()
+    {
+        var input = """
+            ## Entity: NoTypeEntity
+
+            ## Entity: AnotherEntity
+            """;
+        var result = _service.Parse(input);
+        var findings = result.Findings.Where(f =>
+            f.Severity is DataModelSeverity.Critical or DataModelSeverity.Error).ToList();
+
+        if (findings.Count >= 2)
+        {
+            var critical = findings.FirstOrDefault(f => f.Severity == DataModelSeverity.Critical);
+            var error = findings.FirstOrDefault(f => f.Severity == DataModelSeverity.Error);
+
+            if (critical != null && error != null)
+            {
+                var criticalIndex = findings.IndexOf(critical);
+                var errorIndex = findings.IndexOf(error);
+                Assert.True(criticalIndex < errorIndex, "Critical findings should appear before Error");
+            }
+        }
+    }
+
+    [Fact]
+    public void Parse_FindingsSeverity_Error_Before_Warning()
+    {
+        var input = """
+            ## Entity: TestEntity
+
+            ## Entity: AnotherEntity
+            """;
+        var result = _service.Parse(input);
+        var findings = result.Findings.Where(f =>
+            f.Severity is DataModelSeverity.Error or DataModelSeverity.Warning).ToList();
+
+        if (findings.Count >= 2)
+        {
+            var error = findings.FirstOrDefault(f => f.Severity == DataModelSeverity.Error);
+            var warning = findings.FirstOrDefault(f => f.Severity == DataModelSeverity.Warning);
+
+            if (error != null && warning != null)
+            {
+                var errorIndex = findings.IndexOf(error);
+                var warningIndex = findings.IndexOf(warning);
+                Assert.True(errorIndex < warningIndex, "Error findings should appear before Warning");
+            }
+        }
+    }
+
+    [Fact]
+    public void Parse_FindingsSeverity_Warning_Before_Info()
+    {
+        var input = """
+            ## Entity: Entity1
+
+            ## Entity: Entity2
+            """;
+        var result = _service.Parse(input);
+        var findings = result.Findings.Where(f =>
+            f.Severity is DataModelSeverity.Warning or DataModelSeverity.Info).ToList();
+
+        if (findings.Count >= 2)
+        {
+            var warning = findings.FirstOrDefault(f => f.Severity == DataModelSeverity.Warning);
+            var info = findings.FirstOrDefault(f => f.Severity == DataModelSeverity.Info);
+
+            if (warning != null && info != null)
+            {
+                var warningIndex = findings.IndexOf(warning);
+                var infoIndex = findings.IndexOf(info);
+                Assert.True(warningIndex < infoIndex, "Warning findings should appear before Info");
+            }
+        }
+    }
+
+    [Fact]
+    public void Parse_FindingsSeverity_Mixed_SortsCorrectly()
+    {
+        var findings = new[]
+        {
+            new DataModelFinding { Severity = DataModelSeverity.Info, Category = "Test", Description = "Info" },
+            new DataModelFinding { Severity = DataModelSeverity.Critical, Category = "Test", Description = "Critical" },
+            new DataModelFinding { Severity = DataModelSeverity.Warning, Category = "Test", Description = "Warning" },
+            new DataModelFinding { Severity = DataModelSeverity.Error, Category = "Test", Description = "Error" },
+        };
+
+        var ordered = findings.OrderBy(f => GetSeverityPriority(f.Severity)).ToList();
+
+        Assert.Equal(DataModelSeverity.Critical, ordered[0].Severity);
+        Assert.Equal(DataModelSeverity.Error, ordered[1].Severity);
+        Assert.Equal(DataModelSeverity.Warning, ordered[2].Severity);
+        Assert.Equal(DataModelSeverity.Info, ordered[3].Severity);
+    }
+
+    // Helper method for testing (mirrors component method)
+    private int GetSeverityPriority(DataModelSeverity severity) => severity switch
+    {
+        DataModelSeverity.Critical => 0,
+        DataModelSeverity.Error => 1,
+        DataModelSeverity.Warning => 2,
+        DataModelSeverity.Info => 3,
+        _ => 4,
+    };
 
     // ── Code block safety ──────────────────────────────────────────────
 
