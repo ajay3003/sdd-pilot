@@ -200,7 +200,114 @@
                             <h3>Phase and execution dependencies</h3>
                         </div>
                     </div>
-                    @RenderDependenciesView()
+
+                    @if (_tree is null)
+                    {
+                        <div class="te-dependencies-view-content">
+                            <div class="te-empty-message">No execution structure available.</div>
+                        </div>
+                    }
+                    else if (_tree.ExplicitDependencies.Count == 0)
+                    {
+                        <div class="te-dependencies-view-content">
+                            <div class="te-empty-message">No explicit task dependencies found.</div>
+                        </div>
+                    }
+                    else
+                    {
+                        var allNodes = AllNodes(_tree.Roots);
+                        var taskMap = allNodes
+                            .Where(n => n.NodeType == TaskNodeType.Task && !string.IsNullOrEmpty(n.TaskId))
+                            .ToDictionary(n => n.TaskId!, StringComparer.OrdinalIgnoreCase);
+
+                        var blockedByMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                        var blocksMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+                        foreach (var dep in _tree.ExplicitDependencies)
+                        {
+                            if (!blockedByMap.ContainsKey(dep.SourceTaskId))
+                                blockedByMap[dep.SourceTaskId] = new();
+                            blockedByMap[dep.SourceTaskId].Add(dep.DependsOnTaskId);
+
+                            if (!blocksMap.ContainsKey(dep.DependsOnTaskId))
+                                blocksMap[dep.DependsOnTaskId] = new();
+                            blocksMap[dep.DependsOnTaskId].Add(dep.SourceTaskId);
+                        }
+
+                        var taskInDeps = new HashSet<string>(blockedByMap.Keys.Union(blocksMap.Keys), StringComparer.OrdinalIgnoreCase);
+
+                        var tasksByStory = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var taskId in taskInDeps.OrderBy(t => t))
+                        {
+                            var storyKey = "General";
+                            if (taskMap.TryGetValue(taskId, out var task) && !string.IsNullOrEmpty(task.UserStoryTag))
+                                storyKey = task.UserStoryTag;
+
+                            if (!tasksByStory.ContainsKey(storyKey))
+                                tasksByStory[storyKey] = new();
+                            tasksByStory[storyKey].Add(taskId);
+                        }
+
+                        <div class="te-dependencies-view-content">
+                            <div class="te-dep-summary">@_tree.ExplicitDependencies.Count explicit dependencies across @tasksByStory.Count user stories</div>
+
+                            @foreach (var story in tasksByStory.Keys.OrderBy(k => k))
+                            {
+                                var depCount = tasksByStory[story].Sum(t => (blockedByMap.ContainsKey(t) ? blockedByMap[t].Count : 0) + (blocksMap.ContainsKey(t) ? blocksMap[t].Count : 0));
+
+                                <div class="te-dep-story-card">
+                                    <div class="te-dep-story-header">
+                                        <h4 class="te-dep-story-name">@story</h4>
+                                        <span class="te-dep-story-count">@depCount dependencies</span>
+                                    </div>
+
+                                    @foreach (var taskId in tasksByStory[story].OrderBy(t => t))
+                                    {
+                                        var hasBlockedBy = blockedByMap.ContainsKey(taskId) && blockedByMap[taskId].Count > 0;
+                                        var hasBlocks = blocksMap.ContainsKey(taskId) && blocksMap[taskId].Count > 0;
+                                        var blockedByList = hasBlockedBy ? blockedByMap[taskId].OrderBy(t => t).ToList() : new List<string>();
+                                        var blocksList = hasBlocks ? blocksMap[taskId].OrderBy(t => t).ToList() : new List<string>();
+
+                                        <div class="te-dep-task-row">
+                                            <div class="te-dep-task-header">
+                                                <span class="te-dep-task-id-badge">@taskId</span>
+                                                @if (taskMap.TryGetValue(taskId, out var task) && !string.IsNullOrEmpty(task.ShortTitle))
+                                                {
+                                                    <span class="te-dep-task-title">@task.ShortTitle</span>
+                                                }
+                                            </div>
+
+                                            @if (hasBlockedBy)
+                                            {
+                                                <div class="te-dep-relationship">
+                                                    <span class="te-dep-label">Blocked by</span>
+                                                    <div class="te-dep-related-badges">
+                                                        @foreach (var relatedTask in blockedByList)
+                                                        {
+                                                            <span class="te-dep-related-badge">@relatedTask</span>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            }
+
+                                            @if (hasBlocks)
+                                            {
+                                                <div class="te-dep-relationship">
+                                                    <span class="te-dep-label">Blocks</span>
+                                                    <div class="te-dep-related-badges">
+                                                        @foreach (var relatedTask in blocksList)
+                                                        {
+                                                            <span class="te-dep-related-badge">@relatedTask</span>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
                 </div>
             }
             else if (_isParallelView)
@@ -1505,170 +1612,6 @@
             SetSearch(NormalizeArtifactId(target));
     }
 
-    private RenderFragment RenderDependenciesView() => builder =>
-    {
-        if (_tree is null) return;
-
-        builder.OpenElement(0, "div");
-        builder.AddAttribute(1, "class", "te-dependencies-view-content");
-
-        if (_tree.ExplicitDependencies.Count == 0)
-        {
-            builder.OpenElement(2, "div");
-            builder.AddAttribute(3, "class", "te-empty-message");
-            builder.AddContent(4, "No explicit task dependencies found.");
-            builder.CloseElement();
-        }
-        else
-        {
-            // Build task ID → TaskNode map for lookup
-            var allNodes = AllNodes(_tree.Roots);
-            var taskMap = allNodes
-                .Where(n => n.NodeType == TaskNodeType.Task && !string.IsNullOrEmpty(n.TaskId))
-                .ToDictionary(n => n.TaskId!, StringComparer.OrdinalIgnoreCase);
-
-            // Build BlockedBy and Blocks maps
-            var blockedByMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            var blocksMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var dep in _tree.ExplicitDependencies)
-            {
-                // dep.SourceTaskId is blocked by dep.DependsOnTaskId
-                if (!blockedByMap.ContainsKey(dep.SourceTaskId))
-                    blockedByMap[dep.SourceTaskId] = new();
-                blockedByMap[dep.SourceTaskId].Add(dep.DependsOnTaskId);
-
-                // dep.DependsOnTaskId blocks dep.SourceTaskId
-                if (!blocksMap.ContainsKey(dep.DependsOnTaskId))
-                    blocksMap[dep.DependsOnTaskId] = new();
-                blocksMap[dep.DependsOnTaskId].Add(dep.SourceTaskId);
-            }
-
-            // Get all unique tasks involved in dependencies
-            var taskInDeps = new HashSet<string>(blockedByMap.Keys.Union(blocksMap.Keys), StringComparer.OrdinalIgnoreCase);
-
-            // Group tasks by user story
-            var tasksByStory = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            foreach (var taskId in taskInDeps.OrderBy(t => t))
-            {
-                var storyKey = "General";
-                if (taskMap.TryGetValue(taskId, out var task) && !string.IsNullOrEmpty(task.UserStoryTag))
-                    storyKey = task.UserStoryTag;
-
-                if (!tasksByStory.ContainsKey(storyKey))
-                    tasksByStory[storyKey] = new();
-                tasksByStory[storyKey].Add(taskId);
-            }
-
-            // Summary
-            builder.OpenElement(2, "div");
-            builder.AddAttribute(3, "class", "te-dep-summary");
-            builder.AddContent(4, $"{_tree.ExplicitDependencies.Count} explicit dependencies across {tasksByStory.Count} user stories");
-            builder.CloseElement();
-
-            // Render each story group
-            var seq = 5;
-            foreach (var story in tasksByStory.Keys.OrderBy(k => k))
-            {
-                builder.OpenElement(seq++, "div");
-                builder.AddAttribute(seq++, "class", "te-dep-story-card");
-
-                // Story title with task count
-                builder.OpenElement(seq++, "div");
-                builder.AddAttribute(seq++, "class", "te-dep-story-header");
-
-                builder.OpenElement(seq++, "h4");
-                builder.AddAttribute(seq++, "class", "te-dep-story-name");
-                builder.AddContent(seq++, story);
-                builder.CloseElement();
-
-                var depCount = tasksByStory[story].Sum(t => (blockedByMap.ContainsKey(t) ? blockedByMap[t].Count : 0) + (blocksMap.ContainsKey(t) ? blocksMap[t].Count : 0));
-                builder.OpenElement(seq++, "span");
-                builder.AddAttribute(seq++, "class", "te-dep-story-count");
-                builder.AddContent(seq++, $"{depCount} dependencies");
-                builder.CloseElement();
-
-                builder.CloseElement(); // header
-
-                // Render tasks in this story
-                foreach (var taskId in tasksByStory[story].OrderBy(t => t))
-                {
-                    RenderDependencyTaskRow(builder, taskId, taskMap, blockedByMap, blocksMap, ref seq);
-                }
-
-                builder.CloseElement(); // story card
-            }
-        }
-
-        builder.CloseElement();
-    };
-
-    private void RenderDependencyTaskRow(RenderTreeBuilder builder, string taskId, Dictionary<string, TaskNode> taskMap,
-        Dictionary<string, List<string>> blockedByMap, Dictionary<string, List<string>> blocksMap, ref int seq)
-    {
-        builder.OpenElement(seq++, "div");
-        builder.AddAttribute(seq++, "class", "te-dep-task-row");
-
-        // Task ID and title
-        builder.OpenElement(seq++, "div");
-        builder.AddAttribute(seq++, "class", "te-dep-task-header");
-
-        builder.OpenElement(seq++, "span");
-        builder.AddAttribute(seq++, "class", "te-dep-task-id-badge");
-        builder.AddContent(seq++, taskId);
-        builder.CloseElement();
-
-        if (taskMap.TryGetValue(taskId, out var task) && !string.IsNullOrEmpty(task.ShortTitle))
-        {
-            builder.OpenElement(seq++, "span");
-            builder.AddAttribute(seq++, "class", "te-dep-task-title");
-            builder.AddContent(seq++, task.ShortTitle);
-            builder.CloseElement();
-        }
-
-        builder.CloseElement(); // header
-
-        // BlockedBy relationships
-        if (blockedByMap.ContainsKey(taskId) && blockedByMap[taskId].Count > 0)
-        {
-            RenderDependencyLabel(builder, "Blocked by", blockedByMap[taskId].OrderBy(t => t).ToList(), ref seq);
-        }
-
-        // Blocks relationships
-        if (blocksMap.ContainsKey(taskId) && blocksMap[taskId].Count > 0)
-        {
-            RenderDependencyLabel(builder, "Blocks", blocksMap[taskId].OrderBy(t => t).ToList(), ref seq);
-        }
-
-        builder.CloseElement(); // task row
-    }
-
-    private void RenderDependencyLabel(RenderTreeBuilder builder, string label, List<string> relatedTasks, ref int seq)
-    {
-        builder.OpenElement(seq++, "div");
-        builder.AddAttribute(seq++, "class", "te-dep-relationship");
-
-        // Label
-        builder.OpenElement(seq++, "span");
-        builder.AddAttribute(seq++, "class", "te-dep-label");
-        builder.AddContent(seq++, label);
-        builder.CloseElement();
-
-        // Related task badges
-        builder.OpenElement(seq++, "div");
-        builder.AddAttribute(seq++, "class", "te-dep-related-badges");
-
-        foreach (var relatedTask in relatedTasks)
-        {
-            builder.OpenElement(seq++, "span");
-            builder.AddAttribute(seq++, "class", "te-dep-related-badge");
-            builder.AddContent(seq++, relatedTask);
-            builder.CloseElement();
-        }
-
-        builder.CloseElement(); // badges
-        builder.CloseElement(); // relationship
-    }
 
     private static bool IsExecutionGroup(TaskNode node) =>
         (node.NodeType == TaskNodeType.TaskGroup ||
