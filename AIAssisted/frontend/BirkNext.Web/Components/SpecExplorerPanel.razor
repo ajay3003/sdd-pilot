@@ -126,7 +126,7 @@
             <div class="se-coverage-callout" role="status" data-testid="se-coverage-callout">
                 <div class="se-coverage-callout-copy">
                     <span class="se-coverage-callout-icon" aria-hidden="true">&#9888;</span>
-                    <strong>@MissingCoverageSectionCount section@(MissingCoverageSectionCount == 1 ? "" : "s") @(MissingCoverageSectionCount == 1 ? "needs" : "need") coverage attention</strong>
+                    <strong>@MissingCoverageSectionCount requirement@(MissingCoverageSectionCount == 1 ? "" : "s") @(MissingCoverageSectionCount == 1 ? "needs" : "need") coverage attention</strong>
                 </div>
                 <button class="se-coverage-callout-action" @onclick="() => SetSectionFilter(SectionFilter.MissingCoverage)">
                     Review Coverage Gaps -&gt;
@@ -1014,6 +1014,17 @@
             .Select(us => us.Id)
             .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+        // When initialized from candidates-only (no markdown), extract user story ID from section title
+        // In candidates-only mode, semantic model has no requirements, so relevantReqs is empty and userStories from model is empty
+        if (userStories.Count == 0 && relevantReqs.Count == 0)
+        {
+            var usMatch = System.Text.RegularExpressions.Regex.Match(sectionName, @"^(US\d+):");
+            if (usMatch.Success)
+            {
+                userStories = [usMatch.Groups[1].Value];
+            }
+        }
 
         return new SectionHealth(
             requirements,
