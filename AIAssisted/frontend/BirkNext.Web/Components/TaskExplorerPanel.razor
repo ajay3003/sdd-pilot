@@ -374,7 +374,7 @@
 
                                                 @if (!string.IsNullOrEmpty(task.UserStoryTag))
                                                 {
-                                                    <span class="te-ptask-tag">@UserStoryDisplay(task)</span>
+                                                    <span class="te-ptask-tag" title="@GetUserStoryTitle(task)">@UserStoryDisplay(task)</span>
                                                 }
 
                                                 @if (task.IsCompleted)
@@ -600,7 +600,7 @@
                                                     <span class="te-map-task-chips">
                                                         @if (task.UserStoryTag is not null)
                                                         {
-                                                            <span class="te-chip te-chip-us">@UserStoryDisplay(task)</span>
+                                                            <span class="te-chip te-chip-us" title="@GetUserStoryTitle(task)">@UserStoryDisplay(task)</span>
                                                         }
                                                         @if (task.IsCompleted)
                                                         {
@@ -631,7 +631,7 @@
                                             <span class="te-map-task-chips">
                                                 @if (task.UserStoryTag is not null)
                                                 {
-                                                    <span class="te-chip te-chip-us">@UserStoryDisplay(task)</span>
+                                                    <span class="te-chip te-chip-us" title="@GetUserStoryTitle(task)">@UserStoryDisplay(task)</span>
                                                 }
                                                 @if (task.IsCompleted)
                                                 {
@@ -736,11 +736,11 @@
                                 <span class="te-chips">
                                     @if (node.UserStoryTag is not null)
                                     {
-                                        <span class="te-chip te-chip-us">@UserStoryDisplay(node)</span>
+                                        <span class="te-chip te-chip-us" title="@GetUserStoryTitle(node)">@UserStoryDisplay(node)</span>
                                     }
                                     @if (node.IsParallel)
                                     {
-                                        <span class="te-chip te-chip-parallel">P</span>
+                                        <span class="te-chip te-chip-parallel" title="Parallel task">P</span>
                                     }
                                     @if (node.Status.HasValue)
                                     {
@@ -778,12 +778,12 @@
                                     @foreach (var fr in node.ReferencedFrIds.Take(2))
                                     {
                                         var frCapture = fr;
-                                        <button class="te-ref-chip te-ref-fr" @onclick:stopPropagation="true" @onclick='() => SetSearch(frCapture)' title="Search @frCapture">@frCapture</button>
+                                        <button class="te-ref-chip te-ref-fr" @onclick:stopPropagation="true" @onclick='() => SetSearch(frCapture)' title="Functional Requirement @frCapture">@frCapture</button>
                                     }
                                     @foreach (var sc in node.ReferencedScIds.Take(2))
                                     {
                                         var scCapture = sc;
-                                        <button class="te-ref-chip te-ref-sc" @onclick:stopPropagation="true" @onclick='() => SetSearch(scCapture)' title="Search @scCapture">@scCapture</button>
+                                        <button class="te-ref-chip te-ref-sc" @onclick:stopPropagation="true" @onclick='() => SetSearch(scCapture)' title="Success Criterion @scCapture">@scCapture</button>
                                     }
                                     @foreach (var rel in tableRelationships.Take(2))
                                     {
@@ -900,7 +900,7 @@
                                     }
                                     @if (!string.IsNullOrEmpty(selected.UserStoryTitle))
                                     {
-                                        <div><span class="te-det-chip te-chip-us">👤 @UserStoryContextDisplay(selected)</span></div>
+                                        <div><span class="te-det-chip te-chip-us" title="@GetUserStoryTitle(selected)">👤 @UserStoryContextDisplay(selected)</span></div>
                                     }
                                 </div>
                             }
@@ -917,7 +917,7 @@
                                     }
                                     @if (selected.UserStoryTag is not null)
                                     {
-                                        <span class="te-chip te-chip-us">@UserStoryDisplay(selected)</span>
+                                        <span class="te-chip te-chip-us" title="@GetUserStoryTitle(selected)">@UserStoryDisplay(selected)</span>
                                     }
                                     @if (selected.IsTestingTask)
                                     {
@@ -1034,12 +1034,12 @@
                                         @foreach (var fr in selected.ReferencedFrIds)
                                         {
                                             var frCap = fr;
-                                            <button class="te-ref-chip te-ref-fr" @onclick='() => SetSearch(frCap)' title="Filter by @frCap">@frCap</button>
+                                            <button class="te-ref-chip te-ref-fr" @onclick='() => SetSearch(frCap)' title="Functional Requirement @frCap">@frCap</button>
                                         }
                                         @foreach (var sc in selected.ReferencedScIds)
                                         {
                                             var scCap = sc;
-                                            <button class="te-ref-chip te-ref-sc" @onclick='() => SetSearch(scCap)' title="Filter by @scCap">@scCap</button>
+                                            <button class="te-ref-chip te-ref-sc" @onclick='() => SetSearch(scCap)' title="Success Criterion @scCap">@scCap</button>
                                         }
                                     </div>
                                 </div>
@@ -1138,7 +1138,7 @@
                                     <div class="te-ref-chips">
                                         @foreach (var sc in tsScRefs)
                                         {
-                                            <span class="te-ref-chip te-ref-sc">@sc</span>
+                                            <span class="te-ref-chip te-ref-sc" title="Success Criterion @sc">@sc</span>
                                         }
                                     </div>
                                 </div>
@@ -1150,7 +1150,7 @@
                                     <div class="te-ref-chips">
                                         @foreach (var fr in tsFrRefs)
                                         {
-                                            <span class="te-ref-chip te-ref-fr">@fr</span>
+                                            <span class="te-ref-chip te-ref-fr" title="Functional Requirement @fr">@fr</span>
                                         }
                                     </div>
                                 </div>
@@ -1180,7 +1180,7 @@
                                     <div class="te-ref-chips">
                                         @foreach (var fr in selected.ReferencedFrIds)
                                         {
-                                            <span class="te-ref-chip te-ref-fr">@fr</span>
+                                            <span class="te-ref-chip te-ref-fr" title="Functional Requirement @fr">@fr</span>
                                         }
                                     </div>
                                 </div>
@@ -1192,7 +1192,7 @@
                                     <div class="te-ref-chips">
                                         @foreach (var sc in selected.ReferencedScIds)
                                         {
-                                            <span class="te-ref-chip te-ref-sc">@sc</span>
+                                            <span class="te-ref-chip te-ref-sc" title="Success Criterion @sc">@sc</span>
                                         }
                                     </div>
                                 </div>
@@ -1708,6 +1708,25 @@
         return string.IsNullOrWhiteSpace(storyName)
             ? storyId
             : $"{storyId} · {storyName}";
+    }
+
+    private string? GetUserStoryTitle(TaskNode node)
+    {
+        var display = UserStoryDisplay(node);
+        if (string.IsNullOrWhiteSpace(display))
+            return null;
+
+        var storyId = !string.IsNullOrWhiteSpace(node.UserStoryTag)
+            ? node.UserStoryTag.Trim()
+            : ResolveUserStory(node);
+
+        if (string.IsNullOrWhiteSpace(storyId))
+            return "User Story";
+
+        var parts = display.Split('·');
+        return parts.Length > 1
+            ? $"User Story {storyId} — {parts[1].Trim()}"
+            : $"User Story {storyId}";
     }
 
     private string? FindUserStoryName(string storyId)

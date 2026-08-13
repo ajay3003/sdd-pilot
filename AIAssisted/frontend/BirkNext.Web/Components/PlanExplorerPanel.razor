@@ -470,7 +470,7 @@
                                     <button class="pe-adr-header" @onclick="() => Toggle(adr.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
                                         <div class="pe-adr-header-left">
                                             @if (!string.IsNullOrEmpty(adr.Id))
-                                            { <span class="pe-adr-id">@adr.Id</span> }
+                                            { <span class="pe-adr-id" title="Architecture Decision Record @adr.Id">@adr.Id</span> }
                                             <span class="pe-adr-title">@adr.Title</span>
                                         </div>
                                         <span class="pe-expand-icon" aria-hidden="true">@(isExpanded ? "▾" : "▸")</span>

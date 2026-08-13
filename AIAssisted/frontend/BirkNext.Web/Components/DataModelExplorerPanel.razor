@@ -538,7 +538,6 @@ else
     private string             _localText   = string.Empty;
     private string             _activeTab   = "overview";
     private string             _searchQuery = string.Empty;
-    private HashSet<string>    _expanded    = [];
     private SpecificationImport? _importRef;
 
     private bool CanBuild => !string.IsNullOrWhiteSpace(_localText);
@@ -552,7 +551,6 @@ else
             _document = ParsedDataModel;
             _activeTab = InitialView ?? "overview";
             _searchQuery = string.Empty;
-            _expanded = [];
         }
         else if (!string.IsNullOrWhiteSpace(DataModelText) && _document is null)
         {
@@ -578,7 +576,6 @@ else
         _document    = AnalysisService.Parse(_localText);
         _activeTab   = InitialView ?? "overview";
         _searchQuery = string.Empty;
-        _expanded    = [];
     }
 
     private void Reset()
@@ -587,7 +584,6 @@ else
         _localText   = string.Empty;
         _activeTab   = "overview";
         _searchQuery = string.Empty;
-        _expanded    = [];
         _importRef?.Reset();
     }
 
@@ -601,12 +597,6 @@ else
     {
         _activeTab   = tab;
         _searchQuery = string.Empty;
-    }
-
-    private void ToggleExpanded(string id)
-    {
-        if (!_expanded.Add(id))
-            _expanded.Remove(id);
     }
 
     private void HandleSearch(ChangeEventArgs e) =>
