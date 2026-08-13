@@ -30,6 +30,22 @@ public class TaskExplorerPageTests : BunitContext
         - [ ] T002 Implement logout
         """;
 
+    private const string SemanticFilterFixture = """
+        # Tasks
+
+        ## Phase 1
+
+        ### User Story 1 — User Activated
+        - [x] T001 [P] [US1] Unit test for activation with FR-018 and SC-003 in tests/ActivationTests.cs
+        - [ ] T002 Implementation task without explicit links
+        - [ ] T003 Security review task
+
+        ## Summary
+        | Entity | Tasks |
+        |---|---|
+        | KjentBruker | T001 |
+        """;
+
     public TaskExplorerPageTests()
     {
         Services.AddSingleton<MarkdownRenderingService>();
@@ -138,6 +154,275 @@ public class TaskExplorerPageTests : BunitContext
         cut.Find("[data-testid='te-task-details']").TextContent.Should().Contain("Task Details");
         cut.Find(".te-main").GetAttribute("class").Should().Contain("has-details");
         cut.FindAll(".te-row.is-selected").Should().ContainSingle(row => row.TextContent.Contains("T001"));
+    }
+
+    [Fact]
+    public void TableLinkFilter_MatchesExpectedTasks()
+    {
+        var tasks = """
+            # Tasks
+
+            ## Phase 1
+            - [ ] T001 Build user entity
+            - [ ] T002 Unrelated setup
+            - [ ] T003 Configure user table
+
+            ## Summary
+            | Entity | Tasks |
+            |---|---|
+            | KjentBruker | T001, T003 |
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        ClickFilter(cut, "Table Links");
+
+        cut.FindAll(".te-row.is-match").Should().HaveCount(2);
+        FindTreeTaskRow(cut, "T001").ClassList.Should().Contain("is-match");
+        FindTreeTaskRow(cut, "T003").ClassList.Should().Contain("is-match");
+        cut.FindAll(".te-row").Should().NotContain(row => row.TextContent.Contains("T002"));
+    }
+
+    [Fact]
+    public void TableLinkFilter_RendersConcreteLinkedEntity()
+    {
+        var tasks = """
+            # Tasks
+
+            ## Phase 1
+            - [ ] T001 Build user entity
+
+            ## Summary
+            | Entity | Tasks |
+            |---|---|
+            | KjentBruker | T001 |
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        ClickFilter(cut, "Table Links");
+
+        var row = FindTreeTaskRow(cut, "T001");
+        row.TextContent.Should().Contain("TABLE · KjentBruker");
+        row.QuerySelector(".te-ref-table")!.GetAttribute("title").Should().Be("Linked table row: KjentBruker");
+    }
+
+    [Fact]
+    public void MultipleTableLinks_RenderAsSeparateBadges()
+    {
+        var tasks = """
+            # Tasks
+
+            ## Phase 1
+            - [ ] T001 Build user persistence
+
+            ## Summary
+            | Entity | Tasks |
+            |---|---|
+            | KjentBruker | T001 |
+            | KjentBrukerConfiguration | T001 |
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        ClickFilter(cut, "Table Links");
+
+        var badges = FindTreeTaskRow(cut, "T001").QuerySelectorAll(".te-ref-table");
+        badges.Should().HaveCount(2);
+        badges.Select(b => b.TextContent.Trim()).Should().Contain("TABLE · KjentBruker");
+        badges.Select(b => b.TextContent.Trim()).Should().Contain("TABLE · KjentBrukerConfiguration");
+    }
+
+    [Fact]
+    public void TableLinkBadge_UsesActualModelValue()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        ClickFilter(cut, "Table Links");
+
+        FindTreeTaskRow(cut, "T003").TextContent.Should().Contain("TABLE · Phase 2: Foundational");
+    }
+
+    [Fact]
+    public void TableLinkFilter_DoesNotInventMissingNames()
+    {
+        var tasks = """
+            # Tasks
+
+            ## Phase 1
+            - [ ] T001 Task without markdown table reference
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        ClickFilter(cut, "Table Links");
+
+        cut.FindAll(".te-ref-table").Should().BeEmpty();
+        cut.Find(".te-no-results").TextContent.Should().Contain("No tasks match");
+    }
+
+    [Fact]
+    public void FrScFilterRendering_RemainsUnchanged()
+    {
+        var tasks = """
+            # Tasks
+
+            ## Phase 1
+            - [ ] T001 Implement feature for FR-018 and SC-003
+
+            ## Summary
+            | Entity | Tasks |
+            |---|---|
+            | KjentBruker | T001 |
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
+
+        var row = FindTreeTaskRow(cut, "T001");
+
+        row.QuerySelector(".te-ref-fr")!.TextContent.Trim().Should().Be("FR-018");
+        row.QuerySelector(".te-ref-sc")!.TextContent.Trim().Should().Be("SC-003");
+        row.QuerySelector(".te-ref-table")!.TextContent.Trim().Should().Be("TABLE · KjentBruker");
+    }
+
+    [Fact]
+    public void HasFRLinks_MatchReceivesInformationalSemanticClass()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
+
+        ClickFilter(cut, "Has FR Links");
+
+        AssertInfoMatch(FindTreeTaskRow(cut, "T001"));
+    }
+
+    [Fact]
+    public void HasSCLinks_MatchReceivesInformationalSemanticClass()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
+
+        ClickFilter(cut, "Has SC Links");
+
+        AssertInfoMatch(FindTreeTaskRow(cut, "T001"));
+    }
+
+    [Fact]
+    public void HasTableLinks_MatchReceivesInformationalSemanticClass()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
+
+        ClickFilter(cut, "Table Links");
+
+        AssertInfoMatch(FindTreeTaskRow(cut, "T001"));
+    }
+
+    [Fact]
+    public void UserStories_MatchReceivesInformationalSemanticClass()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
+
+        ClickFilter(cut, "User Stories");
+
+        AssertInfoMatch(FindTreeTaskRow(cut, "T001"));
+    }
+
+    [Fact]
+    public void Requirements_MatchReceivesInformationalSemanticClass()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
+
+        ClickFilter(cut, "Requirements");
+
+        AssertInfoMatch(FindTreeTaskRow(cut, "T001"));
+    }
+
+    [Fact]
+    public void SuccessCriteria_MatchReceivesInformationalSemanticClass()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
+
+        ClickFilter(cut, "Success Criteria");
+
+        AssertInfoMatch(FindTreeTaskRow(cut, "T001"));
+    }
+
+    [Fact]
+    public void Testing_MatchReceivesInformationalSemanticClass()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
+
+        ClickFilter(cut, "Testing");
+
+        AssertInfoMatch(FindTreeTaskRow(cut, "T001"));
+    }
+
+    [Fact]
+    public void Security_MatchReceivesInformationalSemanticClass()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
+
+        ClickFilter(cut, "Security");
+
+        AssertInfoMatch(FindTreeTaskRow(cut, "T003"));
+    }
+
+    [Fact]
+    public void MissingImplementation_MatchReceivesWarningSemanticClass()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
+
+        ClickFilter(cut, "Missing Implementation");
+
+        AssertWarningMatch(FindTreeTaskRow(cut, "T002"));
+    }
+
+    [Fact]
+    public void Unlinked_MatchReceivesWarningSemanticClass()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
+
+        ClickFilter(cut, "Unlinked");
+
+        AssertWarningMatch(FindTreeTaskRow(cut, "T002"));
+    }
+
+    [Fact]
+    public void SemanticFilterMatches_PreserveExistingBadges()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
+
+        ClickFilter(cut, "Has FR Links");
+
+        var row = FindTreeTaskRow(cut, "T001");
+        row.TextContent.Should().Contain("T001");
+        row.TextContent.Should().Contain("US1");
+        row.TextContent.Should().Contain("P");
+        row.TextContent.Should().Contain("FR-018");
+        row.TextContent.Should().Contain("SC-003");
+        row.TextContent.Should().Contain("TABLE · KjentBruker");
+    }
+
+    [Fact]
+    public void SemanticFilterMatches_PreserveTreeHierarchy()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
+
+        ClickFilter(cut, "Has FR Links");
+
+        cut.FindAll(".te-row.is-heading").Should().Contain(row => row.TextContent.Contains("Phase 1"));
+        cut.FindAll(".te-row").Should().Contain(row => row.TextContent.Contains("T001"));
+    }
+
+    [Fact]
+    public void StatusFilters_KeepGenericMatchClass()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
+
+        ClickFilter(cut, "Done");
+
+        var row = FindTreeTaskRow(cut, "T001");
+        row.ClassList.Should().Contain("is-match");
+        row.ClassList.Should().NotContain("te-filter-match--info");
+        row.ClassList.Should().NotContain("te-filter-match--warning");
     }
 
     [Fact]
@@ -1340,7 +1625,7 @@ public class TaskExplorerPageTests : BunitContext
 
         // Verify US1 is present
         var tagTexts = tags.Select(t => t.TextContent.Trim()).ToList();
-        tagTexts.Should().Contain("US1", "Should render US1 user story");
+        tagTexts.Should().Contain(t => t.Contains("US1"), "Should render US1 user story");
     }
 
     [Fact]
@@ -1418,7 +1703,83 @@ public class TaskExplorerPageTests : BunitContext
         // Verify tags are rendered
         var tags = cut.FindAll(".te-ptask-tag");
         var tagTexts = tags.Select(t => t.TextContent.Trim()).ToList();
-        tagTexts.Should().Contain("US4", "Should render US4 tag");
+        tagTexts.Should().Contain(t => t.Contains("US4"), "Should render US4 tag");
+    }
+
+    [Fact]
+    public void Parallel_T018_ShowsUS1AndUserActivated()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        ClickTab(cut, "Parallel");
+
+        FindParallelTaskRow(cut, "T018").TextContent.Should().Contain("US1 · User Activated");
+    }
+
+    [Fact]
+    public void Parallel_T024_ShowsUS2AndUserDeactivated()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        ClickTab(cut, "Parallel");
+
+        FindParallelTaskRow(cut, "T024").TextContent.Should().Contain("US2 · User Deactivated");
+    }
+
+    [Fact]
+    public void Parallel_T028_ShowsUS3AndFullSynchronization()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        ClickTab(cut, "Parallel");
+
+        FindParallelTaskRow(cut, "T028").TextContent.Should().Contain("US3 · Full Synchronization");
+    }
+
+    [Fact]
+    public void Parallel_T032_ShowsUS4AndOperationsMonitoring()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        ClickTab(cut, "Parallel");
+
+        FindParallelTaskRow(cut, "T032").TextContent.Should().Contain("US4 · Operations Monitoring");
+    }
+
+    [Fact]
+    public void UnknownUserStory_FallsBackToId()
+    {
+        var sampleTasks = """
+            # Tasks
+
+            ## Phase 1: Setup
+            - [ ] T001 [P] [US7] Unknown story task
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, sampleTasks));
+
+        ClickTab(cut, "Parallel");
+
+        FindParallelTaskRow(cut, "T001").TextContent.Should().Contain("US7");
+        FindParallelTaskRow(cut, "T001").TextContent.Should().NotContain("·");
+    }
+
+    [Fact]
+    public void NoLinkedUserStory_PreservesNoLinkBehavior()
+    {
+        var sampleTasks = """
+            # Tasks
+
+            ## Phase 1: Setup
+            - [ ] T001 Task without story
+            """;
+
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, sampleTasks));
+
+        ClickTaskRow(cut, "T001");
+
+        cut.Find("[data-testid='te-task-details']").TextContent.Should().Contain("Linked User Story");
+        cut.Find("[data-testid='te-task-details']").TextContent.Should().Contain("No link");
     }
 
     [Fact]
@@ -1520,6 +1881,97 @@ public class TaskExplorerPageTests : BunitContext
         impactContent.Should().Contain("Requirement implementation coverage", "Should mention requirement coverage explicitly");
         impactContent.Should().Contain("requirement-to-task",
             "Should clarify what requirement coverage measures");
+    }
+
+    [Fact]
+    public void LinkVisualization_RendersFourPaths()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        var linkVisualization = RenderImpactView(cut).QuerySelector(".te-link-visualization");
+
+        linkVisualization.Should().NotBeNull("Impact view should include the traceability link visualization");
+        linkVisualization!.QuerySelectorAll(".te-link-path").Should().HaveCount(4);
+    }
+
+    [Fact]
+    public void LinkVisualization_UserStoryPathContains()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        var pathText = RenderImpactView(cut).QuerySelectorAll(".te-link-path")[0].TextContent;
+
+        pathText.Should().Contain("User Story");
+        pathText.Should().Contain("Requirements");
+        pathText.Should().Contain("Success Criteria");
+        pathText.Should().Contain("Tasks");
+    }
+
+    [Fact]
+    public void LinkVisualization_RequirementPathContains()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        var pathText = RenderImpactView(cut).QuerySelectorAll(".te-link-path")[1].TextContent;
+
+        pathText.Should().Contain("Requirement");
+        pathText.Should().Contain("Tasks");
+    }
+
+    [Fact]
+    public void LinkVisualization_SuccessCriterionPathContains()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        var pathText = RenderImpactView(cut).QuerySelectorAll(".te-link-path")[2].TextContent;
+
+        pathText.Should().Contain("Success Criterion");
+        pathText.Should().Contain("Tasks");
+    }
+
+    [Fact]
+    public void LinkVisualization_TaskPathContains()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        var pathText = RenderImpactView(cut).QuerySelectorAll(".te-link-path")[3].TextContent;
+
+        pathText.Should().Contain("Task");
+        pathText.Should().Contain("Linked Spec Artifacts");
+    }
+
+    [Fact]
+    public void LinkVisualization_DoesNotRenderAsciiArrow()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        var linkText = RenderImpactView(cut).QuerySelector(".te-link-visualization")!.TextContent;
+
+        linkText.Should().NotContain("->");
+        linkText.Should().Contain("→");
+    }
+
+    [Fact]
+    public void Impact_MetricsRemainUnchanged()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        var impactText = RenderImpactView(cut).TextContent;
+
+        impactText.Should().Contain("94%");
+        impactText.Should().Contain("4 / 4");
+        impactText.Should().Contain("User Stories linked");
+        impactText.Should().Contain("3 / 5");
+        impactText.Should().Contain("Functional Requirements linked");
+        impactText.Should().Contain("1 / 1");
+        impactText.Should().Contain("Success Criteria linked");
+        impactText.Should().Contain("7 / 7");
+        impactText.Should().Contain("Tests linked");
+        impactText.Should().Contain("14 / 14");
+        impactText.Should().Contain("Architecture Notes linked");
+        impactText.Should().Contain("FR-019");
+        impactText.Should().Contain("FR-020");
+        impactText.Should().Contain("no gaps");
     }
 
     [Fact]
@@ -2309,11 +2761,57 @@ public class TaskExplorerPageTests : BunitContext
         depsContent.Should().Contain("No explicit task dependencies", "Should show empty state when no dependencies");
     }
 
+    [Fact]
+    public void Dependencies_StoryHeader_ShowsIdAndName()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
+
+        ClickTab(cut, "Dependencies");
+
+        var storyHeaders = cut.FindAll(".te-dep-story-name").Select(h => h.TextContent.Trim()).ToList();
+        storyHeaders.Should().Contain("US1 · User Activated");
+        storyHeaders.Should().Contain("US2 · User Deactivated");
+        storyHeaders.Should().Contain("US3 · Full Synchronization");
+        storyHeaders.Should().Contain("US4 · Operations Monitoring");
+    }
+
     private static void ClickTaskRow(IRenderedComponent<TaskExplorerPanel> cut, string taskId)
     {
         var row = cut.FindAll(".te-row").FirstOrDefault(r => r.TextContent.Contains(taskId));
         row.Should().NotBeNull($"task row {taskId} should be rendered in Tree view");
         row!.Click();
+    }
+
+    private static AngleSharp.Dom.IElement FindTreeTaskRow(IRenderedComponent<TaskExplorerPanel> cut, string taskId)
+    {
+        var row = cut.FindAll(".te-row")
+            .SingleOrDefault(r => r.TextContent.Contains(taskId) && r.QuerySelector(".te-task-id")?.TextContent.Trim() == taskId);
+
+        row.Should().NotBeNull($"task row {taskId} should be rendered in Tree view");
+        return row!;
+    }
+
+    private static void ClickFilter(IRenderedComponent<TaskExplorerPanel> cut, string label)
+    {
+        var filter = cut.FindAll(".te-filter-chip").FirstOrDefault(b => b.TextContent.Contains(label));
+        filter.Should().NotBeNull($"{label} filter button should exist");
+        filter!.Click();
+    }
+
+    private static void AssertInfoMatch(AngleSharp.Dom.IElement row)
+    {
+        row.ClassList.Should().Contain("is-match");
+        row.ClassList.Should().Contain("te-filter-match");
+        row.ClassList.Should().Contain("te-filter-match--info");
+        row.ClassList.Should().NotContain("te-filter-match--warning");
+    }
+
+    private static void AssertWarningMatch(AngleSharp.Dom.IElement row)
+    {
+        row.ClassList.Should().Contain("is-match");
+        row.ClassList.Should().Contain("te-filter-match");
+        row.ClassList.Should().Contain("te-filter-match--warning");
+        row.ClassList.Should().NotContain("te-filter-match--info");
     }
 
     private static AngleSharp.Dom.IElement FindDependencyTaskRow(IRenderedComponent<TaskExplorerPanel> cut, string taskId)
@@ -2323,6 +2821,21 @@ public class TaskExplorerPageTests : BunitContext
 
         row.Should().NotBeNull($"dependency task row {taskId} should be rendered");
         return row!;
+    }
+
+    private static AngleSharp.Dom.IElement FindParallelTaskRow(IRenderedComponent<TaskExplorerPanel> cut, string taskId)
+    {
+        var row = cut.FindAll(".te-parallel-task")
+            .SingleOrDefault(r => r.TextContent.TrimStart().StartsWith(taskId, StringComparison.Ordinal));
+
+        row.Should().NotBeNull($"parallel task row {taskId} should be rendered");
+        return row!;
+    }
+
+    private static AngleSharp.Dom.IElement RenderImpactView(IRenderedComponent<TaskExplorerPanel> cut)
+    {
+        ClickTab(cut, "Impact");
+        return cut.Find("[data-testid='te-impact-view']");
     }
 
     private static void ClickTab(IRenderedComponent<TaskExplorerPanel> cut, string label)

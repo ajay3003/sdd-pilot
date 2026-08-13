@@ -141,7 +141,7 @@
                         <div class="te-filter-row">
                             <button class='te-filter-chip @(_activeFilter == "HasFrLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasFrLinks")'>Has FR Links</button>
                             <button class='te-filter-chip @(_activeFilter == "HasScLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasScLinks")'>Has SC Links</button>
-                            <button class='te-filter-chip @(_activeFilter == "HasTableLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasTableLinks")'>Has Table Links</button>
+                            <button class='te-filter-chip @(_activeFilter == "HasTableLinks" ? "is-active" : "")' @onclick='() => SetFilter("HasTableLinks")'>Table Links</button>
                             @if (_health.UnlinkedTasks > 0)
                             {
                                 <button class='te-filter-chip @(_activeFilter == "NoLinks" ? "is-active" : "")' @onclick='() => SetFilter("NoLinks")'>Unlinked</button>
@@ -239,11 +239,15 @@
                         var taskInDeps = new HashSet<string>(blockedByMap.Keys.Union(blocksMap.Keys), StringComparer.OrdinalIgnoreCase);
 
                         var tasksByStory = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                        var storyLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                         foreach (var taskId in taskInDeps.OrderBy(t => t))
                         {
                             var storyKey = "General";
                             if (taskMap.TryGetValue(taskId, out var task) && !string.IsNullOrEmpty(task.UserStoryTag))
+                            {
                                 storyKey = task.UserStoryTag;
+                                storyLabels[storyKey] = UserStoryDisplay(task) ?? storyKey;
+                            }
 
                             if (!tasksByStory.ContainsKey(storyKey))
                                 tasksByStory[storyKey] = new();
@@ -256,10 +260,11 @@
                             @foreach (var story in tasksByStory.Keys.OrderBy(k => k))
                             {
                                 var depCount = tasksByStory[story].Sum(t => (blockedByMap.ContainsKey(t) ? blockedByMap[t].Count : 0) + (blocksMap.ContainsKey(t) ? blocksMap[t].Count : 0));
+                                var storyLabel = storyLabels.TryGetValue(story, out var label) ? label : story;
 
                                 <div class="te-dep-story-card">
                                     <div class="te-dep-story-header">
-                                        <h4 class="te-dep-story-name">@story</h4>
+                                        <h4 class="te-dep-story-name">@storyLabel</h4>
                                         <span class="te-dep-story-count">@depCount dependencies</span>
                                     </div>
 
@@ -369,7 +374,7 @@
 
                                                 @if (!string.IsNullOrEmpty(task.UserStoryTag))
                                                 {
-                                                    <span class="te-ptask-tag">@task.UserStoryTag</span>
+                                                    <span class="te-ptask-tag">@UserStoryDisplay(task)</span>
                                                 }
 
                                                 @if (task.IsCompleted)
@@ -487,10 +492,33 @@
 
                     <div class="te-link-visualization">
                         <div class="te-section-kicker">Link Visualization</div>
-                        <div class="te-link-chain">User Story -> Requirements -> Success Criteria -> Tasks</div>
-                        <div class="te-link-chain">Requirement -> Tasks</div>
-                        <div class="te-link-chain">Success Criterion -> Tasks</div>
-                        <div class="te-link-chain">Task -> Linked Spec Artifacts</div>
+                        <div class="te-link-visualization-subtitle">How task implementation connects back to specification artifacts.</div>
+                        <div class="te-link-paths" aria-label="Traceability relationship paths">
+                            <div class="te-link-path">
+                                <span class="te-link-node">User Story</span>
+                                <span class="te-link-arrow">→</span>
+                                <span class="te-link-node">Requirements</span>
+                                <span class="te-link-arrow">→</span>
+                                <span class="te-link-node">Success Criteria</span>
+                                <span class="te-link-arrow">→</span>
+                                <span class="te-link-node">Tasks</span>
+                            </div>
+                            <div class="te-link-path">
+                                <span class="te-link-node">Requirement</span>
+                                <span class="te-link-arrow">→</span>
+                                <span class="te-link-node">Tasks</span>
+                            </div>
+                            <div class="te-link-path">
+                                <span class="te-link-node">Success Criterion</span>
+                                <span class="te-link-arrow">→</span>
+                                <span class="te-link-node">Tasks</span>
+                            </div>
+                            <div class="te-link-path">
+                                <span class="te-link-node">Task</span>
+                                <span class="te-link-arrow">→</span>
+                                <span class="te-link-node">Linked Spec Artifacts</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             }
@@ -572,7 +600,7 @@
                                                     <span class="te-map-task-chips">
                                                         @if (task.UserStoryTag is not null)
                                                         {
-                                                            <span class="te-chip te-chip-us">@task.UserStoryTag</span>
+                                                            <span class="te-chip te-chip-us">@UserStoryDisplay(task)</span>
                                                         }
                                                         @if (task.IsCompleted)
                                                         {
@@ -603,7 +631,7 @@
                                             <span class="te-map-task-chips">
                                                 @if (task.UserStoryTag is not null)
                                                 {
-                                                    <span class="te-chip te-chip-us">@task.UserStoryTag</span>
+                                                    <span class="te-chip te-chip-us">@UserStoryDisplay(task)</span>
                                                 }
                                                 @if (task.IsCompleted)
                                                 {
@@ -660,7 +688,7 @@
                         var isHeading = node.HeadingLevel > 0;
                         var isPhase = node.NodeType == TaskNodeType.Phase;
 
-                        <div class="te-row @(isSelected ? "is-selected" : "") @(isMatch ? "is-match" : "") @(isHeading || node.NodeType == TaskNodeType.TableSection ? "is-heading" : "is-item")"
+                        <div class="te-row @(isSelected ? "is-selected" : "") @TreeFilterMatchClass(isMatch) @(isHeading || node.NodeType == TaskNodeType.TableSection ? "is-heading" : "is-item")"
                              style="padding-left: @(depth * 16 + 6)px"
                              role="treeitem"
                              aria-selected="@isSelected.ToString().ToLower()"
@@ -708,7 +736,7 @@
                                 <span class="te-chips">
                                     @if (node.UserStoryTag is not null)
                                     {
-                                        <span class="te-chip te-chip-us">@node.UserStoryTag</span>
+                                        <span class="te-chip te-chip-us">@UserStoryDisplay(node)</span>
                                     }
                                     @if (node.IsParallel)
                                     {
@@ -737,8 +765,14 @@
                                 </span>
                             }
 
-                            <!-- FR/SC ref chips on task rows — clickable to search -->
-                            @if (node.NodeType == TaskNodeType.Task && (node.ReferencedFrIds.Count > 0 || node.ReferencedScIds.Count > 0))
+                            <!-- FR/SC/table ref chips on task rows -->
+                            @{
+                                var tableRelationships = node.NodeType == TaskNodeType.Task
+                                    ? GetTableRelationships(node.TaskId)
+                                    : new List<TableRelationship>();
+                            }
+
+                            @if (node.NodeType == TaskNodeType.Task && (node.ReferencedFrIds.Count > 0 || node.ReferencedScIds.Count > 0 || tableRelationships.Count > 0))
                             {
                                 <span class="te-ref-chips">
                                     @foreach (var fr in node.ReferencedFrIds.Take(2))
@@ -751,7 +785,11 @@
                                         var scCapture = sc;
                                         <button class="te-ref-chip te-ref-sc" @onclick:stopPropagation="true" @onclick='() => SetSearch(scCapture)' title="Search @scCapture">@scCapture</button>
                                     }
-                                    @{ var refOverflow = node.ReferencedFrIds.Count + node.ReferencedScIds.Count - 4; }
+                                    @foreach (var rel in tableRelationships.Take(2))
+                                    {
+                                        <span class="te-ref-chip te-ref-table" title="Linked table row: @rel.RowTitle">TABLE · @rel.RowTitle</span>
+                                    }
+                                    @{ var refOverflow = node.ReferencedFrIds.Count + node.ReferencedScIds.Count + tableRelationships.Count - 6; }
                                     @if (refOverflow > 0)
                                     {
                                         <span class="te-ref-chip te-ref-more">+@refOverflow</span>
@@ -862,7 +900,7 @@
                                     }
                                     @if (!string.IsNullOrEmpty(selected.UserStoryTitle))
                                     {
-                                        <div><span class="te-det-chip te-chip-us">👤 @selected.UserStoryTitle</span></div>
+                                        <div><span class="te-det-chip te-chip-us">👤 @UserStoryContextDisplay(selected)</span></div>
                                     }
                                 </div>
                             }
@@ -879,7 +917,7 @@
                                     }
                                     @if (selected.UserStoryTag is not null)
                                     {
-                                        <span class="te-chip te-chip-us">@selected.UserStoryTag</span>
+                                        <span class="te-chip te-chip-us">@UserStoryDisplay(selected)</span>
                                     }
                                     @if (selected.IsTestingTask)
                                     {
@@ -897,7 +935,7 @@
                                 <dl class="te-detail-grid">
                                     <div>
                                         <dt>Linked User Story</dt>
-                                        <dd>@DisplayOrEmpty(ResolveUserStory(selected))</dd>
+                                        <dd>@DisplayOrEmpty(UserStoryDisplay(selected))</dd>
                                     </div>
                                     <div>
                                         <dt>Linked Requirement(s)</dt>
@@ -1381,6 +1419,35 @@
         RefreshFlatCache();
     }
 
+    private string TreeFilterMatchClass(bool isMatch)
+    {
+        if (!isMatch)
+            return string.Empty;
+
+        var semantic = FilterMatchSemantic(_activeFilter);
+        if (semantic is null)
+            return "is-match";
+
+        return $"is-match te-filter-match te-filter-match--{semantic}";
+    }
+
+    private static string? FilterMatchSemantic(string? filter) => filter switch
+    {
+        "OnlyUserStories" or
+        "OnlyRequirements" or
+        "OnlySuccessCriteria" or
+        "HasFrLinks" or
+        "HasScLinks" or
+        "HasTableLinks" or
+        "TestingTasks" or
+        "SecurityTasks" => "info",
+
+        "MissingImplementation" or
+        "NoLinks" => "warning",
+
+        _ => null,
+    };
+
     private void HandleNodeClick(TaskNode node)
     {
         _selectedNodeId = _selectedNodeId == node.Id ? null : node.Id;
@@ -1623,6 +1690,72 @@
         return FindAncestors(_tree.Roots, node.Id, ancestors)
             ? ancestors.Select(ExtractUserStory).OfType<string>().LastOrDefault()
             : null;
+    }
+
+    private string? UserStoryDisplay(TaskNode node)
+    {
+        var storyId = !string.IsNullOrWhiteSpace(node.UserStoryTag)
+            ? node.UserStoryTag.Trim()
+            : ResolveUserStory(node);
+
+        if (string.IsNullOrWhiteSpace(storyId))
+            return null;
+
+        var storyName = CleanUserStoryName(node.PhaseTitle, storyId)
+            ?? CleanUserStoryName(node.UserStoryTitle, storyId)
+            ?? FindUserStoryName(storyId);
+
+        return string.IsNullOrWhiteSpace(storyName)
+            ? storyId
+            : $"{storyId} · {storyName}";
+    }
+
+    private string? FindUserStoryName(string storyId)
+    {
+        if (_tree is null)
+            return null;
+
+        return AllNodes(_tree.Roots)
+            .Where(n => string.Equals(n.UserStoryTag, storyId, StringComparison.OrdinalIgnoreCase))
+            .Select(n => CleanUserStoryName(n.PhaseTitle, storyId) ?? CleanUserStoryName(n.UserStoryTitle, storyId))
+            .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+    }
+
+    private string UserStoryContextDisplay(TaskNode node)
+    {
+        return UserStoryDisplay(node) ?? node.UserStoryTitle ?? string.Empty;
+    }
+
+    private static string? CleanUserStoryName(string? source, string storyId)
+    {
+        if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(storyId))
+            return null;
+
+        var text = source.Trim().TrimStart('#').Trim();
+        var hasExplicitStoryContext = System.Text.RegularExpressions.Regex.IsMatch(text, @"\bUser\s+Story\s+\d+\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            || System.Text.RegularExpressions.Regex.IsMatch(text, $@"\b{System.Text.RegularExpressions.Regex.Escape(storyId)}\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!hasExplicitStoryContext)
+            return null;
+
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"^\s*Phase\s+\d+\s*[:\-–—]\s*", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s*\(Priority:[^)]+\).*$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s*🎯\s*MVP\s*$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+
+        var storyNumber = System.Text.RegularExpressions.Regex.Match(storyId, @"US[-\s]?0*(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (storyNumber.Success)
+        {
+            text = System.Text.RegularExpressions.Regex.Replace(text, $@"^\s*User\s+Story\s+0*{storyNumber.Groups[1].Value}\s*[:\-–—]\s*", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+            if (System.Text.RegularExpressions.Regex.IsMatch(text, $@"^\s*User\s+Story\s+0*{storyNumber.Groups[1].Value}\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                return null;
+            if (System.Text.RegularExpressions.Regex.IsMatch(text, $@"\bUser\s+Story\s+0*{storyNumber.Groups[1].Value}\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                return null;
+        }
+
+        text = System.Text.RegularExpressions.Regex.Replace(text, $@"^\s*{System.Text.RegularExpressions.Regex.Escape(storyId)}\s*[:\-–—]\s*", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+
+        return string.IsNullOrWhiteSpace(text) || string.Equals(text, storyId, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : text;
     }
 
     private static bool FindAncestors(IEnumerable<TaskNode> nodes, string targetId, List<TaskNode> ancestors)

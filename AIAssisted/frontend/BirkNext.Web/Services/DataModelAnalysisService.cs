@@ -363,8 +363,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                                     });
                             }
 
-                            // Extract traceability refs from Notes column (index 4) and
-                            // Constraints column (index 3) using the shared engine's RefIdRe.
+                            // Extract traceability refs from Notes and Constraints columns using RefIdRe.
                             var lastCell = token.TableCells!.Count - 1;
                             for (var ci = Math.Max(0, token.TableCells!.Count - 2); ci <= lastCell; ci++)
                             {

@@ -1671,7 +1671,11 @@ public class ViewBehaviorTests : BunitContext
             .Should().BeTrue("Should show at least one zero-gap success indicator");
 
         // Link visualization still present
-        impact.Should().Contain("User Story -> Requirements -> Success Criteria -> Tasks");
+        impact.Should().Contain("User Story");
+        impact.Should().Contain("Requirements");
+        impact.Should().Contain("Success Criteria");
+        impact.Should().Contain("Tasks");
+        impact.Should().NotContain("->");
     }
 
     [Fact]
