@@ -1,0 +1,206 @@
+/* ======================================================
+   EXPLORERS COMMON DESIGN LANGUAGE (Phase 1)
+   Constitution, Plan, and Task Explorer shared utilities
+
+   Minimal first pass consolidation focusing on:
+   - High-value, low-risk reuse
+   - Safety: all explorers already use these styles
+   - Maintainability: single source for common patterns
+
+   PRINCIPLE: Shared CSS owns design language, not structure.
+   Scoped CSS remains responsible for explorer-unique layouts.
+   ====================================================== */
+
+/* ── PRIMARY ACTION BUTTON ─────────────────────────── */
+
+/* Base primary button (used by all three explorers as .ce-build-btn, .pe-build-btn, .te-build-btn) */
+.btn-primary,
+.ce-build-btn,
+.pe-build-btn,
+.te-build-btn {
+    padding: 0.6rem 1.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: white;
+    background: var(--clr-primary);
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background var(--transition);
+}
+
+.te-build-btn {
+    font-size: 0.875rem;
+    padding: 0.55rem 1.5rem;
+    margin-top: 0.25rem;
+    transition: background 0.15s, opacity 0.15s;
+}
+
+.btn-primary:hover:not(:disabled),
+.ce-build-btn:hover:not(:disabled),
+.pe-build-btn:hover:not(:disabled),
+.te-build-btn:hover:not(:disabled) {
+    background: var(--clr-primary-hover);
+}
+
+.btn-primary:disabled,
+.ce-build-btn:disabled,
+.pe-build-btn:disabled,
+.te-build-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* ── CLEAR/SECONDARY BUTTON ─────────────────────────── */
+
+.btn-clear,
+.ce-clear-btn,
+.pe-clear-btn,
+.te-clear-btn {
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.1rem 0.3rem;
+    transition: color var(--transition);
+}
+
+.btn-clear:hover,
+.ce-clear-btn:hover,
+.pe-clear-btn:hover,
+.te-clear-btn:hover {
+    color: var(--clr-danger);
+}
+
+/* ── RESET/CONTROL BUTTON ─────────────────────────── */
+
+.btn-secondary,
+.ce-reset-btn,
+.pe-reset-btn,
+.te-reset-btn {
+    padding: 0.3rem 0.75rem;
+    font-size: 0.8rem;
+    color: var(--clr-text-subtle);
+    background: none;
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color var(--transition), color var(--transition);
+    white-space: nowrap;
+}
+
+.btn-secondary:hover,
+.ce-reset-btn:hover,
+.pe-reset-btn:hover,
+.te-reset-btn:hover {
+    border-color: var(--clr-border-hover);
+    color: var(--clr-text-body);
+}
+
+/* ── VIEW TOGGLE GROUP (Segmented Tabs) ──────────── */
+
+.view-toggle,
+.ce-view-toggle,
+.pe-view-toggle,
+.te-view-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--clr-surface);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    padding: 2px;
+}
+
+.view-toggle-btn,
+.ce-view-btn,
+.pe-view-btn,
+.te-view-btn {
+    padding: 0.3rem 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--clr-text-muted);
+    background: transparent;
+    border: none;
+    border-radius: calc(var(--radius-md) - 2px);
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+    white-space: nowrap;
+}
+
+.view-toggle-btn:hover,
+.ce-view-btn:hover,
+.pe-view-btn:hover,
+.te-view-btn:hover {
+    background: var(--clr-surface-white);
+    color: var(--clr-text-body);
+}
+
+.view-toggle-btn.is-active,
+.ce-view-btn.is-active,
+.pe-view-btn.is-active,
+.te-view-btn.is-active {
+    background: var(--clr-surface-white);
+    color: var(--clr-primary);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* ── EMPTY STATE ───────────────────────────────────── */
+
+.empty-state,
+.ce-empty-state,
+.pe-empty-state,
+.te-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 2.5rem 1rem;
+    max-width: 680px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.empty-state-icon,
+.ce-empty-icon,
+.pe-empty-icon,
+.te-empty-icon {
+    font-size: 3rem;
+    line-height: 1;
+}
+
+.empty-state-title,
+.ce-empty-title,
+.pe-empty-title,
+.te-empty-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--clr-text-heading);
+    margin: 0;
+}
+
+.empty-state-desc,
+.ce-empty-desc,
+.pe-empty-desc,
+.te-empty-desc {
+    font-size: 0.9rem;
+    color: var(--clr-text-muted);
+    margin: 0;
+    line-height: 1.6;
+}
+
+/* ── CARD SURFACE ───────────────────────────────────── */
+
+.card {
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-lg);
+}
+
+.card-meta {
+    padding: 1rem 1.25rem;
+}
+
+/* EOF: Phase 1 consolidations (buttons, toggles, empty states, basic cards) */
+/* These rules are referenced directly or aliased in explorer-specific CSS files */
