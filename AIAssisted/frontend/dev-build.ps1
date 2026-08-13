@@ -13,24 +13,28 @@ param(
     [switch]$Clean
 )
 
-$BirkNextWebPath = "$PSScriptRoot/BirkNext.Web"
-$setupScript = "$PSScriptRoot/setup-dev-scoped-css.ps1"
+# Stable paths based on script location (works from any current directory)
+$FrontendRoot = $PSScriptRoot
+$BirkNextWebPath = Join-Path $FrontendRoot "BirkNext.Web"
+$WebProjectFile = Join-Path $BirkNextWebPath "BirkNext.Web.csproj"
+$TestsProjectPath = Join-Path $FrontendRoot "BirkNext.Web.Tests"
+$setupScript = Join-Path $FrontendRoot "setup-dev-scoped-css.ps1"
 
 function Cleanup-CSS {
-    & $setupScript -Clean
+    & $setupScript -Clean -BirkNextWebPath "$BirkNextWebPath"
 }
 
 # Clean if requested
 if ($Clean) {
     Write-Host "Cleaning previous build artifacts..." -ForegroundColor Yellow
-    dotnet clean BirkNext.Web -c $Configuration
+    dotnet clean "$WebProjectFile" -c $Configuration
     Cleanup-CSS
 }
 
 # Build the project
 Write-Host ""
 Write-Host "Building BirkNext.Web ($Configuration)..." -ForegroundColor Cyan
-dotnet build BirkNext.Web -c $Configuration
+dotnet build "$WebProjectFile" -c $Configuration
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Build failed!" -ForegroundColor Red
     exit 1
@@ -40,7 +44,7 @@ if ($LASTEXITCODE -ne 0) {
 if ($Configuration -eq "Debug" -and -not $Test) {
     Write-Host ""
     Write-Host "Setting up scoped CSS for development..." -ForegroundColor Cyan
-    & $setupScript
+    & $setupScript -BirkNextWebPath "$BirkNextWebPath"
     if ($LASTEXITCODE -ne 0) {
         Write-Host "CSS setup failed!" -ForegroundColor Red
         exit 1
@@ -57,7 +61,7 @@ if ($Test) {
     }
 
     Write-Host "Running tests..." -ForegroundColor Cyan
-    dotnet test BirkNext.Web.Tests
+    dotnet test "$TestsProjectPath"
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Tests failed!" -ForegroundColor Red
         exit 1
@@ -65,7 +69,7 @@ if ($Test) {
 
     Write-Host ""
     Write-Host "Tests passed! Restoring CSS for development..." -ForegroundColor Green
-    & $setupScript
+    & $setupScript -BirkNextWebPath "$BirkNextWebPath"
 }
 
 Write-Host ""
