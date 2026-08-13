@@ -856,7 +856,9 @@ function Start-DotNetProcessLogged {
         [object]$Runnable,
         [string]$StdoutLog,
         [string]$StderrLog,
-        [string]$LauncherLogFile
+        [string]$LauncherLogFile,
+        [string]$BirkNextWebPath = "",
+        [string]$FrontendSetupScript = ""
     )
 
     if (-not (Test-Path $WorkingPath)) {
@@ -907,6 +909,20 @@ function Start-DotNetProcessLogged {
         $null = Invoke-NativeCommand -Executable "dotnet" -Arguments @("build", $Runnable.Path, "--no-restore") -ShowOutput -ThrowOnError
 
         Ok "$Name built successfully."
+
+        # For frontend (Blazor WASM), prepare scoped CSS after build
+        if ($Name -eq "Frontend" -and -not [string]::IsNullOrWhiteSpace($FrontendSetupScript) -and (Test-Path $FrontendSetupScript)) {
+            Info "Preparing scoped CSS for development..."
+            Add-Content -Path $LauncherLogFile -Value "[$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))] Setting up scoped CSS"
+            & $FrontendSetupScript -BirkNextWebPath $BirkNextWebPath
+            if ($LASTEXITCODE -ne 0) {
+                Fail "Scoped CSS setup failed!"
+                Add-Content -Path $LauncherLogFile -Value "[$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))] Scoped CSS setup failed (exit code: $LASTEXITCODE)"
+                throw "Frontend scoped CSS preparation failed. Cannot continue."
+            }
+            Ok "Scoped CSS ready."
+        }
+
         $argString = "run --no-build --project `"$($Runnable.Path)`""
     }
 
@@ -990,6 +1006,10 @@ $repoRoot = Split-Path -Parent $scriptDir
 
 $backendPath = Join-Path $repoRoot "AIAssisted\backend"
 $frontendPath = Join-Path $repoRoot "AIAssisted\frontend"
+
+# Frontend scoped CSS setup paths (for source development only)
+$birkNextWebPath = Join-Path $frontendPath "BirkNext.Web"
+$setupScopedCssScript = Join-Path $frontendPath "setup-dev-scoped-css.ps1"
 
 # Fixed Compose project name ensures the PostgreSQL volume persists across
 # tester package upgrades even when installed to a different folder.
@@ -1150,7 +1170,9 @@ try {
             -Runnable $frontendRunnable `
             -StdoutLog $frontendOutLog `
             -StderrLog $frontendErrLog `
-            -LauncherLogFile $launcherLogFile
+            -LauncherLogFile $launcherLogFile `
+            -BirkNextWebPath $birkNextWebPath `
+            -FrontendSetupScript $setupScopedCssScript
 
         # Brief check — verify frontend didn't exit immediately
         Start-Sleep -Seconds 3
