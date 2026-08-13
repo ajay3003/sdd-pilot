@@ -312,7 +312,7 @@
             }
             else if (_isParallelView)
             {
-                <div class="te-parallel-view" data-testid="te-parallel-view" aria-label="Parallel Work">
+                <div class="te-parallel-view" @ref="_parallelContainer" data-testid="te-parallel-view" aria-label="Parallel Work">
                     <div class="te-parallel-header">
                         <div>
                             <div class="te-section-kicker">Parallel Work</div>
@@ -1222,6 +1222,7 @@
     private bool _isDependenciesView;
     private bool _isParallelView;
     private ElementReference _mapContainer;
+    private ElementReference _parallelContainer;
     private List<(TaskNode Node, int Depth, bool IsMatch)> _flatCache = [];
     private string _lastBuiltText = string.Empty;
     private HashSet<string> _tableLinkedTaskIds = [];
@@ -1467,13 +1468,30 @@
         _isParallelView = false;
     }
 
-    private void ShowParallelView()
+    private async Task ShowParallelView()
     {
         _isMapView = false;
         _isImpactView = false;
         _isChangesView = false;
         _isDependenciesView = false;
         _isParallelView = true;
+        await ResetParallelScroll();
+    }
+
+    private async Task ResetParallelScroll()
+    {
+        try
+        {
+            if (_parallelContainer.Context is not null)
+            {
+                // Reset Parallel container scroll position to top
+                await JS.InvokeVoidAsync("eval", "document.querySelector('[data-testid=\"te-parallel-view\"]').scrollTop = 0");
+            }
+        }
+        catch
+        {
+            // Silently ignore errors; scroll reset is not critical
+        }
     }
 
     private void ShowChangesView()
