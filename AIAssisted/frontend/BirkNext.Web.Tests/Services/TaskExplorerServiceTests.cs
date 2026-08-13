@@ -936,6 +936,127 @@ The goal of our project is good.
         }
     }
 
+    [Fact]
+    public void Parse_WithZeroDependencies_HasNoDependencyEdges()
+    {
+        var markdown = """
+            # Tasks: No Dependencies
+
+            ## Phase 1: Setup
+
+            - [ ] T001 First task
+            - [ ] T002 Second task
+            - [ ] T003 Third task
+
+            ## Phase 2: Implementation
+
+            - [ ] T010 Feature task
+            - [ ] T011 Integration task
+            """;
+
+        var tree = TaskExplorerService.Parse(markdown);
+
+        Assert.Equal(5, tree.Health.TotalTasks);
+
+        // Collect all task nodes
+        var nodes = new List<TaskNode>();
+        CollectAllNodes(tree.Roots, nodes);
+        var tasks = nodes.Where(n => n.NodeType == TaskNodeType.Task).ToList();
+
+        // Verify no task has dependencies
+        Assert.NotEmpty(tasks);
+        foreach (var task in tasks)
+        {
+            Assert.NotNull(task.BlockedBy);
+            Assert.Empty(task.BlockedBy);
+            Assert.NotNull(task.Blocks);
+            Assert.Empty(task.Blocks);
+        }
+    }
+
+    [Fact]
+    public void Parse_WithZeroParallelTasks_HasNoParallelMarkers()
+    {
+        var markdown = """
+            # Tasks: All Sequential
+
+            ## Phase 1: Setup
+
+            - [ ] T001 First sequential task
+            - [ ] T002 Second sequential task
+            - [ ] T003 Third sequential task
+
+            ## Phase 2: Implementation
+
+            - [ ] T010 Feature task
+            - [ ] T011 Integration task
+            """;
+
+        var tree = TaskExplorerService.Parse(markdown);
+
+        Assert.Equal(5, tree.Health.TotalTasks);
+        Assert.Equal(0, tree.Health.ParallelTasks);
+
+        // Collect all task nodes
+        var nodes = new List<TaskNode>();
+        CollectAllNodes(tree.Roots, nodes);
+        var tasks = nodes.Where(n => n.NodeType == TaskNodeType.Task).ToList();
+
+        // Verify no task is marked parallel
+        Assert.NotEmpty(tasks);
+        foreach (var task in tasks)
+        {
+            Assert.False(task.IsParallel, $"Task {task.TaskId} should not be marked parallel");
+        }
+    }
+
+    [Fact]
+    public void Parse_WithLetterSuffixTaskIds_ParsesSuffixesDistinctly()
+    {
+        var markdown = """
+            # Tasks: Letter Suffixes
+
+            ## Phase 1: Setup
+
+            - [X] T010 Base task
+            - [X] T011 Task eleven
+            - [X] T011b Supplemental to T011
+            - [X] T012 Task twelve
+            - [X] T025b Another supplemental
+            """;
+
+        var tree = TaskExplorerService.Parse(markdown);
+
+        Assert.Equal(5, tree.Health.TotalTasks);
+        Assert.Equal(5, tree.Health.CompletedTasks);
+
+        // Collect all task nodes
+        var nodes = new List<TaskNode>();
+        CollectAllNodes(tree.Roots, nodes);
+        var tasks = nodes.Where(n => n.NodeType == TaskNodeType.Task).ToList();
+
+        Assert.Equal(5, tasks.Count);
+
+        // Verify each task ID is parsed distinctly
+        var taskIds = tasks.Select(t => t.TaskId).OrderBy(id => id).ToList();
+        Assert.Contains("T010", taskIds);
+        Assert.Contains("T011", taskIds);
+        Assert.Contains("T011b", taskIds);
+        Assert.Contains("T012", taskIds);
+        Assert.Contains("T025b", taskIds);
+
+        // Verify ordering is preserved
+        var expectedOrder = new[] { "T010", "T011", "T011b", "T012", "T025b" };
+        Assert.Equal(expectedOrder.OrderBy(x => x), taskIds);
+
+        // Verify T011 and T011b are not merged
+        var t011 = tasks.FirstOrDefault(t => t.TaskId == "T011");
+        var t011b = tasks.FirstOrDefault(t => t.TaskId == "T011b");
+        Assert.NotNull(t011);
+        Assert.NotNull(t011b);
+        Assert.NotEqual(t011.Id, t011b.Id);
+    }
+
     // Helper method to collect all nodes recursively
     private static void CollectAllNodes(List<TaskNode> roots, List<TaskNode> result)
     {

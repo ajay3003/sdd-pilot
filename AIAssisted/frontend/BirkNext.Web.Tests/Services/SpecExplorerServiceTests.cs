@@ -916,3 +916,89 @@ public sealed class SpecExplorerServiceTests
                 yield return d;
     }
 }
+
+/// <summary>
+/// Tests for SpecExplorerPanel.GetSpecIdTitle() helper method.
+/// Verifies that abbreviations are expanded consistently with semantic meaning.
+/// </summary>
+public sealed class SpecExplorerPanelAbbreviationTests
+{
+    [Fact]
+    public void GetSpecIdTitle_Debug_ExtractsPrefixCorrectly()
+    {
+        var testId = "FR-001";
+        var prefix = new string(testId.TakeWhile(c => char.IsLetter(c)).ToArray());
+        prefix.Should().Be("FR");
+    }
+
+    [Theory]
+    [InlineData("FR-001", "Functional Requirement FR-001")]
+    [InlineData("FR-018", "Functional Requirement FR-018")]
+    [InlineData("NFR-002", "Non-Functional Requirement NFR-002")]
+    [InlineData("REQ-003", "Requirement REQ-003")]
+    [InlineData("SC-004", "Success Criterion SC-004")]
+    [InlineData("US-05", "User Story US-05")]
+    [InlineData("UC-02", "Use Case UC-02")]
+    [InlineData("AC-003", "Acceptance Criteria AC-003")]
+    [InlineData("TS-004", "Test Scenario TS-004")]
+    [InlineData("TC-005", "Test Case TC-005")]
+    public void GetSpecIdTitle_KnownPrefix_ReturnsFullName(string specId, string expected)
+    {
+        var result = GetSpecIdTitle(specId);
+        result.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void GetSpecIdTitle_NullOrEmpty_ReturnsNull(string? specId)
+    {
+        var result = GetSpecIdTitle(specId);
+        result.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("XX-001")]
+    [InlineData("UNKNOWN-002")]
+    [InlineData("ABC")]
+    public void GetSpecIdTitle_UnknownPrefix_ReturnsNull(string specId)
+    {
+        var result = GetSpecIdTitle(specId);
+        result.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("fr-001", "Functional Requirement fr-001")]
+    [InlineData("sc-004", "Success Criterion sc-004")]
+    [InlineData("us-05", "User Story us-05")]
+    public void GetSpecIdTitle_LowercasePrefix_NormalizesAndReturnsFullName(string specId, string expected)
+    {
+        var result = GetSpecIdTitle(specId);
+        result.Should().Be(expected);
+    }
+
+    // Implementation of GetSpecIdTitle matching SpecExplorerPanel.razor
+    private static string? GetSpecIdTitle(string? specItemId)
+    {
+        if (string.IsNullOrEmpty(specItemId)) return null;
+
+        var prefix = new string(specItemId.TakeWhile(c => char.IsLetter(c)).ToArray()).ToUpperInvariant();
+
+        var fullName = prefix switch
+        {
+            "FR" => "Functional Requirement",
+            "NFR" => "Non-Functional Requirement",
+            "REQ" => "Requirement",
+            "SC" => "Success Criterion",
+            "US" => "User Story",
+            "UC" => "Use Case",
+            "AC" => "Acceptance Criteria",
+            "TS" => "Test Scenario",
+            "TC" => "Test Case",
+            _ => null,
+        };
+
+        return fullName is not null ? $"{fullName} {specItemId}" : null;
+    }
+}

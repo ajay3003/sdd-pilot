@@ -176,7 +176,11 @@
                              style="padding-left: @(depth * (_isMapView ? 24 : 16) + 6)px"
                              role="treeitem"
                              aria-selected="@isSelected.ToString().ToLower()"
-                             @onclick="() => HandleNodeClick(node)">
+                             aria-expanded="@((hasChildren && isExpanded).ToString().ToLower())"
+                             tabindex="@(isSelected ? 0 : -1)"
+                             @ref="_treeItemRefs[node.Id]"
+                             @onclick="() => HandleNodeClick(node)"
+                             @onkeypress="@(e => HandleTreeKeyDown(e, node))">
 
                             <span class="se-expand-cell">
                                 @if (hasChildren)
@@ -196,11 +200,11 @@
 
                             <span class="se-node-icon" aria-hidden="true">@GetIcon(node.NodeType, node.HeadingLevel)</span>
 
-                            <span class="se-node-title">
+                            <span class="se-node-title" title="@node.Title">
                                 @node.Title
                                 @if (node.SpecItemId is not null)
                                 {
-                                    <span class="se-spec-id">@node.SpecItemId</span>
+                                    <span class="se-spec-id" title="@GetSpecIdTitle(node.SpecItemId)">@node.SpecItemId</span>
                                 }
                             </span>
 
@@ -234,7 +238,7 @@
                                 <span class="se-ref-chips">
                                     @foreach (var rid in node.LinkedSpecItemIds.Take(3))
                                     {
-                                        <span class="se-ref-chip">@rid</span>
+                                        <span class="se-ref-chip" title="@GetSpecIdTitle(rid)">@rid</span>
                                     }
                                 </span>
                             }
@@ -297,7 +301,7 @@
 
                         @if (selected.SpecItemId is not null)
                         {
-                            <div class="se-details-id">@selected.SpecItemId</div>
+                            <div class="se-details-id" title="@GetSpecIdTitle(selected.SpecItemId)">@selected.SpecItemId</div>
                         }
 
                         @if (selectedHealth is not null)
@@ -497,7 +501,7 @@
                                     <div class="se-ref-chips" style="flex-wrap: wrap; gap: 0.3rem;">
                                         @foreach (var refId in allRefs.Take(12))
                                         {
-                                            <span class="se-ref-chip">@refId</span>
+                                            <span class="se-ref-chip" title="@GetSpecIdTitle(refId)">@refId</span>
                                         }
                                         @if (allRefs.Count > 12)
                                         {
@@ -529,7 +533,7 @@
                                     <div class="se-ref-chips" style="flex-wrap: wrap; gap: 0.3rem;">
                                         @foreach (var refId in selected.LinkedSpecItemIds)
                                         {
-                                            <span class="se-ref-chip">@refId</span>
+                                            <span class="se-ref-chip" title="@GetSpecIdTitle(refId)">@refId</span>
                                         }
                                     </div>
                                 </div>
@@ -624,6 +628,7 @@
     private List<(SpecNode Node, int Depth, bool IsMatch)> _flatCache = [];
     private HashSet<string> _hiddenIds = [];
     private int _hiddenCount;
+    private Dictionary<string, ElementReference> _treeItemRefs = [];
 
     private enum SectionFilter
     {
@@ -824,6 +829,96 @@
     private void HandleNodeClick(SpecNode node)
     {
         _selectedNodeId = _selectedNodeId == node.Id ? null : node.Id;
+    }
+
+    private async Task HandleTreeKeyDown(KeyboardEventArgs e, SpecNode currentNode)
+    {
+        var currentIndex = _flatCache.FindIndex(x => x.Node.Id == currentNode.Id);
+        if (currentIndex < 0) return;
+
+        var handled = false;
+        int newIndex = currentIndex;
+        var (_, currentDepth, _) = _flatCache[currentIndex];
+
+        if (e.Key == "ArrowDown")
+        {
+            if (currentIndex < _flatCache.Count - 1)
+                newIndex = currentIndex + 1;
+            handled = true;
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            if (currentIndex > 0)
+                newIndex = currentIndex - 1;
+            handled = true;
+        }
+        else if (e.Key == "ArrowRight")
+        {
+            handled = true;
+            var hasChildren = currentNode.Children.Count > 0;
+            var isExpanded = _expandedIds.Contains(currentNode.Id);
+
+            if (hasChildren && !isExpanded)
+            {
+                _expandedIds.Add(currentNode.Id);
+                RefreshFlatCache();
+                // After expansion, first child should be at currentIndex + 1
+                if (currentIndex < _flatCache.Count - 1)
+                    newIndex = currentIndex + 1;
+            }
+            else if (hasChildren && isExpanded && currentIndex < _flatCache.Count - 1)
+            {
+                newIndex = currentIndex + 1;
+            }
+        }
+        else if (e.Key == "ArrowLeft")
+        {
+            handled = true;
+            var isExpanded = _expandedIds.Contains(currentNode.Id);
+
+            if (isExpanded && currentNode.Children.Count > 0)
+            {
+                _expandedIds.Remove(currentNode.Id);
+                RefreshFlatCache();
+            }
+            else
+            {
+                // Find parent by searching backwards for node with depth = currentDepth - 1
+                for (int i = currentIndex - 1; i >= 0; i--)
+                {
+                    if (_flatCache[i].Depth == currentDepth - 1)
+                    {
+                        newIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+        else if (e.Key == "Home")
+        {
+            newIndex = 0;
+            handled = true;
+        }
+        else if (e.Key == "End")
+        {
+            newIndex = _flatCache.Count - 1;
+            handled = true;
+        }
+        else if (e.Key == "Enter" || e.Key == " ")
+        {
+            HandleNodeClick(currentNode);
+            handled = true;
+        }
+
+        if (handled && newIndex >= 0 && newIndex < _flatCache.Count && newIndex != currentIndex)
+        {
+            var newNode = _flatCache[newIndex].Node;
+            _selectedNodeId = newNode.Id;
+            if (_treeItemRefs.TryGetValue(newNode.Id, out var elementRef))
+            {
+                await elementRef.FocusAsync();
+            }
+        }
     }
 
     private void ToggleExpand(string id)
@@ -1124,4 +1219,27 @@
         CoverageState.Missing => "Missing",
         _ => "Unknown",
     };
+
+    private static string? GetSpecIdTitle(string? specItemId)
+    {
+        if (string.IsNullOrEmpty(specItemId)) return null;
+
+        var prefix = new string(specItemId.TakeWhile(c => char.IsLetter(c)).ToArray()).ToUpperInvariant();
+
+        var fullName = prefix switch
+        {
+            "FR" => "Functional Requirement",
+            "NFR" => "Non-Functional Requirement",
+            "REQ" => "Requirement",
+            "SC" => "Success Criterion",
+            "US" => "User Story",
+            "UC" => "Use Case",
+            "AC" => "Acceptance Criteria",
+            "TS" => "Test Scenario",
+            "TC" => "Test Case",
+            _ => null,
+        };
+
+        return fullName is not null ? $"{fullName} {specItemId}" : null;
+    }
 }

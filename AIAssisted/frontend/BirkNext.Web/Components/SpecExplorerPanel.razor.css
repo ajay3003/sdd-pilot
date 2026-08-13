@@ -994,7 +994,7 @@
 
 .se-coverage-callout-action:hover {
     background: rgba(245, 158, 11, 0.22);
-    color: #fde68a;
+    color: var(--clr-warning-border);
 }
 
 .se-filter-chip {
