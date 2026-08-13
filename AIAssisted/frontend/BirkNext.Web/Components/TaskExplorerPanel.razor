@@ -326,7 +326,131 @@
             }
             else if (_isMapView)
             {
-                @RenderMapView()
+                var rootNode = _tree?.Roots.FirstOrDefault();
+                var phasesContainer = rootNode?.NodeType == TaskNodeType.TaskGroup ? rootNode : null;
+                var phasesSource = phasesContainer?.Children ?? _tree?.Roots ?? new List<TaskNode>();
+                var phases = phasesSource.Where(n => n.NodeType == TaskNodeType.Phase).ToList();
+                var allTasks = _tree is null ? new List<TaskNode>() : phases
+                    .SelectMany(p => AllNodes(p.Children))
+                    .Where(n => n.NodeType == TaskNodeType.Task)
+                    .ToList();
+
+                @if (_tree is null)
+                {
+                    <div class="te-map">
+                        <div>No execution structure available.</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="te-map">
+                        <div class="te-map-header pe-section-block">
+                            @if (rootNode is not null && rootNode.NodeType == TaskNodeType.TaskGroup)
+                            {
+                                <div class="te-map-document-title">@rootNode.Title</div>
+                            }
+
+                            <div class="te-map-kicker pe-section-kicker">Execution Map</div>
+
+                            <div class="te-map-header-row">
+                                <h3 class="te-map-title">Implementation structure by phase</h3>
+                                <div class="te-map-summary ce-map-child-count">@phases.Count phases · @allTasks.Count tasks</div>
+                            </div>
+                        </div>
+
+                        @if (phases.Count == 0)
+                        {
+                            <div class="te-no-results">No execution phases found.</div>
+                        }
+                        else
+                        {
+                            @foreach (var phase in phases)
+                            {
+                                var phaseTasks = AllNodes(phase.Children).Where(n => n.NodeType == TaskNodeType.Task).ToList();
+                                var taskGroups = phase.Children.Where(IsExecutionGroup).ToList();
+                                var directTasks = phase.Children.Where(n => n.NodeType == TaskNodeType.Task).ToList();
+
+                                <div class="te-map-phase-card pe-section-block">
+                                    <!-- Phase header -->
+                                    <div class="te-map-phase-header">
+                                        <h3 class="te-map-phase-title">@phase.Title</h3>
+                                        <div class="te-map-phase-count">@phaseTasks.Count task@(phaseTasks.Count != 1 ? "s" : "")</div>
+                                    </div>
+
+                                    <!-- Task groups -->
+                                    @foreach (var group in taskGroups)
+                                    {
+                                        var groupTasks = AllNodes(group.Children).Where(n => n.NodeType == TaskNodeType.Task).ToList();
+
+                                        <div class="te-map-group">
+                                            <div class="te-map-group-header">
+                                                <span class="te-map-group-title">@group.Title</span>
+                                                <span class="te-map-group-count">@groupTasks.Count task@(groupTasks.Count != 1 ? "s" : "")</span>
+                                            </div>
+
+                                            @foreach (var task in groupTasks)
+                                            {
+                                                var isSelected = _selectedNodeId == task.Id;
+
+                                                <div class="te-map-task @(isSelected ? "is-selected" : "")" role="treeitem" aria-selected="@isSelected.ToString().ToLower()" @onclick="@(() => HandleNodeClick(task))">
+                                                    <span class="te-map-task-id">@(task.TaskId ?? "")</span>
+
+                                                    <div class="te-map-task-content">
+                                                        <span class="te-map-task-title">@(task.ShortTitle ?? task.Title)</span>
+                                                    </div>
+
+                                                    <span class="te-map-task-chips">
+                                                        @if (task.UserStoryTag is not null)
+                                                        {
+                                                            <span class="te-chip te-chip-us">@task.UserStoryTag</span>
+                                                        }
+                                                        @if (task.IsCompleted)
+                                                        {
+                                                            <span class="te-map-status-badge" aria-label="Completed">Complete</span>
+                                                        }
+                                                        @if (task.IsParallel)
+                                                        {
+                                                            <span class="te-map-parallel-badge">Parallel</span>
+                                                        }
+                                                    </span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+
+                                    <!-- Direct task children -->
+                                    @foreach (var task in directTasks)
+                                    {
+                                        var isSelected = _selectedNodeId == task.Id;
+
+                                        <div class="te-map-task @(isSelected ? "is-selected" : "")" role="treeitem" aria-selected="@isSelected.ToString().ToLower()" @onclick="@(() => HandleNodeClick(task))">
+                                            <span class="te-map-task-id">@(task.TaskId ?? "")</span>
+
+                                            <div class="te-map-task-content">
+                                                <span class="te-map-task-title">@(task.ShortTitle ?? task.Title)</span>
+                                            </div>
+
+                                            <span class="te-map-task-chips">
+                                                @if (task.UserStoryTag is not null)
+                                                {
+                                                    <span class="te-chip te-chip-us">@task.UserStoryTag</span>
+                                                }
+                                                @if (task.IsCompleted)
+                                                {
+                                                    <span class="te-map-status-badge" aria-label="Completed">Complete</span>
+                                                }
+                                                @if (task.IsParallel)
+                                                {
+                                                    <span class="te-map-parallel-badge">Parallel</span>
+                                                }
+                                            </span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        }
+                    </div>
+                }
             }
             else
             {
@@ -1544,212 +1668,6 @@
 
         builder.CloseElement(); // badges
         builder.CloseElement(); // relationship
-    }
-
-    private RenderFragment RenderMapView() => builder =>
-    {
-        builder.OpenElement(0, "div");
-        builder.AddAttribute(1, "class", "te-map");
-
-        if (_tree is null)
-        {
-            builder.AddContent(2, "No execution structure available.");
-            builder.CloseElement();
-            return;
-        }
-
-        // Determine root document node and phases container
-        var rootNode = _tree.Roots.FirstOrDefault();
-        var phasesContainer = rootNode?.NodeType == TaskNodeType.TaskGroup ? rootNode : null;
-        var phasesSource = phasesContainer?.Children ?? _tree.Roots;
-        var phases = phasesSource.Where(n => n.NodeType == TaskNodeType.Phase).ToList();
-        var allTasks = phases
-            .SelectMany(p => AllNodes(p.Children))
-            .Where(n => n.NodeType == TaskNodeType.Task)
-            .ToList();
-
-        builder.OpenElement(3, "div");
-        builder.AddAttribute(4, "class", "te-map-header pe-section-block");
-
-        if (rootNode is not null && rootNode.NodeType == TaskNodeType.TaskGroup)
-        {
-            builder.OpenElement(5, "div");
-            builder.AddAttribute(6, "class", "te-map-document-title");
-            builder.AddContent(7, rootNode.Title);
-            builder.CloseElement();
-        }
-
-        builder.OpenElement(8, "div");
-        builder.AddAttribute(9, "class", "te-map-kicker pe-section-kicker");
-        builder.AddContent(10, "Execution Map");
-        builder.CloseElement();
-
-        builder.OpenElement(11, "div");
-        builder.AddAttribute(12, "class", "te-map-header-row");
-
-        builder.OpenElement(13, "h3");
-        builder.AddAttribute(14, "class", "te-map-title");
-        builder.AddContent(15, "Implementation structure by phase");
-        builder.CloseElement();
-
-        builder.OpenElement(16, "div");
-        builder.AddAttribute(17, "class", "te-map-summary ce-map-child-count");
-        builder.AddContent(18, $"{phases.Count} phases · {allTasks.Count} tasks");
-        builder.CloseElement();
-
-        builder.CloseElement();
-        builder.CloseElement();
-
-        if (phases.Count == 0)
-        {
-            builder.OpenElement(11, "div");
-            builder.AddAttribute(12, "class", "te-no-results");
-            builder.AddContent(13, "No execution phases found.");
-            builder.CloseElement();
-        }
-        else
-        {
-            var elemId = 20;
-            foreach (var phase in phases)
-            {
-                RenderPhaseCard(builder, ref elemId, phase);
-            }
-        }
-
-        builder.CloseElement(); // te-map
-    };
-
-    private void RenderPhaseCard(RenderTreeBuilder builder, ref int elemId, TaskNode phase)
-    {
-        builder.OpenElement(elemId++, "div");
-        builder.AddAttribute(elemId++, "class", "te-map-phase-card pe-section-block");
-
-        // Phase header
-        builder.OpenElement(elemId++, "div");
-        builder.AddAttribute(elemId++, "class", "te-map-phase-header");
-
-        builder.OpenElement(elemId++, "h3");
-        builder.AddAttribute(elemId++, "class", "te-map-phase-title");
-        builder.AddContent(elemId++, phase.Title);
-        builder.CloseElement(); // h3
-
-        var phaseTasks = AllNodes(phase.Children).Where(n => n.NodeType == TaskNodeType.Task).ToList();
-        builder.OpenElement(elemId++, "div");
-        builder.AddAttribute(elemId++, "class", "te-map-phase-count");
-        builder.AddContent(elemId++, $"{phaseTasks.Count} task{(phaseTasks.Count != 1 ? "s" : "")}");
-        builder.CloseElement();
-
-        builder.CloseElement(); // te-map-phase-header
-
-        // Phase content: task groups and tasks
-        var taskGroups = phase.Children.Where(IsExecutionGroup).ToList();
-        var directTasks = phase.Children.Where(n => n.NodeType == TaskNodeType.Task).ToList();
-
-        // Render task groups
-        foreach (var group in taskGroups)
-        {
-            RenderTaskGroup(builder, ref elemId, group);
-        }
-
-        // Render direct task children
-        foreach (var task in directTasks)
-        {
-            RenderMapTask(builder, ref elemId, task);
-        }
-
-        builder.CloseElement(); // te-map-phase-card
-    }
-
-    private void RenderTaskGroup(RenderTreeBuilder builder, ref int elemId, TaskNode group)
-    {
-        var groupTasks = AllNodes(group.Children).Where(n => n.NodeType == TaskNodeType.Task).ToList();
-
-        builder.OpenElement(elemId++, "div");
-        builder.AddAttribute(elemId++, "class", "te-map-group");
-
-        builder.OpenElement(elemId++, "div");
-        builder.AddAttribute(elemId++, "class", "te-map-group-header");
-
-        builder.OpenElement(elemId++, "span");
-        builder.AddAttribute(elemId++, "class", "te-map-group-title");
-        builder.AddContent(elemId++, group.Title);
-        builder.CloseElement();
-
-        builder.OpenElement(elemId++, "span");
-        builder.AddAttribute(elemId++, "class", "te-map-group-count");
-        builder.AddContent(elemId++, $"{groupTasks.Count} task{(groupTasks.Count != 1 ? "s" : "")}");
-        builder.CloseElement();
-
-        builder.CloseElement(); // te-map-group-header
-
-        // Render tasks under group
-        foreach (var task in groupTasks)
-        {
-            RenderMapTask(builder, ref elemId, task);
-        }
-
-        builder.CloseElement(); // te-map-group
-    }
-
-    private void RenderMapTask(RenderTreeBuilder builder, ref int elemId, TaskNode task)
-    {
-        var isSelected = _selectedNodeId == task.Id;
-
-        builder.OpenElement(elemId++, "div");
-        builder.AddAttribute(elemId++, "class", $"te-map-task {(isSelected ? "is-selected" : "")}");
-        builder.AddAttribute(elemId++, "role", "treeitem");
-        builder.AddAttribute(elemId++, "aria-selected", isSelected.ToString().ToLower());
-        builder.AddAttribute(elemId++, "onclick", EventCallback.Factory.Create(this, () => HandleNodeClick(task)));
-
-        // Task ID badge
-        builder.OpenElement(elemId++, "span");
-        builder.AddAttribute(elemId++, "class", "te-map-task-id");
-        builder.AddContent(elemId++, task.TaskId ?? "");
-        builder.CloseElement();
-
-        // Task title and secondary
-        builder.OpenElement(elemId++, "div");
-        builder.AddAttribute(elemId++, "class", "te-map-task-content");
-
-        builder.OpenElement(elemId++, "span");
-        builder.AddAttribute(elemId++, "class", "te-map-task-title");
-        builder.AddContent(elemId++, task.ShortTitle ?? task.Title);
-        builder.CloseElement();
-
-        builder.CloseElement(); // te-map-task-content
-
-        // Metadata chips
-        builder.OpenElement(elemId++, "span");
-        builder.AddAttribute(elemId++, "class", "te-map-task-chips");
-
-        if (task.UserStoryTag is not null)
-        {
-            builder.OpenElement(elemId++, "span");
-            builder.AddAttribute(elemId++, "class", "te-chip te-chip-us");
-            builder.AddContent(elemId++, task.UserStoryTag);
-            builder.CloseElement();
-        }
-
-        if (task.IsCompleted)
-        {
-            builder.OpenElement(elemId++, "span");
-            builder.AddAttribute(elemId++, "class", "te-map-status-badge");
-            builder.AddAttribute(elemId++, "aria-label", "Completed");
-            builder.AddContent(elemId++, "Complete");
-            builder.CloseElement();
-        }
-
-        if (task.IsParallel)
-        {
-            builder.OpenElement(elemId++, "span");
-            builder.AddAttribute(elemId++, "class", "te-map-parallel-badge");
-            builder.AddContent(elemId++, "Parallel");
-            builder.CloseElement();
-        }
-
-        builder.CloseElement(); // te-map-task-chips
-
-        builder.CloseElement(); // te-map-task
     }
 
     private static bool IsExecutionGroup(TaskNode node) =>
