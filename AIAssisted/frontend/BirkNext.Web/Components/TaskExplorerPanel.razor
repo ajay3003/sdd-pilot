@@ -225,13 +225,15 @@
 
                         foreach (var dep in _tree.ExplicitDependencies)
                         {
-                            if (!blockedByMap.ContainsKey(dep.SourceTaskId))
-                                blockedByMap[dep.SourceTaskId] = new();
-                            blockedByMap[dep.SourceTaskId].Add(dep.DependsOnTaskId);
+                            // dep.SourceTaskId blocks dep.DependsOnTaskId
+                            if (!blocksMap.ContainsKey(dep.SourceTaskId))
+                                blocksMap[dep.SourceTaskId] = new();
+                            blocksMap[dep.SourceTaskId].Add(dep.DependsOnTaskId);
 
-                            if (!blocksMap.ContainsKey(dep.DependsOnTaskId))
-                                blocksMap[dep.DependsOnTaskId] = new();
-                            blocksMap[dep.DependsOnTaskId].Add(dep.SourceTaskId);
+                            // dep.DependsOnTaskId is blocked by dep.SourceTaskId
+                            if (!blockedByMap.ContainsKey(dep.DependsOnTaskId))
+                                blockedByMap[dep.DependsOnTaskId] = new();
+                            blockedByMap[dep.DependsOnTaskId].Add(dep.SourceTaskId);
                         }
 
                         var taskInDeps = new HashSet<string>(blockedByMap.Keys.Union(blocksMap.Keys), StringComparer.OrdinalIgnoreCase);
