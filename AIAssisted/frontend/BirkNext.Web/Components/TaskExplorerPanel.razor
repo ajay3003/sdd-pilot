@@ -319,7 +319,68 @@
                             <h3>Tasks that can run in parallel</h3>
                         </div>
                     </div>
-                    @RenderParallelView()
+
+                    @if (_tree is null)
+                    {
+                        <div class="te-parallel-list">
+                            <div class="te-empty-message">No execution structure available.</div>
+                        </div>
+                    }
+                    else
+                    {
+                        var allNodes = AllNodes(_tree.Roots);
+                        var parallelTasks = allNodes.Where(n => n.NodeType == TaskNodeType.Task && n.IsParallel).OrderBy(n => n.PhaseTitle).ThenBy(n => n.TaskId).ToList();
+
+                        <div class="te-parallel-list">
+                            @if (parallelTasks.Count == 0)
+                            {
+                                <div class="te-empty-message">No parallelizable tasks found.</div>
+                            }
+                            else
+                            {
+                                var groups = parallelTasks.GroupBy(t => t.PhaseTitle ?? "Unphased").OrderBy(g => g.Key).ToList();
+
+                                <div class="te-parallel-summary">@parallelTasks.Count parallel tasks across @groups.Count phases</div>
+
+                                @foreach (var group in groups)
+                                {
+                                    var groupCount = group.Count();
+
+                                    <div class="te-parallel-group">
+                                        <div class="te-parallel-group-header">
+                                            <h4 class="te-parallel-group-title">@group.Key</h4>
+                                            <span class="te-parallel-group-count">@groupCount parallel task@(groupCount == 1 ? "" : "s")</span>
+                                        </div>
+
+                                        @foreach (var task in group)
+                                        {
+                                            <div class="te-parallel-task">
+                                                <span class="te-ptask-id">@(task.TaskId ?? "?")</span>
+
+                                                <div class="te-ptask-content">
+                                                    <div class="te-ptask-primary">@(task.ShortTitle ?? task.Title)</div>
+                                                    @if (!string.IsNullOrEmpty(task.Title) && task.Title != (task.ShortTitle ?? task.Title))
+                                                    {
+                                                        <div class="te-ptask-secondary">@task.Title</div>
+                                                    }
+                                                </div>
+
+                                                @if (!string.IsNullOrEmpty(task.UserStoryTag))
+                                                {
+                                                    <span class="te-ptask-tag">@task.UserStoryTag</span>
+                                                }
+
+                                                @if (task.IsCompleted)
+                                                {
+                                                    <span class="te-ptask-status">✓</span>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
                 </div>
             }
             else if (_isImpactView && _coverage is not null)
@@ -1619,114 +1680,6 @@
          node.NodeType == TaskNodeType.DeepGroup) &&
         AllNodes(node.Children).Any(n => n.NodeType == TaskNodeType.Task);
 
-
-    private RenderFragment RenderParallelView() => builder =>
-    {
-        if (_tree is null) return;
-        var allNodes = AllNodes(_tree.Roots);
-        var parallelTasks = allNodes.Where(n => n.NodeType == TaskNodeType.Task && n.IsParallel).OrderBy(n => n.PhaseTitle).ThenBy(n => n.TaskId).ToList();
-
-        builder.OpenElement(0, "div");
-        builder.AddAttribute(1, "class", "te-parallel-list");
-
-        if (parallelTasks.Count == 0)
-        {
-            builder.OpenElement(2, "div");
-            builder.AddAttribute(3, "class", "te-empty-message");
-            builder.AddContent(4, "No parallelizable tasks found.");
-            builder.CloseElement();
-        }
-        else
-        {
-            // Overall summary
-            var groups = parallelTasks.GroupBy(t => t.PhaseTitle ?? "Unphased").OrderBy(g => g.Key).ToList();
-            builder.OpenElement(5, "div");
-            builder.AddAttribute(6, "class", "te-parallel-summary");
-            builder.AddContent(7, $"{parallelTasks.Count} parallel tasks across {groups.Count} phases");
-            builder.CloseElement();
-
-            // Phase groups
-            var seq = 10;
-            foreach (var group in groups)
-            {
-                builder.OpenElement(seq++, "div");
-                builder.AddAttribute(seq++, "class", "te-parallel-group");
-
-                // Group header with count
-                builder.OpenElement(seq++, "div");
-                builder.AddAttribute(seq++, "class", "te-parallel-group-header");
-
-                builder.OpenElement(seq++, "h4");
-                builder.AddAttribute(seq++, "class", "te-parallel-group-title");
-                builder.AddContent(seq++, group.Key);
-                builder.CloseElement();
-
-                var groupCount = group.Count();
-                builder.OpenElement(seq++, "span");
-                builder.AddAttribute(seq++, "class", "te-parallel-group-count");
-                builder.AddContent(seq++, $"{groupCount} parallel task{(groupCount == 1 ? "" : "s")}");
-                builder.CloseElement();
-
-                builder.CloseElement(); // header
-
-                // Tasks in group
-                foreach (var task in group)
-                {
-                    builder.OpenElement(seq++, "div");
-                    builder.AddAttribute(seq++, "class", "te-parallel-task");
-
-                    // Task ID badge (column 1)
-                    builder.OpenElement(seq++, "span");
-                    builder.AddAttribute(seq++, "class", "te-ptask-id");
-                    builder.AddContent(seq++, task.TaskId ?? "?");
-                    builder.CloseElement();
-
-                    // Title and detail section (column 2)
-                    builder.OpenElement(seq++, "div");
-                    builder.AddAttribute(seq++, "class", "te-ptask-content");
-
-                    // Primary title
-                    builder.OpenElement(seq++, "div");
-                    builder.AddAttribute(seq++, "class", "te-ptask-primary");
-                    builder.AddContent(seq++, task.ShortTitle ?? task.Title);
-                    builder.CloseElement();
-
-                    // Secondary detail (if different from primary)
-                    if (!string.IsNullOrEmpty(task.Title) && task.Title != (task.ShortTitle ?? task.Title))
-                    {
-                        builder.OpenElement(seq++, "div");
-                        builder.AddAttribute(seq++, "class", "te-ptask-secondary");
-                        builder.AddContent(seq++, task.Title);
-                        builder.CloseElement();
-                    }
-
-                    builder.CloseElement(); // content
-
-                    // User story tag (column 3)
-                    if (!string.IsNullOrEmpty(task.UserStoryTag))
-                    {
-                        builder.OpenElement(seq++, "span");
-                        builder.AddAttribute(seq++, "class", "te-ptask-tag");
-                        builder.AddContent(seq++, task.UserStoryTag);
-                        builder.CloseElement();
-                    }
-
-                    // Status (column 4)
-                    if (task.IsCompleted)
-                    {
-                        builder.OpenElement(seq++, "span");
-                        builder.AddAttribute(seq++, "class", "te-ptask-status");
-                        builder.AddContent(seq++, "✓");
-                        builder.CloseElement();
-                    }
-
-                    builder.CloseElement(); // task
-                }
-                builder.CloseElement(); // group
-            }
-        }
-        builder.CloseElement();
-    };
 
     private static RenderFragment RenderImpactGroup(string title, IReadOnlyList<string> items, string emptyText) => builder =>
     {
