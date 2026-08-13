@@ -561,7 +561,7 @@ button.te-ref-chip:hover {
 
 .te-map-phase-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 1rem;
     padding: 0.7rem 1rem;
@@ -602,10 +602,10 @@ button.te-ref-chip:hover {
 
 .te-map-group-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    padding: 0.25rem 0 0.45rem;
+    padding: 0.45rem 0 0.55rem;
     flex-wrap: wrap;
 }
 
