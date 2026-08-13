@@ -31,6 +31,15 @@ if ($Clean) {
     Cleanup-CSS
 }
 
+# Clean up stale development CSS before building to avoid StaticWebAssets conflicts
+# When CSS from a previous build is present in wwwroot during a new build, Blazor sees both
+# the copied file and the newly generated bundle, causing "Sequence contains more than one element"
+$devScopedCss = Join-Path $BirkNextWebPath "wwwroot\BirkNext.Web.styles.css"
+if (Test-Path $devScopedCss) {
+    Write-Host "Cleaning stale development scoped CSS..." -ForegroundColor Yellow
+    Remove-Item $devScopedCss -Force -ErrorAction SilentlyContinue
+}
+
 # Build the project
 Write-Host ""
 Write-Host "Building BirkNext.Web ($Configuration)..." -ForegroundColor Cyan

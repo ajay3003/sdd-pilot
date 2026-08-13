@@ -900,6 +900,18 @@ function Start-DotNetProcessLogged {
     }
     else {
         # Source mode: restore and build synchronously in the launcher window, then run in background
+
+        # For frontend (Blazor WASM), remove stale development scoped CSS before build to avoid StaticWebAssets conflicts.
+        # The CSS file is regenerated during build and copied to wwwroot after build succeeds.
+        if ($Name -eq "Frontend" -and -not [string]::IsNullOrWhiteSpace($BirkNextWebPath)) {
+            $devScopedCss = Join-Path $BirkNextWebPath "wwwroot\BirkNext.Web.styles.css"
+            if (Test-Path $devScopedCss) {
+                Info "Cleaning stale development scoped CSS..."
+                Remove-Item $devScopedCss -Force -ErrorAction SilentlyContinue
+                Add-Content -Path $LauncherLogFile -Value "[$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))] Removed stale development CSS"
+            }
+        }
+
         Info "Restoring $Name..."
         Add-Content -Path $LauncherLogFile -Value "[$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))] Restoring $Name"
         $null = Invoke-NativeCommand -Executable "dotnet" -Arguments @("restore", $Runnable.Path) -ShowOutput -ThrowOnError
