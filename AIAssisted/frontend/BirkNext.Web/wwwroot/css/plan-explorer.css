@@ -66,32 +66,7 @@
 
 /* ── Empty / input state ────────────────────────────── */
 
-.pe-empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1rem;
-    padding: 2.5rem 1rem;
-    max-width: 680px;
-    margin: 0 auto;
-    text-align: center;
-}
-
-.pe-empty-icon { font-size: 3rem; line-height: 1; }
-
-.pe-empty-title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--clr-text-heading);
-    margin: 0;
-}
-
-.pe-empty-desc {
-    font-size: 0.9rem;
-    color: var(--clr-text-muted);
-    margin: 0;
-    line-height: 1.6;
-}
+/* Empty state and icon/title/desc styles consolidated into explorers-common.css */
 
 .pe-input-area {
     width: 100%;
@@ -139,29 +114,8 @@
 
 .pe-input-stat { font-size: 0.75rem; color: var(--clr-text-subtle); }
 
-.pe-clear-btn {
-    font-size: 0.75rem;
-    color: var(--clr-text-subtle);
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.1rem 0.3rem;
-}
-.pe-clear-btn:hover { color: var(--clr-danger); }
-
-.pe-build-btn {
-    padding: 0.6rem 1.5rem;
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: white;
-    background: var(--clr-primary);
-    border: none;
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: background var(--transition);
-}
-.pe-build-btn:hover:not(:disabled) { background: var(--clr-primary-hover); }
-.pe-build-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Button styles consolidated into explorers-common.css */
+/* .pe-clear-btn, .pe-build-btn now inherited from shared CSS */
 
 /* ── Header bar ─────────────────────────────────────── */
 
@@ -207,42 +161,8 @@
 
 /* ── View toggle ────────────────────────────────────── */
 
-.pe-view-toggle {
-    display: flex;
-    gap: 2px;
-    background: var(--clr-surface);
-    border: 1px solid var(--clr-border);
-    border-radius: var(--radius-md);
-    padding: 2px;
-    flex-wrap: wrap;
-}
-
-.pe-view-btn {
-    padding: 0.3rem 0.7rem;
-    font-size: 0.78rem;
-    font-weight: 500;
-    color: var(--clr-text-muted);
-    background: transparent;
-    border: none;
-    border-radius: calc(var(--radius-md) - 2px);
-    cursor: pointer;
-    transition: background var(--transition), color var(--transition);
-    white-space: nowrap;
-}
-.pe-view-btn:hover { background: var(--clr-surface-white); color: var(--clr-text-body); }
-.pe-view-btn.is-active { background: var(--clr-surface-white); color: var(--clr-primary); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-
-.pe-reset-btn {
-    padding: 0.3rem 0.75rem;
-    font-size: 0.8rem;
-    color: var(--clr-text-subtle);
-    background: none;
-    border: 1px solid var(--clr-border);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    white-space: nowrap;
-}
-.pe-reset-btn:hover { border-color: var(--clr-border-hover); color: var(--clr-text-body); }
+/* View toggle and button styles consolidated into explorers-common.css */
+/* .pe-view-toggle, .pe-view-btn, .pe-reset-btn now inherited from shared CSS */
 
 /* ── Search & filter strip ──────────────────────────── */
 

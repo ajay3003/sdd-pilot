@@ -172,6 +172,38 @@ public class TaskExplorerPageTests : BunitContext
     }
 
     [Fact]
+    public void Changes_AnalyzeButtonUsesSharedButtonClass()
+    {
+        var cut = Render<TaskChangesPanel>(p => p
+            .Add(x => x.CurrentTasksText, SampleTasks));
+
+        var analyzeButton = cut.Find(".delta-analyse-btn");
+
+        analyzeButton.TextContent.Trim().Should().Be("Analyze Changes");
+        analyzeButton.ClassList.Should().Contain("btn-primary");
+    }
+
+    [Fact]
+    public void Changes_AnalyzeButtonStillDisabledWithoutBothVersions()
+    {
+        var cut = Render<TaskChangesPanel>(p => p
+            .Add(x => x.CurrentTasksText, SampleTasks));
+
+        cut.Find(".delta-analyse-btn").HasAttribute("disabled").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Changes_AnalyzeButtonEnabledWhenInputsValid()
+    {
+        var cut = Render<TaskChangesPanel>(p => p
+            .Add(x => x.CurrentTasksText, SampleTasks));
+
+        cut.FindAll("textarea")[0].Change(PreviousTasks);
+
+        cut.Find(".delta-analyse-btn").HasAttribute("disabled").Should().BeFalse();
+    }
+
+    [Fact]
     public void TaskChanges_AffectsImplementationCoverage()
     {
         var cut = Render<TaskChangesPanel>(p => p
@@ -982,7 +1014,7 @@ public class TaskExplorerPageTests : BunitContext
     }
 
     [Fact]
-    public void DependencyChain_ThreePredecessorConvergence_RendersSuffixedIdCorrectly()
+    public void Dependencies_ThreePredecessorConvergence_RendersSuffixedIdCorrectly()
     {
         var sampleTasks = """
             # Tasks
@@ -1008,7 +1040,7 @@ public class TaskExplorerPageTests : BunitContext
 
         // Find US4 section
         var depsView = cut.Find(".te-dependencies-view");
-        var depChains = cut.FindAll(".te-dep-chain");
+        var depChains = cut.FindAll(".te-dep-story-card");
         depChains.Should().NotBeEmpty("Should have dependency chains");
 
         // Find the chain containing T032
@@ -1036,12 +1068,12 @@ public class TaskExplorerPageTests : BunitContext
 
         // Count arrows to ensure we have exactly 2 separators (one between group and T034, one between T034 and T035)
         var arrowCount = new System.Text.RegularExpressions.Regex("→").Matches(chainText).Count;
-        arrowCount.Should().Be(2, "Should have exactly 2 arrows: one after predecessor group, one after T034");
+        arrowCount.Should().Be(0, "Current Dependencies UI renders structured relationship rows instead of legacy arrow chains");
 
         // All predecessors should appear before T034
-        positions["T032"].Should().BeLessThan(positions["T034"], "T032 < T034");
-        positions["T033"].Should().BeLessThan(positions["T034"], "T033 < T034");
-        positions["T033a"].Should().BeLessThan(positions["T034"], "T033a < T034");
+        positions["T032"].Should().BeGreaterThanOrEqualTo(0, "T032 should render in the US4 story card");
+        positions["T033"].Should().BeGreaterThanOrEqualTo(0, "T033 should render in the US4 story card");
+        positions["T033a"].Should().BeGreaterThanOrEqualTo(0, "T033a should render in the US4 story card");
         positions["T034"].Should().BeLessThan(positions["T035"], "T034 < T035");
 
         // Critical: T033a should NOT appear after T034 (which was the bug)
@@ -1049,12 +1081,17 @@ public class TaskExplorerPageTests : BunitContext
         // which means T033a position > T034 position (WRONG)
         // We want: "T032 + T033 + T033a → T034 → T035"
         // which means T033a position < T034 position
-        positions["T033a"].Should().BeLessThan(positions["T034"],
-            "T033a should appear with predecessors, not after the arrow to T034 (this was the bug). Text: " + chainText);
+        var t034Row = FindDependencyTaskRow(cut, "T034");
+        t034Row.TextContent.Should().Contain("Blocked by");
+        t034Row.TextContent.Should().Contain("T032");
+        t034Row.TextContent.Should().Contain("T033");
+        t034Row.TextContent.Should().Contain("T033a");
+        t034Row.TextContent.Should().Contain("Blocks");
+        t034Row.TextContent.Should().Contain("T035");
     }
 
     [Fact]
-    public void DependencyChain_LinearSequence()
+    public void Dependencies_LinearSequence()
     {
         var sampleTasks = """
             # Tasks
@@ -1072,7 +1109,7 @@ public class TaskExplorerPageTests : BunitContext
         var depsTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Dependencies"));
         depsTabBtn!.Click();
 
-        var depChain = cut.Find(".te-dep-chain");
+        var depChain = cut.Find(".te-dep-story-card");
         var text = depChain.TextContent;
 
         // Should render: T001 → T002 → T003
@@ -1087,7 +1124,7 @@ public class TaskExplorerPageTests : BunitContext
     }
 
     [Fact]
-    public void DependencyChain_TwoPredecessorConvergence()
+    public void Dependencies_TwoPredecessorConvergence()
     {
         var sampleTasks = """
             # Tasks
@@ -1106,20 +1143,23 @@ public class TaskExplorerPageTests : BunitContext
         var depsTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Dependencies"));
         depsTabBtn!.Click();
 
-        var depChain = cut.Find(".te-dep-chain");
+        var depChain = cut.Find(".te-dep-story-card");
         var text = depChain.TextContent;
 
         // Should render: T001 + T002 → T003 → T004
         var arrowCount = new System.Text.RegularExpressions.Regex("→").Matches(text).Count;
-        arrowCount.Should().Be(2, "Should have 2 arrows");
+        arrowCount.Should().Be(0, "Current Dependencies UI renders structured relationship rows instead of legacy arrow chains");
 
-        text.IndexOf("T001").Should().BeLessThan(text.IndexOf("T003"), "T001 < T003");
-        text.IndexOf("T002").Should().BeLessThan(text.IndexOf("T003"), "T002 < T003");
-        text.IndexOf("T003").Should().BeLessThan(text.IndexOf("T004"), "T003 < T004");
+        var t003Row = FindDependencyTaskRow(cut, "T003");
+        t003Row.TextContent.Should().Contain("Blocked by");
+        t003Row.TextContent.Should().Contain("T001");
+        t003Row.TextContent.Should().Contain("T002");
+        t003Row.TextContent.Should().Contain("Blocks");
+        t003Row.TextContent.Should().Contain("T004");
     }
 
     [Fact]
-    public void DependencyChain_AllRealUserStories()
+    public void Dependencies_AllRealUserStories()
     {
         var sampleTasks = """
             # Tasks
@@ -1163,8 +1203,8 @@ public class TaskExplorerPageTests : BunitContext
         var depsTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Dependencies"));
         depsTabBtn!.Click();
 
-        var depChains = cut.FindAll(".te-dep-chain");
-        depChains.Should().HaveCount(4, "Should have 4 dependency chains (one per user story)");
+        var depChains = cut.FindAll(".te-dep-story-card");
+        depChains.Should().ContainSingle("sample tasks without explicit story tags should render in one dependency group");
 
         // Check each chain
         var us1Chain = depChains.FirstOrDefault(c => c.TextContent.Contains("T018"));
@@ -1182,14 +1222,15 @@ public class TaskExplorerPageTests : BunitContext
         us4Chain.TextContent.Should().Contain("T034");
         us4Chain.TextContent.Should().Contain("T035");
 
-        // Most importantly: T033a should appear before T034
-        var us4Text = us4Chain.TextContent;
-        us4Text.IndexOf("T033a").Should().BeLessThan(us4Text.IndexOf("T034"),
-            "T033a is a predecessor, should appear before T034 target");
+        var t034Row = FindDependencyTaskRow(cut, "T034");
+        t034Row.TextContent.Should().Contain("Blocked by");
+        t034Row.TextContent.Should().Contain("T032");
+        t034Row.TextContent.Should().Contain("T033");
+        t034Row.TextContent.Should().Contain("T033a");
     }
 
     [Fact]
-    public void DependencyChain_VerifyBugFixWithRealStructure()
+    public void Dependencies_VerifyBugFixWithRealStructure()
     {
         // This test verifies the bug is fixed by checking that:
         // - T032, T033, T033a are NOT grouped with T034
@@ -1213,10 +1254,10 @@ public class TaskExplorerPageTests : BunitContext
         var depsTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Dependencies"));
         depsTabBtn!.Click();
 
-        var depChain = cut.Find(".te-dep-chain");
+        var depChain = cut.Find(".te-dep-story-card");
 
         // Get all task ID elements in order
-        var taskIds = cut.FindAll(".te-dep-task-id").Where(e => depChain.Contains(e)).Select(e => e.TextContent.Trim()).ToList();
+        var taskIds = cut.FindAll(".te-dep-task-id-badge").Where(e => depChain.Contains(e)).Select(e => e.TextContent.Trim()).ToList();
 
         // The bug would have rendered as: [T032, T033, T033a, T034, T035] where T033a appears after T033 but before T034
         // With grouping based on arrows, the rendering would show T033a with T034 (wrong)
@@ -1247,8 +1288,8 @@ public class TaskExplorerPageTests : BunitContext
         pos034.Should().BeLessThan(pos035);
 
         // Verify the structure by counting arrows
-        var arrows = cut.FindAll(".te-dep-arrow").Where(a => depChain.Contains(a)).Count();
-        arrows.Should().Be(2, "Should have exactly 2 arrows in the US4 chain");
+        var relationshipBadges = cut.FindAll(".te-dep-related-badge").Where(a => depChain.Contains(a)).Count();
+        relationshipBadges.Should().BeGreaterThan(0, "Current Dependencies UI should render relationship badges in the US4 group");
     }
 
     [Fact]
@@ -1391,7 +1432,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, allCompletedTasks));
 
-        var headerContent = cut.FindAll(".te-header-status");
+        var headerContent = cut.FindAll(".te-header-completion");
         headerContent.Should().NotBeEmpty("Should have header status");
 
         var statusText = headerContent[0].TextContent;
@@ -1446,7 +1487,7 @@ public class TaskExplorerPageTests : BunitContext
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasksMissingRequirements));
 
         // Header should show task completion
-        var headerStatus = cut.FindAll(".te-header-status");
+        var headerStatus = cut.FindAll(".te-header-completion");
         var taskCompletionText = headerStatus.FirstOrDefault()?.TextContent ?? "";
         taskCompletionText.Should().Contain("task completion",
             "Header should show task completion status");
@@ -2273,6 +2314,15 @@ public class TaskExplorerPageTests : BunitContext
         var row = cut.FindAll(".te-row").FirstOrDefault(r => r.TextContent.Contains(taskId));
         row.Should().NotBeNull($"task row {taskId} should be rendered in Tree view");
         row!.Click();
+    }
+
+    private static AngleSharp.Dom.IElement FindDependencyTaskRow(IRenderedComponent<TaskExplorerPanel> cut, string taskId)
+    {
+        var row = cut.FindAll(".te-dep-task-row")
+            .SingleOrDefault(r => r.TextContent.TrimStart().StartsWith(taskId, StringComparison.Ordinal));
+
+        row.Should().NotBeNull($"dependency task row {taskId} should be rendered");
+        return row!;
     }
 
     private static void ClickTab(IRenderedComponent<TaskExplorerPanel> cut, string label)

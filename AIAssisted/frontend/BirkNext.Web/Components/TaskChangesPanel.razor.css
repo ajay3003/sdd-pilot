@@ -118,27 +118,6 @@
     margin-bottom: 1.5rem;
 }
 
-.delta-analyse-btn {
-    background: var(--clr-accent, #3b82f6);
-    color: #fff;
-    border: none;
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    padding: 0.55rem 1.5rem;
-    cursor: pointer;
-    transition: opacity 0.15s, background 0.15s;
-}
-
-.delta-analyse-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
-.delta-analyse-btn:not(:disabled):hover {
-    background: #2563eb;
-}
-
 .delta-analyse-hint {
     font-size: 0.78rem;
     color: var(--clr-text-subtle);
