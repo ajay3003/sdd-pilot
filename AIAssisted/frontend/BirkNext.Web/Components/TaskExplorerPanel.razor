@@ -505,13 +505,13 @@
 
                 @if (_tree is null)
                 {
-                    <div class="te-map">
+                    <div class="te-map" @ref="_mapContainer">
                         <div>No execution structure available.</div>
                     </div>
                 }
                 else
                 {
-                    <div class="te-map">
+                    <div class="te-map" @ref="_mapContainer">
                         <div class="te-map-header pe-section-block">
                             @if (rootNode is not null && rootNode.NodeType == TaskNodeType.TaskGroup)
                             {
@@ -1198,6 +1198,8 @@
     }
 </div>
 
+@inject IJSRuntime JS
+
 @code {
     [Parameter] public string TasksText { get; set; } = string.Empty;
     [Parameter] public TaskTree? ParsedTasks { get; set; }
@@ -1219,6 +1221,7 @@
     private bool _isChangesView;
     private bool _isDependenciesView;
     private bool _isParallelView;
+    private ElementReference _mapContainer;
     private List<(TaskNode Node, int Depth, bool IsMatch)> _flatCache = [];
     private string _lastBuiltText = string.Empty;
     private HashSet<string> _tableLinkedTaskIds = [];
@@ -1378,6 +1381,7 @@
     private void HandleNodeClick(TaskNode node)
     {
         _selectedNodeId = _selectedNodeId == node.Id ? null : node.Id;
+        StateHasChanged();
     }
 
     private void ToggleExpand(string id)
@@ -1419,13 +1423,30 @@
         _isParallelView = false;
     }
 
-    private void ShowMapView()
+    private async Task ShowMapView()
     {
         _isMapView = true;
         _isImpactView = false;
         _isChangesView = false;
         _isDependenciesView = false;
         _isParallelView = false;
+        await ResetMapScroll();
+    }
+
+    private async Task ResetMapScroll()
+    {
+        try
+        {
+            if (_mapContainer.Context is not null)
+            {
+                // Reset Map container scroll position to top
+                await JS.InvokeVoidAsync("eval", "document.querySelectorAll('.te-map')[document.querySelectorAll('.te-map').length-1].scrollTop = 0");
+            }
+        }
+        catch
+        {
+            // Silently ignore errors; scroll reset is not critical
+        }
     }
 
     private void ShowImpactView()
