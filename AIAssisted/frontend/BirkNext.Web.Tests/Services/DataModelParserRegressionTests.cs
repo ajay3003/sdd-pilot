@@ -867,62 +867,133 @@ public class DataModelParserRegressionTests
 
     // ── Cross-module regression tests ──────────────────────────────────
 
+    // ── Portability tests: real syntax across modules ────────────────────
+
     [Fact]
-    public void Parse_Autorisasjon_DataModel_Parses()
+    public void Parse_Autorisasjon_ContainsNoMarkdownIndexes()
     {
-        // Verify parser doesn't break on Autorisasjon sample
+        // Autorisasjon has index definitions only in EF Core code block,
+        // not in markdown **Indexes** sections, so zero indexes expected
         var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\autorisasjon\\data-model.md";
-        if (!System.IO.File.Exists(path)) return; // Skip if file missing
+        if (!System.IO.File.Exists(path)) return;
 
         var markdown = System.IO.File.ReadAllText(path);
         var result = _service.Parse(markdown);
 
-        Assert.NotNull(result);
-        // Should successfully parse without throwing
+        // No markdown indexes (code blocks are intentionally excluded)
+        Assert.Empty(result.Indexes);
     }
 
     [Fact]
-    public void Parse_HendelseAdapter_DataModel_Parses()
+    public void Parse_HendelseAdapter_ContainsNoMarkdownIndexes()
     {
-        // Verify parser doesn't break on Hendelse Adapter sample
+        // Hendelse Adapter has no explicit **Indexes** section
         var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\hendelse-adapter\\data-model.md";
-        if (!System.IO.File.Exists(path)) return; // Skip if file missing
+        if (!System.IO.File.Exists(path)) return;
 
         var markdown = System.IO.File.ReadAllText(path);
         var result = _service.Parse(markdown);
 
-        Assert.NotNull(result);
-        // Should successfully parse without throwing
+        // No indexes in markdown
+        Assert.Empty(result.Indexes);
     }
 
     [Fact]
-    public void Parse_PersonAdapter_DataModel_Parses()
+    public void Parse_Hendelsestjenesten_InlineIndexSyntax()
     {
-        // Verify parser doesn't break on Person Adapter sample
-        // Person Adapter has informal index notation that should be rejected gracefully
+        // Hendelsestjenesten has inline semicolon-separated index definitions across two lines:
+        // **Indexes**: `BirkHendelsesId` (unique, for idempotency); `BarnId` (for timeline queries);
+        // `BirkTiltakPK` + `BarnId IS NULL` (partial, for async linking lookup).
+        //
+        // All three are legitimate Data Model index definitions
+        // Parsing requires: inline syntax support + continuation-line handling + composite index name extraction
+        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\hendelsestjenesten\\data-model.md";
+        if (!System.IO.File.Exists(path)) return;
+
+        var markdown = System.IO.File.ReadAllText(path);
+        var result = _service.Parse(markdown);
+
+        // Should parse exactly 3 indexes from inline syntax
+        Assert.Equal(3, result.Indexes.Count);
+
+        var indexNames = result.Indexes.Select(i => i.Name).ToHashSet();
+        Assert.Contains("BirkHendelsesId", indexNames);
+        Assert.Contains("BarnId", indexNames);
+        Assert.Contains("BirkTiltakPK", indexNames);  // Composite index with filter
+
+        // Verify unique flag on BirkHendelsesId
+        var birkHendelsesIdx = result.Indexes.First(i => i.Name == "BirkHendelsesId");
+        Assert.True(birkHendelsesIdx.IsUnique, "BirkHendelsesId should be marked unique");
+    }
+
+    [Fact]
+    public void Parse_PersonAdapter_NonStandardIndexNotationRejected()
+    {
+        // Person Adapter has **Indexes**: bullets but with non-IX_ format:
+        // - Primary key: `id`
+        // - `(feiltype, post_type)` — filtered re-delivery queries
+        // - `utloper_tidspunkt` — expiry purge batch job
+        // These are documentation notes, not formal index definitions.
+        // Parser behavior: rejected because they don't match IX_ pattern
         var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\person-adapter\\data-model.md";
-        if (!System.IO.File.Exists(path)) return; // Skip if file missing
+        if (!System.IO.File.Exists(path)) return;
 
         var markdown = System.IO.File.ReadAllText(path);
         var result = _service.Parse(markdown);
 
-        Assert.NotNull(result);
-        // Should successfully parse without throwing
-        // Note: Person Adapter indexes are documented but not in standard IX_ format,
-        // so they will not be parsed as indexes (which is correct)
+        // Non-standard notation is intentionally unsupported
+        Assert.Empty(result.Indexes);
     }
 
     [Fact]
-    public void Parse_Revisjon_DataModel_Parses()
+    public void Parse_Revisjon_ContainsNoIndexes()
     {
-        // Verify parser doesn't break on Revisjon sample
+        // Revisjon sample has no index definitions
         var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\revisjon\\data-model.md";
-        if (!System.IO.File.Exists(path)) return; // Skip if file missing
+        if (!System.IO.File.Exists(path)) return;
 
         var markdown = System.IO.File.ReadAllText(path);
         var result = _service.Parse(markdown);
 
-        Assert.NotNull(result);
-        // Should successfully parse without throwing
+        Assert.Empty(result.Indexes);
+    }
+
+    [Fact]
+    public void Parse_FrontendAdminPanel_ContainsNoIndexes()
+    {
+        // Frontend Admin Panel has no index definitions
+        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\frontend-admin-panel\\data-model.md";
+        if (!System.IO.File.Exists(path)) return;
+
+        var markdown = System.IO.File.ReadAllText(path);
+        var result = _service.Parse(markdown);
+
+        Assert.Empty(result.Indexes);
+    }
+
+    [Fact]
+    public void Parse_Proxy_ContainsNoIndexes()
+    {
+        // Proxy sample has no index definitions
+        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\proxy\\data-model.md";
+        if (!System.IO.File.Exists(path)) return;
+
+        var markdown = System.IO.File.ReadAllText(path);
+        var result = _service.Parse(markdown);
+
+        Assert.Empty(result.Indexes);
+    }
+
+    [Fact]
+    public void Parse_Tjeneste_ContainsNoIndexes()
+    {
+        // Tjeneste sample has no index definitions
+        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\tjeneste\\data-model.md";
+        if (!System.IO.File.Exists(path)) return;
+
+        var markdown = System.IO.File.ReadAllText(path);
+        var result = _service.Parse(markdown);
+
+        Assert.Empty(result.Indexes);
     }
 }

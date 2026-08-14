@@ -281,7 +281,14 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         case "indices":
                         case "index":
                             if (currentEntityName is not null)
+                            {
                                 currentSection = "indexes";
+                                // If there's inline content after the label, parse it immediately
+                                if (!string.IsNullOrWhiteSpace(val))
+                                {
+                                    ParseInlineIndexSyntax(val, currentEntityName, currentEntityIndexes);
+                                }
+                            }
                             continue;
                         default:
                             // Any other bold label (Invariants, Seed data, State machine, …)
@@ -294,6 +301,23 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                             }
                             break;
                     }
+                }
+
+                // ── Inline Indexes continuation check ──────────────────────────────────
+                // If we're in an indexes section and a Text token looks like index content,
+                // don't clear the section so the switch can process it
+                // This handles multi-line inline index definitions like:
+                //   **Indexes**: item1; item2;
+                //   item3 (continuation on next line)
+                if (currentSection == "indexes" && token.Kind == MarkdownTokenKind.Text &&
+                    pm.Success == false)  // Not a bold label
+                {
+                    if (!IsInlineIndexLike(token.Content))
+                    {
+                        // Text token that's not index-like; clear the section
+                        currentSection = string.Empty;
+                    }
+                    // If index-like, DON'T clear section; let switch process it
                 }
             }
 
@@ -403,6 +427,13 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                             else
                                 globalIndexes.Add(idx);
                         }
+                    }
+                    else if (token.Kind == MarkdownTokenKind.Text)
+                    {
+                        // Support inline semicolon-separated index syntax
+                        // Example: "IndexName (unique, ...); AnotherIndex (...); ..."
+                        ParseInlineIndexSyntax(token.Content, currentEntityName ?? string.Empty,
+                            currentEntityName is not null ? currentEntityIndexes : globalIndexes);
                     }
                     break;
 
@@ -617,27 +648,89 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         };
     }
 
+    private static void ParseInlineIndexSyntax(string text, string entityName, List<DataIndex> indexList)
+    {
+        // Parse semicolon-separated inline index definitions
+        // Example: "`BirkHendelsesId` (unique, for idempotency); `BarnId` (for timeline queries); ..."
+        // Conservative parsing: only accept items that look like index names with metadata
+
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        var segments = text.Split(';', StringSplitOptions.TrimEntries);
+        foreach (var segment in segments)
+        {
+            if (string.IsNullOrWhiteSpace(segment)) continue;
+
+            // Each segment should contain an index name (possibly in backticks)
+            // Try to parse as a complete index definition
+            var idx = ParseIndexLine(segment, entityName);
+            if (idx is not null)
+            {
+                indexList.Add(idx);
+            }
+        }
+    }
+
     private static bool IsValidIndexSignature(string text)
     {
         // Must start with recognized index patterns; reject arbitrary prose
-        // Valid: IX_*, Unique index *, Full-text index *, Composite: IX_*
+        // Valid: IX_*, Composite:, Full-text, unique index, clustered, or inline column-like names with metadata
         var lower = text.ToLowerInvariant().Trim();
-        return lower.StartsWith("ix_") ||
-               lower.StartsWith("composite:") ||
-               lower.StartsWith("full-text") ||
-               lower.StartsWith("unique index") ||
-               lower.StartsWith("clustered");
+        if (lower.StartsWith("ix_") ||
+            lower.StartsWith("composite:") ||
+            lower.StartsWith("full-text") ||
+            lower.StartsWith("unique index") ||
+            lower.StartsWith("clustered"))
+            return true;
+
+        // For inline syntax, also accept column-like names with metadata in parentheses/operators
+        // Example: "BirkHendelsesId (unique, ...)" or "BarkId (for ...)" or "BirkTiltakPK + BarnId IS NULL (...)"
+        return IsInlineIndexLike(text);
+    }
+
+    private static bool IsInlineIndexLike(string text)
+    {
+        // Check if text looks like an inline index definition rather than prose
+        var trimmed = text.Trim();
+        if (trimmed.Length == 0) return false;
+
+        // Normalize backticks for checking (e.g., "`BirkTiltakPK`" → "BirkTiltakPK")
+        var normalized = NormalizeStructuredName(trimmed);
+
+        // Reject obvious prose patterns: starts with lowercase, is clearly a sentence, etc.
+        if (normalized.Length > 0 && char.IsLower(normalized[0])) return false;  // Starts lowercase
+
+        // Reject if it starts with parenthesis (e.g., "(col1, col2)" without an index name)
+        if (normalized.StartsWith("(")) return false;
+
+        // Reject if it's clearly a sentence with common sentence structures
+        // BUT allow SQL keywords like "IS NULL" and "IS NOT NULL"
+        var lower = normalized.ToLowerInvariant();
+        if ((lower.Contains(" is ") && !lower.Contains(" is null") && !lower.Contains(" is not null")) ||
+            lower.Contains(" are ") || lower.Contains(" should ") ||
+            lower.Contains(" must ") || lower.Contains(" can ") || lower.Contains(" never ") ||
+            lower.Contains(" always ") || lower.Contains(" deleted"))
+            return false;
+
+        // Reject single word/identifier without structure (e.g., just "`utloper_tidspunkt`")
+        if (!normalized.Contains("(") && !normalized.Contains("+") && !normalized.Contains("IS"))
+            return false;
+
+        // Accept if it contains index-like structure: identifier followed by parentheses or operators/SQL
+        return normalized.Contains("(") || normalized.Contains("+") || normalized.Contains("IS NOT NULL") ||
+               normalized.Contains("IS NULL");
     }
 
     private static int FindFirstMetadataMarker(string text)
     {
         // Find where the index name ends and metadata begins
-        // Markers: " (" for (non-clustered, ...) or " on " for column list
+        // Markers: " (" for (non-clustered, ...), " on " for column list, " +" for composite/filter
         var spaceParenIdx = text.IndexOf(" (");
         var onIdx = text.IndexOf(" on ", StringComparison.OrdinalIgnoreCase);
         var forIdx = text.IndexOf(" for ", StringComparison.OrdinalIgnoreCase);
+        var spacePlusIdx = text.IndexOf(" +");  // For partial indexes like "IX_Name + Filter"
 
-        var candidates = new[] { spaceParenIdx, onIdx, forIdx }
+        var candidates = new[] { spaceParenIdx, onIdx, forIdx, spacePlusIdx }
             .Where(i => i > 0)
             .ToList();
 
