@@ -42,7 +42,6 @@ public sealed class SampleProjectsNavigationTests : BunitContext
         Services.AddSingleton(Mock.Of<IIntegrationTargetRegistryService>());
         Services.AddSingleton(NullLogger<SampleProjects>.Instance);
         Services.AddSingleton(new SampleProjectsApiService(client));
-        Services.AddSingleton(new ProjectDocumentApiService(client));
 
         JSInterop.Setup<bool>("confirm", _ => true).SetResult(true);
 
@@ -237,9 +236,6 @@ public sealed class SampleProjectsNavigationTests : BunitContext
                 var marker = slug.Equals("person-module", StringComparison.OrdinalIgnoreCase) ? "PERSON" : "PROXY";
                 return Text($"{marker} {fileName}");
             }
-
-            if (request.Method == HttpMethod.Put && path.StartsWith("api/project-documents/", StringComparison.Ordinal))
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }

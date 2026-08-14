@@ -15,6 +15,7 @@ public class SavedWorkspace
     public string ReviewContextVersion { get; set; } = "1.0";
     public string? ArtifactSetHash { get; set; }
     public bool AutoSaved { get; set; } = false;
+    public bool IsCurrent { get; set; } = false;
     public bool Favorite { get; set; } = false;
     public string? TagsJson { get; set; }
     public bool IsDeleted { get; set; } = false;

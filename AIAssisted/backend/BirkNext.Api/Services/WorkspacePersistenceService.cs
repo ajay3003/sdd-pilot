@@ -23,6 +23,9 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
     public async Task<SavedWorkspace> SaveCurrentAsync(string? name = null, List<WorkspaceArtifactDto>? artifacts = null)
     {
         if (!_currentWorkspaceId.HasValue)
+            _currentWorkspaceId = await ResolvePersistedCurrentWorkspaceIdAsync();
+
+        if (!_currentWorkspaceId.HasValue)
         {
             return await SaveAsAsync(name ?? $"Workspace_{DateTime.UtcNow:yyyyMMdd_HHmmss}", artifacts ?? new());
         }
@@ -44,7 +47,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         if (artifacts != null && artifacts.Any())
         {
             // Remove existing artifacts
-            _db.SavedWorkspaceArtifacts.RemoveRange(workspace.Artifacts);
+            _db.SavedWorkspaceArtifacts.RemoveRange(workspace.Artifacts.ToList());
 
             // Add new artifacts
             foreach (var artifact in artifacts)
@@ -65,7 +68,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
                         CreatedAt = DateTimeOffset.UtcNow,
                         UpdatedAt = DateTimeOffset.UtcNow
                     };
-                    workspace.Artifacts.Add(saved);
+                    _db.SavedWorkspaceArtifacts.Add(saved);
                 }
             }
         }
@@ -155,10 +158,10 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         workspace.ArtifactSetHash = await ComputeArtifactSetHashAsync(workspace.Id);
 
         _db.SavedWorkspaces.Add(workspace);
+        await MarkCurrentWorkspaceAsync(workspace);
         await _db.SaveChangesAsync();
         _logger.LogInformation($"DIAG: [SaveAs] SaveChangesAsync completed, saved to DB");
 
-        _currentWorkspaceId = workspace.Id;
         _logger.LogInformation($"DIAG: [SaveAs] RETURNING WorkspaceId={workspace.Id}, name={workspace.Name}, artifacts={workspace.Artifacts.Count}");
         return workspace;
     }
@@ -176,10 +179,10 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         }
 
         workspace.LastOpenedAt = DateTimeOffset.UtcNow;
+        await MarkCurrentWorkspaceAsync(workspace);
         _db.SavedWorkspaces.Update(workspace);
         await _db.SaveChangesAsync();
 
-        _currentWorkspaceId = workspace.Id;
         _logger.LogInformation("Loaded workspace {WorkspaceId} with name {Name}", workspace.Id, workspace.Name);
         _logger.LogInformation("Restoring {ArtifactCount} artifacts from workspace", workspace.Artifacts.Count);
 
@@ -310,6 +313,12 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         {
             _currentWorkspaceId = null;
         }
+        if (workspace.IsCurrent)
+        {
+            workspace.IsCurrent = false;
+            _db.SavedWorkspaces.Update(workspace);
+            await _db.SaveChangesAsync();
+        }
 
         _logger.LogInformation("Soft-deleted workspace {WorkspaceId}", workspaceId);
     }
@@ -331,6 +340,9 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         }
 
         _logger.LogInformation($"TRACE: AutoSaveAsync entered, currentWorkspaceId={_currentWorkspaceId}, artifactCount={artifacts?.Count ?? 0}");
+        if (!_currentWorkspaceId.HasValue)
+            _currentWorkspaceId = await ResolvePersistedCurrentWorkspaceIdAsync();
+
         if (!_currentWorkspaceId.HasValue)
         {
             _logger.LogInformation("TRACE: No current workspace ID, calling SaveAsAsync");
@@ -359,8 +371,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         {
             _logger.LogInformation($"TRACE: Replacing {current.Artifacts.Count} artifacts with {artifacts.Count} new artifacts");
             // Remove existing artifacts
-            _db.SavedWorkspaceArtifacts.RemoveRange(current.Artifacts);
-            current.Artifacts.Clear();
+            _db.SavedWorkspaceArtifacts.RemoveRange(current.Artifacts.ToList());
 
             // Add new artifacts
             foreach (var artifact in artifacts)
@@ -381,7 +392,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
                         CreatedAt = DateTimeOffset.UtcNow,
                         UpdatedAt = DateTimeOffset.UtcNow
                     };
-                    current.Artifacts.Add(saved);
+                    _db.SavedWorkspaceArtifacts.Add(saved);
                 }
             }
         }
@@ -389,8 +400,8 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         current.UpdatedAt = DateTimeOffset.UtcNow;
         current.AutoSaved = true;
         current.ArtifactSetHash = await ComputeArtifactSetHashAsync(_currentWorkspaceId.Value);
+        await MarkCurrentWorkspaceAsync(current);
 
-        _db.SavedWorkspaces.Update(current);
         await _db.SaveChangesAsync();
 
         _logger.LogInformation($"TRACE: Auto-saved workspace {current.Id} with {current.Artifacts.Count} artifacts");
@@ -399,26 +410,35 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
     public async Task SetCurrentWorkspaceAsync(Guid workspaceId)
     {
-        var exists = await _db.SavedWorkspaces.AnyAsync(w => w.Id == workspaceId && !w.IsDeleted);
-        if (!exists)
+        var workspace = await _db.SavedWorkspaces.FirstOrDefaultAsync(w => w.Id == workspaceId && !w.IsDeleted);
+        if (workspace == null)
         {
             throw new InvalidOperationException($"Workspace {workspaceId} not found");
         }
 
-        _currentWorkspaceId = workspaceId;
+        await MarkCurrentWorkspaceAsync(workspace);
+        await _db.SaveChangesAsync();
         _logger.LogInformation("Set current workspace to {WorkspaceId}", workspaceId);
     }
 
-    public Task<Guid?> GetCurrentWorkspaceIdAsync()
+    public async Task<Guid?> GetCurrentWorkspaceIdAsync()
     {
-        return Task.FromResult(_currentWorkspaceId);
+        if (!_currentWorkspaceId.HasValue)
+            _currentWorkspaceId = await ResolvePersistedCurrentWorkspaceIdAsync();
+
+        return _currentWorkspaceId;
     }
 
-    public Task ClearCurrentWorkspaceAsync()
+    public async Task ClearCurrentWorkspaceAsync()
     {
         _currentWorkspaceId = null;
+        var currentWorkspaces = await _db.SavedWorkspaces
+            .Where(w => w.UserId == (_currentUserId ?? "default-user") && w.IsCurrent)
+            .ToListAsync();
+        foreach (var workspace in currentWorkspaces)
+            workspace.IsCurrent = false;
+        await _db.SaveChangesAsync();
         _logger.LogInformation("Cleared current workspace");
-        return Task.CompletedTask;
     }
 
     public async Task SaveArtifactAsync(Guid workspaceId, WorkspaceArtifactDto artifact)
@@ -543,26 +563,11 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
     public async Task<WorkspaceStateDto> GetCurrentStateAsync()
     {
-        // Check in-memory first (for within-request state)
-        var workspaceIdToUse = _currentWorkspaceId;
+        _logger.LogInformation($"DIAG: [GetCurrentState] ENTERED, _currentWorkspaceId={_currentWorkspaceId}");
+        if (!_currentWorkspaceId.HasValue)
+            _currentWorkspaceId = await ResolvePersistedCurrentWorkspaceIdAsync();
 
-        // If not in memory, try to load from database (for cross-request persistence)
-        if (!workspaceIdToUse.HasValue)
-        {
-            var lastWorkspace = await _db.SavedWorkspaces
-                .Where(w => w.UserId == (_currentUserId ?? "default-user") && !w.IsDeleted)
-                .OrderByDescending(w => w.UpdatedAt)
-                .FirstOrDefaultAsync();
-
-            if (lastWorkspace != null)
-            {
-                workspaceIdToUse = lastWorkspace.Id;
-                _logger.LogInformation($"DIAG: [GetCurrentState] Loaded workspace from database: {workspaceIdToUse}");
-            }
-        }
-
-        _logger.LogInformation($"DIAG: [GetCurrentState] ENTERED, _currentWorkspaceId={_currentWorkspaceId}, workspaceIdToUse={workspaceIdToUse}");
-        if (!workspaceIdToUse.HasValue)
+        if (!_currentWorkspaceId.HasValue)
         {
             _logger.LogInformation("DIAG: [GetCurrentState] No current workspace ID, returning NotSaved");
             return new WorkspaceStateDto
@@ -576,11 +581,12 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
         var workspace = await _db.SavedWorkspaces
             .Include(w => w.Artifacts)
-            .FirstOrDefaultAsync(w => w.Id == workspaceIdToUse);
+            .FirstOrDefaultAsync(w => w.Id == _currentWorkspaceId && !w.IsDeleted);
 
         if (workspace == null)
         {
-            _logger.LogInformation($"DIAG: [GetCurrentState] Workspace {workspaceIdToUse} not found in DB, returning NotSaved");
+            _logger.LogInformation($"DIAG: [GetCurrentState] Workspace {_currentWorkspaceId} not found in DB, returning NotSaved");
+            _currentWorkspaceId = null;
             return new WorkspaceStateDto
             {
                 CurrentWorkspaceId = null,
@@ -785,9 +791,9 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             workspace.ArtifactSetHash = await ComputeArtifactSetHashAsync(workspace.Id);
 
             _db.SavedWorkspaces.Add(workspace);
+            await MarkCurrentWorkspaceAsync(workspace);
             await _db.SaveChangesAsync();
 
-            _currentWorkspaceId = workspace.Id;
             _logger.LogInformation("Imported workspace {WorkspaceId} ({Name}) with {ArtifactCount} artifacts",
                 workspace.Id, workspace.Name, workspace.Artifacts.Count);
             return workspace;
@@ -810,6 +816,28 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(content));
             return Convert.ToHexString(hash);
         }
+    }
+
+    private async Task<Guid?> ResolvePersistedCurrentWorkspaceIdAsync()
+    {
+        var current = await _db.SavedWorkspaces
+            .Where(w => w.UserId == (_currentUserId ?? "default-user") && w.IsCurrent && !w.IsDeleted)
+            .OrderByDescending(w => w.LastOpenedAt ?? w.UpdatedAt)
+            .FirstOrDefaultAsync();
+        return current?.Id;
+    }
+
+    private async Task MarkCurrentWorkspaceAsync(SavedWorkspace workspace)
+    {
+        var userId = workspace.UserId;
+        var currentWorkspaces = await _db.SavedWorkspaces
+            .Where(w => w.UserId == userId && w.IsCurrent && w.Id != workspace.Id)
+            .ToListAsync();
+        foreach (var current in currentWorkspaces)
+            current.IsCurrent = false;
+
+        workspace.IsCurrent = true;
+        _currentWorkspaceId = workspace.Id;
     }
 
     private async Task<List<WorkspaceArtifactDto>> GetCurrentArtifactsFromSessionAsync()

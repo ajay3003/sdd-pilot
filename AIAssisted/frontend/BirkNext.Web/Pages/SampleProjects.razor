@@ -4,7 +4,6 @@
 @using BirkNext.Web.Services
 @using Microsoft.JSInterop
 @inject SampleProjectsApiService ProjectsApi
-@inject ProjectDocumentApiService DocumentApi
 @inject IWorkspaceSessionService Workspace
 @inject IWorkspaceArtifactStatusService ArtifactStatus
 @inject IWorkspaceAutoSaveService AutoSave
@@ -648,7 +647,6 @@
 
             foreach (var (file, content) in fetched)
             {
-                await DocumentApi.SaveAsync(file.ArtifactKind!, content);
                 if (file.ArtifactKind is not null && _artifactKindMap.TryGetValue(file.ArtifactKind, out var kind))
                     Workspace.Set(kind, content, fileName: file.Filename, sourcePath: project.AbsolutePath);
                 loaded++;

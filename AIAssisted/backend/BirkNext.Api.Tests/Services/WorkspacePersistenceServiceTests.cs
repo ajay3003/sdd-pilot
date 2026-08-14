@@ -248,4 +248,145 @@ public class WorkspacePersistenceServiceTests : IDisposable
         Assert.Equal("Import Test", imported.Name);
         Assert.Contains("Import", imported.Name);
     }
+
+    [Fact]
+    public async Task GetCurrentStateAsync_WithExplicitCurrent_ReturnsWorkspace()
+    {
+        var workspace = await _service.SaveAsAsync("Explicit Current", [Artifact("constitution.md", ArtifactType.Constitution, "constitution")]);
+
+        var state = await _service.GetCurrentStateAsync();
+
+        Assert.Equal(workspace.Id, state.CurrentWorkspaceId);
+        Assert.Equal("Explicit Current", state.WorkspaceName);
+        Assert.Equal(1, state.ArtifactCount);
+    }
+
+    [Fact]
+    public async Task GetCurrentStateAsync_AfterClear_DoesNotFallbackToLatestWorkspace()
+    {
+        await _service.SaveAsAsync("Workspace A");
+        await Task.Delay(2);
+        await _service.SaveAsAsync("Workspace B");
+        await _service.ClearCurrentWorkspaceAsync();
+
+        var state = await _service.GetCurrentStateAsync();
+
+        Assert.Null(state.CurrentWorkspaceId);
+        Assert.Equal(WorkspaceStatus.NotSaved, state.Status);
+        Assert.Equal(0, state.ArtifactCount);
+    }
+
+    [Fact]
+    public async Task GetCurrentStateAsync_AfterServiceRestart_ReturnsPersistedExplicitCurrentWorkspace()
+    {
+        await _service.SaveAsAsync("Workspace A");
+        await Task.Delay(2);
+        var current = await _service.SaveAsAsync("Workspace B");
+
+        var restartedService = CreateService();
+
+        var state = await restartedService.GetCurrentStateAsync();
+
+        Assert.Equal(current.Id, state.CurrentWorkspaceId);
+        Assert.Equal("Workspace B", state.WorkspaceName);
+    }
+
+    [Fact]
+    public async Task GetCurrentStateAsync_AfterClearedServiceRestart_DoesNotFallbackToLatestWorkspace()
+    {
+        await _service.SaveAsAsync("Workspace A");
+        await Task.Delay(2);
+        await _service.SaveAsAsync("Workspace B");
+        await _service.ClearCurrentWorkspaceAsync();
+
+        var restartedService = CreateService();
+
+        var state = await restartedService.GetCurrentStateAsync();
+
+        Assert.Null(state.CurrentWorkspaceId);
+        Assert.Equal(WorkspaceStatus.NotSaved, state.Status);
+        Assert.Equal(0, state.ArtifactCount);
+    }
+
+    [Fact]
+    public async Task AutoSaveAsync_AfterServiceRestart_UpdatesPersistedCurrentWorkspace()
+    {
+        var workspace = await _service.AutoSaveAsync("Auto", [Artifact("constitution.md", ArtifactType.Constitution, "A")]);
+        _db.ChangeTracker.Clear();
+        var restartedService = CreateService();
+
+        var updated = await restartedService.AutoSaveAsync("Auto", [Artifact("constitution.md", ArtifactType.Constitution, "B")]);
+
+        Assert.Equal(workspace.Id, updated.Id);
+        var artifact = await _db.SavedWorkspaceArtifacts.SingleAsync(a => a.WorkspaceId == workspace.Id);
+        Assert.Equal("B", artifact.Content);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_CurrentWorkspace_ClearsCurrentState()
+    {
+        var workspace = await _service.SaveAsAsync("Current Delete");
+
+        await _service.DeleteAsync(workspace.Id);
+        var state = await _service.GetCurrentStateAsync();
+
+        Assert.Null(await _service.GetCurrentWorkspaceIdAsync());
+        Assert.Null(state.CurrentWorkspaceId);
+        Assert.Equal(WorkspaceStatus.NotSaved, state.Status);
+    }
+
+    [Fact]
+    public async Task RenameAsync_NonCurrentWorkspace_DoesNotStealCurrentState()
+    {
+        var current = await _service.SaveAsAsync("Current");
+        var other = await _service.SaveAsAsync("Other");
+        await _service.SetCurrentWorkspaceAsync(current.Id);
+
+        await _service.RenameAsync(other.Id, "Other Updated");
+        var state = await _service.GetCurrentStateAsync();
+
+        Assert.Equal(current.Id, state.CurrentWorkspaceId);
+        Assert.Equal("Current", state.WorkspaceName);
+    }
+
+    [Fact]
+    public async Task LoadAsync_SetsCurrentState()
+    {
+        var workspace = await _service.SaveAsAsync("Load Sets Current");
+        await _service.ClearCurrentWorkspaceAsync();
+
+        await _service.LoadAsync(workspace.Id);
+        var state = await _service.GetCurrentStateAsync();
+
+        Assert.Equal(workspace.Id, state.CurrentWorkspaceId);
+        Assert.Equal("Load Sets Current", state.WorkspaceName);
+    }
+
+    [Fact]
+    public async Task SavedWorkspacesRemainRetrievableWhenNoCurrentStateExists()
+    {
+        var first = await _service.SaveAsAsync("Workspace A");
+        var second = await _service.SaveAsAsync("Workspace B");
+        await _service.ClearCurrentWorkspaceAsync();
+
+        var list = await _service.ListAsync("default-user");
+        var firstLoaded = await _service.LoadAsync(first.Id);
+        var secondLoaded = await _service.LoadAsync(second.Id);
+
+        Assert.Contains(list, workspace => workspace.Id == first.Id);
+        Assert.Contains(list, workspace => workspace.Id == second.Id);
+        Assert.NotNull(firstLoaded);
+        Assert.NotNull(secondLoaded);
+    }
+
+    private WorkspacePersistenceService CreateService() =>
+        new(_db, _logger);
+
+    private static WorkspaceArtifactDto Artifact(string fileName, ArtifactType type, string content) =>
+        new()
+        {
+            ArtifactType = type,
+            FileName = fileName,
+            Content = content
+        };
 }

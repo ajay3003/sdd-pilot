@@ -378,6 +378,12 @@ namespace BirkNext.Api.Data.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("is_deleted");
 
+                    b.Property<bool>("IsCurrent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_current");
+
                     b.Property<DateTimeOffset?>("LastOpenedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_opened_at");
@@ -430,6 +436,9 @@ namespace BirkNext.Api.Data.Migrations
 
                     b.HasIndex("UserId", "IsDeleted")
                         .HasDatabaseName("ix_saved_workspaces_user_not_deleted");
+
+                    b.HasIndex("UserId", "IsCurrent")
+                        .HasDatabaseName("ix_saved_workspaces_user_current");
 
                     b.HasIndex("UserId", "UpdatedAt")
                         .IsDescending(false, true)

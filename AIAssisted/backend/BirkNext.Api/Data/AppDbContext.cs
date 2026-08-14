@@ -426,6 +426,7 @@ public class AppDbContext : DbContext
             entity.Property(w => w.ReviewContextVersion).HasColumnName("review_context_version").HasMaxLength(50);
             entity.Property(w => w.ArtifactSetHash).HasColumnName("artifact_set_hash").HasMaxLength(128);
             entity.Property(w => w.AutoSaved).HasColumnName("auto_saved").HasDefaultValue(false);
+            entity.Property(w => w.IsCurrent).HasColumnName("is_current").HasDefaultValue(false);
             entity.Property(w => w.Favorite).HasColumnName("favorite").HasDefaultValue(false);
             entity.Property(w => w.TagsJson).HasColumnName("tags_json").HasColumnType("text");
             entity.Property(w => w.IsDeleted).HasColumnName("is_deleted").HasDefaultValue(false);
@@ -436,6 +437,9 @@ public class AppDbContext : DbContext
             entity.HasIndex(w => new { w.UserId, w.UpdatedAt })
                 .HasDatabaseName("ix_saved_workspaces_user_updated")
                 .IsDescending(false, true);
+
+            entity.HasIndex(w => new { w.UserId, w.IsCurrent })
+                .HasDatabaseName("ix_saved_workspaces_user_current");
         });
 
         modelBuilder.Entity<SavedWorkspaceArtifact>(entity =>
