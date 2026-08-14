@@ -5,7 +5,6 @@
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
 @inject NavigationManager NavigationManager
-@inject BirkNext.Web.Services.ProjectDocumentApiService DocumentApi
 @inject BirkNext.Web.Services.IWorkspaceSessionService Workspace
 @inject BirkNext.Web.Services.IConstitutionAnalysisService ConstitutionService
 
@@ -51,29 +50,11 @@
         if (!firstRender) return;
         if (!string.IsNullOrWhiteSpace(_initialText)) return;
 
-        string? content = null;
-        try { content = await DocumentApi.GetAsync("constitution"); } catch { }
-
-        if (!string.IsNullOrWhiteSpace(content))
-        {
-            Workspace.Set(WorkspaceArtifactKind.Constitution, content);
-            _initialText = content;
-            BuildSemanticModel(content);
-            StateHasChanged();
-            return;
-        }
-
         string? legacy = null;
         try { legacy = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey); } catch { }
 
         if (!string.IsNullOrWhiteSpace(legacy))
         {
-            try
-            {
-                await DocumentApi.SaveAsync("constitution", legacy);
-                await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey);
-            }
-            catch { }
             Workspace.Set(WorkspaceArtifactKind.Constitution, legacy);
             _initialText = legacy;
             BuildSemanticModel(legacy);
@@ -98,7 +79,13 @@
         if (string.IsNullOrWhiteSpace(text)) return;
         BuildSemanticModel(text);
         Workspace.Set(WorkspaceArtifactKind.Constitution, text);
-        try { await DocumentApi.SaveAsync("constitution", text); } catch { }
-        try { await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey); } catch { }
+        try
+        {
+            if (string.IsNullOrWhiteSpace(Workspace.CurrentProject))
+                await JS.InvokeVoidAsync("localStorage.setItem", StorageKey, text);
+            else
+                await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey);
+        }
+        catch { }
     }
 }

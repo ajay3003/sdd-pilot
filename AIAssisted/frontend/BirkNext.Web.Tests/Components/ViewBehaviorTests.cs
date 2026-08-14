@@ -1514,7 +1514,8 @@ public class ViewBehaviorTests : BunitContext
 
         var owners = cut.FindAll("[data-testid='se-user-story-ownership']").Select(e => e.TextContent).ToList();
         owners.Should().NotBeEmpty("clicking a section heading should show user story ownership in details panel");
-        owners.Should().Contain(t => t.Contains("US1"));
+        // User story IDs are normalized to US-NNN format
+        owners.Should().Contain(t => t.Contains("US-001"));
     }
 
     [Fact]

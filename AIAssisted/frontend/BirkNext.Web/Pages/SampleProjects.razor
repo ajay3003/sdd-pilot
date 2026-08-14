@@ -16,6 +16,7 @@
 @inject IIntegrationTargetRegistryService IntegrationRegistry
 @inject ILogger<SampleProjects> Logger
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
 
 <div class="sp-page">
     <div class="sp-page-header">
@@ -106,7 +107,13 @@
                                     <span class="sp-file-status sp-status-ok" aria-label="Available">✓</span>
                                     <span class="sp-file-name">@f.Filename</span>
                                     <span class="sp-file-arrow" aria-hidden="true">→</span>
-                                    <a class="sp-reviewer-link" href="@f.ReviewerRoute">@f.ReviewerName</a>
+                                    <a class="sp-reviewer-link"
+                                       href="@f.ReviewerRoute"
+                                       aria-disabled="@IsProjectLoading(project)"
+                                       @onclick:preventDefault="true"
+                                       @onclick="() => OpenReviewerAsync(project, f.ReviewerRoute)">
+                                        @f.ReviewerName
+                                    </a>
                                 </div>
                             }
                         </div>
@@ -158,7 +165,13 @@
                             <div class="sp-rec-links">
                                 @foreach (var f in supported)
                                 {
-                                    <a class="sp-rec-chip" href="@f.ReviewerRoute">@f.ReviewerName</a>
+                                    <a class="sp-rec-chip"
+                                       href="@f.ReviewerRoute"
+                                       aria-disabled="@IsProjectLoading(project)"
+                                       @onclick:preventDefault="true"
+                                       @onclick="() => OpenReviewerAsync(project, f.ReviewerRoute)">
+                                        @f.ReviewerName
+                                    </a>
                                 }
                                 <a class="sp-rec-chip" href="quality-review">Quality Review</a>
                             </div>
@@ -201,7 +214,20 @@
                                 <div class="sp-confirm-actions" aria-label="Next actions">
                                     @foreach (var action in NextActions)
                                     {
-                                        <a class="sp-confirm-link" href="@action.Href">@action.Label</a>
+                                        @if (IsReviewerRoute(action.Href))
+                                        {
+                                            <a class="sp-confirm-link"
+                                               href="@action.Href"
+                                               aria-disabled="@IsProjectLoading(project)"
+                                               @onclick:preventDefault="true"
+                                               @onclick="() => OpenReviewerAsync(project, action.Href)">
+                                                @action.Label
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <a class="sp-confirm-link" href="@action.Href">@action.Label</a>
+                                        }
                                     }
                                 </div>
                             </div>
@@ -495,6 +521,15 @@
         new("Open Dashboard", "dashboard"),
     ];
 
+    private static readonly HashSet<string> ReviewerRoutes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "constitution-explorer",
+        "extract",
+        "data-model-explorer",
+        "plan-explorer",
+        "task-explorer"
+    };
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -524,12 +559,42 @@
             ["datamodel"]    = WorkspaceArtifactKind.DataModel,
         };
 
+    private bool IsProjectLoading(SampleProjectDto project) =>
+        string.Equals(_loadingSlug, project.Slug, StringComparison.Ordinal);
+
+    private static bool IsReviewerRoute(string? route)
+    {
+        if (string.IsNullOrWhiteSpace(route)) return false;
+        return ReviewerRoutes.Contains(route.Trim().TrimStart('/'));
+    }
+
+    private async Task OpenReviewerAsync(SampleProjectDto project, string? route)
+    {
+        if (!IsReviewerRoute(route) || _loadingSlug is not null)
+            return;
+
+        var loaded = await LoadArtifactsCoreAsync(project, requireConfirmation: false);
+        if (loaded)
+            Navigation.NavigateTo(route!);
+    }
+
     private async Task LoadArtifacts(SampleProjectDto project)
     {
+        await LoadArtifactsCoreAsync(project, requireConfirmation: true);
+    }
+
+    private async Task<bool> LoadArtifactsCoreAsync(SampleProjectDto project, bool requireConfirmation)
+    {
         System.Diagnostics.Debug.WriteLine("======== DIAG: [LoadArtifacts] START ========");
-        var confirmed = await JS.InvokeAsync<bool>("confirm",
-            $"Load supported artifacts from \"{project.Name}\"?\n\nThis will overwrite any currently loaded documents for these artifact types.");
-        if (!confirmed) return;
+        if (_loadingSlug is not null)
+            return false;
+
+        if (requireConfirmation)
+        {
+            var confirmed = await JS.InvokeAsync<bool>("confirm",
+                $"Load supported artifacts from \"{project.Name}\"?\n\nThis will overwrite any currently loaded documents for these artifact types.");
+            if (!confirmed) return false;
+        }
 
         _loadingSlug = project.Slug;
         _loadState.Remove(project.Slug);
@@ -541,25 +606,48 @@
         var supported = project.Files.Where(f => f.IsSupported && f.Exists).ToList();
         var loaded = 0;
         var skipped = new List<string>();
+        var fetched = new List<(SampleFileDto File, string Content)>();
+
+        foreach (var file in supported)
+        {
+            var content = await ProjectsApi.GetFileAsync(project.Slug, file.Filename);
+            if (content is null)
+            {
+                skipped.Add(file.Filename);
+                continue;
+            }
+
+            fetched.Add((file, NormalizeArtifactText(content)));
+        }
+
+        if (skipped.Count > 0)
+        {
+            ClearWorkspaceArtifactSlots();
+            Workspace.CurrentProject = null;
+
+            var failedMsg = $"Failed to fetch: {string.Join(", ", skipped)}.";
+            var failedMissing = project.Files.Where(f => f.IsSupported && !f.Exists).Select(f => f.Filename).ToList();
+            if (failedMissing.Count > 0)
+                failedMsg += $" Not found: {string.Join(", ", failedMissing)}.";
+
+            _loadState[project.Slug] = new LoadResult(project.Name, failedMsg, true, [], []);
+            _loadingSlug = null;
+            StateHasChanged();
+            return false;
+        }
 
         QualitySession.Clear();
         DashboardSnapshot.ClearQualityReview();
-        Workspace.CurrentProject = project.Name;
 
         System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] Before BeginUpdate");
         Updates.BeginUpdate();
         try
         {
-            foreach (var file in supported)
+            ClearWorkspaceArtifactSlots();
+            Workspace.CurrentProject = project.Name;
+
+            foreach (var (file, content) in fetched)
             {
-                var content = await ProjectsApi.GetFileAsync(project.Slug, file.Filename);
-                if (content is null)
-                {
-                    skipped.Add(file.Filename);
-                    continue;
-                }
-                // Normalize to match what SpecificationImport produces on file upload.
-                content = NormalizeArtifactText(content);
                 await DocumentApi.SaveAsync(file.ArtifactKind!, content);
                 if (file.ArtifactKind is not null && _artifactKindMap.TryGetValue(file.ArtifactKind, out var kind))
                     Workspace.Set(kind, content, fileName: file.Filename, sourcePath: project.AbsolutePath);
@@ -595,10 +683,7 @@
             System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] After EndUpdate");
         }
 
-        var loadedArtifacts = supported
-            .Where(f => !skipped.Contains(f.Filename))
-            .Select(f => f.Filename)
-            .ToList();
+        var loadedArtifacts = fetched.Select(x => x.File.Filename).ToList();
         var contextOnly = project.Files
             .Where(f => f.IsContextOnly && f.Exists)
             .Select(f => f.Filename)
@@ -618,15 +703,38 @@
 
         _loadState[project.Slug] = new LoadResult(project.Name, msg, hasError, loadedArtifacts, contextOnly);
         if (!hasError)
-            _hintState[project.Slug] = TargetHintExtractor.Extract(project, await FetchProjectTextsAsync(project));
+            _hintState[project.Slug] = TargetHintExtractor.Extract(project, await FetchProjectTextsAsync(project, fetched));
         _loadingSlug = null;
+        StateHasChanged();
         System.Diagnostics.Debug.WriteLine("======== DIAG: [LoadArtifacts] END ========");
+        return !hasError;
     }
 
-    private async Task<List<SampleProjectArtifactText>> FetchProjectTextsAsync(SampleProjectDto project)
+    private void ClearWorkspaceArtifactSlots()
     {
-        var result = new List<SampleProjectArtifactText>();
-        foreach (var file in project.Files.Where(f => f.Exists))
+        Workspace.Clear(WorkspaceArtifactKind.Constitution);
+        Workspace.Clear(WorkspaceArtifactKind.Specification);
+        Workspace.Clear(WorkspaceArtifactKind.DataModel);
+        Workspace.Clear(WorkspaceArtifactKind.Plan);
+        Workspace.Clear(WorkspaceArtifactKind.Tasks);
+    }
+
+    private async Task<List<SampleProjectArtifactText>> FetchProjectTextsAsync(
+        SampleProjectDto project,
+        IReadOnlyList<(SampleFileDto File, string Content)> loadedArtifacts)
+    {
+        var result = loadedArtifacts
+            .Select(item => new SampleProjectArtifactText
+            {
+                FileName = item.File.Filename,
+                Content = item.Content
+            })
+            .ToList();
+        var loadedFileNames = result
+            .Select(item => item.FileName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var file in project.Files.Where(f => f.Exists && !loadedFileNames.Contains(f.Filename)))
         {
             var content = await ProjectsApi.GetFileAsync(project.Slug, file.Filename);
             if (content is null) continue;

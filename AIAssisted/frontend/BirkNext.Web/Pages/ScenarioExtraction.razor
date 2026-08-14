@@ -74,20 +74,29 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var session = await SessionService.LoadAsync();
-        if (session is not null
-            && !SessionService.IsExpired(session)
-            && session.PipelineStatus == PipelineStatus.Success
-            && session.Candidates.Count > 0)
-        {
-            _sessionSnapshot = session;
-            _pipelineResult = ExtractionPipelineResult.Restore(session);
-        }
-
         // Pre-load spec from workspace so the user can run analysis without re-uploading.
         var cached = Workspace.Get(WorkspaceArtifactKind.Specification);
         if (cached is not null)
             _initialSpec = cached.Text;
+
+        var session = await SessionService.LoadAsync();
+        if (session is not null
+            && !SessionService.IsExpired(session)
+            && session.PipelineStatus == PipelineStatus.Success
+            && session.Candidates.Count > 0
+            && IsSessionForCurrentSpec(session))
+        {
+            _sessionSnapshot = session;
+            _pipelineResult = ExtractionPipelineResult.Restore(session);
+        }
+    }
+
+    private bool IsSessionForCurrentSpec(ExtractionSessionSnapshot session)
+    {
+        if (string.IsNullOrWhiteSpace(_initialSpec))
+            return true;
+
+        return string.Equals(session.SpecMarkdown, _initialSpec, StringComparison.Ordinal);
     }
 
     private void HandleExtractionCompleted(ExtractionPipelineResult result)

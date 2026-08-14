@@ -46,7 +46,8 @@ public sealed class ExtractionSessionService : IExtractionSessionService
         try
         {
             // If workspace changed since we loaded, invalidate cache
-            if (!_stateManager.IsValidForCurrentWorkspace(_loadedForWorkspaceId))
+            if ((_stateManager.CurrentWorkspaceId is not null || _loadedForWorkspaceId is not null)
+                && !_stateManager.IsValidForCurrentWorkspace(_loadedForWorkspaceId))
                 return null;
 
             var json = await _js.InvokeAsync<string?>("birkNextStorage.getItem", StorageKey);

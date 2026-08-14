@@ -1656,6 +1656,29 @@ public static class SpecExplorerService
         return ancestors;
     }
 
+    internal static string? TryExtractUserStoryId(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return null;
+
+        // Format 1: "User Story 1 —" or "User Story 1 -" (real sample data)
+        // Matches: "User Story 1 —...", "User Story 1 - ...", "User Story #1 — ..."
+        var match = Regex.Match(title, @"^User\s+Stor(?:y|ies)\s+#?(\d+)\b", RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            return $"US-{match.Groups[1].Value.PadLeft(3, '0')}";
+        }
+
+        // Format 2: "US1: Title" (test data format)
+        // Matches: "US1:", "US-001:", "us123:", etc.
+        match = Regex.Match(title, @"^(US|UC)-?(\d+):", RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            return $"US-{match.Groups[2].Value.PadLeft(3, '0')}";
+        }
+
+        return null;
+    }
+
     private static List<SpecNode> AllNodes(IEnumerable<SpecNode> roots)
     {
         var result = new List<SpecNode>();

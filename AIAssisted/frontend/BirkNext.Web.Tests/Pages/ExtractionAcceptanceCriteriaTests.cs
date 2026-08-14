@@ -37,6 +37,9 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         Services.AddSingleton(mockConfig.Object);
         Services.AddSingleton(_mockMutation.Object);
         Services.AddSingleton<ISpecComparisonService, SpecComparisonService>();
+        Services.AddSingleton<IWorkspaceSessionService>(new WorkspaceArtifactRepository());
+        Services.AddSingleton<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
+        Services.AddSingleton<FeatureVisibilityService>();
 
         var mockSaveReview = new Mock<ISaveReviewedCandidatesMutation>();
         mockSaveReview
@@ -64,7 +67,7 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         Services.AddSingleton(mockGetReviewed.Object);
 
         Services.AddLogging();
-        JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
+        JSInterop.SetupVoid("fileImport.initDropZone", _ => true).SetVoidResult();
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────

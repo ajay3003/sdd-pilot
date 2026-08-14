@@ -15,6 +15,7 @@ public class ScenarioExtractionSessionTests : BunitContext
 {
     private readonly Mock<IExtractionSessionService> _mockSession = new();
     private readonly Mock<IScenarioExtractionService> _mockExtraction = new();
+    private readonly WorkspaceArtifactRepository _workspace = new();
 
     public ScenarioExtractionSessionTests()
     {
@@ -25,6 +26,9 @@ public class ScenarioExtractionSessionTests : BunitContext
 
         Services.AddSingleton(_mockExtraction.Object);
         Services.AddSingleton(mockConfig.Object);
+        Services.AddSingleton<IWorkspaceSessionService>(_workspace);
+        Services.AddSingleton<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
+        Services.AddSingleton<FeatureVisibilityService>();
         Services.AddSingleton(new Mock<ICreateScenariosMutation>().Object);
         Services.AddSingleton<ISpecComparisonService, SpecComparisonService>();
 
@@ -52,10 +56,10 @@ public class ScenarioExtractionSessionTests : BunitContext
         Services.AddSingleton(mockGetReviewed.Object);
 
         Services.AddLogging();
-        JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
+        JSInterop.SetupVoid("fileImport.initDropZone", _ => true).SetVoidResult();
     }
 
-    private static ExtractionSessionSnapshot MakeActiveSession() => new()
+    private static ExtractionSessionSnapshot MakeActiveSession(string specMarkdown = "") => new()
     {
         SessionId = "page-test-session",
         Timestamp = DateTimeOffset.UtcNow,
@@ -64,6 +68,7 @@ public class ScenarioExtractionSessionTests : BunitContext
         InputLengthChars = 100,
         InputLineCount = 5,
         DurationMs = 10,
+        SpecMarkdown = specMarkdown,
         Candidates =
         [
             new CandidateSnapshot(
@@ -113,10 +118,10 @@ public class ScenarioExtractionSessionTests : BunitContext
         _mockSession.Setup(s => s.LoadAsync()).ReturnsAsync(session);
 
         var cut = Render<ScenarioExtraction>();
-        await cut.WaitForStateAsync(() => cut.FindAll("[data-testid='candidate-summary']").Count > 0);
+        await cut.WaitForStateAsync(() => cut.FindAll("[data-testid='extract-pre-state']").Count == 0);
 
-        cut.Find("[data-testid='candidate-summary']").TextContent
-            .Should().Contain("1 review candidates found");
+        cut.Markup.Should().Contain("Analysis Results");
+        cut.Markup.Should().Contain("The system shall allow login");
     }
 
     [Fact]
@@ -167,8 +172,24 @@ public class ScenarioExtractionSessionTests : BunitContext
         cut.Find("[data-testid='spec-textarea']").Input("some text");
         cut.Find("[data-testid='extract-button']").Click();
 
-        await cut.WaitForStateAsync(() => cut.FindAll("[data-testid='candidate-summary']").Count > 0);
+        await cut.WaitForAssertionAsync(() => cut.Markup.Should().Contain("The system shall log in"));
 
-        cut.Find("[data-testid='candidate-summary']").Should().NotBeNull();
+        cut.FindAll("[data-testid='extract-pre-state']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task OnInit_WithWorkspaceSpec_DoesNotRestoreSessionFromDifferentSpec()
+    {
+        _workspace.Set(WorkspaceArtifactKind.Specification, "PROJECT B SPEC", "spec.md", "SampleData/proxy");
+        var session = MakeActiveSession("PROJECT A SPEC");
+        _mockSession.Setup(s => s.LoadAsync()).ReturnsAsync(session);
+
+        var cut = Render<ScenarioExtraction>();
+        await cut.WaitForStateAsync(() => true);
+
+        cut.FindAll("[data-testid='candidate-summary']").Should().BeEmpty(
+            "a global extraction session from another spec must not appear over the active workspace spec");
+        cut.Find("[data-testid='spec-textarea']").GetAttribute("value")
+            .Should().Be("PROJECT B SPEC");
     }
 }

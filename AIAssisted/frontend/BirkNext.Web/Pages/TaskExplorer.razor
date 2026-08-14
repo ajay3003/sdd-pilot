@@ -5,7 +5,6 @@
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
 @inject NavigationManager NavigationManager
-@inject BirkNext.Web.Services.ProjectDocumentApiService DocumentApi
 @inject BirkNext.Web.Services.IWorkspaceSessionService Workspace
 
 <PageTitle>Task Explorer — QA Review Studio</PageTitle>
@@ -50,29 +49,11 @@
         if (!firstRender) return;
         if (!string.IsNullOrWhiteSpace(_initialTasksText)) return;
 
-        string? content = null;
-        try { content = await DocumentApi.GetAsync("tasks"); } catch { }
-
-        if (!string.IsNullOrWhiteSpace(content))
-        {
-            Workspace.Set(WorkspaceArtifactKind.Tasks, content);
-            _initialTasksText = content;
-            BuildSemanticModel(content);
-            StateHasChanged();
-            return;
-        }
-
         string? legacy = null;
         try { legacy = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey); } catch { }
 
         if (!string.IsNullOrWhiteSpace(legacy))
         {
-            try
-            {
-                await DocumentApi.SaveAsync("tasks", legacy);
-                await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey);
-            }
-            catch { }
             Workspace.Set(WorkspaceArtifactKind.Tasks, legacy);
             _initialTasksText = legacy;
             BuildSemanticModel(legacy);
@@ -97,7 +78,13 @@
         if (string.IsNullOrWhiteSpace(text)) return;
         BuildSemanticModel(text);
         Workspace.Set(WorkspaceArtifactKind.Tasks, text);
-        try { await DocumentApi.SaveAsync("tasks", text); } catch { }
-        try { await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey); } catch { }
+        try
+        {
+            if (string.IsNullOrWhiteSpace(Workspace.CurrentProject))
+                await JS.InvokeVoidAsync("localStorage.setItem", StorageKey, text);
+            else
+                await JS.InvokeVoidAsync("localStorage.removeItem", StorageKey);
+        }
+        catch { }
     }
 }

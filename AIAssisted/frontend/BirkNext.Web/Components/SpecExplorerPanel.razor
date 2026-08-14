@@ -1019,10 +1019,10 @@
         // In candidates-only mode, semantic model has no requirements, so relevantReqs is empty and userStories from model is empty
         if (userStories.Count == 0 && relevantReqs.Count == 0)
         {
-            var usMatch = System.Text.RegularExpressions.Regex.Match(sectionName, @"^(US\d+):");
-            if (usMatch.Success)
+            var usId = SpecExplorerService.TryExtractUserStoryId(sectionName);
+            if (usId is not null)
             {
-                userStories = [usMatch.Groups[1].Value];
+                userStories = [usId];
             }
         }
 
