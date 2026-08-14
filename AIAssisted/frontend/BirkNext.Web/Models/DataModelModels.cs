@@ -20,6 +20,8 @@ public sealed class DataModelDocument
     public int IndexCount        => Indexes.Count;
     public int FindingCount      => Findings.Count;
     public int ErrorCount        => Findings.Count(f => f.Severity is DataModelSeverity.Error or DataModelSeverity.Critical);
+    public int WarningCount      => Findings.Count(f => f.Severity == DataModelSeverity.Warning);
+    public int InfoCount         => Findings.Count(f => f.Severity == DataModelSeverity.Info);
 }
 
 public sealed class DataEntity

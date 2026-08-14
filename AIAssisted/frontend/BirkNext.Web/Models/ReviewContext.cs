@@ -412,7 +412,7 @@ public static class ReviewContextFactory
         foreach (var requirement in specification.Requirements)
         {
             var linkedEntities = dataModel.Entities
-                .Where(e => e.RelatedRequirementIds.Contains(requirement.Id))
+                .Where(e => e.RelatedTraceabilityIds.Contains(requirement.Id))
                 .Select(e => e.Id)
                 .ToList();
 

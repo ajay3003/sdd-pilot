@@ -412,4 +412,314 @@ public class DataModelParserRegressionTests
         Assert.Equal("scenarios", entity.Name);
         Assert.True(entity.IsTable);
     }
+
+    // ── Backtick normalization (structured field regression) ──────────────
+
+    [Fact]
+    public void Parse_SCIM_Sample_NoBackticksInModel()
+    {
+        // Regression test for SCIM User Synchronization Adapter data-model
+        // Simplified version using standard column headers to ensure parsing works
+        var input = """
+            # Data Model: SCIM User Synchronization Adapter
+
+            ## Entity: KjentBruker
+
+            ### Columns
+
+            | Name | Type | Nullable |
+            |---|---|---|
+            | `EntraObjectId` | `uniqueidentifier` | No |
+            | `UserName` | `nvarchar(256)` | No |
+            | `ExternalId` | `nvarchar(256)` | Yes |
+            | `IsActive` | `bit` | No |
+            | `LastUpdated` | `datetimeoffset` | No |
+            """;
+
+        var result = _service.Parse(input);
+
+        Assert.Single(result.Entities);
+        var entity = result.Entities[0];
+        Assert.Equal("KjentBruker", entity.Name);
+        Assert.Equal(5, entity.Columns.Count);
+
+        // Verify no backticks in column names
+        Assert.Equal("EntraObjectId", entity.Columns[0].Name);
+        Assert.False(entity.Columns[0].Name.Contains("`"));
+
+        Assert.Equal("UserName", entity.Columns[1].Name);
+        Assert.False(entity.Columns[1].Name.Contains("`"));
+
+        Assert.Equal("ExternalId", entity.Columns[2].Name);
+        Assert.False(entity.Columns[2].Name.Contains("`"));
+
+        Assert.Equal("IsActive", entity.Columns[3].Name);
+        Assert.False(entity.Columns[3].Name.Contains("`"));
+
+        Assert.Equal("LastUpdated", entity.Columns[4].Name);
+        Assert.False(entity.Columns[4].Name.Contains("`"));
+
+        // Verify no backticks in types
+        Assert.Equal("uniqueidentifier", entity.Columns[0].Type);
+        Assert.False((entity.Columns[0].Type ?? "").Contains("`"));
+
+        Assert.Equal("nvarchar(256)", entity.Columns[1].Type);
+        Assert.False((entity.Columns[1].Type ?? "").Contains("`"));
+    }
+
+    [Fact]
+    public void Parse_SCIM_Sample_FindingsUseNormalizedNames()
+    {
+        var input = """
+            # Data Model: SCIM User Synchronization Adapter
+
+            ## Entity: KjentBruker
+
+            ### Fields
+
+            | Property | Type | Nullable |
+            |---|---|---|
+            | `UserName` | `nvarchar(256)` |  |
+            | `Email` | `nvarchar(256)` |  |
+            """;
+
+        var result = _service.Parse(input);
+
+        // Check that findings reference normalized names
+        var nullableFindings = result.Findings
+            .Where(f => f.Description.Contains("nullable") || f.Description.Contains("does not specify"))
+            .ToList();
+
+        Assert.NotEmpty(nullableFindings);
+
+        // All findings should have clean names without backticks
+        foreach (var finding in result.Findings)
+        {
+            Assert.False(finding.Description.Contains("`"));
+        }
+    }
+
+    [Fact]
+    public void Parse_InlineCodeInH3_NormalizesEntityName()
+    {
+        var input = """
+            # Data Model: Test
+
+            ## SCIM Request/Response Models
+
+            ### Source Reference (`KildeReferanse`) Format
+
+            | Field | Type |
+            |-------|------|
+            | id | UUID |
+            """;
+
+        var result = _service.Parse(input);
+
+        Assert.NotEmpty(result.Entities);
+        var entity = result.Entities[0];
+
+        // Should have normalized the inline-code backticks
+        Assert.Equal("Source Reference (KildeReferanse) Format", entity.Name);
+        Assert.False(entity.Name.Contains("`"));
+    }
+
+    // ── Traceability reference classification ──────────────────────
+
+    [Fact]
+    public void Parse_PlatformStandardReference_ExtractedAsTraceability()
+    {
+        // Platform Standards (PS-) are traceability references, not functional requirements
+        // PS-04 in SCIM sample: "UUID v4 (PS-04)" - a platform design standard
+        var input = """
+            # Data Model: Test
+
+            ## Entity: User
+
+            ### Columns
+
+            | Column | Type | Notes |
+            |--------|------|-------|
+            | Id | UUID | UUID v4 format (PS-04) |
+            """;
+
+        var result = _service.Parse(input);
+
+        Assert.NotEmpty(result.Entities);
+        var entity = result.Entities[0];
+
+        // PS-04 should be extracted as a traceability reference
+        // It is a Platform Standard from the Constitution, not a Requirement
+        Assert.Contains("PS-04", entity.TraceabilityIds);
+    }
+
+    [Fact]
+    public void Parse_MixedTraceability_FunctionalRequirementAndPlatformStandard()
+    {
+        // Entities can have both FR (Requirements) and PS (Platform Standards) in TraceabilityIds
+        // This proves the collection is intentionally mixed, not requirement-only
+        var input = """
+            # Data Model: Test
+
+            ## Entity: Account
+
+            ### Columns
+
+            | Column | Type | Notes |
+            |--------|------|-------|
+            | Id | UUID | Implements FR-001 and follows PS-04 |
+            | Status | string | Required by FR-002 |
+            """;
+
+        var result = _service.Parse(input);
+
+        Assert.NotEmpty(result.Entities);
+        var entity = result.Entities[0];
+
+        // Both FR (requirement) and PS (standard) should coexist in same collection
+        Assert.Contains("FR-001", entity.TraceabilityIds);
+        Assert.Contains("PS-04", entity.TraceabilityIds);
+        Assert.Contains("FR-002", entity.TraceabilityIds);
+        Assert.True(entity.TraceabilityIds.Count >= 3);
+    }
+
+    [Fact]
+    public void Parse_MixedTraceability_DeduplicatesRepeatedReferences()
+    {
+        // Duplicate references (e.g., FR-001 mentioned twice) should deduplicate
+        var input = """
+            # Data Model: Test
+
+            ## Entity: Task
+
+            ### Columns
+
+            | Column | Type | Notes |
+            |--------|------|-------|
+            | Id | UUID | FR-100 UUID per FR-100 design |
+            | Name | string | From FR-100 spec |
+            """;
+
+        var result = _service.Parse(input);
+
+        Assert.NotEmpty(result.Entities);
+        var entity = result.Entities[0];
+
+        // FR-100 appears 3 times but should deduplicate to 1
+        var fr100Count = entity.TraceabilityIds.Count(x => x == "FR-100");
+        Assert.Equal(1, fr100Count);
+    }
+
+    [Fact]
+    public void Parse_SemanticModel_RelatedTraceabilityIds_HoldsMixedReferences()
+    {
+        // The renamed property RelatedTraceabilityIds (was RelatedRequirementIds)
+        // confirms the collection holds mixed reference types
+        var input = """
+            # Data Model: Test
+
+            ## Entity: Document
+
+            ### Columns
+
+            | Column | Type | Notes |
+            |--------|------|-------|
+            | Id | UUID | Requirement FR-010, standard PS-02, governance GV-15 |
+            """;
+
+        var result = _service.Parse(input);
+
+        // Verify ParsedDataModel (raw parser output)
+        Assert.NotEmpty(result.Entities);
+        var entity = result.Entities[0];
+        Assert.Contains("FR-010", entity.TraceabilityIds);
+        Assert.Contains("PS-02", entity.TraceabilityIds);
+        Assert.Contains("GV-15", entity.TraceabilityIds);
+
+        // Build semantic model to verify renamed property
+        var semantic = DataModelAnalysisService.BuildSemanticModel(result);
+        Assert.NotEmpty(semantic.Entities);
+        var semanticEntity = semantic.Entities[0];
+
+        // RelatedTraceabilityIds (not RelatedRequirementIds) holds all mixed types
+        Assert.Contains("FR-010", semanticEntity.RelatedTraceabilityIds);
+        Assert.Contains("PS-02", semanticEntity.RelatedTraceabilityIds);
+        Assert.Contains("GV-15", semanticEntity.RelatedTraceabilityIds);
+    }
+
+    [Fact]
+    public void Parse_SemanticModel_EntityToTraceability_MapsAllReferences()
+    {
+        // The renamed dictionary EntityToTraceability (was EntityToRequirements)
+        // should contain all mixed references, not just requirements
+        var input = """
+            # Data Model: Test
+
+            ## Entity: Configuration
+
+            ### Columns
+
+            | Column | Type | Notes |
+            |--------|------|-------|
+            | Id | UUID | FR-020, PS-03, GV-005 |
+            """;
+
+        var doc = _service.Parse(input);
+        var semantic = DataModelAnalysisService.BuildSemanticModel(doc);
+
+        // EntityToTraceability should exist (renamed from EntityToRequirements)
+        Assert.NotEmpty(semantic.EntityToTraceability);
+
+        var firstEntityId = semantic.Entities[0].Id;
+        Assert.True(semantic.EntityToTraceability.ContainsKey(firstEntityId));
+
+        var traceIds = semantic.EntityToTraceability[firstEntityId];
+        // Should contain mixed types: FR, PS, GV
+        Assert.Contains("FR-020", traceIds);
+        Assert.Contains("PS-03", traceIds);
+        Assert.Contains("GV-005", traceIds);
+    }
+
+    [Fact]
+    public void Parse_LinkedEntities_CountsAllTraceabilityReferences()
+    {
+        // Entities linked via any traceability reference (FR, PS, GL, etc.)
+        // should count toward "Entities Linked", not just requirement-linked ones
+        var input = """
+            # Data Model: Test
+
+            ## Entity: User
+
+            ### Columns
+
+            | Column | Type | Notes |
+            |--------|------|-------|
+            | Id | UUID | FR-100 |
+
+            ## Entity: Role
+
+            ### Columns
+
+            | Column | Type | Notes |
+            |--------|------|-------|
+            | Id | UUID | PS-01 |
+
+            ## Entity: Permission
+
+            ### Columns
+
+            | Column | Type | Notes |
+            |--------|------|-------|
+            | Id | UUID | No references |
+            """;
+
+        var result = _service.Parse(input);
+
+        // User linked via FR, Role linked via PS, Permission unlinked
+        var linked = result.Entities.Where(e => e.TraceabilityIds.Count > 0).ToList();
+        Assert.Equal(2, linked.Count);
+
+        var unlinked = result.Entities.Where(e => e.TraceabilityIds.Count == 0).ToList();
+        Assert.Equal(1, unlinked.Count);
+    }
 }

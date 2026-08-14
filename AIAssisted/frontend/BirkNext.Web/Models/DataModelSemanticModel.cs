@@ -38,7 +38,7 @@ public sealed class DataModelSemanticModel
     public int OrphanEntities => DataModelHelpers.CalculateOrphanEntities(this);
 
     // ── Relationships ───────────────────────────────────────────────────────
-    public Dictionary<string, List<string>> EntityToRequirements { get; init; } = [];
+    public Dictionary<string, List<string>> EntityToTraceability { get; init; } = [];
 }
 
 /// <summary>
@@ -55,7 +55,7 @@ public sealed class SemanticDataEntity
     public List<string> ValidationRules { get; init; } = [];
     public List<SemanticDataMethod> Methods { get; init; } = [];
     public string? Lifecycle { get; init; }
-    public List<string> RelatedRequirementIds { get; init; } = [];
+    public List<string> RelatedTraceabilityIds { get; init; } = [];
     public List<string> RelationshipIds { get; init; } = [];
 }
 

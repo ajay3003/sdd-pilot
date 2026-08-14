@@ -260,6 +260,151 @@ public class DataModelAnalysisServiceTests
         }
     }
 
+    // ── Backtick normalization in structured names ──────────────────────
+
+    [Fact]
+    public void Parse_ColumnWithBackticks_NormalizesName()
+    {
+        var markdown = """
+            # Data Model: Test
+
+            ## Entity: User
+
+            ### Columns
+
+            | Column | Type | Nullable |
+            |--------|------|----------|
+            | `UserId` | UUID | No |
+            | `UserName` | string | No |
+            """;
+
+        var doc = _service.Parse(markdown);
+
+        Assert.NotEmpty(doc.Entities);
+        var entity = doc.Entities[0];
+        Assert.Equal(2, entity.Columns.Count);
+        Assert.Equal("UserId", entity.Columns[0].Name);
+        Assert.Equal("UserName", entity.Columns[1].Name);
+    }
+
+    [Fact]
+    public void Parse_ColumnTypeWithBackticks_NormalizesType()
+    {
+        var markdown = """
+            # Data Model: Test
+
+            ## Entity: User
+
+            ### Columns
+
+            | Column | Type | Nullable |
+            |--------|------|----------|
+            | UserId | `uniqueidentifier` | No |
+            """;
+
+        var doc = _service.Parse(markdown);
+
+        Assert.NotEmpty(doc.Entities);
+        var entity = doc.Entities[0];
+        Assert.NotEmpty(entity.Columns);
+        Assert.Equal("uniqueidentifier", entity.Columns[0].Type);
+    }
+
+    [Fact]
+    public void Parse_InlineCodeInHeading_NormalizesName()
+    {
+        var markdown = """
+            # Data Model: Test
+
+            ## Persistent Entities
+
+            ### Source Reference (`KildeReferanse`) Format
+
+            | Column | Type |
+            |--------|------|
+            | id | UUID |
+            """;
+
+        var doc = _service.Parse(markdown);
+
+        Assert.NotEmpty(doc.Entities);
+        var entity = doc.Entities[0];
+        Assert.Equal("Source Reference (KildeReferanse) Format", entity.Name);
+    }
+
+    [Fact]
+    public void Parse_FindingUsesNormalizedColumnName()
+    {
+        var markdown = """
+            # Data Model: Test
+
+            ## Entity: User
+
+            ### Columns
+
+            | Column | Type | Nullable |
+            |--------|------|----------|
+            | `UserId` | UUID | No |
+            | `Email` | string |  |
+            """;
+
+        var doc = _service.Parse(markdown);
+
+        Assert.NotEmpty(doc.Findings);
+        var nullableFinding = doc.Findings.FirstOrDefault(f =>
+            f.Description.Contains("Email") && f.Description.Contains("nullable"));
+
+        Assert.NotNull(nullableFinding);
+        Assert.Contains("Email", nullableFinding.Description);
+        Assert.False(nullableFinding.Description.Contains("`"));
+    }
+
+    [Fact]
+    public void Parse_PlainColumnName_UnchangedAfterNormalization()
+    {
+        var markdown = """
+            # Data Model: Test
+
+            ## Entity: User
+
+            ### Columns
+
+            | Column | Type | Nullable |
+            |--------|------|----------|
+            | UserId | UUID | No |
+            """;
+
+        var doc = _service.Parse(markdown);
+
+        Assert.NotEmpty(doc.Entities);
+        var entity = doc.Entities[0];
+        Assert.NotEmpty(entity.Columns);
+        Assert.Equal("UserId", entity.Columns[0].Name);
+    }
+
+    [Fact]
+    public void Parse_GenericTypeWithAngleBrackets_Preserved()
+    {
+        var markdown = """
+            # Data Model: Test
+
+            ## Entity: Response
+
+            ### Columns
+
+            | Field | Type | Description |
+            |-------|------|-------------|
+            | Items | `ScimListResponse<T>` | List items |
+            """;
+
+        var doc = _service.Parse(markdown);
+
+        Assert.NotEmpty(doc.Entities);
+        var entity = doc.Entities[0];
+        Assert.NotEmpty(entity.Columns);
+        Assert.Equal("ScimListResponse<T>", entity.Columns[0].Type);
+    }
+
     [Fact]
     public void Parse_SkipsSubsectionHeadings()
     {

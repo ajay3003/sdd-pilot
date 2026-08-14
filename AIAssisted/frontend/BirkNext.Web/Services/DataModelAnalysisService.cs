@@ -73,7 +73,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             enums.Add(new DataEnum
             {
                 Name        = currentEnumName,
-                Values      = new List<string>(currentEnumValues),
+                Values      = currentEnumValues.Select(v => NormalizeStructuredName(v)).ToList(),
                 Description = string.IsNullOrWhiteSpace(currentEnumDesc) ? null : currentEnumDesc.Trim(),
             });
             currentEnumName   = null;
@@ -110,21 +110,21 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
                     if (h2.StartsWith("Entity:", StringComparison.OrdinalIgnoreCase))
                     {
-                        currentEntityName    = h2[7..].Trim();
+                        currentEntityName    = NormalizeStructuredName(h2[7..].Trim());
                         currentEntityIsTable = false;
                         currentSection       = string.Empty;
                         currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.StartsWith("Table:", StringComparison.OrdinalIgnoreCase))
                     {
-                        currentEntityName    = h2[6..].Trim();
+                        currentEntityName    = NormalizeStructuredName(h2[6..].Trim());
                         currentEntityIsTable = true;
                         currentSection       = string.Empty;
                         currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.StartsWith("Enum:", StringComparison.OrdinalIgnoreCase))
                     {
-                        currentEnumName = h2[5..].Trim();
+                        currentEnumName = NormalizeStructuredName(h2[5..].Trim());
                         currentSection  = "enum";
                         currentEntitySectionKind = string.Empty;
                     }
@@ -206,12 +206,12 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         FlushEnum();
 
                         var (entityName, tableName) = ExtractEntityAndTableName(h3);
-                        currentEntityName    = entityName;
+                        currentEntityName    = NormalizeStructuredName(entityName);
                         currentEntityIsTable = !string.IsNullOrEmpty(tableName);
 
                         // If a table name was extracted, set it as a description hint
                         if (!string.IsNullOrEmpty(tableName))
-                            currentEntityDesc = $"Table: {tableName}";
+                            currentEntityDesc = $"Table: {NormalizeStructuredName(tableName)}";
 
                         // Continue processing subsections
                         currentSection = string.Empty;
@@ -237,7 +237,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         // "### 2.1 Person", "### 3.4 SikkerhetsnivaaType", etc.
                         FlushEntity();
                         FlushEnum();
-                        currentEntityName    = StripNumericPrefix(h3);
+                        currentEntityName    = NormalizeStructuredName(StripNumericPrefix(h3));
                         currentEntityIsTable = false;
                         currentSection       = string.Empty;
                         currentEntitySectionKind = string.Empty;
@@ -266,7 +266,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                     {
                         case "table":
                         {
-                            var tableName = CleanEntityName(val);
+                            var tableName = NormalizeStructuredName(CleanEntityName(val));
                             if (!string.IsNullOrWhiteSpace(tableName))
                             {
                                 // H3 may have already opened an entity — reuse it
@@ -358,7 +358,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                                     currentEntityRelations.Add(new DataRelationship
                                     {
                                         Source           = $"{currentEntityName}.{col.Name}",
-                                        Target           = fkM.Groups[1].Value.Trim(),
+                                        Target           = NormalizeStructuredName(fkM.Groups[1].Value.Trim()),
                                         RelationshipType = "FK",
                                     });
                             }
@@ -487,10 +487,10 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
     {
         if (cells.Count < 2) return null;
 
-        var name = cells[0];
+        var name = NormalizeStructuredName(cells[0]);
         if (string.IsNullOrWhiteSpace(name)) return null;
 
-        var type        = cells.Count > 1 ? NullIfEmpty(cells[1]) : null;
+        var type        = cells.Count > 1 ? NullIfEmpty(NormalizeStructuredName(cells[1])) : null;
         var nullableRaw = cells.Count > 2 ? cells[2].ToLowerInvariant() : null;
         var desc        = cells.Count > 3 ? NullIfEmpty(cells[3]) : null;
 
@@ -526,8 +526,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         var arrowIdx = text.IndexOf("->", StringComparison.Ordinal);
         if (arrowIdx < 0) return null;
 
-        var source = text[..arrowIdx].Trim();
-        var rest   = text[(arrowIdx + 2)..].Trim();
+        var source = NormalizeStructuredName(text[..arrowIdx].Trim());
+        var rest   = NormalizeStructuredName(text[(arrowIdx + 2)..].Trim());
 
         // Optional type in parentheses: "users.id (many-to-one)"
         string? relType = null;
@@ -559,7 +559,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
     private static DataIndex? ParseIndexLine(string text, string entityName)
     {
         // Strip backtick quoting from index names like `IX_Person_EksternId`
-        text = text.Replace("`", "").Trim();
+        text = NormalizeStructuredName(text).Trim();
 
         // "IX_profiles_email on email (unique)" or "IX_name on col1, col2"
         var isUnique = text.Contains("(unique)", StringComparison.OrdinalIgnoreCase) ||
@@ -573,6 +573,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         var columnsPart = text[(onIdx + 4)..].Trim();
         var cols        = columnsPart.Split(',', StringSplitOptions.TrimEntries)
                                      .Where(c => !string.IsNullOrEmpty(c))
+                                     .Select(c => NormalizeStructuredName(c))
                                      .ToList();
 
         return new DataIndex
@@ -589,9 +590,9 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         // "FK_name: definition" or "PK_name: definition"
         var colonIdx = text.IndexOf(':');
         if (colonIdx < 0)
-            return new DataConstraint { Name = text, EntityName = entityName, ConstraintType = "CK" };
+            return new DataConstraint { Name = NormalizeStructuredName(text), EntityName = entityName, ConstraintType = "CK" };
 
-        var name       = text[..colonIdx].Trim();
+        var name       = NormalizeStructuredName(text[..colonIdx].Trim());
         var definition = text[(colonIdx + 1)..].Trim();
         var typePart   = name.ToUpperInvariant();
 
@@ -631,13 +632,35 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         return s;
     }
 
+    // Normalizes structured field names by removing inline-code (backtick) syntax.
+    // Handles both fully-backticked identifiers and inline backticks within text.
+    // Examples:
+    //   `UserName` → UserName
+    //   Source Reference (`KildeReferanse`) Format → Source Reference (KildeReferanse) Format
+    //   ScimListResponse<T> → ScimListResponse<T> (unchanged)
+    //   PlainName → PlainName (unchanged)
+    private static string NormalizeStructuredName(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return raw;
+
+        var s = raw.Trim();
+
+        // Replace backtick pairs with the content between them (removes the backticks)
+        // Pattern: `text` → text
+        // This handles both fully-wrapped identifiers and inline-code within longer text
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"`([^`]*)`", "$1");
+
+        return s;
+    }
+
     // Extracts entity name and table name from H3 format like "### EntityName" or "### EntityName — tableName description"
     private static (string EntityName, string? TableName) ExtractEntityAndTableName(string heading)
     {
-        var s = heading.Trim();
+        var s = NormalizeStructuredName(heading.Trim());
 
         // First, handle backticked names like "### `birk_tiltak`" or "### `birk_tiltak`, `birk_tiltakstype`"
         // For comma-separated backticked names, take the first one as the entity name
+        // (Note: backticks should already be removed by NormalizeStructuredName, but keep logic for safety)
         if (s.StartsWith("`"))
         {
             var closeIdx = s.IndexOf("`", 1);
@@ -669,7 +692,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                     tableName = rest[..spaceIdx].Trim();
             }
 
-            // Clean backticks from table name
+            // Clean backticks from table name (should already be normalized, but keep for safety)
             tableName = tableName.Replace("`", "").Trim();
 
             return (entityName, tableName);
@@ -1039,7 +1062,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                     .ToList(),
                 Methods = [],
                 Lifecycle = null,
-                RelatedRequirementIds = e.TraceabilityIds,
+                RelatedTraceabilityIds = e.TraceabilityIds,
                 RelationshipIds = document.Relationships
                     .Where(r => r.SourceEntity == e.Name || r.TargetEntity == e.Name)
                     .Select(r => $"{r.Source}->{r.Target}")
@@ -1090,17 +1113,17 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             Enumerations = enumerations,
             ValueObjects = [],
             AggregateRoots = [],
-            EntityToRequirements = BuildEntityToRequirementsMap(entities),
+            EntityToTraceability = BuildEntityToTraceabilityMap(entities),
         };
     }
 
-    private static Dictionary<string, List<string>> BuildEntityToRequirementsMap(List<SemanticDataEntity> entities)
+    private static Dictionary<string, List<string>> BuildEntityToTraceabilityMap(List<SemanticDataEntity> entities)
     {
         var map = new Dictionary<string, List<string>>();
         foreach (var entity in entities)
         {
-            if (entity.RelatedRequirementIds.Count > 0)
-                map[entity.Id] = entity.RelatedRequirementIds;
+            if (entity.RelatedTraceabilityIds.Count > 0)
+                map[entity.Id] = entity.RelatedTraceabilityIds;
         }
         return map;
     }

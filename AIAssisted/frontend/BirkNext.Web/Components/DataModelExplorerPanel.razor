@@ -85,7 +85,7 @@ else
     </div>
 
     @* ── Search bar (entity/relationship/index tabs) ───────────────────────────── *@
-    @if (_activeTab is "relationships" or "indexes")
+    @if ((_activeTab == "relationships" && _document.Relationships.Count > 0) || (_activeTab == "indexes" && (_document.Indexes.Count > 0 || _document.Constraints.Count > 0)))
     {
         <div class="dme-search-bar">
             <input type="search" class="dme-search"
@@ -125,7 +125,7 @@ else
                         <span class="dme-stat-value">@_document.IndexCount</span>
                         <span class="dme-stat-label">Indexes</span>
                     </div>
-                    <div class="dme-stat @(_document.ErrorCount > 0 ? "dme-stat-warn" : "")">
+                    <div class="dme-stat @(_document.ErrorCount > 0 ? "dme-stat-error" : (_document.WarningCount > 0 ? "dme-stat-warn" : ""))">
                         <span class="dme-stat-value">@_document.FindingCount</span>
                         <span class="dme-stat-label">Findings</span>
                     </div>
@@ -238,7 +238,7 @@ else
                                                 </div>
                                                 @if (!string.IsNullOrEmpty(col.Type))
                                                 {
-                                                    <span class="dme-dc-col-type">@col.Type</span>
+                                                    <span class="dme-dc-col-type" title="@col.Type">@col.Type</span>
                                                 }
                                             </div>
                                         }
@@ -384,7 +384,7 @@ else
                         @foreach (var idx in visibleIdx)
                         {
                             <div class="dme-idx-row" role="listitem">
-                                <span class="dme-idx-name">@idx.Name</span>
+                                <span class="dme-idx-name" title="@idx.Name">@idx.Name</span>
                                 @if (!string.IsNullOrEmpty(idx.EntityName))
                                 { <span class="dme-idx-entity">@idx.EntityName</span> }
                                 @if (idx.Columns.Count > 0)
@@ -417,7 +417,7 @@ else
                             {
                                 <div class="dme-idx-row" role="listitem">
                                     <span class="dme-con-type dme-con-@con.ConstraintType.ToLowerInvariant()" title="@GetConstraintTypeLabel(con.ConstraintType)">@con.ConstraintType</span>
-                                    <span class="dme-idx-name">@con.Name</span>
+                                    <span class="dme-idx-name" title="@con.Name">@con.Name</span>
                                     @if (!string.IsNullOrEmpty(con.EntityName))
                                     { <span class="dme-idx-entity">@con.EntityName</span> }
                                     @if (!string.IsNullOrEmpty(con.Definition))
@@ -444,9 +444,9 @@ else
                 <div class="dme-stat-row">
                     <div class="dme-stat">
                         <span class="dme-stat-value">@allIds.Count</span>
-                        <span class="dme-stat-label">Unique Requirement IDs</span>
+                        <span class="dme-stat-label">Unique Traceability IDs</span>
                     </div>
-                    <div class="dme-stat @(linked.Count < _document.EntityCount ? "dme-stat-warn" : "")">
+                    <div class="dme-stat">
                         <span class="dme-stat-value">@linked.Count</span>
                         <span class="dme-stat-label">Entities Linked</span>
                     </div>
@@ -464,7 +464,7 @@ else
                 {
                     <div class="dme-trace-entity-row">
                         <span class="dme-entity-kind-sm">@(entity.IsTable ? "TABLE" : "ENTITY")</span>
-                        <span class="dme-entity-name">@entity.Name</span>
+                        <span class="dme-entity-name" title="@entity.Name">@entity.Name</span>
                         <div class="dme-trace-chips">
                             @foreach (var id in entity.TraceabilityIds)
                             {
@@ -478,7 +478,7 @@ else
             @if (unlinked.Count > 0)
             {
                 <div class="dme-section-label dme-section-label-warn" style="margin-top:1.5rem">
-                    Entities Without Requirement Links (@unlinked.Count)
+                    Entities Without Traceability Links (@unlinked.Count)
                 </div>
                 @foreach (var entity in unlinked)
                 {

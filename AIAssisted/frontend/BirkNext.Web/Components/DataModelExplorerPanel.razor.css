@@ -251,6 +251,7 @@
     background: var(--surface, #fff);
 }
 .dme-stat-warn { border-color: var(--clr-warning-border, #fcd34d); background: var(--clr-warning-bg, #fff8e1); }
+.dme-stat-error { border-color: #fca5a5; background: #fee2e2; }
 
 .dme-stat-value { font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111); line-height: 1; }
 .dme-stat-label { font-size: 0.7rem; color: var(--text-muted, #888); margin-top: 0.2rem; text-align: center; }
@@ -608,9 +609,8 @@
     font-size: 0.87rem;
     color: var(--text-primary, #111);
     flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    word-break: break-word;
+    overflow-wrap: break-word;
     font-family: var(--font-mono, monospace);
 }
 
@@ -649,9 +649,8 @@
     font-weight: 600;
     color: var(--text-primary, #111);
     font-family: var(--font-mono, monospace);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .dme-dc-badges {
