@@ -147,8 +147,7 @@ public class QAArtifactLibraryPageModelBuilder : IQAArtifactLibraryPageModelBuil
     private async Task<Guid> GetCurrentWorkspaceIdAsync()
     {
         var workspace = await _db.SavedWorkspaces
-            .Where(w => !w.IsDeleted)
-            .OrderByDescending(w => w.UpdatedAt)
+            .Where(w => w.IsCurrent && !w.IsDeleted)
             .FirstOrDefaultAsync();
         return workspace?.Id ?? Guid.Empty;
     }
@@ -198,7 +197,8 @@ public class CreateTestScenarioPageModelBuilder : ICreateTestScenarioPageModelBu
             var workspaceId = await GetCurrentWorkspaceIdAsync();
             if (workspaceId == Guid.Empty)
             {
-                return EmptyModel(
+                return BlockedModel(
+                    ["active workspace"],
                     "No active workspace yet. Create or load a workspace first, then load artifacts.");
             }
 
@@ -251,27 +251,9 @@ public class CreateTestScenarioPageModelBuilder : ICreateTestScenarioPageModelBu
     private async Task<Guid> GetCurrentWorkspaceIdAsync()
     {
         var workspace = await _db.SavedWorkspaces
-            .Where(w => !w.IsDeleted)
-            .OrderByDescending(w => w.UpdatedAt)
+            .Where(w => w.IsCurrent && !w.IsDeleted)
             .FirstOrDefaultAsync();
         return workspace?.Id ?? Guid.Empty;
-    }
-
-    private static LibraryPageModel EmptyModel(string statusMessage)
-    {
-        return new LibraryPageModel
-        {
-            Title = "Create Test Scenario",
-            Description = "Create structured test scenarios linked to your requirements.",
-            ReadinessStatus = LibraryStatus.Empty,
-            RequiredInputs = ["Workspace", "Specification or Tasks or Plan"],
-            MissingInputs = ["active workspace"],
-            Summary = new LibrarySummary
-            {
-                StatusMessage = statusMessage,
-                HasAvailableActions = false
-            }
-        };
     }
 
     private static LibraryPageModel BlockedModel(List<string> missingInputs, string statusMessage)

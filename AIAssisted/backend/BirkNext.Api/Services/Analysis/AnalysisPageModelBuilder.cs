@@ -99,8 +99,7 @@ public class SpecDriftPageModelBuilder : ISpecDriftPageModelBuilder
 
     private async Task<Guid> GetCurrentWorkspaceIdAsync()
     {
-        // For now, return first workspace; in real scenario would be from session/user context
-        var workspace = await _db.SavedWorkspaces.FirstOrDefaultAsync();
+        var workspace = await _db.SavedWorkspaces.FirstOrDefaultAsync(w => w.IsCurrent && !w.IsDeleted);
         return workspace?.Id ?? Guid.Empty;
     }
 
@@ -149,7 +148,10 @@ public class ImpactAnalysisPageModelBuilder : IImpactAnalysisPageModelBuilder
             var workspaceId = await GetCurrentWorkspaceIdAsync();
             if (workspaceId == Guid.Empty)
             {
-                return ErrorModel("Impact Analysis", "No active workspace");
+                return AnalysisPageModelSemantics.BlockedNoWorkspaceModel(
+                    "Impact Analysis",
+                    "Analyze the impact of changes on requirements, tasks, and tests.",
+                    ["Workspace", "Specification", "Change Input (Plan/Constitution)"]);
             }
 
             var artifactStatus = await _artifactStatus.GetStatusAsync(workspaceId);
@@ -213,7 +215,7 @@ public class ImpactAnalysisPageModelBuilder : IImpactAnalysisPageModelBuilder
 
     private async Task<Guid> GetCurrentWorkspaceIdAsync()
     {
-        var workspace = await _db.SavedWorkspaces.FirstOrDefaultAsync();
+        var workspace = await _db.SavedWorkspaces.FirstOrDefaultAsync(w => w.IsCurrent && !w.IsDeleted);
         return workspace?.Id ?? Guid.Empty;
     }
 
@@ -262,7 +264,10 @@ public class RequirementsTraceabilityPageModelBuilder : IRequirementsTraceabilit
             var workspaceId = await GetCurrentWorkspaceIdAsync();
             if (workspaceId == Guid.Empty)
             {
-                return ErrorModel("Requirements Traceability", "No active workspace");
+                return AnalysisPageModelSemantics.BlockedNoWorkspaceModel(
+                    "Requirements Traceability",
+                    "Track which requirements are covered by tests, tasks, and plan items.",
+                    ["Workspace", "Specification", "Tests/Tasks or Plan"]);
             }
 
             var artifactStatus = await _artifactStatus.GetStatusAsync(workspaceId);
@@ -314,7 +319,7 @@ public class RequirementsTraceabilityPageModelBuilder : IRequirementsTraceabilit
 
     private async Task<Guid> GetCurrentWorkspaceIdAsync()
     {
-        var workspace = await _db.SavedWorkspaces.FirstOrDefaultAsync();
+        var workspace = await _db.SavedWorkspaces.FirstOrDefaultAsync(w => w.IsCurrent && !w.IsDeleted);
         return workspace?.Id ?? Guid.Empty;
     }
 
@@ -363,7 +368,10 @@ public class ImplementationReviewPageModelBuilder : IImplementationReviewPageMod
             var workspaceId = await GetCurrentWorkspaceIdAsync();
             if (workspaceId == Guid.Empty)
             {
-                return ErrorModel("Implementation Review", "No active workspace");
+                return AnalysisPageModelSemantics.BlockedNoWorkspaceModel(
+                    "Implementation Review",
+                    "Review implementation code against requirements and design.",
+                    ["Workspace", "Implementation/Code Input", "Specification (context)"]);
             }
 
             var artifactStatus = await _artifactStatus.GetStatusAsync(workspaceId);
@@ -415,7 +423,7 @@ public class ImplementationReviewPageModelBuilder : IImplementationReviewPageMod
 
     private async Task<Guid> GetCurrentWorkspaceIdAsync()
     {
-        var workspace = await _db.SavedWorkspaces.FirstOrDefaultAsync();
+        var workspace = await _db.SavedWorkspaces.FirstOrDefaultAsync(w => w.IsCurrent && !w.IsDeleted);
         return workspace?.Id ?? Guid.Empty;
     }
 
@@ -464,7 +472,10 @@ public class ImplementationTraceabilityPageModelBuilder : IImplementationTraceab
             var workspaceId = await GetCurrentWorkspaceIdAsync();
             if (workspaceId == Guid.Empty)
             {
-                return ErrorModel("Implementation Traceability", "No active workspace");
+                return AnalysisPageModelSemantics.BlockedNoWorkspaceModel(
+                    "Implementation Traceability",
+                    "Trace code changes to requirements, tasks, and plan items.",
+                    ["Workspace", "Implementation/Code Input", "Specification", "Tasks or Plan"]);
             }
 
             var artifactStatus = await _artifactStatus.GetStatusAsync(workspaceId);
@@ -516,7 +527,7 @@ public class ImplementationTraceabilityPageModelBuilder : IImplementationTraceab
 
     private async Task<Guid> GetCurrentWorkspaceIdAsync()
     {
-        var workspace = await _db.SavedWorkspaces.FirstOrDefaultAsync();
+        var workspace = await _db.SavedWorkspaces.FirstOrDefaultAsync(w => w.IsCurrent && !w.IsDeleted);
         return workspace?.Id ?? Guid.Empty;
     }
 
@@ -536,4 +547,25 @@ public class ImplementationTraceabilityPageModelBuilder : IImplementationTraceab
             }
         };
     }
+}
+
+file static class AnalysisPageModelSemantics
+{
+    public static AnalysisPageModel BlockedNoWorkspaceModel(
+        string title,
+        string description,
+        List<string> requiredInputs) =>
+        new()
+        {
+            Title = title,
+            Description = description,
+            ReadinessStatus = AnalysisStatus.Blocked,
+            RequiredInputs = requiredInputs,
+            MissingInputs = ["active workspace"],
+            Summary = new AnalysisSummary
+            {
+                CanRun = false,
+                ReadinessMessage = "No active workspace. Create or load a workspace first."
+            }
+        };
 }

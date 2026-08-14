@@ -117,6 +117,45 @@ public class AnalysisPageModelBuilderTests
     }
 
     [Fact]
+    public async Task ImplementationReview_WithSavedNonCurrentWorkspace_ReturnsBlocked()
+    {
+        await using var db = CreateInMemoryDb();
+        var workspaceId = await CreateWorkspaceAsync(db, isCurrent: false);
+        await CreateArtifactAsync(db, workspaceId, ArtifactType.Specification);
+
+        var artifactStatus = new WorkspaceArtifactStatusService(db, NullLogger<WorkspaceArtifactStatusService>.Instance);
+        var builder = new ImplementationReviewPageModelBuilder(
+            db,
+            artifactStatus,
+            NullLogger<ImplementationReviewPageModelBuilder>.Instance);
+
+        var model = await builder.BuildPageModelAsync();
+
+        Assert.Equal(AnalysisStatus.Blocked, model.ReadinessStatus);
+        Assert.Contains("active workspace", model.MissingInputs);
+        Assert.False(model.Summary.CanRun);
+    }
+
+    [Fact]
+    public async Task ImplementationReview_WithCurrentWorkspaceButNoArtifacts_ReturnsBlocked()
+    {
+        await using var db = CreateInMemoryDb();
+        await CreateWorkspaceAsync(db);
+
+        var artifactStatus = new WorkspaceArtifactStatusService(db, NullLogger<WorkspaceArtifactStatusService>.Instance);
+        var builder = new ImplementationReviewPageModelBuilder(
+            db,
+            artifactStatus,
+            NullLogger<ImplementationReviewPageModelBuilder>.Instance);
+
+        var model = await builder.BuildPageModelAsync();
+
+        Assert.Equal(AnalysisStatus.Blocked, model.ReadinessStatus);
+        Assert.Contains("specification for context", model.MissingInputs);
+        Assert.False(model.Summary.CanRun);
+    }
+
+    [Fact]
     public async Task AllAnalysisPages_ReturnAnalysisPageModel()
     {
         await using var db = CreateInMemoryDb();
@@ -180,12 +219,15 @@ public class AnalysisPageModelBuilderTests
         return new AppDbContext(options);
     }
 
-    private static async Task<Guid> CreateWorkspaceAsync(AppDbContext db)
+    private static async Task<Guid> CreateWorkspaceAsync(AppDbContext db, bool isCurrent = true)
     {
         var workspace = new SavedWorkspace
         {
             Id = Guid.NewGuid(),
+            UserId = "default-user",
             Name = "Test Workspace",
+            ProjectName = "Test Project",
+            IsCurrent = isCurrent,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
