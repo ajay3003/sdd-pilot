@@ -561,20 +561,52 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         // Strip backtick quoting from index names like `IX_Person_EksternId`
         text = NormalizeStructuredName(text).Trim();
 
-        // "IX_profiles_email on email (unique)" or "IX_name on col1, col2"
+        // Reject obvious prose (must start with recognized index patterns)
+        if (!IsValidIndexSignature(text))
+            return null;
+
+        // Extract metadata flags
         var isUnique = text.Contains("(unique)", StringComparison.OrdinalIgnoreCase) ||
                        text.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase);
-        text = text.Replace("(unique)", "", StringComparison.OrdinalIgnoreCase).Trim();
 
-        var onIdx = text.IndexOf(" on ", StringComparison.OrdinalIgnoreCase);
-        if (onIdx < 0) return new DataIndex { Name = text, EntityName = entityName, IsUnique = isUnique };
+        // Strip "Composite:" prefix if present (for composite indexes)
+        var working = text;
+        if (working.StartsWith("composite:", StringComparison.OrdinalIgnoreCase))
+            working = working[10..].Trim();
 
-        var name        = text[..onIdx].Trim();
-        var columnsPart = text[(onIdx + 4)..].Trim();
-        var cols        = columnsPart.Split(',', StringSplitOptions.TrimEntries)
-                                     .Where(c => !string.IsNullOrEmpty(c))
-                                     .Select(c => NormalizeStructuredName(c))
-                                     .ToList();
+        // Extract canonical index name (up to first metadata marker: space+parens, " on ", " for ")
+        var metadataIdx = FindFirstMetadataMarker(working);
+        string name;
+
+        if (metadataIdx > 0)
+            name = working[..metadataIdx].Trim();
+        else
+            name = working.Trim();
+
+        // Check for "on (col1, col2)" pattern for extracting columns
+        var onIdx = working.IndexOf(" on ", StringComparison.OrdinalIgnoreCase);
+        var cols = new List<string>();
+
+        if (onIdx > 0)
+        {
+            var afterOn = working[(onIdx + 4)..];
+
+            // Extract columns from (col1, col2) or from col1, col2
+            var parenIdx = afterOn.IndexOf('(');
+            var parenEndIdx = afterOn.LastIndexOf(')');
+
+            string columnsPart;
+            if (parenIdx >= 0 && parenEndIdx > parenIdx)
+                columnsPart = afterOn.Substring(parenIdx + 1, parenEndIdx - parenIdx - 1);
+            else
+                columnsPart = afterOn;
+
+            cols = columnsPart.Split(',', StringSplitOptions.TrimEntries)
+                             .Where(c => !string.IsNullOrEmpty(c) && c.Trim().Length > 0)
+                             .Select(c => NormalizeStructuredName(c.Trim().TrimEnd(')')))
+                             .Where(c => c.Length > 0)
+                             .ToList();
+        }
 
         return new DataIndex
         {
@@ -583,6 +615,33 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             Columns    = cols,
             IsUnique   = isUnique,
         };
+    }
+
+    private static bool IsValidIndexSignature(string text)
+    {
+        // Must start with recognized index patterns; reject arbitrary prose
+        // Valid: IX_*, Unique index *, Full-text index *, Composite: IX_*
+        var lower = text.ToLowerInvariant().Trim();
+        return lower.StartsWith("ix_") ||
+               lower.StartsWith("composite:") ||
+               lower.StartsWith("full-text") ||
+               lower.StartsWith("unique index") ||
+               lower.StartsWith("clustered");
+    }
+
+    private static int FindFirstMetadataMarker(string text)
+    {
+        // Find where the index name ends and metadata begins
+        // Markers: " (" for (non-clustered, ...) or " on " for column list
+        var spaceParenIdx = text.IndexOf(" (");
+        var onIdx = text.IndexOf(" on ", StringComparison.OrdinalIgnoreCase);
+        var forIdx = text.IndexOf(" for ", StringComparison.OrdinalIgnoreCase);
+
+        var candidates = new[] { spaceParenIdx, onIdx, forIdx }
+            .Where(i => i > 0)
+            .ToList();
+
+        return candidates.Count > 0 ? candidates.Min() : -1;
     }
 
     private static DataConstraint? ParseConstraintLine(string text, string entityName)

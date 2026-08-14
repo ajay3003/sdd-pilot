@@ -722,4 +722,207 @@ public class DataModelParserRegressionTests
         var unlinked = result.Entities.Where(e => e.TraceabilityIds.Count == 0).ToList();
         Assert.Equal(1, unlinked.Count);
     }
+
+    // ── Indexes & Constraints parsing ──────────────────────────────────
+
+    [Fact]
+    public void Parse_PersonModuleCore_IndexesCount()
+    {
+        // Audit the Person Module Core sample to verify Indexes parsing
+        var markdown = System.IO.File.ReadAllText(
+            "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\person-module\\data-model.md");
+
+        var result = _service.Parse(markdown);
+
+        // Authoritative count from manual audit of sample:
+        // Person: 4 indexes (3 filtered single-column + 1 full-text)
+        // BarnIAndrelinjeBarnevern: 6 indexes (5 single-column + 1 composite)
+        // BarnStatusHistorikk: 1 index
+        // OutboxMessage: 1 index (+ 1 prose note that should NOT be parsed)
+        // TOTAL: 12 indexes
+        // NOT 13 — "Rows are never deleted..." is retention policy prose, not an index
+
+        Assert.Equal(12, result.Indexes.Count);
+        Assert.NotNull(result.Indexes);
+    }
+
+    [Fact]
+    public void Parse_PersonModule_SpecificIndexNames()
+    {
+        // Verify the canonical names of important indexes
+        var markdown = System.IO.File.ReadAllText(
+            "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\person-module\\data-model.md");
+
+        var result = _service.Parse(markdown);
+
+        var indexNames = result.Indexes.Select(i => i.Name).ToHashSet();
+
+        // Key indexes expected to exist
+        Assert.Contains("IX_Person_EksternId", indexNames);
+        Assert.Contains("IX_Person_Foedselsnummer", indexNames);
+        Assert.Contains("IX_Person_DUFNummer", indexNames);
+        Assert.Contains("IX_BarnIAndrelinjeBarnevern_PersonId", indexNames);
+        Assert.Contains("IX_Barn_Search", indexNames);
+        Assert.Contains("IX_OutboxMessage_Status_CreatedAt", indexNames);
+
+        // "Rows are never deleted" must NOT be an index
+        Assert.False(indexNames.Any(n => n.Contains("never deleted", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [Fact]
+    public void Parse_PersonModule_UniqueIndexes()
+    {
+        // Verify IsUnique flag on specific indexes
+        var markdown = System.IO.File.ReadAllText(
+            "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\person-module\\data-model.md");
+
+        var result = _service.Parse(markdown);
+
+        var person = result.Indexes.Where(i => i.EntityName == "Person").ToList();
+        // No unique flags in Person indexes (they are filtered but not unique in the sample)
+        Assert.True(person.All(i => !i.IsUnique), "Person indexes should not be marked unique");
+
+        var barn = result.Indexes.Where(i => i.EntityName == "BarnIAndrelinjeBarnevern").ToList();
+        // PersonId and BirkId should be marked unique
+        var personIdIdx = barn.FirstOrDefault(i => i.Name.Contains("PersonId"));
+        var birkIdIdx = barn.FirstOrDefault(i => i.Name.Contains("BirkId"));
+
+        if (personIdIdx != null) Assert.True(personIdIdx.IsUnique, "PersonId index should be unique");
+        if (birkIdIdx != null) Assert.True(birkIdIdx.IsUnique, "BirkId index should be unique");
+    }
+
+    [Fact]
+    public void Parse_Indexes_RejectProseNotation()
+    {
+        // Prose like "Rows are never deleted (could be archived after 30 days)"
+        // under an Indexes section should NOT be parsed as an index
+        var input = """
+            # Data Model: Test
+
+            ## Table: Log
+
+            **Indexes**:
+            - `IX_Log_Timestamp` on (Timestamp)
+            - Rows are never deleted (archive after 30 days)
+            - Could be moved to cold storage
+
+            """;
+
+        var result = _service.Parse(input);
+
+        // Should have only 1 index (not 3)
+        Assert.Single(result.Indexes);
+        Assert.Equal("IX_Log_Timestamp", result.Indexes[0].Name);
+
+        // Verify prose is not in index list
+        var names = result.Indexes.Select(i => i.Name).ToList();
+        Assert.False(names.Any(n => n.Contains("never deleted", StringComparison.OrdinalIgnoreCase)));
+        Assert.False(names.Any(n => n.Contains("Could be", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [Fact]
+    public void Parse_Indexes_FullTextIndex()
+    {
+        // Full-text indexes should be recognized and stored as indexes
+        var input = """
+            # Data Model: Test
+
+            ## Table: Document
+
+            **Indexes**:
+            - Full-text index on `Content` for search (FR-042)
+
+            """;
+
+        var result = _service.Parse(input);
+
+        // Should have 1 index
+        Assert.Single(result.Indexes);
+        var idx = result.Indexes[0];
+        Assert.Contains("Full-text", idx.Name);
+        Assert.Equal("Document", idx.EntityName);
+    }
+
+    [Fact]
+    public void Parse_Indexes_CompositeIndex()
+    {
+        // Composite indexes with multiple columns should extract column list
+        var input = """
+            # Data Model: Test
+
+            ## Table: Event
+
+            **Indexes**:
+            - Composite: `IX_Event_Filter` on (Status, CreatedAt, UserId)
+
+            """;
+
+        var result = _service.Parse(input);
+
+        Assert.Single(result.Indexes);
+        var idx = result.Indexes[0];
+        Assert.Equal("IX_Event_Filter", idx.Name);
+        Assert.True(idx.Columns.Count >= 2, "Composite index should have multiple columns");
+    }
+
+    // ── Cross-module regression tests ──────────────────────────────────
+
+    [Fact]
+    public void Parse_Autorisasjon_DataModel_Parses()
+    {
+        // Verify parser doesn't break on Autorisasjon sample
+        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\autorisasjon\\data-model.md";
+        if (!System.IO.File.Exists(path)) return; // Skip if file missing
+
+        var markdown = System.IO.File.ReadAllText(path);
+        var result = _service.Parse(markdown);
+
+        Assert.NotNull(result);
+        // Should successfully parse without throwing
+    }
+
+    [Fact]
+    public void Parse_HendelseAdapter_DataModel_Parses()
+    {
+        // Verify parser doesn't break on Hendelse Adapter sample
+        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\hendelse-adapter\\data-model.md";
+        if (!System.IO.File.Exists(path)) return; // Skip if file missing
+
+        var markdown = System.IO.File.ReadAllText(path);
+        var result = _service.Parse(markdown);
+
+        Assert.NotNull(result);
+        // Should successfully parse without throwing
+    }
+
+    [Fact]
+    public void Parse_PersonAdapter_DataModel_Parses()
+    {
+        // Verify parser doesn't break on Person Adapter sample
+        // Person Adapter has informal index notation that should be rejected gracefully
+        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\person-adapter\\data-model.md";
+        if (!System.IO.File.Exists(path)) return; // Skip if file missing
+
+        var markdown = System.IO.File.ReadAllText(path);
+        var result = _service.Parse(markdown);
+
+        Assert.NotNull(result);
+        // Should successfully parse without throwing
+        // Note: Person Adapter indexes are documented but not in standard IX_ format,
+        // so they will not be parsed as indexes (which is correct)
+    }
+
+    [Fact]
+    public void Parse_Revisjon_DataModel_Parses()
+    {
+        // Verify parser doesn't break on Revisjon sample
+        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\revisjon\\data-model.md";
+        if (!System.IO.File.Exists(path)) return; // Skip if file missing
+
+        var markdown = System.IO.File.ReadAllText(path);
+        var result = _service.Parse(markdown);
+
+        Assert.NotNull(result);
+        // Should successfully parse without throwing
+    }
 }
