@@ -61,7 +61,7 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
 
         return new FrontendAnalysisContext
         {
-            ActiveProfile               = profile,
+            ActiveProfile               = CreateSafeProfileSnapshot(profile),
             TargetUrl                   = profile.TargetUrl?.Trim() ?? "",
             RestBaseUrl                 = profile.RestBaseUrl?.Trim(),
             HealthEndpoint              = profile.HealthEndpoint?.Trim(),
@@ -87,5 +87,45 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             ValidationErrors            = validation.Errors,
             Integrations                = profile.Integrations.AsReadOnly()
         };
+    }
+
+    private static FrontendAnalysisProfile CreateSafeProfileSnapshot(FrontendAnalysisProfile profile)
+    {
+        var snapshot = new FrontendAnalysisProfile
+        {
+            Id = profile.Id,
+            Name = profile.Name,
+            EnvironmentType = profile.EnvironmentType,
+            Description = profile.Description,
+            Notes = profile.Notes,
+            TargetUrl = profile.TargetUrl,
+            RestBaseUrl = profile.RestBaseUrl,
+            HealthEndpoint = profile.HealthEndpoint,
+            SwaggerUrl = profile.SwaggerUrl,
+            GraphQlEndpoint = profile.GraphQlEndpoint,
+            ApiAuth = new TargetApiCredentials { AuthType = profile.ApiAuth.AuthType },
+            RequestTimeoutSeconds = profile.RequestTimeoutSeconds,
+            RetryCount = profile.RetryCount,
+            ExpectedApiGateway = profile.ExpectedApiGateway,
+            AllowedRestHosts = [.. profile.AllowedRestHosts],
+            AllowedGraphQlEndpoints = [.. profile.AllowedGraphQlEndpoints],
+            ExpectedCdn = profile.ExpectedCdn,
+            Authentication = new FrontendAuthenticationSettings
+            {
+                RequiresAuthentication = profile.Authentication.RequiresAuthentication,
+                AuthenticationType = profile.Authentication.AuthenticationType,
+                UseExistingBrowserSession = profile.Authentication.UseExistingBrowserSession,
+                AutomaticallyOpenLoginPage = profile.Authentication.AutomaticallyOpenLoginPage,
+                ExpectedAuthority = profile.Authentication.ExpectedAuthority,
+                AllowedRedirectUrls = [.. profile.Authentication.AllowedRedirectUrls]
+            },
+            Performance = profile.Performance,
+            CoreWebVitals = profile.CoreWebVitals,
+            Security = profile.Security,
+            Features = profile.Features,
+            Integrations = [.. profile.Integrations]
+        };
+
+        return snapshot;
     }
 }

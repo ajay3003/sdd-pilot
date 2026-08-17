@@ -1851,6 +1851,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         var blockBullets = new List<string>();
         var codeSb = new StringBuilder();
         bool inCodeBlock = false;
+        bool splitCodeBlock = false;
         string? codeFence = null;
 
         void FlushPhaseBlock()
@@ -1873,6 +1874,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             descSb.Clear();
             codeSb.Clear();
             inCodeBlock = false;
+            splitCodeBlock = false;
             codeFence = null;
         }
 
@@ -1886,6 +1888,11 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 if (!inCodeBlock)
                 {
                     // Start of code block
+                    if (blockBullets.Count > 0)
+                    {
+                        FlushPhaseBlock();
+                        splitCodeBlock = true;
+                    }
                     inCodeBlock = true;
                     codeFence = trimmed[0].ToString() + trimmed[0] + trimmed[0]; // ``` or ~~~
                     continue;
@@ -1895,6 +1902,8 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                     // End of code block
                     inCodeBlock = false;
                     codeFence = null;
+                    if (splitCodeBlock)
+                        FlushPhaseBlock();
                     continue;
                 }
             }
@@ -2248,7 +2257,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
     private static bool IsFrontendOnly(List<PlanSection> sections, List<PlanConstraint> constraints)
     {
-        var allText = (string.Join(" ", sections.Select(s => s.RawContent)) + " " +
+        var allText = StripMarkdown(string.Join(" ", sections.Select(s => s.RawContent)) + " " +
                        string.Join(" ", constraints.Select(c => c.Title + " " + c.Description)))
                       .ToLowerInvariant();
 
@@ -2259,7 +2268,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
     private static bool IsStateless(List<PlanSection> sections, List<PlanConstraint> constraints)
     {
-        var allText = (string.Join(" ", sections.Select(s => s.RawContent)) +
+        var allText = StripMarkdown(string.Join(" ", sections.Select(s => s.RawContent)) +
                        string.Join(" ", constraints.Select(c => c.Title + " " + c.Description)))
                       .ToLowerInvariant();
 
@@ -2270,12 +2279,12 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
     private static bool HasNoStorage(List<PlanSection> sections, List<PlanConstraint> constraints)
     {
-        var allText = (string.Join(" ", sections.Select(s => s.RawContent)) +
+        var allText = StripMarkdown(string.Join(" ", sections.Select(s => s.RawContent)) +
                        string.Join(" ", constraints.Select(c => c.Title + " " + c.Description)))
                       .ToLowerInvariant();
 
         return (allText.Contains("no sql") || allText.Contains("no database") || allText.Contains("no persistence") ||
-                allText.Contains("storage = n/a")) && !allText.Contains("blob storage");
+                allText.Contains("storage: n/a") || allText.Contains("storage = n/a") || allText.Contains("no storage"));
     }
 
     // ── Health Assessment ────────────────────────────────────────────────────
@@ -2485,6 +2494,10 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         if (TestingKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
             return PlanSectionType.Testing;
 
+        // Dependencies
+        if (DependencyKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
+            return PlanSectionType.Dependencies;
+
         // Risks (with "open" prefix to avoid matching generic "risks" in other contexts)
         if (RiskKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
             return PlanSectionType.Risks;
@@ -2496,10 +2509,6 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         // Complexity
         if (ComplexityKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
             return PlanSectionType.Complexity;
-
-        // Dependencies
-        if (DependencyKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))
-            return PlanSectionType.Dependencies;
 
         // Milestones
         if (MilestoneKeywords.Any(k => lower.Contains(k.ToLowerInvariant())))

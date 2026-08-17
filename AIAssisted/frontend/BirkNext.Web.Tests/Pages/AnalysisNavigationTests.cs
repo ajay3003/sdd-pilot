@@ -85,12 +85,27 @@ public class AnalysisNavigationTests : BunitContext
         var cut = Render<NavMenu>();
         var nav = cut.Find("nav").TextContent;
 
+        nav.IndexOf("Dashboard", StringComparison.Ordinal)
+            .Should().BeLessThan(nav.IndexOf("Specification Review", StringComparison.Ordinal));
+        nav.IndexOf("Specification Review", StringComparison.Ordinal)
+            .Should().BeLessThan(nav.IndexOf("Specification Explorer", StringComparison.Ordinal));
+        nav.IndexOf("Specification Explorer", StringComparison.Ordinal)
+            .Should().BeLessThan(nav.IndexOf("Constitution Explorer", StringComparison.Ordinal));
+        nav.IndexOf("Constitution Explorer", StringComparison.Ordinal)
+            .Should().BeLessThan(nav.IndexOf("Data Model Explorer", StringComparison.Ordinal));
+        nav.IndexOf("Data Model Explorer", StringComparison.Ordinal)
+            .Should().BeLessThan(nav.IndexOf("Plan Explorer", StringComparison.Ordinal));
+        nav.IndexOf("Plan Explorer", StringComparison.Ordinal)
+            .Should().BeLessThan(nav.IndexOf("Task Explorer", StringComparison.Ordinal));
+
         nav.IndexOf("Spec Drift", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Impact Analysis", StringComparison.Ordinal));
         nav.IndexOf("Impact Analysis", StringComparison.Ordinal)
+            .Should().BeLessThan(nav.IndexOf("Requirements Traceability", StringComparison.Ordinal));
+        nav.IndexOf("Requirements Traceability", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Implementation Review", StringComparison.Ordinal));
         nav.IndexOf("Implementation Review", StringComparison.Ordinal)
-            .Should().BeLessThan(nav.IndexOf("Task Explorer", StringComparison.Ordinal));
+            .Should().BeLessThan(nav.IndexOf("Implementation Traceability", StringComparison.Ordinal));
     }
 
     [Fact]

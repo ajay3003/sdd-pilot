@@ -47,7 +47,7 @@ public class SpecComparisonPanelTests : BunitContext
     {
         var cut = Render<SpecComparisonPanel>();
 
-        cut.Find("[data-testid='delta-empty-state']").TextContent.Should().Contain("No delta review yet");
+        cut.Find("[data-testid='delta-empty-state']").TextContent.Should().Contain("No comparison yet");
         cut.Markup.Should().Contain("Speckit Structured Spec");
         cut.Markup.Should().Contain("Generic Document");
         cut.Markup.Should().Contain("Comparison does not modify saved QA artifacts");

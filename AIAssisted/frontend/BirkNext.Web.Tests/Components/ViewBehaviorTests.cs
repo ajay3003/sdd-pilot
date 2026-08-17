@@ -1003,16 +1003,27 @@ public class ViewBehaviorTests : BunitContext
     [Fact]
     public void FlowView_ShowsCollapsedStorySummary()
     {
-        // Second story will be collapsed (only first is auto-expanded)
+        const string specMarkdown = """
+            # Specification
+
+            ## US2: Profile
+
+            ### Success Criteria
+            - SC-001: FR-002 profile details are visible.
+            """;
+
+        // US1 has gaps and auto-expands. US2 has tests and success criteria, so it stays collapsed.
         IReadOnlyList<ExtractionCandidate> candidates =
         [
             MakeCandidate("FR-001: Search",  ScenarioKind.Requirement, "US1: Search"),
             MakeCandidate("Test: works",     ScenarioKind.Test,        "US1: Search"),
             MakeCandidate("FR-002: Profile", ScenarioKind.Requirement, "US2: Profile"),
+            MakeCandidate("Test: profile works", ScenarioKind.Test,    "US2: Profile"),
         ];
 
         var cut = Render<FlowView>(p =>
         {
+            p.Add(c => c.SpecMarkdown, specMarkdown);
             p.Add(c => c.Candidates, candidates);
             p.Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]);
         });

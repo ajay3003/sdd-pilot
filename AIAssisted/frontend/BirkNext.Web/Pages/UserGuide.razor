@@ -474,6 +474,11 @@
             <li><strong>Blocked</strong> — requirements are missing linked acceptance tests.</li>
         </ul>
 
+        <h4 class="ug-feature-title">Priority Sorting</h4>
+        <p>Flow View sorts User Stories with explicit P1, P2, and P3 priority markers before unprioritized stories so the highest-risk QA work stays visible first.</p>
+        <h4 class="ug-feature-title">Flow View Filters</h4>
+        <p>Filter chips narrow the board to Covered, Missing Tests, Missing Success Criteria, Ready, or High Priority stories. The Coverage Summary consolidates the current gaps, including stories with No implementation links.</p>
+
         <h3 class="ug-subsection-title" id="disc-traceability-view">Traceability &amp; Coverage (Analysis Tab)</h3>
         <p><strong>Purpose:</strong> Shows the QA risk picture first: coverage status, missing tests, orphan tests, missing success criteria, missing user story mappings, and relationship gaps. This is the <em>default</em> view shown after analysis.</p>
         <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>. The Traceability &amp; Coverage tab is active by default in Analysis Results.</p>
@@ -481,6 +486,8 @@
             <strong>Traceability &amp; Coverage vs. Artifact Traceability:</strong> Traceability &amp; Coverage shows relationships <em>within the specification</em> (requirements to tests). <a href="/artifact-traceability" class="ug-inline-link">Artifact Traceability</a> shows relationships <em>across all four artifacts</em> (Constitution → Spec → Plan → Tasks).
         </div>
 
+        <h4 class="ug-feature-title">Coverage Is Requirement-Centric</h4>
+        <p>Coverage Requirements are the requirement-level items used for validation coverage. User Story health is derived from those linked requirements, so Missing User Story, Missing Success Criteria, Missing Tests, and Orphan Tests are reported as distinct gap categories.</p>
         <div class="ug-callout ug-callout-tip">
             <strong>Traceability &amp; Coverage vs. QA Artifact Library:</strong> Coverage analysis belongs in Traceability &amp; Coverage. The QA Artifact Library is a repository for reusable QA assets that teams can discover and reuse after review; it is not the place where coverage health is calculated.
         </div>
@@ -496,6 +503,9 @@
 
         <h3 class="ug-subsection-title" id="disc-task-explorer">Task Explorer</h3>
         <p><strong>Purpose:</strong> Task Explorer is the <strong>Implementation Coverage</strong> workspace. It answers whether the specification is being implemented: which requirements have tasks, which requirements are missing implementation, and where delivery risk exists.</p>
+        <div class="ug-callout ug-callout-tip">
+            <strong>Traceability &amp; Coverage = Validation Coverage:</strong> it verifies requirement-to-test and requirement-to-success-criteria coverage inside the specification. <strong>Task Explorer = Implementation Coverage:</strong> it verifies whether those requirements are represented by delivery tasks.
+        </div>
         <p><strong>How to access:</strong> Task Explorer has its own menu item in the REVIEW section (<a href="/task-explorer" class="ug-inline-link">/task-explorer</a>). It is also available as an enriched tab inside Implementation Review after a full analysis.</p>
     </section>
 

@@ -48,13 +48,13 @@ public class SpecComparisonPanelSaveTests : BunitContext
     }
 
     [Fact]
-    public async Task ReviewTitleInput_HasDefaultValueWithDeltaReviewPrefix()
+    public async Task ReviewTitleInput_HasDefaultValueWithComparisonPrefix()
     {
         SetupModifiedRequirement();
         var cut = await RenderWithResultAsync();
 
         var titleInput = cut.Find("[data-testid='review-title-input']");
-        titleInput.GetAttribute("value").Should().StartWith("Delta Review –");
+        titleInput.GetAttribute("value").Should().StartWith("Comparison –");
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public class SpecComparisonPanelSaveTests : BunitContext
         cut.Find("[data-testid='save-review-success']").TextContent
             .Should().Contain("Saved");
         cut.Find("[data-testid='save-review-success'] a")
-            .GetAttribute("href").Should().Contain("compare/reviews");
+            .GetAttribute("href").Should().Contain("spec-drift?tab=changes");
     }
 
     [Fact]

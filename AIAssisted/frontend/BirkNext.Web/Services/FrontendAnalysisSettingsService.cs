@@ -230,7 +230,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             errors.Add($"A profile named \"{profile.Name}\" already exists.");
 
         if (!string.IsNullOrWhiteSpace(profile.TargetUrl) && !IsValidUrl(profile.TargetUrl))
-            errors.Add("Frontend Base URL is not a valid absolute URL.");
+            errors.Add("Target URL is not a valid absolute URL.");
 
         if (!string.IsNullOrWhiteSpace(profile.RestBaseUrl) && !IsValidUrl(profile.RestBaseUrl))
             errors.Add("REST Base URL is not a valid absolute URL.");

@@ -21,8 +21,8 @@ public class QaDeltaReviewListTests : BunitContext
             .Add(x => x.DeleteErrors, null));
 
         cut.Find("[data-testid='review-list-empty']").Should().NotBeNull();
-        cut.Find("[data-testid='review-list-empty']").TextContent.Should().Contain("No Delta Reviews Yet");
-        cut.Find("[data-testid='review-list-empty']").TextContent.Should().Contain("Open Compare Specs");
+        cut.Find("[data-testid='review-list-empty']").TextContent.Should().Contain("No Comparisons Yet");
+        cut.Find("[data-testid='review-list-empty']").TextContent.Should().Contain("Open Spec Drift");
         cut.FindAll("[data-testid='review-card']").Should().BeEmpty();
     }
 

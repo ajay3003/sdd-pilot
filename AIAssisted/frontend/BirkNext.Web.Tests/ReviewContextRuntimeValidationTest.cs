@@ -14,7 +14,7 @@ namespace BirkNext.Web.Tests;
 /// </summary>
 public class ReviewContextRuntimeValidationTest
 {
-    private const string SampleDataPath = @"BirkNext/SampleData/person-adapter";
+    private const string SampleModuleName = "person-adapter";
     private ReviewContext? _reviewContext;
     private SpecificationSemanticModel? _spec;
 
@@ -103,11 +103,11 @@ public class ReviewContextRuntimeValidationTest
             _spec.TotalRequirements - _spec.RequirementsWithSuccessCriteria);
 
         // Coverage Percentage
-        var expectedCoveragePct = _spec.TotalRequirements == 0 ? 0 :
-            (_spec.RequirementsWithTests * 100) / _spec.TotalRequirements;
+        var expectedSpecificationCompletenessPct = _spec.TotalRequirements == 0 ? 0 :
+            (_spec.Requirements.Count(r => r.LinkedUserStories.Count > 0) * 100) / _spec.TotalRequirements;
         ValidateCoreMetric(results, "Coverage %",
             _reviewContext.Coverage.SpecificationCompleteness,
-            expectedCoveragePct);
+            expectedSpecificationCompletenessPct);
 
         // Traceability Links
         ValidateCoreMetric(results, "Spec → Constitution Links",
@@ -120,7 +120,8 @@ public class ReviewContextRuntimeValidationTest
 
         ValidateCoreMetric(results, "Spec → Tasks Links",
             _reviewContext.SpecToTasks.Count,
-            _spec.Requirements.Count(r => r.LinkedTasks.Count > 0));
+            _spec.Requirements.Count(r => taskModel.FRToTasks.ContainsKey(r.Id)) +
+            _spec.SuccessCriteria.Count(s => taskModel.SCToTasks.ContainsKey(s.Id)));
 
         ValidateCoreMetric(results, "Spec → DataModel Links",
             _reviewContext.SpecToDataModel.Count,
@@ -142,7 +143,7 @@ public class ReviewContextRuntimeValidationTest
         // Health Scores
         ValidateCoreMetric(results, "Specification Completeness %",
             _reviewContext.Coverage.SpecificationCompleteness,
-            expectedCoveragePct);
+            expectedSpecificationCompletenessPct);
 
         // Generate Report
         PrintValidationReport(results);
@@ -216,12 +217,29 @@ public class ReviewContextRuntimeValidationTest
 
     private string LoadArtifact(string filename)
     {
-        var path = Path.Combine(SampleDataPath, filename);
+        var path = Path.Combine(FindSampleModulePath(), filename);
         if (!File.Exists(path))
         {
             throw new FileNotFoundException($"Sample artifact not found: {path}");
         }
         return File.ReadAllText(path);
+    }
+
+    private static string FindSampleModulePath()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory != null)
+        {
+            var candidate = Path.Combine(directory.FullName, "SampleData", SampleModuleName);
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException($"Sample module not found: SampleData/{SampleModuleName}");
     }
 
     private class ValidationResult

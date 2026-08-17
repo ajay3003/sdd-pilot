@@ -1,0 +1,55 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="d6f4732f-a8bd-464c-a59f-0eee32670fe1" name="ajaan@BUF-5CG4423FYV 2026-08-17 13:18:04" runUser="COMMON\ajaan" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-17T13:18:04.3392554+02:00" queuing="2026-08-17T13:18:04.3392556+02:00" start="2026-08-17T13:18:01.5126290+02:00" finish="2026-08-17T13:18:04.3432086+02:00" />
+  <TestSettings name="default" id="cb7e37f3-aabb-4387-9120-e439894d5d45">
+    <Deployment runDeploymentRoot="ajaan_BUF-5CG4423FYV_2026-08-17_13_18_04" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="a201fd61-2584-4c21-9cd4-31be8ee99ada" testId="9c0e485c-3a29-adba-e8ca-7907306ed0bf" testName="BirkNext.Web.Tests.ReviewContextRuntimeValidationTest.Validate_ReviewContext_IsCanonicalSourceOfTruth" computerName="BUF-5CG4423FYV" duration="00:00:00.0030246" startTime="2026-08-17T13:18:04.2832398+02:00" endTime="2026-08-17T13:18:04.2832519+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a201fd61-2584-4c21-9cd4-31be8ee99ada">
+      <Output>
+        <ErrorInfo>
+          <Message>System.IO.FileNotFoundException : Sample artifact not found: SampleData\person-adapter\constitution.md</Message>
+          <StackTrace>   at BirkNext.Web.Tests.ReviewContextRuntimeValidationTest.LoadArtifact(String filename) in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\ReviewContextRuntimeValidationTest.cs:line 222&#xD;
+   at BirkNext.Web.Tests.ReviewContextRuntimeValidationTest.Validate_ReviewContext_IsCanonicalSourceOfTruth() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\ReviewContextRuntimeValidationTest.cs:line 25&#xD;
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="BirkNext.Web.Tests.ReviewContextRuntimeValidationTest.Validate_ReviewContext_IsCanonicalSourceOfTruth" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="9c0e485c-3a29-adba-e8ca-7907306ed0bf">
+      <Execution id="a201fd61-2584-4c21-9cd4-31be8ee99ada" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.ReviewContextRuntimeValidationTest" name="Validate_ReviewContext_IsCanonicalSourceOfTruth" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="9c0e485c-3a29-adba-e8ca-7907306ed0bf" executionId="a201fd61-2584-4c21-9cd4-31be8ee99ada" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="1" executed="1" passed="0" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 8.0.16)&#xD;
+[xUnit.net 00:00:00.11]   Discovering: BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.22]   Discovered:  BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.23]   Starting:    BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.26]       System.IO.FileNotFoundException : Sample artifact not found: SampleData\person-adapter\constitution.md&#xD;
+[xUnit.net 00:00:00.26]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.26]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\ReviewContextRuntimeValidationTest.cs(222,0): at BirkNext.Web.Tests.ReviewContextRuntimeValidationTest.LoadArtifact(String filename)&#xD;
+[xUnit.net 00:00:00.26]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\ReviewContextRuntimeValidationTest.cs(25,0): at BirkNext.Web.Tests.ReviewContextRuntimeValidationTest.Validate_ReviewContext_IsCanonicalSourceOfTruth()&#xD;
+[xUnit.net 00:00:00.26]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+[xUnit.net 00:00:00.26]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:00.27]   Finished:    BirkNext.Web.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T13:18:04.2886455+02:00">
+        <Text>[xUnit.net 00:00:00.26]     BirkNext.Web.Tests.ReviewContextRuntimeValidationTest.Validate_ReviewContext_IsCanonicalSourceOfTruth [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>
