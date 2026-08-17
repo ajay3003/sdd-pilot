@@ -23,10 +23,14 @@ public class SpecComparisonPanelSaveTests : BunitContext
 
         _client.Setup(c => c.SaveQaDeltaReview).Returns(_saveMutation.Object);
 
+        var mockWorkspace = new Mock<IWorkspaceSessionService>();
+        mockWorkspace.Setup(w => w.CurrentProject).Returns("test-project");
+
         Services.AddSingleton(config.Object);
         Services.AddSingleton(_extractionService.Object);
         Services.AddSingleton<ISpecComparisonService, SpecComparisonService>();
         Services.AddSingleton(_client.Object);
+        Services.AddSingleton(mockWorkspace.Object);
         JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
     }
 

@@ -18,6 +18,10 @@ public class AnalysisNavigationTests : BunitContext
         // SpecDrift injects IBirkNextClient; register a basic mock so DI succeeds
         // (LoadAsync catches all exceptions so a bare mock is sufficient for structure tests)
         Services.AddSingleton(new Mock<IBirkNextClient>().Object);
+
+        var mockWorkspace = new Mock<IWorkspaceSessionService>();
+        mockWorkspace.Setup(w => w.CurrentProject).Returns("test-project");
+        Services.AddSingleton(mockWorkspace.Object);
     }
 
     [Fact]

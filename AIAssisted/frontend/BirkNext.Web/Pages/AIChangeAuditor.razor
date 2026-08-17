@@ -1,6 +1,8 @@
 @page "/ai-change-auditor"
 @using BirkNext.Web.GraphQL
+@using BirkNext.Web.Services
 @inject IBirkNextClient Client
+@inject IWorkspaceSessionService Workspace
 
 <PageTitle>AI Change Review</PageTitle>
 
@@ -207,16 +209,21 @@
 </div>
 
 @code {
-    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
-
     private string _changeDescription = string.Empty;
     private bool _isAnalyzing;
     private string? _error;
     private IAnalyzeChange_AnalyzeChange_Report? _report;
 
+    private string? SelectedProjectSlug => Workspace.CurrentProject;
+
     private async Task RunAnalysisAsync()
     {
         if (string.IsNullOrWhiteSpace(_changeDescription)) return;
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+        {
+            _error = "Select a Sample Project to analyze changes.";
+            return;
+        }
 
         _isAnalyzing = true;
         _error = null;
@@ -225,7 +232,7 @@
 
         try
         {
-            var result = await Client.AnalyzeChange.ExecuteAsync(ProjectId, _changeDescription.Trim());
+            var result = await Client.AnalyzeChange.ExecuteAsync(SelectedProjectSlug, _changeDescription.Trim());
 
             if (result.Errors is { Count: > 0 })
             {

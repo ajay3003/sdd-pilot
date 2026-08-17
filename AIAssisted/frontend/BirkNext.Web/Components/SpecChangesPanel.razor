@@ -4,6 +4,7 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @inject IBirkNextClient Client
+@inject IWorkspaceSessionService Workspace
 
 <div class="scp-panel" data-testid="scp-panel">
 
@@ -92,8 +93,6 @@
 </div>
 
 @code {
-    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
-
     private bool _showCreate;
     private IReadOnlyList<IGetQaDeltaReviews_QaDeltaReviews> _reviews = [];
     private bool _isLoading;
@@ -122,17 +121,38 @@
     private int CoverageGapsIntroduced   => Summaries.Sum(s => s.UncoveredRequirements);
     private int RiskReviewCount          => Summaries.Count(s => s.RemovedRequirements > 0 || s.UncoveredRequirements > 0 || s.PotentiallyImpactedTests > 0);
 
-    protected override async Task OnInitializedAsync() => await LoadReviewsAsync();
+    private string? SelectedProjectSlug => Workspace.CurrentProject;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+        {
+            _isLoading = false;
+            _loadError = "Select a Sample Project to view change history.";
+            StateHasChanged();
+            return;
+        }
+
+        await LoadReviewsAsync();
+    }
 
     private async Task LoadReviewsAsync()
     {
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+        {
+            _loadError = "Select a Sample Project to view change history.";
+            _isLoading = false;
+            StateHasChanged();
+            return;
+        }
+
         _isLoading = true;
         _loadError = null;
         StateHasChanged();
 
         try
         {
-            var result = await Client.GetQaDeltaReviews.ExecuteAsync(ProjectId);
+            var result = await Client.GetQaDeltaReviews.ExecuteAsync(SelectedProjectSlug);
             if (result.Errors is { Count: > 0 })
             {
                 _loadError = "We couldn't load comparisons right now. Please try again later.";

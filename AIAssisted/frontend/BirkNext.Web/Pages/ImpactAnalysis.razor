@@ -1,6 +1,8 @@
 @page "/impact-analysis"
 @using BirkNext.Web.GraphQL
+@using BirkNext.Web.Services
 @inject IBirkNextClient Client
+@inject IWorkspaceSessionService Workspace
 
 <PageTitle>Impact Analysis</PageTitle>
 
@@ -202,8 +204,6 @@
 </div>
 
 @code {
-    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
-
     private bool _isLoading = true;
     private string? _loadError;
     private SummaryViewModel _summary = new();
@@ -218,6 +218,8 @@
     // Display labels shared with Traceability page (same alphabetical ordering)
     private Dictionary<string, string> _requirementLabels = new();
     private Dictionary<string, string> _testLabels = new();
+
+    private string? SelectedProjectSlug => Workspace.CurrentProject;
 
     private IReadOnlyList<RequirementRiskViewModel> FilteredRequirements => string.IsNullOrEmpty(_riskFilter)
         ? _requirements
@@ -256,18 +258,37 @@
         }
     }
 
-    protected override async Task OnInitializedAsync() => await LoadSummaryAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+        {
+            _isLoading = false;
+            _loadError = "Select a Sample Project to view impact analysis.";
+            StateHasChanged();
+            return;
+        }
+
+        await LoadSummaryAsync();
+    }
 
     private async Task LoadSummaryAsync()
     {
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+        {
+            _loadError = "Select a Sample Project to view impact analysis.";
+            _isLoading = false;
+            StateHasChanged();
+            return;
+        }
+
         _isLoading = true;
         _loadError = null;
         StateHasChanged();
 
         try
         {
-            var summaryTask = Client.GetImpactSummary.ExecuteAsync(ProjectId);
-            var scenariosTask = Client.GetScenarios.ExecuteAsync(ProjectId);
+            var summaryTask = Client.GetImpactSummary.ExecuteAsync(SelectedProjectSlug);
+            var scenariosTask = Client.GetScenarios.ExecuteAsync(SelectedProjectSlug);
             await Task.WhenAll(summaryTask, scenariosTask);
 
             var summaryResult = summaryTask.Result;
@@ -334,6 +355,7 @@
     private async Task SelectRequirementAsync(string requirementId)
     {
         if (_selectedRequirementId == requirementId) return;
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug)) return;
 
         _selectedRequirementId = requirementId;
         _isLoadingDetail = true;
@@ -343,7 +365,7 @@
 
         try
         {
-            var result = await Client.GetRequirementImpact.ExecuteAsync(ProjectId, requirementId);
+            var result = await Client.GetRequirementImpact.ExecuteAsync(SelectedProjectSlug, requirementId);
 
             if (result.Errors is { Count: > 0 })
             {

@@ -1,9 +1,11 @@
 @page "/spec-drift"
 @using BirkNext.Web.GraphQL
 @using BirkNext.Web.Components
+@using BirkNext.Web.Services
 @using Microsoft.AspNetCore.WebUtilities
 @inject IBirkNextClient Client
 @inject NavigationManager NavigationManager
+@inject IWorkspaceSessionService Workspace
 
 <PageTitle>Spec Drift</PageTitle>
 
@@ -241,13 +243,13 @@
 </div>
 
 @code {
-    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
-
     private bool _isLoading = true;
     private string? _loadError;
     private IGetSpecDriftReport_SpecDriftReport? _report;
     private string? _activeFilter;
     private string _activeTab = "overview";
+
+    private string? SelectedProjectSlug => Workspace.CurrentProject;
 
     protected override void OnInitialized()
     {
@@ -256,19 +258,38 @@
             _activeTab = tab!;
     }
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+        {
+            _isLoading = false;
+            _loadError = "Select a Sample Project to view specification drift.";
+            StateHasChanged();
+            return;
+        }
+
+        await LoadAsync();
+    }
 
     private void SetTab(string tab) => _activeTab = tab;
 
     private async Task LoadAsync()
     {
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+        {
+            _loadError = "Select a Sample Project to view specification drift.";
+            _isLoading = false;
+            StateHasChanged();
+            return;
+        }
+
         _isLoading = true;
         _loadError = null;
         StateHasChanged();
 
         try
         {
-            var result = await Client.GetSpecDriftReport.ExecuteAsync(ProjectId);
+            var result = await Client.GetSpecDriftReport.ExecuteAsync(SelectedProjectSlug);
 
             if (result.Errors is { Count: > 0 })
             {

@@ -2,6 +2,7 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @inject IScenarioExtractionService ExtractionService
+@inject IWorkspaceSessionService Workspace
 @inject IExtractionConfiguration ExtractionConfig
 @inject ISpecComparisonService ComparisonService
 @inject IBirkNextClient Client
@@ -212,8 +213,6 @@
 </section>
 
 @code {
-    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
-
     private string _oldSpecText = string.Empty;
     private string _newSpecText = string.Empty;
     private string? _validationMessage;
@@ -227,6 +226,8 @@
     private bool _saveSuccess;
     private string? _saveTitleError;
     private string? _saveError;
+
+    private string? SelectedProjectSlug => Workspace.CurrentProject;
 
     private void HandleOldImported(string content)
     {
@@ -305,6 +306,12 @@
         if (_comparisonResult is null)
             return;
 
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+        {
+            _saveError = "Select a Sample Project to save the comparison.";
+            return;
+        }
+
         _isSaving = true;
         try
         {
@@ -313,7 +320,7 @@
             var input = new SaveQaDeltaReviewInput
             {
                 Title = _reviewTitle.Trim(),
-                ProjectId = ProjectId,
+                ProjectId = SelectedProjectSlug,
                 OldSpecFileName = null,
                 NewSpecFileName = null,
                 AnalysisProfile = _profile.ToString(),

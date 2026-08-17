@@ -1,7 +1,9 @@
 @page "/traceability/suggestions"
 @page "/traceability-suggestions"
 @using BirkNext.Web.GraphQL
+@using BirkNext.Web.Services
 @inject IBirkNextClient Client
+@inject IWorkspaceSessionService Workspace
 
 <PageTitle>Traceability Suggestions</PageTitle>
 
@@ -180,8 +182,6 @@
 </div>
 
 @code {
-    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
-
     private bool _isLoading = true;
     private string? _loadError;
     private string? _actionError;
@@ -220,17 +220,38 @@
         _                => "Pending Suggestions",
     };
 
-    protected override async Task OnInitializedAsync() => await LoadDataAsync();
+    private string? SelectedProjectSlug => Workspace.CurrentProject;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+        {
+            _isLoading = false;
+            _loadError = "Select a Sample Project to view traceability suggestions.";
+            StateHasChanged();
+            return;
+        }
+
+        await LoadDataAsync();
+    }
 
     private async Task LoadDataAsync()
     {
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+        {
+            _loadError = "Select a Sample Project to view traceability suggestions.";
+            _isLoading = false;
+            StateHasChanged();
+            return;
+        }
+
         _isLoading = true;
         _loadError = null;
         StateHasChanged();
 
         try
         {
-            var result = await Client.GetTraceabilitySuggestions.ExecuteAsync(ProjectId);
+            var result = await Client.GetTraceabilitySuggestions.ExecuteAsync(SelectedProjectSlug);
 
             if (result.Errors is { Count: > 0 })
             {
@@ -265,6 +286,9 @@
 
     private async Task HandleConfirmAsync(string suggestionId)
     {
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+            return;
+
         _confirmingId = suggestionId;
         _actionError = null;
         StateHasChanged();
@@ -274,7 +298,7 @@
             var result = await Client.ConfirmSuggestion.ExecuteAsync(new ConfirmSuggestionInput
             {
                 Id = suggestionId,
-                ProjectId = ProjectId,
+                ProjectId = SelectedProjectSlug,
             });
 
             if (result.Errors is { Count: > 0 })
@@ -306,6 +330,9 @@
 
     private async Task HandleRejectAsync(string suggestionId)
     {
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+            return;
+
         _rejectingId = suggestionId;
         _actionError = null;
         StateHasChanged();
@@ -315,7 +342,7 @@
             var result = await Client.RejectSuggestion.ExecuteAsync(new RejectSuggestionInput
             {
                 Id = suggestionId,
-                ProjectId = ProjectId,
+                ProjectId = SelectedProjectSlug,
             });
 
             if (result.Errors is { Count: > 0 })
@@ -345,6 +372,9 @@
 
     private async Task HandleBulkConfirmAsync()
     {
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+            return;
+
         _isBulkConfirming = true;
         _actionError = null;
         _bulkResult = null;
@@ -353,7 +383,7 @@
         try
         {
             var result = await Client.ConfirmHighConfidenceSuggestions.ExecuteAsync(
-                new ConfirmHighConfidenceSuggestionsInput { ProjectId = ProjectId });
+                new ConfirmHighConfidenceSuggestionsInput { ProjectId = SelectedProjectSlug });
 
             if (result.Errors is { Count: > 0 })
             {
@@ -380,6 +410,9 @@
 
     private async Task HandleRegenerateAsync()
     {
+        if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
+            return;
+
         _isRegenerating = true;
         _actionError = null;
         _generateResult = null;
@@ -388,7 +421,7 @@
         try
         {
             var result = await Client.GenerateTraceabilitySuggestions.ExecuteAsync(
-                new GenerateTraceabilitySuggestionsInput { ProjectId = ProjectId });
+                new GenerateTraceabilitySuggestionsInput { ProjectId = SelectedProjectSlug });
 
             if (result.Errors is { Count: > 0 })
             {

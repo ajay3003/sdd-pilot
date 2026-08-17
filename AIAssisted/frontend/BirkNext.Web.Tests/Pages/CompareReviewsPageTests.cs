@@ -1,5 +1,6 @@
 using BirkNext.Web.GraphQL;
 using BirkNext.Web.Pages;
+using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
@@ -18,6 +19,10 @@ public class CompareReviewsPageTests : BunitContext
         var mockClient = new Mock<IBirkNextClient>();
         mockClient.Setup(c => c.GetQaDeltaReviews).Returns(mockQuery.Object);
         Services.AddSingleton(mockClient.Object);
+
+        var mockWorkspace = new Mock<IWorkspaceSessionService>();
+        mockWorkspace.Setup(w => w.CurrentProject).Returns("test-project");
+        Services.AddSingleton(mockWorkspace.Object);
 
         Render<CompareReviews>();
 
