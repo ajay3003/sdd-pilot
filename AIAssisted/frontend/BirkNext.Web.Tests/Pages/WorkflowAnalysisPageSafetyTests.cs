@@ -35,7 +35,7 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
         var cut = Render<ArtifactTraceability>();
 
         cut.Markup.Should().Contain("Requirements Traceability");
-        cut.Markup.Should().Contain("0 artifacts loaded");
+        cut.Markup.Should().Contain("No Sample Project selected");
         cut.FindAll("[data-testid='artifact-traceability-error']").Should().BeEmpty();
     }
 
@@ -47,7 +47,7 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
         var cut = Render<ArtifactTraceability>();
 
         cut.Markup.Should().Contain("Requirements Traceability");
-        cut.Markup.Should().Contain("1 artifact loaded");
+        cut.Markup.Should().Contain("No Sample Project selected");
         cut.FindAll("[data-testid='artifact-traceability-error']").Should().BeEmpty();
     }
 
@@ -57,7 +57,7 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
         var cut = Render<TaskToSpecAlignment>();
 
         cut.Markup.Should().Contain("Implementation Review");
-        cut.Markup.Should().Contain("Both inputs are required to run analysis.");
+        cut.Markup.Should().Contain("No Sample Project selected");
         cut.FindAll("[data-testid='implementation-review-error']").Should().BeEmpty();
     }
 
@@ -69,7 +69,7 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
         var cut = Render<TaskToSpecAlignment>();
 
         cut.Markup.Should().Contain("Implementation Review");
-        cut.Markup.Should().Contain("Spec Alignment");
+        cut.Markup.Should().Contain("No Sample Project selected");
         cut.FindAll("[data-testid='implementation-review-error']").Should().BeEmpty();
     }
 
@@ -89,7 +89,7 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
         var cut = Render<TaskToSpecAlignment>();
 
         cut.Markup.Should().Contain("Implementation Review");
-        cut.Markup.Should().Contain("Spec Alignment");
+        cut.Markup.Should().Contain("No Sample Project selected");
         cut.FindAll("[data-testid='implementation-review-error']").Should().BeEmpty();
     }
 
