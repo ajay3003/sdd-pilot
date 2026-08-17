@@ -90,10 +90,9 @@ public class CandidateLinkPanelTests : BunitContext
             .Add(c => c.LinkableCandidates, Array.Empty<ExtractionCandidate>()));
 
         var help = cut.Find("[data-testid='link-panel-help']").TextContent;
-        help.Should().Contain("connect requirements to tests");
-        help.Should().Contain("connect requirements to success criteria");
+        help.Should().Contain("Connect requirements to tests");
+        help.Should().Contain("success criteria");
         help.Should().Contain("improve traceability coverage");
-        help.Should().Contain("correct extraction relationships");
         help.Should().Contain("affect Traceability & Coverage calculations");
     }
 

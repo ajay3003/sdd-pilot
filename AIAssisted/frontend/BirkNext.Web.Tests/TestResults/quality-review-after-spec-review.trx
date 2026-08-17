@@ -1,0 +1,103 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="00d0e596-9d63-43e8-bb96-7ea9ebc82a8d" name="ajaan@BUF-5CG4423FYV 2026-08-17 12:16:47" runUser="COMMON\ajaan" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-17T12:16:47.3693381+02:00" queuing="2026-08-17T12:16:47.3693388+02:00" start="2026-08-17T12:16:46.3726735+02:00" finish="2026-08-17T12:16:47.3939136+02:00" />
+  <TestSettings name="default" id="2ac75e64-054a-454b-94e3-7fba1144c3ed">
+    <Deployment runDeploymentRoot="ajaan_BUF-5CG4423FYV_2026-08-17_12_16_47" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="31405ed9-8673-4aee-9d6d-dd1e0f33a0c6" testId="8ee72ccf-7ec0-cb5c-e745-fcc2d24ae319" testName="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.WorkspaceArtifactCannotOverrideSampleProjectResolvedArtifact" computerName="BUF-5CG4423FYV" duration="00:00:00.0044100" startTime="2026-08-17T12:16:47.3477828+02:00" endTime="2026-08-17T12:16:47.3477829+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="31405ed9-8673-4aee-9d6d-dd1e0f33a0c6" />
+    <UnitTestResult executionId="aa8e3417-6ee5-4ba1-9d45-cb725459c16a" testId="f73e6b4f-4bb1-6e43-6f4f-235189e6100a" testName="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.ProjectSwitch_ReloadsArtifactsAndRecalculatesPackAvailability" computerName="BUF-5CG4423FYV" duration="00:00:00.0064429" startTime="2026-08-17T12:16:47.3194775+02:00" endTime="2026-08-17T12:16:47.3194776+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aa8e3417-6ee5-4ba1-9d45-cb725459c16a" />
+    <UnitTestResult executionId="39e52b2f-3e87-46a4-9645-f398998fc4f4" testId="44093f5b-d751-59a6-abe1-02a444e5b309" testName="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.MissingDataModel_MarksOnlyDataModelMissingAndDisablesDataModelPack" computerName="BUF-5CG4423FYV" duration="00:00:00.0036652" startTime="2026-08-17T12:16:47.3095738+02:00" endTime="2026-08-17T12:16:47.3095739+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="39e52b2f-3e87-46a4-9645-f398998fc4f4" />
+    <UnitTestResult executionId="cdff40da-5fba-4f3a-9d94-160a770fbd12" testId="0bf0d2a4-4138-91c1-6877-c3dc112c4976" testName="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.PackAvailability_ReactsToProjectSwitch" computerName="BUF-5CG4423FYV" duration="00:00:00.0092894" startTime="2026-08-17T12:16:47.3058953+02:00" endTime="2026-08-17T12:16:47.3058955+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cdff40da-5fba-4f3a-9d94-160a770fbd12" />
+    <UnitTestResult executionId="07fe249e-41d6-45f1-a1f2-836c54c82085" testId="d9b18078-0ad8-3b7e-0e14-36254772124b" testName="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.ReadOnlyUi_DoesNotRenderManualArtifactInputControls" computerName="BUF-5CG4423FYV" duration="00:00:00.0063791" startTime="2026-08-17T12:16:47.2484574+02:00" endTime="2026-08-17T12:16:47.2484575+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="07fe249e-41d6-45f1-a1f2-836c54c82085" />
+    <UnitTestResult executionId="0baca87d-818b-46a4-b079-ef6216907a41" testId="5ecabe3c-0550-8df9-605e-bfc616bc164f" testName="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.InitialLoad_ReadsAllArtifactsFromSelectedSampleProject" computerName="BUF-5CG4423FYV" duration="00:00:00.0568541" startTime="2026-08-17T12:16:47.2420489+02:00" endTime="2026-08-17T12:16:47.2420492+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0baca87d-818b-46a4-b079-ef6216907a41" />
+    <UnitTestResult executionId="535684ed-6acc-4e28-9566-8ca6f4086bb0" testId="bb9cdcff-38ca-caea-df5c-1fb6e04c27fb" testName="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.ProjectSwitch_ClearsReportFromPreviousProject" computerName="BUF-5CG4423FYV" duration="00:00:00.0067876" startTime="2026-08-17T12:16:47.2963351+02:00" endTime="2026-08-17T12:16:47.2963357+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="535684ed-6acc-4e28-9566-8ca6f4086bb0" />
+    <UnitTestResult executionId="64ab6c89-ee48-4bec-9c6d-eed10560155d" testId="52a3998d-ed6d-8d33-b589-27da48f3e696" testName="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.NoProjectSelected_ShowsNoProjectStateWithoutManualFallback" computerName="BUF-5CG4423FYV" duration="00:00:00.2731138" startTime="2026-08-17T12:16:47.1855254+02:00" endTime="2026-08-17T12:16:47.1855384+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="64ab6c89-ee48-4bec-9c6d-eed10560155d" />
+    <UnitTestResult executionId="c7dfaa7d-1a22-43ba-b820-d8f7463c46c5" testId="5f0a8bc9-3d9c-b0e7-7d93-526e8ec20020" testName="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.DeselectProject_ClearsArtifactsReportAndRunState" computerName="BUF-5CG4423FYV" duration="00:00:00.0155988" startTime="2026-08-17T12:16:47.3478994+02:00" endTime="2026-08-17T12:16:47.3478994+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c7dfaa7d-1a22-43ba-b820-d8f7463c46c5" />
+    <UnitTestResult executionId="5ca4362d-41bc-470a-87e7-858d88ef93d8" testId="c3a8e25e-8a26-2f0e-2520-5f1ce47f6b7b" testName="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.SameProjectRerender_DoesNotResolveArtifactsAgain" computerName="BUF-5CG4423FYV" duration="00:00:00.0032984" startTime="2026-08-17T12:16:47.3129682+02:00" endTime="2026-08-17T12:16:47.3129684+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5ca4362d-41bc-470a-87e7-858d88ef93d8" />
+    <UnitTestResult executionId="d11a3435-97e9-4a25-a6cb-0fc3f43b2ca0" testId="e844553d-0fd1-272b-6dce-0431f353c02c" testName="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.RunQualityReview_UsesResolvedSampleProjectSnapshot" computerName="BUF-5CG4423FYV" duration="00:00:00.0408897" startTime="2026-08-17T12:16:47.2894537+02:00" endTime="2026-08-17T12:16:47.2894542+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d11a3435-97e9-4a25-a6cb-0fc3f43b2ca0" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.NoProjectSelected_ShowsNoProjectStateWithoutManualFallback" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="52a3998d-ed6d-8d33-b589-27da48f3e696">
+      <Execution id="64ab6c89-ee48-4bec-9c6d-eed10560155d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests" name="NoProjectSelected_ShowsNoProjectStateWithoutManualFallback" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.ReadOnlyUi_DoesNotRenderManualArtifactInputControls" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d9b18078-0ad8-3b7e-0e14-36254772124b">
+      <Execution id="07fe249e-41d6-45f1-a1f2-836c54c82085" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests" name="ReadOnlyUi_DoesNotRenderManualArtifactInputControls" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.InitialLoad_ReadsAllArtifactsFromSelectedSampleProject" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="5ecabe3c-0550-8df9-605e-bfc616bc164f">
+      <Execution id="0baca87d-818b-46a4-b079-ef6216907a41" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests" name="InitialLoad_ReadsAllArtifactsFromSelectedSampleProject" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.RunQualityReview_UsesResolvedSampleProjectSnapshot" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="e844553d-0fd1-272b-6dce-0431f353c02c">
+      <Execution id="d11a3435-97e9-4a25-a6cb-0fc3f43b2ca0" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests" name="RunQualityReview_UsesResolvedSampleProjectSnapshot" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.PackAvailability_ReactsToProjectSwitch" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="0bf0d2a4-4138-91c1-6877-c3dc112c4976">
+      <Execution id="cdff40da-5fba-4f3a-9d94-160a770fbd12" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests" name="PackAvailability_ReactsToProjectSwitch" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.WorkspaceArtifactCannotOverrideSampleProjectResolvedArtifact" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="8ee72ccf-7ec0-cb5c-e745-fcc2d24ae319">
+      <Execution id="31405ed9-8673-4aee-9d6d-dd1e0f33a0c6" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests" name="WorkspaceArtifactCannotOverrideSampleProjectResolvedArtifact" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.SameProjectRerender_DoesNotResolveArtifactsAgain" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="c3a8e25e-8a26-2f0e-2520-5f1ce47f6b7b">
+      <Execution id="5ca4362d-41bc-470a-87e7-858d88ef93d8" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests" name="SameProjectRerender_DoesNotResolveArtifactsAgain" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.ProjectSwitch_ClearsReportFromPreviousProject" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="bb9cdcff-38ca-caea-df5c-1fb6e04c27fb">
+      <Execution id="535684ed-6acc-4e28-9566-8ca6f4086bb0" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests" name="ProjectSwitch_ClearsReportFromPreviousProject" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.DeselectProject_ClearsArtifactsReportAndRunState" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="5f0a8bc9-3d9c-b0e7-7d93-526e8ec20020">
+      <Execution id="c7dfaa7d-1a22-43ba-b820-d8f7463c46c5" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests" name="DeselectProject_ClearsArtifactsReportAndRunState" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.MissingDataModel_MarksOnlyDataModelMissingAndDisablesDataModelPack" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="44093f5b-d751-59a6-abe1-02a444e5b309">
+      <Execution id="39e52b2f-3e87-46a4-9645-f398998fc4f4" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests" name="MissingDataModel_MarksOnlyDataModelMissingAndDisablesDataModelPack" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.ProjectSwitch_ReloadsArtifactsAndRecalculatesPackAvailability" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="f73e6b4f-4bb1-6e43-6f4f-235189e6100a">
+      <Execution id="aa8e3417-6ee5-4ba1-9d45-cb725459c16a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests" name="ProjectSwitch_ReloadsArtifactsAndRecalculatesPackAvailability" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="8ee72ccf-7ec0-cb5c-e745-fcc2d24ae319" executionId="31405ed9-8673-4aee-9d6d-dd1e0f33a0c6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f73e6b4f-4bb1-6e43-6f4f-235189e6100a" executionId="aa8e3417-6ee5-4ba1-9d45-cb725459c16a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="44093f5b-d751-59a6-abe1-02a444e5b309" executionId="39e52b2f-3e87-46a4-9645-f398998fc4f4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0bf0d2a4-4138-91c1-6877-c3dc112c4976" executionId="cdff40da-5fba-4f3a-9d94-160a770fbd12" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d9b18078-0ad8-3b7e-0e14-36254772124b" executionId="07fe249e-41d6-45f1-a1f2-836c54c82085" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5ecabe3c-0550-8df9-605e-bfc616bc164f" executionId="0baca87d-818b-46a4-b079-ef6216907a41" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bb9cdcff-38ca-caea-df5c-1fb6e04c27fb" executionId="535684ed-6acc-4e28-9566-8ca6f4086bb0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="52a3998d-ed6d-8d33-b589-27da48f3e696" executionId="64ab6c89-ee48-4bec-9c6d-eed10560155d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5f0a8bc9-3d9c-b0e7-7d93-526e8ec20020" executionId="c7dfaa7d-1a22-43ba-b820-d8f7463c46c5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c3a8e25e-8a26-2f0e-2520-5f1ce47f6b7b" executionId="5ca4362d-41bc-470a-87e7-858d88ef93d8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e844553d-0fd1-272b-6dce-0431f353c02c" executionId="d11a3435-97e9-4a25-a6cb-0fc3f43b2ca0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="11" executed="11" passed="11" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 8.0.16)&#xD;
+[xUnit.net 00:00:00.07]   Discovering: BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.18]   Discovered:  BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.19]   Starting:    BirkNext.Web.Tests&#xD;
+     Warning:&#xD;
+     The component "Fluent Assertions" is governed by the rules defined in the Xceed License Agreement and&#xD;
+     the Xceed Fluent Assertions Community License. You may use Fluent Assertions free of charge for&#xD;
+     non-commercial use only. An active subscription is required to use Fluent Assertions for commercial use.&#xD;
+     Please contact Xceed Sales mailto:sales@xceed.com to acquire a subscription at a very low cost.&#xD;
+     A paid commercial license supports the development and continued increasing support of&#xD;
+     Fluent Assertions users under both commercial and community licenses. Help us&#xD;
+     keep Fluent Assertions at the forefront of unit testing.&#xD;
+     For more information, visit https://xceed.com/products/unit-testing/fluent-assertions/&#xD;
+[xUnit.net 00:00:00.66]   Finished:    BirkNext.Web.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

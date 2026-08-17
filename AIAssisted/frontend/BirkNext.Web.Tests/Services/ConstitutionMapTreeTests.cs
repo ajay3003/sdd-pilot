@@ -85,8 +85,13 @@ public sealed class ConstitutionMapTreeTests
 
         var governanceNode = FindNode(_svc.BuildMapTree(doc.RuleCatalog), "GOV-001");
 
+        var expectedCanonicalIds = ResolveCanonicalReferenceIds(doc.RuleCatalog, governanceRule.References);
+
         governanceNode.Should().NotBeNull();
-        governanceNode!.Children.Should().HaveCount(47);
+        governanceNode!.Children.Select(c => c.Rule.RuleId)
+            .Should().BeEquivalentTo(expectedCanonicalIds,
+                "the map renders canonical rules, so aliases that resolve to an existing primary rule are not duplicated");
+        governanceNode.Children.Should().HaveCount(40);
     }
 
     private static ConstitutionRule Rule(string id, params string[] references) => new()
@@ -96,6 +101,32 @@ public sealed class ConstitutionMapTreeTests
         RuleType = ConstitutionRuleType.Principle,
         References = references.ToList(),
     };
+
+    private static List<string> ResolveCanonicalReferenceIds(
+        IReadOnlyCollection<ConstitutionRule> catalog,
+        IEnumerable<string> references)
+    {
+        var byId = new Dictionary<string, ConstitutionRule>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rule in catalog)
+        {
+            if (!string.IsNullOrWhiteSpace(rule.RuleId))
+                byId[rule.RuleId] = rule;
+        }
+
+        foreach (var rule in catalog)
+        {
+            foreach (var alias in rule.Aliases)
+            {
+                if (!byId.ContainsKey(alias))
+                    byId[alias] = rule;
+            }
+        }
+
+        return references
+            .Select(reference => byId.TryGetValue(reference, out var rule) ? rule.RuleId : reference)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
 
     private static ConstitutionMapNode? FindNode(IEnumerable<ConstitutionMapNode> nodes, string ruleId)
     {

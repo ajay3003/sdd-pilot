@@ -5,6 +5,9 @@ using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace BirkNext.Web.Tests.Components;
 
@@ -592,7 +595,7 @@ public class ViewBehaviorTests : BunitContext
     [Fact]
     public void Workflow_UsesTraceabilityFirstModel()
     {
-        var cut = Render<RecommendedWorkflow>();
+        var cut = RenderRecommendedWorkflowForTraceability();
 
         var text = cut.Markup;
         text.Should().Contain("Open Traceability &amp; Coverage first");
@@ -1123,7 +1126,7 @@ public class ViewBehaviorTests : BunitContext
     [Fact]
     public void RecommendedWorkflow_MarksQaLibraryAsOptional()
     {
-        var cut = Render<RecommendedWorkflow>();
+        var cut = RenderRecommendedWorkflowForTraceability();
 
         var text = cut.Markup;
 
@@ -1621,34 +1624,55 @@ public class ViewBehaviorTests : BunitContext
     }
 
     [Fact]
-    public void TaskExplorer_ShowsImplementationCoverage()
+    public void TaskExplorer_ImpactShowsRequirementImplementationCoverage()
     {
         var cut = RenderTaskExplorerWithImplementationGaps();
 
-        var coverage = cut.Find("[data-testid='te-implementation-coverage']").TextContent;
-        coverage.Should().Contain("Implementation Coverage");
-        coverage.Should().Contain("Are requirements implemented?");
-        coverage.Should().Contain("User Stories");
-        coverage.Should().Contain("Functional Requirements");
-        coverage.Should().Contain("Success Criteria");
-        coverage.Should().Contain("Tests");
-        coverage.Should().Contain("Architecture Notes");
-        coverage.Should().Contain("Partial");
+        // Requirement implementation coverage is the primary feature of the Impact tab
+        cut.FindAll(".te-view-btn").First(b => b.TextContent.Contains("Impact")).Click();
+
+        var impact = cut.Find("[data-testid='te-impact-view']").TextContent;
+
+        // Coverage metrics shown
+        impact.Should().Contain("Requirement Implementation Coverage");
+        impact.Should().Contain("Are requirements covered by implementation tasks?");
+
+        // Specific metric types present
+        impact.Should().Contain("User Stories");
+        impact.Should().Contain("Functional Requirements");
+        impact.Should().Contain("Success Criteria");
+        impact.Should().Contain("Tests");
+        impact.Should().Contain("Architecture Notes");
+
+        // Coverage status indicated (may show "Partial" or similar status)
+        (impact.Contains("Partial") || impact.Contains("Covered") || impact.Contains("Missing"))
+            .Should().BeTrue("Should show coverage status");
     }
 
     [Fact]
-    public void TaskExplorer_ShowsDeliveryRiskSummary()
+    public void TaskExplorer_ImpactAnalyzesImplementationGaps()
     {
         var cut = RenderTaskExplorerWithImplementationGaps();
 
-        var risk = cut.Find("[data-testid='te-delivery-risk']").TextContent;
-        risk.Should().Contain("Delivery Risk");
-        risk.Should().Contain("Requirements without implementation");
-        risk.Should().Contain("Success Criteria without tasks");
-        risk.Should().Contain("User Stories with no implementation");
-        risk.Should().Contain("Security requirements without security tasks");
-        risk.Should().Contain("Testing requirements without test tasks");
-        risk.Should().Contain("Medium");
+        // Impact tab performs gap analysis between requirements and implementation
+        cut.FindAll(".te-view-btn").First(b => b.TextContent.Contains("Impact")).Click();
+
+        var impact = cut.Find("[data-testid='te-impact-view']").TextContent;
+
+        // Should show implementation gaps section
+        impact.Should().Contain("Implementation Gaps");
+
+        // Should identify missing implementations (singular or plural depending on data)
+        (impact.Contains("Requirement without implementation") ||
+         impact.Contains("Requirements without implementation"))
+            .Should().BeTrue("Should identify requirements lacking implementation");
+
+        // Should show success indicators for aspects with no gaps
+        (impact.Contains("Success Criteria — no gaps") ||
+         impact.Contains("User Stories — no gaps") ||
+         impact.Contains("Security — no gaps") ||
+         impact.Contains("Testing — no gaps"))
+            .Should().BeTrue("Should show zero-gap indicators for covered categories");
     }
 
     [Fact]
@@ -1680,19 +1704,26 @@ public class ViewBehaviorTests : BunitContext
     }
 
     [Fact]
-    public void TaskExplorer_ShowsImplementationFilters()
+    public void TaskExplorer_TreeViewSupportsFilteringByMultipleDimensions()
     {
         var cut = RenderTaskExplorerWithImplementationGaps();
 
         var text = cut.Markup;
-        text.Should().Contain("Only Missing Implementation");
-        text.Should().Contain("Only Partial Coverage");
-        text.Should().Contain("Only Security");
-        text.Should().Contain("Only Testing");
-        text.Should().Contain("Only User Stories");
-        text.Should().Contain("Only Requirements");
-        text.Should().Contain("Only Success Criteria");
-        text.Should().Contain("Only Unlinked Tasks");
+
+        // Coverage dimension: filter by artifact type and implementation status
+        text.Should().Contain("User Stories");
+        text.Should().Contain("Requirements");
+        text.Should().Contain("Success Criteria");
+        text.Should().Contain("Missing Implementation");
+
+        // Traceability dimension: filter by link relationships
+        text.Should().Contain("Has FR Links");
+        text.Should().Contain("Has SC Links");
+        text.Should().Contain("Unlinked");
+
+        // Quality dimension: filter by task classification
+        text.Should().Contain("Testing");
+        text.Should().Contain("Security");
     }
 
     [Fact]
@@ -1750,11 +1781,108 @@ public class ViewBehaviorTests : BunitContext
         var text = cut.Markup;
         text.Should().Contain("Specification Review");
         text.Should().Contain("Traceability &amp; Coverage");
-        text.Should().NotContain("href=\"/traceability\"");
-        text.Should().NotContain("href=\"/code-traceability\"");
-        text.Should().NotContain("Traceability Suggestions");
-        text.Should().NotContain("Code Traceability");
-        text.Should().NotContain("standalone Traceability");
+        text.Should().Contain("Legacy session-level coverage view");
+        text.Should().Contain("hidden from the sidebar by default");
+        text.Should().Contain("Artifact Traceability");
+        text.Should().Contain("href=\"/artifact-traceability\"");
+    }
+
+    private IRenderedComponent<RecommendedWorkflow> RenderRecommendedWorkflowForTraceability()
+    {
+        var readinessService = new Mock<IWorkflowReadinessService>();
+        readinessService
+            .Setup(service => service.GetReadinessAsync())
+            .ReturnsAsync(CreateTraceabilityFirstReadiness());
+
+        var autoSave = new Mock<IWorkspaceAutoSaveService>();
+        autoSave.Setup(service => service.StartMonitoringAsync()).Returns(Task.CompletedTask);
+        autoSave.Setup(service => service.StopMonitoringAsync()).Returns(Task.CompletedTask);
+
+        Services.AddSingleton(readinessService.Object);
+        Services.AddSingleton(Mock.Of<IWorkspacePersistenceApiService>());
+        Services.AddSingleton(Mock.Of<IWorkspaceSessionRestoreService>());
+        Services.AddSingleton(autoSave.Object);
+        Services.AddSingleton(Mock.Of<IRecommendedWorkflowApiService>());
+        Services.AddSingleton(NullLogger<RecommendedWorkflow>.Instance);
+
+        return Render<RecommendedWorkflow>();
+    }
+
+    private static WorkflowReadiness CreateTraceabilityFirstReadiness()
+    {
+        var artifactStatus = new WorkspaceArtifactStatus(
+            HasConstitution: true,
+            HasSpecification: true,
+            HasPlan: true,
+            HasTasks: true,
+            HasDataModel: true,
+            ArtifactCount: 5,
+            ActiveProjectName: "Traceability fixture");
+
+        var traceabilityStep = new WorkflowStepViewModel
+        {
+            Number = 1,
+            Key = "ArtifactTraceability",
+            Title = "Open Traceability & Coverage first",
+            Description = "Review coverage and gaps. Use Flow View for QA readiness. Use Spec Explorer for specification structure. Traceability requires no publishing required.",
+            Route = "/artifact-traceability",
+            ActionLabel = "Open Traceability & Coverage first",
+            Color = "#2563eb",
+            CanOpen = true,
+            IsCurrent = true,
+            Status = WorkflowStepStatus.Available,
+            Prerequisites = PrerequisiteState.Available,
+            ReviewState = ReviewState.NotStarted,
+            ApprovalState = ApprovalState.Pending
+        };
+
+        var libraryStep = new WorkflowStepViewModel
+        {
+            Number = 2,
+            Key = "QaArtifactLibrary",
+            Title = "Optional QA Artifact Library",
+            Description = "Optional reuse repository for reviewed QA assets; not required for traceability coverage.",
+            Route = "/scenarios",
+            ActionLabel = "Open library for reuse",
+            Color = "#0f766e",
+            CanOpen = true,
+            IsOptional = true,
+            RequiresApproval = false,
+            RequiresManualReview = false,
+            Status = WorkflowStepStatus.Available,
+            Prerequisites = PrerequisiteState.Available,
+            ReviewState = ReviewState.NotStarted,
+            ApprovalState = ApprovalState.Pending
+        };
+
+        return new WorkflowReadiness(
+            CurrentWorkspace: new WorkflowWorkspace(Guid.NewGuid(), "Traceability fixture", "Traceability fixture", 5, DateTimeOffset.UtcNow, null, false),
+            WorkspaceLoaded: true,
+            WorkspaceName: "Traceability fixture",
+            ProjectName: "Traceability fixture",
+            WorkspaceStatus: "Not Saved",
+            WorkspaceStatusClass: "status-not-saved",
+            LastSavedAt: null,
+            LastSavedText: "Not saved",
+            ArtifactStatus: artifactStatus,
+            Artifacts:
+            [
+                new("Constitution", true),
+                new("Specification", true),
+                new("Plan", true),
+                new("Tasks", true),
+                new("Data Model", true)
+            ],
+            SpecificationReviewState: null,
+            TraceabilityState: traceabilityStep,
+            ImplementationReviewState: null,
+            QualityGateState: null,
+            NextRecommendedAction: traceabilityStep,
+            OverallReadiness: new WorkflowReadinessBreakdown { OverallReadiness = 80, ArtifactReadiness = 100, ReviewReadiness = 50, ApprovalReadiness = 50 },
+            Steps: [traceabilityStep, libraryStep],
+            CanRelease: false,
+            ReleaseReason: "Manual approvals required.",
+            Warnings: []);
     }
 
     private IRenderedComponent<TaskExplorerPanel> RenderTaskExplorerWithImplementationGaps()

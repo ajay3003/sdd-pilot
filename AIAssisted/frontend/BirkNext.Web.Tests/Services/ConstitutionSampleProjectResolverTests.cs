@@ -1,3 +1,6 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
 using FluentAssertions;
@@ -10,24 +13,14 @@ public sealed class ConstitutionSampleProjectResolverTests
     [Fact]
     public async Task ResolveAsync_Constitution_ReturnsSelectedProjectFile()
     {
-        var mockApiService = new Mock<SampleProjectsApiService>(null!);
-        var mockWorkspace = new Mock<IWorkspaceSessionService>();
-
-        mockApiService.Setup(s => s.GetProjectsAsync())
-            .ReturnsAsync(new List<SampleProjectDto>
+        var resolver = CreateResolver(
+            [
+                Project("autorisasjon", "Autorisasjon", "constitution.md", "spec.md")
+            ],
+            new Dictionary<(string, string), string>
             {
-                new("autorisasjon", "Autorisasjon", "Authorization", "Auth module", "/path/a",
-                    false, new[]
-                    {
-                        new SampleFileDto("constitution.md", true, null, null, null, false, false),
-                        new SampleFileDto("spec.md", true, null, null, null, false, false),
-                    }.ToList())
+                [("autorisasjon", "constitution.md")] = "# Constitution\nPP-01: Test",
             });
-
-        mockApiService.Setup(s => s.GetFileAsync("autorisasjon", "constitution.md"))
-            .ReturnsAsync("# Constitution\nPP-01: Test");
-
-        var resolver = new SampleProjectDocumentResolver(mockApiService.Object, mockWorkspace.Object);
 
         var result = await resolver.ResolveAsync("autorisasjon", ExplorerDocumentType.Constitution);
 
@@ -40,17 +33,11 @@ public sealed class ConstitutionSampleProjectResolverTests
     [Fact]
     public async Task ResolveAsync_MissingDocument_ReturnsNotFoundNotFallback()
     {
-        var mockApiService = new Mock<SampleProjectsApiService>(null!);
-        var mockWorkspace = new Mock<IWorkspaceSessionService>();
-
-        mockApiService.Setup(s => s.GetProjectsAsync())
-            .ReturnsAsync(new List<SampleProjectDto>
-            {
-                new("autorisasjon", "Autorisasjon", "Authorization", "Auth module", "/path/a",
-                    false, new[] { new SampleFileDto("spec.md", true, null, null, null, false, false) }.ToList())
-            });
-
-        var resolver = new SampleProjectDocumentResolver(mockApiService.Object, mockWorkspace.Object);
+        var resolver = CreateResolver(
+            [
+                Project("autorisasjon", "Autorisasjon", "spec.md")
+            ],
+            new Dictionary<(string, string), string>());
 
         var result = await resolver.ResolveAsync("autorisasjon", ExplorerDocumentType.Constitution);
 
@@ -63,13 +50,7 @@ public sealed class ConstitutionSampleProjectResolverTests
     [Fact]
     public async Task ResolveAsync_InvalidProject_ReturnsError()
     {
-        var mockApiService = new Mock<SampleProjectsApiService>(null!);
-        var mockWorkspace = new Mock<IWorkspaceSessionService>();
-
-        mockApiService.Setup(s => s.GetProjectsAsync())
-            .ReturnsAsync(new List<SampleProjectDto>());
-
-        var resolver = new SampleProjectDocumentResolver(mockApiService.Object, mockWorkspace.Object);
+        var resolver = CreateResolver([], new Dictionary<(string, string), string>());
 
         var result = await resolver.ResolveAsync("nonexistent", ExplorerDocumentType.Constitution);
 
@@ -80,10 +61,12 @@ public sealed class ConstitutionSampleProjectResolverTests
     [Fact]
     public void SetSelectedProject_UpdatesContext()
     {
-        var mockApiService = new Mock<SampleProjectsApiService>(null!);
+        var api = new SampleProjectsApiService(new HttpClient(new SampleProjectsHandler([], new Dictionary<(string, string), string>()))
+        {
+            BaseAddress = new Uri("http://localhost/")
+        });
         var mockWorkspace = new Mock<IWorkspaceSessionService>();
-
-        var resolver = new SampleProjectDocumentResolver(mockApiService.Object, mockWorkspace.Object);
+        var resolver = new SampleProjectDocumentResolver(api, mockWorkspace.Object);
 
         resolver.SetSelectedProject("autorisasjon");
 
@@ -93,19 +76,12 @@ public sealed class ConstitutionSampleProjectResolverTests
     [Fact]
     public async Task GetAvailableProjectsAsync_ReturnsOnlySampleDataProjects()
     {
-        var mockApiService = new Mock<SampleProjectsApiService>(null!);
-        var mockWorkspace = new Mock<IWorkspaceSessionService>();
-
         var projects = new List<SampleProjectDto>
         {
-            new("autorisasjon", "Autorisasjon", "Auth", "Auth module", "/path/a", false, []),
-            new("person-module", "Person Module", "Data", "Person data", "/path/p", false, [])
+            Project("autorisasjon", "Autorisasjon"),
+            Project("person-module", "Person Module"),
         };
-
-        mockApiService.Setup(s => s.GetProjectsAsync())
-            .ReturnsAsync(projects);
-
-        var resolver = new SampleProjectDocumentResolver(mockApiService.Object, mockWorkspace.Object);
+        var resolver = CreateResolver(projects, new Dictionary<(string, string), string>());
 
         var available = await resolver.GetAvailableProjectsAsync();
 
@@ -117,24 +93,16 @@ public sealed class ConstitutionSampleProjectResolverTests
     [Fact]
     public async Task ResolveAsync_SwitchProjects_ClearsOldContent()
     {
-        var mockApiService = new Mock<SampleProjectsApiService>(null!);
-        var mockWorkspace = new Mock<IWorkspaceSessionService>();
-
-        mockApiService.Setup(s => s.GetProjectsAsync())
-            .ReturnsAsync(new List<SampleProjectDto>
+        var resolver = CreateResolver(
+            [
+                Project("projectA", "Project A", "constitution.md"),
+                Project("projectB", "Project B", "constitution.md"),
+            ],
+            new Dictionary<(string, string), string>
             {
-                new("projectA", "Project A", "A", "Project A", "/a", false,
-                    new[] { new SampleFileDto("constitution.md", true, null, null, null, false, false) }.ToList()),
-                new("projectB", "Project B", "B", "Project B", "/b", false,
-                    new[] { new SampleFileDto("constitution.md", true, null, null, null, false, false) }.ToList())
+                [("projectA", "constitution.md")] = "# A Constitution",
+                [("projectB", "constitution.md")] = "# B Constitution",
             });
-
-        mockApiService.Setup(s => s.GetFileAsync("projectA", "constitution.md"))
-            .ReturnsAsync("# A Constitution");
-        mockApiService.Setup(s => s.GetFileAsync("projectB", "constitution.md"))
-            .ReturnsAsync("# B Constitution");
-
-        var resolver = new SampleProjectDocumentResolver(mockApiService.Object, mockWorkspace.Object);
 
         var resultA = await resolver.ResolveAsync("projectA", ExplorerDocumentType.Constitution);
         resultA.Content.Should().Contain("A Constitution");
@@ -144,38 +112,88 @@ public sealed class ConstitutionSampleProjectResolverTests
         resultB.Content.Should().NotContain("A Constitution");
     }
 
-    /// <summary>
-    /// REGRESSION TEST: Workspace cache must not override selected Sample Project
-    /// Violation: If CurrentProject=B but Workspace contains cached content from A,
-    /// the page would display A instead of B/constitution.md
-    /// </summary>
     [Fact]
-    public void WorkspaceCache_DoesNotOverrideSelectedProject_PolicyEnforcement()
+    public async Task WorkspaceCache_DoesNotOverrideSelectedProject_PolicyEnforcement()
     {
-        var mockApiService = new Mock<SampleProjectsApiService>(null!);
         var mockWorkspace = new Mock<IWorkspaceSessionService>();
-
-        // Setup: resolver will be called for ProjectB
         mockWorkspace.Setup(w => w.CurrentProject).Returns("projectB");
 
-        mockApiService.Setup(s => s.GetProjectsAsync())
-            .ReturnsAsync(new List<SampleProjectDto>
+        var resolver = CreateResolver(
+            [
+                Project("projectB", "Project B", "constitution.md")
+            ],
+            new Dictionary<(string, string), string>
             {
-                new("projectB", "Project B", "B", "Project B", "/b", false,
-                    new[] { new SampleFileDto("constitution.md", true, null, null, null, false, false) }.ToList())
-            });
+                [("projectB", "constitution.md")] = "# B Constitution",
+            },
+            mockWorkspace.Object);
 
-        mockApiService.Setup(s => s.GetFileAsync("projectB", "constitution.md"))
-            .ReturnsAsync("# B Constitution");
+        resolver.GetSelectedProject().Should().Be("projectB");
 
-        var resolver = new SampleProjectDocumentResolver(mockApiService.Object, mockWorkspace.Object);
-
-        // Policy requirement: resolver should be the source, not Workspace cache
-        var selected = resolver.GetSelectedProject();
-        selected.Should().Be("projectB");
-
-        // Resolver should return B, regardless of what might be in Workspace cache
-        var result = resolver.ResolveAsync("projectB", ExplorerDocumentType.Constitution).Result;
+        var result = await resolver.ResolveAsync("projectB", ExplorerDocumentType.Constitution);
         result.Content.Should().Contain("B Constitution");
+    }
+
+    private static SampleProjectDocumentResolver CreateResolver(
+        IReadOnlyList<SampleProjectDto> projects,
+        IReadOnlyDictionary<(string ProjectSlug, string Filename), string> files,
+        IWorkspaceSessionService? workspace = null)
+    {
+        var client = new HttpClient(new SampleProjectsHandler(projects, files))
+        {
+            BaseAddress = new Uri("http://localhost/")
+        };
+
+        return new SampleProjectDocumentResolver(
+            new SampleProjectsApiService(client),
+            workspace ?? Mock.Of<IWorkspaceSessionService>());
+    }
+
+    private static SampleProjectDto Project(string slug, string name, params string[] filenames) =>
+        new(
+            slug,
+            name,
+            "test",
+            $"Test project {name}",
+            $"/SampleData/{slug}",
+            false,
+            filenames.Select(filename => new SampleFileDto(filename, true, null, null, null, true, false)).ToList());
+
+    private sealed class SampleProjectsHandler(
+        IReadOnlyList<SampleProjectDto> projects,
+        IReadOnlyDictionary<(string ProjectSlug, string Filename), string> files) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            if (path.Equals("/api/sample-projects", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(projects));
+            }
+
+            if (path.Contains("/api/sample-projects/", StringComparison.OrdinalIgnoreCase)
+                && path.EndsWith("/file", StringComparison.OrdinalIgnoreCase))
+            {
+                var slug = Uri.UnescapeDataString(path.Split('/')[3]);
+                var query = System.Web.HttpUtility.ParseQueryString(request.RequestUri?.Query ?? string.Empty);
+                var filename = query["filename"] ?? string.Empty;
+
+                if (files.TryGetValue((slug, filename), out var content))
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(content, Encoding.UTF8, "text/plain")
+                    });
+
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+
+        private static HttpResponseMessage JsonResponse<T>(T value) =>
+            new(HttpStatusCode.OK)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(value), Encoding.UTF8, "application/json")
+            };
     }
 }

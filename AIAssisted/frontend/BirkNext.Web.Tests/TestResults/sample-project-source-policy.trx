@@ -1,0 +1,584 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="44702e2a-42e9-473b-9e4b-1a6efedac65b" name="ajaan@BUF-5CG4423FYV 2026-08-17 11:03:16" runUser="COMMON\ajaan" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-17T11:03:16.7381804+02:00" queuing="2026-08-17T11:03:16.7381807+02:00" start="2026-08-17T11:03:16.1223464+02:00" finish="2026-08-17T11:03:17.0617515+02:00" />
+  <TestSettings name="default" id="8ccfe4a9-3ab7-4011-971b-115d63ee9981">
+    <Deployment runDeploymentRoot="ajaan_BUF-5CG4423FYV_2026-08-17_11_03_16" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="04ab8c85-f331-4e21-808a-6a20b1a63d77" testId="d95a531c-3e7d-063e-7bf7-6be34dc86b11" testName="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_SwitchesProjects" computerName="BUF-5CG4423FYV" duration="00:00:00.0021854" startTime="2026-08-17T11:03:16.9219205+02:00" endTime="2026-08-17T11:03:16.9219206+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="04ab8c85-f331-4e21-808a-6a20b1a63d77" />
+    <UnitTestResult executionId="aabd642c-d2c4-48b2-aaf5-bb5254675bb6" testId="da3f82c4-3f5a-3ce6-c628-3622499f8417" testName="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_LoadsFromSelectedSampleProject" computerName="BUF-5CG4423FYV" duration="00:00:00.0212231" startTime="2026-08-17T11:03:16.9170900+02:00" endTime="2026-08-17T11:03:16.9170902+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aabd642c-d2c4-48b2-aaf5-bb5254675bb6" />
+    <UnitTestResult executionId="e9e202e6-8928-4074-a808-0a5232736ac8" testId="d423bedd-f4cc-c836-de95-67a83cd9df10" testName="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_DifferentTaskIDsDoNotLeakBetweenProjects" computerName="BUF-5CG4423FYV" duration="00:00:00.0022390" startTime="2026-08-17T11:03:16.9435576+02:00" endTime="2026-08-17T11:03:16.9435577+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e9e202e6-8928-4074-a808-0a5232736ac8" />
+    <UnitTestResult executionId="b60ffa89-4d78-4bd0-b867-1823931e012d" testId="6b4ca3d7-8a60-225a-1fd5-cda22794b3bc" testName="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_ClearsProjectHeaderOnProjectDeselection" computerName="BUF-5CG4423FYV" duration="00:00:00.2484781" startTime="2026-08-17T11:03:16.8937073+02:00" endTime="2026-08-17T11:03:16.8937074+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b60ffa89-4d78-4bd0-b867-1823931e012d" />
+    <UnitTestResult executionId="d8af43bf-d4d2-4213-89c3-c497c09fb6a1" testId="d9d2d2c2-8f06-f6f8-3199-a330e46f746f" testName="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_HandlesEmptySelectedProject" computerName="BUF-5CG4423FYV" duration="00:00:00.0010381" startTime="2026-08-17T11:03:16.9099367+02:00" endTime="2026-08-17T11:03:16.9099368+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d8af43bf-d4d2-4213-89c3-c497c09fb6a1" />
+    <UnitTestResult executionId="34d3edf1-ff48-4ce8-b6f5-abf6f53c69e2" testId="6de0d571-848a-ecb0-ab60-525436eee8c3" testName="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ReviewerLinksLoadSelectedProjectBeforeNavigating(reviewerName: &quot;Data Model Explorer&quot;, expectedRoute: &quot;/data-model-explorer&quot;, expectedKind: DataModel, expectedText: &quot;PERSON data-model.md&quot;)" computerName="BUF-5CG4423FYV" duration="00:00:00.0036756" startTime="2026-08-17T11:03:17.0002678+02:00" endTime="2026-08-17T11:03:17.0002679+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="34d3edf1-ff48-4ce8-b6f5-abf6f53c69e2" />
+    <UnitTestResult executionId="0ca9ef17-cb5f-46ef-aacc-02a9bbe2b981" testId="f431a49d-ede1-daa5-a835-253630a6b4a6" testName="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_DoesNotUseWorkspaceAsAutomaticSource" computerName="BUF-5CG4423FYV" duration="00:00:00.2468600" startTime="2026-08-17T11:03:16.8919564+02:00" endTime="2026-08-17T11:03:16.8919564+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0ca9ef17-cb5f-46ef-aacc-02a9bbe2b981" />
+    <UnitTestResult executionId="f13d7f74-d878-473f-a603-694801d28b8b" testId="31ffab3f-3d8b-a8d7-0147-c12629662658" testName="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_DifferentDataModelsDoNotLeakBetweenProjects" computerName="BUF-5CG4423FYV" duration="00:00:00.2466922" startTime="2026-08-17T11:03:16.8919902+02:00" endTime="2026-08-17T11:03:16.8919902+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f13d7f74-d878-473f-a603-694801d28b8b" />
+    <UnitTestResult executionId="7d5c0de8-39e0-4681-84a9-13cf9457ed4c" testId="0a4d6b64-3ec5-0804-bb1d-ad3cf97d6653" testName="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_ClearsProjectHeaderOnProjectDeselection" computerName="BUF-5CG4423FYV" duration="00:00:00.0025754" startTime="2026-08-17T11:03:16.9073723+02:00" endTime="2026-08-17T11:03:16.9073724+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7d5c0de8-39e0-4681-84a9-13cf9457ed4c" />
+    <UnitTestResult executionId="9708f69a-8d0d-462a-bfaa-b52da47ace95" testId="c68c50ce-25fd-8602-4f14-05b23856e6d4" testName="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_ShowsMissingStateWhenPlanNotFound" computerName="BUF-5CG4423FYV" duration="00:00:00.0096128" startTime="2026-08-17T11:03:16.9046911+02:00" endTime="2026-08-17T11:03:16.9046913+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9708f69a-8d0d-462a-bfaa-b52da47ace95" />
+    <UnitTestResult executionId="e8e17ebc-a464-43a5-9e6b-7ffba8781c9f" testId="c90edb55-07b9-1fca-bb4a-871e9064928e" testName="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.SetSelectedProject_UpdatesContext" computerName="BUF-5CG4423FYV" duration="00:00:00.0334216" startTime="2026-08-17T11:03:16.7024970+02:00" endTime="2026-08-17T11:03:16.7024972+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e8e17ebc-a464-43a5-9e6b-7ffba8781c9f" />
+    <UnitTestResult executionId="dc56e3fa-7d69-43ae-bc1e-893bdcae8093" testId="5c3c67e4-75c1-0363-ba13-68db69f9ef5f" testName="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.FailedReviewerLoadDoesNotNavigateAndClearsStaleWorkspace" computerName="BUF-5CG4423FYV" duration="00:00:00.0063933" startTime="2026-08-17T11:03:17.0133721+02:00" endTime="2026-08-17T11:03:17.0133722+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="dc56e3fa-7d69-43ae-bc1e-893bdcae8093" />
+    <UnitTestResult executionId="e382bc3f-928f-482a-99ad-7183c69641a7" testId="ecbd8a29-c620-a079-1aaf-86d7f1f936f3" testName="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_HandlesEmptySelectedProject" computerName="BUF-5CG4423FYV" duration="00:00:00.0011122" startTime="2026-08-17T11:03:16.9102475+02:00" endTime="2026-08-17T11:03:16.9102476+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e382bc3f-928f-482a-99ad-7183c69641a7" />
+    <UnitTestResult executionId="e083fa6b-40a1-4245-b079-640ca6f5c57e" testId="52cf2472-99ae-5b57-c080-cfa737263999" testName="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_ShowsMissingStateWhenDataModelNotFound" computerName="BUF-5CG4423FYV" duration="00:00:00.0008446" startTime="2026-08-17T11:03:16.9123040+02:00" endTime="2026-08-17T11:03:16.9123041+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e083fa6b-40a1-4245-b079-640ca6f5c57e" />
+    <UnitTestResult executionId="4e45251b-bd2a-489e-8130-0c791c20190f" testId="f145a492-2976-4d4a-b5ce-57eb5e1ef727" testName="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_MissingDocument_ReturnsNotFoundNotFallback" computerName="BUF-5CG4423FYV" duration="00:00:00.0007834" startTime="2026-08-17T11:03:16.7204517+02:00" endTime="2026-08-17T11:03:16.7204518+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4e45251b-bd2a-489e-8130-0c791c20190f">
+      <Output>
+        <ErrorInfo>
+          <Message>System.NotSupportedException : Unsupported expression: s =&gt; s.GetProjectsAsync()&#xD;
+Non-overridable members (here: SampleProjectsApiService.GetProjectsAsync) may not be used in setup / verification expressions.</Message>
+          <StackTrace>   at Moq.Guard.IsOverridable(MethodInfo method, Expression expression) in /_/src/Moq/Guard.cs:line 99&#xD;
+   at Moq.MethodExpectation..ctor(LambdaExpression expression, MethodInfo method, IReadOnlyList`1 arguments, Boolean exactGenericTypeArguments, Boolean skipMatcherInitialization, Boolean allowNonOverridable) in /_/src/Moq/MethodExpectation.cs:line 87&#xD;
+   at Moq.ExpressionExtensions.&lt;Split&gt;g__Split|5_0(Expression e, Expression&amp; r, MethodExpectation&amp; p, Boolean assignment, Boolean allowNonOverridableLastProperty) in /_/src/Moq/ExpressionExtensions.cs:line 219&#xD;
+   at Moq.ExpressionExtensions.Split(LambdaExpression expression, Boolean allowNonOverridableLastProperty) in /_/src/Moq/ExpressionExtensions.cs:line 149&#xD;
+   at Moq.Mock.SetupRecursive[TSetup](Mock mock, LambdaExpression expression, Func`4 setupLast, Boolean allowNonOverridableLastProperty) in /_/src/Moq/Mock.cs:line 645&#xD;
+   at Moq.Mock.Setup(Mock mock, LambdaExpression expression, Condition condition) in /_/src/Moq/Mock.cs:line 500&#xD;
+   at Moq.Mock`1.Setup[TResult](Expression`1 expression) in /_/src/Moq/Mock`1.cs:line 452&#xD;
+   at BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_MissingDocument_ReturnsNotFoundNotFallback() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionSampleProjectResolverTests.cs:line 46&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="fc82c5c5-1932-4ace-911f-9379e4e45cc4" testId="af29c175-8d65-4ec5-1060-8fd2ce3c4950" testName="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_ReloadsSameProjectWithoutDuplication" computerName="BUF-5CG4423FYV" duration="00:00:00.0020687" startTime="2026-08-17T11:03:16.9401563+02:00" endTime="2026-08-17T11:03:16.9401564+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fc82c5c5-1932-4ace-911f-9379e4e45cc4" />
+    <UnitTestResult executionId="81a9b98d-7bd3-4ddf-93bc-31999bdca16f" testId="d724eea0-90bf-50a9-fcd3-dfa7e6ad7789" testName="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_DoesNotUseWorkspaceAsAutomaticSource" computerName="BUF-5CG4423FYV" duration="00:00:00.0012018" startTime="2026-08-17T11:03:16.9113991+02:00" endTime="2026-08-17T11:03:16.9113993+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="81a9b98d-7bd3-4ddf-93bc-31999bdca16f" />
+    <UnitTestResult executionId="e41883a0-16ab-4b4d-8f64-ee371f1ed824" testId="4dc64b36-df70-577e-a208-c27c7d897ca0" testName="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.GetAvailableProjectsAsync_ReturnsOnlySampleDataProjects" computerName="BUF-5CG4423FYV" duration="00:00:00.0010563" startTime="2026-08-17T11:03:16.7196424+02:00" endTime="2026-08-17T11:03:16.7196426+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e41883a0-16ab-4b4d-8f64-ee371f1ed824">
+      <Output>
+        <ErrorInfo>
+          <Message>System.NotSupportedException : Unsupported expression: s =&gt; s.GetProjectsAsync()&#xD;
+Non-overridable members (here: SampleProjectsApiService.GetProjectsAsync) may not be used in setup / verification expressions.</Message>
+          <StackTrace>   at Moq.Guard.IsOverridable(MethodInfo method, Expression expression) in /_/src/Moq/Guard.cs:line 99&#xD;
+   at Moq.MethodExpectation..ctor(LambdaExpression expression, MethodInfo method, IReadOnlyList`1 arguments, Boolean exactGenericTypeArguments, Boolean skipMatcherInitialization, Boolean allowNonOverridable) in /_/src/Moq/MethodExpectation.cs:line 87&#xD;
+   at Moq.ExpressionExtensions.&lt;Split&gt;g__Split|5_0(Expression e, Expression&amp; r, MethodExpectation&amp; p, Boolean assignment, Boolean allowNonOverridableLastProperty) in /_/src/Moq/ExpressionExtensions.cs:line 219&#xD;
+   at Moq.ExpressionExtensions.Split(LambdaExpression expression, Boolean allowNonOverridableLastProperty) in /_/src/Moq/ExpressionExtensions.cs:line 149&#xD;
+   at Moq.Mock.SetupRecursive[TSetup](Mock mock, LambdaExpression expression, Func`4 setupLast, Boolean allowNonOverridableLastProperty) in /_/src/Moq/Mock.cs:line 645&#xD;
+   at Moq.Mock.Setup(Mock mock, LambdaExpression expression, Condition condition) in /_/src/Moq/Mock.cs:line 500&#xD;
+   at Moq.Mock`1.Setup[TResult](Expression`1 expression) in /_/src/Moq/Mock`1.cs:line 452&#xD;
+   at BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.GetAvailableProjectsAsync_ReturnsOnlySampleDataProjects() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionSampleProjectResolverTests.cs:line 105&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="559d4834-d2f8-46fe-8e96-e1eea65fb370" testId="1e841182-3e62-1b91-1d2b-78ba3be65986" testName="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_SwitchesProjects" computerName="BUF-5CG4423FYV" duration="00:00:00.0021521" startTime="2026-08-17T11:03:16.9456846+02:00" endTime="2026-08-17T11:03:16.9456847+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="559d4834-d2f8-46fe-8e96-e1eea65fb370" />
+    <UnitTestResult executionId="c7c3cdcb-8435-43c1-91a7-2a1b3a84de41" testId="0b7ce24a-8b43-b28f-8855-601482aeeafe" testName="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ConstitutionExplorer_StaysEmptyWhenWorkspaceAndStandaloneScratchAreEmpty" computerName="BUF-5CG4423FYV" duration="00:00:00.0011924" startTime="2026-08-17T11:03:16.9501632+02:00" endTime="2026-08-17T11:03:16.9501633+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c7c3cdcb-8435-43c1-91a7-2a1b3a84de41" />
+    <UnitTestResult executionId="eb413537-e423-410e-8293-5b25866d7faf" testId="9dc270a1-be65-185d-ec4a-acf87eab7425" testName="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_ReloadsSameProjectWithoutDuplication" computerName="BUF-5CG4423FYV" duration="00:00:00.0103860" startTime="2026-08-17T11:03:16.9052345+02:00" endTime="2026-08-17T11:03:16.9052346+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="eb413537-e423-410e-8293-5b25866d7faf" />
+    <UnitTestResult executionId="3b7f9e8f-3a98-4053-b477-b00404f26981" testId="fddf3bb8-b4cf-bba8-7c93-5d1fad41ba51" testName="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.DataModelExplorer_DoesNotRequireProjectDocumentApiFallback" computerName="BUF-5CG4423FYV" duration="00:00:00.0013200" startTime="2026-08-17T11:03:16.9468377+02:00" endTime="2026-08-17T11:03:16.9468379+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3b7f9e8f-3a98-4053-b477-b00404f26981" />
+    <UnitTestResult executionId="a2ce54da-566b-4500-a59a-7ab5c29fab03" testId="8f00e84b-4dad-f948-eac0-34b2255a3a21" testName="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ReviewerLinksLoadSelectedProjectBeforeNavigating(reviewerName: &quot;Task Explorer&quot;, expectedRoute: &quot;/task-explorer&quot;, expectedKind: Tasks, expectedText: &quot;PERSON tasks.md&quot;)" computerName="BUF-5CG4423FYV" duration="00:00:00.0059526" startTime="2026-08-17T11:03:16.9671602+02:00" endTime="2026-08-17T11:03:16.9671603+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a2ce54da-566b-4500-a59a-7ab5c29fab03" />
+    <UnitTestResult executionId="158b7dc0-a04e-4700-b8cb-2419c17eba97" testId="ce146397-3612-bb8d-7a38-aa5137b3866d" testName="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_ClearsProjectHeaderOnProjectDeselection" computerName="BUF-5CG4423FYV" duration="00:00:00.0020389" startTime="2026-08-17T11:03:16.9380045+02:00" endTime="2026-08-17T11:03:16.9380047+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="158b7dc0-a04e-4700-b8cb-2419c17eba97" />
+    <UnitTestResult executionId="6fdd5bc4-a92d-4eda-9020-152e6eb67641" testId="285468a1-255d-a8c0-9516-b54e7d8a61af" testName="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_ReloadsSameProjectWithoutDuplication" computerName="BUF-5CG4423FYV" duration="00:00:00.0021765" startTime="2026-08-17T11:03:16.9240604+02:00" endTime="2026-08-17T11:03:16.9240605+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6fdd5bc4-a92d-4eda-9020-152e6eb67641" />
+    <UnitTestResult executionId="08ee51d5-9a3e-4b71-8439-4d222b0f2f4d" testId="3f7c9673-fb34-3ebc-3549-71605be8ddc3" testName="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ManualLoadSupportedArtifactsStillLoadsWorkspace" computerName="BUF-5CG4423FYV" duration="00:00:00.0053358" startTime="2026-08-17T11:03:17.0187777+02:00" endTime="2026-08-17T11:03:17.0187778+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="08ee51d5-9a3e-4b71-8439-4d222b0f2f4d" />
+    <UnitTestResult executionId="593dbcbe-6363-41c8-a341-12030d72cde1" testId="8c7a33d3-0135-dbcf-86fc-2bae288cf064" testName="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_DoesNotUseWorkspaceAsAutomaticSource" computerName="BUF-5CG4423FYV" duration="00:00:00.0013561" startTime="2026-08-17T11:03:16.9087874+02:00" endTime="2026-08-17T11:03:16.9087875+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="593dbcbe-6363-41c8-a341-12030d72cde1" />
+    <UnitTestResult executionId="ee5af7cd-2b80-4152-9bbe-f61c581a84df" testId="aa5841b6-9f68-7b8a-4f0d-ff5c4c9ae13a" testName="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ReviewerLinksLoadSelectedProjectBeforeNavigating(reviewerName: &quot;Plan Explorer&quot;, expectedRoute: &quot;/plan-explorer&quot;, expectedKind: Plan, expectedText: &quot;PERSON plan.md&quot;)" computerName="BUF-5CG4423FYV" duration="00:00:00.0045796" startTime="2026-08-17T11:03:16.9717622+02:00" endTime="2026-08-17T11:03:16.9717623+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ee5af7cd-2b80-4152-9bbe-f61c581a84df" />
+    <UnitTestResult executionId="721ac815-b777-4eba-8e3d-02cf731af0f1" testId="d3ae7e0e-185a-47a8-b3bf-d341692dfc80" testName="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_ClearsProjectHeaderOnProjectDeselection" computerName="BUF-5CG4423FYV" duration="00:00:00.0019458" startTime="2026-08-17T11:03:16.9073191+02:00" endTime="2026-08-17T11:03:16.9073193+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="721ac815-b777-4eba-8e3d-02cf731af0f1" />
+    <UnitTestResult executionId="21fe068d-9563-4e54-835e-0e637e34241b" testId="86a2de7f-f961-bf03-d8df-0e0feaaab9f1" testName="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_HandlesEmptySelectedProject" computerName="BUF-5CG4423FYV" duration="00:00:00.0019937" startTime="2026-08-17T11:03:16.8957631+02:00" endTime="2026-08-17T11:03:16.8957633+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="21fe068d-9563-4e54-835e-0e637e34241b" />
+    <UnitTestResult executionId="a319433c-4733-40da-a404-de5e01060b9c" testId="a7269637-39b5-7aab-6f72-76469ab2d538" testName="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_ReloadsSameProjectWithoutDuplication" computerName="BUF-5CG4423FYV" duration="00:00:00.0029106" startTime="2026-08-17T11:03:16.8950512+02:00" endTime="2026-08-17T11:03:16.8950513+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a319433c-4733-40da-a404-de5e01060b9c" />
+    <UnitTestResult executionId="860929e6-22bc-4e69-a4f9-ecc6918809db" testId="ffc29bf8-f3dd-b510-ce83-47285427af94" testName="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.WorkspaceCache_DoesNotOverrideSelectedProject_PolicyEnforcement" computerName="BUF-5CG4423FYV" duration="00:00:00.0009070" startTime="2026-08-17T11:03:16.7201484+02:00" endTime="2026-08-17T11:03:16.7201486+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="860929e6-22bc-4e69-a4f9-ecc6918809db">
+      <Output>
+        <ErrorInfo>
+          <Message>System.NotSupportedException : Unsupported expression: s =&gt; s.GetProjectsAsync()&#xD;
+Non-overridable members (here: SampleProjectsApiService.GetProjectsAsync) may not be used in setup / verification expressions.</Message>
+          <StackTrace>   at Moq.Guard.IsOverridable(MethodInfo method, Expression expression) in /_/src/Moq/Guard.cs:line 99&#xD;
+   at Moq.MethodExpectation..ctor(LambdaExpression expression, MethodInfo method, IReadOnlyList`1 arguments, Boolean exactGenericTypeArguments, Boolean skipMatcherInitialization, Boolean allowNonOverridable) in /_/src/Moq/MethodExpectation.cs:line 87&#xD;
+   at Moq.ExpressionExtensions.&lt;Split&gt;g__Split|5_0(Expression e, Expression&amp; r, MethodExpectation&amp; p, Boolean assignment, Boolean allowNonOverridableLastProperty) in /_/src/Moq/ExpressionExtensions.cs:line 219&#xD;
+   at Moq.ExpressionExtensions.Split(LambdaExpression expression, Boolean allowNonOverridableLastProperty) in /_/src/Moq/ExpressionExtensions.cs:line 149&#xD;
+   at Moq.Mock.SetupRecursive[TSetup](Mock mock, LambdaExpression expression, Func`4 setupLast, Boolean allowNonOverridableLastProperty) in /_/src/Moq/Mock.cs:line 645&#xD;
+   at Moq.Mock.Setup(Mock mock, LambdaExpression expression, Condition condition) in /_/src/Moq/Mock.cs:line 500&#xD;
+   at Moq.Mock`1.Setup[TResult](Expression`1 expression) in /_/src/Moq/Mock`1.cs:line 452&#xD;
+   at BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.WorkspaceCache_DoesNotOverrideSelectedProject_PolicyEnforcement() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionSampleProjectResolverTests.cs:line 161&#xD;
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="dc10a352-6eca-4c74-9bcb-5e5eaf0edabc" testId="de7b7f6f-ee56-7c22-3c30-ae59500068f4" testName="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.PlanExplorer_DoesNotRequireProjectDocumentApiFallback" computerName="BUF-5CG4423FYV" duration="00:00:00.2467439" startTime="2026-08-17T11:03:16.8919344+02:00" endTime="2026-08-17T11:03:16.8919346+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="dc10a352-6eca-4c74-9bcb-5e5eaf0edabc" />
+    <UnitTestResult executionId="306a9a48-9f46-4b5f-bb16-873722e5c458" testId="361d28a4-5784-5d97-d94e-cae21b8f6c51" testName="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_LoadsFromSelectedSampleProject" computerName="BUF-5CG4423FYV" duration="00:00:00.2468780" startTime="2026-08-17T11:03:16.8930084+02:00" endTime="2026-08-17T11:03:16.8930084+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="306a9a48-9f46-4b5f-bb16-873722e5c458" />
+    <UnitTestResult executionId="9310a597-b1e9-43e3-a9fa-37f56c0bac99" testId="3fe1ae01-e415-f82b-ed7d-ff059eaf1f48" testName="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ExplorerPages_UseStandaloneScratchWhenWorkspaceIsEmpty(storageKey: &quot;dme-standalone-datamodel&quot;, kind: DataModel, text: &quot;# Standalone Data Model&quot;)" computerName="BUF-5CG4423FYV" duration="00:00:00.0014322" startTime="2026-08-17T11:03:16.9091850+02:00" endTime="2026-08-17T11:03:16.9091851+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9310a597-b1e9-43e3-a9fa-37f56c0bac99" />
+    <UnitTestResult executionId="79c9bb2a-d068-449d-a01d-320762449442" testId="ac1ac52e-e7eb-adad-58b4-c99b214e77b8" testName="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_HandlesEmptySelectedProject" computerName="BUF-5CG4423FYV" duration="00:00:00.0010966" startTime="2026-08-17T11:03:16.9412133+02:00" endTime="2026-08-17T11:03:16.9412134+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="79c9bb2a-d068-449d-a01d-320762449442" />
+    <UnitTestResult executionId="902e8e2b-b32d-4017-8476-7e65b01d4b83" testId="67831d69-4acb-1b28-4813-e4bcfe01c753" testName="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ReviewerLinksLoadSelectedProjectBeforeNavigating(reviewerName: &quot;Constitution Explorer&quot;, expectedRoute: &quot;/constitution-explorer&quot;, expectedKind: Constitution, expectedText: &quot;PERSON constitution.md&quot;)" computerName="BUF-5CG4423FYV" duration="00:00:00.0041101" startTime="2026-08-17T11:03:16.9965764+02:00" endTime="2026-08-17T11:03:16.9965766+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="902e8e2b-b32d-4017-8476-7e65b01d4b83" />
+    <UnitTestResult executionId="1a8a1dbf-256b-4c3f-836a-cb59664cc34f" testId="44dedde2-76e5-5ca4-7218-eb44e8b008dd" testName="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ConstitutionExplorer_UsesStandaloneScratchWhenWorkspaceIsEmpty" computerName="BUF-5CG4423FYV" duration="00:00:00.0020864" startTime="2026-08-17T11:03:16.9489120+02:00" endTime="2026-08-17T11:03:16.9489121+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1a8a1dbf-256b-4c3f-836a-cb59664cc34f" />
+    <UnitTestResult executionId="ee7f4b3d-7c18-452f-8c40-586210a4eaff" testId="a5dd1463-501f-4b2b-6e11-7b1056736328" testName="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_LoadsFromSelectedSampleProject" computerName="BUF-5CG4423FYV" duration="00:00:00.0028077" startTime="2026-08-17T11:03:16.8947941+02:00" endTime="2026-08-17T11:03:16.8947943+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ee7f4b3d-7c18-452f-8c40-586210a4eaff" />
+    <UnitTestResult executionId="f6711e7f-dacc-4b0e-81d5-42eb87ed4016" testId="c35ab415-83bc-20b2-a92c-df1979a35f02" testName="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_ShowsMissingStateWhenTasksNotFound" computerName="BUF-5CG4423FYV" duration="00:00:00.0021561" startTime="2026-08-17T11:03:16.8941240+02:00" endTime="2026-08-17T11:03:16.8941241+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f6711e7f-dacc-4b0e-81d5-42eb87ed4016" />
+    <UnitTestResult executionId="7d3f84e3-e34c-4e1a-8f42-a0475bd0d911" testId="b6c2c4fe-31df-1c6f-ec94-0ab141847c62" testName="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ReviewerLinksLoadSelectedProjectBeforeNavigating(reviewerName: &quot;Specification Review&quot;, expectedRoute: &quot;/extract&quot;, expectedKind: Specification, expectedText: &quot;PERSON spec.md&quot;)" computerName="BUF-5CG4423FYV" duration="00:00:00.0205316" startTime="2026-08-17T11:03:16.9923649+02:00" endTime="2026-08-17T11:03:16.9923650+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7d3f84e3-e34c-4e1a-8f42-a0475bd0d911" />
+    <UnitTestResult executionId="98986400-9fc6-4da1-bc86-d9dd2382ae4f" testId="15cd6928-1add-eb11-822d-3e560fe58255" testName="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ExplorerPages_UseStandaloneScratchWhenWorkspaceIsEmpty(storageKey: &quot;pe-standalone-plan&quot;, kind: Plan, text: &quot;# Standalone Plan&quot;)" computerName="BUF-5CG4423FYV" duration="00:00:00.0136067" startTime="2026-08-17T11:03:16.9055598+02:00" endTime="2026-08-17T11:03:16.9055599+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="98986400-9fc6-4da1-bc86-d9dd2382ae4f" />
+    <UnitTestResult executionId="04a62b3b-6241-4928-b4b4-56b3c471e654" testId="2ac85c4d-92d8-ccab-3b1d-cfd59237acca" testName="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ConstitutionExplorer_UsesWorkspaceBeforeStandaloneStorage" computerName="BUF-5CG4423FYV" duration="00:00:00.0348812" startTime="2026-08-17T11:03:16.9446301+02:00" endTime="2026-08-17T11:03:16.9446301+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="04a62b3b-6241-4928-b4b4-56b3c471e654">
+      <Output>
+        <ErrorInfo>
+          <Message>Expected _workspace.Get(WorkspaceArtifactKind.Constitution)!.Text to be a match with the expectation, but it differs at index 2:&#xD;
+     ↓ (actual)&#xD;
+  "# Standalone Constitution"&#xD;
+  "# Workspace Constitution"&#xD;
+     ↑ (expected)</Message>
+          <StackTrace>   at FluentAssertions.Primitives.StringAssertions`1.Be(String expected, String because, Object[] becauseArgs)&#xD;
+   at BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ConstitutionExplorer_UsesWorkspaceBeforeStandaloneStorage() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Pages\ExplorerPageSourceOfTruthTests.cs:line 40&#xD;
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="b6a75958-5faa-4bfc-b53e-5652db5d4878" testId="58bc011a-9089-4334-d3ca-2478e3f66da2" testName="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_LoadsFromSelectedSampleProject" computerName="BUF-5CG4423FYV" duration="00:00:00.0416747" startTime="2026-08-17T11:03:16.9358725+02:00" endTime="2026-08-17T11:03:16.9358727+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b6a75958-5faa-4bfc-b53e-5652db5d4878" />
+    <UnitTestResult executionId="b88e729a-99f6-4090-a117-cefa2605428c" testId="98f5c6b4-9483-7f80-0586-8f1d8565e4cd" testName="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_DoesNotUseWorkspaceAsAutomaticSource" computerName="BUF-5CG4423FYV" duration="00:00:00.0014120" startTime="2026-08-17T11:03:16.9195515+02:00" endTime="2026-08-17T11:03:16.9195516+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b88e729a-99f6-4090-a117-cefa2605428c" />
+    <UnitTestResult executionId="a417d339-d8eb-4865-9f0d-817a3b399879" testId="6d79443a-1b89-96ae-8f2f-89168be6dd6c" testName="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_SwitchesProjects" computerName="BUF-5CG4423FYV" duration="00:00:00.0015598" startTime="2026-08-17T11:03:16.9115043+02:00" endTime="2026-08-17T11:03:16.9115043+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a417d339-d8eb-4865-9f0d-817a3b399879" />
+    <UnitTestResult executionId="2901f7bc-5d0d-40e8-a524-af17320db2fc" testId="210a0a54-cc52-8377-c39c-b079d2a02e0c" testName="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ReviewerClickFetchesEachSupportedFileOnlyOnce" computerName="BUF-5CG4423FYV" duration="00:00:00.3159983" startTime="2026-08-17T11:03:16.9611252+02:00" endTime="2026-08-17T11:03:16.9611254+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2901f7bc-5d0d-40e8-a524-af17320db2fc" />
+    <UnitTestResult executionId="593acf75-8550-4fd2-81ba-3a533c3bf6fd" testId="e9d08b8c-5fee-a912-b302-12d5a96562cc" testName="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ExplorerPages_UseStandaloneScratchWhenWorkspaceIsEmpty(storageKey: &quot;te-standalone-tasks&quot;, kind: Tasks, text: &quot;# Standalone Tasks&quot;)" computerName="BUF-5CG4423FYV" duration="00:00:00.0020934" startTime="2026-08-17T11:03:16.9077373+02:00" endTime="2026-08-17T11:03:16.9077374+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="593acf75-8550-4fd2-81ba-3a533c3bf6fd" />
+    <UnitTestResult executionId="0fec5625-3f4b-48fc-898c-fc98474f7ceb" testId="53bf0c73-4540-8f6e-25e2-c9c31a025c5c" testName="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ProjectSwitchingReplacesAllWorkspaceArtifacts" computerName="BUF-5CG4423FYV" duration="00:00:00.0066058" startTime="2026-08-17T11:03:17.0069566+02:00" endTime="2026-08-17T11:03:17.0069568+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0fec5625-3f4b-48fc-898c-fc98474f7ceb" />
+    <UnitTestResult executionId="a7aa3ecd-a2ef-4cde-b31a-8c62575b4cd6" testId="47a95918-18ba-a459-fdc1-db35919eab54" testName="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_InvalidProject_ReturnsError" computerName="BUF-5CG4423FYV" duration="00:00:00.0005689" startTime="2026-08-17T11:03:16.6741122+02:00" endTime="2026-08-17T11:03:16.6741123+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a7aa3ecd-a2ef-4cde-b31a-8c62575b4cd6">
+      <Output>
+        <ErrorInfo>
+          <Message>System.NotSupportedException : Unsupported expression: s =&gt; s.GetProjectsAsync()&#xD;
+Non-overridable members (here: SampleProjectsApiService.GetProjectsAsync) may not be used in setup / verification expressions.</Message>
+          <StackTrace>   at Moq.Guard.IsOverridable(MethodInfo method, Expression expression) in /_/src/Moq/Guard.cs:line 99&#xD;
+   at Moq.MethodExpectation..ctor(LambdaExpression expression, MethodInfo method, IReadOnlyList`1 arguments, Boolean exactGenericTypeArguments, Boolean skipMatcherInitialization, Boolean allowNonOverridable) in /_/src/Moq/MethodExpectation.cs:line 87&#xD;
+   at Moq.ExpressionExtensions.&lt;Split&gt;g__Split|5_0(Expression e, Expression&amp; r, MethodExpectation&amp; p, Boolean assignment, Boolean allowNonOverridableLastProperty) in /_/src/Moq/ExpressionExtensions.cs:line 219&#xD;
+   at Moq.ExpressionExtensions.Split(LambdaExpression expression, Boolean allowNonOverridableLastProperty) in /_/src/Moq/ExpressionExtensions.cs:line 149&#xD;
+   at Moq.Mock.SetupRecursive[TSetup](Mock mock, LambdaExpression expression, Func`4 setupLast, Boolean allowNonOverridableLastProperty) in /_/src/Moq/Mock.cs:line 645&#xD;
+   at Moq.Mock.Setup(Mock mock, LambdaExpression expression, Condition condition) in /_/src/Moq/Mock.cs:line 500&#xD;
+   at Moq.Mock`1.Setup[TResult](Expression`1 expression) in /_/src/Moq/Mock`1.cs:line 452&#xD;
+   at BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_InvalidProject_ReturnsError() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionSampleProjectResolverTests.cs:line 69&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="63ca5b0e-795a-4cd0-bfe6-f00aa61fd785" testId="24c241a0-e179-101a-b5c8-31bc312ac61d" testName="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_SwitchesProjects" computerName="BUF-5CG4423FYV" duration="00:00:00.0017652" startTime="2026-08-17T11:03:16.9091624+02:00" endTime="2026-08-17T11:03:16.9091625+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="63ca5b0e-795a-4cd0-bfe6-f00aa61fd785" />
+    <UnitTestResult executionId="9e488a8f-0895-4d00-8301-ba245ddce730" testId="6664db61-527e-d74c-bb53-bded492adedd" testName="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_SwitchProjects_ClearsOldContent" computerName="BUF-5CG4423FYV" duration="00:00:00.0008506" startTime="2026-08-17T11:03:16.7207890+02:00" endTime="2026-08-17T11:03:16.7207891+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9e488a8f-0895-4d00-8301-ba245ddce730">
+      <Output>
+        <ErrorInfo>
+          <Message>System.NotSupportedException : Unsupported expression: s =&gt; s.GetProjectsAsync()&#xD;
+Non-overridable members (here: SampleProjectsApiService.GetProjectsAsync) may not be used in setup / verification expressions.</Message>
+          <StackTrace>   at Moq.Guard.IsOverridable(MethodInfo method, Expression expression) in /_/src/Moq/Guard.cs:line 99&#xD;
+   at Moq.MethodExpectation..ctor(LambdaExpression expression, MethodInfo method, IReadOnlyList`1 arguments, Boolean exactGenericTypeArguments, Boolean skipMatcherInitialization, Boolean allowNonOverridable) in /_/src/Moq/MethodExpectation.cs:line 87&#xD;
+   at Moq.ExpressionExtensions.&lt;Split&gt;g__Split|5_0(Expression e, Expression&amp; r, MethodExpectation&amp; p, Boolean assignment, Boolean allowNonOverridableLastProperty) in /_/src/Moq/ExpressionExtensions.cs:line 219&#xD;
+   at Moq.ExpressionExtensions.Split(LambdaExpression expression, Boolean allowNonOverridableLastProperty) in /_/src/Moq/ExpressionExtensions.cs:line 149&#xD;
+   at Moq.Mock.SetupRecursive[TSetup](Mock mock, LambdaExpression expression, Func`4 setupLast, Boolean allowNonOverridableLastProperty) in /_/src/Moq/Mock.cs:line 645&#xD;
+   at Moq.Mock.Setup(Mock mock, LambdaExpression expression, Condition condition) in /_/src/Moq/Mock.cs:line 500&#xD;
+   at Moq.Mock`1.Setup[TResult](Expression`1 expression) in /_/src/Moq/Mock`1.cs:line 452&#xD;
+   at BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_SwitchProjects_ClearsOldContent() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionSampleProjectResolverTests.cs:line 123&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="9a16df0b-046a-414d-8026-661f61bef799" testId="d8249221-1eb5-2d07-b8ed-c5a903842fc4" testName="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.TaskExplorer_DoesNotRequireProjectDocumentApiFallback" computerName="BUF-5CG4423FYV" duration="00:00:00.0010981" startTime="2026-08-17T11:03:16.9454351+02:00" endTime="2026-08-17T11:03:16.9454353+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9a16df0b-046a-414d-8026-661f61bef799" />
+    <UnitTestResult executionId="582fff94-490b-4a98-bcb7-20f5dfda79e9" testId="0ae1576b-e762-21a4-2222-3fdc03eb3b42" testName="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_ShowsMissingStateWhenSpecNotFound" computerName="BUF-5CG4423FYV" duration="00:00:00.0010666" startTime="2026-08-17T11:03:16.9180854+02:00" endTime="2026-08-17T11:03:16.9180855+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="582fff94-490b-4a98-bcb7-20f5dfda79e9" />
+    <UnitTestResult executionId="83bb6e8a-0df9-47ef-bb24-b9043fbb874b" testId="e7db4ed3-cc9d-cc70-87ed-17664c9c575e" testName="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_Constitution_ReturnsSelectedProjectFile" computerName="BUF-5CG4423FYV" duration="00:00:00.0134211" startTime="2026-08-17T11:03:16.6717141+02:00" endTime="2026-08-17T11:03:16.6717265+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="83bb6e8a-0df9-47ef-bb24-b9043fbb874b">
+      <Output>
+        <ErrorInfo>
+          <Message>System.NotSupportedException : Unsupported expression: s =&gt; s.GetProjectsAsync()&#xD;
+Non-overridable members (here: SampleProjectsApiService.GetProjectsAsync) may not be used in setup / verification expressions.</Message>
+          <StackTrace>   at Moq.Guard.IsOverridable(MethodInfo method, Expression expression) in /_/src/Moq/Guard.cs:line 99&#xD;
+   at Moq.MethodExpectation..ctor(LambdaExpression expression, MethodInfo method, IReadOnlyList`1 arguments, Boolean exactGenericTypeArguments, Boolean skipMatcherInitialization, Boolean allowNonOverridable) in /_/src/Moq/MethodExpectation.cs:line 87&#xD;
+   at Moq.ExpressionExtensions.&lt;Split&gt;g__Split|5_0(Expression e, Expression&amp; r, MethodExpectation&amp; p, Boolean assignment, Boolean allowNonOverridableLastProperty) in /_/src/Moq/ExpressionExtensions.cs:line 219&#xD;
+   at Moq.ExpressionExtensions.Split(LambdaExpression expression, Boolean allowNonOverridableLastProperty) in /_/src/Moq/ExpressionExtensions.cs:line 149&#xD;
+   at Moq.Mock.SetupRecursive[TSetup](Mock mock, LambdaExpression expression, Func`4 setupLast, Boolean allowNonOverridableLastProperty) in /_/src/Moq/Mock.cs:line 645&#xD;
+   at Moq.Mock.Setup(Mock mock, LambdaExpression expression, Condition condition) in /_/src/Moq/Mock.cs:line 500&#xD;
+   at Moq.Mock`1.Setup[TResult](Expression`1 expression) in /_/src/Moq/Mock`1.cs:line 452&#xD;
+   at BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_Constitution_ReturnsSelectedProjectFile() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionSampleProjectResolverTests.cs:line 16&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ManualLoadSupportedArtifactsStillLoadsWorkspace" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="3f7c9673-fb34-3ebc-3549-71605be8ddc3">
+      <Execution id="08ee51d5-9a3e-4b71-8439-4d222b0f2f4d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests" name="ManualLoadSupportedArtifactsStillLoadsWorkspace" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ReviewerLinksLoadSelectedProjectBeforeNavigating(reviewerName: &quot;Task Explorer&quot;, expectedRoute: &quot;/task-explorer&quot;, expectedKind: Tasks, expectedText: &quot;PERSON tasks.md&quot;)" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="8f00e84b-4dad-f948-eac0-34b2255a3a21">
+      <Execution id="a2ce54da-566b-4500-a59a-7ab5c29fab03" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests" name="ReviewerLinksLoadSelectedProjectBeforeNavigating" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_Constitution_ReturnsSelectedProjectFile" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="e7db4ed3-cc9d-cc70-87ed-17664c9c575e">
+      <Execution id="83bb6e8a-0df9-47ef-bb24-b9043fbb874b" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests" name="ResolveAsync_Constitution_ReturnsSelectedProjectFile" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.WorkspaceCache_DoesNotOverrideSelectedProject_PolicyEnforcement" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ffc29bf8-f3dd-b510-ce83-47285427af94">
+      <Execution id="860929e6-22bc-4e69-a4f9-ecc6918809db" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests" name="WorkspaceCache_DoesNotOverrideSelectedProject_PolicyEnforcement" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ConstitutionExplorer_StaysEmptyWhenWorkspaceAndStandaloneScratchAreEmpty" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="0b7ce24a-8b43-b28f-8855-601482aeeafe">
+      <Execution id="c7c3cdcb-8435-43c1-91a7-2a1b3a84de41" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests" name="ConstitutionExplorer_StaysEmptyWhenWorkspaceAndStandaloneScratchAreEmpty" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_DoesNotUseWorkspaceAsAutomaticSource" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="f431a49d-ede1-daa5-a835-253630a6b4a6">
+      <Execution id="0ca9ef17-cb5f-46ef-aacc-02a9bbe2b981" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests" name="TaskExplorer_DoesNotUseWorkspaceAsAutomaticSource" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_InvalidProject_ReturnsError" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="47a95918-18ba-a459-fdc1-db35919eab54">
+      <Execution id="a7aa3ecd-a2ef-4cde-b31a-8c62575b4cd6" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests" name="ResolveAsync_InvalidProject_ReturnsError" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_SwitchProjects_ClearsOldContent" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="6664db61-527e-d74c-bb53-bded492adedd">
+      <Execution id="9e488a8f-0895-4d00-8301-ba245ddce730" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests" name="ResolveAsync_SwitchProjects_ClearsOldContent" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_HandlesEmptySelectedProject" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ecbd8a29-c620-a079-1aaf-86d7f1f936f3">
+      <Execution id="e382bc3f-928f-482a-99ad-7183c69641a7" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests" name="DataModelExplorer_HandlesEmptySelectedProject" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_ShowsMissingStateWhenPlanNotFound" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="c68c50ce-25fd-8602-4f14-05b23856e6d4">
+      <Execution id="9708f69a-8d0d-462a-bfaa-b52da47ace95" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests" name="PlanExplorer_ShowsMissingStateWhenPlanNotFound" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_SwitchesProjects" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="24c241a0-e179-101a-b5c8-31bc312ac61d">
+      <Execution id="63ca5b0e-795a-4cd0-bfe6-f00aa61fd785" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests" name="DataModelExplorer_SwitchesProjects" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.PlanExplorer_DoesNotRequireProjectDocumentApiFallback" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="de7b7f6f-ee56-7c22-3c30-ae59500068f4">
+      <Execution id="dc10a352-6eca-4c74-9bcb-5e5eaf0edabc" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests" name="PlanExplorer_DoesNotRequireProjectDocumentApiFallback" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ReviewerLinksLoadSelectedProjectBeforeNavigating(reviewerName: &quot;Plan Explorer&quot;, expectedRoute: &quot;/plan-explorer&quot;, expectedKind: Plan, expectedText: &quot;PERSON plan.md&quot;)" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="aa5841b6-9f68-7b8a-4f0d-ff5c4c9ae13a">
+      <Execution id="ee5af7cd-2b80-4152-9bbe-f61c581a84df" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests" name="ReviewerLinksLoadSelectedProjectBeforeNavigating" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_ClearsProjectHeaderOnProjectDeselection" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="0a4d6b64-3ec5-0804-bb1d-ad3cf97d6653">
+      <Execution id="7d5c0de8-39e0-4681-84a9-13cf9457ed4c" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests" name="PlanExplorer_ClearsProjectHeaderOnProjectDeselection" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_LoadsFromSelectedSampleProject" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="da3f82c4-3f5a-3ce6-c628-3622499f8417">
+      <Execution id="aabd642c-d2c4-48b2-aaf5-bb5254675bb6" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests" name="SpecificationExplorer_LoadsFromSelectedSampleProject" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ReviewerLinksLoadSelectedProjectBeforeNavigating(reviewerName: &quot;Constitution Explorer&quot;, expectedRoute: &quot;/constitution-explorer&quot;, expectedKind: Constitution, expectedText: &quot;PERSON constitution.md&quot;)" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="67831d69-4acb-1b28-4813-e4bcfe01c753">
+      <Execution id="902e8e2b-b32d-4017-8476-7e65b01d4b83" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests" name="ReviewerLinksLoadSelectedProjectBeforeNavigating" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_LoadsFromSelectedSampleProject" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a5dd1463-501f-4b2b-6e11-7b1056736328">
+      <Execution id="ee7f4b3d-7c18-452f-8c40-586210a4eaff" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests" name="DataModelExplorer_LoadsFromSelectedSampleProject" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_ReloadsSameProjectWithoutDuplication" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="285468a1-255d-a8c0-9516-b54e7d8a61af">
+      <Execution id="6fdd5bc4-a92d-4eda-9020-152e6eb67641" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests" name="SpecificationExplorer_ReloadsSameProjectWithoutDuplication" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ConstitutionExplorer_UsesWorkspaceBeforeStandaloneStorage" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="2ac85c4d-92d8-ccab-3b1d-cfd59237acca">
+      <Execution id="04a62b3b-6241-4928-b4b4-56b3c471e654" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests" name="ConstitutionExplorer_UsesWorkspaceBeforeStandaloneStorage" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_ShowsMissingStateWhenDataModelNotFound" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="52cf2472-99ae-5b57-c080-cfa737263999">
+      <Execution id="e083fa6b-40a1-4245-b079-640ca6f5c57e" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests" name="DataModelExplorer_ShowsMissingStateWhenDataModelNotFound" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_DoesNotUseWorkspaceAsAutomaticSource" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="98f5c6b4-9483-7f80-0586-8f1d8565e4cd">
+      <Execution id="b88e729a-99f6-4090-a117-cefa2605428c" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests" name="SpecificationExplorer_DoesNotUseWorkspaceAsAutomaticSource" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_DifferentTaskIDsDoNotLeakBetweenProjects" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d423bedd-f4cc-c836-de95-67a83cd9df10">
+      <Execution id="e9e202e6-8928-4074-a808-0a5232736ac8" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests" name="TaskExplorer_DifferentTaskIDsDoNotLeakBetweenProjects" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_SwitchesProjects" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="6d79443a-1b89-96ae-8f2f-89168be6dd6c">
+      <Execution id="a417d339-d8eb-4865-9f0d-817a3b399879" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests" name="PlanExplorer_SwitchesProjects" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_DifferentDataModelsDoNotLeakBetweenProjects" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="31ffab3f-3d8b-a8d7-0147-c12629662658">
+      <Execution id="f13d7f74-d878-473f-a603-694801d28b8b" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests" name="DataModelExplorer_DifferentDataModelsDoNotLeakBetweenProjects" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.DataModelExplorer_DoesNotRequireProjectDocumentApiFallback" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="fddf3bb8-b4cf-bba8-7c93-5d1fad41ba51">
+      <Execution id="3b7f9e8f-3a98-4053-b477-b00404f26981" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests" name="DataModelExplorer_DoesNotRequireProjectDocumentApiFallback" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_ShowsMissingStateWhenSpecNotFound" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="0ae1576b-e762-21a4-2222-3fdc03eb3b42">
+      <Execution id="582fff94-490b-4a98-bcb7-20f5dfda79e9" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests" name="SpecificationExplorer_ShowsMissingStateWhenSpecNotFound" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.TaskExplorer_DoesNotRequireProjectDocumentApiFallback" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d8249221-1eb5-2d07-b8ed-c5a903842fc4">
+      <Execution id="9a16df0b-046a-414d-8026-661f61bef799" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests" name="TaskExplorer_DoesNotRequireProjectDocumentApiFallback" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_DoesNotUseWorkspaceAsAutomaticSource" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="8c7a33d3-0135-dbcf-86fc-2bae288cf064">
+      <Execution id="593dbcbe-6363-41c8-a341-12030d72cde1" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests" name="PlanExplorer_DoesNotUseWorkspaceAsAutomaticSource" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_HandlesEmptySelectedProject" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d9d2d2c2-8f06-f6f8-3199-a330e46f746f">
+      <Execution id="d8af43bf-d4d2-4213-89c3-c497c09fb6a1" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests" name="PlanExplorer_HandlesEmptySelectedProject" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ReviewerLinksLoadSelectedProjectBeforeNavigating(reviewerName: &quot;Specification Review&quot;, expectedRoute: &quot;/extract&quot;, expectedKind: Specification, expectedText: &quot;PERSON spec.md&quot;)" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b6c2c4fe-31df-1c6f-ec94-0ab141847c62">
+      <Execution id="7d3f84e3-e34c-4e1a-8f42-a0475bd0d911" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests" name="ReviewerLinksLoadSelectedProjectBeforeNavigating" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_ReloadsSameProjectWithoutDuplication" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a7269637-39b5-7aab-6f72-76469ab2d538">
+      <Execution id="a319433c-4733-40da-a404-de5e01060b9c" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests" name="PlanExplorer_ReloadsSameProjectWithoutDuplication" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_ClearsProjectHeaderOnProjectDeselection" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d3ae7e0e-185a-47a8-b3bf-d341692dfc80">
+      <Execution id="721ac815-b777-4eba-8e3d-02cf731af0f1" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests" name="DataModelExplorer_ClearsProjectHeaderOnProjectDeselection" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_HandlesEmptySelectedProject" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="86a2de7f-f961-bf03-d8df-0e0feaaab9f1">
+      <Execution id="21fe068d-9563-4e54-835e-0e637e34241b" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests" name="SpecificationExplorer_HandlesEmptySelectedProject" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_ShowsMissingStateWhenTasksNotFound" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="c35ab415-83bc-20b2-a92c-df1979a35f02">
+      <Execution id="f6711e7f-dacc-4b0e-81d5-42eb87ed4016" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests" name="TaskExplorer_ShowsMissingStateWhenTasksNotFound" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.GetAvailableProjectsAsync_ReturnsOnlySampleDataProjects" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="4dc64b36-df70-577e-a208-c27c7d897ca0">
+      <Execution id="e41883a0-16ab-4b4d-8f64-ee371f1ed824" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests" name="GetAvailableProjectsAsync_ReturnsOnlySampleDataProjects" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests.PlanExplorer_LoadsFromSelectedSampleProject" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="361d28a4-5784-5d97-d94e-cae21b8f6c51">
+      <Execution id="306a9a48-9f46-4b5f-bb16-873722e5c458" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.PlanExplorerSampleProjectTests" name="PlanExplorer_LoadsFromSelectedSampleProject" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ReviewerClickFetchesEachSupportedFileOnlyOnce" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="210a0a54-cc52-8377-c39c-b079d2a02e0c">
+      <Execution id="2901f7bc-5d0d-40e8-a524-af17320db2fc" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests" name="ReviewerClickFetchesEachSupportedFileOnlyOnce" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_ClearsProjectHeaderOnProjectDeselection" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ce146397-3612-bb8d-7a38-aa5137b3866d">
+      <Execution id="158b7dc0-a04e-4700-b8cb-2419c17eba97" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests" name="TaskExplorer_ClearsProjectHeaderOnProjectDeselection" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ExplorerPages_UseStandaloneScratchWhenWorkspaceIsEmpty(storageKey: &quot;dme-standalone-datamodel&quot;, kind: DataModel, text: &quot;# Standalone Data Model&quot;)" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="3fe1ae01-e415-f82b-ed7d-ff059eaf1f48">
+      <Execution id="9310a597-b1e9-43e3-a9fa-37f56c0bac99" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests" name="ExplorerPages_UseStandaloneScratchWhenWorkspaceIsEmpty" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_ReloadsSameProjectWithoutDuplication" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="af29c175-8d65-4ec5-1060-8fd2ce3c4950">
+      <Execution id="fc82c5c5-1932-4ace-911f-9379e4e45cc4" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests" name="TaskExplorer_ReloadsSameProjectWithoutDuplication" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ExplorerPages_UseStandaloneScratchWhenWorkspaceIsEmpty(storageKey: &quot;pe-standalone-plan&quot;, kind: Plan, text: &quot;# Standalone Plan&quot;)" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="15cd6928-1add-eb11-822d-3e560fe58255">
+      <Execution id="98986400-9fc6-4da1-bc86-d9dd2382ae4f" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests" name="ExplorerPages_UseStandaloneScratchWhenWorkspaceIsEmpty" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_HandlesEmptySelectedProject" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ac1ac52e-e7eb-adad-58b4-c99b214e77b8">
+      <Execution id="79c9bb2a-d068-449d-a01d-320762449442" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests" name="TaskExplorer_HandlesEmptySelectedProject" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ReviewerLinksLoadSelectedProjectBeforeNavigating(reviewerName: &quot;Data Model Explorer&quot;, expectedRoute: &quot;/data-model-explorer&quot;, expectedKind: DataModel, expectedText: &quot;PERSON data-model.md&quot;)" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="6de0d571-848a-ecb0-ab60-525436eee8c3">
+      <Execution id="34d3edf1-ff48-4ce8-b6f5-abf6f53c69e2" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests" name="ReviewerLinksLoadSelectedProjectBeforeNavigating" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_LoadsFromSelectedSampleProject" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="58bc011a-9089-4334-d3ca-2478e3f66da2">
+      <Execution id="b6a75958-5faa-4bfc-b53e-5652db5d4878" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests" name="TaskExplorer_LoadsFromSelectedSampleProject" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.SetSelectedProject_UpdatesContext" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="c90edb55-07b9-1fca-bb4a-871e9064928e">
+      <Execution id="e8e17ebc-a464-43a5-9e6b-7ffba8781c9f" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests" name="SetSelectedProject_UpdatesContext" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_MissingDocument_ReturnsNotFoundNotFallback" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="f145a492-2976-4d4a-b5ce-57eb5e1ef727">
+      <Execution id="4e45251b-bd2a-489e-8130-0c791c20190f" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests" name="ResolveAsync_MissingDocument_ReturnsNotFoundNotFallback" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_DoesNotUseWorkspaceAsAutomaticSource" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d724eea0-90bf-50a9-fcd3-dfa7e6ad7789">
+      <Execution id="81a9b98d-7bd3-4ddf-93bc-31999bdca16f" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests" name="DataModelExplorer_DoesNotUseWorkspaceAsAutomaticSource" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests.TaskExplorer_SwitchesProjects" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="1e841182-3e62-1b91-1d2b-78ba3be65986">
+      <Execution id="559d4834-d2f8-46fe-8e96-e1eea65fb370" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.TaskExplorerSampleProjectTests" name="TaskExplorer_SwitchesProjects" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ExplorerPages_UseStandaloneScratchWhenWorkspaceIsEmpty(storageKey: &quot;te-standalone-tasks&quot;, kind: Tasks, text: &quot;# Standalone Tasks&quot;)" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="e9d08b8c-5fee-a912-b302-12d5a96562cc">
+      <Execution id="593acf75-8550-4fd2-81ba-3a533c3bf6fd" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests" name="ExplorerPages_UseStandaloneScratchWhenWorkspaceIsEmpty" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_ClearsProjectHeaderOnProjectDeselection" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="6b4ca3d7-8a60-225a-1fd5-cda22794b3bc">
+      <Execution id="b60ffa89-4d78-4bd0-b867-1823931e012d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests" name="SpecificationExplorer_ClearsProjectHeaderOnProjectDeselection" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.ProjectSwitchingReplacesAllWorkspaceArtifacts" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="53bf0c73-4540-8f6e-25e2-c9c31a025c5c">
+      <Execution id="0fec5625-3f4b-48fc-898c-fc98474f7ceb" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests" name="ProjectSwitchingReplacesAllWorkspaceArtifacts" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ConstitutionExplorer_UsesStandaloneScratchWhenWorkspaceIsEmpty" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="44dedde2-76e5-5ca4-7218-eb44e8b008dd">
+      <Execution id="1a8a1dbf-256b-4c3f-836a-cb59664cc34f" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests" name="ConstitutionExplorer_UsesStandaloneScratchWhenWorkspaceIsEmpty" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests.FailedReviewerLoadDoesNotNavigateAndClearsStaleWorkspace" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="5c3c67e4-75c1-0363-ba13-68db69f9ef5f">
+      <Execution id="dc56e3fa-7d69-43ae-bc1e-893bdcae8093" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SampleProjectsNavigationTests" name="FailedReviewerLoadDoesNotNavigateAndClearsStaleWorkspace" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests.SpecificationExplorer_SwitchesProjects" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d95a531c-3e7d-063e-7bf7-6be34dc86b11">
+      <Execution id="04ab8c85-f331-4e21-808a-6a20b1a63d77" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SpecificationExplorerSampleProjectTests" name="SpecificationExplorer_SwitchesProjects" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests.DataModelExplorer_ReloadsSameProjectWithoutDuplication" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="9dc270a1-be65-185d-ec4a-acf87eab7425">
+      <Execution id="eb413537-e423-410e-8293-5b25866d7faf" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.DataModelExplorerSampleProjectTests" name="DataModelExplorer_ReloadsSameProjectWithoutDuplication" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="d95a531c-3e7d-063e-7bf7-6be34dc86b11" executionId="04ab8c85-f331-4e21-808a-6a20b1a63d77" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="da3f82c4-3f5a-3ce6-c628-3622499f8417" executionId="aabd642c-d2c4-48b2-aaf5-bb5254675bb6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d423bedd-f4cc-c836-de95-67a83cd9df10" executionId="e9e202e6-8928-4074-a808-0a5232736ac8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6b4ca3d7-8a60-225a-1fd5-cda22794b3bc" executionId="b60ffa89-4d78-4bd0-b867-1823931e012d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d9d2d2c2-8f06-f6f8-3199-a330e46f746f" executionId="d8af43bf-d4d2-4213-89c3-c497c09fb6a1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6de0d571-848a-ecb0-ab60-525436eee8c3" executionId="34d3edf1-ff48-4ce8-b6f5-abf6f53c69e2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f431a49d-ede1-daa5-a835-253630a6b4a6" executionId="0ca9ef17-cb5f-46ef-aacc-02a9bbe2b981" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="31ffab3f-3d8b-a8d7-0147-c12629662658" executionId="f13d7f74-d878-473f-a603-694801d28b8b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0a4d6b64-3ec5-0804-bb1d-ad3cf97d6653" executionId="7d5c0de8-39e0-4681-84a9-13cf9457ed4c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c68c50ce-25fd-8602-4f14-05b23856e6d4" executionId="9708f69a-8d0d-462a-bfaa-b52da47ace95" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c90edb55-07b9-1fca-bb4a-871e9064928e" executionId="e8e17ebc-a464-43a5-9e6b-7ffba8781c9f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5c3c67e4-75c1-0363-ba13-68db69f9ef5f" executionId="dc56e3fa-7d69-43ae-bc1e-893bdcae8093" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ecbd8a29-c620-a079-1aaf-86d7f1f936f3" executionId="e382bc3f-928f-482a-99ad-7183c69641a7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="52cf2472-99ae-5b57-c080-cfa737263999" executionId="e083fa6b-40a1-4245-b079-640ca6f5c57e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f145a492-2976-4d4a-b5ce-57eb5e1ef727" executionId="4e45251b-bd2a-489e-8130-0c791c20190f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="af29c175-8d65-4ec5-1060-8fd2ce3c4950" executionId="fc82c5c5-1932-4ace-911f-9379e4e45cc4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d724eea0-90bf-50a9-fcd3-dfa7e6ad7789" executionId="81a9b98d-7bd3-4ddf-93bc-31999bdca16f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4dc64b36-df70-577e-a208-c27c7d897ca0" executionId="e41883a0-16ab-4b4d-8f64-ee371f1ed824" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1e841182-3e62-1b91-1d2b-78ba3be65986" executionId="559d4834-d2f8-46fe-8e96-e1eea65fb370" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0b7ce24a-8b43-b28f-8855-601482aeeafe" executionId="c7c3cdcb-8435-43c1-91a7-2a1b3a84de41" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9dc270a1-be65-185d-ec4a-acf87eab7425" executionId="eb413537-e423-410e-8293-5b25866d7faf" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="fddf3bb8-b4cf-bba8-7c93-5d1fad41ba51" executionId="3b7f9e8f-3a98-4053-b477-b00404f26981" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8f00e84b-4dad-f948-eac0-34b2255a3a21" executionId="a2ce54da-566b-4500-a59a-7ab5c29fab03" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ce146397-3612-bb8d-7a38-aa5137b3866d" executionId="158b7dc0-a04e-4700-b8cb-2419c17eba97" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="285468a1-255d-a8c0-9516-b54e7d8a61af" executionId="6fdd5bc4-a92d-4eda-9020-152e6eb67641" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3f7c9673-fb34-3ebc-3549-71605be8ddc3" executionId="08ee51d5-9a3e-4b71-8439-4d222b0f2f4d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8c7a33d3-0135-dbcf-86fc-2bae288cf064" executionId="593dbcbe-6363-41c8-a341-12030d72cde1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="aa5841b6-9f68-7b8a-4f0d-ff5c4c9ae13a" executionId="ee5af7cd-2b80-4152-9bbe-f61c581a84df" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d3ae7e0e-185a-47a8-b3bf-d341692dfc80" executionId="721ac815-b777-4eba-8e3d-02cf731af0f1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="86a2de7f-f961-bf03-d8df-0e0feaaab9f1" executionId="21fe068d-9563-4e54-835e-0e637e34241b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a7269637-39b5-7aab-6f72-76469ab2d538" executionId="a319433c-4733-40da-a404-de5e01060b9c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ffc29bf8-f3dd-b510-ce83-47285427af94" executionId="860929e6-22bc-4e69-a4f9-ecc6918809db" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="de7b7f6f-ee56-7c22-3c30-ae59500068f4" executionId="dc10a352-6eca-4c74-9bcb-5e5eaf0edabc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="361d28a4-5784-5d97-d94e-cae21b8f6c51" executionId="306a9a48-9f46-4b5f-bb16-873722e5c458" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3fe1ae01-e415-f82b-ed7d-ff059eaf1f48" executionId="9310a597-b1e9-43e3-a9fa-37f56c0bac99" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ac1ac52e-e7eb-adad-58b4-c99b214e77b8" executionId="79c9bb2a-d068-449d-a01d-320762449442" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="67831d69-4acb-1b28-4813-e4bcfe01c753" executionId="902e8e2b-b32d-4017-8476-7e65b01d4b83" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="44dedde2-76e5-5ca4-7218-eb44e8b008dd" executionId="1a8a1dbf-256b-4c3f-836a-cb59664cc34f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a5dd1463-501f-4b2b-6e11-7b1056736328" executionId="ee7f4b3d-7c18-452f-8c40-586210a4eaff" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c35ab415-83bc-20b2-a92c-df1979a35f02" executionId="f6711e7f-dacc-4b0e-81d5-42eb87ed4016" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b6c2c4fe-31df-1c6f-ec94-0ab141847c62" executionId="7d3f84e3-e34c-4e1a-8f42-a0475bd0d911" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="15cd6928-1add-eb11-822d-3e560fe58255" executionId="98986400-9fc6-4da1-bc86-d9dd2382ae4f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2ac85c4d-92d8-ccab-3b1d-cfd59237acca" executionId="04a62b3b-6241-4928-b4b4-56b3c471e654" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="58bc011a-9089-4334-d3ca-2478e3f66da2" executionId="b6a75958-5faa-4bfc-b53e-5652db5d4878" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="98f5c6b4-9483-7f80-0586-8f1d8565e4cd" executionId="b88e729a-99f6-4090-a117-cefa2605428c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6d79443a-1b89-96ae-8f2f-89168be6dd6c" executionId="a417d339-d8eb-4865-9f0d-817a3b399879" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="210a0a54-cc52-8377-c39c-b079d2a02e0c" executionId="2901f7bc-5d0d-40e8-a524-af17320db2fc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e9d08b8c-5fee-a912-b302-12d5a96562cc" executionId="593acf75-8550-4fd2-81ba-3a533c3bf6fd" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="53bf0c73-4540-8f6e-25e2-c9c31a025c5c" executionId="0fec5625-3f4b-48fc-898c-fc98474f7ceb" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="47a95918-18ba-a459-fdc1-db35919eab54" executionId="a7aa3ecd-a2ef-4cde-b31a-8c62575b4cd6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="24c241a0-e179-101a-b5c8-31bc312ac61d" executionId="63ca5b0e-795a-4cd0-bfe6-f00aa61fd785" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6664db61-527e-d74c-bb53-bded492adedd" executionId="9e488a8f-0895-4d00-8301-ba245ddce730" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d8249221-1eb5-2d07-b8ed-c5a903842fc4" executionId="9a16df0b-046a-414d-8026-661f61bef799" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0ae1576b-e762-21a4-2222-3fdc03eb3b42" executionId="582fff94-490b-4a98-bcb7-20f5dfda79e9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e7db4ed3-cc9d-cc70-87ed-17664c9c575e" executionId="83bb6e8a-0df9-47ef-bb24-b9043fbb874b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="55" executed="55" passed="48" failed="7" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 8.0.16)&#xD;
+[xUnit.net 00:00:00.06]   Discovering: BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.17]   Discovered:  BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.18]   Starting:    BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.23]       System.NotSupportedException : Unsupported expression: s =&gt; s.GetProjectsAsync()&#xD;
+[xUnit.net 00:00:00.23]       Non-overridable members (here: SampleProjectsApiService.GetProjectsAsync) may not be used in setup / verification expressions.&#xD;
+[xUnit.net 00:00:00.23]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/Guard.cs(99,0): at Moq.Guard.IsOverridable(MethodInfo method, Expression expression)&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/MethodExpectation.cs(87,0): at Moq.MethodExpectation..ctor(LambdaExpression expression, MethodInfo method, IReadOnlyList`1 arguments, Boolean exactGenericTypeArguments, Boolean skipMatcherInitialization, Boolean allowNonOverridable)&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/ExpressionExtensions.cs(219,0): at Moq.ExpressionExtensions.&lt;Split&gt;g__Split|5_0(Expression e, Expression&amp; r, MethodExpectation&amp; p, Boolean assignment, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/ExpressionExtensions.cs(149,0): at Moq.ExpressionExtensions.Split(LambdaExpression expression, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/Mock.cs(645,0): at Moq.Mock.SetupRecursive[TSetup](Mock mock, LambdaExpression expression, Func`4 setupLast, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/Mock.cs(500,0): at Moq.Mock.Setup(Mock mock, LambdaExpression expression, Condition condition)&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/Mock`1.cs(452,0): at Moq.Mock`1.Setup[TResult](Expression`1 expression)&#xD;
+[xUnit.net 00:00:00.23]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionSampleProjectResolverTests.cs(16,0): at BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_Constitution_ReturnsSelectedProjectFile()&#xD;
+[xUnit.net 00:00:00.23]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:00.23]       System.NotSupportedException : Unsupported expression: s =&gt; s.GetProjectsAsync()&#xD;
+[xUnit.net 00:00:00.23]       Non-overridable members (here: SampleProjectsApiService.GetProjectsAsync) may not be used in setup / verification expressions.&#xD;
+[xUnit.net 00:00:00.23]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/Guard.cs(99,0): at Moq.Guard.IsOverridable(MethodInfo method, Expression expression)&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/MethodExpectation.cs(87,0): at Moq.MethodExpectation..ctor(LambdaExpression expression, MethodInfo method, IReadOnlyList`1 arguments, Boolean exactGenericTypeArguments, Boolean skipMatcherInitialization, Boolean allowNonOverridable)&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/ExpressionExtensions.cs(219,0): at Moq.ExpressionExtensions.&lt;Split&gt;g__Split|5_0(Expression e, Expression&amp; r, MethodExpectation&amp; p, Boolean assignment, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/ExpressionExtensions.cs(149,0): at Moq.ExpressionExtensions.Split(LambdaExpression expression, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/Mock.cs(645,0): at Moq.Mock.SetupRecursive[TSetup](Mock mock, LambdaExpression expression, Func`4 setupLast, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/Mock.cs(500,0): at Moq.Mock.Setup(Mock mock, LambdaExpression expression, Condition condition)&#xD;
+[xUnit.net 00:00:00.23]         /_/src/Moq/Mock`1.cs(452,0): at Moq.Mock`1.Setup[TResult](Expression`1 expression)&#xD;
+[xUnit.net 00:00:00.23]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionSampleProjectResolverTests.cs(69,0): at BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_InvalidProject_ReturnsError()&#xD;
+[xUnit.net 00:00:00.23]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:00.28]       System.NotSupportedException : Unsupported expression: s =&gt; s.GetProjectsAsync()&#xD;
+[xUnit.net 00:00:00.28]       Non-overridable members (here: SampleProjectsApiService.GetProjectsAsync) may not be used in setup / verification expressions.&#xD;
+[xUnit.net 00:00:00.28]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Guard.cs(99,0): at Moq.Guard.IsOverridable(MethodInfo method, Expression expression)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/MethodExpectation.cs(87,0): at Moq.MethodExpectation..ctor(LambdaExpression expression, MethodInfo method, IReadOnlyList`1 arguments, Boolean exactGenericTypeArguments, Boolean skipMatcherInitialization, Boolean allowNonOverridable)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/ExpressionExtensions.cs(219,0): at Moq.ExpressionExtensions.&lt;Split&gt;g__Split|5_0(Expression e, Expression&amp; r, MethodExpectation&amp; p, Boolean assignment, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/ExpressionExtensions.cs(149,0): at Moq.ExpressionExtensions.Split(LambdaExpression expression, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Mock.cs(645,0): at Moq.Mock.SetupRecursive[TSetup](Mock mock, LambdaExpression expression, Func`4 setupLast, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Mock.cs(500,0): at Moq.Mock.Setup(Mock mock, LambdaExpression expression, Condition condition)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Mock`1.cs(452,0): at Moq.Mock`1.Setup[TResult](Expression`1 expression)&#xD;
+[xUnit.net 00:00:00.28]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionSampleProjectResolverTests.cs(105,0): at BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.GetAvailableProjectsAsync_ReturnsOnlySampleDataProjects()&#xD;
+[xUnit.net 00:00:00.28]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:00.28]       System.NotSupportedException : Unsupported expression: s =&gt; s.GetProjectsAsync()&#xD;
+[xUnit.net 00:00:00.28]       Non-overridable members (here: SampleProjectsApiService.GetProjectsAsync) may not be used in setup / verification expressions.&#xD;
+[xUnit.net 00:00:00.28]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Guard.cs(99,0): at Moq.Guard.IsOverridable(MethodInfo method, Expression expression)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/MethodExpectation.cs(87,0): at Moq.MethodExpectation..ctor(LambdaExpression expression, MethodInfo method, IReadOnlyList`1 arguments, Boolean exactGenericTypeArguments, Boolean skipMatcherInitialization, Boolean allowNonOverridable)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/ExpressionExtensions.cs(219,0): at Moq.ExpressionExtensions.&lt;Split&gt;g__Split|5_0(Expression e, Expression&amp; r, MethodExpectation&amp; p, Boolean assignment, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/ExpressionExtensions.cs(149,0): at Moq.ExpressionExtensions.Split(LambdaExpression expression, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Mock.cs(645,0): at Moq.Mock.SetupRecursive[TSetup](Mock mock, LambdaExpression expression, Func`4 setupLast, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Mock.cs(500,0): at Moq.Mock.Setup(Mock mock, LambdaExpression expression, Condition condition)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Mock`1.cs(452,0): at Moq.Mock`1.Setup[TResult](Expression`1 expression)&#xD;
+[xUnit.net 00:00:00.28]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionSampleProjectResolverTests.cs(161,0): at BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.WorkspaceCache_DoesNotOverrideSelectedProject_PolicyEnforcement()&#xD;
+[xUnit.net 00:00:00.28]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+[xUnit.net 00:00:00.28]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:00.28]       System.NotSupportedException : Unsupported expression: s =&gt; s.GetProjectsAsync()&#xD;
+[xUnit.net 00:00:00.28]       Non-overridable members (here: SampleProjectsApiService.GetProjectsAsync) may not be used in setup / verification expressions.&#xD;
+[xUnit.net 00:00:00.28]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Guard.cs(99,0): at Moq.Guard.IsOverridable(MethodInfo method, Expression expression)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/MethodExpectation.cs(87,0): at Moq.MethodExpectation..ctor(LambdaExpression expression, MethodInfo method, IReadOnlyList`1 arguments, Boolean exactGenericTypeArguments, Boolean skipMatcherInitialization, Boolean allowNonOverridable)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/ExpressionExtensions.cs(219,0): at Moq.ExpressionExtensions.&lt;Split&gt;g__Split|5_0(Expression e, Expression&amp; r, MethodExpectation&amp; p, Boolean assignment, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/ExpressionExtensions.cs(149,0): at Moq.ExpressionExtensions.Split(LambdaExpression expression, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Mock.cs(645,0): at Moq.Mock.SetupRecursive[TSetup](Mock mock, LambdaExpression expression, Func`4 setupLast, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Mock.cs(500,0): at Moq.Mock.Setup(Mock mock, LambdaExpression expression, Condition condition)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Mock`1.cs(452,0): at Moq.Mock`1.Setup[TResult](Expression`1 expression)&#xD;
+[xUnit.net 00:00:00.28]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionSampleProjectResolverTests.cs(46,0): at BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_MissingDocument_ReturnsNotFoundNotFallback()&#xD;
+[xUnit.net 00:00:00.28]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:00.28]       System.NotSupportedException : Unsupported expression: s =&gt; s.GetProjectsAsync()&#xD;
+[xUnit.net 00:00:00.28]       Non-overridable members (here: SampleProjectsApiService.GetProjectsAsync) may not be used in setup / verification expressions.&#xD;
+[xUnit.net 00:00:00.28]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Guard.cs(99,0): at Moq.Guard.IsOverridable(MethodInfo method, Expression expression)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/MethodExpectation.cs(87,0): at Moq.MethodExpectation..ctor(LambdaExpression expression, MethodInfo method, IReadOnlyList`1 arguments, Boolean exactGenericTypeArguments, Boolean skipMatcherInitialization, Boolean allowNonOverridable)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/ExpressionExtensions.cs(219,0): at Moq.ExpressionExtensions.&lt;Split&gt;g__Split|5_0(Expression e, Expression&amp; r, MethodExpectation&amp; p, Boolean assignment, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/ExpressionExtensions.cs(149,0): at Moq.ExpressionExtensions.Split(LambdaExpression expression, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Mock.cs(645,0): at Moq.Mock.SetupRecursive[TSetup](Mock mock, LambdaExpression expression, Func`4 setupLast, Boolean allowNonOverridableLastProperty)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Mock.cs(500,0): at Moq.Mock.Setup(Mock mock, LambdaExpression expression, Condition condition)&#xD;
+[xUnit.net 00:00:00.28]         /_/src/Moq/Mock`1.cs(452,0): at Moq.Mock`1.Setup[TResult](Expression`1 expression)&#xD;
+[xUnit.net 00:00:00.28]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionSampleProjectResolverTests.cs(123,0): at BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_SwitchProjects_ClearsOldContent()&#xD;
+[xUnit.net 00:00:00.28]         --- End of stack trace from previous location ---&#xD;
+     Warning:&#xD;
+     The component "Fluent Assertions" is governed by the rules defined in the Xceed License Agreement and&#xD;
+     the Xceed Fluent Assertions Community License. You may use Fluent Assertions free of charge for&#xD;
+     non-commercial use only. An active subscription is required to use Fluent Assertions for commercial use.&#xD;
+     Please contact Xceed Sales mailto:sales@xceed.com to acquire a subscription at a very low cost.&#xD;
+     A paid commercial license supports the development and continued increasing support of&#xD;
+     Fluent Assertions users under both commercial and community licenses. Help us&#xD;
+     keep Fluent Assertions at the forefront of unit testing.&#xD;
+     For more information, visit https://xceed.com/products/unit-testing/fluent-assertions/&#xD;
+[xUnit.net 00:00:00.50]       Expected _workspace.Get(WorkspaceArtifactKind.Constitution)!.Text to be a match with the expectation, but it differs at index 2:&#xD;
+[xUnit.net 00:00:00.50]            ↓ (actual)&#xD;
+[xUnit.net 00:00:00.50]         "# Standalone Constitution"&#xD;
+[xUnit.net 00:00:00.50]         "# Workspace Constitution"&#xD;
+[xUnit.net 00:00:00.50]            ↑ (expected)&#xD;
+[xUnit.net 00:00:00.50]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.50]            at FluentAssertions.Primitives.StringAssertions`1.Be(String expected, String because, Object[] becauseArgs)&#xD;
+[xUnit.net 00:00:00.50]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Pages\ExplorerPageSourceOfTruthTests.cs(40,0): at BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ConstitutionExplorer_UsesWorkspaceBeforeStandaloneStorage()&#xD;
+[xUnit.net 00:00:00.50]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+[xUnit.net 00:00:00.50]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:00.58]   Finished:    BirkNext.Web.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T11:03:16.6696683+02:00">
+        <Text>[xUnit.net 00:00:00.23]     BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_Constitution_ReturnsSelectedProjectFile [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T11:03:16.6738757+02:00">
+        <Text>[xUnit.net 00:00:00.23]     BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_InvalidProject_ReturnsError [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T11:03:16.7421276+02:00">
+        <Text>[xUnit.net 00:00:00.28]     BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.GetAvailableProjectsAsync_ReturnsOnlySampleDataProjects [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T11:03:16.7421591+02:00">
+        <Text>[xUnit.net 00:00:00.28]     BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.WorkspaceCache_DoesNotOverrideSelectedProject_PolicyEnforcement [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T11:03:16.7421812+02:00">
+        <Text>[xUnit.net 00:00:00.28]     BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_MissingDocument_ReturnsNotFoundNotFallback [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T11:03:16.7422077+02:00">
+        <Text>[xUnit.net 00:00:00.28]     BirkNext.Web.Tests.Services.ConstitutionSampleProjectResolverTests.ResolveAsync_SwitchProjects_ClearsOldContent [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T11:03:16.9448145+02:00">
+        <Text>[xUnit.net 00:00:00.50]     BirkNext.Web.Tests.Pages.ExplorerPageSourceOfTruthTests.ConstitutionExplorer_UsesWorkspaceBeforeStandaloneStorage [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

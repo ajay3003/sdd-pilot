@@ -39,7 +39,13 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         Services.AddSingleton<ISpecComparisonService, SpecComparisonService>();
         Services.AddSingleton<IWorkspaceSessionService>(new WorkspaceArtifactRepository());
         Services.AddSingleton<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
-        Services.AddSingleton<FeatureVisibilityService>();
+        var featureVisibility = new FeatureVisibilityService();
+        featureVisibility.ApplyLocalFlags(new FeatureVisibilityDto
+        {
+            EnableExtractionReview = true,
+            EnableArchitectureView = true
+        });
+        Services.AddSingleton(featureVisibility);
 
         var mockSaveReview = new Mock<ISaveReviewedCandidatesMutation>();
         mockSaveReview
@@ -127,6 +133,11 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         return mockResult.Object;
     }
 
+    private static void OpenExtractionReview(IRenderedComponent<ScenarioExtraction> cut)
+    {
+        cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Extraction Review")).Click();
+    }
+
     // ── AC1 ─────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -151,6 +162,10 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
 
         cut.Find("[data-testid='spec-textarea']").Input("- some bullet text");
         cut.Find("[data-testid='extract-button']").Click();
+
+        await cut.WaitForAssertionAsync(() =>
+            cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("3"));
+        OpenExtractionReview(cut);
 
         await cut.WaitForStateAsync(
             () => cut.FindAll("[data-testid='candidate-row']").Count == 3,
@@ -183,17 +198,21 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         cut.Find("[data-testid='spec-textarea']").Input("spec text");
         cut.Find("[data-testid='extract-button']").Click();
 
+        await cut.WaitForAssertionAsync(() =>
+            cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("3"));
+        OpenExtractionReview(cut);
+
         await cut.WaitForStateAsync(
-            () => cut.FindAll("[data-testid='classification-badge']").Count == 3,
+            () => cut.FindAll(".doc-artifact-badge").Count == 3,
             timeout: TimeSpan.FromSeconds(2));
 
-        var badges = cut.FindAll("[data-testid='classification-badge']")
+        var badges = cut.FindAll(".doc-artifact-badge")
             .Select(b => b.TextContent.Trim())
             .ToList();
 
         badges.Should().Contain("REQUIREMENT");
         badges.Should().Contain("TEST");
-        badges.Should().Contain("NEEDS_CLARIFICATION");
+        badges.Should().Contain("CLARIFICATION");
     }
 
     // ── AC3 ─────────────────────────────────────────────────────────────────
@@ -217,6 +236,10 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         var cut = Render<ScenarioExtraction>();
         cut.Find("[data-testid='spec-textarea']").Input("spec text");
         cut.Find("[data-testid='extract-button']").Click();
+
+        await cut.WaitForAssertionAsync(() =>
+            cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("1"));
+        OpenExtractionReview(cut);
 
         await cut.WaitForStateAsync(
             () => cut.FindAll("[data-testid='candidate-row']").Count == 1,
@@ -280,12 +303,17 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         cut.Find("[data-testid='spec-textarea']").Input("spec text");
         cut.Find("[data-testid='extract-button']").Click();
 
+        await cut.WaitForAssertionAsync(() =>
+            cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("3"));
+        OpenExtractionReview(cut);
+
         await cut.WaitForStateAsync(
             () => cut.FindAll("[data-testid='candidate-checkbox']").Count == 3,
             timeout: TimeSpan.FromSeconds(2));
 
         // Select only the first candidate (candidateA)
         cut.FindAll("[data-testid='candidate-checkbox']")[0].Change(true);
+        cut.Find(".bulk-review-accept").Click();
 
         await cut.WaitForStateAsync(
             () => !cut.Find("[data-testid='confirm-save-button']").HasAttribute("disabled"),
@@ -351,6 +379,10 @@ public class ExtractionAcceptanceCriteriaTests : BunitContext
         await cut.InvokeAsync(() => importChild.Instance.OnFileDrop("spec.md", 512, importedText));
 
         cut.Find("[data-testid='extract-button']").Click();
+
+        await cut.WaitForAssertionAsync(() =>
+            cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("1"));
+        OpenExtractionReview(cut);
 
         await cut.WaitForStateAsync(
             () => cut.FindAll("[data-testid='candidate-row']").Count > 0,

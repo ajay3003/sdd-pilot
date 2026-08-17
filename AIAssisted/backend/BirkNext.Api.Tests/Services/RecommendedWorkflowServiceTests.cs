@@ -463,4 +463,159 @@ public class RecommendedWorkflowServiceTests : IDisposable
         Assert.Equal(0, breakdown.StepsApproved);
         Assert.DoesNotContain(steps.Where(s => s.RequiresApproval), s => s.Key == "Dashboard");
     }
+
+    // Test 19: Five Explorers present in workflow
+    [Fact]
+    public async Task BuildWorkflowSteps_ContainsFiveExplorerSteps()
+    {
+        // Act
+        var steps = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: true,
+            hasPlan: true,
+            hasTasks: true,
+            hasDataModel: true);
+
+        // Assert - All five explorers must be present
+        var explorers = steps.Where(s => s.Key.Contains("Explorer")).ToList();
+        Assert.Equal(5, explorers.Count);
+
+        var explorerKeys = explorers.Select(e => e.Key).ToList();
+        Assert.Contains("ConstitutionExplorer", explorerKeys);
+        Assert.Contains("SpecificationExplorer", explorerKeys);
+        Assert.Contains("PlanExplorer", explorerKeys);
+        Assert.Contains("TaskExplorer", explorerKeys);
+        Assert.Contains("DataModelExplorer", explorerKeys);
+    }
+
+    // Test 20: SpecificationExplorer is distinct from SpecificationReview
+    [Fact]
+    public async Task BuildWorkflowSteps_SpecificationExplorerDistinctFromSpecificationReview()
+    {
+        // Act
+        var steps = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: true,
+            hasPlan: false,
+            hasTasks: false,
+            hasDataModel: false);
+
+        // Assert
+        var specExplorer = steps.FirstOrDefault(s => s.Key == "SpecificationExplorer");
+        var specReview = steps.FirstOrDefault(s => s.Key == "SpecificationReview");
+
+        Assert.NotNull(specExplorer);
+        Assert.NotNull(specReview);
+        Assert.NotEqual(specExplorer.Route, specReview.Route);
+        Assert.Equal("specification-explorer", specExplorer.Route);
+        Assert.Equal("extract", specReview.Route);
+    }
+
+    // Test 21: SpecificationExplorer approval state is independent from SpecificationReview
+    [Fact]
+    public async Task BuildWorkflowSteps_SpecificationExplorerStateIndependentFromReview()
+    {
+        // Arrange - Approve SpecificationExplorer
+        await _service.ApproveStepAsync(_workspaceId, "SpecificationExplorer");
+
+        // Act - Check both steps
+        var steps = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: true,
+            hasPlan: false,
+            hasTasks: false,
+            hasDataModel: false);
+
+        // Assert - SpecificationExplorer approved, Review not approved
+        var specExplorer = steps.FirstOrDefault(s => s.Key == "SpecificationExplorer");
+        var specReview = steps.FirstOrDefault(s => s.Key == "SpecificationReview");
+
+        Assert.NotNull(specExplorer);
+        Assert.Equal(WorkflowStepStatus.Approved, specExplorer.Status);
+
+        Assert.NotNull(specReview);
+        Assert.Equal(WorkflowStepStatus.Available, specReview.Status);
+    }
+
+    // Test 22: Workflow order is sequential with correct numbering
+    [Fact]
+    public async Task BuildWorkflowSteps_SequentialNumberingWithNoGaps()
+    {
+        // Act
+        var steps = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: true,
+            hasPlan: true,
+            hasTasks: true,
+            hasDataModel: true);
+
+        // Assert - Verify order and numbering (ReviewContextValidation is developer-only, excluded from reviewer workflow)
+        var expectedOrder = new[]
+        {
+            "LoadSampleProject",
+            "ConstitutionExplorer",
+            "SpecificationExplorer",
+            "PlanExplorer",
+            "TaskExplorer",
+            "DataModelExplorer",
+            "SpecificationReview",
+            "ArtifactTraceability",
+            "ImplementationReview",
+            "Dashboard"
+        };
+
+        var actualOrder = steps.Select(s => s.Key).ToList();
+        Assert.Equal(expectedOrder, actualOrder);
+
+        // Check numbers are sequential for visible steps
+        for (int i = 0; i < steps.Count; i++)
+        {
+            Assert.Equal(i + 1, steps[i].Number);
+        }
+    }
+
+    // Test 23: SpecificationExplorer appears before Specification Review
+    [Fact]
+    public async Task BuildWorkflowSteps_SpecificationExplorerBeforeSpecificationReview()
+    {
+        // Act
+        var steps = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: true,
+            hasPlan: true,
+            hasTasks: true,
+            hasDataModel: true);
+
+        // Assert
+        var explorerIndex = steps.FindIndex(s => s.Key == "SpecificationExplorer");
+        var reviewIndex = steps.FindIndex(s => s.Key == "SpecificationReview");
+
+        Assert.True(explorerIndex >= 0);
+        Assert.True(reviewIndex >= 0);
+        Assert.True(explorerIndex < reviewIndex);
+    }
+
+    // Test 24: Missing spec artifact locks SpecificationExplorer
+    [Fact]
+    public async Task BuildWorkflowSteps_SpecificationExplorerLockedWhenMissingSpec()
+    {
+        // Act - Load without Specification
+        var steps = await _service.BuildWorkflowStepsAsync(
+            _workspaceId,
+            hasConstitution: true,
+            hasSpecification: false,
+            hasPlan: true,
+            hasTasks: true,
+            hasDataModel: true);
+
+        // Assert
+        var specExplorer = steps.FirstOrDefault(s => s.Key == "SpecificationExplorer");
+        Assert.NotNull(specExplorer);
+        Assert.Equal(WorkflowStepStatus.Locked, specExplorer.Status);
+    }
 }

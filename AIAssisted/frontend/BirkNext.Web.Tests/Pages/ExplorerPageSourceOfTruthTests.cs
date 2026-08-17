@@ -29,20 +29,26 @@ public sealed class ExplorerPageSourceOfTruthTests : BunitContext
     }
 
     [Fact]
-    public void ConstitutionExplorer_UsesWorkspaceBeforeStandaloneStorage()
+    public void ConstitutionExplorer_UsesSampleProjectBeforeWorkspaceAndStandaloneStorage()
     {
-        _workspace.CurrentProject = "Project B";
+        _resolver.SetProject("project-b", "Project B", ExplorerDocumentType.Constitution, "# Project B Constitution");
+        _resolver.SetSelectedProject("project-b");
         _workspace.Set(WorkspaceArtifactKind.Constitution, "# Workspace Constitution");
         SetStandaloneScratch("ce-standalone-constitution", "# Standalone Constitution");
 
         var cut = Render<ConstitutionExplorer>();
 
-        _workspace.Get(WorkspaceArtifactKind.Constitution)!.Text.Should().Be("# Workspace Constitution");
-        JSInterop.Invocations
-            .Where(invocation => invocation.Identifier == "localStorage.getItem")
-            .Select(invocation => invocation.Arguments.Count == 1 ? invocation.Arguments[0]?.ToString() : null)
-            .Should()
-            .NotContain("ce-standalone-constitution");
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Project B Constitution");
+            cut.Markup.Should().NotContain("Workspace Constitution");
+            cut.Markup.Should().NotContain("Standalone Constitution");
+            JSInterop.Invocations
+                .Where(invocation => invocation.Identifier == "localStorage.getItem")
+                .Select(invocation => invocation.Arguments.Count == 1 ? invocation.Arguments[0]?.ToString() : null)
+                .Should()
+                .NotContain("ce-standalone-constitution");
+        });
     }
 
     [Fact]
@@ -137,22 +143,53 @@ public sealed class ExplorerPageSourceOfTruthTests : BunitContext
 /// </summary>
 internal sealed class SampleProjectResolver : ISampleProjectDocumentResolver
 {
+    private readonly Dictionary<(string ProjectSlug, ExplorerDocumentType Type), SampleProjectDocumentResult> _documents = [];
+    private readonly Dictionary<string, Models.SampleProjectDto> _projects = new(StringComparer.OrdinalIgnoreCase);
+    private string? _selectedProject;
+
+    public void SetProject(string projectSlug, string projectName, ExplorerDocumentType documentType, string content)
+    {
+        var filename = documentType switch
+        {
+            ExplorerDocumentType.Constitution => "constitution.md",
+            ExplorerDocumentType.Specification => "spec.md",
+            ExplorerDocumentType.Plan => "plan.md",
+            ExplorerDocumentType.Tasks => "tasks.md",
+            ExplorerDocumentType.DataModel => "data-model.md",
+            _ => throw new ArgumentOutOfRangeException(nameof(documentType), documentType, null),
+        };
+
+        _documents[(projectSlug, documentType)] =
+            SampleProjectDocumentResult.Success(projectSlug, documentType, filename, content);
+
+        _projects[projectSlug] = new Models.SampleProjectDto(
+            projectSlug,
+            projectName,
+            "test",
+            $"Test project {projectName}",
+            $"/SampleData/{projectSlug}",
+            false,
+            [new Models.SampleFileDto(filename, true, documentType.ToString(), null, null, true, false)]);
+    }
+
     public Task<SampleProjectDocumentResult> ResolveAsync(
         string projectSlug,
         ExplorerDocumentType documentType,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(SampleProjectDocumentResult.InvalidProject("Test resolver"));
+        return Task.FromResult(_documents.TryGetValue((projectSlug, documentType), out var result)
+            ? result
+            : SampleProjectDocumentResult.InvalidProject("Test resolver"));
     }
 
     public Task<IReadOnlyList<Models.SampleProjectDto>> GetAvailableProjectsAsync(CancellationToken cancellationToken = default)
     {
-        return Task.FromResult<IReadOnlyList<Models.SampleProjectDto>>([]);
+        return Task.FromResult<IReadOnlyList<Models.SampleProjectDto>>(_projects.Values.ToList());
     }
 
-    public string? GetSelectedProject() => null;
+    public string? GetSelectedProject() => _selectedProject;
 
-    public void SetSelectedProject(string? projectSlug) { }
+    public void SetSelectedProject(string? projectSlug) => _selectedProject = projectSlug;
 
     public void ClearProjectCache(string projectSlug) { }
 }

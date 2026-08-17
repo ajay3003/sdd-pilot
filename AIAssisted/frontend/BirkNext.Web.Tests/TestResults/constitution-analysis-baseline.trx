@@ -1,0 +1,1354 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="09bbe23e-1c53-43ce-bb1a-9054adf0ee24" name="ajaan@BUF-5CG4423FYV 2026-08-17 12:40:17" runUser="COMMON\ajaan" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-17T12:40:17.1087937+02:00" queuing="2026-08-17T12:40:17.1087941+02:00" start="2026-08-17T12:40:16.4277512+02:00" finish="2026-08-17T12:40:17.3501599+02:00" />
+  <TestSettings name="default" id="2443e577-b591-4515-a5a5-1aa2633aa003">
+    <Deployment runDeploymentRoot="ajaan_BUF-5CG4423FYV_2026-08-17_12_40_17" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="114e4375-a4ea-430d-ae03-8fda1974360f" testId="a023c93f-3854-963c-22d8-38244aaa450c" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MultiId_BothPP02AndPP04MapToSameRule" computerName="BUF-5CG4423FYV" duration="00:00:00.0009275" startTime="2026-08-17T12:40:17.3085975+02:00" endTime="2026-08-17T12:40:17.3085977+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="114e4375-a4ea-430d-ae03-8fda1974360f" />
+    <UnitTestResult executionId="dfccdbfb-d7cd-4a7e-af66-b9b991a79ead" testId="9c58c818-7448-f6e2-fa82-2a5c90dde1f9" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_ChangelogParsed" computerName="BUF-5CG4423FYV" duration="00:00:00.0149486" startTime="2026-08-17T12:40:17.1135190+02:00" endTime="2026-08-17T12:40:17.1135192+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="dfccdbfb-d7cd-4a7e-af66-b9b991a79ead" />
+    <UnitTestResult executionId="e006f09f-aacb-44a1-b883-6a1791b01ec7" testId="bdc17c2e-8cfa-6e5b-2782-4ea737780cd2" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithServicePrinciples_RecognizesHNotation" computerName="BUF-5CG4423FYV" duration="00:00:00.0006089" startTime="2026-08-17T12:40:17.1576206+02:00" endTime="2026-08-17T12:40:17.1576207+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e006f09f-aacb-44a1-b883-6a1791b01ec7" />
+    <UnitTestResult executionId="d84e7ed0-77a0-4c71-a3a6-b2806ffcfc99" testId="8fc3b3cb-58f9-1e89-2844-2c11a223373f" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapLabelFormat_SingularAndPluralForLinkedRules" computerName="BUF-5CG4423FYV" duration="00:00:00.0003482" startTime="2026-08-17T12:40:17.2139779+02:00" endTime="2026-08-17T12:40:17.2139783+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d84e7ed0-77a0-4c71-a3a6-b2806ffcfc99" />
+    <UnitTestResult executionId="416d2692-11b7-449b-8fad-1af0dc007906" testId="c709c9d4-6ad5-b43f-6044-641bec91c510" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RealConstitution_SourceCodeLanguage_TableLinesAreNotFlattened" computerName="BUF-5CG4423FYV" duration="00:00:00.0002807" startTime="2026-08-17T12:40:17.2319652+02:00" endTime="2026-08-17T12:40:17.2319653+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="416d2692-11b7-449b-8fad-1af0dc007906" />
+    <UnitTestResult executionId="d742c9c4-7935-47c9-a1b7-84fbef3d4b10" testId="7f4c65bf-f740-2fd5-20ad-c4f6af4c89d2" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Changelog_WithoutDeclaredVersionMatch_LatestVersionDeterminedBySemanticVersion" computerName="BUF-5CG4423FYV" duration="00:00:00.0016878" startTime="2026-08-17T12:40:17.0676364+02:00" endTime="2026-08-17T12:40:17.0676365+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d742c9c4-7935-47c9-a1b7-84fbef3d4b10" />
+    <UnitTestResult executionId="14762e83-e108-4495-a657-939086e220a5" testId="4cac14d2-f00b-4a3f-5e6c-7e11fef002c9" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalogInspection_CheckForDuplicateRuleIds" computerName="BUF-5CG4423FYV" duration="00:00:00.0101809" startTime="2026-08-17T12:40:17.2818939+02:00" endTime="2026-08-17T12:40:17.2818942+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="14762e83-e108-4495-a657-939086e220a5">
+      <Output>
+        <ErrorInfo>
+          <Message>
+=== RULECATALOG ANALYSIS ===
+Total rules: 51
+
+✓ No duplicate RuleIds
+
+⚠️ Found 1 alias-ID conflicts:
+
+  Conflict: 'PP-04' appears as both alias and ID
+    Rule with ID 'PP-04': IV. Event-Driven Integration (PP-04-derived, PS-05)
+    Rules with 'PP-04' as alias:
+      - PP-02: II. Zero-Trust Security (PP-02, PP-04)
+</Message>
+          <StackTrace>   at BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalogInspection_CheckForDuplicateRuleIds() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionAnalysisServiceTests.cs:line 2330&#xD;
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="756580fc-26ac-41f1-afd5-d1f04f5b8286" testId="d8f22977-8c2c-f589-3035-c711d565589a" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.CatalogRuleTypes_MatchParsedSections" computerName="BUF-5CG4423FYV" duration="00:00:00.0045150" startTime="2026-08-17T12:40:17.2247404+02:00" endTime="2026-08-17T12:40:17.2247405+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="756580fc-26ac-41f1-afd5-d1f04f5b8286" />
+    <UnitTestResult executionId="4fb30673-8cf8-45da-a469-27a435b6ed43" testId="cd1495c8-274f-1375-342a-e754c1c04b21" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleReferences_RangeWithThrough_ExpandsAllIntermediateIds" computerName="BUF-5CG4423FYV" duration="00:00:00.0015615" startTime="2026-08-17T12:40:17.2354339+02:00" endTime="2026-08-17T12:40:17.2354342+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4fb30673-8cf8-45da-a469-27a435b6ed43" />
+    <UnitTestResult executionId="dce25b99-657a-49a0-abd7-fadbe44b2e34" testId="104ed3a5-f833-f1b9-98f8-47a334a44743" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.StandardRendering_WithMarkdownTable_ProducesHtmlTable" computerName="BUF-5CG4423FYV" duration="00:00:00.0385268" startTime="2026-08-17T12:40:17.2022009+02:00" endTime="2026-08-17T12:40:17.2022014+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="dce25b99-657a-49a0-abd7-fadbe44b2e34" />
+    <UnitTestResult executionId="d2fc889e-ce74-4f3c-87ab-bcd6d95694fc" testId="d25b3e36-b343-a8b0-f7f6-caa8d308d2bb" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.SearchRules_FindsByAlias" computerName="BUF-5CG4423FYV" duration="00:00:00.0009372" startTime="2026-08-17T12:40:17.1628840+02:00" endTime="2026-08-17T12:40:17.1628842+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d2fc889e-ce74-4f3c-87ab-bcd6d95694fc" />
+    <UnitTestResult executionId="742d93aa-8012-4376-9a1d-bd6ad70d9fc8" testId="1dc371d6-a933-c65d-e28a-69c1e684c40b" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.OrphanRules_OutgoingReferencesPreventOrphanStatus" computerName="BUF-5CG4423FYV" duration="00:00:00.0007176" startTime="2026-08-17T12:40:17.2567808+02:00" endTime="2026-08-17T12:40:17.2567809+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="742d93aa-8012-4376-9a1d-bd6ad70d9fc8" />
+    <UnitTestResult executionId="3634f3c2-e18b-4da4-b4cc-8d3cb748d0f1" testId="60bf8be7-f95d-b8e9-f4bf-8323dbb7f66d" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_PP02IsSearchable" computerName="BUF-5CG4423FYV" duration="00:00:00.0045971" startTime="2026-08-17T12:40:17.2400693+02:00" endTime="2026-08-17T12:40:17.2400694+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3634f3c2-e18b-4da4-b4cc-8d3cb748d0f1" />
+    <UnitTestResult executionId="e07d768c-6c62-405b-9cd5-1689e2e8276d" testId="ec8d510e-43b4-57d0-1f0d-5cd68c810b5d" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithAlternativeTitleFormat_ExtractsTitle" computerName="BUF-5CG4423FYV" duration="00:00:00.0003193" startTime="2026-08-17T12:40:17.3076419+02:00" endTime="2026-08-17T12:40:17.3076420+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e07d768c-6c62-405b-9cd5-1689e2e8276d" />
+    <UnitTestResult executionId="6aecf2b7-b860-46f2-aab4-66999cf2111e" testId="7dc58539-c762-757c-a4ed-bd37481fcf10" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Changelog_TableWithoutLevelThreeHeadings_ParsesAllRows" computerName="BUF-5CG4423FYV" duration="00:00:00.0010914" startTime="2026-08-17T12:40:17.3046976+02:00" endTime="2026-08-17T12:40:17.3046977+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6aecf2b7-b860-46f2-aab4-66999cf2111e" />
+    <UnitTestResult executionId="ec45d4fe-7703-45b8-8f9c-88b46540bffc" testId="1d944010-5dbd-9831-e91b-6945a77a63e1" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithSecurityComplianceSection_ParsingSucceeds" computerName="BUF-5CG4423FYV" duration="00:00:00.0004151" startTime="2026-08-17T12:40:17.3031389+02:00" endTime="2026-08-17T12:40:17.3031392+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ec45d4fe-7703-45b8-8f9c-88b46540bffc" />
+    <UnitTestResult executionId="da67d507-c199-46b7-88ec-f6116bc5cba8" testId="d2a26fe6-26f7-95de-444d-10e78f75fafc" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Constraints_ExplicitPlatformKeyword_ArePlatformWide" computerName="BUF-5CG4423FYV" duration="00:00:00.0461460" startTime="2026-08-17T12:40:17.0481537+02:00" endTime="2026-08-17T12:40:17.0481665+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="da67d507-c199-46b7-88ec-f6116bc5cba8" />
+    <UnitTestResult executionId="5a246770-d785-4643-adfd-1ca1235adbf5" testId="ee3f0d68-e40a-0598-21cc-1ef96f7b54d2" testName="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests.BuildMapTree_SimpleCycle_StopsAtCurrentPath" computerName="BUF-5CG4423FYV" duration="00:00:00.0010405" startTime="2026-08-17T12:40:17.0960578+02:00" endTime="2026-08-17T12:40:17.0960579+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5a246770-d785-4643-adfd-1ca1235adbf5" />
+    <UnitTestResult executionId="3e4ccd32-b33c-4f7a-8e54-7a951446f072" testId="4f0d3673-b101-cb53-c7ed-472be71020f1" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapRendering_GOV001DirectChildrenNoRenderedDuplicates" computerName="BUF-5CG4423FYV" duration="00:00:00.0005532" startTime="2026-08-17T12:40:17.1530213+02:00" endTime="2026-08-17T12:40:17.1530214+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3e4ccd32-b33c-4f7a-8e54-7a951446f072" />
+    <UnitTestResult executionId="25cb8d17-b980-4627-b702-0ddbe668138d" testId="5b3357b9-a4f9-d31c-2fb5-d4bdf9aa75ca" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapRendering_AllRoots_UniqueAndNoHiddenDuplicates" computerName="BUF-5CG4423FYV" duration="00:00:00.0004261" startTime="2026-08-17T12:40:17.3051756+02:00" endTime="2026-08-17T12:40:17.3051757+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="25cb8d17-b980-4627-b702-0ddbe668138d" />
+    <UnitTestResult executionId="dca73127-3166-4b2b-a5e7-4d7a3a8f8d84" testId="feec3437-7ebd-100a-10f8-f47d80308294" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_RangeExpansion_WorksWithoutDuplicates" computerName="BUF-5CG4423FYV" duration="00:00:00.0013848" startTime="2026-08-17T12:40:17.2194004+02:00" endTime="2026-08-17T12:40:17.2194005+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="dca73127-3166-4b2b-a5e7-4d7a3a8f8d84" />
+    <UnitTestResult executionId="19a0ccbb-18b6-43ba-8435-fc2e2cb84dbe" testId="f4458b22-e522-da97-fe91-c31613267403" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RealConstitution_GOV001_ReferencesNoDuplicates" computerName="BUF-5CG4423FYV" duration="00:00:00.0011949" startTime="2026-08-17T12:40:17.0660282+02:00" endTime="2026-08-17T12:40:17.0660283+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="19a0ccbb-18b6-43ba-8435-fc2e2cb84dbe" />
+    <UnitTestResult executionId="9898a8ea-6431-434a-b9db-86e953d590af" testId="0dd62791-1b7b-ccd8-fec5-16c826f5503d" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.ResolutionDebug_TraceEachGOV001ReferenceResolution" computerName="BUF-5CG4423FYV" duration="00:00:00.0140010" startTime="2026-08-17T12:40:17.2550549+02:00" endTime="2026-08-17T12:40:17.2550551+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9898a8ea-6431-434a-b9db-86e953d590af">
+      <Output>
+        <ErrorInfo>
+          <Message>
+=== REFERENCE RESOLUTION TRACE ===
+
+GOV-001.References.Count: 47
+
+[001] 'PP-01' → 'PP-01' (exact)
+[002] 'PP-02' → 'PP-02' (exact)
+[003] 'PP-03' → 'PP-03' (exact)
+[004] 'PP-04' → 'PP-04' (exact)
+[005] 'PP-05' → 'PP-05' (exact)
+[006] 'PP-06' → 'PP-03' (alias)
+[007] 'PP-07' → 'PP-03' (alias)
+[008] 'PP-08' → 'PP-08' (exact)
+[009] 'PP-09' → 'PP-09' (exact)
+[010] 'PS-01' → 'PS-01' (exact)
+[011] 'PS-02' → 'PS-02' (exact)
+[012] 'PS-03' → 'PS-03' (exact)
+[013] 'PS-04' → 'PS-04' (exact)
+[014] 'PS-05' → 'PP-04' (alias)
+[015] 'PS-06' → 'PS-06' (exact)
+... (27 more) ...
+[043] 'GL-25' → 'GL-25' (exact)
+[044] 'GL-26' → 'PS-02' (alias)
+[045] 'GL-27' → 'PS-09' (alias)
+[046] 'GL-28' → 'PS-08' (alias)
+[047] 'GL-29' → 'STANDARD-001' (alias)
+
+=== RESOLUTION ANALYSIS ===
+Total references: 47
+Exact matches: 39
+Alias matches: 8
+Mismatches (refId != resolvedId): 8
+
+⚠️ MISMATCHES FOUND:
+  'PP-06' resolved to 'PP-03'
+  'PP-07' resolved to 'PP-03'
+  'PS-05' resolved to 'PP-04'
+  'GL-13' resolved to 'PS-07'
+  'GL-26' resolved to 'PS-02'
+  'GL-27' resolved to 'PS-09'
+  'GL-28' resolved to 'PS-08'
+  'GL-29' resolved to 'STANDARD-001'
+
+=== ALIAS CONFLICTS ===
+Total aliases skipped (conflicts): 1
+  Skipped alias 'PP-04' (exists as PP-04)
+
+=== ALIAS OWNERSHIP ===
+
+'PP-06' is an alias of:
+  Rule PP-03: III. Domain-Driven Service Design (PP-03, PP-06, PP-07)
+
+'PP-07' is an alias of:
+  Rule PP-03: III. Domain-Driven Service Design (PP-03, PP-06, PP-07)
+
+'PS-05' is an alias of:
+  Rule PP-04: IV. Event-Driven Integration (PP-04-derived, PS-05)
+
+'GL-13' is an alias of:
+  Rule PS-07: API Versioning (PS-07, GL-13)
+
+'GL-26' is an alias of:
+  Rule PS-02: Configuration and Secrets (PS-02, GL-26)
+
+'GL-27' is an alias of:
+  Rule PS-09: Stateless Services (PS-09, GL-27)
+
+'GL-28' is an alias of:
+  Rule PS-08: Observability (PS-08, GL-28)
+
+'GL-29' is an alias of:
+  Rule STANDARD-001: Resilience (GL-29)
+</Message>
+          <StackTrace>   at BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.ResolutionDebug_TraceEachGOV001ReferenceResolution() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionAnalysisServiceTests.cs:line 2512&#xD;
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="3ce21f1c-6c6a-460d-a613-5d16a9c358ea" testId="960078bf-57b1-b321-6af0-f5f8813d3366" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapDiagnostics_CaptureRenderingStructure_GOV001" computerName="BUF-5CG4423FYV" duration="00:00:00.0011401" startTime="2026-08-17T12:40:17.1386323+02:00" endTime="2026-08-17T12:40:17.1386325+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3ce21f1c-6c6a-460d-a613-5d16a9c358ea" />
+    <UnitTestResult executionId="3ec35d54-879b-4425-8ed7-3cdd63b6371b" testId="8e33dd20-2fa8-d8bd-640e-aaf4f19595ca" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MultiId_StandardWithParenthesisIdSearchablePS08" computerName="BUF-5CG4423FYV" duration="00:00:00.0009703" startTime="2026-08-17T12:40:17.2553750+02:00" endTime="2026-08-17T12:40:17.2553751+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3ec35d54-879b-4425-8ed7-3cdd63b6371b" />
+    <UnitTestResult executionId="411e917e-c841-4e89-90d2-5f2260c780cb" testId="4a07f83e-057f-c903-fb89-ab9d76be7bda" testName="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests.BuildMapTree_DeeperSharedBranch_RendersCompleteBranchUnderEachParent" computerName="BUF-5CG4423FYV" duration="00:00:00.0011173" startTime="2026-08-17T12:40:17.0960249+02:00" endTime="2026-08-17T12:40:17.0960249+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="411e917e-c841-4e89-90d2-5f2260c780cb" />
+    <UnitTestResult executionId="3d1288cb-3f70-4ec9-9579-fce09c20bdbc" testId="e5d54874-40ce-bb84-19e7-3cb304657ae7" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Changelog_WithMarkdownTable_ParsesVersionsCorrectly" computerName="BUF-5CG4423FYV" duration="00:00:00.0021601" startTime="2026-08-17T12:40:17.2837975+02:00" endTime="2026-08-17T12:40:17.2837976+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3d1288cb-3f70-4ec9-9579-fce09c20bdbc" />
+    <UnitTestResult executionId="3fbda6c8-3501-4a4d-9582-f841634a15a3" testId="84d2b101-6341-1d4e-8d12-6f5dab372037" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_GovernanceParsed" computerName="BUF-5CG4423FYV" duration="00:00:00.0050158" startTime="2026-08-17T12:40:17.0960398+02:00" endTime="2026-08-17T12:40:17.0960398+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3fbda6c8-3501-4a4d-9582-f841634a15a3" />
+    <UnitTestResult executionId="0a584367-17bf-4489-a25f-60a0a739d26e" testId="78114688-2492-8310-e32d-0630fdf63ad5" testName="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests.BuildMapTree_SelfCycle_DoesNotExpandSelfRecursively" computerName="BUF-5CG4423FYV" duration="00:00:00.0005803" startTime="2026-08-17T12:40:17.0960720+02:00" endTime="2026-08-17T12:40:17.0960720+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0a584367-17bf-4489-a25f-60a0a739d26e" />
+    <UnitTestResult executionId="43f19b42-b4ac-486f-9cf5-57e4decd854a" testId="cdd3d52d-b640-b789-b688-1dfe1f0885a8" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.NoChangelog_ChangelogIndicatorIsWarning" computerName="BUF-5CG4423FYV" duration="00:00:00.0007259" startTime="2026-08-17T12:40:17.2202026+02:00" endTime="2026-08-17T12:40:17.2202027+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="43f19b42-b4ac-486f-9cf5-57e4decd854a" />
+    <UnitTestResult executionId="32fe169f-9305-4c29-b266-f767753ca4c0" testId="b109a626-7622-81a1-28f4-1c1d89a24830" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Constraints_ModuleConstraintsWithoutId_AreNotPlatformWide" computerName="BUF-5CG4423FYV" duration="00:00:00.0007158" startTime="2026-08-17T12:40:17.2327612+02:00" endTime="2026-08-17T12:40:17.2327614+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="32fe169f-9305-4c29-b266-f767753ca4c0" />
+    <UnitTestResult executionId="040b0933-1232-4fc2-a7ae-7ab0cbf98840" testId="dcd466ea-9780-0509-3100-cd90b5831f05" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapDiagnostics_TraceAllOccurrencesOfRepeatedRules" computerName="BUF-5CG4423FYV" duration="00:00:00.0004733" startTime="2026-08-17T12:40:17.2295898+02:00" endTime="2026-08-17T12:40:17.2295901+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="040b0933-1232-4fc2-a7ae-7ab0cbf98840" />
+    <UnitTestResult executionId="cd42b0df-8315-4a08-a0e7-a6628da09739" testId="994b66c3-c41f-a9c6-c2f1-6eec33475756" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MultiId_PrincipleWithParenthesisIdSearchablePP04" computerName="BUF-5CG4423FYV" duration="00:00:00.0008379" startTime="2026-08-17T12:40:17.2180216+02:00" endTime="2026-08-17T12:40:17.2180217+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cd42b0df-8315-4a08-a0e7-a6628da09739" />
+    <UnitTestResult executionId="0b917bee-2ea5-4b92-94c8-21fb8efd50a0" testId="833194ec-19c0-5ec7-bf23-3fe72a380f95" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleReferences_InvalidRange_OnlyExtracts" computerName="BUF-5CG4423FYV" duration="00:00:00.0008586" startTime="2026-08-17T12:40:17.2165456+02:00" endTime="2026-08-17T12:40:17.2165457+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0b917bee-2ea5-4b92-94c8-21fb8efd50a0" />
+    <UnitTestResult executionId="e637ab89-61cb-42a8-88b2-ac6bfa17fd4a" testId="3456f6c3-6103-5c38-0bc9-bcb9c50b530f" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_ParsesStandards" computerName="BUF-5CG4423FYV" duration="00:00:00.0042808" startTime="2026-08-17T12:40:17.3023395+02:00" endTime="2026-08-17T12:40:17.3023396+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e637ab89-61cb-42a8-88b2-ac6bfa17fd4a" />
+    <UnitTestResult executionId="935b9584-7511-4298-b1a9-b30a6f3e8203" testId="7e5300b2-4574-1d67-3840-d71c5e264cb9" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.OrphanRules_CountMatches_HealthMetric" computerName="BUF-5CG4423FYV" duration="00:00:00.0013423" startTime="2026-08-17T12:40:17.0884714+02:00" endTime="2026-08-17T12:40:17.0884715+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="935b9584-7511-4298-b1a9-b30a6f3e8203" />
+    <UnitTestResult executionId="9d881acd-600e-4d6c-8442-0c0a5c91c6f3" testId="95787c70-f9f4-297c-ca51-e01d35cc65d6" testName="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests.BuildMapTree_AutorisasjonGovernance_RendersAllResolvedDirectReferences" computerName="BUF-5CG4423FYV" duration="00:00:00.0891480" startTime="2026-08-17T12:40:17.0948627+02:00" endTime="2026-08-17T12:40:17.0948632+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9d881acd-600e-4d6c-8442-0c0a5c91c6f3">
+      <Output>
+        <ErrorInfo>
+          <Message>Expected governanceNode!.Children to contain 47 item(s), but found 40: BirkNext.Web.Models.ConstitutionMapNode&#xD;
+    {&#xD;
+        Children = BirkNext.Web.Models.ConstitutionMapNode&#xD;
+        {&#xD;
+            {&#xD;
+                Children = {empty},&#xD;
+                Depth = 2,&#xD;
+                NodeId = "4107c8e4e0",&#xD;
+                Rule = BirkNext.Web.Models.ConstitutionRule&#xD;
+                {&#xD;
+                    Aliases = {empty},&#xD;
+                    Description = "",&#xD;
+                    NodeId = "afd277b54a",&#xD;
+                    ReferencedBy =&#xD;
+                    {&#xD;
+                    Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.,&#xD;
+                    Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.&#xD;
+                    }&#xD;
+                ,&#xD;
+                    References = {empty},&#xD;
+                    RuleId = "GL-01",&#xD;
+                    RuleType = ConstitutionRuleType.Guideline {value: 2},&#xD;
+                    Title = "GL-01"&#xD;
+                }&#xD;
+            },&#xD;
+            BirkNext.Web.Models.ConstitutionMapNode&#xD;
+            {&#xD;
+                Children = {empty},&#xD;
+                Depth = 2,&#xD;
+                NodeId = "29aefa6f1b",&#xD;
+                Rule = BirkNext.Web.Models.ConstitutionRule&#xD;
+                {&#xD;
+                    Aliases = {empty},&#xD;
+                    Description = "",&#xD;
+                    NodeId = "66fd89a493",&#xD;
+                    ReferencedBy =&#xD;
+                    {&#xD;
+                    Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.,&#xD;
+                    Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.&#xD;
+                    }&#xD;
+                ,&#xD;
+                    References = {empty},&#xD;
+                    RuleId = "GL-02",&#xD;
+                    RuleType = ConstitutionRuleType.Guideline {value: 2},&#xD;
+                    Title = "GL-02"&#xD;
+                }&#xD;
+            },&#xD;
+            BirkNext.Web.Models.ConstitutionMapNode&#xD;
+            {&#xD;
+                Children = {empty},&#xD;
+                Depth = 2,&#xD;
+                NodeId = "f5eb43e35c",&#xD;
+                Rule = BirkNext.Web.Models.ConstitutionRule&#xD;
+                {&#xD;
+                    Aliases = {empty},&#xD;
+                    Description = "",&#xD;
+                    NodeId = "a8150040b1",&#xD;
+                    ReferencedBy =&#xD;
+                    {&#xD;
+                    Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.,&#xD;
+                    Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.&#xD;
+                    }&#xD;
+                ,&#xD;
+                    References = {empty},&#xD;
+                    RuleId = "GL-03",&#xD;
+                    RuleType = ConstitutionRuleType.Guideline {value: 2},&#xD;
+                    Title = "GL-03"&#xD;
+                }&#xD;
+            },&#xD;
+            BirkNext.Web.Models.ConstitutionMapNode&#xD;
+            {&#xD;
+                Children = {empty},&#xD;
+                Depth = 2,&#xD;
+                NodeId = "f8173f5f24",&#xD;
+                Rule = BirkNext.Web.Models.ConstitutionRule&#xD;
+                {&#xD;
+                    Aliases = {empty},&#xD;
+                    Description = "",&#xD;
+                    NodeId = "bb247813d2",&#xD;
+                    ReferencedBy =&#xD;
+                    {&#xD;
+                    Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.,&#xD;
+                    Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.&#xD;
+                    }&#xD;
+                ,&#xD;
+                    References = {empty},&#xD;
+                    RuleId = "GL-16",&#xD;
+                    RuleType = ConstitutionRuleType.Guideline {value: 2},&#xD;
+                    Title = "GL-16"&#xD;
+                }&#xD;
+            }&#xD;
+        }&#xD;
+    ,&#xD;
+        Depth = 1,&#xD;
+        NodeId = "f7132a8f7d",&#xD;
+        Rule = BirkNext.Web.Models.ConstitutionRule&#xD;
+        {&#xD;
+            Aliases = {empty},&#xD;
+            Description = "All communication between layers and services MUST go through published API contracts.&#xD;
+Backend has no knowledge of the presentation layer. No service accesses another service's&#xD;
+data layer directly — regardless of technology. This is non-negotiable.&#xD;
+GL-01: All frontend-to-backend communication routes through the reverse proxy (YARP/APIM). Direct backend URLs are forbidden in frontend code.&#xD;
+GL-02: API contract design precedes implementation. The contract is the source of truth, not the database schema.&#xD;
+GL-03: Blazor components fetch data exclusively via HttpClient against published contracts.&#xD;
+GL-16: Contracts use domain language (not table names, legacy IDs, or internal codes).",&#xD;
+            NodeId = "dea6577ffd",&#xD;
+&#xD;
+&#xD;
+(Output has exceeded the maximum of 100 lines. Increase FormattingOptions.MaxLines on AssertionScope or AssertionConfiguration to include more lines.).</Message>
+          <StackTrace>   at FluentAssertions.Collections.GenericCollectionAssertions`3.HaveCount(Int32 expected, String because, Object[] becauseArgs)&#xD;
+   at BirkNext.Web.Tests.Services.ConstitutionMapTreeTests.BuildMapTree_AutorisasjonGovernance_RendersAllResolvedDirectReferences() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionMapTreeTests.cs:line 89&#xD;
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="ca5e7cb9-c973-40e6-b3f2-1adc15e45baf" testId="8674e201-5c81-4c38-275f-575cb410cb05" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Changelog_WithAscendingVersions_LatestVersionDeterminedBySemVerNotPosition" computerName="BUF-5CG4423FYV" duration="00:00:00.0004862" startTime="2026-08-17T12:40:17.2136304+02:00" endTime="2026-08-17T12:40:17.2136305+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ca5e7cb9-c973-40e6-b3f2-1adc15e45baf" />
+    <UnitTestResult executionId="d293f63b-179d-43f7-ab07-941a1411c724" testId="e5653b32-0ef0-7a10-8b44-9326bce90f25" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Health_TotalRulesEqualsCatalogCount" computerName="BUF-5CG4423FYV" duration="00:00:00.0042462" startTime="2026-08-17T12:40:17.1619601+02:00" endTime="2026-08-17T12:40:17.1619602+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d293f63b-179d-43f7-ab07-941a1411c724" />
+    <UnitTestResult executionId="e6c6fd1f-1b6a-4020-ab6a-0cb1062dec1f" testId="06d46aa3-29fc-6da4-d752-71cbe1c2f4b2" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_NoSelfReferencesFromHeading" computerName="BUF-5CG4423FYV" duration="00:00:00.0013605" startTime="2026-08-17T12:40:17.3073395+02:00" endTime="2026-08-17T12:40:17.3073396+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e6c6fd1f-1b6a-4020-ab6a-0cb1062dec1f" />
+    <UnitTestResult executionId="1831bbad-cb09-4d20-805e-3abc60fa4a7c" testId="d5caa699-2343-e0ea-f19f-aef737c01c9e" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_RealConstitution_NoPrinciplesSelfReference" computerName="BUF-5CG4423FYV" duration="00:00:00.0003854" startTime="2026-08-17T12:40:17.2956212+02:00" endTime="2026-08-17T12:40:17.2956212+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1831bbad-cb09-4d20-805e-3abc60fa4a7c" />
+    <UnitTestResult executionId="b7bb238a-c7b7-46ee-bcf8-d24c5d6dd963" testId="60a39904-9a1f-a86f-7eae-88b5631fe7b5" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.DOMInspection_PrintAllDuplicateRules" computerName="BUF-5CG4423FYV" duration="00:00:00.0097242" startTime="2026-08-17T12:40:17.2716897+02:00" endTime="2026-08-17T12:40:17.2716898+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b7bb238a-c7b7-46ee-bcf8-d24c5d6dd963">
+      <Output>
+        <ErrorInfo>
+          <Message>INSPECTION REPORT:
+
+=== GOV-001 DIRECT CHILDREN ANALYSIS ===
+Total Children: 40
+NodeId: b28fc71c56
+RuleId: GOV-001
+
+Rules grouped by RuleId:
+
+=== RENDERING WHAT DOM SHOULD CONTAIN ===
+[001] &lt;div data-rule-id="PP-01" data-node-id="a86a211962" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[002] &lt;div data-rule-id="PP-02" data-node-id="a278fb061f" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[003] &lt;div data-rule-id="PP-03" data-node-id="fd68592a25" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[004] &lt;div data-rule-id="PP-04" data-node-id="94a0814427" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[005] &lt;div data-rule-id="PP-05" data-node-id="1e37ade06d" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[006] &lt;div data-rule-id="PP-08" data-node-id="1e208893e6" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[007] &lt;div data-rule-id="PP-09" data-node-id="e6eac01c2b" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[008] &lt;div data-rule-id="PS-01" data-node-id="ee46eb1123" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[009] &lt;div data-rule-id="PS-02" data-node-id="18c3ef50e0" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[010] &lt;div data-rule-id="PS-03" data-node-id="b76a4bc5d6" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[011] &lt;div data-rule-id="PS-04" data-node-id="107cf4affa" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[012] &lt;div data-rule-id="PS-06" data-node-id="0997285120" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[013] &lt;div data-rule-id="PS-07" data-node-id="8e74e6e257" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[014] &lt;div data-rule-id="PS-08" data-node-id="02a74a6c31" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[015] &lt;div data-rule-id="PS-09" data-node-id="27174f3860" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[016] &lt;div data-rule-id="GL-01" data-node-id="e1fceb0aeb" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[017] &lt;div data-rule-id="GL-02" data-node-id="79e50bf673" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[018] &lt;div data-rule-id="GL-03" data-node-id="e83f7ca1c0" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[019] &lt;div data-rule-id="GL-04" data-node-id="c0baeaeb82" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[020] &lt;div data-rule-id="GL-05" data-node-id="fe21065be9" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[021] &lt;div data-rule-id="GL-06" data-node-id="f4394babd3" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[022] &lt;div data-rule-id="GL-07" data-node-id="b0843470d2" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[023] &lt;div data-rule-id="GL-08" data-node-id="54ede367bd" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[024] &lt;div data-rule-id="GL-09" data-node-id="520d427108" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[025] &lt;div data-rule-id="GL-10" data-node-id="fe17ac65ec" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[026] &lt;div data-rule-id="GL-11" data-node-id="2ac98879f7" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[027] &lt;div data-rule-id="GL-12" data-node-id="c5cbe407a1" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[028] &lt;div data-rule-id="GL-14" data-node-id="1cb74ec061" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[029] &lt;div data-rule-id="GL-15" data-node-id="c61a915e4e" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[030] &lt;div data-rule-id="GL-16" data-node-id="a35d30b95c" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[031] &lt;div data-rule-id="GL-17" data-node-id="77bacf30bc" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[032] &lt;div data-rule-id="GL-18" data-node-id="dcd6685f3e" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[033] &lt;div data-rule-id="GL-19" data-node-id="fb55a42a7c" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[034] &lt;div data-rule-id="GL-20" data-node-id="eac77d51be" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[035] &lt;div data-rule-id="GL-21" data-node-id="b9ef55f3f8" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[036] &lt;div data-rule-id="GL-22" data-node-id="2e7ae0faed" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[037] &lt;div data-rule-id="GL-23" data-node-id="854cb9e1df" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[038] &lt;div data-rule-id="GL-24" data-node-id="2e83d2dd7f" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[039] &lt;div data-rule-id="GL-25" data-node-id="ccf430d36f" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[040] &lt;div data-rule-id="STANDARD-001" data-node-id="d6f9a77073" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+
+
+Saved to: C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\DOM_INSPECTION_REPORT.txt</Message>
+          <StackTrace>   at BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.DOMInspection_PrintAllDuplicateRules() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionAnalysisServiceTests.cs:line 2105&#xD;
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="0201875d-d585-47af-be40-fcfc49b3a14d" testId="814e9f43-3107-3fe9-ed38-cc5caba6859f" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_HealthIndicatorShowsCounts" computerName="BUF-5CG4423FYV" duration="00:00:00.0052405" startTime="2026-08-17T12:40:17.1187203+02:00" endTime="2026-08-17T12:40:17.1187204+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0201875d-d585-47af-be40-fcfc49b3a14d" />
+    <UnitTestResult executionId="b9ed3628-db48-47d1-ab4f-08b5060706dd" testId="da9fd775-2fc1-db39-7125-f4b30712a29b" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapRendering_GOV001Node_HasUniqueChildren" computerName="BUF-5CG4423FYV" duration="00:00:00.0004179" startTime="2026-08-17T12:40:17.0610087+02:00" endTime="2026-08-17T12:40:17.0610088+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b9ed3628-db48-47d1-ab4f-08b5060706dd" />
+    <UnitTestResult executionId="28c77e84-22f8-4221-9f3d-e13f17e2a359" testId="5b2bad2c-b46b-ca27-b126-6a50ea405435" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.FinalVerification_GOV001MapChildrenAreUniquWithoutDuplicates" computerName="BUF-5CG4423FYV" duration="00:00:00.0004808" startTime="2026-08-17T12:40:17.0884524+02:00" endTime="2026-08-17T12:40:17.0884524+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="28c77e84-22f8-4221-9f3d-e13f17e2a359" />
+    <UnitTestResult executionId="c3626ff5-70ed-4846-8cb5-ef1a64de6899" testId="18ffc505-6c2a-a78c-ff18-95c3cd7c1963" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapTree_WithSharedReferences_ShowsRuleUnderMultipleParents" computerName="BUF-5CG4423FYV" duration="00:00:00.0015796" startTime="2026-08-17T12:40:17.2130160+02:00" endTime="2026-08-17T12:40:17.2130161+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c3626ff5-70ed-4846-8cb5-ef1a64de6899" />
+    <UnitTestResult executionId="9110a88a-2230-4c50-8f70-adfb462e7e71" testId="fcb4a82c-68f4-e06d-32ca-2c97bee9cab9" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapDiagnostics_CheckPP02DepthUnderGOV001" computerName="BUF-5CG4423FYV" duration="00:00:00.0005666" startTime="2026-08-17T12:40:17.1635368+02:00" endTime="2026-08-17T12:40:17.1635369+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9110a88a-2230-4c50-8f70-adfb462e7e71" />
+    <UnitTestResult executionId="036e50a6-98e5-4374-be36-b0bab33ec1e7" testId="1f44e410-9ab9-7a33-f1ad-a928ecdbce97" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_RomanNumeralWithParentheses_NoSelfReference" computerName="BUF-5CG4423FYV" duration="00:00:00.0009894" startTime="2026-08-17T12:40:17.1198637+02:00" endTime="2026-08-17T12:40:17.1198638+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="036e50a6-98e5-4374-be36-b0bab33ec1e7" />
+    <UnitTestResult executionId="2c99bb1f-33be-43e4-a8fa-cb26278a810e" testId="eaf93810-2295-5146-23a3-0495813bb25d" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapDiagnostics_DetailedGOV001Hierarchy" computerName="BUF-5CG4423FYV" duration="00:00:00.0005352" startTime="2026-08-17T12:40:17.2114756+02:00" endTime="2026-08-17T12:40:17.2114757+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2c99bb1f-33be-43e4-a8fa-cb26278a810e" />
+    <UnitTestResult executionId="51e8b0fe-0c3c-4f49-aeda-d7b60daf693a" testId="b2033019-1f4e-40f7-89c1-f358d93aabc4" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.BrokenReferences_CountedCorrectly" computerName="BUF-5CG4423FYV" duration="00:00:00.0005639" startTime="2026-08-17T12:40:17.2559955+02:00" endTime="2026-08-17T12:40:17.2559956+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="51e8b0fe-0c3c-4f49-aeda-d7b60daf693a" />
+    <UnitTestResult executionId="9394cc52-eb76-4739-8c9d-35616fbbc810" testId="ee0ccdc2-ba30-7a13-33b6-f969588b8045" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_TotalRulesMatchesSectionCounts" computerName="BUF-5CG4423FYV" duration="00:00:00.0065474" startTime="2026-08-17T12:40:17.1375165+02:00" endTime="2026-08-17T12:40:17.1375167+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9394cc52-eb76-4739-8c9d-35616fbbc810" />
+    <UnitTestResult executionId="bd416301-71bc-45ab-8f48-86228495441e" testId="8a9c5739-0644-3d29-d5c4-2006425d152e" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithMultiplePrincipalTypes_CategorizesProperly" computerName="BUF-5CG4423FYV" duration="00:00:00.0007839" startTime="2026-08-17T12:40:17.2980229+02:00" endTime="2026-08-17T12:40:17.2980232+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="bd416301-71bc-45ab-8f48-86228495441e" />
+    <UnitTestResult executionId="be54ad2d-6baa-467b-84c3-a537f9f41316" testId="6cd7947a-b896-ee3e-b771-5a4de3c4ff26" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.NoChangelog_ChangelogCountIsZero" computerName="BUF-5CG4423FYV" duration="00:00:00.0008178" startTime="2026-08-17T12:40:17.1525814+02:00" endTime="2026-08-17T12:40:17.1525815+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="be54ad2d-6baa-467b-84c3-a537f9f41316" />
+    <UnitTestResult executionId="2df6bdcc-cb4f-4c2a-9f4a-85ab091145a1" testId="a71c6816-9b8f-1b09-0ca2-3b9aad80a0eb" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_HeadingWithoutExplicitId_ExtractsFromParentheses" computerName="BUF-5CG4423FYV" duration="00:00:00.0007520" startTime="2026-08-17T12:40:17.2156418+02:00" endTime="2026-08-17T12:40:17.2156419+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2df6bdcc-cb4f-4c2a-9f4a-85ab091145a1" />
+    <UnitTestResult executionId="4e73255a-99ac-4a08-94b0-e7e66ef6ea79" testId="38ca401c-005d-c27e-2ca8-a494f38a189a" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithRomanNumeralPrinciples_ExtractsAsAlternativeFormat" computerName="BUF-5CG4423FYV" duration="00:00:00.0005236" startTime="2026-08-17T12:40:17.3036756+02:00" endTime="2026-08-17T12:40:17.3036757+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4e73255a-99ac-4a08-94b0-e7e66ef6ea79" />
+    <UnitTestResult executionId="618abbe8-88ef-4eb8-a9de-a3f11f472f6d" testId="bfe79a5d-446f-1c0a-dd5d-9af6d9e29397" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.BuildMapTreeDiagnostics_CheckGOV001RulesBeforeAndAfterMapping" computerName="BUF-5CG4423FYV" duration="00:00:00.0103334" startTime="2026-08-17T12:40:17.2955766+02:00" endTime="2026-08-17T12:40:17.2955766+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="618abbe8-88ef-4eb8-a9de-a3f11f472f6d">
+      <Output>
+        <ErrorInfo>
+          <Message>DIAGNOSTIC:
+
+=== RULES BEFORE MAP BUILDING ===
+GOV-001 from Catalog:
+  References.Count: 47
+  References order: PP-01, PP-02, PP-03, PP-04, PP-05, PP-06, PP-07, PP-08, PP-09, PS-01, PS-02, PS-03, PS-04, PS-05, PS-06, PS-07, PS-08, PS-09, GL-01, GL-02, GL-03, GL-04, GL-05, GL-06, GL-07, GL-08, GL-09, GL-10, GL-11, GL-12, GL-13, GL-14, GL-15, GL-16, GL-17, GL-18, GL-19, GL-20, GL-21, GL-22, GL-23, GL-24, GL-25, GL-26, GL-27, GL-28, GL-29
+
+=== RULES AFTER MAP BUILDING ===
+GOV-001 from Map:
+  Children.Count: 40
+  Children order: PP-01, PP-02, PP-03, PP-04, PP-05, PP-08, PP-09, PS-01, PS-02, PS-03, PS-04, PS-06, PS-07, PS-08, PS-09, GL-01, GL-02, GL-03, GL-04, GL-05, GL-06, GL-07, GL-08, GL-09, GL-10, GL-11, GL-12, GL-14, GL-15, GL-16, GL-17, GL-18, GL-19, GL-20, GL-21, GL-22, GL-23, GL-24, GL-25, STANDARD-001
+</Message>
+          <StackTrace>   at BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.BuildMapTreeDiagnostics_CheckGOV001RulesBeforeAndAfterMapping() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionAnalysisServiceTests.cs:line 2245&#xD;
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="86fd5763-5db7-44b9-ab1f-d006581c450a" testId="84af18f1-11d8-2cab-5bbe-7873a31d96fc" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapTree_AutorisasjonRegression_GovernanceShowsAllReferences" computerName="BUF-5CG4423FYV" duration="00:00:00.0070555" startTime="2026-08-17T12:40:17.0605895+02:00" endTime="2026-08-17T12:40:17.0605896+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="86fd5763-5db7-44b9-ab1f-d006581c450a" />
+    <UnitTestResult executionId="98548ea3-23e7-4ed9-8f7b-8a9768a6ea2d" testId="a0928e83-5a72-9706-3383-d6be35695193" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.OrphanRules_BothRefsAndRefByZero_AreOrphaned" computerName="BUF-5CG4423FYV" duration="00:00:00.0017266" startTime="2026-08-17T12:40:17.0627801+02:00" endTime="2026-08-17T12:40:17.0627802+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="98548ea3-23e7-4ed9-8f7b-8a9768a6ea2d" />
+    <UnitTestResult executionId="ab6aeb9a-2a1f-4549-b617-10b5d4a2d01a" testId="1010b5d2-c24d-e306-dc88-d8bfca81d5a8" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_ReferencedBy_NosDuplicates_AuthConstitution" computerName="BUF-5CG4423FYV" duration="00:00:00.0044607" startTime="2026-08-17T12:40:17.2108679+02:00" endTime="2026-08-17T12:40:17.2108680+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ab6aeb9a-2a1f-4549-b617-10b5d4a2d01a" />
+    <UnitTestResult executionId="adb18904-5e44-4b9b-bdae-570aaa9f86a6" testId="70c443e6-14bd-291f-ab76-f21cddbf5227" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithMandatoryKeywords_FlagsAsBindingRules" computerName="BUF-5CG4423FYV" duration="00:00:00.0005086" startTime="2026-08-17T12:40:17.2027005+02:00" endTime="2026-08-17T12:40:17.2027006+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="adb18904-5e44-4b9b-bdae-570aaa9f86a6" />
+    <UnitTestResult executionId="34eac083-7785-44d1-8ed9-361a7f5aac09" testId="c67af53b-e008-9cde-94c6-807e8b9ef4fa" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RealConstitution_SourceCodeLanguage_PreservesTable" computerName="BUF-5CG4423FYV" duration="00:00:00.0002998" startTime="2026-08-17T12:40:17.3026156+02:00" endTime="2026-08-17T12:40:17.3026157+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="34eac083-7785-44d1-8ed9-361a7f5aac09" />
+    <UnitTestResult executionId="ccfb1b91-ddb9-415e-ad21-09eed11a5a56" testId="9a1ef4f8-9639-7bd7-34c5-1e254e04327c" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleReferences_AutorisasjonConstitution_ExpandsAllRanges" computerName="BUF-5CG4423FYV" duration="00:00:00.0053511" startTime="2026-08-17T12:40:17.0885089+02:00" endTime="2026-08-17T12:40:17.0885089+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ccfb1b91-ddb9-415e-ad21-09eed11a5a56" />
+    <UnitTestResult executionId="70307e52-ce3f-42d0-a555-06f65f84967a" testId="fac74a82-a8a6-3fc1-36c8-51e19e43ec66" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_TotalRulesIsNotZero" computerName="BUF-5CG4423FYV" duration="00:00:00.0043007" startTime="2026-08-17T12:40:17.2290402+02:00" endTime="2026-08-17T12:40:17.2290406+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="70307e52-ce3f-42d0-a555-06f65f84967a" />
+    <UnitTestResult executionId="b35ffdf1-900e-470c-8862-98fb13a5f3d2" testId="ef27646b-0d0c-da2b-8526-03cfc8ee0858" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.DiagnosticRoot_CheckIfMultipleGOV001RulesExist" computerName="BUF-5CG4423FYV" duration="00:00:00.0109667" startTime="2026-08-17T12:40:17.1506203+02:00" endTime="2026-08-17T12:40:17.1506205+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b35ffdf1-900e-470c-8862-98fb13a5f3d2">
+      <Output>
+        <ErrorInfo>
+          <Message>
+=== GOV-001 RULES CHECK ===
+Found 1 rule(s) with ID 'GOV-001'
+✓ Single GOV-001 rule found
+  References: 47
+  ✓ References list is same object (shared reference)
+</Message>
+          <StackTrace>   at BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.DiagnosticRoot_CheckIfMultipleGOV001RulesExist() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionAnalysisServiceTests.cs:line 2389&#xD;
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="cd1be243-f59a-409a-8353-a1c53ad60701" testId="b9aaf447-e6f9-0d4a-52bc-50c7a85e52bd" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_References_NoDuplicates_AuthConstitution" computerName="BUF-5CG4423FYV" duration="00:00:00.0047847" startTime="2026-08-17T12:40:17.0984643+02:00" endTime="2026-08-17T12:40:17.0984645+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cd1be243-f59a-409a-8353-a1c53ad60701" />
+    <UnitTestResult executionId="a3583218-a3e3-4e80-92c1-3243a9f0b352" testId="3270f500-b79a-83de-1f03-36bf677275ce" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleReferences_RangeWithEnDash_ExpandsAllIntermediateIds" computerName="BUF-5CG4423FYV" duration="00:00:00.0011453" startTime="2026-08-17T12:40:17.2316667+02:00" endTime="2026-08-17T12:40:17.2316671+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a3583218-a3e3-4e80-92c1-3243a9f0b352" />
+    <UnitTestResult executionId="89b87d49-bcd3-426a-ab5a-46d551e68bd0" testId="775588e8-8f2f-0399-9503-80284eaa1fff" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Changelog_WithNonSequentialVersions_LatestVersionUsesSemanticOrdering" computerName="BUF-5CG4423FYV" duration="00:00:00.0004351" startTime="2026-08-17T12:40:17.2842629+02:00" endTime="2026-08-17T12:40:17.2842630+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="89b87d49-bcd3-426a-ab5a-46d551e68bd0" />
+    <UnitTestResult executionId="1a7f8e7a-4d06-45b5-9c5a-c02da1da3ba6" testId="3bf8a877-f4c6-0a58-0558-836b72b02656" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_ParsesPrinciples" computerName="BUF-5CG4423FYV" duration="00:00:00.0119101" startTime="2026-08-17T12:40:17.0882502+02:00" endTime="2026-08-17T12:40:17.0882502+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1a7f8e7a-4d06-45b5-9c5a-c02da1da3ba6" />
+    <UnitTestResult executionId="29489949-4b28-4c39-8b18-022ff8c12f38" testId="044e83a5-024e-4ab1-0e44-8792466b28ea" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.StandardsWithTableAndBullets_PreserveBothInRawText" computerName="BUF-5CG4423FYV" duration="00:00:00.0035931" startTime="2026-08-17T12:40:17.2063824+02:00" endTime="2026-08-17T12:40:17.2063825+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="29489949-4b28-4c39-8b18-022ff8c12f38" />
+    <UnitTestResult executionId="ab4855f1-e2ff-46b7-a7ea-fbdf89be74d0" testId="c135512f-75f7-7cd5-b608-ddfdb6e604ca" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithModulePrinciples_ExtractsWithoutError" computerName="BUF-5CG4423FYV" duration="00:00:00.0008893" startTime="2026-08-17T12:40:17.2304763+02:00" endTime="2026-08-17T12:40:17.2304765+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ab4855f1-e2ff-46b7-a7ea-fbdf89be74d0" />
+    <UnitTestResult executionId="382b989d-b9f0-4a37-b5b1-649682bdb851" testId="87a2e336-4eae-ec82-bf12-6bb654b17709" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RealConstitution_PP02_NotMultiplied_AsDirectChild" computerName="BUF-5CG4423FYV" duration="00:00:00.0003876" startTime="2026-08-17T12:40:17.2970988+02:00" endTime="2026-08-17T12:40:17.2970989+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="382b989d-b9f0-4a37-b5b1-649682bdb851" />
+    <UnitTestResult executionId="33fd8a86-4b2e-48d4-8eb9-5ac2f4dfc5db" testId="7a139d93-fcf9-17fd-a5da-bcf01e3a236b" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithSyncImpactReport_ParsesMetadata" computerName="BUF-5CG4423FYV" duration="00:00:00.0003177" startTime="2026-08-17T12:40:17.0883951+02:00" endTime="2026-08-17T12:40:17.0883952+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="33fd8a86-4b2e-48d4-8eb9-5ac2f4dfc5db" />
+    <UnitTestResult executionId="f6617e8f-540a-4c75-932c-0acd4a94d685" testId="f246ad96-bd61-287f-8681-5c898f055870" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RealConstitution_MapGOV001_DirectChildrenNoDuplicates" computerName="BUF-5CG4423FYV" duration="00:00:00.0003714" startTime="2026-08-17T12:40:17.2144337+02:00" endTime="2026-08-17T12:40:17.2144339+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f6617e8f-540a-4c75-932c-0acd4a94d685" />
+    <UnitTestResult executionId="82dbf606-29e4-4db9-b077-cc52b9b93e2c" testId="a920af63-7d76-f6dc-7d8d-02965c1a6e3f" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.NoChangelog_TotalRulesStillReflectsParsedItems" computerName="BUF-5CG4423FYV" duration="00:00:00.0006511" startTime="2026-08-17T12:40:17.3058514+02:00" endTime="2026-08-17T12:40:17.3058515+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="82dbf606-29e4-4db9-b077-cc52b9b93e2c" />
+    <UnitTestResult executionId="4b0c3973-8fc2-4d6b-a325-11342a09c3d2" testId="fe3df3c6-aa64-3ed2-4710-76ae6348d8bb" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.ModelInspection_GOV001ReferencesForDuplicates" computerName="BUF-5CG4423FYV" duration="00:00:00.0090107" startTime="2026-08-17T12:40:17.1321762+02:00" endTime="2026-08-17T12:40:17.1321763+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4b0c3973-8fc2-4d6b-a325-11342a09c3d2">
+      <Output>
+        <ErrorInfo>
+          <Message>MODEL INSPECTION:
+
+=== GOV-001 MODEL INSPECTION (RuleCatalog) ===
+RuleId: GOV-001
+Title: Governance
+References.Count: 47
+
+✓ No duplicates in GOV-001.References list
+
+All References in order:
+  [001] PP-01
+  [002] PP-02
+  [003] PP-03
+  [004] PP-04
+  [005] PP-05
+  [006] PP-06
+  [007] PP-07
+  [008] PP-08
+  [009] PP-09
+  [010] PS-01
+  [011] PS-02
+  [012] PS-03
+  [013] PS-04
+  [014] PS-05
+  [015] PS-06
+  [016] PS-07
+  [017] PS-08
+  [018] PS-09
+  [019] GL-01
+  [020] GL-02
+  [021] GL-03
+  [022] GL-04
+  [023] GL-05
+  [024] GL-06
+  [025] GL-07
+  [026] GL-08
+  [027] GL-09
+  [028] GL-10
+  [029] GL-11
+  [030] GL-12
+  [031] GL-13
+  [032] GL-14
+  [033] GL-15
+  [034] GL-16
+  [035] GL-17
+  [036] GL-18
+  [037] GL-19
+  [038] GL-20
+  [039] GL-21
+  [040] GL-22
+  [041] GL-23
+  [042] GL-24
+  [043] GL-25
+  [044] GL-26
+  [045] GL-27
+  [046] GL-28
+  [047] GL-29
+</Message>
+          <StackTrace>   at BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.ModelInspection_GOV001ReferencesForDuplicates() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionAnalysisServiceTests.cs:line 2164&#xD;
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="7ea1e805-0c91-4ffb-a70c-d082e04cf62a" testId="ad5f80ff-e6c3-579e-42b8-1aef78537deb" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleReferences_RangeMixedWithSingleIds_HandlesCorrectly" computerName="BUF-5CG4423FYV" duration="00:00:00.0012916" startTime="2026-08-17T12:40:17.1211174+02:00" endTime="2026-08-17T12:40:17.1211175+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7ea1e805-0c91-4ffb-a70c-d082e04cf62a" />
+    <UnitTestResult executionId="3fc96b94-03b1-4e42-a3c7-5540eb21fe6d" testId="5cff2280-a1c6-3486-a4a2-fbc56c15ccd7" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithDeferredTODOs_ExtractsFromMetadata" computerName="BUF-5CG4423FYV" duration="00:00:00.0002020" startTime="2026-08-17T12:40:17.0885224+02:00" endTime="2026-08-17T12:40:17.0885224+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3fc96b94-03b1-4e42-a3c7-5540eb21fe6d" />
+    <UnitTestResult executionId="0edd73ca-fdac-4de8-a453-c41f9c010888" testId="c1b3ff85-bc48-021f-996f-b0173b50cf2a" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapDiagnostics_GOV001DirectChildrenItemsDuplicate" computerName="BUF-5CG4423FYV" duration="00:00:00.0005619" startTime="2026-08-17T12:40:17.2171889+02:00" endTime="2026-08-17T12:40:17.2171890+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0edd73ca-fdac-4de8-a453-c41f9c010888" />
+    <UnitTestResult executionId="fba43c89-e6d2-4a4b-80dc-dda470912575" testId="a9d37376-0306-3e30-4575-9703922a2b43" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MultiId_PrincipleWithParenthesisIdSearchablePP02" computerName="BUF-5CG4423FYV" duration="00:00:00.0009047" startTime="2026-08-17T12:40:17.1540291+02:00" endTime="2026-08-17T12:40:17.1540292+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fba43c89-e6d2-4a4b-80dc-dda470912575" />
+    <UnitTestResult executionId="67c7e430-60c0-408c-ac09-76e0fc3c8f40" testId="9de662c4-73d5-327c-528b-62851fc727b3" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MultiId_GL28ExtractedFromParenthesis" computerName="BUF-5CG4423FYV" duration="00:00:00.0019100" startTime="2026-08-17T12:40:17.0647197+02:00" endTime="2026-08-17T12:40:17.0647198+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="67c7e430-60c0-408c-ac09-76e0fc3c8f40" />
+    <UnitTestResult executionId="8c84361e-e316-451e-b5fd-6c8bf8b9bf2a" testId="8f6dad0a-363a-3fe9-b201-c5e5200b7014" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithPlatformPrinciplesTables_ExtractsRows" computerName="BUF-5CG4423FYV" duration="00:00:00.0004092" startTime="2026-08-17T12:40:17.3090427+02:00" endTime="2026-08-17T12:40:17.3090429+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8c84361e-e316-451e-b5fd-6c8bf8b9bf2a" />
+    <UnitTestResult executionId="23c73ab2-7735-41d1-a4da-592e0e5feaec" testId="15f88474-ee5d-0e8c-3456-91f5bab6e742" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.StandardInvoicesRawTextNotFlattened_AllTableRowsOnSeparateLines" computerName="BUF-5CG4423FYV" duration="00:00:00.0010015" startTime="2026-08-17T12:40:17.2967140+02:00" endTime="2026-08-17T12:40:17.2967141+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="23c73ab2-7735-41d1-a4da-592e0e5feaec" />
+    <UnitTestResult executionId="85ffe054-4f5e-42ee-8876-fed04949b5c8" testId="c8fac6bd-d925-9056-7ba1-3003d6d32acc" testName="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests.BuildMapTree_SharedChildUnderTwoParents_RendersBothEdges" computerName="BUF-5CG4423FYV" duration="00:00:00.0013523" startTime="2026-08-17T12:40:17.0960016+02:00" endTime="2026-08-17T12:40:17.0960016+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="85ffe054-4f5e-42ee-8876-fed04949b5c8" />
+    <UnitTestResult executionId="151bac36-6ef4-47bf-84c3-8a651e593a44" testId="497be3a0-a1e9-ae2b-16dd-14681caa4969" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Changelog_SyncImpactReportVersion_NotAddedAsChangelogEntry" computerName="BUF-5CG4423FYV" duration="00:00:00.0003502" startTime="2026-08-17T12:40:17.2846152+02:00" endTime="2026-08-17T12:40:17.2846153+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="151bac36-6ef4-47bf-84c3-8a651e593a44" />
+    <UnitTestResult executionId="55a40954-fe87-408d-970c-a98f4d542967" testId="2772d729-07c9-305b-7fc6-3823153f0d1f" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleReferences_MultipleRanges_ExpandsEachRange" computerName="BUF-5CG4423FYV" duration="00:00:00.0016112" startTime="2026-08-17T12:40:17.1555987+02:00" endTime="2026-08-17T12:40:17.1555988+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="55a40954-fe87-408d-970c-a98f4d542967" />
+    <UnitTestResult executionId="172fe9e6-72bb-4992-bdfa-71e6d64b0fbc" testId="e29c954c-622b-9b23-3f58-67af7f13efc5" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapTree_WithCycle_PreventsCycles" computerName="BUF-5CG4423FYV" duration="00:00:00.0010178" startTime="2026-08-17T12:40:17.2337947+02:00" endTime="2026-08-17T12:40:17.2337948+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="172fe9e6-72bb-4992-bdfa-71e6d64b0fbc" />
+    <UnitTestResult executionId="9d762da7-3713-4cbe-bd55-49343d000fe5" testId="0a51a59f-e22e-dfb0-3ec8-20525e5e3c29" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapTree_WithDeepSharedReferences_ShowsCompleteHierarchy" computerName="BUF-5CG4423FYV" duration="00:00:00.0055936" startTime="2026-08-17T12:40:17.0534340+02:00" endTime="2026-08-17T12:40:17.0534342+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9d762da7-3713-4cbe-bd55-49343d000fe5" />
+    <UnitTestResult executionId="8a6ac122-f464-401b-8e06-605ef585d4ba" testId="c5410cd4-df22-fdcc-a561-5c11c5158582" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.OrphanRules_IncomingReferencesPreventOrphanStatus" computerName="BUF-5CG4423FYV" duration="00:00:00.0009227" startTime="2026-08-17T12:40:17.0884932+02:00" endTime="2026-08-17T12:40:17.0884932+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8a6ac122-f464-401b-8e06-605ef585d4ba" />
+    <UnitTestResult executionId="0008e12c-1543-42af-aa6f-93c089fdabf1" testId="f37ee4eb-ba19-362e-d127-5e781d3d1bdb" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.StandardRawText_PreservesMarkdownTableRows" computerName="BUF-5CG4423FYV" duration="00:00:00.0012968" startTime="2026-08-17T12:40:17.1515403+02:00" endTime="2026-08-17T12:40:17.1515404+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0008e12c-1543-42af-aa6f-93c089fdabf1" />
+    <UnitTestResult executionId="7b5a1b1d-93f9-4040-83ca-5b02dc9c9e5a" testId="557f4057-1593-c6f7-6527-b114c25f1abc" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_ParsesConstraints" computerName="BUF-5CG4423FYV" duration="00:00:00.0043448" startTime="2026-08-17T12:40:17.2717359+02:00" endTime="2026-08-17T12:40:17.2717359+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7b5a1b1d-93f9-4040-83ca-5b02dc9c9e5a" />
+    <UnitTestResult executionId="e3b29453-c52e-4429-91ec-8f2743a5dc64" testId="b155989d-b595-d531-62d6-1fc27b8f8535" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RealConstitution_MapRoots_NoDuplicateChildren" computerName="BUF-5CG4423FYV" duration="00:00:00.0002998" startTime="2026-08-17T12:40:17.1389732+02:00" endTime="2026-08-17T12:40:17.1389734+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e3b29453-c52e-4429-91ec-8f2743a5dc64" />
+    <UnitTestResult executionId="24095586-0458-4cc0-aba1-cb1d69f04cea" testId="8e7420aa-78ff-7d9f-2876-a1b1f7886ec7" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithNorwegianContent_DoesNotBreakParsing" computerName="BUF-5CG4423FYV" duration="00:00:00.0004700" startTime="2026-08-17T12:40:17.2148253+02:00" endTime="2026-08-17T12:40:17.2148254+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="24095586-0458-4cc0-aba1-cb1d69f04cea" />
+    <UnitTestResult executionId="040b19f0-257e-40d8-92d1-1d4fd48a40ee" testId="1deef7d4-d2c4-84f7-084c-4851839615c5" testName="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.ItemsWithoutIds_GetSyntheticIds" computerName="BUF-5CG4423FYV" duration="00:00:00.0013445" startTime="2026-08-17T12:40:17.1570100+02:00" endTime="2026-08-17T12:40:17.1570101+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="040b19f0-257e-40d8-92d1-1d4fd48a40ee" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalogInspection_CheckForDuplicateRuleIds" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="4cac14d2-f00b-4a3f-5e6c-7e11fef002c9">
+      <Execution id="14762e83-e108-4495-a657-939086e220a5" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleCatalogInspection_CheckForDuplicateRuleIds" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Health_TotalRulesEqualsCatalogCount" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="e5653b32-0ef0-7a10-8b44-9326bce90f25">
+      <Execution id="d293f63b-179d-43f7-ab07-941a1411c724" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Health_TotalRulesEqualsCatalogCount" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_ReferencedBy_NosDuplicates_AuthConstitution" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="1010b5d2-c24d-e306-dc88-d8bfca81d5a8">
+      <Execution id="ab6aeb9a-2a1f-4549-b617-10b5d4a2d01a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleCatalog_ReferencedBy_NosDuplicates_AuthConstitution" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests.BuildMapTree_DeeperSharedBranch_RendersCompleteBranchUnderEachParent" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="4a07f83e-057f-c903-fb89-ab9d76be7bda">
+      <Execution id="411e917e-c841-4e89-90d2-5f2260c780cb" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests" name="BuildMapTree_DeeperSharedBranch_RendersCompleteBranchUnderEachParent" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.ModelInspection_GOV001ReferencesForDuplicates" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="fe3df3c6-aa64-3ed2-4710-76ae6348d8bb">
+      <Execution id="4b0c3973-8fc2-4d6b-a325-11342a09c3d2" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="ModelInspection_GOV001ReferencesForDuplicates" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.OrphanRules_CountMatches_HealthMetric" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="7e5300b2-4574-1d67-3840-d71c5e264cb9">
+      <Execution id="935b9584-7511-4298-b1a9-b30a6f3e8203" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="OrphanRules_CountMatches_HealthMetric" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.StandardRawText_PreservesMarkdownTableRows" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="f37ee4eb-ba19-362e-d127-5e781d3d1bdb">
+      <Execution id="0008e12c-1543-42af-aa6f-93c089fdabf1" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="StandardRawText_PreservesMarkdownTableRows" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithSecurityComplianceSection_ParsingSucceeds" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="1d944010-5dbd-9831-e91b-6945a77a63e1">
+      <Execution id="ec45d4fe-7703-45b8-8f9c-88b46540bffc" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Parse_WithSecurityComplianceSection_ParsingSucceeds" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RealConstitution_MapGOV001_DirectChildrenNoDuplicates" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="f246ad96-bd61-287f-8681-5c898f055870">
+      <Execution id="f6617e8f-540a-4c75-932c-0acd4a94d685" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RealConstitution_MapGOV001_DirectChildrenNoDuplicates" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.DOMInspection_PrintAllDuplicateRules" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="60a39904-9a1f-a86f-7eae-88b5631fe7b5">
+      <Execution id="b7bb238a-c7b7-46ee-bcf8-d24c5d6dd963" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="DOMInspection_PrintAllDuplicateRules" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MultiId_PrincipleWithParenthesisIdSearchablePP02" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a9d37376-0306-3e30-4575-9703922a2b43">
+      <Execution id="fba43c89-e6d2-4a4b-80dc-dda470912575" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MultiId_PrincipleWithParenthesisIdSearchablePP02" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.StandardInvoicesRawTextNotFlattened_AllTableRowsOnSeparateLines" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="15f88474-ee5d-0e8c-3456-91f5bab6e742">
+      <Execution id="23c73ab2-7735-41d1-a4da-592e0e5feaec" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="StandardInvoicesRawTextNotFlattened_AllTableRowsOnSeparateLines" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RealConstitution_SourceCodeLanguage_TableLinesAreNotFlattened" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="c709c9d4-6ad5-b43f-6044-641bec91c510">
+      <Execution id="416d2692-11b7-449b-8fad-1af0dc007906" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RealConstitution_SourceCodeLanguage_TableLinesAreNotFlattened" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithMandatoryKeywords_FlagsAsBindingRules" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="70c443e6-14bd-291f-ab76-f21cddbf5227">
+      <Execution id="adb18904-5e44-4b9b-bdae-570aaa9f86a6" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Parse_WithMandatoryKeywords_FlagsAsBindingRules" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithServicePrinciples_RecognizesHNotation" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="bdc17c2e-8cfa-6e5b-2782-4ea737780cd2">
+      <Execution id="e006f09f-aacb-44a1-b883-6a1791b01ec7" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Parse_WithServicePrinciples_RecognizesHNotation" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.OrphanRules_IncomingReferencesPreventOrphanStatus" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="c5410cd4-df22-fdcc-a561-5c11c5158582">
+      <Execution id="8a6ac122-f464-401b-8e06-605ef585d4ba" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="OrphanRules_IncomingReferencesPreventOrphanStatus" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_RomanNumeralWithParentheses_NoSelfReference" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="1f44e410-9ab9-7a33-f1ad-a928ecdbce97">
+      <Execution id="036e50a6-98e5-4374-be36-b0bab33ec1e7" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleCatalog_RomanNumeralWithParentheses_NoSelfReference" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapRendering_GOV001DirectChildrenNoRenderedDuplicates" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="4f0d3673-b101-cb53-c7ed-472be71020f1">
+      <Execution id="3e4ccd32-b33c-4f7a-8e54-7a951446f072" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MapRendering_GOV001DirectChildrenNoRenderedDuplicates" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapDiagnostics_CheckPP02DepthUnderGOV001" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="fcb4a82c-68f4-e06d-32ca-2c97bee9cab9">
+      <Execution id="9110a88a-2230-4c50-8f70-adfb462e7e71" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MapDiagnostics_CheckPP02DepthUnderGOV001" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Constraints_ModuleConstraintsWithoutId_AreNotPlatformWide" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b109a626-7622-81a1-28f4-1c1d89a24830">
+      <Execution id="32fe169f-9305-4c29-b266-f767753ca4c0" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Constraints_ModuleConstraintsWithoutId_AreNotPlatformWide" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleReferences_AutorisasjonConstitution_ExpandsAllRanges" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="9a1ef4f8-9639-7bd7-34c5-1e254e04327c">
+      <Execution id="ccfb1b91-ddb9-415e-ad21-09eed11a5a56" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleReferences_AutorisasjonConstitution_ExpandsAllRanges" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_RangeExpansion_WorksWithoutDuplicates" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="feec3437-7ebd-100a-10f8-f47d80308294">
+      <Execution id="dca73127-3166-4b2b-a5e7-4d7a3a8f8d84" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleCatalog_RangeExpansion_WorksWithoutDuplicates" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_ParsesStandards" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="3456f6c3-6103-5c38-0bc9-bcb9c50b530f">
+      <Execution id="e637ab89-61cb-42a8-88b2-ac6bfa17fd4a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="AuthConstitution_ParsesStandards" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_HeadingWithoutExplicitId_ExtractsFromParentheses" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a71c6816-9b8f-1b09-0ca2-3b9aad80a0eb">
+      <Execution id="2df6bdcc-cb4f-4c2a-9f4a-85ab091145a1" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleCatalog_HeadingWithoutExplicitId_ExtractsFromParentheses" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MultiId_GL28ExtractedFromParenthesis" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="9de662c4-73d5-327c-528b-62851fc727b3">
+      <Execution id="67c7e430-60c0-408c-ac09-76e0fc3c8f40" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MultiId_GL28ExtractedFromParenthesis" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests.BuildMapTree_SelfCycle_DoesNotExpandSelfRecursively" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="78114688-2492-8310-e32d-0630fdf63ad5">
+      <Execution id="0a584367-17bf-4489-a25f-60a0a739d26e" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests" name="BuildMapTree_SelfCycle_DoesNotExpandSelfRecursively" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_RealConstitution_NoPrinciplesSelfReference" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d5caa699-2343-e0ea-f19f-aef737c01c9e">
+      <Execution id="1831bbad-cb09-4d20-805e-3abc60fa4a7c" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleCatalog_RealConstitution_NoPrinciplesSelfReference" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapDiagnostics_CaptureRenderingStructure_GOV001" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="960078bf-57b1-b321-6af0-f5f8813d3366">
+      <Execution id="3ce21f1c-6c6a-460d-a613-5d16a9c358ea" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MapDiagnostics_CaptureRenderingStructure_GOV001" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RealConstitution_GOV001_ReferencesNoDuplicates" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="f4458b22-e522-da97-fe91-c31613267403">
+      <Execution id="19a0ccbb-18b6-43ba-8435-fc2e2cb84dbe" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RealConstitution_GOV001_ReferencesNoDuplicates" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.StandardsWithTableAndBullets_PreserveBothInRawText" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="044e83a5-024e-4ab1-0e44-8792466b28ea">
+      <Execution id="29489949-4b28-4c39-8b18-022ff8c12f38" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="StandardsWithTableAndBullets_PreserveBothInRawText" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_ChangelogParsed" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="9c58c818-7448-f6e2-fa82-2a5c90dde1f9">
+      <Execution id="dfccdbfb-d7cd-4a7e-af66-b9b991a79ead" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="AuthConstitution_ChangelogParsed" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithModulePrinciples_ExtractsWithoutError" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="c135512f-75f7-7cd5-b608-ddfdb6e604ca">
+      <Execution id="ab4855f1-e2ff-46b7-a7ea-fbdf89be74d0" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Parse_WithModulePrinciples_ExtractsWithoutError" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests.BuildMapTree_SharedChildUnderTwoParents_RendersBothEdges" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="c8fac6bd-d925-9056-7ba1-3003d6d32acc">
+      <Execution id="85ffe054-4f5e-42ee-8876-fed04949b5c8" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests" name="BuildMapTree_SharedChildUnderTwoParents_RendersBothEdges" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_TotalRulesMatchesSectionCounts" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ee0ccdc2-ba30-7a13-33b6-f969588b8045">
+      <Execution id="9394cc52-eb76-4739-8c9d-35616fbbc810" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="AuthConstitution_TotalRulesMatchesSectionCounts" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RealConstitution_MapRoots_NoDuplicateChildren" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b155989d-b595-d531-62d6-1fc27b8f8535">
+      <Execution id="e3b29453-c52e-4429-91ec-8f2743a5dc64" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RealConstitution_MapRoots_NoDuplicateChildren" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MultiId_PrincipleWithParenthesisIdSearchablePP04" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="994b66c3-c41f-a9c6-c2f1-6eec33475756">
+      <Execution id="cd42b0df-8315-4a08-a0e7-a6628da09739" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MultiId_PrincipleWithParenthesisIdSearchablePP04" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_GovernanceParsed" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="84d2b101-6341-1d4e-8d12-6f5dab372037">
+      <Execution id="3fbda6c8-3501-4a4d-9582-f841634a15a3" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="AuthConstitution_GovernanceParsed" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.BrokenReferences_CountedCorrectly" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b2033019-1f4e-40f7-89c1-f358d93aabc4">
+      <Execution id="51e8b0fe-0c3c-4f49-aeda-d7b60daf693a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="BrokenReferences_CountedCorrectly" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.OrphanRules_BothRefsAndRefByZero_AreOrphaned" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a0928e83-5a72-9706-3383-d6be35695193">
+      <Execution id="98548ea3-23e7-4ed9-8f7b-8a9768a6ea2d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="OrphanRules_BothRefsAndRefByZero_AreOrphaned" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.NoChangelog_ChangelogIndicatorIsWarning" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="cdd3d52d-b640-b789-b688-1dfe1f0885a8">
+      <Execution id="43f19b42-b4ac-486f-9cf5-57e4decd854a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="NoChangelog_ChangelogIndicatorIsWarning" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithNorwegianContent_DoesNotBreakParsing" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="8e7420aa-78ff-7d9f-2876-a1b1f7886ec7">
+      <Execution id="24095586-0458-4cc0-aba1-cb1d69f04cea" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Parse_WithNorwegianContent_DoesNotBreakParsing" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleReferences_RangeWithThrough_ExpandsAllIntermediateIds" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="cd1495c8-274f-1375-342a-e754c1c04b21">
+      <Execution id="4fb30673-8cf8-45da-a469-27a435b6ed43" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleReferences_RangeWithThrough_ExpandsAllIntermediateIds" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_References_NoDuplicates_AuthConstitution" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b9aaf447-e6f9-0d4a-52bc-50c7a85e52bd">
+      <Execution id="cd1be243-f59a-409a-8353-a1c53ad60701" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleCatalog_References_NoDuplicates_AuthConstitution" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapDiagnostics_DetailedGOV001Hierarchy" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="eaf93810-2295-5146-23a3-0495813bb25d">
+      <Execution id="2c99bb1f-33be-43e4-a8fa-cb26278a810e" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MapDiagnostics_DetailedGOV001Hierarchy" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapDiagnostics_GOV001DirectChildrenItemsDuplicate" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="c1b3ff85-bc48-021f-996f-b0173b50cf2a">
+      <Execution id="0edd73ca-fdac-4de8-a453-c41f9c010888" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MapDiagnostics_GOV001DirectChildrenItemsDuplicate" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.OrphanRules_OutgoingReferencesPreventOrphanStatus" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="1dc371d6-a933-c65d-e28a-69c1e684c40b">
+      <Execution id="742d93aa-8012-4376-9a1d-bd6ad70d9fc8" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="OrphanRules_OutgoingReferencesPreventOrphanStatus" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.DiagnosticRoot_CheckIfMultipleGOV001RulesExist" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ef27646b-0d0c-da2b-8526-03cfc8ee0858">
+      <Execution id="b35ffdf1-900e-470c-8862-98fb13a5f3d2" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="DiagnosticRoot_CheckIfMultipleGOV001RulesExist" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalog_NoSelfReferencesFromHeading" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="06d46aa3-29fc-6da4-d752-71cbe1c2f4b2">
+      <Execution id="e6c6fd1f-1b6a-4020-ab6a-0cb1062dec1f" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleCatalog_NoSelfReferencesFromHeading" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapTree_WithCycle_PreventsCycles" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="e29c954c-622b-9b23-3f58-67af7f13efc5">
+      <Execution id="172fe9e6-72bb-4992-bdfa-71e6d64b0fbc" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MapTree_WithCycle_PreventsCycles" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_HealthIndicatorShowsCounts" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="814e9f43-3107-3fe9-ed38-cc5caba6859f">
+      <Execution id="0201875d-d585-47af-be40-fcfc49b3a14d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="AuthConstitution_HealthIndicatorShowsCounts" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Constraints_ExplicitPlatformKeyword_ArePlatformWide" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d2a26fe6-26f7-95de-444d-10e78f75fafc">
+      <Execution id="da67d507-c199-46b7-88ec-f6116bc5cba8" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Constraints_ExplicitPlatformKeyword_ArePlatformWide" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.BuildMapTreeDiagnostics_CheckGOV001RulesBeforeAndAfterMapping" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="bfe79a5d-446f-1c0a-dd5d-9af6d9e29397">
+      <Execution id="618abbe8-88ef-4eb8-a9de-a3f11f472f6d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="BuildMapTreeDiagnostics_CheckGOV001RulesBeforeAndAfterMapping" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapRendering_AllRoots_UniqueAndNoHiddenDuplicates" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="5b3357b9-a4f9-d31c-2fb5-d4bdf9aa75ca">
+      <Execution id="25cb8d17-b980-4627-b702-0ddbe668138d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MapRendering_AllRoots_UniqueAndNoHiddenDuplicates" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Changelog_SyncImpactReportVersion_NotAddedAsChangelogEntry" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="497be3a0-a1e9-ae2b-16dd-14681caa4969">
+      <Execution id="151bac36-6ef4-47bf-84c3-8a651e593a44" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Changelog_SyncImpactReportVersion_NotAddedAsChangelogEntry" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests.BuildMapTree_SimpleCycle_StopsAtCurrentPath" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ee3f0d68-e40a-0598-21cc-1ef96f7b54d2">
+      <Execution id="5a246770-d785-4643-adfd-1ca1235adbf5" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests" name="BuildMapTree_SimpleCycle_StopsAtCurrentPath" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithSyncImpactReport_ParsesMetadata" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="7a139d93-fcf9-17fd-a5da-bcf01e3a236b">
+      <Execution id="33fd8a86-4b2e-48d4-8eb9-5ac2f4dfc5db" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Parse_WithSyncImpactReport_ParsesMetadata" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.NoChangelog_TotalRulesStillReflectsParsedItems" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a920af63-7d76-f6dc-7d8d-02965c1a6e3f">
+      <Execution id="82dbf606-29e4-4db9-b077-cc52b9b93e2c" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="NoChangelog_TotalRulesStillReflectsParsedItems" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapTree_AutorisasjonRegression_GovernanceShowsAllReferences" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="84af18f1-11d8-2cab-5bbe-7873a31d96fc">
+      <Execution id="86fd5763-5db7-44b9-ab1f-d006581c450a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MapTree_AutorisasjonRegression_GovernanceShowsAllReferences" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleReferences_RangeWithEnDash_ExpandsAllIntermediateIds" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="3270f500-b79a-83de-1f03-36bf677275ce">
+      <Execution id="a3583218-a3e3-4e80-92c1-3243a9f0b352" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleReferences_RangeWithEnDash_ExpandsAllIntermediateIds" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithRomanNumeralPrinciples_ExtractsAsAlternativeFormat" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="38ca401c-005d-c27e-2ca8-a494f38a189a">
+      <Execution id="4e73255a-99ac-4a08-94b0-e7e66ef6ea79" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Parse_WithRomanNumeralPrinciples_ExtractsAsAlternativeFormat" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithDeferredTODOs_ExtractsFromMetadata" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="5cff2280-a1c6-3486-a4a2-fbc56c15ccd7">
+      <Execution id="3fc96b94-03b1-4e42-a3c7-5540eb21fe6d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Parse_WithDeferredTODOs_ExtractsFromMetadata" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.CatalogRuleTypes_MatchParsedSections" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d8f22977-8c2c-f589-3035-c711d565589a">
+      <Execution id="756580fc-26ac-41f1-afd5-d1f04f5b8286" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="CatalogRuleTypes_MatchParsedSections" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithMultiplePrincipalTypes_CategorizesProperly" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="8a9c5739-0644-3d29-d5c4-2006425d152e">
+      <Execution id="bd416301-71bc-45ab-8f48-86228495441e" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Parse_WithMultiplePrincipalTypes_CategorizesProperly" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MultiId_StandardWithParenthesisIdSearchablePS08" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="8e33dd20-2fa8-d8bd-640e-aaf4f19595ca">
+      <Execution id="3ec35d54-879b-4425-8ed7-3cdd63b6371b" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MultiId_StandardWithParenthesisIdSearchablePS08" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_TotalRulesIsNotZero" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="fac74a82-a8a6-3fc1-36c8-51e19e43ec66">
+      <Execution id="70307e52-ce3f-42d0-a555-06f65f84967a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="AuthConstitution_TotalRulesIsNotZero" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.SearchRules_FindsByAlias" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d25b3e36-b343-a8b0-f7f6-caa8d308d2bb">
+      <Execution id="d2fc889e-ce74-4f3c-87ab-bcd6d95694fc" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="SearchRules_FindsByAlias" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapRendering_GOV001Node_HasUniqueChildren" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="da9fd775-2fc1-db39-7125-f4b30712a29b">
+      <Execution id="b9ed3628-db48-47d1-ab4f-08b5060706dd" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MapRendering_GOV001Node_HasUniqueChildren" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.ItemsWithoutIds_GetSyntheticIds" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="1deef7d4-d2c4-84f7-084c-4851839615c5">
+      <Execution id="040b19f0-257e-40d8-92d1-1d4fd48a40ee" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="ItemsWithoutIds_GetSyntheticIds" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleReferences_MultipleRanges_ExpandsEachRange" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="2772d729-07c9-305b-7fc6-3823153f0d1f">
+      <Execution id="55a40954-fe87-408d-970c-a98f4d542967" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleReferences_MultipleRanges_ExpandsEachRange" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_ParsesPrinciples" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="3bf8a877-f4c6-0a58-0558-836b72b02656">
+      <Execution id="1a7f8e7a-4d06-45b5-9c5a-c02da1da3ba6" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="AuthConstitution_ParsesPrinciples" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests.BuildMapTree_AutorisasjonGovernance_RendersAllResolvedDirectReferences" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="95787c70-f9f4-297c-ca51-e01d35cc65d6">
+      <Execution id="9d881acd-600e-4d6c-8442-0c0a5c91c6f3" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionMapTreeTests" name="BuildMapTree_AutorisasjonGovernance_RendersAllResolvedDirectReferences" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_PP02IsSearchable" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="60bf8be7-f95d-b8e9-f4bf-8323dbb7f66d">
+      <Execution id="3634f3c2-e18b-4da4-b4cc-8d3cb748d0f1" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="AuthConstitution_PP02IsSearchable" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Changelog_TableWithoutLevelThreeHeadings_ParsesAllRows" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="7dc58539-c762-757c-a4ed-bd37481fcf10">
+      <Execution id="6aecf2b7-b860-46f2-aab4-66999cf2111e" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Changelog_TableWithoutLevelThreeHeadings_ParsesAllRows" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithPlatformPrinciplesTables_ExtractsRows" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="8f6dad0a-363a-3fe9-b201-c5e5200b7014">
+      <Execution id="8c84361e-e316-451e-b5fd-6c8bf8b9bf2a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Parse_WithPlatformPrinciplesTables_ExtractsRows" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.FinalVerification_GOV001MapChildrenAreUniquWithoutDuplicates" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="5b2bad2c-b46b-ca27-b126-6a50ea405435">
+      <Execution id="28c77e84-22f8-4221-9f3d-e13f17e2a359" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="FinalVerification_GOV001MapChildrenAreUniquWithoutDuplicates" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Changelog_WithNonSequentialVersions_LatestVersionUsesSemanticOrdering" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="775588e8-8f2f-0399-9503-80284eaa1fff">
+      <Execution id="89b87d49-bcd3-426a-ab5a-46d551e68bd0" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Changelog_WithNonSequentialVersions_LatestVersionUsesSemanticOrdering" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.ResolutionDebug_TraceEachGOV001ReferenceResolution" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="0dd62791-1b7b-ccd8-fec5-16c826f5503d">
+      <Execution id="9898a8ea-6431-434a-b9db-86e953d590af" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="ResolutionDebug_TraceEachGOV001ReferenceResolution" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleReferences_InvalidRange_OnlyExtracts" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="833194ec-19c0-5ec7-bf23-3fe72a380f95">
+      <Execution id="0b917bee-2ea5-4b92-94c8-21fb8efd50a0" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleReferences_InvalidRange_OnlyExtracts" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Parse_WithAlternativeTitleFormat_ExtractsTitle" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ec8d510e-43b4-57d0-1f0d-5cd68c810b5d">
+      <Execution id="e07d768c-6c62-405b-9cd5-1689e2e8276d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Parse_WithAlternativeTitleFormat_ExtractsTitle" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.NoChangelog_ChangelogCountIsZero" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="6cd7947a-b896-ee3e-b771-5a4de3c4ff26">
+      <Execution id="be54ad2d-6baa-467b-84c3-a537f9f41316" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="NoChangelog_ChangelogCountIsZero" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleReferences_RangeMixedWithSingleIds_HandlesCorrectly" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ad5f80ff-e6c3-579e-42b8-1aef78537deb">
+      <Execution id="7ea1e805-0c91-4ffb-a70c-d082e04cf62a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RuleReferences_RangeMixedWithSingleIds_HandlesCorrectly" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.AuthConstitution_ParsesConstraints" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="557f4057-1593-c6f7-6527-b114c25f1abc">
+      <Execution id="7b5a1b1d-93f9-4040-83ca-5b02dc9c9e5a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="AuthConstitution_ParsesConstraints" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Changelog_WithoutDeclaredVersionMatch_LatestVersionDeterminedBySemanticVersion" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="7f4c65bf-f740-2fd5-20ad-c4f6af4c89d2">
+      <Execution id="d742c9c4-7935-47c9-a1b7-84fbef3d4b10" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Changelog_WithoutDeclaredVersionMatch_LatestVersionDeterminedBySemanticVersion" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MultiId_BothPP02AndPP04MapToSameRule" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a023c93f-3854-963c-22d8-38244aaa450c">
+      <Execution id="114e4375-a4ea-430d-ae03-8fda1974360f" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MultiId_BothPP02AndPP04MapToSameRule" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapDiagnostics_TraceAllOccurrencesOfRepeatedRules" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="dcd466ea-9780-0509-3100-cd90b5831f05">
+      <Execution id="040b0933-1232-4fc2-a7ae-7ab0cbf98840" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MapDiagnostics_TraceAllOccurrencesOfRepeatedRules" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Changelog_WithMarkdownTable_ParsesVersionsCorrectly" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="e5d54874-40ce-bb84-19e7-3cb304657ae7">
+      <Execution id="3d1288cb-3f70-4ec9-9579-fce09c20bdbc" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Changelog_WithMarkdownTable_ParsesVersionsCorrectly" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapTree_WithDeepSharedReferences_ShowsCompleteHierarchy" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="0a51a59f-e22e-dfb0-3ec8-20525e5e3c29">
+      <Execution id="9d762da7-3713-4cbe-bd55-49343d000fe5" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MapTree_WithDeepSharedReferences_ShowsCompleteHierarchy" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapTree_WithSharedReferences_ShowsRuleUnderMultipleParents" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="18ffc505-6c2a-a78c-ff18-95c3cd7c1963">
+      <Execution id="c3626ff5-70ed-4846-8cb5-ef1a64de6899" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MapTree_WithSharedReferences_ShowsRuleUnderMultipleParents" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.MapLabelFormat_SingularAndPluralForLinkedRules" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="8fc3b3cb-58f9-1e89-2844-2c11a223373f">
+      <Execution id="d84e7ed0-77a0-4c71-a3a6-b2806ffcfc99" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="MapLabelFormat_SingularAndPluralForLinkedRules" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.StandardRendering_WithMarkdownTable_ProducesHtmlTable" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="104ed3a5-f833-f1b9-98f8-47a334a44743">
+      <Execution id="dce25b99-657a-49a0-abd7-fadbe44b2e34" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="StandardRendering_WithMarkdownTable_ProducesHtmlTable" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RealConstitution_PP02_NotMultiplied_AsDirectChild" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="87a2e336-4eae-ec82-bf12-6bb654b17709">
+      <Execution id="382b989d-b9f0-4a37-b5b1-649682bdb851" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RealConstitution_PP02_NotMultiplied_AsDirectChild" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RealConstitution_SourceCodeLanguage_PreservesTable" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="c67af53b-e008-9cde-94c6-807e8b9ef4fa">
+      <Execution id="34eac083-7785-44d1-8ed9-361a7f5aac09" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="RealConstitution_SourceCodeLanguage_PreservesTable" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.Changelog_WithAscendingVersions_LatestVersionDeterminedBySemVerNotPosition" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="8674e201-5c81-4c38-275f-575cb410cb05">
+      <Execution id="ca5e7cb9-c973-40e6-b3f2-1adc15e45baf" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests" name="Changelog_WithAscendingVersions_LatestVersionDeterminedBySemVerNotPosition" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="a023c93f-3854-963c-22d8-38244aaa450c" executionId="114e4375-a4ea-430d-ae03-8fda1974360f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9c58c818-7448-f6e2-fa82-2a5c90dde1f9" executionId="dfccdbfb-d7cd-4a7e-af66-b9b991a79ead" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bdc17c2e-8cfa-6e5b-2782-4ea737780cd2" executionId="e006f09f-aacb-44a1-b883-6a1791b01ec7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8fc3b3cb-58f9-1e89-2844-2c11a223373f" executionId="d84e7ed0-77a0-4c71-a3a6-b2806ffcfc99" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c709c9d4-6ad5-b43f-6044-641bec91c510" executionId="416d2692-11b7-449b-8fad-1af0dc007906" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7f4c65bf-f740-2fd5-20ad-c4f6af4c89d2" executionId="d742c9c4-7935-47c9-a1b7-84fbef3d4b10" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4cac14d2-f00b-4a3f-5e6c-7e11fef002c9" executionId="14762e83-e108-4495-a657-939086e220a5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d8f22977-8c2c-f589-3035-c711d565589a" executionId="756580fc-26ac-41f1-afd5-d1f04f5b8286" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="cd1495c8-274f-1375-342a-e754c1c04b21" executionId="4fb30673-8cf8-45da-a469-27a435b6ed43" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="104ed3a5-f833-f1b9-98f8-47a334a44743" executionId="dce25b99-657a-49a0-abd7-fadbe44b2e34" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d25b3e36-b343-a8b0-f7f6-caa8d308d2bb" executionId="d2fc889e-ce74-4f3c-87ab-bcd6d95694fc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1dc371d6-a933-c65d-e28a-69c1e684c40b" executionId="742d93aa-8012-4376-9a1d-bd6ad70d9fc8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="60bf8be7-f95d-b8e9-f4bf-8323dbb7f66d" executionId="3634f3c2-e18b-4da4-b4cc-8d3cb748d0f1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ec8d510e-43b4-57d0-1f0d-5cd68c810b5d" executionId="e07d768c-6c62-405b-9cd5-1689e2e8276d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7dc58539-c762-757c-a4ed-bd37481fcf10" executionId="6aecf2b7-b860-46f2-aab4-66999cf2111e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1d944010-5dbd-9831-e91b-6945a77a63e1" executionId="ec45d4fe-7703-45b8-8f9c-88b46540bffc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d2a26fe6-26f7-95de-444d-10e78f75fafc" executionId="da67d507-c199-46b7-88ec-f6116bc5cba8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ee3f0d68-e40a-0598-21cc-1ef96f7b54d2" executionId="5a246770-d785-4643-adfd-1ca1235adbf5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4f0d3673-b101-cb53-c7ed-472be71020f1" executionId="3e4ccd32-b33c-4f7a-8e54-7a951446f072" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5b3357b9-a4f9-d31c-2fb5-d4bdf9aa75ca" executionId="25cb8d17-b980-4627-b702-0ddbe668138d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="feec3437-7ebd-100a-10f8-f47d80308294" executionId="dca73127-3166-4b2b-a5e7-4d7a3a8f8d84" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f4458b22-e522-da97-fe91-c31613267403" executionId="19a0ccbb-18b6-43ba-8435-fc2e2cb84dbe" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0dd62791-1b7b-ccd8-fec5-16c826f5503d" executionId="9898a8ea-6431-434a-b9db-86e953d590af" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="960078bf-57b1-b321-6af0-f5f8813d3366" executionId="3ce21f1c-6c6a-460d-a613-5d16a9c358ea" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8e33dd20-2fa8-d8bd-640e-aaf4f19595ca" executionId="3ec35d54-879b-4425-8ed7-3cdd63b6371b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4a07f83e-057f-c903-fb89-ab9d76be7bda" executionId="411e917e-c841-4e89-90d2-5f2260c780cb" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e5d54874-40ce-bb84-19e7-3cb304657ae7" executionId="3d1288cb-3f70-4ec9-9579-fce09c20bdbc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="84d2b101-6341-1d4e-8d12-6f5dab372037" executionId="3fbda6c8-3501-4a4d-9582-f841634a15a3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="78114688-2492-8310-e32d-0630fdf63ad5" executionId="0a584367-17bf-4489-a25f-60a0a739d26e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="cdd3d52d-b640-b789-b688-1dfe1f0885a8" executionId="43f19b42-b4ac-486f-9cf5-57e4decd854a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b109a626-7622-81a1-28f4-1c1d89a24830" executionId="32fe169f-9305-4c29-b266-f767753ca4c0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="dcd466ea-9780-0509-3100-cd90b5831f05" executionId="040b0933-1232-4fc2-a7ae-7ab0cbf98840" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="994b66c3-c41f-a9c6-c2f1-6eec33475756" executionId="cd42b0df-8315-4a08-a0e7-a6628da09739" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="833194ec-19c0-5ec7-bf23-3fe72a380f95" executionId="0b917bee-2ea5-4b92-94c8-21fb8efd50a0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3456f6c3-6103-5c38-0bc9-bcb9c50b530f" executionId="e637ab89-61cb-42a8-88b2-ac6bfa17fd4a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7e5300b2-4574-1d67-3840-d71c5e264cb9" executionId="935b9584-7511-4298-b1a9-b30a6f3e8203" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="95787c70-f9f4-297c-ca51-e01d35cc65d6" executionId="9d881acd-600e-4d6c-8442-0c0a5c91c6f3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8674e201-5c81-4c38-275f-575cb410cb05" executionId="ca5e7cb9-c973-40e6-b3f2-1adc15e45baf" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e5653b32-0ef0-7a10-8b44-9326bce90f25" executionId="d293f63b-179d-43f7-ab07-941a1411c724" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="06d46aa3-29fc-6da4-d752-71cbe1c2f4b2" executionId="e6c6fd1f-1b6a-4020-ab6a-0cb1062dec1f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d5caa699-2343-e0ea-f19f-aef737c01c9e" executionId="1831bbad-cb09-4d20-805e-3abc60fa4a7c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="60a39904-9a1f-a86f-7eae-88b5631fe7b5" executionId="b7bb238a-c7b7-46ee-bcf8-d24c5d6dd963" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="814e9f43-3107-3fe9-ed38-cc5caba6859f" executionId="0201875d-d585-47af-be40-fcfc49b3a14d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="da9fd775-2fc1-db39-7125-f4b30712a29b" executionId="b9ed3628-db48-47d1-ab4f-08b5060706dd" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5b2bad2c-b46b-ca27-b126-6a50ea405435" executionId="28c77e84-22f8-4221-9f3d-e13f17e2a359" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="18ffc505-6c2a-a78c-ff18-95c3cd7c1963" executionId="c3626ff5-70ed-4846-8cb5-ef1a64de6899" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="fcb4a82c-68f4-e06d-32ca-2c97bee9cab9" executionId="9110a88a-2230-4c50-8f70-adfb462e7e71" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1f44e410-9ab9-7a33-f1ad-a928ecdbce97" executionId="036e50a6-98e5-4374-be36-b0bab33ec1e7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="eaf93810-2295-5146-23a3-0495813bb25d" executionId="2c99bb1f-33be-43e4-a8fa-cb26278a810e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b2033019-1f4e-40f7-89c1-f358d93aabc4" executionId="51e8b0fe-0c3c-4f49-aeda-d7b60daf693a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ee0ccdc2-ba30-7a13-33b6-f969588b8045" executionId="9394cc52-eb76-4739-8c9d-35616fbbc810" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8a9c5739-0644-3d29-d5c4-2006425d152e" executionId="bd416301-71bc-45ab-8f48-86228495441e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6cd7947a-b896-ee3e-b771-5a4de3c4ff26" executionId="be54ad2d-6baa-467b-84c3-a537f9f41316" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a71c6816-9b8f-1b09-0ca2-3b9aad80a0eb" executionId="2df6bdcc-cb4f-4c2a-9f4a-85ab091145a1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="38ca401c-005d-c27e-2ca8-a494f38a189a" executionId="4e73255a-99ac-4a08-94b0-e7e66ef6ea79" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bfe79a5d-446f-1c0a-dd5d-9af6d9e29397" executionId="618abbe8-88ef-4eb8-a9de-a3f11f472f6d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="84af18f1-11d8-2cab-5bbe-7873a31d96fc" executionId="86fd5763-5db7-44b9-ab1f-d006581c450a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a0928e83-5a72-9706-3383-d6be35695193" executionId="98548ea3-23e7-4ed9-8f7b-8a9768a6ea2d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1010b5d2-c24d-e306-dc88-d8bfca81d5a8" executionId="ab6aeb9a-2a1f-4549-b617-10b5d4a2d01a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="70c443e6-14bd-291f-ab76-f21cddbf5227" executionId="adb18904-5e44-4b9b-bdae-570aaa9f86a6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c67af53b-e008-9cde-94c6-807e8b9ef4fa" executionId="34eac083-7785-44d1-8ed9-361a7f5aac09" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9a1ef4f8-9639-7bd7-34c5-1e254e04327c" executionId="ccfb1b91-ddb9-415e-ad21-09eed11a5a56" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="fac74a82-a8a6-3fc1-36c8-51e19e43ec66" executionId="70307e52-ce3f-42d0-a555-06f65f84967a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ef27646b-0d0c-da2b-8526-03cfc8ee0858" executionId="b35ffdf1-900e-470c-8862-98fb13a5f3d2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b9aaf447-e6f9-0d4a-52bc-50c7a85e52bd" executionId="cd1be243-f59a-409a-8353-a1c53ad60701" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3270f500-b79a-83de-1f03-36bf677275ce" executionId="a3583218-a3e3-4e80-92c1-3243a9f0b352" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="775588e8-8f2f-0399-9503-80284eaa1fff" executionId="89b87d49-bcd3-426a-ab5a-46d551e68bd0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3bf8a877-f4c6-0a58-0558-836b72b02656" executionId="1a7f8e7a-4d06-45b5-9c5a-c02da1da3ba6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="044e83a5-024e-4ab1-0e44-8792466b28ea" executionId="29489949-4b28-4c39-8b18-022ff8c12f38" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c135512f-75f7-7cd5-b608-ddfdb6e604ca" executionId="ab4855f1-e2ff-46b7-a7ea-fbdf89be74d0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="87a2e336-4eae-ec82-bf12-6bb654b17709" executionId="382b989d-b9f0-4a37-b5b1-649682bdb851" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7a139d93-fcf9-17fd-a5da-bcf01e3a236b" executionId="33fd8a86-4b2e-48d4-8eb9-5ac2f4dfc5db" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f246ad96-bd61-287f-8681-5c898f055870" executionId="f6617e8f-540a-4c75-932c-0acd4a94d685" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a920af63-7d76-f6dc-7d8d-02965c1a6e3f" executionId="82dbf606-29e4-4db9-b077-cc52b9b93e2c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="fe3df3c6-aa64-3ed2-4710-76ae6348d8bb" executionId="4b0c3973-8fc2-4d6b-a325-11342a09c3d2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ad5f80ff-e6c3-579e-42b8-1aef78537deb" executionId="7ea1e805-0c91-4ffb-a70c-d082e04cf62a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5cff2280-a1c6-3486-a4a2-fbc56c15ccd7" executionId="3fc96b94-03b1-4e42-a3c7-5540eb21fe6d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c1b3ff85-bc48-021f-996f-b0173b50cf2a" executionId="0edd73ca-fdac-4de8-a453-c41f9c010888" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a9d37376-0306-3e30-4575-9703922a2b43" executionId="fba43c89-e6d2-4a4b-80dc-dda470912575" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9de662c4-73d5-327c-528b-62851fc727b3" executionId="67c7e430-60c0-408c-ac09-76e0fc3c8f40" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8f6dad0a-363a-3fe9-b201-c5e5200b7014" executionId="8c84361e-e316-451e-b5fd-6c8bf8b9bf2a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="15f88474-ee5d-0e8c-3456-91f5bab6e742" executionId="23c73ab2-7735-41d1-a4da-592e0e5feaec" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c8fac6bd-d925-9056-7ba1-3003d6d32acc" executionId="85ffe054-4f5e-42ee-8876-fed04949b5c8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="497be3a0-a1e9-ae2b-16dd-14681caa4969" executionId="151bac36-6ef4-47bf-84c3-8a651e593a44" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2772d729-07c9-305b-7fc6-3823153f0d1f" executionId="55a40954-fe87-408d-970c-a98f4d542967" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e29c954c-622b-9b23-3f58-67af7f13efc5" executionId="172fe9e6-72bb-4992-bdfa-71e6d64b0fbc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0a51a59f-e22e-dfb0-3ec8-20525e5e3c29" executionId="9d762da7-3713-4cbe-bd55-49343d000fe5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c5410cd4-df22-fdcc-a561-5c11c5158582" executionId="8a6ac122-f464-401b-8e06-605ef585d4ba" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f37ee4eb-ba19-362e-d127-5e781d3d1bdb" executionId="0008e12c-1543-42af-aa6f-93c089fdabf1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="557f4057-1593-c6f7-6527-b114c25f1abc" executionId="7b5a1b1d-93f9-4040-83ca-5b02dc9c9e5a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b155989d-b595-d531-62d6-1fc27b8f8535" executionId="e3b29453-c52e-4429-91ec-8f2743a5dc64" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8e7420aa-78ff-7d9f-2876-a1b1f7886ec7" executionId="24095586-0458-4cc0-aba1-cb1d69f04cea" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1deef7d4-d2c4-84f7-084c-4851839615c5" executionId="040b19f0-257e-40d8-92d1-1d4fd48a40ee" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="93" executed="93" passed="86" failed="7" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 8.0.16)&#xD;
+[xUnit.net 00:00:00.07]   Discovering: BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.19]   Discovered:  BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.19]   Starting:    BirkNext.Web.Tests&#xD;
+     Warning:&#xD;
+     The component "Fluent Assertions" is governed by the rules defined in the Xceed License Agreement and&#xD;
+     the Xceed Fluent Assertions Community License. You may use Fluent Assertions free of charge for&#xD;
+     non-commercial use only. An active subscription is required to use Fluent Assertions for commercial use.&#xD;
+     Please contact Xceed Sales mailto:sales@xceed.com to acquire a subscription at a very low cost.&#xD;
+     A paid commercial license supports the development and continued increasing support of&#xD;
+     Fluent Assertions users under both commercial and community licenses. Help us&#xD;
+     keep Fluent Assertions at the forefront of unit testing.&#xD;
+     For more information, visit https://xceed.com/products/unit-testing/fluent-assertions/&#xD;
+[xUnit.net 00:00:00.32]       Expected governanceNode!.Children to contain 47 item(s), but found 40: BirkNext.Web.Models.ConstitutionMapNode&#xD;
+[xUnit.net 00:00:00.32]           {&#xD;
+[xUnit.net 00:00:00.32]               Children = BirkNext.Web.Models.ConstitutionMapNode&#xD;
+[xUnit.net 00:00:00.32]               {&#xD;
+[xUnit.net 00:00:00.32]                   {&#xD;
+[xUnit.net 00:00:00.32]                       Children = {empty},&#xD;
+[xUnit.net 00:00:00.32]                       Depth = 2,&#xD;
+[xUnit.net 00:00:00.32]                       NodeId = "4107c8e4e0",&#xD;
+[xUnit.net 00:00:00.32]                       Rule = BirkNext.Web.Models.ConstitutionRule&#xD;
+[xUnit.net 00:00:00.32]                       {&#xD;
+[xUnit.net 00:00:00.32]                           Aliases = {empty},&#xD;
+[xUnit.net 00:00:00.32]                           Description = "",&#xD;
+[xUnit.net 00:00:00.32]                           NodeId = "afd277b54a",&#xD;
+[xUnit.net 00:00:00.32]                           ReferencedBy =&#xD;
+[xUnit.net 00:00:00.32]                           {&#xD;
+[xUnit.net 00:00:00.32]                           Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.,&#xD;
+[xUnit.net 00:00:00.32]                           Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.&#xD;
+[xUnit.net 00:00:00.32]                           }&#xD;
+[xUnit.net 00:00:00.32]                       ,&#xD;
+[xUnit.net 00:00:00.32]                           References = {empty},&#xD;
+[xUnit.net 00:00:00.32]                           RuleId = "GL-01",&#xD;
+[xUnit.net 00:00:00.32]                           RuleType = ConstitutionRuleType.Guideline {value: 2},&#xD;
+[xUnit.net 00:00:00.32]                           Title = "GL-01"&#xD;
+[xUnit.net 00:00:00.32]                       }&#xD;
+[xUnit.net 00:00:00.32]                   },&#xD;
+[xUnit.net 00:00:00.32]                   BirkNext.Web.Models.ConstitutionMapNode&#xD;
+[xUnit.net 00:00:00.32]                   {&#xD;
+[xUnit.net 00:00:00.32]                       Children = {empty},&#xD;
+[xUnit.net 00:00:00.32]                       Depth = 2,&#xD;
+[xUnit.net 00:00:00.32]                       NodeId = "29aefa6f1b",&#xD;
+[xUnit.net 00:00:00.32]                       Rule = BirkNext.Web.Models.ConstitutionRule&#xD;
+[xUnit.net 00:00:00.32]                       {&#xD;
+[xUnit.net 00:00:00.32]                           Aliases = {empty},&#xD;
+[xUnit.net 00:00:00.32]                           Description = "",&#xD;
+[xUnit.net 00:00:00.32]                           NodeId = "66fd89a493",&#xD;
+[xUnit.net 00:00:00.32]                           ReferencedBy =&#xD;
+[xUnit.net 00:00:00.32]                           {&#xD;
+[xUnit.net 00:00:00.32]                           Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.,&#xD;
+[xUnit.net 00:00:00.32]                           Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.&#xD;
+[xUnit.net 00:00:00.32]                           }&#xD;
+[xUnit.net 00:00:00.32]                       ,&#xD;
+[xUnit.net 00:00:00.32]                           References = {empty},&#xD;
+[xUnit.net 00:00:00.32]                           RuleId = "GL-02",&#xD;
+[xUnit.net 00:00:00.32]                           RuleType = ConstitutionRuleType.Guideline {value: 2},&#xD;
+[xUnit.net 00:00:00.32]                           Title = "GL-02"&#xD;
+[xUnit.net 00:00:00.32]                       }&#xD;
+[xUnit.net 00:00:00.32]                   },&#xD;
+[xUnit.net 00:00:00.32]                   BirkNext.Web.Models.ConstitutionMapNode&#xD;
+[xUnit.net 00:00:00.32]                   {&#xD;
+[xUnit.net 00:00:00.32]                       Children = {empty},&#xD;
+[xUnit.net 00:00:00.32]                       Depth = 2,&#xD;
+[xUnit.net 00:00:00.32]                       NodeId = "f5eb43e35c",&#xD;
+[xUnit.net 00:00:00.32]                       Rule = BirkNext.Web.Models.ConstitutionRule&#xD;
+[xUnit.net 00:00:00.32]                       {&#xD;
+[xUnit.net 00:00:00.32]                           Aliases = {empty},&#xD;
+[xUnit.net 00:00:00.32]                           Description = "",&#xD;
+[xUnit.net 00:00:00.32]                           NodeId = "a8150040b1",&#xD;
+[xUnit.net 00:00:00.32]                           ReferencedBy =&#xD;
+[xUnit.net 00:00:00.32]                           {&#xD;
+[xUnit.net 00:00:00.32]                           Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.,&#xD;
+[xUnit.net 00:00:00.32]                           Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.&#xD;
+[xUnit.net 00:00:00.32]                           }&#xD;
+[xUnit.net 00:00:00.32]                       ,&#xD;
+[xUnit.net 00:00:00.32]                           References = {empty},&#xD;
+[xUnit.net 00:00:00.32]                           RuleId = "GL-03",&#xD;
+[xUnit.net 00:00:00.32]                           RuleType = ConstitutionRuleType.Guideline {value: 2},&#xD;
+[xUnit.net 00:00:00.32]                           Title = "GL-03"&#xD;
+[xUnit.net 00:00:00.32]                       }&#xD;
+[xUnit.net 00:00:00.32]                   },&#xD;
+[xUnit.net 00:00:00.32]                   BirkNext.Web.Models.ConstitutionMapNode&#xD;
+[xUnit.net 00:00:00.32]                   {&#xD;
+[xUnit.net 00:00:00.32]                       Children = {empty},&#xD;
+[xUnit.net 00:00:00.32]                       Depth = 2,&#xD;
+[xUnit.net 00:00:00.32]                       NodeId = "f8173f5f24",&#xD;
+[xUnit.net 00:00:00.32]                       Rule = BirkNext.Web.Models.ConstitutionRule&#xD;
+[xUnit.net 00:00:00.32]                       {&#xD;
+[xUnit.net 00:00:00.32]                           Aliases = {empty},&#xD;
+[xUnit.net 00:00:00.32]                           Description = "",&#xD;
+[xUnit.net 00:00:00.32]                           NodeId = "bb247813d2",&#xD;
+[xUnit.net 00:00:00.32]                           ReferencedBy =&#xD;
+[xUnit.net 00:00:00.32]                           {&#xD;
+[xUnit.net 00:00:00.32]                           Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.,&#xD;
+[xUnit.net 00:00:00.32]                           Maximum recursion depth of 5 was reached.  Increase MaxDepth on AssertionScope or AssertionConfiguration to get more details.&#xD;
+[xUnit.net 00:00:00.32]                           }&#xD;
+[xUnit.net 00:00:00.32]                       ,&#xD;
+[xUnit.net 00:00:00.32]                           References = {empty},&#xD;
+[xUnit.net 00:00:00.32]                           RuleId = "GL-16",&#xD;
+[xUnit.net 00:00:00.32]                           RuleType = ConstitutionRuleType.Guideline {value: 2},&#xD;
+[xUnit.net 00:00:00.32]                           Title = "GL-16"&#xD;
+[xUnit.net 00:00:00.32]                       }&#xD;
+[xUnit.net 00:00:00.32]                   }&#xD;
+[xUnit.net 00:00:00.32]               }&#xD;
+[xUnit.net 00:00:00.32]           ,&#xD;
+[xUnit.net 00:00:00.32]               Depth = 1,&#xD;
+[xUnit.net 00:00:00.32]               NodeId = "f7132a8f7d",&#xD;
+[xUnit.net 00:00:00.32]               Rule = BirkNext.Web.Models.ConstitutionRule&#xD;
+[xUnit.net 00:00:00.32]               {&#xD;
+[xUnit.net 00:00:00.32]                   Aliases = {empty},&#xD;
+[xUnit.net 00:00:00.32]                   Description = "All communication between layers and services MUST go through published API contracts.&#xD;
+[xUnit.net 00:00:00.32]       Backend has no knowledge of the presentation layer. No service accesses another service's&#xD;
+[xUnit.net 00:00:00.32]       data layer directly — regardless of technology. This is non-negotiable.&#xD;
+[xUnit.net 00:00:00.32]       GL-01: All frontend-to-backend communication routes through the reverse proxy (YARP/APIM). Direct backend URLs are forbidden in frontend code.&#xD;
+[xUnit.net 00:00:00.32]       GL-02: API contract design precedes implementation. The contract is the source of truth, not the database schema.&#xD;
+[xUnit.net 00:00:00.32]       GL-03: Blazor components fetch data exclusively via HttpClient against published contracts.&#xD;
+[xUnit.net 00:00:00.32]       GL-16: Contracts use domain language (not table names, legacy IDs, or internal codes).",&#xD;
+[xUnit.net 00:00:00.32]                   NodeId = "dea6577ffd",&#xD;
+[xUnit.net 00:00:00.32]       &#xD;
+[xUnit.net 00:00:00.32]       &#xD;
+[xUnit.net 00:00:00.32]       (Output has exceeded the maximum of 100 lines. Increase FormattingOptions.MaxLines on AssertionScope or AssertionConfiguration to include more lines.).&#xD;
+[xUnit.net 00:00:00.32]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.32]            at FluentAssertions.Collections.GenericCollectionAssertions`3.HaveCount(Int32 expected, String because, Object[] becauseArgs)&#xD;
+[xUnit.net 00:00:00.32]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionMapTreeTests.cs(89,0): at BirkNext.Web.Tests.Services.ConstitutionMapTreeTests.BuildMapTree_AutorisasjonGovernance_RendersAllResolvedDirectReferences()&#xD;
+[xUnit.net 00:00:00.32]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+[xUnit.net 00:00:00.32]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:00.36]       MODEL INSPECTION:
+
+=== GOV-001 MODEL INSPECTION (RuleCatalog) ===
+RuleId: GOV-001
+Title: Governance
+References.Count: 47
+
+✓ No duplicates in GOV-001.References list
+
+All References in order:
+  [001] PP-01
+  [002] PP-02
+  [003] PP-03
+  [004] PP-04
+  [005] PP-05
+  [006] PP-06
+  [007] PP-07
+  [008] PP-08
+  [009] PP-09
+  [010] PS-01
+  [011] PS-02
+  [012] PS-03
+  [013] PS-04
+  [014] PS-05
+  [015] PS-06
+  [016] PS-07
+  [017] PS-08
+  [018] PS-09
+  [019] GL-01
+  [020] GL-02
+  [021] GL-03
+  [022] GL-04
+  [023] GL-05
+  [024] GL-06
+  [025] GL-07
+  [026] GL-08
+  [027] GL-09
+  [028] GL-10
+  [029] GL-11
+  [030] GL-12
+  [031] GL-13
+  [032] GL-14
+  [033] GL-15
+  [034] GL-16
+  [035] GL-17
+  [036] GL-18
+  [037] GL-19
+  [038] GL-20
+  [039] GL-21
+  [040] GL-22
+  [041] GL-23
+  [042] GL-24
+  [043] GL-25
+  [044] GL-26
+  [045] GL-27
+  [046] GL-28
+  [047] GL-29
+&#xD;
+[xUnit.net 00:00:00.36]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.36]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionAnalysisServiceTests.cs(2164,0): at BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.ModelInspection_GOV001ReferencesForDuplicates()&#xD;
+[xUnit.net 00:00:00.36]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+[xUnit.net 00:00:00.36]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:00.38]       
+=== GOV-001 RULES CHECK ===
+Found 1 rule(s) with ID 'GOV-001'
+✓ Single GOV-001 rule found
+  References: 47
+  ✓ References list is same object (shared reference)
+&#xD;
+[xUnit.net 00:00:00.38]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.38]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionAnalysisServiceTests.cs(2389,0): at BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.DiagnosticRoot_CheckIfMultipleGOV001RulesExist()&#xD;
+[xUnit.net 00:00:00.38]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+[xUnit.net 00:00:00.38]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:00.48]       
+=== REFERENCE RESOLUTION TRACE ===
+
+GOV-001.References.Count: 47
+
+[001] 'PP-01' → 'PP-01' (exact)
+[002] 'PP-02' → 'PP-02' (exact)
+[003] 'PP-03' → 'PP-03' (exact)
+[004] 'PP-04' → 'PP-04' (exact)
+[005] 'PP-05' → 'PP-05' (exact)
+[006] 'PP-06' → 'PP-03' (alias)
+[007] 'PP-07' → 'PP-03' (alias)
+[008] 'PP-08' → 'PP-08' (exact)
+[009] 'PP-09' → 'PP-09' (exact)
+[010] 'PS-01' → 'PS-01' (exact)
+[011] 'PS-02' → 'PS-02' (exact)
+[012] 'PS-03' → 'PS-03' (exact)
+[013] 'PS-04' → 'PS-04' (exact)
+[014] 'PS-05' → 'PP-04' (alias)
+[015] 'PS-06' → 'PS-06' (exact)
+... (27 more) ...
+[043] 'GL-25' → 'GL-25' (exact)
+[044] 'GL-26' → 'PS-02' (alias)
+[045] 'GL-27' → 'PS-09' (alias)
+[046] 'GL-28' → 'PS-08' (alias)
+[047] 'GL-29' → 'STANDARD-001' (alias)
+
+=== RESOLUTION ANALYSIS ===
+Total references: 47
+Exact matches: 39
+Alias matches: 8
+Mismatches (refId != resolvedId): 8
+
+⚠️ MISMATCHES FOUND:
+  'PP-06' resolved to 'PP-03'
+  'PP-07' resolved to 'PP-03'
+  'PS-05' resolved to 'PP-04'
+  'GL-13' resolved to 'PS-07'
+  'GL-26' resolved to 'PS-02'
+  'GL-27' resolved to 'PS-09'
+  'GL-28' resolved to 'PS-08'
+  'GL-29' resolved to 'STANDARD-001'
+
+=== ALIAS CONFLICTS ===
+Total aliases skipped (conflicts): 1
+  Skipped alias 'PP-04' (exists as PP-04)
+
+=== ALIAS OWNERSHIP ===
+
+'PP-06' is an alias of:
+  Rule PP-03: III. Domain-Driven Service Design (PP-03, PP-06, PP-07)
+
+'PP-07' is an alias of:
+  Rule PP-03: III. Domain-Driven Service Design (PP-03, PP-06, PP-07)
+
+'PS-05' is an alias of:
+  Rule PP-04: IV. Event-Driven Integration (PP-04-derived, PS-05)
+
+'GL-13' is an alias of:
+  Rule PS-07: API Versioning (PS-07, GL-13)
+
+'GL-26' is an alias of:
+  Rule PS-02: Configuration and Secrets (PS-02, GL-26)
+
+'GL-27' is an alias of:
+  Rule PS-09: Stateless Services (PS-09, GL-27)
+
+'GL-28' is an alias of:
+  Rule PS-08: Observability (PS-08, GL-28)
+
+'GL-29' is an alias of:
+  Rule STANDARD-001: Resilience (GL-29)
+&#xD;
+[xUnit.net 00:00:00.48]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.48]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionAnalysisServiceTests.cs(2512,0): at BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.ResolutionDebug_TraceEachGOV001ReferenceResolution()&#xD;
+[xUnit.net 00:00:00.48]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+[xUnit.net 00:00:00.48]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:00.50]       INSPECTION REPORT:
+
+=== GOV-001 DIRECT CHILDREN ANALYSIS ===
+Total Children: 40
+NodeId: b28fc71c56
+RuleId: GOV-001
+
+Rules grouped by RuleId:
+
+=== RENDERING WHAT DOM SHOULD CONTAIN ===
+[001] &lt;div data-rule-id="PP-01" data-node-id="a86a211962" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[002] &lt;div data-rule-id="PP-02" data-node-id="a278fb061f" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[003] &lt;div data-rule-id="PP-03" data-node-id="fd68592a25" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[004] &lt;div data-rule-id="PP-04" data-node-id="94a0814427" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[005] &lt;div data-rule-id="PP-05" data-node-id="1e37ade06d" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[006] &lt;div data-rule-id="PP-08" data-node-id="1e208893e6" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[007] &lt;div data-rule-id="PP-09" data-node-id="e6eac01c2b" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[008] &lt;div data-rule-id="PS-01" data-node-id="ee46eb1123" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[009] &lt;div data-rule-id="PS-02" data-node-id="18c3ef50e0" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[010] &lt;div data-rule-id="PS-03" data-node-id="b76a4bc5d6" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[011] &lt;div data-rule-id="PS-04" data-node-id="107cf4affa" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[012] &lt;div data-rule-id="PS-06" data-node-id="0997285120" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[013] &lt;div data-rule-id="PS-07" data-node-id="8e74e6e257" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[014] &lt;div data-rule-id="PS-08" data-node-id="02a74a6c31" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[015] &lt;div data-rule-id="PS-09" data-node-id="27174f3860" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[016] &lt;div data-rule-id="GL-01" data-node-id="e1fceb0aeb" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[017] &lt;div data-rule-id="GL-02" data-node-id="79e50bf673" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[018] &lt;div data-rule-id="GL-03" data-node-id="e83f7ca1c0" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[019] &lt;div data-rule-id="GL-04" data-node-id="c0baeaeb82" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[020] &lt;div data-rule-id="GL-05" data-node-id="fe21065be9" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[021] &lt;div data-rule-id="GL-06" data-node-id="f4394babd3" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[022] &lt;div data-rule-id="GL-07" data-node-id="b0843470d2" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[023] &lt;div data-rule-id="GL-08" data-node-id="54ede367bd" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[024] &lt;div data-rule-id="GL-09" data-node-id="520d427108" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[025] &lt;div data-rule-id="GL-10" data-node-id="fe17ac65ec" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[026] &lt;div data-rule-id="GL-11" data-node-id="2ac98879f7" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[027] &lt;div data-rule-id="GL-12" data-node-id="c5cbe407a1" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[028] &lt;div data-rule-id="GL-14" data-node-id="1cb74ec061" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[029] &lt;div data-rule-id="GL-15" data-node-id="c61a915e4e" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[030] &lt;div data-rule-id="GL-16" data-node-id="a35d30b95c" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[031] &lt;div data-rule-id="GL-17" data-node-id="77bacf30bc" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[032] &lt;div data-rule-id="GL-18" data-node-id="dcd6685f3e" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[033] &lt;div data-rule-id="GL-19" data-node-id="fb55a42a7c" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[034] &lt;div data-rule-id="GL-20" data-node-id="eac77d51be" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[035] &lt;div data-rule-id="GL-21" data-node-id="b9ef55f3f8" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[036] &lt;div data-rule-id="GL-22" data-node-id="2e7ae0faed" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[037] &lt;div data-rule-id="GL-23" data-node-id="854cb9e1df" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[038] &lt;div data-rule-id="GL-24" data-node-id="2e83d2dd7f" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[039] &lt;div data-rule-id="GL-25" data-node-id="ccf430d36f" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+[040] &lt;div data-rule-id="STANDARD-001" data-node-id="d6f9a77073" data-depth="1" data-parent-node-id="b28fc71c56"&gt;
+
+
+Saved to: C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\DOM_INSPECTION_REPORT.txt&#xD;
+[xUnit.net 00:00:00.50]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.50]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionAnalysisServiceTests.cs(2105,0): at BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.DOMInspection_PrintAllDuplicateRules()&#xD;
+[xUnit.net 00:00:00.50]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+[xUnit.net 00:00:00.50]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:00.51]       
+=== RULECATALOG ANALYSIS ===
+Total rules: 51
+
+✓ No duplicate RuleIds
+
+⚠️ Found 1 alias-ID conflicts:
+
+  Conflict: 'PP-04' appears as both alias and ID
+    Rule with ID 'PP-04': IV. Event-Driven Integration (PP-04-derived, PS-05)
+    Rules with 'PP-04' as alias:
+      - PP-02: II. Zero-Trust Security (PP-02, PP-04)
+&#xD;
+[xUnit.net 00:00:00.51]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.51]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionAnalysisServiceTests.cs(2330,0): at BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalogInspection_CheckForDuplicateRuleIds()&#xD;
+[xUnit.net 00:00:00.51]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+[xUnit.net 00:00:00.51]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:00.52]       DIAGNOSTIC:
+
+=== RULES BEFORE MAP BUILDING ===
+GOV-001 from Catalog:
+  References.Count: 47
+  References order: PP-01, PP-02, PP-03, PP-04, PP-05, PP-06, PP-07, PP-08, PP-09, PS-01, PS-02, PS-03, PS-04, PS-05, PS-06, PS-07, PS-08, PS-09, GL-01, GL-02, GL-03, GL-04, GL-05, GL-06, GL-07, GL-08, GL-09, GL-10, GL-11, GL-12, GL-13, GL-14, GL-15, GL-16, GL-17, GL-18, GL-19, GL-20, GL-21, GL-22, GL-23, GL-24, GL-25, GL-26, GL-27, GL-28, GL-29
+
+=== RULES AFTER MAP BUILDING ===
+GOV-001 from Map:
+  Children.Count: 40
+  Children order: PP-01, PP-02, PP-03, PP-04, PP-05, PP-08, PP-09, PS-01, PS-02, PS-03, PS-04, PS-06, PS-07, PS-08, PS-09, GL-01, GL-02, GL-03, GL-04, GL-05, GL-06, GL-07, GL-08, GL-09, GL-10, GL-11, GL-12, GL-14, GL-15, GL-16, GL-17, GL-18, GL-19, GL-20, GL-21, GL-22, GL-23, GL-24, GL-25, STANDARD-001
+&#xD;
+[xUnit.net 00:00:00.52]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.52]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ConstitutionAnalysisServiceTests.cs(2245,0): at BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.BuildMapTreeDiagnostics_CheckGOV001RulesBeforeAndAfterMapping()&#xD;
+[xUnit.net 00:00:00.52]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+[xUnit.net 00:00:00.52]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:00.54]   Finished:    BirkNext.Web.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T12:40:17.1133774+02:00">
+        <Text>[xUnit.net 00:00:00.32]     BirkNext.Web.Tests.Services.ConstitutionMapTreeTests.BuildMapTree_AutorisasjonGovernance_RendersAllResolvedDirectReferences [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T12:40:17.1321485+02:00">
+        <Text>[xUnit.net 00:00:00.36]     BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.ModelInspection_GOV001ReferencesForDuplicates [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T12:40:17.1507912+02:00">
+        <Text>[xUnit.net 00:00:00.38]     BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.DiagnosticRoot_CheckIfMultipleGOV001RulesExist [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T12:40:17.2548054+02:00">
+        <Text>[xUnit.net 00:00:00.48]     BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.ResolutionDebug_TraceEachGOV001ReferenceResolution [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T12:40:17.2670790+02:00">
+        <Text>[xUnit.net 00:00:00.50]     BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.DOMInspection_PrintAllDuplicateRules [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T12:40:17.2820798+02:00">
+        <Text>[xUnit.net 00:00:00.51]     BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.RuleCatalogInspection_CheckForDuplicateRuleIds [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T12:40:17.2955874+02:00">
+        <Text>[xUnit.net 00:00:00.52]     BirkNext.Web.Tests.Services.ConstitutionAnalysisServiceTests.BuildMapTreeDiagnostics_CheckGOV001RulesBeforeAndAfterMapping [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

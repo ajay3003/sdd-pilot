@@ -1,5 +1,7 @@
 using BirkNext.Web.GraphQL;
+using BirkNext.Web.Models.Analysis;
 using BirkNext.Web.Pages;
+using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,6 +12,28 @@ namespace BirkNext.Web.Tests.Pages;
 
 public class TraceabilityPageTests : BunitContext
 {
+    public TraceabilityPageTests()
+    {
+        var pageModelService = new Mock<IAnalysisPageModelService>();
+        pageModelService
+            .Setup(s => s.GetRequirementsTraceabilityModelAsync())
+            .ReturnsAsync(new AnalysisPageModel
+            {
+                Title = "Requirements Traceability",
+                Description = "Trace requirements to implementation evidence.",
+                ReadinessStatus = AnalysisStatus.Blocked,
+                MissingInputs = ["specification", "plan"],
+                Summary = new AnalysisSummary
+                {
+                    CanRun = false,
+                    ReadinessMessage = "Load specification and plan artifacts to analyze requirements traceability."
+                }
+            });
+
+        Services.AddSingleton(pageModelService.Object);
+        Services.AddSingleton<IWorkspaceSessionService>(new WorkspaceArtifactRepository());
+    }
+
     private void SetupEmptyClient()
     {
         var matrixQuery = new Mock<IGetTraceabilityMatrixQuery>();
@@ -46,13 +70,10 @@ public class TraceabilityPageTests : BunitContext
             cut.Markup.Should().NotContain("Loading coverage data"),
             timeout: TimeSpan.FromSeconds(1));
 
-        var chipGrid = cut.Find(".filter-chip-grid");
-        chipGrid.Should().NotBeNull();
-
-        var filterButtons = cut.FindAll(".filter-chip-grid button");
-        filterButtons.Should().HaveCount(4);
-        foreach (var btn in filterButtons)
-            btn.ClassList.Should().Contain("library-filter-chip");
+        cut.Markup.Should().Contain("Requirements Traceability");
+        cut.Markup.Should().Contain("Load Artifacts First");
+        cut.FindAll(".filter-chip-grid").Should().BeEmpty(
+            "the current traceability route is readiness/page-model driven, not the removed GraphQL filter grid");
     }
 
     [Fact]
@@ -66,13 +87,8 @@ public class TraceabilityPageTests : BunitContext
             cut.Markup.Should().NotContain("Loading coverage data"),
             timeout: TimeSpan.FromSeconds(1));
 
-        // Every button in the filter area must use the design system chip class
-        var filterButtons = cut.FindAll(".filter-chip-grid button");
-        foreach (var btn in filterButtons)
-        {
-            btn.ClassList.Should().Contain("library-filter-chip",
-                because: $"button '{btn.TextContent.Trim()}' must use design-system styling");
-        }
+        cut.FindAll("button").Should().BeEmpty(
+            "blocked traceability state should not render unstyled default action buttons");
     }
 
     private static IOperationResult<IGetTraceabilityMatrixResult> MakeEmptyMatrixResult()

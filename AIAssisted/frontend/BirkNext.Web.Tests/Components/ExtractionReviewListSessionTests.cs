@@ -51,6 +51,7 @@ public class ExtractionReviewListSessionTests : BunitContext
             EnableArchitectureView = true
         });
         Services.AddSingleton(featureVisibility);
+        Services.AddSingleton<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
 
         Services.AddLogging();
     }

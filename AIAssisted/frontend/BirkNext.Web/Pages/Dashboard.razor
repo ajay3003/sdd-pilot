@@ -281,7 +281,7 @@
                 <div class="db-artifact-progress-track" aria-hidden="true">
                     <div class="db-artifact-progress-fill" style="width: @((_specLoaded ? 50 : 0) + (_specAnalyzed ? 50 : 0))%"></div>
                 </div>
-                <a href="extract" class="db-artifact-action">Open Specification Review →</a>
+                <a href="specification-explorer" class="db-artifact-action">Open Specification Explorer →</a>
             </div>
 
             <div class="db-artifact-card db-artifact-plan @(_planLoaded ? "db-artifact-loaded" : "")">
@@ -339,6 +339,28 @@
                     <div class="db-artifact-progress-fill" style="width: @((_tasksLoaded ? 50 : 0) + (_tasksAnalyzed ? 50 : 0))%"></div>
                 </div>
                 <a href="task-explorer" class="db-artifact-action">Open Task Explorer →</a>
+            </div>
+
+            <div class="db-artifact-card db-artifact-datamodel @(_dataModelLoaded ? "db-artifact-loaded" : "")">
+                <div class="db-artifact-icon" aria-hidden="true">🗄️</div>
+                <div class="db-artifact-name">Data Model</div>
+                <div class="db-artifact-badges">
+                    @if (_dataModelLoaded) { <span class="db-badge db-badge-loaded">Loaded</span> }
+                    @if (_dataModelAnalyzed) { <span class="db-badge db-badge-analyzed">Analyzed</span> }
+                    @if (!_dataModelLoaded)  { <span class="db-badge db-badge-empty">Not loaded</span> }
+                </div>
+                @if (Workspace.Get(WorkspaceArtifactKind.DataModel) is { } wsDataModel)
+                {
+                    <div class="db-artifact-stats">
+                        @if (wsDataModel.FileName is not null)     { <span class="db-stat-pill">@wsDataModel.FileName</span> }
+                        @if (Workspace.ProjectName is not null) { <span class="db-stat-pill">@Workspace.ProjectName</span> }
+                        <span class="db-stat-pill">@wsDataModel.LoadedAt.ToString("HH:mm")</span>
+                    </div>
+                }
+                <div class="db-artifact-progress-track" aria-hidden="true">
+                    <div class="db-artifact-progress-fill" style="width: @((_dataModelLoaded ? 50 : 0) + (_dataModelAnalyzed ? 50 : 0))%"></div>
+                </div>
+                <a href="data-model-explorer" class="db-artifact-action">Open Data Model Explorer →</a>
             </div>
         </div>
     </section>
@@ -924,6 +946,12 @@
         Snapshot.AuditReport?.HasTasks == true ||
         Snapshot.DeliveryReport?.HasTasks == true ||
         Snapshot.ReadinessReport?.HasTasks == true;
+
+    private bool _dataModelLoaded =>
+        Workspace.Has(WorkspaceArtifactKind.DataModel);
+
+    private bool _dataModelAnalyzed =>
+        false;  // Data Model analysis not yet integrated into report system
 
     // ── Pre-computed health scores (numeric) ──────────────────────────────────
 

@@ -21,6 +21,10 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         @"\b(PP-\d+|PS-\d+|GL-\d+|FP-\d+|MC-\d+|AC-\d+|FC-\d+|GV-\d+)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private static readonly Regex FrIdRe = new(
+        @"\b(FR)-?\s*(\d{1,4})\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static readonly Regex AdrIdRe = new(
         @"^(ADR-\d+)\b\s*[:\-–]?\s*(.*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -2612,15 +2616,16 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     public static PlanSemanticModel BuildSemanticModel(PlanDocument document)
     {
         var architectureDecisions = document.ArchitectureDecisions
-            .Select(d => new SemanticPlanArchitectureDecision
+            .Select((d, index) => new SemanticPlanArchitectureDecision
             {
-                Id = d.Id,
+                Id = string.IsNullOrWhiteSpace(d.Id) ? $"PLAN-{index + 1:000}" : d.Id,
                 Title = d.Title,
                 Context = d.Context,
                 Decision = d.Decision,
                 Rationale = d.Rationale,
                 Consequences = d.Consequences,
-                RelatedRequirementIds = [],
+                RelatedRequirementIds = ExtractRequirementReferences(
+                    string.Join('\n', d.Title, d.Context, d.Decision, d.Rationale, string.Join('\n', d.Consequences))),
             })
             .ToList();
 
@@ -2737,4 +2742,10 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             PhaseToTasks = phases.ToDictionary(p => $"Phase{p.PhaseNumber}", p => p.TaskIds),
         };
     }
+
+    private static List<string> ExtractRequirementReferences(string text) =>
+        FrIdRe.Matches(text)
+            .Select(m => $"FR-{int.Parse(m.Groups[2].Value):000}")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 }

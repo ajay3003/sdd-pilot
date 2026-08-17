@@ -48,6 +48,16 @@ internal sealed class MockSampleProjectDocumentResolver : ISampleProjectDocument
         SetProjectSpecification(projectSlug, planContent, "plan.md");
     }
 
+    public void SetProjectTasks(string projectSlug, string tasksContent)
+    {
+        SetProjectSpecification(projectSlug, tasksContent, "tasks.md");
+    }
+
+    public void SetProjectDataModel(string projectSlug, string dataModelContent)
+    {
+        SetProjectSpecification(projectSlug, dataModelContent, "data-model.md");
+    }
+
     public async Task<SampleProjectDocumentResult> ResolveAsync(
         string projectSlug,
         ExplorerDocumentType documentType,
@@ -81,6 +91,8 @@ internal sealed class MockSampleProjectDocumentResolver : ISampleProjectDocument
         {
             ExplorerDocumentType.Specification => "spec.md",
             ExplorerDocumentType.Plan => "plan.md",
+            ExplorerDocumentType.Tasks => "tasks.md",
+            ExplorerDocumentType.DataModel => "data-model.md",
             _ => throw new ArgumentException($"Unknown document type: {documentType}"),
         };
 
@@ -88,7 +100,13 @@ internal sealed class MockSampleProjectDocumentResolver : ISampleProjectDocument
         new SampleFileDto(
             Filename: filename,
             Exists: true,
-            ArtifactKind: filename == "plan.md" ? "Plan" : "Specification",
+            ArtifactKind: filename switch
+            {
+                "plan.md" => "Plan",
+                "tasks.md" => "Tasks",
+                "data-model.md" => "DataModel",
+                _ => "Specification"
+            },
             ReviewerName: null,
             ReviewerRoute: null,
             IsSupported: true,

@@ -521,20 +521,20 @@ else
 
     // Metrics from ReviewContext (canonical source) or SemanticModel (fallback)
     private int GetRequirementCount() =>
-        ReviewContext?.Specification.TotalRequirements ?? SemanticModel?.TotalRequirements ?? 0;
+        ReviewContext?.Specification.TotalRequirements ?? SemanticModel?.TotalRequirements ?? _model?.EligibleCount ?? 0;
 
     private int GetCoveredCount() =>
-        ReviewContext?.RequirementsWithTests ?? SemanticModel?.RequirementsWithTests ?? 0;
+        ReviewContext?.RequirementsWithTests ?? SemanticModel?.RequirementsWithTests ?? _model?.CoveredCount ?? 0;
 
     private int GetMissingTestsCount() =>
-        ReviewContext?.MissingTests ?? (SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithTests : 0);
+        ReviewContext?.MissingTests ?? (SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithTests : _model?.MissingTestsCount ?? 0);
 
     private int GetMissingUserStoriesCount() =>
         ReviewContext != null ? (ReviewContext.Specification.UserStoriesWithRequirements > 0 ? 0 : ReviewContext.Specification.TotalRequirements) :
-        (SemanticModel != null ? (SemanticModel.UserStoriesWithRequirements > 0 ? 0 : SemanticModel.TotalRequirements) : 0);
+        (SemanticModel != null ? (SemanticModel.UserStoriesWithRequirements > 0 ? 0 : SemanticModel.TotalRequirements) : _model?.MissingUserStoryCount ?? 0);
 
     private int GetMissingScCount() =>
-        ReviewContext?.MissingSuccessCriteria ?? (SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithSuccessCriteria : 0);
+        ReviewContext?.MissingSuccessCriteria ?? (SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithSuccessCriteria : _model?.MissingSuccessCriteriaCount ?? 0);
 
     private int GetCoveragePercent()
     {
@@ -544,12 +544,14 @@ else
             return ReviewContext.Coverage.SpecificationCompleteness;
         }
 
-        if (SemanticModel == null || SemanticModel.TotalRequirements == 0) return 0;
-        return (SemanticModel.RequirementsWithTests * 100) / SemanticModel.TotalRequirements;
+        if (SemanticModel != null && SemanticModel.TotalRequirements > 0)
+            return (SemanticModel.RequirementsWithTests * 100) / SemanticModel.TotalRequirements;
+
+        return _model?.CoveragePercent ?? 0;
     }
 
     private int GetOrphanTestsCount() =>
-        ReviewContext?.Specification.TotalAcceptanceScenarios ?? SemanticModel?.TotalAcceptanceScenarios ?? 0;
+        ReviewContext?.Specification.TotalAcceptanceScenarios ?? SemanticModel?.TotalAcceptanceScenarios ?? _model?.OrphanTestCount ?? 0;
 
     // ── Computed properties ─────────────────────────────────────────────────
 

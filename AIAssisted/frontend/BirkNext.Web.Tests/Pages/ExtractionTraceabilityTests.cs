@@ -21,6 +21,7 @@ public class ExtractionTraceabilityTests : BunitContext
         Services.AddSingleton(new Mock<IGetReviewedCandidatesQuery>().Object);
         Services.AddSingleton(new Mock<IExtractionSessionService>().Object);
         Services.AddSingleton<ILogger<ExtractionReviewList>>(NullLogger<ExtractionReviewList>.Instance);
+        Services.AddSingleton<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
         Services.AddSingleton<FeatureVisibilityService>();
     }
 

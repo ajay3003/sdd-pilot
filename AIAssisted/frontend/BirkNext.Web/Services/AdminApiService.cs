@@ -322,6 +322,7 @@ public class FeatureVisibilityDto
     [JsonPropertyName("userGuide")]            public bool UserGuide            { get; set; } = true;
     [JsonPropertyName("dashboard")]            public bool Dashboard            { get; set; } = true;
     [JsonPropertyName("specificationReview")]  public bool SpecificationReview  { get; set; } = true;
+    [JsonPropertyName("specificationExplorer")] public bool SpecificationExplorer { get; set; } = true;
     [JsonPropertyName("qaArtifactLibrary")]    public bool QaArtifactLibrary    { get; set; } = true;
     [JsonPropertyName("sampleProjects")]       public bool SampleProjects       { get; set; } = true;
     [JsonPropertyName("createTestScenario")]   public bool CreateTestScenario   { get; set; } = true;

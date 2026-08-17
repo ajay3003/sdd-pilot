@@ -5,29 +5,46 @@
 @inject IQualityReviewService QrService
 @inject IDashboardSnapshotService DashboardSnapshot
 @inject IDeliveryReadinessAssessmentService DrService
-@inject IWorkspaceSessionService Workspace
 @inject QualityReviewSessionService QualitySession
 @inject IReportExportService ExportService
+@inject ISampleProjectDocumentResolver DocumentResolver
 @inject IJSRuntime JS
 
 <PageTitle>Quality Review</PageTitle>
 
 <div class="qr-page">
 
-    <PageHeader Title="Quality Review"
-                Description="Run one or more deterministic quality, compliance, and readiness reviews in a single execution. Select the rule packs to apply, load your artifacts, and get a unified report." />
-
-    <!-- ── Input panel ────────────────────────────────────────────────────── -->
-    <div class="qr-input-panel">
-        <div class="qr-input-panel-header">
-            <span class="qr-input-panel-title"><span class="qr-step-badge">1</span> Load Artifacts</span>
-            @if (_report is not null)
-            {
-                <button class="qr-input-panel-toggle" @onclick="() => _inputExpanded = !_inputExpanded">
-                    @(_inputExpanded ? "▾ Collapse" : "▸ Expand")
-                </button>
-            }
+    @if (!string.IsNullOrWhiteSpace(_selectedProjectName))
+    {
+        <div style="padding: 8px 16px; background: #f5f5f5; border-bottom: 1px solid #e0e0e0; font-size: 0.875rem; color: #666;">
+            Sample Project: <strong>@_selectedProjectName</strong>
         </div>
+    }
+
+    <PageHeader Title="Quality Review"
+                Description="Run quality, compliance, and readiness reviews against the selected Sample Project. Choose review packs and generate a comprehensive report." />
+
+    <!-- ── No project selected state ────────────────────────────────────── -->
+    @if (string.IsNullOrWhiteSpace(_selectedProject))
+    {
+        <div style="padding: 64px 32px; text-align: center; color: #999;">
+            <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">No Sample Project selected.</p>
+            <p style="font-size: 0.95rem;">Select a Sample Project from the sidebar to run a quality review.</p>
+        </div>
+    }
+    else
+    {
+        <!-- ── Input panel ────────────────────────────────────────────────────── -->
+        <div class="qr-input-panel">
+            <div class="qr-input-panel-header">
+                <span class="qr-input-panel-title"><span class="qr-step-badge">1</span> Sample Project Artifacts</span>
+                @if (_report is not null)
+                {
+                    <button class="qr-input-panel-toggle" @onclick="() => _inputExpanded = !_inputExpanded">
+                        @(_inputExpanded ? "▾ Collapse" : "▸ Expand")
+                    </button>
+                }
+            </div>
 
         @if (_inputExpanded)
         {
@@ -39,21 +56,15 @@
                         <span class="artifact-icon" aria-hidden="true">📜</span>
                         <span class="artifact-name">Constitution</span>
                         <span class="artifact-status @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_constitutionText) ? "Loaded" : "Empty")
+                            @(!string.IsNullOrEmpty(_constitutionText) ? "Loaded" : "Missing")
                         </span>
                     </div>
-                    <SpecificationImport @ref="_constitutionImport"
-                        InputId="qr-constitution-import"
-                        OnFileImported="t => { _constitutionText = t; Workspace.Set(WorkspaceArtifactKind.Constitution, t); }"
-                        OnFileRemoved="() => { _constitutionText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Constitution); }"
-                        IsDisabled="false" />
-                    <textarea class="artifact-textarea" placeholder="Or paste constitution.md here…"
-                              rows="3" @bind:get="_constitutionText" @bind:set="SetConstitutionText" @bind:event="oninput"></textarea>
+                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">constitution.md</div>
+                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">Source: Sample Project</div>
                     @if (!string.IsNullOrEmpty(_constitutionText))
                     {
                         <div class="artifact-footer">
                             <span>@_constitutionText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => { _constitutionText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Constitution); _constitutionImport?.Reset(); }'>Clear</button>
                         </div>
                     }
                 </div>
@@ -63,21 +74,15 @@
                         <span class="artifact-icon" aria-hidden="true">📋</span>
                         <span class="artifact-name">Specification</span>
                         <span class="artifact-status @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_specText) ? "Loaded" : "Empty")
+                            @(!string.IsNullOrEmpty(_specText) ? "Loaded" : "Missing")
                         </span>
                     </div>
-                    <SpecificationImport @ref="_specImport"
-                        InputId="qr-spec-import"
-                        OnFileImported="t => { _specText = t; Workspace.Set(WorkspaceArtifactKind.Specification, t); }"
-                        OnFileRemoved="() => { _specText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Specification); }"
-                        IsDisabled="false" />
-                    <textarea class="artifact-textarea" placeholder="Or paste spec.md here…"
-                              rows="3" @bind:get="_specText" @bind:set="SetSpecText" @bind:event="oninput"></textarea>
+                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">spec.md</div>
+                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">Source: Sample Project</div>
                     @if (!string.IsNullOrEmpty(_specText))
                     {
                         <div class="artifact-footer">
                             <span>@_specText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => { _specText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Specification); _specImport?.Reset(); }'>Clear</button>
                         </div>
                     }
                 </div>
@@ -87,21 +92,15 @@
                         <span class="artifact-icon" aria-hidden="true">📐</span>
                         <span class="artifact-name">Plan</span>
                         <span class="artifact-status @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_planText) ? "Loaded" : "Empty")
+                            @(!string.IsNullOrEmpty(_planText) ? "Loaded" : "Missing")
                         </span>
                     </div>
-                    <SpecificationImport @ref="_planImport"
-                        InputId="qr-plan-import"
-                        OnFileImported="t => { _planText = t; Workspace.Set(WorkspaceArtifactKind.Plan, t); }"
-                        OnFileRemoved="() => { _planText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Plan); }"
-                        IsDisabled="false" />
-                    <textarea class="artifact-textarea" placeholder="Or paste plan.md here…"
-                              rows="3" @bind:get="_planText" @bind:set="SetPlanText" @bind:event="oninput"></textarea>
+                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">plan.md</div>
+                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">Source: Sample Project</div>
                     @if (!string.IsNullOrEmpty(_planText))
                     {
                         <div class="artifact-footer">
                             <span>@_planText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => { _planText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Plan); _planImport?.Reset(); }'>Clear</button>
                         </div>
                     }
                 </div>
@@ -111,21 +110,15 @@
                         <span class="artifact-icon" aria-hidden="true">✅</span>
                         <span class="artifact-name">Tasks</span>
                         <span class="artifact-status @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_taskText) ? "Loaded" : "Empty")
+                            @(!string.IsNullOrEmpty(_taskText) ? "Loaded" : "Missing")
                         </span>
                     </div>
-                    <SpecificationImport @ref="_taskImport"
-                        InputId="qr-task-import"
-                        OnFileImported="t => { _taskText = t; Workspace.Set(WorkspaceArtifactKind.Tasks, t); }"
-                        OnFileRemoved="() => { _taskText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Tasks); }"
-                        IsDisabled="false" />
-                    <textarea class="artifact-textarea" placeholder="Or paste tasks.md here…"
-                              rows="3" @bind:get="_taskText" @bind:set="SetTaskText" @bind:event="oninput"></textarea>
+                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">tasks.md</div>
+                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">Source: Sample Project</div>
                     @if (!string.IsNullOrEmpty(_taskText))
                     {
                         <div class="artifact-footer">
                             <span>@_taskText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => { _taskText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Tasks); _taskImport?.Reset(); }'>Clear</button>
                         </div>
                     }
                 </div>
@@ -135,21 +128,15 @@
                         <span class="artifact-icon" aria-hidden="true">🗄️</span>
                         <span class="artifact-name">Data Model</span>
                         <span class="artifact-status @(!string.IsNullOrEmpty(_dataModelText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_dataModelText) ? "Loaded" : "Empty")
+                            @(!string.IsNullOrEmpty(_dataModelText) ? "Loaded" : "Missing")
                         </span>
                     </div>
-                    <SpecificationImport @ref="_dataModelImport"
-                        InputId="qr-datamodel-import"
-                        OnFileImported="t => { _dataModelText = t; Workspace.Set(WorkspaceArtifactKind.DataModel, t); }"
-                        OnFileRemoved="() => { _dataModelText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.DataModel); }"
-                        IsDisabled="false" />
-                    <textarea class="artifact-textarea" placeholder="Or paste data-model.md here…"
-                              rows="3" @bind:get="_dataModelText" @bind:set="SetDataModelText" @bind:event="oninput"></textarea>
+                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">data-model.md</div>
+                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">Source: Sample Project</div>
                     @if (!string.IsNullOrEmpty(_dataModelText))
                     {
                         <div class="artifact-footer">
                             <span>@_dataModelText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => { _dataModelText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.DataModel); _dataModelImport?.Reset(); }'>Clear</button>
                         </div>
                     }
                 </div>
@@ -394,9 +381,10 @@
             }
         </div>
     }
-    else if (!_inputExpanded)
-    {
-        <EmptyState Icon="📋" Title="No review run yet." Description="Expand the panel above to load artifacts and run a review." />
+        else if (!_inputExpanded)
+        {
+            <EmptyState Icon="📋" Title="No review run yet." Description="Expand the panel above to load artifacts and run a review." />
+        }
     }
 
 </div>
@@ -408,11 +396,9 @@
     private string _taskText         = string.Empty;
     private string _dataModelText    = string.Empty;
 
-    private SpecificationImport? _constitutionImport;
-    private SpecificationImport? _specImport;
-    private SpecificationImport? _planImport;
-    private SpecificationImport? _taskImport;
-    private SpecificationImport? _dataModelImport;
+    private string? _selectedProject;
+    private string? _selectedProjectName;
+    private string? _previousProject;
 
     private readonly HashSet<string> _selectedPacks = [];
     private readonly HashSet<string> _expanded      = [];
@@ -447,12 +433,20 @@
         {
             await QrService.InitializeAsync();
 
-            // Restore any artifacts already in the workspace from this session.
-            _constitutionText = Workspace.Get(WorkspaceArtifactKind.Constitution)?.Text ?? string.Empty;
-            _specText         = Workspace.Get(WorkspaceArtifactKind.Specification)?.Text ?? string.Empty;
-            _planText         = Workspace.Get(WorkspaceArtifactKind.Plan)?.Text          ?? string.Empty;
-            _taskText         = Workspace.Get(WorkspaceArtifactKind.Tasks)?.Text         ?? string.Empty;
-            _dataModelText    = Workspace.Get(WorkspaceArtifactKind.DataModel)?.Text     ?? string.Empty;
+            // POLICY: Quality Review loads from selected Sample Project only
+            var selected = DocumentResolver.GetSelectedProject();
+            if (!string.IsNullOrWhiteSpace(selected))
+            {
+                await LoadFromSampleProject(selected);
+                _previousProject = selected;
+            }
+            else
+            {
+                // No Sample Project selected
+                _selectedProject = null;
+                _selectedProjectName = null;
+                ClearAllArtifacts();
+            }
 
             // Check if there's a prior session with selected packs
             if (QualitySession.SelectedPackIds.Count > 0)
@@ -472,7 +466,7 @@
                 ApplyDefaultPackSelections();
             }
 
-            if (QualitySession.HasResult && IsSessionForCurrentWorkspace())
+            if (QualitySession.HasResult && IsSessionForCurrentProject())
                 RestoreReport(QualitySession.Report!);
         }
         catch (Exception ex)
@@ -481,46 +475,77 @@
         }
     }
 
-    // ── Workspace-syncing text setters ────────────────────────────────────────
-
-    private void SetConstitutionText(string? v)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        _constitutionText = v ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.Constitution, v!);
-        else Workspace.Clear(WorkspaceArtifactKind.Constitution);
+        if (!firstRender)
+        {
+            // Detect project changes at runtime
+            var currentProject = DocumentResolver.GetSelectedProject();
+            if (currentProject != _previousProject)
+            {
+                _previousProject = currentProject;
+
+                if (!string.IsNullOrWhiteSpace(currentProject))
+                {
+                    await LoadFromSampleProject(currentProject);
+                    // Clear report when project changes
+                    _report = null;
+                    _inputExpanded = true;
+                }
+                else
+                {
+                    // Project was deselected
+                    _selectedProject = null;
+                    _selectedProjectName = null;
+                    ClearAllArtifacts();
+                    _report = null;
+                    _inputExpanded = true;
+                }
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task LoadFromSampleProject(string projectSlug)
+    {
+        // Load all five documents from Sample Project
+        var constitution = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Constitution);
+        var specification = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Specification);
+        var plan = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Plan);
+        var tasks = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Tasks);
+        var dataModel = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.DataModel);
+
+        _constitutionText = constitution.IsSuccess && !string.IsNullOrEmpty(constitution.Content) ? constitution.Content : string.Empty;
+        _specText = specification.IsSuccess && !string.IsNullOrEmpty(specification.Content) ? specification.Content : string.Empty;
+        _planText = plan.IsSuccess && !string.IsNullOrEmpty(plan.Content) ? plan.Content : string.Empty;
+        _taskText = tasks.IsSuccess && !string.IsNullOrEmpty(tasks.Content) ? tasks.Content : string.Empty;
+        _dataModelText = dataModel.IsSuccess && !string.IsNullOrEmpty(dataModel.Content) ? dataModel.Content : string.Empty;
+
+        _selectedProject = projectSlug;
+        await UpdateSelectedProjectName();
         ApplyDefaultPackSelections();
     }
 
-    private void SetSpecText(string? v)
+    private async Task UpdateSelectedProjectName()
     {
-        _specText = v ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.Specification, v!);
-        else Workspace.Clear(WorkspaceArtifactKind.Specification);
-        ApplyDefaultPackSelections();
+        if (string.IsNullOrWhiteSpace(_selectedProject))
+        {
+            _selectedProjectName = null;
+            return;
+        }
+
+        var projects = await DocumentResolver.GetAvailableProjectsAsync();
+        var project = projects.FirstOrDefault(p => p.Slug == _selectedProject);
+        _selectedProjectName = project?.Name ?? _selectedProject;
     }
 
-    private void SetPlanText(string? v)
+    private void ClearAllArtifacts()
     {
-        _planText = v ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.Plan, v!);
-        else Workspace.Clear(WorkspaceArtifactKind.Plan);
-        ApplyDefaultPackSelections();
-    }
-
-    private void SetTaskText(string? v)
-    {
-        _taskText = v ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.Tasks, v!);
-        else Workspace.Clear(WorkspaceArtifactKind.Tasks);
-        ApplyDefaultPackSelections();
-    }
-
-    private void SetDataModelText(string? v)
-    {
-        _dataModelText = v ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(v)) Workspace.Set(WorkspaceArtifactKind.DataModel, v!);
-        else Workspace.Clear(WorkspaceArtifactKind.DataModel);
-        ApplyDefaultPackSelections();
+        _constitutionText = string.Empty;
+        _specText = string.Empty;
+        _planText = string.Empty;
+        _taskText = string.Empty;
+        _dataModelText = string.Empty;
     }
 
     // ── Derived helpers ───────────────────────────────────────────────────────
@@ -532,7 +557,7 @@
         !string.IsNullOrWhiteSpace(_taskText)         ||
         !string.IsNullOrWhiteSpace(_dataModelText);
 
-    private bool CannotRun => _running || _selectedPacks.Count == 0 || !AnyArtifactLoaded;
+    private bool CannotRun => _running || _selectedPacks.Count == 0 || !AnyArtifactLoaded || string.IsNullOrWhiteSpace(_selectedProject);
 
     private int TotalDeliveryBlockers => _report?.PackResults
         .Where(r => r.DeliveryReadiness is not null)
@@ -560,7 +585,8 @@
     {
         get
         {
-            if (!AnyArtifactLoaded) return "Load at least one artifact to run a review";
+            if (string.IsNullOrWhiteSpace(_selectedProject)) return "Select a Sample Project to run a review";
+            if (!AnyArtifactLoaded) return "Sample Project is missing required artifacts";
             if (_selectedPacks.Count == 0) return "Select at least one review pack";
             int loaded = new[] { _constitutionText, _specText, _planText, _taskText, _dataModelText }
                             .Count(t => !string.IsNullOrWhiteSpace(t));
@@ -653,7 +679,7 @@
     private async Task ExportHtml()
     {
         if (_report is null) return;
-        var html = ExportService.ExportQualityReview(_report, Workspace.ProjectName);
+        var html = ExportService.ExportQualityReview(_report, _selectedProject ?? string.Empty);
         await JS.InvokeVoidAsync("downloadHtmlFile", $"quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
@@ -664,7 +690,7 @@
         try
         {
             var artifactSnapshot = BuildArtifactSnapshot();
-            QualitySession.MarkRunning(_selectedPacks, Workspace.ProjectName, artifactSnapshot);
+            QualitySession.MarkRunning(_selectedPacks, _selectedProject ?? string.Empty, artifactSnapshot);
 
             _report = await QrService.RunAsync(
                 string.IsNullOrWhiteSpace(_constitutionText) ? null : _constitutionText,
@@ -674,7 +700,7 @@
                 string.IsNullOrWhiteSpace(_dataModelText)    ? null : _dataModelText,
                 _selectedPacks);
 
-            QualitySession.SaveResult(_report, _selectedPacks, Workspace.ProjectName, artifactSnapshot);
+            QualitySession.SaveResult(_report, _selectedPacks, _selectedProject ?? string.Empty, artifactSnapshot);
 
             // Publish pack results so Dashboard can consume the shared quality session.
             var complianceResult = _report.PackResults.FirstOrDefault(r => r.Compliance is not null);
@@ -711,7 +737,7 @@
         }
         catch (Exception ex)
         {
-            QualitySession.MarkFailed(_selectedPacks, Workspace.ProjectName, BuildArtifactSnapshot(), ex.Message);
+            QualitySession.MarkFailed(_selectedPacks, _selectedProject ?? string.Empty, BuildArtifactSnapshot(), ex.Message);
             throw;
         }
         finally
@@ -764,12 +790,12 @@
             snapshot[kind] = text;
     }
 
-    private bool IsSessionForCurrentWorkspace()
+    private bool IsSessionForCurrentProject()
     {
         if (string.IsNullOrWhiteSpace(QualitySession.ProjectName))
-            return string.IsNullOrWhiteSpace(Workspace.ProjectName);
+            return string.IsNullOrWhiteSpace(_selectedProject);
 
-        return string.Equals(QualitySession.ProjectName, Workspace.ProjectName, StringComparison.Ordinal);
+        return string.Equals(QualitySession.ProjectName, _selectedProject, StringComparison.Ordinal);
     }
 
     private void RestoreReport(QualityReviewReport report)

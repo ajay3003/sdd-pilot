@@ -2040,6 +2040,19 @@ All access requires explicit verification. References PP-02 through PP-04, and P
     [Fact]
     public void DOMInspection_PrintAllDuplicateRules()
     {
+        if (UseGov001RegressionAssertions)
+        {
+            var regressionDoc = ParseAutorisasjonConstitution();
+            var regressionGov001Node = FindNodeByRuleId(_svc.BuildMapTree(regressionDoc.RuleCatalog), "GOV-001");
+
+            regressionGov001Node.Should().NotBeNull();
+            var regressionChildRuleIds = regressionGov001Node!.Children.Select(c => c.Rule.RuleId).ToList();
+            regressionChildRuleIds.Should().OnlyHaveUniqueItems(
+                "the map renders unique canonical rule children even when governance text references aliases");
+            regressionChildRuleIds.Should().HaveCount(40);
+            return;
+        }
+
         // Construct the correct path from test assembly location
         var testAssemblyDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
         var fullPath = Path.Combine(testAssemblyDir, "../../../../../../SampleData/autorisasjon/constitution.md");
@@ -2108,6 +2121,18 @@ All access requires explicit verification. References PP-02 through PP-04, and P
     [Fact]
     public void ModelInspection_GOV001ReferencesForDuplicates()
     {
+        if (UseGov001RegressionAssertions)
+        {
+            var regressionDoc = ParseAutorisasjonConstitution();
+            var regressionGov001 = GetGov001(regressionDoc);
+
+            regressionGov001.References.Should().HaveCount(47,
+                "the raw governance item references all platform principles, standards, and guidelines");
+            regressionGov001.References.Should().OnlyHaveUniqueItems();
+            regressionGov001.References.Should().Contain(["PP-06", "PP-07", "PS-05", "GL-13", "GL-26", "GL-27", "GL-28", "GL-29"]);
+            return;
+        }
+
         // Test the model BEFORE map tree building
         var testAssemblyDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
         var fullPath = Path.Combine(testAssemblyDir, "../../../../../../SampleData/autorisasjon/constitution.md");
@@ -2167,6 +2192,20 @@ All access requires explicit verification. References PP-02 through PP-04, and P
     [Fact]
     public void BuildMapTreeDiagnostics_CheckGOV001RulesBeforeAndAfterMapping()
     {
+        if (UseGov001RegressionAssertions)
+        {
+            var regressionDoc = ParseAutorisasjonConstitution();
+            var regressionGov001Catalog = GetGov001(regressionDoc);
+            var regressionGov001Map = FindNodeByRuleId(_svc.BuildMapTree(regressionDoc.RuleCatalog), "GOV-001");
+            var regressionExpectedCanonicalIds = ResolveCanonicalReferenceIds(regressionDoc.RuleCatalog, regressionGov001Catalog.References);
+
+            regressionGov001Map.Should().NotBeNull();
+            regressionGov001Catalog.References.Should().HaveCount(47);
+            regressionExpectedCanonicalIds.Should().HaveCount(40);
+            regressionGov001Map!.Children.Select(c => c.Rule.RuleId).Should().BeEquivalentTo(regressionExpectedCanonicalIds);
+            return;
+        }
+
         var testAssemblyDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
         var fullPath = Path.Combine(testAssemblyDir, "../../../../../../SampleData/autorisasjon/constitution.md");
         fullPath = Path.GetFullPath(fullPath);
@@ -2248,6 +2287,18 @@ All access requires explicit verification. References PP-02 through PP-04, and P
     [Fact]
     public void RuleCatalogInspection_CheckForDuplicateRuleIds()
     {
+        if (UseGov001RegressionAssertions)
+        {
+            var regressionDoc = ParseAutorisasjonConstitution();
+
+            regressionDoc.RuleCatalog.Select(r => r.RuleId).Should().OnlyHaveUniqueItems();
+
+            var regressionAliasIdConflicts = FindAliasIdConflicts(regressionDoc);
+            regressionAliasIdConflicts.Should().ContainSingle("the Autorisasjon fixture intentionally contains PP-04 as an alias and a primary ID")
+                .Which.Should().Be("PP-04");
+            return;
+        }
+
         var testAssemblyDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
         var fullPath = Path.Combine(testAssemblyDir, "../../../../../../SampleData/autorisasjon/constitution.md");
         fullPath = Path.GetFullPath(fullPath);
@@ -2333,6 +2384,18 @@ All access requires explicit verification. References PP-02 through PP-04, and P
     [Fact]
     public void DiagnosticRoot_CheckIfMultipleGOV001RulesExist()
     {
+        if (UseGov001RegressionAssertions)
+        {
+            var regressionDoc = ParseAutorisasjonConstitution();
+            var regressionGov001Rules = regressionDoc.RuleCatalog
+                .Where(r => r.RuleId.Equals("GOV-001", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            regressionGov001Rules.Should().ContainSingle();
+            regressionGov001Rules[0].References.Should().HaveCount(47);
+            return;
+        }
+
         var testAssemblyDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
         var fullPath = Path.Combine(testAssemblyDir, "../../../../../../SampleData/autorisasjon/constitution.md");
         fullPath = Path.GetFullPath(fullPath);
@@ -2392,6 +2455,20 @@ All access requires explicit verification. References PP-02 through PP-04, and P
     [Fact]
     public void ResolutionDebug_TraceEachGOV001ReferenceResolution()
     {
+        if (UseGov001RegressionAssertions)
+        {
+            var regressionDoc = ParseAutorisasjonConstitution();
+            var regressionGov001 = GetGov001(regressionDoc);
+            var regressionResolved = ResolveReferences(regressionDoc.RuleCatalog, regressionGov001.References);
+
+            regressionResolved.Where(r => r.ResolvedId is null).Should().BeEmpty();
+            regressionResolved.Count(r => r.ReferenceId.Equals(r.ResolvedId, StringComparison.OrdinalIgnoreCase)).Should().Be(39);
+            regressionResolved.Count(r => !r.ReferenceId.Equals(r.ResolvedId, StringComparison.OrdinalIgnoreCase)).Should().Be(8,
+                "eight GOV-001 references are aliases that intentionally resolve to canonical primary rules");
+            regressionResolved.Select(r => r.ResolvedId).Distinct(StringComparer.OrdinalIgnoreCase).Should().HaveCount(40);
+            return;
+        }
+
         var testAssemblyDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
         var fullPath = Path.Combine(testAssemblyDir, "../../../../../../SampleData/autorisasjon/constitution.md");
         fullPath = Path.GetFullPath(fullPath);
@@ -2510,6 +2587,69 @@ All access requires explicit verification. References PP-02 through PP-04, and P
         }
 
         Assert.True(false, output);
+    }
+
+    private static bool UseGov001RegressionAssertions => true;
+
+    private ConstitutionDocument ParseAutorisasjonConstitution()
+    {
+        var testAssemblyDir = Path.GetDirectoryName(typeof(ConstitutionAnalysisServiceTests).Assembly.Location);
+        var fullPath = Path.Combine(testAssemblyDir!, "../../../../../../SampleData/autorisasjon/constitution.md");
+        fullPath = Path.GetFullPath(fullPath);
+
+        File.Exists(fullPath).Should().BeTrue($"Sample constitution should exist at {fullPath}");
+        return _svc.Parse(File.ReadAllText(fullPath));
+    }
+
+    private static ConstitutionRule GetGov001(ConstitutionDocument doc) =>
+        doc.RuleCatalog.Should()
+            .ContainSingle(r => r.RuleId.Equals("GOV-001", StringComparison.OrdinalIgnoreCase))
+            .Subject;
+
+    private static List<string> FindAliasIdConflicts(ConstitutionDocument doc)
+    {
+        var allIds = new HashSet<string>(
+            doc.RuleCatalog.Select(r => r.RuleId),
+            StringComparer.OrdinalIgnoreCase);
+
+        return doc.RuleCatalog
+            .SelectMany(r => r.Aliases)
+            .Where(alias => allIds.Contains(alias))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static List<string> ResolveCanonicalReferenceIds(
+        IReadOnlyCollection<ConstitutionRule> catalog,
+        IEnumerable<string> references) =>
+        ResolveReferences(catalog, references)
+            .Select(r => r.ResolvedId ?? r.ReferenceId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static List<(string ReferenceId, string? ResolvedId)> ResolveReferences(
+        IReadOnlyCollection<ConstitutionRule> catalog,
+        IEnumerable<string> references)
+    {
+        var byId = new Dictionary<string, ConstitutionRule>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rule in catalog)
+        {
+            if (!string.IsNullOrWhiteSpace(rule.RuleId))
+                byId[rule.RuleId] = rule;
+        }
+
+        foreach (var rule in catalog)
+        {
+            foreach (var alias in rule.Aliases)
+            {
+                if (!byId.ContainsKey(alias))
+                    byId[alias] = rule;
+            }
+        }
+
+        return references
+            .Select(reference => (reference, byId.TryGetValue(reference, out var rule) ? rule.RuleId : null))
+            .ToList();
     }
 
     [Fact]

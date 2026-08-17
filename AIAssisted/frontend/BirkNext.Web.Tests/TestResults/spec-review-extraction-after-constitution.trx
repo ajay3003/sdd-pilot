@@ -1,0 +1,940 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="ca079365-adcb-48aa-becf-3ecfaf2cb39d" name="ajaan@BUF-5CG4423FYV 2026-08-17 12:45:23" runUser="COMMON\ajaan" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-17T12:45:23.8530583+02:00" queuing="2026-08-17T12:45:23.8530587+02:00" start="2026-08-17T12:45:23.2762619+02:00" finish="2026-08-17T12:45:24.5910546+02:00" />
+  <TestSettings name="default" id="df375d07-941c-4b30-96d2-32dce93c66f4">
+    <Deployment runDeploymentRoot="ajaan_BUF-5CG4423FYV_2026-08-17_12_45_23" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="1da97e3e-390d-462b-b08a-96106ae393ec" testId="b540f373-8b27-5418-cd0b-104cd159a524" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.SpecificationReview_RestoredSessionWithoutTab_DefaultsToTraceabilityCoverage" computerName="BUF-5CG4423FYV" duration="00:00:00.0032739" startTime="2026-08-17T12:45:24.3134801+02:00" endTime="2026-08-17T12:45:24.3134802+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1da97e3e-390d-462b-b08a-96106ae393ec" />
+    <UnitTestResult executionId="2568374a-172a-4ee9-bc46-0f5dfe919b09" testId="5b8f9c02-ed10-b24f-a307-de2df3a0c01a" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.WithInitialSession_RestoresAcceptedReviewStatus" computerName="BUF-5CG4423FYV" duration="00:00:00.2960741" startTime="2026-08-17T12:45:24.1186767+02:00" endTime="2026-08-17T12:45:24.1186768+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2568374a-172a-4ee9-bc46-0f5dfe919b09" />
+    <UnitTestResult executionId="fcb68249-4c14-48a0-af81-fd0d6af2f672" testId="11fc9b36-3c3f-f039-3298-b5fac1990bc6" testName="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.SearchFilter_AppliesWithinClarificationSubgroups" computerName="BUF-5CG4423FYV" duration="00:00:00.2984175" startTime="2026-08-17T12:45:24.1212897+02:00" endTime="2026-08-17T12:45:24.1212898+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fcb68249-4c14-48a0-af81-fd0d6af2f672" />
+    <UnitTestResult executionId="edbbae8e-6633-46f2-87ab-d93922259db4" testId="967057c1-cf7e-5a53-be83-3ef53516a727" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ConfirmSaveButton_EnabledWhenAtLeastOneCandidateSelected" computerName="BUF-5CG4423FYV" duration="00:00:00.0096805" startTime="2026-08-17T12:45:24.5397917+02:00" endTime="2026-08-17T12:45:24.5397918+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="edbbae8e-6633-46f2-87ab-d93922259db4" />
+    <UnitTestResult executionId="4fb90c8b-8b98-43f8-984b-dd6182011391" testId="8ffaee90-3b12-6e92-64bb-b220fc4cf673" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.WithInitialSession_RestoresSearchTerm" computerName="BUF-5CG4423FYV" duration="00:00:00.0058085" startTime="2026-08-17T12:45:24.3002995+02:00" endTime="2026-08-17T12:45:24.3002996+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4fb90c8b-8b98-43f8-984b-dd6182011391" />
+    <UnitTestResult executionId="bf397b7e-5355-4fea-bb2b-f5aea89be710" testId="a48b9a25-b764-f78a-7777-4daa9d243a0a" testName="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.Analyze_WithWorkspaceSpecAndStaleNoResultsSession_RunsExtractionAndUpdatesCounters" computerName="BUF-5CG4423FYV" duration="00:00:00.3537601" startTime="2026-08-17T12:45:24.1764370+02:00" endTime="2026-08-17T12:45:24.1764372+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="bf397b7e-5355-4fea-bb2b-f5aea89be710" />
+    <UnitTestResult executionId="379e9ed9-1c9a-40de-9160-be69e1bcd99b" testId="3812638b-7078-a711-4436-bc9ef3c791f1" testName="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.SearchFilter_AppliesWithinSubgroups" computerName="BUF-5CG4423FYV" duration="00:00:00.2980665" startTime="2026-08-17T12:45:24.1207457+02:00" endTime="2026-08-17T12:45:24.1207459+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="379e9ed9-1c9a-40de-9160-be69e1bcd99b" />
+    <UnitTestResult executionId="0ec9053b-50fc-42f7-a963-d552f73a0848" testId="e97b48c7-b496-7f62-6c93-147c43c49fe7" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.AnalyzeSpec_AutoPersistsNormalizedArtifacts" computerName="BUF-5CG4423FYV" duration="00:00:00.0552737" startTime="2026-08-17T12:45:24.3133977+02:00" endTime="2026-08-17T12:45:24.3133978+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0ec9053b-50fc-42f7-a963-d552f73a0848" />
+    <UnitTestResult executionId="c97ebbe4-6c92-4f5e-b687-25ed44bd2a72" testId="f577ba37-d477-b0be-143a-edb967ccab04" testName="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.SameContextHeading_RenderedInSameSubsection" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8414571+02:00" endTime="2026-08-17T12:45:23.8414572+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c97ebbe4-6c92-4f5e-b687-25ed44bd2a72">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="5f179760-11dd-40c8-9f48-d48c5773c33d" testId="123f1ac1-6f84-96fe-5578-956b5c322a12" testName="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests.TraceabilityPage_UsesOnlyCoverageModel" computerName="BUF-5CG4423FYV" duration="00:00:00.0022234" startTime="2026-08-17T12:45:24.1054599+02:00" endTime="2026-08-17T12:45:24.1054600+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5f179760-11dd-40c8-9f48-d48c5773c33d" />
+    <UnitTestResult executionId="ee20f7cc-11c6-4d11-8e07-542611aae998" testId="cb50eabf-b917-c498-8697-decbf8ca665c" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.SpecificationReview_DefaultTabAfterAnalysis_IsTraceabilityCoverage" computerName="BUF-5CG4423FYV" duration="00:00:00.0201812" startTime="2026-08-17T12:45:24.5300857+02:00" endTime="2026-08-17T12:45:24.5300859+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ee20f7cc-11c6-4d11-8e07-542611aae998" />
+    <UnitTestResult executionId="e8cd6301-7c12-413a-b1ac-9267d83e22da" testId="b7e83ad8-6738-4b84-00a0-b58660ed5e60" testName="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.OnInit_WithNoSession_ShowsPreState" computerName="BUF-5CG4423FYV" duration="00:00:00.0041320" startTime="2026-08-17T12:45:24.3403276+02:00" endTime="2026-08-17T12:45:24.3403277+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e8cd6301-7c12-413a-b1ac-9267d83e22da" />
+    <UnitTestResult executionId="4dac02ae-f507-4d47-87c6-5b8aae320a25" testId="738b7bec-58ed-deff-84ef-d2021a7e6ce5" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.Backdrop_Click_ClosesDrawer" computerName="BUF-5CG4423FYV" duration="00:00:00.0093443" startTime="2026-08-17T12:45:24.1676583+02:00" endTime="2026-08-17T12:45:24.1676584+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4dac02ae-f507-4d47-87c6-5b8aae320a25" />
+    <UnitTestResult executionId="3327b237-121f-48d2-84b5-705cfc699fbb" testId="dbdafda6-0b71-698a-5ef7-f49efa512b04" testName="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.SearchFilter_HidesNonMatchingAvailableCandidates" computerName="BUF-5CG4423FYV" duration="00:00:00.0028678" startTime="2026-08-17T12:45:24.1512078+02:00" endTime="2026-08-17T12:45:24.1512079+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3327b237-121f-48d2-84b5-705cfc699fbb" />
+    <UnitTestResult executionId="19b011fd-65f4-4342-a1bd-1e6bcd1c054a" testId="530fba94-dfe3-bbf4-a6fa-951b797f1736" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.WithInitialSession_ShowsRestoreNotice" computerName="BUF-5CG4423FYV" duration="00:00:00.0035700" startTime="2026-08-17T12:45:24.3101405+02:00" endTime="2026-08-17T12:45:24.3101407+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="19b011fd-65f4-4342-a1bd-1e6bcd1c054a" />
+    <UnitTestResult executionId="84c8fadd-1d0a-4302-920a-ad094524e21f" testId="7ac1ee01-d50b-da5f-3ba1-f1e2ef1d5288" testName="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:24.1212483+02:00" endTime="2026-08-17T12:45:24.1212484+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="84c8fadd-1d0a-4302-920a-ad094524e21f">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="a004dc01-f78e-46fa-b370-c92d14c93755" testId="dbd4ae5e-e7c2-6fe2-d2e5-b40017baf5b9" testName="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.AfterExtraction_TopLevelSections_AreExpandedByDefault" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8414038+02:00" endTime="2026-08-17T12:45:23.8414038+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a004dc01-f78e-46fa-b370-c92d14c93755">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="5c3b714d-f5de-46d9-aacd-21f5066474d0" testId="bd4caf4a-49a7-8510-8f72-d6eb26ffc424" testName="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC7_ImportedFile_ExtractsAndDisplaysCandidates" computerName="BUF-5CG4423FYV" duration="00:00:00.0131984" startTime="2026-08-17T12:45:24.2456218+02:00" endTime="2026-08-17T12:45:24.2456220+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5c3b714d-f5de-46d9-aacd-21f5066474d0" />
+    <UnitTestResult executionId="2e47b6bd-4c9b-4c6f-9d51-9896d3bdc377" testId="e0ca89d7-8e18-5e1b-b96c-94333f3bcb9b" testName="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC3_CandidatesDisplayed_BeforeSaveAction_MutationNotCalled" computerName="BUF-5CG4423FYV" duration="00:00:00.0236933" startTime="2026-08-17T12:45:24.2822661+02:00" endTime="2026-08-17T12:45:24.2822662+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2e47b6bd-4c9b-4c6f-9d51-9896d3bdc377" />
+    <UnitTestResult executionId="298236b6-329c-444a-b87a-874385575e14" testId="ea8823d7-391a-4db1-3b0a-71965b3f36d7" testName="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.ManuallyExpandedSubgroup_RemainsExpandedAfterSearchFilter" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8426715+02:00" endTime="2026-08-17T12:45:23.8426715+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="298236b6-329c-444a-b87a-874385575e14">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="56c1790b-d4a9-4d99-affd-386ff8bdcb7d" testId="7ad46f3b-ec28-119e-5b37-fbd74cfa7a32" testName="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests.TraceabilityPage_DoesNotRenderExtractionControls" computerName="BUF-5CG4423FYV" duration="00:00:00.2790973" startTime="2026-08-17T12:45:24.1036177+02:00" endTime="2026-08-17T12:45:24.1036177+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="56c1790b-d4a9-4d99-affd-386ff8bdcb7d" />
+    <UnitTestResult executionId="3d366f41-9d84-464e-b73c-fdaf45e26611" testId="ee584d91-56da-311f-e912-ae82062ff477" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.SelectionToggle_SavesSession" computerName="BUF-5CG4423FYV" duration="00:00:00.0182426" startTime="2026-08-17T12:45:24.2846138+02:00" endTime="2026-08-17T12:45:24.2846139+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3d366f41-9d84-464e-b73c-fdaf45e26611" />
+    <UnitTestResult executionId="f606b9cb-be94-4db8-8ae2-27b780e282dd" testId="07dd6d1c-4e02-c6a2-1522-defd608e1b6e" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExtractionReviewList_DoesNotRenderDashboardWidgets" computerName="BUF-5CG4423FYV" duration="00:00:00.0051992" startTime="2026-08-17T12:45:24.2498769+02:00" endTime="2026-08-17T12:45:24.2498770+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f606b9cb-be94-4db8-8ae2-27b780e282dd" />
+    <UnitTestResult executionId="a911be38-5ecd-4528-be32-02d158bf023c" testId="dbda7ee8-f0cd-9a23-878f-21ce69e6669e" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.CloseButton_Click_ClosesDrawer" computerName="BUF-5CG4423FYV" duration="00:00:00.0091508" startTime="2026-08-17T12:45:24.2178441+02:00" endTime="2026-08-17T12:45:24.2178442+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a911be38-5ecd-4528-be32-02d158bf023c" />
+    <UnitTestResult executionId="d3b9c6c6-e2f3-459e-b514-cd324eb7776b" testId="12b49a80-54bd-6483-117c-e7c4b1ec8c1b" testName="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests.LinkPanel_IsSimplifiedSuggestionsOnly" computerName="BUF-5CG4423FYV" duration="00:00:00.0120275" startTime="2026-08-17T12:45:24.1202561+02:00" endTime="2026-08-17T12:45:24.1202561+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d3b9c6c6-e2f3-459e-b514-cd324eb7776b" />
+    <UnitTestResult executionId="a5ffa4c8-773c-4fc3-bf81-d2d146ff813e" testId="b37a8a69-f537-9414-7243-c55fb1dc96cc" testName="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.ExtractionReview_ExplainsLinkingPanel" computerName="BUF-5CG4423FYV" duration="00:00:00.0015971" startTime="2026-08-17T12:45:24.1221515+02:00" endTime="2026-08-17T12:45:24.1221516+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a5ffa4c8-773c-4fc3-bf81-d2d146ff813e" />
+    <UnitTestResult executionId="b3d1a4d1-9740-4075-93de-629a0dc9fa84" testId="7bbb91e0-358b-2946-9080-529eada762ef" testName="BirkNext.Web.Tests.Components.ExtractionReviewListObservabilityTests.Dispose_WhenSavePhaseComplete_DoesNotLogCandidateReviewAbandoned" computerName="BUF-5CG4423FYV" duration="00:00:00.0474912" startTime="2026-08-17T12:45:24.1552501+02:00" endTime="2026-08-17T12:45:24.1552502+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b3d1a4d1-9740-4075-93de-629a0dc9fa84" />
+    <UnitTestResult executionId="28e15caf-d71a-42c1-a6bf-7ac31f958445" testId="f81522b3-f81e-2352-6ff2-f4f009fc5f3c" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ConfirmSaveButton_DisabledWhenNoCandidatesSelected" computerName="BUF-5CG4423FYV" duration="00:00:00.0045956" startTime="2026-08-17T12:45:24.4403710+02:00" endTime="2026-08-17T12:45:24.4403711+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="28e15caf-d71a-42c1-a6bf-7ac31f958445" />
+    <UnitTestResult executionId="e72c0fbc-efb7-4ac5-aba6-7a76a2c26f10" testId="7d491fe8-4eed-d82f-b9dd-11d3e4b9e85d" testName="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.SelfLink_NotShownInAvailableCandidates" computerName="BUF-5CG4423FYV" duration="00:00:00.2765875" startTime="2026-08-17T12:45:24.1036423+02:00" endTime="2026-08-17T12:45:24.1036423+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e72c0fbc-efb7-4ac5-aba6-7a76a2c26f10" />
+    <UnitTestResult executionId="f6445509-6e71-43cb-9d38-1400bc796828" testId="a09b6229-2044-3bbc-7950-b84ae74e44f3" testName="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC4_NoExtractableCandidates_EmptyStateMessageDisplayed" computerName="BUF-5CG4423FYV" duration="00:00:00.0090735" startTime="2026-08-17T12:45:24.2224631+02:00" endTime="2026-08-17T12:45:24.2224632+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f6445509-6e71-43cb-9d38-1400bc796828" />
+    <UnitTestResult executionId="46b9fa2e-fcc6-4ef8-bb6b-d67074c61992" testId="17a7eb26-18ee-9291-2ef8-e6603a379034" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExtractionReview_UsesNewName" computerName="BUF-5CG4423FYV" duration="00:00:00.0027655" startTime="2026-08-17T12:45:24.1582402+02:00" endTime="2026-08-17T12:45:24.1582403+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="46b9fa2e-fcc6-4ef8-bb6b-d67074c61992" />
+    <UnitTestResult executionId="0b79dabf-e46f-4a51-87e1-d72849b35a72" testId="be5ce5be-87ab-ea3b-bcbe-ccf9777136fd" testName="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.OnClose_InvokedWhenCloseButtonClicked" computerName="BUF-5CG4423FYV" duration="00:00:00.0025769" startTime="2026-08-17T12:45:24.1564724+02:00" endTime="2026-08-17T12:45:24.1564726+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0b79dabf-e46f-4a51-87e1-d72849b35a72" />
+    <UnitTestResult executionId="b8daf74d-ed43-431b-9eae-ece17616538d" testId="605b7e31-d99c-9aec-2009-0c2f183eab11" testName="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:24.1223396+02:00" endTime="2026-08-17T12:45:24.1223396+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b8daf74d-ed43-431b-9eae-ece17616538d">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="803edfbd-4efd-4983-9cf4-6a80f7f64f1d" testId="a3bde925-9312-e3d4-c687-75e40eafb2d3" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.EscapeKey_ClosesDrawer" computerName="BUF-5CG4423FYV" duration="00:00:00.0237360" startTime="2026-08-17T12:45:24.5097013+02:00" endTime="2026-08-17T12:45:24.5097015+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="803edfbd-4efd-4983-9cf4-6a80f7f64f1d" />
+    <UnitTestResult executionId="14c9d7fa-d8e5-4aa4-8000-34f91e89bc85" testId="3fd79a92-028a-1106-c17b-49d268758a2a" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExtractionReview_ShowsExtractionHealthSummary" computerName="BUF-5CG4423FYV" duration="00:00:00.2957638" startTime="2026-08-17T12:45:24.1183838+02:00" endTime="2026-08-17T12:45:24.1183839+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="14c9d7fa-d8e5-4aa4-8000-34f91e89bc85" />
+    <UnitTestResult executionId="6508ec57-945c-4a4f-90dd-870b5be87bca" testId="78e5be06-ef7a-53dd-0017-ea996afb09c2" testName="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.RequirementSection_HasOwnSubgroups_WhenContextHeadingsPresent" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8428051+02:00" endTime="2026-08-17T12:45:23.8428051+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6508ec57-945c-4a4f-90dd-870b5be87bca">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="4997a8fd-ee6f-4005-b6d4-7c657ae6cd0b" testId="00925759-3ff0-10e6-8ef5-fa017421fbb1" testName="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.NeedsClarificationSection_NotAffectedByRequirementGrouping" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8350995+02:00" endTime="2026-08-17T12:45:23.8350996+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4997a8fd-ee6f-4005-b6d4-7c657ae6cd0b">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="8f51b3a8-e8cb-4786-86ad-2f39283febd4" testId="3e03e013-3255-c048-847c-cfce44afb154" testName="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests.NoAutoAcceptedStateInTraceabilityUI" computerName="BUF-5CG4423FYV" duration="00:00:00.0010009" startTime="2026-08-17T12:45:24.1065067+02:00" endTime="2026-08-17T12:45:24.1065068+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8f51b3a8-e8cb-4786-86ad-2f39283febd4" />
+    <UnitTestResult executionId="8471c21e-e671-4de0-a574-1800afe3fc00" testId="e8400457-4fe2-10d8-7c29-f07efd8cf8c6" testName="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.NullContextHeading_GroupedUnderOtherClarifications" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8413510+02:00" endTime="2026-08-17T12:45:23.8413510+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8471c21e-e671-4de0-a574-1800afe3fc00">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="09ad4be1-2674-47a5-ae7b-8c8e89c39011" testId="d1a319f2-cf71-b8e3-18f5-1a3183f6cf48" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.SpecificationReview_RestoredSession_PreservesLastSelectedTab" computerName="BUF-5CG4423FYV" duration="00:00:00.0257837" startTime="2026-08-17T12:45:24.3499241+02:00" endTime="2026-08-17T12:45:24.3499242+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="09ad4be1-2674-47a5-ae7b-8c8e89c39011" />
+    <UnitTestResult executionId="ee496317-769b-45da-85c7-55dc9e8a8f51" testId="ed41cc1f-1954-7c24-c342-caab161d3768" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.WithoutInitialSession_NoRestoreNotice" computerName="BUF-5CG4423FYV" duration="00:00:00.0036862" startTime="2026-08-17T12:45:24.2944100+02:00" endTime="2026-08-17T12:45:24.2944101+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ee496317-769b-45da-85c7-55dc9e8a8f51" />
+    <UnitTestResult executionId="7e2e6714-919d-49cf-b8d7-ddead7d7e58c" testId="6219c43a-8184-0a32-035b-3dbb35c782e8" testName="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC5_SubsetSelected_OnlySelectedCandidatesSentToMutation" computerName="BUF-5CG4423FYV" duration="00:00:00.0433824" startTime="2026-08-17T12:45:24.2132742+02:00" endTime="2026-08-17T12:45:24.2132743+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7e2e6714-919d-49cf-b8d7-ddead7d7e58c" />
+    <UnitTestResult executionId="66f71c61-a5ec-4350-9681-4003d42d9ad3" testId="243c2691-887b-3d58-ab4f-98351e8e3b09" testName="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests.ExtractionReview_IsAdvancedViewMode" computerName="BUF-5CG4423FYV" duration="00:00:00.0015939" startTime="2026-08-17T12:45:24.1081877+02:00" endTime="2026-08-17T12:45:24.1081878+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="66f71c61-a5ec-4350-9681-4003d42d9ad3" />
+    <UnitTestResult executionId="27ea4aef-f1cb-47b8-b428-d65b4c8dbf4a" testId="01f17074-c022-ef50-f5cb-16768b53aa7b" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExtractionReview_ExplainsReviewStatuses" computerName="BUF-5CG4423FYV" duration="00:00:00.0050334" startTime="2026-08-17T12:45:24.4659895+02:00" endTime="2026-08-17T12:45:24.4659896+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="27ea4aef-f1cb-47b8-b428-d65b4c8dbf4a" />
+    <UnitTestResult executionId="6345f676-3593-4a66-92b1-88674403338d" testId="9ca864f5-516a-83fa-73a6-f15e858bd601" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.ReopenSession_RestoresTraceability_WhenLocalStorageIsEmpty" computerName="BUF-5CG4423FYV" duration="00:00:00.1137759" startTime="2026-08-17T12:45:24.2662805+02:00" endTime="2026-08-17T12:45:24.2662807+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6345f676-3593-4a66-92b1-88674403338d" />
+    <UnitTestResult executionId="9863a931-3787-4334-a82a-1ceacbf90262" testId="35f099e2-e40f-4d8a-b495-f1889a8fc208" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.OnSuccessfulSave_CandidateRowShowsSavedIndicator" computerName="BUF-5CG4423FYV" duration="00:00:00.0123085" startTime="2026-08-17T12:45:24.4804365+02:00" endTime="2026-08-17T12:45:24.4804366+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9863a931-3787-4334-a82a-1ceacbf90262" />
+    <UnitTestResult executionId="8a1fcc18-6b04-4be9-a2c2-cdbae6880419" testId="926434db-d8da-741c-26c6-46f07fcb297f" testName="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.CheckboxSelection_WorksInRequirementSubgroups" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:24.1222346+02:00" endTime="2026-08-17T12:45:24.1222347+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8a1fcc18-6b04-4be9-a2c2-cdbae6880419">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="6a385371-8c3b-4450-bb27-25cb013fddb8" testId="a5d3de22-d085-915a-eb59-e68c0812f544" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.CountSummaryHeader_ShowsCorrectTotals" computerName="BUF-5CG4423FYV" duration="00:00:00.0060376" startTime="2026-08-17T12:45:24.1951401+02:00" endTime="2026-08-17T12:45:24.1951402+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6a385371-8c3b-4450-bb27-25cb013fddb8" />
+    <UnitTestResult executionId="eb683097-9366-418d-9c8e-92e3579dd524" testId="824aae63-732f-72b7-b723-a983a6f4928e" testName="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.SameContextHeading_RenderedInSameSubsection" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8415177+02:00" endTime="2026-08-17T12:45:23.8415178+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="eb683097-9366-418d-9c8e-92e3579dd524">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="27f08cba-45bf-46f8-8c16-6892b944d72f" testId="ca9b4752-d07e-8726-cd36-024a6f5fb4d3" testName="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.SearchFilter_ShowsNoMatchingCandidates_DisplaysEmptyMessage" computerName="BUF-5CG4423FYV" duration="00:00:00.0169343" startTime="2026-08-17T12:45:24.1202144+02:00" endTime="2026-08-17T12:45:24.1202146+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="27f08cba-45bf-46f8-8c16-6892b944d72f" />
+    <UnitTestResult executionId="759b46cc-1c00-4401-9c73-518579b88b38" testId="82a52b00-8631-4992-ef7d-e48137740829" testName="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.FilterChange_DoesNotExpandCollapsedSubgroups" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8356850+02:00" endTime="2026-08-17T12:45:23.8356850+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="759b46cc-1c00-4401-9c73-518579b88b38">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="81cdea77-4cca-4a4d-b1cf-1c1061ac05d8" testId="b88d3a7f-2f28-600e-04ce-31dc0da57644" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExtractionReview_EmptyStatesRender" computerName="BUF-5CG4423FYV" duration="00:00:00.0020950" startTime="2026-08-17T12:45:24.2537796+02:00" endTime="2026-08-17T12:45:24.2537797+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="81cdea77-4cca-4a4d-b1cf-1c1061ac05d8" />
+    <UnitTestResult executionId="7dde4a07-a2e1-4445-9235-c18d8eedc620" testId="445c5117-5b92-f884-a5e3-962be9b914d2" testName="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.TestCandidate_ShowsRequirementsAndClarificationsSections" computerName="BUF-5CG4423FYV" duration="00:00:00.0019169" startTime="2026-08-17T12:45:24.1238154+02:00" endTime="2026-08-17T12:45:24.1238155+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7dde4a07-a2e1-4445-9235-c18d8eedc620" />
+    <UnitTestResult executionId="6560be33-ff5b-4148-a3f6-b3cb43186ea2" testId="72243074-7e2f-637d-c61b-724a20bc360d" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.ReviewStatusChange_SavesSession" computerName="BUF-5CG4423FYV" duration="00:00:00.0058738" startTime="2026-08-17T12:45:24.2906022+02:00" endTime="2026-08-17T12:45:24.2906023+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6560be33-ff5b-4148-a3f6-b3cb43186ea2" />
+    <UnitTestResult executionId="beb74ea0-5937-4346-9469-1bdc48661933" testId="60dd6aeb-ea4b-85d7-6c50-da6e2b86fb9d" testName="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.TestSection_NotAffectedByRequirementGrouping" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:24.1224563+02:00" endTime="2026-08-17T12:45:24.1224564+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="beb74ea0-5937-4346-9469-1bdc48661933">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="c26b434b-0df1-468a-ac8e-beab2eda53e2" testId="3183278f-1986-1528-4910-c5e3325f3d97" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.NullPipelineResult_RendersNothing" computerName="BUF-5CG4423FYV" duration="00:00:00.0016865" startTime="2026-08-17T12:45:24.2516081+02:00" endTime="2026-08-17T12:45:24.2516082+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c26b434b-0df1-468a-ac8e-beab2eda53e2" />
+    <UnitTestResult executionId="6bc00bd4-2510-4694-b736-6a2fa825e3c4" testId="0653144a-6cea-91bb-f001-70df5c65b683" testName="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.AfterExtraction_Subgroups_AreCollapsedByDefault" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8415623+02:00" endTime="2026-08-17T12:45:23.8415623+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6bc00bd4-2510-4694-b736-6a2fa825e3c4">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="e2836eca-9852-4651-baca-c311b4c03f86" testId="c21dd8ae-b26d-7596-5c87-58de62ee85ee" testName="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC2_EachCandidateDisplaysClassificationLabel" computerName="BUF-5CG4423FYV" duration="00:00:00.0127788" startTime="2026-08-17T12:45:24.2584801+02:00" endTime="2026-08-17T12:45:24.2584803+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e2836eca-9852-4651-baca-c311b4c03f86" />
+    <UnitTestResult executionId="0406a39d-051a-4d60-8846-e9df78688918" testId="2007b130-a0c2-cac9-45c1-f3cca3f28a01" testName="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.OnInit_WithExpiredSession_ShowsPreState" computerName="BUF-5CG4423FYV" duration="00:00:00.0043382" startTime="2026-08-17T12:45:24.3361336+02:00" endTime="2026-08-17T12:45:24.3361337+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0406a39d-051a-4d60-8846-e9df78688918" />
+    <UnitTestResult executionId="fc532122-32a4-4edf-b619-fb74b9426718" testId="78ae1ad1-9316-fe2d-f70a-642b54e5be3a" testName="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.HandleExtractionCompleted_ShowsReviewList" computerName="BUF-5CG4423FYV" duration="00:00:00.0103302" startTime="2026-08-17T12:45:24.3556262+02:00" endTime="2026-08-17T12:45:24.3556263+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fc532122-32a4-4edf-b619-fb74b9426718" />
+    <UnitTestResult executionId="1f53e072-7e1b-44e4-9b45-7d4b2e75768a" testId="a87329d3-f1d3-543d-741c-590a8706903f" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.WithInitialSession_RestoresTypeFilter" computerName="BUF-5CG4423FYV" duration="00:00:00.0060882" startTime="2026-08-17T12:45:24.3065070+02:00" endTime="2026-08-17T12:45:24.3065072+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1f53e072-7e1b-44e4-9b45-7d4b2e75768a" />
+    <UnitTestResult executionId="07851aa0-4a18-4ab2-adcc-2bbf349f3e8b" testId="c227360c-a9a4-53d1-8f4a-0c7f95b76440" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.SearchInput_SavesSession" computerName="BUF-5CG4423FYV" duration="00:00:00.0273812" startTime="2026-08-17T12:45:24.1525410+02:00" endTime="2026-08-17T12:45:24.1525411+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="07851aa0-4a18-4ab2-adcc-2bbf349f3e8b" />
+    <UnitTestResult executionId="413a8c20-7a1f-4e9a-924d-cbe45112dc06" testId="a4fa99f6-e6fb-4f32-ddf8-bcecc92a144b" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.LinkIndicator_Click_OpensDrawer" computerName="BUF-5CG4423FYV" duration="00:00:00.0158841" startTime="2026-08-17T12:45:24.1890186+02:00" endTime="2026-08-17T12:45:24.1890187+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="413a8c20-7a1f-4e9a-924d-cbe45112dc06" />
+    <UnitTestResult executionId="7c9c9a2c-967a-40e4-8952-513227e77f13" testId="5aa48ca5-2e60-36bc-cb06-6c213ad0c63e" testName="BirkNext.Web.Tests.Components.ExtractionReviewListObservabilityTests.Dispose_CandidateReviewAbandoned_DoesNotContainCandidateTitle" computerName="BUF-5CG4423FYV" duration="00:00:00.0021903" startTime="2026-08-17T12:45:24.1077391+02:00" endTime="2026-08-17T12:45:24.1077392+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7c9c9a2c-967a-40e4-8952-513227e77f13" />
+    <UnitTestResult executionId="c3f91db9-7c65-4a95-9ffa-328eebc5dbc3" testId="93e05bb9-7de0-531f-f59a-ca68d780137b" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.TypeFilterClick_SavesSession" computerName="BUF-5CG4423FYV" duration="00:00:00.0069352" startTime="2026-08-17T12:45:24.3569186+02:00" endTime="2026-08-17T12:45:24.3569187+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c3f91db9-7c65-4a95-9ffa-328eebc5dbc3" />
+    <UnitTestResult executionId="6e34a77b-a310-4229-ad6e-7ee51e1a00bf" testId="1fc6b734-c3f9-72d3-ec7d-68dceeedf87d" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.OnErrorSave_CandidateRowShowsErrorMessage" computerName="BUF-5CG4423FYV" duration="00:00:00.0182225" startTime="2026-08-17T12:45:24.3358503+02:00" endTime="2026-08-17T12:45:24.3358504+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6e34a77b-a310-4229-ad6e-7ee51e1a00bf" />
+    <UnitTestResult executionId="35077a0a-bcc3-4a34-869c-5f4a406426d7" testId="18bc670c-465b-1bf2-b71b-d6bcf3d0a2b0" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.Drawer_ShowsCorrectCandidateName" computerName="BUF-5CG4423FYV" duration="00:00:00.0066159" startTime="2026-08-17T12:45:24.4470536+02:00" endTime="2026-08-17T12:45:24.4470537+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="35077a0a-bcc3-4a34-869c-5f4a406426d7" />
+    <UnitTestResult executionId="ea7067b4-f23b-485e-b7f7-78d0e3f7c019" testId="b9553696-59c4-c24b-93e5-3203474886ee" testName="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.OnInit_WithActiveSession_HidesPreState" computerName="BUF-5CG4423FYV" duration="00:00:00.0131783" startTime="2026-08-17T12:45:24.3688773+02:00" endTime="2026-08-17T12:45:24.3688774+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ea7067b4-f23b-485e-b7f7-78d0e3f7c019" />
+    <UnitTestResult executionId="68636902-914c-41b4-b495-1f3b662fc9e9" testId="30ad44e5-c48d-9f36-d56f-63268079e0f0" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.SpecificationReview_HidesAdvancedTabsWhenFeatureFlagsAreDisabled" computerName="BUF-5CG4423FYV" duration="00:00:00.0034565" startTime="2026-08-17T12:45:24.4839845+02:00" endTime="2026-08-17T12:45:24.4839846+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="68636902-914c-41b4-b495-1f3b662fc9e9" />
+    <UnitTestResult executionId="cedaed1a-37d6-41ca-9e3d-167bfe239dab" testId="f66d5ab0-21f1-050b-d03f-fc172505774a" testName="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.OnInit_WithWorkspaceSpec_DoesNotRestoreSessionFromDifferentSpec" computerName="BUF-5CG4423FYV" duration="00:00:00.0134290" startTime="2026-08-17T12:45:24.1899316+02:00" endTime="2026-08-17T12:45:24.1899317+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cedaed1a-37d6-41ca-9e3d-167bfe239dab" />
+    <UnitTestResult executionId="8ee721df-8186-4bc0-8c00-b19b198b1cb1" testId="d08e134c-6021-06a0-5c4a-ddef3918684a" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.AutoPersist_DoesNotDuplicateExistingArtifacts" computerName="BUF-5CG4423FYV" duration="00:00:00.0608626" startTime="2026-08-17T12:45:24.4357009+02:00" endTime="2026-08-17T12:45:24.4357013+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8ee721df-8186-4bc0-8c00-b19b198b1cb1" />
+    <UnitTestResult executionId="1b8112f1-66a6-4cae-a5c4-38ab4ad47086" testId="8a487328-d59b-f8d5-0936-226ecbe48a7d" testName="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC1_BulletPointsExtracted_AllDisplayedAsCandidateRows" computerName="BUF-5CG4423FYV" duration="00:00:00.0428975" startTime="2026-08-17T12:45:24.1690842+02:00" endTime="2026-08-17T12:45:24.1690844+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1b8112f1-66a6-4cae-a5c4-38ab4ad47086" />
+    <UnitTestResult executionId="6d14a911-facb-4735-90a1-5dd92aa6c1c8" testId="67dfba7b-2cfb-5154-4f39-aa378db512e0" testName="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.RequirementCandidate_ShowsTestsAndClarificationsSections" computerName="BUF-5CG4423FYV" duration="00:00:00.0019223" startTime="2026-08-17T12:45:24.1482965+02:00" endTime="2026-08-17T12:45:24.1482967+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6d14a911-facb-4735-90a1-5dd92aa6c1c8" />
+    <UnitTestResult executionId="9270f548-f3a1-47e9-917a-3ff3389bebdd" testId="ecdbdede-6e4b-f4ed-bcd9-7268ec2e5052" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.NoCheckboxCheckedByDefault" computerName="BUF-5CG4423FYV" duration="00:00:00.0117359" startTime="2026-08-17T12:45:24.3476310+02:00" endTime="2026-08-17T12:45:24.3476311+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9270f548-f3a1-47e9-917a-3ff3389bebdd" />
+    <UnitTestResult executionId="524bf31c-0d24-49e5-b051-6e3132817fd6" testId="929f6cfb-4c67-1213-34ed-e4a63ae4cd75" testName="BirkNext.Web.Tests.Components.ExtractionReviewListObservabilityTests.Dispose_WithNullPipelineResult_DoesNotLog" computerName="BUF-5CG4423FYV" duration="00:00:00.0022348" startTime="2026-08-17T12:45:24.1054783+02:00" endTime="2026-08-17T12:45:24.1054783+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="524bf31c-0d24-49e5-b051-6e3132817fd6" />
+    <UnitTestResult executionId="c49ca99c-6d56-4758-b761-0d32a1aa0683" testId="edb7592d-d323-ef08-3043-4070040a6324" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.Candidates_RenderedInThreeGroupsByClassification" computerName="BUF-5CG4423FYV" duration="00:00:00.0063375" startTime="2026-08-17T12:45:24.3541255+02:00" endTime="2026-08-17T12:45:24.3541256+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c49ca99c-6d56-4758-b761-0d32a1aa0683" />
+    <UnitTestResult executionId="6f8a37bd-58ae-42a2-8d96-4fe8de1212ec" testId="12fa741b-ae90-1357-975a-6f3857e3d356" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.DismissRestoreNotice_HidesNotice" computerName="BUF-5CG4423FYV" duration="00:00:00.0062108" startTime="2026-08-17T12:45:24.1249461+02:00" endTime="2026-08-17T12:45:24.1249462+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6f8a37bd-58ae-42a2-8d96-4fe8de1212ec" />
+    <UnitTestResult executionId="a61beef4-7677-4535-a1c6-a166e16f1ec6" testId="1d38b33c-364e-ffb8-72ed-b0f52c47a45a" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.RequirementsWithTests_FilterAndIndicator_UpdateAfterManualLink" computerName="BUF-5CG4423FYV" duration="00:00:00.0206054" startTime="2026-08-17T12:45:24.3747084+02:00" endTime="2026-08-17T12:45:24.3747085+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a61beef4-7677-4535-a1c6-a166e16f1ec6" />
+    <UnitTestResult executionId="1541917c-61b4-4a6f-9360-2e34e0d868d4" testId="348d5df3-484b-762c-d662-e07bcc117e95" testName="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC6_EmptyTextArea_ValidationMessageShown_ExtractionNotAttempted" computerName="BUF-5CG4423FYV" duration="00:00:00.3020798" startTime="2026-08-17T12:45:24.1246967+02:00" endTime="2026-08-17T12:45:24.1246968+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1541917c-61b4-4a6f-9360-2e34e0d868d4" />
+    <UnitTestResult executionId="ff9450b4-0b67-465d-86b3-8bed2e62ec3d" testId="8e5c7117-cdaf-edc9-e724-9c9832554fd8" testName="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.NullContextHeading_GroupedUnderOtherTests" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:24.1210521+02:00" endTime="2026-08-17T12:45:24.1210523+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ff9450b4-0b67-465d-86b3-8bed2e62ec3d">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="71a49cc2-1968-40eb-9a2c-b70fb4222f70" testId="22e48df4-47aa-32b1-20f4-9d67c11bfa1d" testName="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.NullContextHeading_GroupedUnderOtherRequirements" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:24.1222899+02:00" endTime="2026-08-17T12:45:24.1222899+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="71a49cc2-1968-40eb-9a2c-b70fb4222f70">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="839b8b6a-c874-4f32-abf9-b1b43bdd5d65" testId="0342e0e7-1fb9-e645-a11b-55322d6d16e9" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.SaveAcceptedArtifacts_NotRequiredForTraceability" computerName="BUF-5CG4423FYV" duration="00:00:00.0039488" startTime="2026-08-17T12:45:24.3174511+02:00" endTime="2026-08-17T12:45:24.3174512+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="839b8b6a-c874-4f32-abf9-b1b43bdd5d65" />
+    <UnitTestResult executionId="cb8be290-40e4-440d-bd7a-e7cb415dad94" testId="2de700dd-60e0-81f2-3470-c4e409ce8d13" testName="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.TestCandidate_CanLinkToClarification" computerName="BUF-5CG4423FYV" duration="00:00:00.0223645" startTime="2026-08-17T12:45:24.1462834+02:00" endTime="2026-08-17T12:45:24.1462835+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cb8be290-40e4-440d-bd7a-e7cb415dad94" />
+    <UnitTestResult executionId="2876198c-a1d3-43bd-a131-01e76f186fcb" testId="27b4a6c3-665f-07fd-7f3a-3bced088f177" testName="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.CheckboxSelection_WorksInClarificationSubgroups" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8330422+02:00" endTime="2026-08-17T12:45:23.8330554+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2876198c-a1d3-43bd-a131-01e76f186fcb">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="653b988d-a554-46e0-a7e4-f2405bebfe50" testId="01a44807-568e-50f4-7915-c1b0a702e501" testName="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.SameContextHeading_RenderedInSameSubsection" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8417666+02:00" endTime="2026-08-17T12:45:23.8417666+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="653b988d-a554-46e0-a7e4-f2405bebfe50">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="6bc30f64-7c72-4b28-a980-8a54e78272a9" testId="701a5833-ef64-9223-3231-15166810e139" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExistingAcceptedArtifacts_StillWorkAfterMigration" computerName="BUF-5CG4423FYV" duration="00:00:00.0019028" startTime="2026-08-17T12:45:24.4859144+02:00" endTime="2026-08-17T12:45:24.4859146+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6bc30f64-7c72-4b28-a980-8a54e78272a9" />
+    <UnitTestResult executionId="97a7c645-dd76-40a7-b8ae-69b556fa6c5d" testId="97c66f8d-f8e4-e1ab-0412-b08f9adb57e9" testName="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.CollapseAll_CollapsesSectionsAndSubgroups" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8416654+02:00" endTime="2026-08-17T12:45:23.8416655+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="97a7c645-dd76-40a7-b8ae-69b556fa6c5d">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="55994f9e-8380-4de2-b4b8-c1b229c19721" testId="fdcec52a-8ea9-2401-333b-c561fe0b9bcb" testName="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.ExpandAll_ExpandsAllSectionsAndSubgroups" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8350490+02:00" endTime="2026-08-17T12:45:23.8350491+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="55994f9e-8380-4de2-b4b8-c1b229c19721">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="80d8403c-9c83-46fd-907a-d0a805b29b3b" testId="67735503-1411-bc97-169d-47bcd00381c5" testName="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.SearchFilter_AppliesWithinRequirementSubgroups" computerName="BUF-5CG4423FYV" duration="00:00:00.2992663" startTime="2026-08-17T12:45:24.1218394+02:00" endTime="2026-08-17T12:45:24.1218396+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="80d8403c-9c83-46fd-907a-d0a805b29b3b" />
+    <UnitTestResult executionId="260a40d8-0d34-477b-8d3c-37d794df2bb9" testId="aa3132f6-d384-5541-3e5d-ded5c5c04b89" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExtractionReview_ShowsPurposeBanner" computerName="BUF-5CG4423FYV" duration="00:00:00.0052857" startTime="2026-08-17T12:45:24.1730495+02:00" endTime="2026-08-17T12:45:24.1730497+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="260a40d8-0d34-477b-8d3c-37d794df2bb9" />
+    <UnitTestResult executionId="17e3e36c-8226-4ba8-abb0-d5e667cbf2b6" testId="6266cdde-73a2-2f6c-2201-4104e72ea598" testName="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.RequirementSection_HasOwnSubgroups_WhenContextHeadingPresent" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:24.1214805+02:00" endTime="2026-08-17T12:45:24.1214806+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="17e3e36c-8226-4ba8-abb0-d5e667cbf2b6">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="afb9453c-5db9-410e-ba45-ff2fd659eade" testId="6b5a1a6b-40fc-dcae-22db-dfa1267579e7" testName="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.TestSection_NotAffectedByClarificationGrouping" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8357549+02:00" endTime="2026-08-17T12:45:23.8357549+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="afb9453c-5db9-410e-ba45-ff2fd659eade">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="6990b87e-9577-4210-913f-2a5d3232a134" testId="721b8025-dfab-5a89-0c90-3e348c2cb214" testName="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.CheckboxSelection_WorksInSubgroups" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8347607+02:00" endTime="2026-08-17T12:45:23.8347609+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6990b87e-9577-4210-913f-2a5d3232a134">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="8f8e2334-7724-496c-ac09-8e0248e6e9b5" testId="916dab5b-0af1-9692-7d7f-7db4b2a74f4b" testName="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.ExistingLink_CanBeRemoved" computerName="BUF-5CG4423FYV" duration="00:00:00.0032138" startTime="2026-08-17T12:45:24.1596961+02:00" endTime="2026-08-17T12:45:24.1596963+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8f8e2334-7724-496c-ac09-8e0248e6e9b5" />
+    <UnitTestResult executionId="9043421c-ea6b-4c7d-8fa0-899804095d11" testId="a08a902a-e20d-d32e-f0aa-55df88d8f08e" testName="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.ExtractionPage_DoesNotRenderSpecComparisonUi" computerName="BUF-5CG4423FYV" duration="00:00:00.0097689" startTime="2026-08-17T12:45:24.2323128+02:00" endTime="2026-08-17T12:45:24.2323130+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9043421c-ea6b-4c7d-8fa0-899804095d11" />
+    <UnitTestResult executionId="aaafe0c7-ee75-4f47-baa0-78d422ceceaa" testId="7b7ef79b-1b29-258d-b2fd-43ae8576f73b" testName="BirkNext.Web.Tests.Components.ExtractionReviewListObservabilityTests.Dispose_WithUnsavedCandidates_LogsCandidateReviewAbandoned" computerName="BUF-5CG4423FYV" duration="00:00:00.2791736" startTime="2026-08-17T12:45:24.1035588+02:00" endTime="2026-08-17T12:45:24.1035590+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aaafe0c7-ee75-4f47-baa0-78d422ceceaa" />
+    <UnitTestResult executionId="7bd0d793-964d-49ef-a4d6-28c2389eb0b7" testId="b1cdc666-776b-8513-aaf3-35bb9f929810" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.NoResults_ShowsEmptyStateMessage" computerName="BUF-5CG4423FYV" duration="00:00:00.0019254" startTime="2026-08-17T12:45:24.4679785+02:00" endTime="2026-08-17T12:45:24.4679786+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7bd0d793-964d-49ef-a4d6-28c2389eb0b7" />
+    <UnitTestResult executionId="10adedb6-b5f0-49e2-a0e7-225cbf8a04af" testId="ddc64338-722f-4967-d8b3-ea6a493190ba" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ClarificationsWithoutRequirements_FilterExcludesClarificationsLinkedToRequirements" computerName="BUF-5CG4423FYV" duration="00:00:00.0142657" startTime="2026-08-17T12:45:24.2446037+02:00" endTime="2026-08-17T12:45:24.2446038+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="10adedb6-b5f0-49e2-a0e7-225cbf8a04af" />
+    <UnitTestResult executionId="919b6492-46ae-4a05-814a-a108e2b4e153" testId="f483631f-e133-42b7-44f3-318bf3816906" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.SpecificationReview_Tabs_AreInQaPriorityOrder" computerName="BUF-5CG4423FYV" duration="00:00:00.0041881" startTime="2026-08-17T12:45:24.2580169+02:00" endTime="2026-08-17T12:45:24.2580170+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="919b6492-46ae-4a05-814a-a108e2b4e153" />
+    <UnitTestResult executionId="d278f746-01c0-44b3-b900-2994f98895c2" testId="6f5e5e4e-33cc-4c9f-d6aa-05e2c4119ddc" testName="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.EmptyGroup_NotRendered_WhenSearchFiltersAllCandidates" computerName="BUF-5CG4423FYV" duration="00:00:00.0010000" startTime="2026-08-17T12:45:23.8417259+02:00" endTime="2026-08-17T12:45:23.8417260+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d278f746-01c0-44b3-b900-2994f98895c2">
+      <Output>
+        <ErrorInfo>
+          <Message>Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="e4639292-9af9-4e10-9927-bed472fe2b58" testId="02b868db-59e6-b844-566c-1d9afc779433" testName="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.WithInitialSession_SelectedCandidateCheckboxIsChecked" computerName="BUF-5CG4423FYV" duration="00:00:00.0104962" startTime="2026-08-17T12:45:24.3240525+02:00" endTime="2026-08-17T12:45:24.3240526+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e4639292-9af9-4e10-9927-bed472fe2b58" />
+    <UnitTestResult executionId="b1ae3c93-cc42-4857-b6b1-66491bd8f2e9" testId="b069e44c-6f8e-8db2-c1fb-40cd4bbbfb5b" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.TraceabilityFilters_RenderCoverageCountsBeforeLinksExist" computerName="BUF-5CG4423FYV" duration="00:00:00.0123138" startTime="2026-08-17T12:45:24.2302501+02:00" endTime="2026-08-17T12:45:24.2302502+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b1ae3c93-cc42-4857-b6b1-66491bd8f2e9" />
+    <UnitTestResult executionId="f92be859-ff5e-4e1f-aa72-9c252f17e8e5" testId="20f430ff-ac55-c574-5271-13c77a2911d8" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.RequirementsWithoutTests_FilterExcludesLinkedRequirements" computerName="BUF-5CG4423FYV" duration="00:00:00.0368792" startTime="2026-08-17T12:45:24.1554477+02:00" endTime="2026-08-17T12:45:24.1554479+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f92be859-ff5e-4e1f-aa72-9c252f17e8e5" />
+    <UnitTestResult executionId="9bf69365-ca86-41a8-8dad-71612caa05f2" testId="d6a7e383-e767-8197-501f-5fcbc2d7791a" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.AfterCompleteSave_ReviewSavePhaseCompleteStateReached" computerName="BUF-5CG4423FYV" duration="00:00:00.0133616" startTime="2026-08-17T12:45:24.2085954+02:00" endTime="2026-08-17T12:45:24.2085955+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9bf69365-ca86-41a8-8dad-71612caa05f2" />
+    <UnitTestResult executionId="f35b4d2a-0720-41e6-a7d0-0c039152742c" testId="2564a96e-4c09-15d7-da28-4541057ee8d4" testName="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.AlreadyLinked_NotShownInAvailableList" computerName="BUF-5CG4423FYV" duration="00:00:00.0024963" startTime="2026-08-17T12:45:24.1537604+02:00" endTime="2026-08-17T12:45:24.1537605+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f35b4d2a-0720-41e6-a7d0-0c039152742c" />
+    <UnitTestResult executionId="e87bc037-3590-4450-a75c-8c68d14308a5" testId="93a6190b-e233-3786-3f43-cb8d44c4e862" testName="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.Analyze_WorkspaceSpecWithSpeckitProfile_PageCountsMatchDirectExtraction" computerName="BUF-5CG4423FYV" duration="00:00:00.1416949" startTime="2026-08-17T12:45:24.3317051+02:00" endTime="2026-08-17T12:45:24.3317052+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e87bc037-3590-4450-a75c-8c68d14308a5" />
+    <UnitTestResult executionId="4233824e-d25b-4804-89ef-54fc59ce4591" testId="58c9ecf9-a890-71dc-463c-2d6685230e49" testName="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.OnInit_WithActiveSession_ShowsCandidateSummary" computerName="BUF-5CG4423FYV" duration="00:00:00.0048057" startTime="2026-08-17T12:45:24.3452130+02:00" endTime="2026-08-17T12:45:24.3452131+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4233824e-d25b-4804-89ef-54fc59ce4591" />
+    <UnitTestResult executionId="a5de6c30-5396-4c36-b7f6-3a3575914372" testId="b4418db5-c71a-f6a5-bc54-fe8a3640ea77" testName="BirkNext.Web.Tests.Components.ExtractionReviewListTests.TestsWithoutRequirements_FilterExcludesTestsLinkedToRequirements" computerName="BUF-5CG4423FYV" duration="00:00:00.0137253" startTime="2026-08-17T12:45:24.4608681+02:00" endTime="2026-08-17T12:45:24.4608682+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a5de6c30-5396-4c36-b7f6-3a3575914372" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.TestsWithoutRequirements_FilterExcludesTestsLinkedToRequirements" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b4418db5-c71a-f6a5-bc54-fe8a3640ea77">
+      <Execution id="a5de6c30-5396-4c36-b7f6-3a3575914372" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="TestsWithoutRequirements_FilterExcludesTestsLinkedToRequirements" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.AfterExtraction_Subgroups_AreCollapsedByDefault" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="0653144a-6cea-91bb-f001-70df5c65b683">
+      <Execution id="6bc00bd4-2510-4694-b736-6a2fa825e3c4" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests" name="AfterExtraction_Subgroups_AreCollapsedByDefault" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.CountSummaryHeader_ShowsCorrectTotals" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a5d3de22-d085-915a-eb59-e68c0812f544">
+      <Execution id="6a385371-8c3b-4450-bb27-25cb013fddb8" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="CountSummaryHeader_ShowsCorrectTotals" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.ManuallyExpandedSubgroup_RemainsExpandedAfterSearchFilter" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ea8823d7-391a-4db1-3b0a-71965b3f36d7">
+      <Execution id="298236b6-329c-444a-b87a-874385575e14" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests" name="ManuallyExpandedSubgroup_RemainsExpandedAfterSearchFilter" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExtractionReview_UsesNewName" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="17a7eb26-18ee-9291-2ef8-e6603a379034">
+      <Execution id="46b9fa2e-fcc6-4ef8-bb6b-d67074c61992" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="ExtractionReview_UsesNewName" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListObservabilityTests.Dispose_WithNullPipelineResult_DoesNotLog" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="929f6cfb-4c67-1213-34ed-e4a63ae4cd75">
+      <Execution id="524bf31c-0d24-49e5-b051-6e3132817fd6" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListObservabilityTests" name="Dispose_WithNullPipelineResult_DoesNotLog" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC4_NoExtractableCandidates_EmptyStateMessageDisplayed" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a09b6229-2044-3bbc-7950-b84ae74e44f3">
+      <Execution id="f6445509-6e71-43cb-9d38-1400bc796828" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests" name="AC4_NoExtractableCandidates_EmptyStateMessageDisplayed" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.Drawer_ShowsCorrectCandidateName" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="18bc670c-465b-1bf2-b71b-d6bcf3d0a2b0">
+      <Execution id="35077a0a-bcc3-4a34-869c-5f4a406426d7" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="Drawer_ShowsCorrectCandidateName" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.RequirementSection_HasOwnSubgroups_WhenContextHeadingsPresent" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="78e5be06-ef7a-53dd-0017-ea996afb09c2">
+      <Execution id="6508ec57-945c-4a4f-90dd-870b5be87bca" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests" name="RequirementSection_HasOwnSubgroups_WhenContextHeadingsPresent" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC7_ImportedFile_ExtractsAndDisplaysCandidates" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="bd4caf4a-49a7-8510-8f72-d6eb26ffc424">
+      <Execution id="5c3b714d-f5de-46d9-aacd-21f5066474d0" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests" name="AC7_ImportedFile_ExtractsAndDisplaysCandidates" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.Analyze_WorkspaceSpecWithSpeckitProfile_PageCountsMatchDirectExtraction" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="93a6190b-e233-3786-3f43-cb8d44c4e862">
+      <Execution id="e87bc037-3590-4450-a75c-8c68d14308a5" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests" name="Analyze_WorkspaceSpecWithSpeckitProfile_PageCountsMatchDirectExtraction" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExtractionReview_ShowsExtractionHealthSummary" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="3fd79a92-028a-1106-c17b-49d268758a2a">
+      <Execution id="14c9d7fa-d8e5-4aa4-8000-34f91e89bc85" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="ExtractionReview_ShowsExtractionHealthSummary" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.WithInitialSession_RestoresSearchTerm" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="8ffaee90-3b12-6e92-64bb-b220fc4cf673">
+      <Execution id="4fb90c8b-8b98-43f8-984b-dd6182011391" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="WithInitialSession_RestoresSearchTerm" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.RequirementSection_HasOwnSubgroups_WhenContextHeadingPresent" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="6266cdde-73a2-2f6c-2201-4104e72ea598">
+      <Execution id="17e3e36c-8226-4ba8-abb0-d5e667cbf2b6" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests" name="RequirementSection_HasOwnSubgroups_WhenContextHeadingPresent" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.CheckboxSelection_WorksInClarificationSubgroups" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="27b4a6c3-665f-07fd-7f3a-3bced088f177">
+      <Execution id="2876198c-a1d3-43bd-a131-01e76f186fcb" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests" name="CheckboxSelection_WorksInClarificationSubgroups" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.CollapseAll_CollapsesSectionsAndSubgroups" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="97c66f8d-f8e4-e1ab-0412-b08f9adb57e9">
+      <Execution id="97a7c645-dd76-40a7-b8ae-69b556fa6c5d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests" name="CollapseAll_CollapsesSectionsAndSubgroups" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.SameContextHeading_RenderedInSameSubsection" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="01a44807-568e-50f4-7915-c1b0a702e501">
+      <Execution id="653b988d-a554-46e0-a7e4-f2405bebfe50" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests" name="SameContextHeading_RenderedInSameSubsection" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ClarificationsWithoutRequirements_FilterExcludesClarificationsLinkedToRequirements" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ddc64338-722f-4967-d8b3-ea6a493190ba">
+      <Execution id="10adedb6-b5f0-49e2-a0e7-225cbf8a04af" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="ClarificationsWithoutRequirements_FilterExcludesClarificationsLinkedToRequirements" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests.TraceabilityPage_UsesOnlyCoverageModel" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="123f1ac1-6f84-96fe-5578-956b5c322a12">
+      <Execution id="5f179760-11dd-40c8-9f48-d48c5773c33d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests" name="TraceabilityPage_UsesOnlyCoverageModel" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.SearchFilter_AppliesWithinRequirementSubgroups" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="67735503-1411-bc97-169d-47bcd00381c5">
+      <Execution id="80d8403c-9c83-46fd-907a-d0a805b29b3b" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests" name="SearchFilter_AppliesWithinRequirementSubgroups" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.SearchFilter_AppliesWithinSubgroups" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="3812638b-7078-a711-4436-bc9ef3c791f1">
+      <Execution id="379e9ed9-1c9a-40de-9160-be69e1bcd99b" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests" name="SearchFilter_AppliesWithinSubgroups" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.TestCandidate_CanLinkToClarification" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="2de700dd-60e0-81f2-3470-c4e409ce8d13">
+      <Execution id="cb8be290-40e4-440d-bd7a-e7cb415dad94" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.CandidateLinkPanelTests" name="TestCandidate_CanLinkToClarification" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.NeedsClarificationSection_NotAffectedByRequirementGrouping" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="00925759-3ff0-10e6-8ef5-fa017421fbb1">
+      <Execution id="4997a8fd-ee6f-4005-b6d4-7c657ae6cd0b" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests" name="NeedsClarificationSection_NotAffectedByRequirementGrouping" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC3_CandidatesDisplayed_BeforeSaveAction_MutationNotCalled" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="e0ca89d7-8e18-5e1b-b96c-94333f3bcb9b">
+      <Execution id="2e47b6bd-4c9b-4c6f-9d51-9896d3bdc377" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests" name="AC3_CandidatesDisplayed_BeforeSaveAction_MutationNotCalled" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.AfterExtraction_TopLevelSections_AreExpandedByDefault" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="dbd4ae5e-e7c2-6fe2-d2e5-b40017baf5b9">
+      <Execution id="a004dc01-f78e-46fa-b370-c92d14c93755" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests" name="AfterExtraction_TopLevelSections_AreExpandedByDefault" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.Backdrop_Click_ClosesDrawer" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="738b7bec-58ed-deff-84ef-d2021a7e6ce5">
+      <Execution id="4dac02ae-f507-4d47-87c6-5b8aae320a25" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="Backdrop_Click_ClosesDrawer" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListObservabilityTests.Dispose_WithUnsavedCandidates_LogsCandidateReviewAbandoned" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="7b7ef79b-1b29-258d-b2fd-43ae8576f73b">
+      <Execution id="aaafe0c7-ee75-4f47-baa0-78d422ceceaa" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListObservabilityTests" name="Dispose_WithUnsavedCandidates_LogsCandidateReviewAbandoned" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.DismissRestoreNotice_HidesNotice" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="12fa741b-ae90-1357-975a-6f3857e3d356">
+      <Execution id="6f8a37bd-58ae-42a2-8d96-4fe8de1212ec" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="DismissRestoreNotice_HidesNotice" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.NullContextHeading_GroupedUnderOtherRequirements" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="22e48df4-47aa-32b1-20f4-9d67c11bfa1d">
+      <Execution id="71a49cc2-1968-40eb-9a2c-b70fb4222f70" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests" name="NullContextHeading_GroupedUnderOtherRequirements" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.SpecificationReview_RestoredSessionWithoutTab_DefaultsToTraceabilityCoverage" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b540f373-8b27-5418-cd0b-104cd159a524">
+      <Execution id="1da97e3e-390d-462b-b08a-96106ae393ec" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="SpecificationReview_RestoredSessionWithoutTab_DefaultsToTraceabilityCoverage" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListObservabilityTests.Dispose_CandidateReviewAbandoned_DoesNotContainCandidateTitle" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="5aa48ca5-2e60-36bc-cb06-6c213ad0c63e">
+      <Execution id="7c9c9a2c-967a-40e4-8952-513227e77f13" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListObservabilityTests" name="Dispose_CandidateReviewAbandoned_DoesNotContainCandidateTitle" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.WithInitialSession_RestoresAcceptedReviewStatus" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="5b8f9c02-ed10-b24f-a307-de2df3a0c01a">
+      <Execution id="2568374a-172a-4ee9-bc46-0f5dfe919b09" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="WithInitialSession_RestoresAcceptedReviewStatus" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.SelectionToggle_SavesSession" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ee584d91-56da-311f-e912-ae82062ff477">
+      <Execution id="3d366f41-9d84-464e-b73c-fdaf45e26611" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="SelectionToggle_SavesSession" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.OnInit_WithActiveSession_HidesPreState" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b9553696-59c4-c24b-93e5-3203474886ee">
+      <Execution id="ea7067b4-f23b-485e-b7f7-78d0e3f7c019" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests" name="OnInit_WithActiveSession_HidesPreState" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExtractionReview_EmptyStatesRender" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b88d3a7f-2f28-600e-04ce-31dc0da57644">
+      <Execution id="81cdea77-4cca-4a4d-b1cf-1c1061ac05d8" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="ExtractionReview_EmptyStatesRender" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.AnalyzeSpec_AutoPersistsNormalizedArtifacts" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="e97b48c7-b496-7f62-6c93-147c43c49fe7">
+      <Execution id="0ec9053b-50fc-42f7-a963-d552f73a0848" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="AnalyzeSpec_AutoPersistsNormalizedArtifacts" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.HandleExtractionCompleted_ShowsReviewList" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="78ae1ad1-9316-fe2d-f70a-642b54e5be3a">
+      <Execution id="fc532122-32a4-4edf-b619-fb74b9426718" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests" name="HandleExtractionCompleted_ShowsReviewList" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExtractionReview_ShowsPurposeBanner" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="aa3132f6-d384-5541-3e5d-ded5c5c04b89">
+      <Execution id="260a40d8-0d34-477b-8d3c-37d794df2bb9" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="ExtractionReview_ShowsPurposeBanner" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.TestSection_NotAffectedByClarificationGrouping" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="6b5a1a6b-40fc-dcae-22db-dfa1267579e7">
+      <Execution id="afb9453c-5db9-410e-ba45-ff2fd659eade" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests" name="TestSection_NotAffectedByClarificationGrouping" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.ReopenSession_RestoresTraceability_WhenLocalStorageIsEmpty" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="9ca864f5-516a-83fa-73a6-f15e858bd601">
+      <Execution id="6345f676-3593-4a66-92b1-88674403338d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="ReopenSession_RestoresTraceability_WhenLocalStorageIsEmpty" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.EscapeKey_ClosesDrawer" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a3bde925-9312-e3d4-c687-75e40eafb2d3">
+      <Execution id="803edfbd-4efd-4983-9cf4-6a80f7f64f1d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="EscapeKey_ClosesDrawer" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListObservabilityTests.Dispose_WhenSavePhaseComplete_DoesNotLogCandidateReviewAbandoned" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="7bbb91e0-358b-2946-9080-529eada762ef">
+      <Execution id="b3d1a4d1-9740-4075-93de-629a0dc9fa84" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListObservabilityTests" name="Dispose_WhenSavePhaseComplete_DoesNotLogCandidateReviewAbandoned" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC6_EmptyTextArea_ValidationMessageShown_ExtractionNotAttempted" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="348d5df3-484b-762c-d662-e07bcc117e95">
+      <Execution id="1541917c-61b4-4a6f-9360-2e34e0d868d4" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests" name="AC6_EmptyTextArea_ValidationMessageShown_ExtractionNotAttempted" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.OnErrorSave_CandidateRowShowsErrorMessage" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="1fc6b734-c3f9-72d3-ec7d-68dceeedf87d">
+      <Execution id="6e34a77b-a310-4229-ad6e-7ee51e1a00bf" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="OnErrorSave_CandidateRowShowsErrorMessage" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests.NoAutoAcceptedStateInTraceabilityUI" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="3e03e013-3255-c048-847c-cfce44afb154">
+      <Execution id="8f51b3a8-e8cb-4786-86ad-2f39283febd4" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests" name="NoAutoAcceptedStateInTraceabilityUI" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.OnInit_WithExpiredSession_ShowsPreState" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="2007b130-a0c2-cac9-45c1-f3cca3f28a01">
+      <Execution id="0406a39d-051a-4d60-8846-e9df78688918" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests" name="OnInit_WithExpiredSession_ShowsPreState" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.ReviewStatusChange_SavesSession" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="72243074-7e2f-637d-c61b-724a20bc360d">
+      <Execution id="6560be33-ff5b-4148-a3f6-b3cb43186ea2" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="ReviewStatusChange_SavesSession" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExtractionReview_ExplainsReviewStatuses" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="01f17074-c022-ef50-f5cb-16768b53aa7b">
+      <Execution id="27ea4aef-f1cb-47b8-b428-d65b4c8dbf4a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="ExtractionReview_ExplainsReviewStatuses" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ConfirmSaveButton_DisabledWhenNoCandidatesSelected" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="f81522b3-f81e-2352-6ff2-f4f009fc5f3c">
+      <Execution id="28e15caf-d71a-42c1-a6bf-7ac31f958445" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="ConfirmSaveButton_DisabledWhenNoCandidatesSelected" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.FilterChange_DoesNotExpandCollapsedSubgroups" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="82a52b00-8631-4992-ef7d-e48137740829">
+      <Execution id="759b46cc-1c00-4401-9c73-518579b88b38" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests" name="FilterChange_DoesNotExpandCollapsedSubgroups" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.NoCheckboxCheckedByDefault" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ecdbdede-6e4b-f4ed-bcd9-7268ec2e5052">
+      <Execution id="9270f548-f3a1-47e9-917a-3ff3389bebdd" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="NoCheckboxCheckedByDefault" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.NullPipelineResult_RendersNothing" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="3183278f-1986-1528-4910-c5e3325f3d97">
+      <Execution id="c26b434b-0df1-468a-ac8e-beab2eda53e2" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="NullPipelineResult_RendersNothing" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.OnClose_InvokedWhenCloseButtonClicked" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="be5ce5be-87ab-ea3b-bcbe-ccf9777136fd">
+      <Execution id="0b79dabf-e46f-4a51-87e1-d72849b35a72" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.CandidateLinkPanelTests" name="OnClose_InvokedWhenCloseButtonClicked" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.SearchFilter_AppliesWithinClarificationSubgroups" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="11fc9b36-3c3f-f039-3298-b5fac1990bc6">
+      <Execution id="fcb68249-4c14-48a0-af81-fd0d6af2f672" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests" name="SearchFilter_AppliesWithinClarificationSubgroups" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests.LinkPanel_IsSimplifiedSuggestionsOnly" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="12b49a80-54bd-6483-117c-e7c4b1ec8c1b">
+      <Execution id="d3b9c6c6-e2f3-459e-b514-cd324eb7776b" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests" name="LinkPanel_IsSimplifiedSuggestionsOnly" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.SpecificationReview_HidesAdvancedTabsWhenFeatureFlagsAreDisabled" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="30ad44e5-c48d-9f36-d56f-63268079e0f0">
+      <Execution id="68636902-914c-41b4-b495-1f3b662fc9e9" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="SpecificationReview_HidesAdvancedTabsWhenFeatureFlagsAreDisabled" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.WithInitialSession_ShowsRestoreNotice" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="530fba94-dfe3-bbf4-a6fa-951b797f1736">
+      <Execution id="19b011fd-65f4-4342-a1bd-1e6bcd1c054a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="WithInitialSession_ShowsRestoreNotice" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExtractionReviewList_DoesNotRenderDashboardWidgets" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="07dd6d1c-4e02-c6a2-1522-defd608e1b6e">
+      <Execution id="f606b9cb-be94-4db8-8ae2-27b780e282dd" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="ExtractionReviewList_DoesNotRenderDashboardWidgets" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.SaveAcceptedArtifacts_NotRequiredForTraceability" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="0342e0e7-1fb9-e645-a11b-55322d6d16e9">
+      <Execution id="839b8b6a-c874-4f32-abf9-b1b43bdd5d65" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="SaveAcceptedArtifacts_NotRequiredForTraceability" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC5_SubsetSelected_OnlySelectedCandidatesSentToMutation" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="6219c43a-8184-0a32-035b-3dbb35c782e8">
+      <Execution id="7e2e6714-919d-49cf-b8d7-ddead7d7e58c" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests" name="AC5_SubsetSelected_OnlySelectedCandidatesSentToMutation" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.SelfLink_NotShownInAvailableCandidates" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="7d491fe8-4eed-d82f-b9dd-11d3e4b9e85d">
+      <Execution id="e72c0fbc-efb7-4ac5-aba6-7a76a2c26f10" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.CandidateLinkPanelTests" name="SelfLink_NotShownInAvailableCandidates" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.AlreadyLinked_NotShownInAvailableList" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="2564a96e-4c09-15d7-da28-4541057ee8d4">
+      <Execution id="f35b4d2a-0720-41e6-a7d0-0c039152742c" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.CandidateLinkPanelTests" name="AlreadyLinked_NotShownInAvailableList" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.LinkIndicator_Click_OpensDrawer" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a4fa99f6-e6fb-4f32-ddf8-bcecc92a144b">
+      <Execution id="413a8c20-7a1f-4e9a-924d-cbe45112dc06" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="LinkIndicator_Click_OpensDrawer" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.CheckboxSelection_WorksInSubgroups" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="721b8025-dfab-5a89-0c90-3e348c2cb214">
+      <Execution id="6990b87e-9577-4210-913f-2a5d3232a134" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests" name="CheckboxSelection_WorksInSubgroups" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.Candidates_RenderedInThreeGroupsByClassification" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="edb7592d-d323-ef08-3043-4070040a6324">
+      <Execution id="c49ca99c-6d56-4758-b761-0d32a1aa0683" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="Candidates_RenderedInThreeGroupsByClassification" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.CloseButton_Click_ClosesDrawer" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="dbda7ee8-f0cd-9a23-878f-21ce69e6669e">
+      <Execution id="a911be38-5ecd-4528-be32-02d158bf023c" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="CloseButton_Click_ClosesDrawer" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.AutoPersist_DoesNotDuplicateExistingArtifacts" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d08e134c-6021-06a0-5c4a-ddef3918684a">
+      <Execution id="8ee721df-8186-4bc0-8c00-b19b198b1cb1" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="AutoPersist_DoesNotDuplicateExistingArtifacts" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.TestCandidate_ShowsRequirementsAndClarificationsSections" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="445c5117-5b92-f884-a5e3-962be9b914d2">
+      <Execution id="7dde4a07-a2e1-4445-9235-c18d8eedc620" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.CandidateLinkPanelTests" name="TestCandidate_ShowsRequirementsAndClarificationsSections" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.WithInitialSession_RestoresTypeFilter" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a87329d3-f1d3-543d-741c-590a8706903f">
+      <Execution id="1f53e072-7e1b-44e4-9b45-7d4b2e75768a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="WithInitialSession_RestoresTypeFilter" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC2_EachCandidateDisplaysClassificationLabel" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="c21dd8ae-b26d-7596-5c87-58de62ee85ee">
+      <Execution id="e2836eca-9852-4651-baca-c311b4c03f86" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests" name="AC2_EachCandidateDisplaysClassificationLabel" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.TestSection_NotAffectedByRequirementGrouping" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="60dd6aeb-ea4b-85d7-6c50-da6e2b86fb9d">
+      <Execution id="beb74ea0-5937-4346-9469-1bdc48661933" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests" name="TestSection_NotAffectedByRequirementGrouping" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.OnInit_WithWorkspaceSpec_DoesNotRestoreSessionFromDifferentSpec" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="f66d5ab0-21f1-050b-d03f-fc172505774a">
+      <Execution id="cedaed1a-37d6-41ca-9e3d-167bfe239dab" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests" name="OnInit_WithWorkspaceSpec_DoesNotRestoreSessionFromDifferentSpec" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="7ac1ee01-d50b-da5f-3ba1-f1e2ef1d5288">
+      <Execution id="84c8fadd-1d0a-4302-920a-ad094524e21f" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests" name="EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.NoResults_ShowsEmptyStateMessage" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b1cdc666-776b-8513-aaf3-35bb9f929810">
+      <Execution id="7bd0d793-964d-49ef-a4d6-28c2389eb0b7" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="NoResults_ShowsEmptyStateMessage" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.SameContextHeading_RenderedInSameSubsection" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="f577ba37-d477-b0be-143a-edb967ccab04">
+      <Execution id="c97ebbe4-6c92-4f5e-b687-25ed44bd2a72" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests" name="SameContextHeading_RenderedInSameSubsection" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.WithInitialSession_SelectedCandidateCheckboxIsChecked" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="02b868db-59e6-b844-566c-1d9afc779433">
+      <Execution id="e4639292-9af9-4e10-9927-bed472fe2b58" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="WithInitialSession_SelectedCandidateCheckboxIsChecked" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.ExpandAll_ExpandsAllSectionsAndSubgroups" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="fdcec52a-8ea9-2401-333b-c561fe0b9bcb">
+      <Execution id="55994f9e-8380-4de2-b4b8-c1b229c19721" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests" name="ExpandAll_ExpandsAllSectionsAndSubgroups" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests.ExtractionReview_IsAdvancedViewMode" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="243c2691-887b-3d58-ab4f-98351e8e3b09">
+      <Execution id="66f71c61-a5ec-4350-9681-4003d42d9ad3" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests" name="ExtractionReview_IsAdvancedViewMode" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.WithoutInitialSession_NoRestoreNotice" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ed41cc1f-1954-7c24-c342-caab161d3768">
+      <Execution id="ee496317-769b-45da-85c7-55dc9e8a8f51" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="WithoutInitialSession_NoRestoreNotice" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.TraceabilityFilters_RenderCoverageCountsBeforeLinksExist" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b069e44c-6f8e-8db2-c1fb-40cd4bbbfb5b">
+      <Execution id="b1ae3c93-cc42-4857-b6b1-66491bd8f2e9" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="TraceabilityFilters_RenderCoverageCountsBeforeLinksExist" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.ExtractionReview_ExplainsLinkingPanel" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b37a8a69-f537-9414-7243-c55fb1dc96cc">
+      <Execution id="a5ffa4c8-773c-4fc3-bf81-d2d146ff813e" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.CandidateLinkPanelTests" name="ExtractionReview_ExplainsLinkingPanel" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.SameContextHeading_RenderedInSameSubsection" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="824aae63-732f-72b7-b723-a983a6f4928e">
+      <Execution id="eb683097-9366-418d-9c8e-92e3579dd524" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests" name="SameContextHeading_RenderedInSameSubsection" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.RequirementsWithoutTests_FilterExcludesLinkedRequirements" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="20f430ff-ac55-c574-5271-13c77a2911d8">
+      <Execution id="f92be859-ff5e-4e1f-aa72-9c252f17e8e5" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="RequirementsWithoutTests_FilterExcludesLinkedRequirements" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="605b7e31-d99c-9aec-2009-0c2f183eab11">
+      <Execution id="b8daf74d-ed43-431b-9eae-ece17616538d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests" name="EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.EmptyGroup_NotRendered_WhenSearchFiltersAllCandidates" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="6f5e5e4e-33cc-4c9f-d6aa-05e2c4119ddc">
+      <Execution id="d278f746-01c0-44b3-b900-2994f98895c2" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests" name="EmptyGroup_NotRendered_WhenSearchFiltersAllCandidates" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.ExistingLink_CanBeRemoved" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="916dab5b-0af1-9692-7d7f-7db4b2a74f4b">
+      <Execution id="8f8e2334-7724-496c-ac09-8e0248e6e9b5" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.CandidateLinkPanelTests" name="ExistingLink_CanBeRemoved" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.Analyze_WithWorkspaceSpecAndStaleNoResultsSession_RunsExtractionAndUpdatesCounters" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a48b9a25-b764-f78a-7777-4daa9d243a0a">
+      <Execution id="bf397b7e-5355-4fea-bb2b-f5aea89be710" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests" name="Analyze_WithWorkspaceSpecAndStaleNoResultsSession_RunsExtractionAndUpdatesCounters" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.SearchInput_SavesSession" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="c227360c-a9a4-53d1-8f4a-0c7f95b76440">
+      <Execution id="07851aa0-4a18-4ab2-adcc-2bbf349f3e8b" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="SearchInput_SavesSession" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.NullContextHeading_GroupedUnderOtherClarifications" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="e8400457-4fe2-10d8-7c29-f07efd8cf8c6">
+      <Execution id="8471c21e-e671-4de0-a574-1800afe3fc00" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests" name="NullContextHeading_GroupedUnderOtherClarifications" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.SpecificationReview_DefaultTabAfterAnalysis_IsTraceabilityCoverage" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="cb50eabf-b917-c498-8697-decbf8ca665c">
+      <Execution id="ee20f7cc-11c6-4d11-8e07-542611aae998" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="SpecificationReview_DefaultTabAfterAnalysis_IsTraceabilityCoverage" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.NullContextHeading_GroupedUnderOtherTests" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="8e5c7117-cdaf-edc9-e724-9c9832554fd8">
+      <Execution id="ff9450b4-0b67-465d-86b3-8bed2e62ec3d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.TestSubsectionGroupingTests" name="NullContextHeading_GroupedUnderOtherTests" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ConfirmSaveButton_EnabledWhenAtLeastOneCandidateSelected" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="967057c1-cf7e-5a53-be83-3ef53516a727">
+      <Execution id="edbbae8e-6633-46f2-87ab-d93922259db4" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="ConfirmSaveButton_EnabledWhenAtLeastOneCandidateSelected" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.ExistingAcceptedArtifacts_StillWorkAfterMigration" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="701a5833-ef64-9223-3231-15166810e139">
+      <Execution id="6bc30f64-7c72-4b28-a980-8a54e78272a9" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="ExistingAcceptedArtifacts_StillWorkAfterMigration" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.RequirementCandidate_ShowsTestsAndClarificationsSections" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="67dfba7b-2cfb-5154-4f39-aa378db512e0">
+      <Execution id="6d14a911-facb-4735-90a1-5dd92aa6c1c8" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.CandidateLinkPanelTests" name="RequirementCandidate_ShowsTestsAndClarificationsSections" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.AfterCompleteSave_ReviewSavePhaseCompleteStateReached" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d6a7e383-e767-8197-501f-5fcbc2d7791a">
+      <Execution id="9bf69365-ca86-41a8-8dad-71612caa05f2" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="AfterCompleteSave_ReviewSavePhaseCompleteStateReached" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.AC1_BulletPointsExtracted_AllDisplayedAsCandidateRows" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="8a487328-d59b-f8d5-0936-226ecbe48a7d">
+      <Execution id="1b8112f1-66a6-4cae-a5c4-38ab4ad47086" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests" name="AC1_BulletPointsExtracted_AllDisplayedAsCandidateRows" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests.TraceabilityPage_DoesNotRenderExtractionControls" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="7ad46f3b-ec28-119e-5b37-fbd74cfa7a32">
+      <Execution id="56c1790b-d4a9-4d99-affd-386ff8bdcb7d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExtractionTraceabilityTests" name="TraceabilityPage_DoesNotRenderExtractionControls" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.TypeFilterClick_SavesSession" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="93e05bb9-7de0-531f-f59a-ca68d780137b">
+      <Execution id="c3f91db9-7c65-4a95-9ffa-328eebc5dbc3" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="TypeFilterClick_SavesSession" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.RequirementsWithTests_FilterAndIndicator_UpdateAfterManualLink" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="1d38b33c-364e-ffb8-72ed-b0f52c47a45a">
+      <Execution id="a61beef4-7677-4535-a1c6-a166e16f1ec6" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="RequirementsWithTests_FilterAndIndicator_UpdateAfterManualLink" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.SearchFilter_ShowsNoMatchingCandidates_DisplaysEmptyMessage" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ca9b4752-d07e-8726-cd36-024a6f5fb4d3">
+      <Execution id="27f08cba-45bf-46f8-8c16-6892b944d72f" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.CandidateLinkPanelTests" name="SearchFilter_ShowsNoMatchingCandidates_DisplaysEmptyMessage" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.CheckboxSelection_WorksInRequirementSubgroups" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="926434db-d8da-741c-26c6-46f07fcb297f">
+      <Execution id="8a1fcc18-6b04-4be9-a2c2-cdbae6880419" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests" name="CheckboxSelection_WorksInRequirementSubgroups" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests.SpecificationReview_RestoredSession_PreservesLastSelectedTab" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d1a319f2-cf71-b8e3-18f5-1a3183f6cf48">
+      <Execution id="09ad4be1-2674-47a5-ae7b-8c8e89c39011" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListSessionTests" name="SpecificationReview_RestoredSession_PreservesLastSelectedTab" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.OnInit_WithNoSession_ShowsPreState" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b7e83ad8-6738-4b84-00a0-b58660ed5e60">
+      <Execution id="e8cd6301-7c12-413a-b1ac-9267d83e22da" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests" name="OnInit_WithNoSession_ShowsPreState" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests.ExtractionPage_DoesNotRenderSpecComparisonUi" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="a08a902a-e20d-d32e-f0aa-55df88d8f08e">
+      <Execution id="9043421c-ea6b-4c7d-8fa0-899804095d11" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ExtractionAcceptanceCriteriaTests" name="ExtractionPage_DoesNotRenderSpecComparisonUi" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.CandidateLinkPanelTests.SearchFilter_HidesNonMatchingAvailableCandidates" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="dbdafda6-0b71-698a-5ef7-f49efa512b04">
+      <Execution id="3327b237-121f-48d2-84b5-705cfc699fbb" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.CandidateLinkPanelTests" name="SearchFilter_HidesNonMatchingAvailableCandidates" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests.OnInit_WithActiveSession_ShowsCandidateSummary" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="58c9ecf9-a890-71dc-463c-2d6685230e49">
+      <Execution id="4233824e-d25b-4804-89ef-54fc59ce4591" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.ScenarioExtractionSessionTests" name="OnInit_WithActiveSession_ShowsCandidateSummary" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.SpecificationReview_Tabs_AreInQaPriorityOrder" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="f483631f-e133-42b7-44f3-318bf3816906">
+      <Execution id="919b6492-46ae-4a05-814a-a108e2b4e153" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="SpecificationReview_Tabs_AreInQaPriorityOrder" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Components.ExtractionReviewListTests.OnSuccessfulSave_CandidateRowShowsSavedIndicator" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="35f099e2-e40f-4d8a-b495-f1889a8fc208">
+      <Execution id="9863a931-3787-4334-a82a-1ceacbf90262" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Components.ExtractionReviewListTests" name="OnSuccessfulSave_CandidateRowShowsSavedIndicator" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="b540f373-8b27-5418-cd0b-104cd159a524" executionId="1da97e3e-390d-462b-b08a-96106ae393ec" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5b8f9c02-ed10-b24f-a307-de2df3a0c01a" executionId="2568374a-172a-4ee9-bc46-0f5dfe919b09" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="11fc9b36-3c3f-f039-3298-b5fac1990bc6" executionId="fcb68249-4c14-48a0-af81-fd0d6af2f672" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="967057c1-cf7e-5a53-be83-3ef53516a727" executionId="edbbae8e-6633-46f2-87ab-d93922259db4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8ffaee90-3b12-6e92-64bb-b220fc4cf673" executionId="4fb90c8b-8b98-43f8-984b-dd6182011391" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a48b9a25-b764-f78a-7777-4daa9d243a0a" executionId="bf397b7e-5355-4fea-bb2b-f5aea89be710" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3812638b-7078-a711-4436-bc9ef3c791f1" executionId="379e9ed9-1c9a-40de-9160-be69e1bcd99b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e97b48c7-b496-7f62-6c93-147c43c49fe7" executionId="0ec9053b-50fc-42f7-a963-d552f73a0848" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f577ba37-d477-b0be-143a-edb967ccab04" executionId="c97ebbe4-6c92-4f5e-b687-25ed44bd2a72" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="123f1ac1-6f84-96fe-5578-956b5c322a12" executionId="5f179760-11dd-40c8-9f48-d48c5773c33d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="cb50eabf-b917-c498-8697-decbf8ca665c" executionId="ee20f7cc-11c6-4d11-8e07-542611aae998" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b7e83ad8-6738-4b84-00a0-b58660ed5e60" executionId="e8cd6301-7c12-413a-b1ac-9267d83e22da" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="738b7bec-58ed-deff-84ef-d2021a7e6ce5" executionId="4dac02ae-f507-4d47-87c6-5b8aae320a25" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="dbdafda6-0b71-698a-5ef7-f49efa512b04" executionId="3327b237-121f-48d2-84b5-705cfc699fbb" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="530fba94-dfe3-bbf4-a6fa-951b797f1736" executionId="19b011fd-65f4-4342-a1bd-1e6bcd1c054a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7ac1ee01-d50b-da5f-3ba1-f1e2ef1d5288" executionId="84c8fadd-1d0a-4302-920a-ad094524e21f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="dbd4ae5e-e7c2-6fe2-d2e5-b40017baf5b9" executionId="a004dc01-f78e-46fa-b370-c92d14c93755" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bd4caf4a-49a7-8510-8f72-d6eb26ffc424" executionId="5c3b714d-f5de-46d9-aacd-21f5066474d0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e0ca89d7-8e18-5e1b-b96c-94333f3bcb9b" executionId="2e47b6bd-4c9b-4c6f-9d51-9896d3bdc377" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ea8823d7-391a-4db1-3b0a-71965b3f36d7" executionId="298236b6-329c-444a-b87a-874385575e14" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7ad46f3b-ec28-119e-5b37-fbd74cfa7a32" executionId="56c1790b-d4a9-4d99-affd-386ff8bdcb7d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ee584d91-56da-311f-e912-ae82062ff477" executionId="3d366f41-9d84-464e-b73c-fdaf45e26611" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="07dd6d1c-4e02-c6a2-1522-defd608e1b6e" executionId="f606b9cb-be94-4db8-8ae2-27b780e282dd" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="dbda7ee8-f0cd-9a23-878f-21ce69e6669e" executionId="a911be38-5ecd-4528-be32-02d158bf023c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="12b49a80-54bd-6483-117c-e7c4b1ec8c1b" executionId="d3b9c6c6-e2f3-459e-b514-cd324eb7776b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b37a8a69-f537-9414-7243-c55fb1dc96cc" executionId="a5ffa4c8-773c-4fc3-bf81-d2d146ff813e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7bbb91e0-358b-2946-9080-529eada762ef" executionId="b3d1a4d1-9740-4075-93de-629a0dc9fa84" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f81522b3-f81e-2352-6ff2-f4f009fc5f3c" executionId="28e15caf-d71a-42c1-a6bf-7ac31f958445" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7d491fe8-4eed-d82f-b9dd-11d3e4b9e85d" executionId="e72c0fbc-efb7-4ac5-aba6-7a76a2c26f10" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a09b6229-2044-3bbc-7950-b84ae74e44f3" executionId="f6445509-6e71-43cb-9d38-1400bc796828" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="17a7eb26-18ee-9291-2ef8-e6603a379034" executionId="46b9fa2e-fcc6-4ef8-bb6b-d67074c61992" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="be5ce5be-87ab-ea3b-bcbe-ccf9777136fd" executionId="0b79dabf-e46f-4a51-87e1-d72849b35a72" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="605b7e31-d99c-9aec-2009-0c2f183eab11" executionId="b8daf74d-ed43-431b-9eae-ece17616538d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a3bde925-9312-e3d4-c687-75e40eafb2d3" executionId="803edfbd-4efd-4983-9cf4-6a80f7f64f1d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3fd79a92-028a-1106-c17b-49d268758a2a" executionId="14c9d7fa-d8e5-4aa4-8000-34f91e89bc85" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="78e5be06-ef7a-53dd-0017-ea996afb09c2" executionId="6508ec57-945c-4a4f-90dd-870b5be87bca" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="00925759-3ff0-10e6-8ef5-fa017421fbb1" executionId="4997a8fd-ee6f-4005-b6d4-7c657ae6cd0b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3e03e013-3255-c048-847c-cfce44afb154" executionId="8f51b3a8-e8cb-4786-86ad-2f39283febd4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e8400457-4fe2-10d8-7c29-f07efd8cf8c6" executionId="8471c21e-e671-4de0-a574-1800afe3fc00" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d1a319f2-cf71-b8e3-18f5-1a3183f6cf48" executionId="09ad4be1-2674-47a5-ae7b-8c8e89c39011" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ed41cc1f-1954-7c24-c342-caab161d3768" executionId="ee496317-769b-45da-85c7-55dc9e8a8f51" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6219c43a-8184-0a32-035b-3dbb35c782e8" executionId="7e2e6714-919d-49cf-b8d7-ddead7d7e58c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="243c2691-887b-3d58-ab4f-98351e8e3b09" executionId="66f71c61-a5ec-4350-9681-4003d42d9ad3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="01f17074-c022-ef50-f5cb-16768b53aa7b" executionId="27ea4aef-f1cb-47b8-b428-d65b4c8dbf4a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9ca864f5-516a-83fa-73a6-f15e858bd601" executionId="6345f676-3593-4a66-92b1-88674403338d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="35f099e2-e40f-4d8a-b495-f1889a8fc208" executionId="9863a931-3787-4334-a82a-1ceacbf90262" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="926434db-d8da-741c-26c6-46f07fcb297f" executionId="8a1fcc18-6b04-4be9-a2c2-cdbae6880419" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a5d3de22-d085-915a-eb59-e68c0812f544" executionId="6a385371-8c3b-4450-bb27-25cb013fddb8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="824aae63-732f-72b7-b723-a983a6f4928e" executionId="eb683097-9366-418d-9c8e-92e3579dd524" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ca9b4752-d07e-8726-cd36-024a6f5fb4d3" executionId="27f08cba-45bf-46f8-8c16-6892b944d72f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="82a52b00-8631-4992-ef7d-e48137740829" executionId="759b46cc-1c00-4401-9c73-518579b88b38" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b88d3a7f-2f28-600e-04ce-31dc0da57644" executionId="81cdea77-4cca-4a4d-b1cf-1c1061ac05d8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="445c5117-5b92-f884-a5e3-962be9b914d2" executionId="7dde4a07-a2e1-4445-9235-c18d8eedc620" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="72243074-7e2f-637d-c61b-724a20bc360d" executionId="6560be33-ff5b-4148-a3f6-b3cb43186ea2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="60dd6aeb-ea4b-85d7-6c50-da6e2b86fb9d" executionId="beb74ea0-5937-4346-9469-1bdc48661933" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3183278f-1986-1528-4910-c5e3325f3d97" executionId="c26b434b-0df1-468a-ac8e-beab2eda53e2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0653144a-6cea-91bb-f001-70df5c65b683" executionId="6bc00bd4-2510-4694-b736-6a2fa825e3c4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c21dd8ae-b26d-7596-5c87-58de62ee85ee" executionId="e2836eca-9852-4651-baca-c311b4c03f86" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2007b130-a0c2-cac9-45c1-f3cca3f28a01" executionId="0406a39d-051a-4d60-8846-e9df78688918" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="78ae1ad1-9316-fe2d-f70a-642b54e5be3a" executionId="fc532122-32a4-4edf-b619-fb74b9426718" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a87329d3-f1d3-543d-741c-590a8706903f" executionId="1f53e072-7e1b-44e4-9b45-7d4b2e75768a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c227360c-a9a4-53d1-8f4a-0c7f95b76440" executionId="07851aa0-4a18-4ab2-adcc-2bbf349f3e8b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a4fa99f6-e6fb-4f32-ddf8-bcecc92a144b" executionId="413a8c20-7a1f-4e9a-924d-cbe45112dc06" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5aa48ca5-2e60-36bc-cb06-6c213ad0c63e" executionId="7c9c9a2c-967a-40e4-8952-513227e77f13" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="93e05bb9-7de0-531f-f59a-ca68d780137b" executionId="c3f91db9-7c65-4a95-9ffa-328eebc5dbc3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1fc6b734-c3f9-72d3-ec7d-68dceeedf87d" executionId="6e34a77b-a310-4229-ad6e-7ee51e1a00bf" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="18bc670c-465b-1bf2-b71b-d6bcf3d0a2b0" executionId="35077a0a-bcc3-4a34-869c-5f4a406426d7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b9553696-59c4-c24b-93e5-3203474886ee" executionId="ea7067b4-f23b-485e-b7f7-78d0e3f7c019" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="30ad44e5-c48d-9f36-d56f-63268079e0f0" executionId="68636902-914c-41b4-b495-1f3b662fc9e9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f66d5ab0-21f1-050b-d03f-fc172505774a" executionId="cedaed1a-37d6-41ca-9e3d-167bfe239dab" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d08e134c-6021-06a0-5c4a-ddef3918684a" executionId="8ee721df-8186-4bc0-8c00-b19b198b1cb1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8a487328-d59b-f8d5-0936-226ecbe48a7d" executionId="1b8112f1-66a6-4cae-a5c4-38ab4ad47086" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="67dfba7b-2cfb-5154-4f39-aa378db512e0" executionId="6d14a911-facb-4735-90a1-5dd92aa6c1c8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ecdbdede-6e4b-f4ed-bcd9-7268ec2e5052" executionId="9270f548-f3a1-47e9-917a-3ff3389bebdd" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="929f6cfb-4c67-1213-34ed-e4a63ae4cd75" executionId="524bf31c-0d24-49e5-b051-6e3132817fd6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="edb7592d-d323-ef08-3043-4070040a6324" executionId="c49ca99c-6d56-4758-b761-0d32a1aa0683" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="12fa741b-ae90-1357-975a-6f3857e3d356" executionId="6f8a37bd-58ae-42a2-8d96-4fe8de1212ec" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1d38b33c-364e-ffb8-72ed-b0f52c47a45a" executionId="a61beef4-7677-4535-a1c6-a166e16f1ec6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="348d5df3-484b-762c-d662-e07bcc117e95" executionId="1541917c-61b4-4a6f-9360-2e34e0d868d4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8e5c7117-cdaf-edc9-e724-9c9832554fd8" executionId="ff9450b4-0b67-465d-86b3-8bed2e62ec3d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="22e48df4-47aa-32b1-20f4-9d67c11bfa1d" executionId="71a49cc2-1968-40eb-9a2c-b70fb4222f70" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0342e0e7-1fb9-e645-a11b-55322d6d16e9" executionId="839b8b6a-c874-4f32-abf9-b1b43bdd5d65" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2de700dd-60e0-81f2-3470-c4e409ce8d13" executionId="cb8be290-40e4-440d-bd7a-e7cb415dad94" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="27b4a6c3-665f-07fd-7f3a-3bced088f177" executionId="2876198c-a1d3-43bd-a131-01e76f186fcb" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="01a44807-568e-50f4-7915-c1b0a702e501" executionId="653b988d-a554-46e0-a7e4-f2405bebfe50" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="701a5833-ef64-9223-3231-15166810e139" executionId="6bc30f64-7c72-4b28-a980-8a54e78272a9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="97c66f8d-f8e4-e1ab-0412-b08f9adb57e9" executionId="97a7c645-dd76-40a7-b8ae-69b556fa6c5d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="fdcec52a-8ea9-2401-333b-c561fe0b9bcb" executionId="55994f9e-8380-4de2-b4b8-c1b229c19721" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="67735503-1411-bc97-169d-47bcd00381c5" executionId="80d8403c-9c83-46fd-907a-d0a805b29b3b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="aa3132f6-d384-5541-3e5d-ded5c5c04b89" executionId="260a40d8-0d34-477b-8d3c-37d794df2bb9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6266cdde-73a2-2f6c-2201-4104e72ea598" executionId="17e3e36c-8226-4ba8-abb0-d5e667cbf2b6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6b5a1a6b-40fc-dcae-22db-dfa1267579e7" executionId="afb9453c-5db9-410e-ba45-ff2fd659eade" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="721b8025-dfab-5a89-0c90-3e348c2cb214" executionId="6990b87e-9577-4210-913f-2a5d3232a134" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="916dab5b-0af1-9692-7d7f-7db4b2a74f4b" executionId="8f8e2334-7724-496c-ac09-8e0248e6e9b5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a08a902a-e20d-d32e-f0aa-55df88d8f08e" executionId="9043421c-ea6b-4c7d-8fa0-899804095d11" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7b7ef79b-1b29-258d-b2fd-43ae8576f73b" executionId="aaafe0c7-ee75-4f47-baa0-78d422ceceaa" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b1cdc666-776b-8513-aaf3-35bb9f929810" executionId="7bd0d793-964d-49ef-a4d6-28c2389eb0b7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ddc64338-722f-4967-d8b3-ea6a493190ba" executionId="10adedb6-b5f0-49e2-a0e7-225cbf8a04af" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f483631f-e133-42b7-44f3-318bf3816906" executionId="919b6492-46ae-4a05-814a-a108e2b4e153" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6f5e5e4e-33cc-4c9f-d6aa-05e2c4119ddc" executionId="d278f746-01c0-44b3-b900-2994f98895c2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="02b868db-59e6-b844-566c-1d9afc779433" executionId="e4639292-9af9-4e10-9927-bed472fe2b58" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b069e44c-6f8e-8db2-c1fb-40cd4bbbfb5b" executionId="b1ae3c93-cc42-4857-b6b1-66491bd8f2e9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="20f430ff-ac55-c574-5271-13c77a2911d8" executionId="f92be859-ff5e-4e1f-aa72-9c252f17e8e5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d6a7e383-e767-8197-501f-5fcbc2d7791a" executionId="9bf69365-ca86-41a8-8dad-71612caa05f2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2564a96e-4c09-15d7-da28-4541057ee8d4" executionId="f35b4d2a-0720-41e6-a7d0-0c039152742c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="93a6190b-e233-3786-3f43-cb8d44c4e862" executionId="e87bc037-3590-4450-a75c-8c68d14308a5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="58c9ecf9-a890-71dc-463c-2d6685230e49" executionId="4233824e-d25b-4804-89ef-54fc59ce4591" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b4418db5-c71a-f6a5-bc54-fe8a3640ea77" executionId="a5de6c30-5396-4c36-b7f6-3a3575914372" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="108" executed="85" passed="85" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 8.0.16)&#xD;
+[xUnit.net 00:00:00.07]   Discovering: BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.19]   Discovered:  BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.20]   Starting:    BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.24]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.24]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.24]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.24]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.24]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.24]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+Test 'BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.CheckboxSelection_WorksInClarificationSubgroups' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.CheckboxSelection_WorksInSubgroups' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.ExpandAll_ExpandsAllSectionsAndSubgroups' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.NeedsClarificationSection_NotAffectedByRequirementGrouping' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.FilterChange_DoesNotExpandCollapsedSubgroups' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.TestSection_NotAffectedByClarificationGrouping' was skipped in the test run.&#xD;
+[xUnit.net 00:00:00.25]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.25]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.25]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.25]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.25]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.25]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.25]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.25]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+Test 'BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.NullContextHeading_GroupedUnderOtherClarifications' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.AfterExtraction_TopLevelSections_AreExpandedByDefault' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.SameContextHeading_RenderedInSameSubsection' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.SameContextHeading_RenderedInSameSubsection' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.AfterExtraction_Subgroups_AreCollapsedByDefault' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.CollapseAll_CollapsesSectionsAndSubgroups' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.EmptyGroup_NotRendered_WhenSearchFiltersAllCandidates' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.SameContextHeading_RenderedInSameSubsection' was skipped in the test run.&#xD;
+[xUnit.net 00:00:00.25]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.25]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+     Warning:&#xD;
+     The component "Fluent Assertions" is governed by the rules defined in the Xceed License Agreement and&#xD;
+     the Xceed Fluent Assertions Community License. You may use Fluent Assertions free of charge for&#xD;
+     non-commercial use only. An active subscription is required to use Fluent Assertions for commercial use.&#xD;
+     Please contact Xceed Sales mailto:sales@xceed.com to acquire a subscription at a very low cost.&#xD;
+     A paid commercial license supports the development and continued increasing support of&#xD;
+     Fluent Assertions users under both commercial and community licenses. Help us&#xD;
+     keep Fluent Assertions at the forefront of unit testing.&#xD;
+     For more information, visit https://xceed.com/products/unit-testing/fluent-assertions/&#xD;
+Test 'BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.ManuallyExpandedSubgroup_RemainsExpandedAfterSearchFilter' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.RequirementSection_HasOwnSubgroups_WhenContextHeadingsPresent' was skipped in the test run.&#xD;
+[xUnit.net 00:00:00.53]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.53]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.53]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+Test 'BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.NullContextHeading_GroupedUnderOtherTests' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.RequirementSection_HasOwnSubgroups_WhenContextHeadingPresent' was skipped in the test run.&#xD;
+[xUnit.net 00:00:00.53]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.53]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.53]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+[xUnit.net 00:00:00.53]       Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.&#xD;
+Test 'BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.CheckboxSelection_WorksInRequirementSubgroups' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.NullContextHeading_GroupedUnderOtherRequirements' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup' was skipped in the test run.&#xD;
+Test 'BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.TestSection_NotAffectedByRequirementGrouping' was skipped in the test run.&#xD;
+[xUnit.net 00:00:00.95]   Finished:    BirkNext.Web.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8410210+02:00">
+        <Text>[xUnit.net 00:00:00.24]     BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.CheckboxSelection_WorksInClarificationSubgroups [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8412241+02:00">
+        <Text>[xUnit.net 00:00:00.24]     BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.CheckboxSelection_WorksInSubgroups [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8412428+02:00">
+        <Text>[xUnit.net 00:00:00.24]     BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.ExpandAll_ExpandsAllSectionsAndSubgroups [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8412535+02:00">
+        <Text>[xUnit.net 00:00:00.24]     BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.NeedsClarificationSection_NotAffectedByRequirementGrouping [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8412632+02:00">
+        <Text>[xUnit.net 00:00:00.24]     BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.FilterChange_DoesNotExpandCollapsedSubgroups [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8412734+02:00">
+        <Text>[xUnit.net 00:00:00.24]     BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.TestSection_NotAffectedByClarificationGrouping [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8577071+02:00">
+        <Text>[xUnit.net 00:00:00.25]     BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.NullContextHeading_GroupedUnderOtherClarifications [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8577312+02:00">
+        <Text>[xUnit.net 00:00:00.25]     BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.AfterExtraction_TopLevelSections_AreExpandedByDefault [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8577451+02:00">
+        <Text>[xUnit.net 00:00:00.25]     BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.SameContextHeading_RenderedInSameSubsection [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8577564+02:00">
+        <Text>[xUnit.net 00:00:00.25]     BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.SameContextHeading_RenderedInSameSubsection [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8577674+02:00">
+        <Text>[xUnit.net 00:00:00.25]     BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.AfterExtraction_Subgroups_AreCollapsedByDefault [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8577796+02:00">
+        <Text>[xUnit.net 00:00:00.25]     BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.CollapseAll_CollapsesSectionsAndSubgroups [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8577943+02:00">
+        <Text>[xUnit.net 00:00:00.25]     BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.EmptyGroup_NotRendered_WhenSearchFiltersAllCandidates [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8578050+02:00">
+        <Text>[xUnit.net 00:00:00.25]     BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.SameContextHeading_RenderedInSameSubsection [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8581646+02:00">
+        <Text>[xUnit.net 00:00:00.25]     BirkNext.Web.Tests.Components.ExtractionReviewListDefaultExpansionTests.ManuallyExpandedSubgroup_RemainsExpandedAfterSearchFilter [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:23.8581785+02:00">
+        <Text>[xUnit.net 00:00:00.25]     BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.RequirementSection_HasOwnSubgroups_WhenContextHeadingsPresent [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:24.1210395+02:00">
+        <Text>[xUnit.net 00:00:00.53]     BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.NullContextHeading_GroupedUnderOtherTests [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:24.1212365+02:00">
+        <Text>[xUnit.net 00:00:00.53]     BirkNext.Web.Tests.Components.TestSubsectionGroupingTests.EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:24.1214258+02:00">
+        <Text>[xUnit.net 00:00:00.53]     BirkNext.Web.Tests.Components.ClarificationSubsectionGroupingTests.RequirementSection_HasOwnSubgroups_WhenContextHeadingPresent [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:24.1234356+02:00">
+        <Text>[xUnit.net 00:00:00.53]     BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.CheckboxSelection_WorksInRequirementSubgroups [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:24.1234554+02:00">
+        <Text>[xUnit.net 00:00:00.53]     BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.NullContextHeading_GroupedUnderOtherRequirements [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:24.1234672+02:00">
+        <Text>[xUnit.net 00:00:00.53]     BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup [SKIP]</Text>
+      </RunInfo>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Warning" timestamp="2026-08-17T12:45:24.1234809+02:00">
+        <Text>[xUnit.net 00:00:00.53]     BirkNext.Web.Tests.Components.RequirementSubsectionGroupingTests.TestSection_NotAffectedByRequirementGrouping [SKIP]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

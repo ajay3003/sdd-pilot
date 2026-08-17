@@ -439,6 +439,20 @@ public static class ReviewContextFactory
             links[$"Phase{phase.PhaseNumber}"] = [..phase.TaskIds];
         }
 
+        foreach (var decision in plan.ArchitectureDecisions)
+        {
+            var taskIds = decision.RelatedRequirementIds
+                .SelectMany(requirementId =>
+                    tasks.FRToTasks.TryGetValue(requirementId, out var linkedTasks)
+                        ? linkedTasks
+                        : [])
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (taskIds.Count > 0)
+                links[decision.Id] = taskIds;
+        }
+
         return links;
     }
 

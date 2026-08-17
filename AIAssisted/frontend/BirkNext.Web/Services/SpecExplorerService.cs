@@ -20,6 +20,10 @@ public static class SpecExplorerService
         @"\b(FR|NFR|SC|US|UC|AC|TS|REQ|TC)-?\s*(\d{1,4})\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private static readonly Regex ConstitutionRuleRefRe = new(
+        @"\b(PP|PS|GL|FP|MC|AC|FC|GV)-?\s*(\d{1,4})\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static readonly Regex UserStoryInlineRe = new(
         @"^[-*]\s+(?:User Story|US|Story)\s*[:\-–]\s*(.+)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -1364,21 +1368,56 @@ public static class SpecExplorerService
     {
         var requirements = new List<SemanticRequirement>();
         var allNodes = AllNodes(tree.Roots);
-        var reqNodes = allNodes.Where(n => n.NodeType == SpecNodeType.Requirement).ToList();
+        var reqNodes = allNodes
+            .Where(n => n.NodeType == SpecNodeType.Requirement
+                || IsRequirementHeading(n))
+            .ToList();
 
         foreach (var reqNode in reqNodes)
         {
+            var content = string.Join('\n', reqNode.Title, reqNode.FullContent).Trim();
+            var headingId = ExtractSpecItemId(reqNode.Title);
             var requirement = new SemanticRequirement
             {
-                Id = reqNode.SpecItemId ?? $"FR-{reqNode.Id[..3]}",
+                Id = reqNode.SpecItemId ?? headingId ?? $"FR-{reqNode.Id[..3]}",
                 Text = reqNode.FullContent ?? reqNode.Title,
                 Category = DetectRequirementCategory(reqNode),
+                LinkedConstitutionRules = ExtractConstitutionRuleReferences(content),
+                LinkedArchitectureDecisions = ExtractArchitectureDecisionReferences(content),
             };
             requirements.Add(requirement);
         }
 
         return requirements;
     }
+
+    private static bool IsRequirementHeading(SpecNode node) =>
+        node.HeadingLevel > 0
+        && node.NodeType is SpecNodeType.SubSection or SpecNodeType.DeepSection
+        && ExtractSpecItemId(node.Title) is not null;
+
+    private static string? ExtractSpecItemId(string text)
+    {
+        var match = SpecItemStartRe.Match(text);
+        if (!match.Success) return null;
+
+        var prefix = match.Groups[1].Value.ToUpperInvariant();
+        if (prefix is not ("FR" or "NFR" or "REQ")) return null;
+
+        return $"{prefix}-{match.Groups[2].Value.PadLeft(3, '0')}";
+    }
+
+    private static List<string> ExtractConstitutionRuleReferences(string text) =>
+        ConstitutionRuleRefRe.Matches(text)
+            .Select(m => $"{m.Groups[1].Value.ToUpperInvariant()}-{int.Parse(m.Groups[2].Value):00}")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static List<string> ExtractArchitectureDecisionReferences(string text) =>
+        Regex.Matches(text, @"\bADR-?\s*(\d{1,4})\b", RegexOptions.IgnoreCase)
+            .Select(m => $"ADR-{int.Parse(m.Groups[1].Value):000}")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     private static List<SemanticSuccessCriterion> ExtractSuccessCriteria(SpecTree tree)
     {

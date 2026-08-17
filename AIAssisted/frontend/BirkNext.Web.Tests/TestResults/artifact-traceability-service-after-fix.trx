@@ -1,0 +1,196 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="ac58c7f4-0ae7-4e4c-962a-7a0e461b9164" name="ajaan@BUF-5CG4423FYV 2026-08-17 12:25:03" runUser="COMMON\ajaan" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-17T12:25:03.2406454+02:00" queuing="2026-08-17T12:25:03.2406456+02:00" start="2026-08-17T12:24:59.0043034+02:00" finish="2026-08-17T12:25:03.3198109+02:00" />
+  <TestSettings name="default" id="be79fda4-a796-4fa4-8c8b-525c631a8d79">
+    <Deployment runDeploymentRoot="ajaan_BUF-5CG4423FYV_2026-08-17_12_25_03" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="f69ea4ab-8fec-4b08-aa2b-43d53327d610" testId="6f63b82d-3b01-1253-10db-da1594ed453f" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.PartialAnalysis_ConstitutionOnlyDoesNotCrash" computerName="BUF-5CG4423FYV" duration="00:00:00.0035545" startTime="2026-08-17T12:25:03.2214311+02:00" endTime="2026-08-17T12:25:03.2214312+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f69ea4ab-8fec-4b08-aa2b-43d53327d610" />
+    <UnitTestResult executionId="a2218112-7379-432b-9e32-0c4e00cecb76" testId="aa2816a1-d81a-c5ed-0953-16bd4645daf5" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.ConstitutionCoverage_StatsMatchChainEntries" computerName="BUF-5CG4423FYV" duration="00:00:00.0070062" startTime="2026-08-17T12:25:03.2097262+02:00" endTime="2026-08-17T12:25:03.2097264+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a2218112-7379-432b-9e32-0c4e00cecb76" />
+    <UnitTestResult executionId="fe0e9c36-6fcc-4805-b991-23e9301f6a81" testId="467452d6-23c9-7c01-42c1-0a5876e6e9f6" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.GapDetection_IncludesMissingSpecRequirements" computerName="BUF-5CG4423FYV" duration="00:00:00.0008375" startTime="2026-08-17T12:25:03.2223094+02:00" endTime="2026-08-17T12:25:03.2223096+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fe0e9c36-6fcc-4805-b991-23e9301f6a81" />
+    <UnitTestResult executionId="70eafb9f-eb06-4788-83d6-dd20171d5773" testId="021a3dda-de27-122b-c275-404359b8d3b2" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.Matrix_ContainsMissingRowForUncoveredRule" computerName="BUF-5CG4423FYV" duration="00:00:00.0033770" startTime="2026-08-17T12:25:03.2147758+02:00" endTime="2026-08-17T12:25:03.2147759+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="70eafb9f-eb06-4788-83d6-dd20171d5773" />
+    <UnitTestResult executionId="8dfa0c59-224c-4838-b91e-53055848ea7a" testId="5638f59e-d42b-d9d2-fe43-6f4085e49769" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.SpecCoverage_StatsMatchChainEntries" computerName="BUF-5CG4423FYV" duration="00:00:00.0009987" startTime="2026-08-17T12:25:03.2107844+02:00" endTime="2026-08-17T12:25:03.2107845+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8dfa0c59-224c-4838-b91e-53055848ea7a" />
+    <UnitTestResult executionId="636a7d4b-ef3d-4f24-9585-b515e1e1150d" testId="99c65fcd-5aff-f245-2713-6a71dffae753" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.PlanCoverage_CoveredWhenTaskReferencesFR" computerName="BUF-5CG4423FYV" duration="00:00:00.0973692" startTime="2026-08-17T12:25:03.1534673+02:00" endTime="2026-08-17T12:25:03.1534778+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="636a7d4b-ef3d-4f24-9585-b515e1e1150d" />
+    <UnitTestResult executionId="1cabebea-3416-42c7-9bee-2d07c1f2b27a" testId="5e7c4a9e-c8ca-759c-0c11-c44e3e2b3c3f" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.PlanCoverage_PlanToTaskEntriesCreated" computerName="BUF-5CG4423FYV" duration="00:00:00.0004906" startTime="2026-08-17T12:25:03.2410561+02:00" endTime="2026-08-17T12:25:03.2410563+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1cabebea-3416-42c7-9bee-2d07c1f2b27a" />
+    <UnitTestResult executionId="ed8a531e-50b6-4434-9998-9ab50d0dad8e" testId="f8b499a0-f37d-5302-d656-28669e9c0bed" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.ConstitutionCoverage_CoveredWhenSpecReferencesRule" computerName="BUF-5CG4423FYV" duration="00:00:00.0044697" startTime="2026-08-17T12:25:03.2284481+02:00" endTime="2026-08-17T12:25:03.2284481+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ed8a531e-50b6-4434-9998-9ab50d0dad8e" />
+    <UnitTestResult executionId="c6821625-f6fc-4421-bed7-0ef7080f9db4" testId="316bbd49-b348-f736-4fb9-9c0de0f7a764" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.Health_TotalCountsMatchInputs" computerName="BUF-5CG4423FYV" duration="00:00:00.0023544" startTime="2026-08-17T12:25:03.2705919+02:00" endTime="2026-08-17T12:25:03.2705920+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c6821625-f6fc-4421-bed7-0ef7080f9db4" />
+    <UnitTestResult executionId="1c394862-2fa8-4f90-878a-3e23f8809ae8" testId="9254591e-31f7-e6f1-5bfb-62efdfddac80" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.NullArtifacts_ProduceEmptyReportWithoutCrash" computerName="BUF-5CG4423FYV" duration="00:00:00.0003345" startTime="2026-08-17T12:25:03.2686503+02:00" endTime="2026-08-17T12:25:03.2686503+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1c394862-2fa8-4f90-878a-3e23f8809ae8" />
+    <UnitTestResult executionId="a77835dd-0484-4a69-b9fe-80296a422c46" testId="732a5e00-0922-64a1-ded8-a48d45016562" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.GapDetection_IncludesMissingRules" computerName="BUF-5CG4423FYV" duration="00:00:00.0028403" startTime="2026-08-17T12:25:03.2739056+02:00" endTime="2026-08-17T12:25:03.2739058+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a77835dd-0484-4a69-b9fe-80296a422c46" />
+    <UnitTestResult executionId="57574f67-b1d3-464d-9148-67f8681f812e" testId="2b7b45ab-5de4-4547-d73f-c7e3fc667168" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.OrphanTask_TaskCoverageStatsCountsOrphans" computerName="BUF-5CG4423FYV" duration="00:00:00.0005156" startTime="2026-08-17T12:25:03.2113953+02:00" endTime="2026-08-17T12:25:03.2113954+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="57574f67-b1d3-464d-9148-67f8681f812e" />
+    <UnitTestResult executionId="57e651f1-e435-4988-9d6e-aa89936f2eee" testId="f0b50ee4-e46c-aebd-ffae-b64b45caeeea" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.ConstitutionCoverage_MissingWhenNoSpecReference" computerName="BUF-5CG4423FYV" duration="00:00:00.0074475" startTime="2026-08-17T12:25:03.2347556+02:00" endTime="2026-08-17T12:25:03.2347557+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="57e651f1-e435-4988-9d6e-aa89936f2eee" />
+    <UnitTestResult executionId="0370bf5d-d60d-46ea-9295-77be5b390921" testId="64a0c3dc-952f-c93a-75fd-eecae8189e86" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.Matrix_ContainsRowsWhenConstitutionLoaded" computerName="BUF-5CG4423FYV" duration="00:00:00.0029833" startTime="2026-08-17T12:25:03.2177954+02:00" endTime="2026-08-17T12:25:03.2177962+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0370bf5d-d60d-46ea-9295-77be5b390921" />
+    <UnitTestResult executionId="09862e7a-1930-4b97-b1f2-2eec8d17ccf4" testId="e063f5a9-a886-16ee-80c7-862b57233abe" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.SpecCoverage_CoveredWhenPlanMentionsFR" computerName="BUF-5CG4423FYV" duration="00:00:00.0009077" startTime="2026-08-17T12:25:03.2357110+02:00" endTime="2026-08-17T12:25:03.2357111+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="09862e7a-1930-4b97-b1f2-2eec8d17ccf4" />
+    <UnitTestResult executionId="59658f8a-e612-4ac9-9cb5-33a207fed330" testId="1e8f71f0-0904-b341-9485-051b95f90822" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.FilterGapsByArtifact_ReturnsOnlyMatching" computerName="BUF-5CG4423FYV" duration="00:00:00.0494133" startTime="2026-08-17T12:25:03.2026689+02:00" endTime="2026-08-17T12:25:03.2026691+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="59658f8a-e612-4ac9-9cb5-33a207fed330" />
+    <UnitTestResult executionId="cc340d92-395a-44e1-87b0-49a479e78c54" testId="db30218e-eadd-5985-ba9b-eae373c98e48" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.SpecCoverage_MissingWhenPlanOmitsFR" computerName="BUF-5CG4423FYV" duration="00:00:00.0007308" startTime="2026-08-17T12:25:03.2365211+02:00" endTime="2026-08-17T12:25:03.2365212+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cc340d92-395a-44e1-87b0-49a479e78c54" />
+    <UnitTestResult executionId="dcf8ebd5-5565-4783-95df-77d92356bfa2" testId="9510407b-f4b4-c3b8-22db-38c619a1e485" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.OrphanTask_DetectedWhenNoFrOrScRefs" computerName="BUF-5CG4423FYV" duration="00:00:00.0003878" startTime="2026-08-17T12:25:03.2709890+02:00" endTime="2026-08-17T12:25:03.2709891+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="dcf8ebd5-5565-4783-95df-77d92356bfa2" />
+    <UnitTestResult executionId="3d5610fe-1a29-454b-b578-55a93dc5903a" testId="4bea529d-5e73-1360-723b-a4fbd92887e7" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.Matrix_ContainsFullChainRowWhenAllArtifactsLoaded" computerName="BUF-5CG4423FYV" duration="00:00:00.0217857" startTime="2026-08-17T12:25:03.2666623+02:00" endTime="2026-08-17T12:25:03.2666624+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3d5610fe-1a29-454b-b578-55a93dc5903a">
+      <Output>
+        <ErrorInfo>
+          <Message>Expected fullRow not to be &lt;null&gt; because at least one full 4-column covered row expected.</Message>
+          <StackTrace>   at FluentAssertions.Primitives.ReferenceTypeAssertions`2.NotBeNull(String because, Object[] becauseArgs)&#xD;
+   at BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.Matrix_ContainsFullChainRowWhenAllArtifactsLoaded() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ArtifactTraceabilityServiceTests.cs:line 319&#xD;
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="4b347ff7-5800-4dbc-a8da-8416305591e5" testId="15c6cbd4-7e0c-cd12-1b03-39160309a846" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.GapDetection_IncludesOrphanTasks" computerName="BUF-5CG4423FYV" duration="00:00:00.0004262" startTime="2026-08-17T12:25:03.2284962+02:00" endTime="2026-08-17T12:25:03.2284962+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4b347ff7-5800-4dbc-a8da-8416305591e5" />
+    <UnitTestResult executionId="fd763059-3224-45f7-9e7f-3cf7656f7d80" testId="e2ec84a3-2138-2d1c-0ff5-9457b12712b0" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.FilterMatrixByStatus_ReturnsOnlyMatching" computerName="BUF-5CG4423FYV" duration="00:00:00.0037464" startTime="2026-08-17T12:25:03.2677711+02:00" endTime="2026-08-17T12:25:03.2677712+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fd763059-3224-45f7-9e7f-3cf7656f7d80" />
+    <UnitTestResult executionId="17ddde93-77ea-4270-94bf-5ce6a3eddf27" testId="b92100b6-a9aa-f717-7765-6e598c457913" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.SearchMatrix_FindsByRuleId" computerName="BUF-5CG4423FYV" duration="00:00:00.0034553" startTime="2026-08-17T12:25:03.2773948+02:00" endTime="2026-08-17T12:25:03.2773949+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="17ddde93-77ea-4270-94bf-5ce6a3eddf27" />
+    <UnitTestResult executionId="1ce2e7fd-c4b8-4192-b02d-ce687ff4afc8" testId="5bc3e815-51ae-171f-1d99-c3e08476a78a" testName="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.ConstitutionCoverage_ReturnsOneEntryPerRule" computerName="BUF-5CG4423FYV" duration="00:00:00.0039739" startTime="2026-08-17T12:25:03.2405827+02:00" endTime="2026-08-17T12:25:03.2405828+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1ce2e7fd-c4b8-4192-b02d-ce687ff4afc8" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.OrphanTask_TaskCoverageStatsCountsOrphans" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="2b7b45ab-5de4-4547-d73f-c7e3fc667168">
+      <Execution id="57574f67-b1d3-464d-9148-67f8681f812e" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="OrphanTask_TaskCoverageStatsCountsOrphans" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.FilterGapsByArtifact_ReturnsOnlyMatching" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="1e8f71f0-0904-b341-9485-051b95f90822">
+      <Execution id="59658f8a-e612-4ac9-9cb5-33a207fed330" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="FilterGapsByArtifact_ReturnsOnlyMatching" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.ConstitutionCoverage_StatsMatchChainEntries" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="aa2816a1-d81a-c5ed-0953-16bd4645daf5">
+      <Execution id="a2218112-7379-432b-9e32-0c4e00cecb76" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="ConstitutionCoverage_StatsMatchChainEntries" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.PlanCoverage_PlanToTaskEntriesCreated" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="5e7c4a9e-c8ca-759c-0c11-c44e3e2b3c3f">
+      <Execution id="1cabebea-3416-42c7-9bee-2d07c1f2b27a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="PlanCoverage_PlanToTaskEntriesCreated" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.ConstitutionCoverage_MissingWhenNoSpecReference" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="f0b50ee4-e46c-aebd-ffae-b64b45caeeea">
+      <Execution id="57e651f1-e435-4988-9d6e-aa89936f2eee" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="ConstitutionCoverage_MissingWhenNoSpecReference" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.NullArtifacts_ProduceEmptyReportWithoutCrash" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="9254591e-31f7-e6f1-5bfb-62efdfddac80">
+      <Execution id="1c394862-2fa8-4f90-878a-3e23f8809ae8" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="NullArtifacts_ProduceEmptyReportWithoutCrash" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.GapDetection_IncludesMissingRules" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="732a5e00-0922-64a1-ded8-a48d45016562">
+      <Execution id="a77835dd-0484-4a69-b9fe-80296a422c46" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="GapDetection_IncludesMissingRules" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.PartialAnalysis_ConstitutionOnlyDoesNotCrash" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="6f63b82d-3b01-1253-10db-da1594ed453f">
+      <Execution id="f69ea4ab-8fec-4b08-aa2b-43d53327d610" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="PartialAnalysis_ConstitutionOnlyDoesNotCrash" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.Matrix_ContainsRowsWhenConstitutionLoaded" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="64a0c3dc-952f-c93a-75fd-eecae8189e86">
+      <Execution id="0370bf5d-d60d-46ea-9295-77be5b390921" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="Matrix_ContainsRowsWhenConstitutionLoaded" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.PlanCoverage_CoveredWhenTaskReferencesFR" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="99c65fcd-5aff-f245-2713-6a71dffae753">
+      <Execution id="636a7d4b-ef3d-4f24-9585-b515e1e1150d" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="PlanCoverage_CoveredWhenTaskReferencesFR" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.GapDetection_IncludesMissingSpecRequirements" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="467452d6-23c9-7c01-42c1-0a5876e6e9f6">
+      <Execution id="fe0e9c36-6fcc-4805-b991-23e9301f6a81" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="GapDetection_IncludesMissingSpecRequirements" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.GapDetection_IncludesOrphanTasks" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="15c6cbd4-7e0c-cd12-1b03-39160309a846">
+      <Execution id="4b347ff7-5800-4dbc-a8da-8416305591e5" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="GapDetection_IncludesOrphanTasks" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.Health_TotalCountsMatchInputs" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="316bbd49-b348-f736-4fb9-9c0de0f7a764">
+      <Execution id="c6821625-f6fc-4421-bed7-0ef7080f9db4" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="Health_TotalCountsMatchInputs" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.ConstitutionCoverage_ReturnsOneEntryPerRule" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="5bc3e815-51ae-171f-1d99-c3e08476a78a">
+      <Execution id="1ce2e7fd-c4b8-4192-b02d-ce687ff4afc8" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="ConstitutionCoverage_ReturnsOneEntryPerRule" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.SpecCoverage_StatsMatchChainEntries" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="5638f59e-d42b-d9d2-fe43-6f4085e49769">
+      <Execution id="8dfa0c59-224c-4838-b91e-53055848ea7a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="SpecCoverage_StatsMatchChainEntries" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.SearchMatrix_FindsByRuleId" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b92100b6-a9aa-f717-7765-6e598c457913">
+      <Execution id="17ddde93-77ea-4270-94bf-5ce6a3eddf27" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="SearchMatrix_FindsByRuleId" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.Matrix_ContainsFullChainRowWhenAllArtifactsLoaded" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="4bea529d-5e73-1360-723b-a4fbd92887e7">
+      <Execution id="3d5610fe-1a29-454b-b578-55a93dc5903a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="Matrix_ContainsFullChainRowWhenAllArtifactsLoaded" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.SpecCoverage_MissingWhenPlanOmitsFR" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="db30218e-eadd-5985-ba9b-eae373c98e48">
+      <Execution id="cc340d92-395a-44e1-87b0-49a479e78c54" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="SpecCoverage_MissingWhenPlanOmitsFR" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.Matrix_ContainsMissingRowForUncoveredRule" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="021a3dda-de27-122b-c275-404359b8d3b2">
+      <Execution id="70eafb9f-eb06-4788-83d6-dd20171d5773" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="Matrix_ContainsMissingRowForUncoveredRule" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.ConstitutionCoverage_CoveredWhenSpecReferencesRule" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="f8b499a0-f37d-5302-d656-28669e9c0bed">
+      <Execution id="ed8a531e-50b6-4434-9998-9ab50d0dad8e" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="ConstitutionCoverage_CoveredWhenSpecReferencesRule" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.OrphanTask_DetectedWhenNoFrOrScRefs" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="9510407b-f4b4-c3b8-22db-38c619a1e485">
+      <Execution id="dcf8ebd5-5565-4783-95df-77d92356bfa2" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="OrphanTask_DetectedWhenNoFrOrScRefs" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.FilterMatrixByStatus_ReturnsOnlyMatching" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="e2ec84a3-2138-2d1c-0ff5-9457b12712b0">
+      <Execution id="fd763059-3224-45f7-9e7f-3cf7656f7d80" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="FilterMatrixByStatus_ReturnsOnlyMatching" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.SpecCoverage_CoveredWhenPlanMentionsFR" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="e063f5a9-a886-16ee-80c7-862b57233abe">
+      <Execution id="09862e7a-1930-4b97-b1f2-2eec8d17ccf4" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests" name="SpecCoverage_CoveredWhenPlanMentionsFR" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="6f63b82d-3b01-1253-10db-da1594ed453f" executionId="f69ea4ab-8fec-4b08-aa2b-43d53327d610" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="aa2816a1-d81a-c5ed-0953-16bd4645daf5" executionId="a2218112-7379-432b-9e32-0c4e00cecb76" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="467452d6-23c9-7c01-42c1-0a5876e6e9f6" executionId="fe0e9c36-6fcc-4805-b991-23e9301f6a81" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="021a3dda-de27-122b-c275-404359b8d3b2" executionId="70eafb9f-eb06-4788-83d6-dd20171d5773" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5638f59e-d42b-d9d2-fe43-6f4085e49769" executionId="8dfa0c59-224c-4838-b91e-53055848ea7a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="99c65fcd-5aff-f245-2713-6a71dffae753" executionId="636a7d4b-ef3d-4f24-9585-b515e1e1150d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5e7c4a9e-c8ca-759c-0c11-c44e3e2b3c3f" executionId="1cabebea-3416-42c7-9bee-2d07c1f2b27a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f8b499a0-f37d-5302-d656-28669e9c0bed" executionId="ed8a531e-50b6-4434-9998-9ab50d0dad8e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="316bbd49-b348-f736-4fb9-9c0de0f7a764" executionId="c6821625-f6fc-4421-bed7-0ef7080f9db4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9254591e-31f7-e6f1-5bfb-62efdfddac80" executionId="1c394862-2fa8-4f90-878a-3e23f8809ae8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="732a5e00-0922-64a1-ded8-a48d45016562" executionId="a77835dd-0484-4a69-b9fe-80296a422c46" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2b7b45ab-5de4-4547-d73f-c7e3fc667168" executionId="57574f67-b1d3-464d-9148-67f8681f812e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f0b50ee4-e46c-aebd-ffae-b64b45caeeea" executionId="57e651f1-e435-4988-9d6e-aa89936f2eee" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="64a0c3dc-952f-c93a-75fd-eecae8189e86" executionId="0370bf5d-d60d-46ea-9295-77be5b390921" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e063f5a9-a886-16ee-80c7-862b57233abe" executionId="09862e7a-1930-4b97-b1f2-2eec8d17ccf4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1e8f71f0-0904-b341-9485-051b95f90822" executionId="59658f8a-e612-4ac9-9cb5-33a207fed330" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="db30218e-eadd-5985-ba9b-eae373c98e48" executionId="cc340d92-395a-44e1-87b0-49a479e78c54" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9510407b-f4b4-c3b8-22db-38c619a1e485" executionId="dcf8ebd5-5565-4783-95df-77d92356bfa2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4bea529d-5e73-1360-723b-a4fbd92887e7" executionId="3d5610fe-1a29-454b-b578-55a93dc5903a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="15c6cbd4-7e0c-cd12-1b03-39160309a846" executionId="4b347ff7-5800-4dbc-a8da-8416305591e5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e2ec84a3-2138-2d1c-0ff5-9457b12712b0" executionId="fd763059-3224-45f7-9e7f-3cf7656f7d80" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b92100b6-a9aa-f717-7765-6e598c457913" executionId="17ddde93-77ea-4270-94bf-5ce6a3eddf27" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5bc3e815-51ae-171f-1d99-c3e08476a78a" executionId="1ce2e7fd-c4b8-4192-b02d-ce687ff4afc8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="23" executed="23" passed="22" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 8.0.16)&#xD;
+[xUnit.net 00:00:01.70]   Discovering: BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:01.83]   Discovered:  BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:01.83]   Starting:    BirkNext.Web.Tests&#xD;
+     Warning:&#xD;
+     The component "Fluent Assertions" is governed by the rules defined in the Xceed License Agreement and&#xD;
+     the Xceed Fluent Assertions Community License. You may use Fluent Assertions free of charge for&#xD;
+     non-commercial use only. An active subscription is required to use Fluent Assertions for commercial use.&#xD;
+     Please contact Xceed Sales mailto:sales@xceed.com to acquire a subscription at a very low cost.&#xD;
+     A paid commercial license supports the development and continued increasing support of&#xD;
+     Fluent Assertions users under both commercial and community licenses. Help us&#xD;
+     keep Fluent Assertions at the forefront of unit testing.&#xD;
+     For more information, visit https://xceed.com/products/unit-testing/fluent-assertions/&#xD;
+[xUnit.net 00:00:02.07]       Expected fullRow not to be &lt;null&gt; because at least one full 4-column covered row expected.&#xD;
+[xUnit.net 00:00:02.07]       Stack Trace:&#xD;
+[xUnit.net 00:00:02.07]            at FluentAssertions.Primitives.ReferenceTypeAssertions`2.NotBeNull(String because, Object[] becauseArgs)&#xD;
+[xUnit.net 00:00:02.07]         C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\ArtifactTraceabilityServiceTests.cs(319,0): at BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.Matrix_ContainsFullChainRowWhenAllArtifactsLoaded()&#xD;
+[xUnit.net 00:00:02.07]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)&#xD;
+[xUnit.net 00:00:02.07]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)&#xD;
+[xUnit.net 00:00:02.09]   Finished:    BirkNext.Web.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="BUF-5CG4423FYV" outcome="Error" timestamp="2026-08-17T12:25:03.2656809+02:00">
+        <Text>[xUnit.net 00:00:02.07]     BirkNext.Web.Tests.Services.ArtifactTraceabilityServiceTests.Matrix_ContainsFullChainRowWhenAllArtifactsLoaded [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

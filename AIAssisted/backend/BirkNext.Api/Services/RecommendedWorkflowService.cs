@@ -98,6 +98,7 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
     {
         { "LoadSampleProject", Array.Empty<string>() },
         { "ConstitutionExplorer", new[] { "Constitution" } },
+        { "SpecificationExplorer", new[] { "Specification" } },
         { "PlanExplorer", new[] { "Plan" } },
         { "TaskExplorer", new[] { "Tasks" } },
         { "DataModelExplorer", new[] { "DataModel" } },
@@ -150,9 +151,15 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         var currentStepAssigned = false;
 
         // Build view model for reviewer workflow definitions only.
-        foreach (var definition in WorkflowDefinitions.AllSteps
-            .Where(definition => ShouldIncludeInReviewerWorkflow(definition, hasDataModel)))
+        var visibleDefinitions = WorkflowDefinitions.AllSteps
+            .Where(definition => ShouldIncludeInReviewerWorkflow(definition, hasDataModel))
+            .ToList();
+
+        for (int index = 0; index < visibleDefinitions.Count; index++)
         {
+            var definition = visibleDefinitions[index];
+            var visibleNumber = index + 1;  // Renumber based on visible steps to avoid gaps
+
             var progress = progressLookup.TryGetValue(definition.StepKey, out var p) ? p : null;
 
             // Check if required artifacts are available
@@ -196,7 +203,7 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
 
             var vm = new WorkflowStepViewModel
             {
-                Number = definition.SortOrder,
+                Number = visibleNumber,
                 Key = definition.StepKey,
                 Title = definition.Title,
                 Description = definition.Description,
@@ -524,6 +531,7 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         var stepToArtifact = new Dictionary<string, string>
         {
             { "ConstitutionExplorer", "Constitution" },
+            { "SpecificationExplorer", "Specification" },
             { "PlanExplorer", "Plan" },
             { "TaskExplorer", "Tasks" },
             { "DataModelExplorer", "DataModel" },
