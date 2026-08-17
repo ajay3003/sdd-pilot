@@ -1,0 +1,303 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="12cba03c-7d0a-40b8-9d6b-af440a7fe35e" name="ajaan@BUF-5CG4423FYV 2026-08-17 13:29:08" runUser="COMMON\ajaan" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-17T13:29:08.9599362+02:00" queuing="2026-08-17T13:29:08.9599368+02:00" start="2026-08-17T13:29:08.2433342+02:00" finish="2026-08-17T13:29:09.3781750+02:00" />
+  <TestSettings name="default" id="84cc1fb7-b7c0-4b95-bff4-968d66d361fe">
+    <Deployment runDeploymentRoot="ajaan_BUF-5CG4423FYV_2026-08-17_13_29_08" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="0ede0807-10e7-4f79-a114-20ee6153f6fb" testId="598857d8-f51b-08c8-a529-1cf2d9713f08" testName="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextBuildShouldBeDeterministic" computerName="BUF-5CG4423FYV" duration="00:00:00.0006216" startTime="2026-08-17T13:29:08.9300589+02:00" endTime="2026-08-17T13:29:08.9300590+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0ede0807-10e7-4f79-a114-20ee6153f6fb">
+      <Output>
+        <StdOut>=== TEST 5: Determinism ===&#xD;
+✓ Same input produces same requirement count&#xD;
+✓ Requirements have identical IDs&#xD;
+✓ Coverage metrics are identical</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="e846f6d2-4bf8-4110-89f4-459103bc3130" testId="3bd13913-9996-45bc-299a-bc6277e42fb9" testName="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.ConcurrentEndUpdateCallsShouldFireEventOnce" computerName="BUF-5CG4423FYV" duration="00:00:00.0011107" startTime="2026-08-17T13:29:09.0137129+02:00" endTime="2026-08-17T13:29:09.0137129+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e846f6d2-4bf8-4110-89f4-459103bc3130">
+      <Output>
+        <StdOut>=== TEST 8: Multiple EndUpdate calls only fire event at depth 0 ===&#xD;
+EndUpdate at depth 1 - no event should fire&#xD;
+EndUpdate at depth 0 - event should fire&#xD;
+✓ Event fired exactly once at depth 0</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="d083bb77-4f6a-44b0-adf2-430a26ea208a" testId="5cd1b5bc-8b16-c759-c8e1-49a3b2740820" testName="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextShouldSupportRebuild" computerName="BUF-5CG4423FYV" duration="00:00:00.0028159" startTime="2026-08-17T13:29:08.9019182+02:00" endTime="2026-08-17T13:29:08.9019185+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d083bb77-4f6a-44b0-adf2-430a26ea208a">
+      <Output>
+        <StdOut>=== TEST 4: Rebuild behavior ===&#xD;
+✓ Initial context has 1 requirement&#xD;
+✓ Rebuild produces new context with updated data&#xD;
+✓ Semantic models are replaced, not mutated&#xD;
+✓ Original context unchanged after rebuild</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="fd8012f6-2732-424f-9f97-82afe1a58394" testId="d4de7630-8056-7635-bd3c-6f41d7593b03" testName="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextShouldBuildCrossArtifactLinks" computerName="BUF-5CG4423FYV" duration="00:00:00.0003139" startTime="2026-08-17T13:29:08.9300869+02:00" endTime="2026-08-17T13:29:08.9300870+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fd8012f6-2732-424f-9f97-82afe1a58394">
+      <Output>
+        <StdOut>=== TEST 6: Cross-artifact linking ===&#xD;
+✓ Query API doesn't throw&#xD;
+✓ Requirements accessible</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="8552364d-1bf2-44fc-ba2f-ca2c97db7eab" testId="54a14259-adf8-c22e-6fe9-0b0897d3a371" testName="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextQueryAPIShouldWork" computerName="BUF-5CG4423FYV" duration="00:00:00.0012900" startTime="2026-08-17T13:29:08.9030184+02:00" endTime="2026-08-17T13:29:08.9030187+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8552364d-1bf2-44fc-ba2f-ca2c97db7eab">
+      <Output>
+        <StdOut>=== TEST 7: Query API ===&#xD;
+✓ Query API correctly filters requirements&#xD;
+✓ Gap analysis works&#xD;
+✓ Coverage queries work</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="1233bd75-3f9c-407a-a3fb-0254bd6bbcf2" testId="854fc15a-1b6e-7a62-2885-43db2fceab78" testName="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextShouldBuildFromCompleteWorkspace" computerName="BUF-5CG4423FYV" duration="00:00:00.0003818" startTime="2026-08-17T13:29:08.9022435+02:00" endTime="2026-08-17T13:29:08.9022436+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1233bd75-3f9c-407a-a3fb-0254bd6bbcf2">
+      <Output>
+        <StdOut>=== TEST 1: Build from complete workspace with all artifacts ===&#xD;
+✓ ReviewContext created successfully&#xD;
+✓ All semantic models present&#xD;
+✓ Coverage summary created&#xD;
+✓ Requirements accessible via API</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="3a68dfa3-91ea-4896-ae76-9d8126609493" testId="ad29fd82-c022-0d56-72c1-ac5cff211ec5" testName="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextShouldHandleMalformedArtifacts" computerName="BUF-5CG4423FYV" duration="00:00:00.0002965" startTime="2026-08-17T13:29:08.9033246+02:00" endTime="2026-08-17T13:29:08.9033248+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3a68dfa3-91ea-4896-ae76-9d8126609493">
+      <Output>
+        <StdOut>=== TEST 3: Handle malformed artifacts ===&#xD;
+✓ Malformed artifact doesn't crash&#xD;
+✓ Malformed requirement still accessible&#xD;
+✓ Query methods still work with malformed data</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="25540240-561b-483d-8693-b0fcb4c46027" testId="2935108c-a215-7139-c787-6c22cb52019e" testName="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.NoMutationShouldNotTriggerRebuild" computerName="BUF-5CG4423FYV" duration="00:00:00.0929873" startTime="2026-08-17T13:29:08.9731716+02:00" endTime="2026-08-17T13:29:08.9731723+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="25540240-561b-483d-8693-b0fcb4c46027">
+      <Output>
+        <StdOut>=== TEST 4: No mutations within batch = no rebuild ===&#xD;
+Batch started, no artifacts modified&#xD;
+✓ ReviewContextChanged was not fired&#xD;
+✓ ReviewContext remains uninitialized</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="e287da0d-06e4-480a-ab84-ddb26b08b902" testId="208eee22-1697-f132-6439-5a1276d0406b" testName="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.RestoreWorkspaceAsyncShouldTriggerRebuild" computerName="BUF-5CG4423FYV" duration="00:00:00.0069045" startTime="2026-08-17T13:29:09.0091755+02:00" endTime="2026-08-17T13:29:09.0091759+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e287da0d-06e4-480a-ab84-ddb26b08b902">
+      <Output>
+        <StdOut>=== TEST 5: RestoreWorkspaceAsync triggers ReviewContextProvider rebuild ===&#xD;
+✓ RestoreWorkspaceAsync completed&#xD;
+✓ ReviewContextChanged fired once&#xD;
+✓ ReviewContext built from restored artifacts (mocks empty)</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="71efdf8f-e480-4251-b190-9cf23707f682" testId="6ed7793e-b24b-33d3-cc65-9ab68d99ed2a" testName="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextShouldHandleMissingArtifacts" computerName="BUF-5CG4423FYV" duration="00:00:00.0157121" startTime="2026-08-17T13:29:08.8987548+02:00" endTime="2026-08-17T13:29:08.8987716+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="71efdf8f-e480-4251-b190-9cf23707f682">
+      <Output>
+        <StdOut>=== TEST 2: Handle missing/empty artifacts ===&#xD;
+✓ Empty workspace doesn't crash&#xD;
+✓ All collections are empty, no null references&#xD;
+✓ Query methods handle empty workspace gracefully&#xD;
+✓ Coverage reflects missing artifacts</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="b26244d4-62ae-44cc-a1db-8e66607e64ce" testId="142cbc91-d1be-1aa2-ccdf-c522e1fec4d8" testName="BirkNext.Web.Tests.Pages.SystemSettingsReviewContextValidationTests.SystemSettings_DeveloperMenu_RendersReviewContextValidationEmptyState" computerName="BUF-5CG4423FYV" duration="00:00:00.4443896" startTime="2026-08-17T13:29:09.3221076+02:00" endTime="2026-08-17T13:29:09.3221079+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b26244d4-62ae-44cc-a1db-8e66607e64ce" />
+    <UnitTestResult executionId="9f320f3d-9f63-4af3-be8a-3fac9e47cc45" testId="8c18e05b-0d28-1ee3-14b9-3cae97fa3409" testName="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.SingleWorkspaceUpdateShouldTriggerExactlyOneRebuild" computerName="BUF-5CG4423FYV" duration="00:00:00.0264039" startTime="2026-08-17T13:29:08.9996846+02:00" endTime="2026-08-17T13:29:08.9996851+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9f320f3d-9f63-4af3-be8a-3fac9e47cc45">
+      <Output>
+        <StdOut>=== TEST 1: Single batch update triggers exactly one rebuild ===&#xD;
+✓ Batch completed&#xD;
+✓ ReviewContextChanged fired exactly once&#xD;
+✓ ReviewContext is available</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="fe448930-b71a-4fe3-8610-9ca3e7d80de0" testId="b6c589d4-ec4a-2aa0-0a14-21feb20a4dc7" testName="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.MultipleSequentialUpdatesShouldTriggerMultipleRebuilds" computerName="BUF-5CG4423FYV" duration="00:00:00.0013829" startTime="2026-08-17T13:29:09.0010959+02:00" endTime="2026-08-17T13:29:09.0010962+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fe448930-b71a-4fe3-8610-9ca3e7d80de0">
+      <Output>
+        <StdOut>=== TEST 3: Multiple sequential updates trigger multiple rebuilds ===&#xD;
+✓ First update completed&#xD;
+✓ Second update completed&#xD;
+✓ ReviewContextChanged fired exactly twice&#xD;
+✓ ReviewContext reflects latest update</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="19412b8e-c0e0-4661-8ead-3a5a95db842b" testId="ef1a12a5-26ce-d562-104a-44295c8675db" testName="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.ProviderShouldBuildFromPartialArtifacts" computerName="BUF-5CG4423FYV" duration="00:00:00.0009471" startTime="2026-08-17T13:29:09.0136762+02:00" endTime="2026-08-17T13:29:09.0136764+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="19412b8e-c0e0-4661-8ead-3a5a95db842b">
+      <Output>
+        <StdOut>=== TEST 6: Provider builds gracefully from partial artifacts ===&#xD;
+✓ Rebuild completed with partial artifacts&#xD;
+✓ ReviewContext is available&#xD;
+✓ Partial artifacts handled gracefully</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="ea44d106-2bcf-48ab-ac1e-f9e2d24607d6" testId="0492377c-ca62-49dc-94ed-bb08eea38d4c" testName="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextShouldNotThrowOnEdgeCases" computerName="BUF-5CG4423FYV" duration="00:00:00.0001870" startTime="2026-08-17T13:29:08.9298966+02:00" endTime="2026-08-17T13:29:08.9298967+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ea44d106-2bcf-48ab-ac1e-f9e2d24607d6">
+      <Output>
+        <StdOut>=== TEST 8: No exceptions on edge cases ===&#xD;
+✓ GetRequirements on empty: no exception&#xD;
+✓ GetRequirement(nonexistent): no exception&#xD;
+✓ Gap analysis on empty: no exception&#xD;
+✓ HasTestCoverage(none): no exception</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="5884f0c0-4192-41e0-b568-bf91887ccb2b" testId="4404e6e3-beb0-fb05-935b-0476a41e2757" testName="BirkNext.Web.Tests.Services.TaskSpecAlignmentServiceTests.PersonAdapterSample_ClassifiesSpecLinkedTasksFromReviewContextRelationships" computerName="BUF-5CG4423FYV" duration="00:00:00.2029589" startTime="2026-08-17T13:29:09.0831200+02:00" endTime="2026-08-17T13:29:09.0831203+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5884f0c0-4192-41e0-b568-bf91887ccb2b" />
+    <UnitTestResult executionId="01a7dec2-1c22-4938-a18f-8cf013638f82" testId="dc30f87c-699b-0d64-387d-9403c0c004e4" testName="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.ProviderShouldHandleRebuildErrorsGracefully" computerName="BUF-5CG4423FYV" duration="00:00:00.0009408" startTime="2026-08-17T13:29:09.0101992+02:00" endTime="2026-08-17T13:29:09.0101994+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="01a7dec2-1c22-4938-a18f-8cf013638f82">
+      <Output>
+        <StdOut>=== TEST 7: Provider handles parse errors gracefully ===&#xD;
+✓ Rebuild completed despite empty artifacts&#xD;
+✓ ReviewContext is available (graceful degradation)</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="4716ee2f-7f5f-44f7-9730-4023947f262c" testId="49273e76-8545-5f31-dd74-7eeb45722c57" testName="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.NestedBatchesShouldTriggerExactlyOneRebuild" computerName="BUF-5CG4423FYV" duration="00:00:00.0010966" startTime="2026-08-17T13:29:09.0022389+02:00" endTime="2026-08-17T13:29:09.0022392+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4716ee2f-7f5f-44f7-9730-4023947f262c">
+      <Output>
+        <StdOut>=== TEST 2: Nested batches (depth &gt; 1) trigger exactly one rebuild ===&#xD;
+Depth: 1&#xD;
+Depth: 2&#xD;
+Depth: 1 (EndUpdate from depth 2)&#xD;
+Depth: 2 (again)&#xD;
+Depth: 1 (EndUpdate from depth 2)&#xD;
+Depth: 0 (EndUpdate from depth 1) - should fire event&#xD;
+✓ ReviewContextChanged fired exactly once despite nesting&#xD;
+✓ ReviewContext is built (mocks return empty models)</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="6f63bd27-730d-4b9c-8265-30619ee6975e" testId="9c0e485c-3a29-adba-e8ca-7907306ed0bf" testName="BirkNext.Web.Tests.ReviewContextRuntimeValidationTest.Validate_ReviewContext_IsCanonicalSourceOfTruth" computerName="BUF-5CG4423FYV" duration="00:00:00.1785736" startTime="2026-08-17T13:29:09.0587287+02:00" endTime="2026-08-17T13:29:09.0587295+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6f63bd27-730d-4b9c-8265-30619ee6975e" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="BirkNext.Web.Tests.Pages.SystemSettingsReviewContextValidationTests.SystemSettings_DeveloperMenu_RendersReviewContextValidationEmptyState" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="142cbc91-d1be-1aa2-ccdf-c522e1fec4d8">
+      <Execution id="b26244d4-62ae-44cc-a1db-8e66607e64ce" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Pages.SystemSettingsReviewContextValidationTests" name="SystemSettings_DeveloperMenu_RendersReviewContextValidationEmptyState" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.RestoreWorkspaceAsyncShouldTriggerRebuild" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="208eee22-1697-f132-6439-5a1276d0406b">
+      <Execution id="e287da0d-06e4-480a-ab84-ddb26b08b902" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest" name="RestoreWorkspaceAsyncShouldTriggerRebuild" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.ProviderShouldBuildFromPartialArtifacts" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ef1a12a5-26ce-d562-104a-44295c8675db">
+      <Execution id="19412b8e-c0e0-4661-8ead-3a5a95db842b" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest" name="ProviderShouldBuildFromPartialArtifacts" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.NoMutationShouldNotTriggerRebuild" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="2935108c-a215-7139-c787-6c22cb52019e">
+      <Execution id="25540240-561b-483d-8693-b0fcb4c46027" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest" name="NoMutationShouldNotTriggerRebuild" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.ReviewContextRuntimeValidationTest.Validate_ReviewContext_IsCanonicalSourceOfTruth" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="9c0e485c-3a29-adba-e8ca-7907306ed0bf">
+      <Execution id="6f63bd27-730d-4b9c-8265-30619ee6975e" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.ReviewContextRuntimeValidationTest" name="Validate_ReviewContext_IsCanonicalSourceOfTruth" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextQueryAPIShouldWork" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="54a14259-adf8-c22e-6fe9-0b0897d3a371">
+      <Execution id="8552364d-1bf2-44fc-ba2f-ca2c97db7eab" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextContractTests" name="ReviewContextQueryAPIShouldWork" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextShouldHandleMalformedArtifacts" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="ad29fd82-c022-0d56-72c1-ac5cff211ec5">
+      <Execution id="3a68dfa3-91ea-4896-ae76-9d8126609493" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextContractTests" name="ReviewContextShouldHandleMalformedArtifacts" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextBuildShouldBeDeterministic" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="598857d8-f51b-08c8-a529-1cf2d9713f08">
+      <Execution id="0ede0807-10e7-4f79-a114-20ee6153f6fb" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextContractTests" name="ReviewContextBuildShouldBeDeterministic" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextShouldNotThrowOnEdgeCases" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="0492377c-ca62-49dc-94ed-bb08eea38d4c">
+      <Execution id="ea44d106-2bcf-48ab-ac1e-f9e2d24607d6" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextContractTests" name="ReviewContextShouldNotThrowOnEdgeCases" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextShouldSupportRebuild" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="5cd1b5bc-8b16-c759-c8e1-49a3b2740820">
+      <Execution id="d083bb77-4f6a-44b0-adf2-430a26ea208a" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextContractTests" name="ReviewContextShouldSupportRebuild" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextShouldBuildFromCompleteWorkspace" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="854fc15a-1b6e-7a62-2885-43db2fceab78">
+      <Execution id="1233bd75-3f9c-407a-a3fb-0254bd6bbcf2" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextContractTests" name="ReviewContextShouldBuildFromCompleteWorkspace" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.NestedBatchesShouldTriggerExactlyOneRebuild" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="49273e76-8545-5f31-dd74-7eeb45722c57">
+      <Execution id="4716ee2f-7f5f-44f7-9730-4023947f262c" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest" name="NestedBatchesShouldTriggerExactlyOneRebuild" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextShouldBuildCrossArtifactLinks" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="d4de7630-8056-7635-bd3c-6f41d7593b03">
+      <Execution id="fd8012f6-2732-424f-9f97-82afe1a58394" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextContractTests" name="ReviewContextShouldBuildCrossArtifactLinks" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.ConcurrentEndUpdateCallsShouldFireEventOnce" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="3bd13913-9996-45bc-299a-bc6277e42fb9">
+      <Execution id="e846f6d2-4bf8-4110-89f4-459103bc3130" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest" name="ConcurrentEndUpdateCallsShouldFireEventOnce" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.ProviderShouldHandleRebuildErrorsGracefully" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="dc30f87c-699b-0d64-387d-9403c0c004e4">
+      <Execution id="01a7dec2-1c22-4938-a18f-8cf013638f82" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest" name="ProviderShouldHandleRebuildErrorsGracefully" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextContractTests.ReviewContextShouldHandleMissingArtifacts" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="6ed7793e-b24b-33d3-cc65-9ab68d99ed2a">
+      <Execution id="71efdf8f-e480-4251-b190-9cf23707f682" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextContractTests" name="ReviewContextShouldHandleMissingArtifacts" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Services.TaskSpecAlignmentServiceTests.PersonAdapterSample_ClassifiesSpecLinkedTasksFromReviewContextRelationships" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="4404e6e3-beb0-fb05-935b-0476a41e2757">
+      <Execution id="5884f0c0-4192-41e0-b568-bf91887ccb2b" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Services.TaskSpecAlignmentServiceTests" name="PersonAdapterSample_ClassifiesSpecLinkedTasksFromReviewContextRelationships" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.MultipleSequentialUpdatesShouldTriggerMultipleRebuilds" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="b6c589d4-ec4a-2aa0-0a14-21feb20a4dc7">
+      <Execution id="fe448930-b71a-4fe3-8610-9ca3e7d80de0" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest" name="MultipleSequentialUpdatesShouldTriggerMultipleRebuilds" />
+    </UnitTest>
+    <UnitTest name="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest.SingleWorkspaceUpdateShouldTriggerExactlyOneRebuild" storage="c:\users\ajaan\source\sdd-repos\birknext\aiassisted\frontend\birknext.web.tests\bin\debug\net8.0\birknext.web.tests.dll" id="8c18e05b-0d28-1ee3-14b9-3cae97fa3409">
+      <Execution id="9f320f3d-9f63-4af3-be8a-3fac9e47cc45" />
+      <TestMethod codeBase="C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="BirkNext.Web.Tests.Integration.ReviewContextLifecycleIntegrationTest" name="SingleWorkspaceUpdateShouldTriggerExactlyOneRebuild" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="598857d8-f51b-08c8-a529-1cf2d9713f08" executionId="0ede0807-10e7-4f79-a114-20ee6153f6fb" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3bd13913-9996-45bc-299a-bc6277e42fb9" executionId="e846f6d2-4bf8-4110-89f4-459103bc3130" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5cd1b5bc-8b16-c759-c8e1-49a3b2740820" executionId="d083bb77-4f6a-44b0-adf2-430a26ea208a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d4de7630-8056-7635-bd3c-6f41d7593b03" executionId="fd8012f6-2732-424f-9f97-82afe1a58394" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="54a14259-adf8-c22e-6fe9-0b0897d3a371" executionId="8552364d-1bf2-44fc-ba2f-ca2c97db7eab" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="854fc15a-1b6e-7a62-2885-43db2fceab78" executionId="1233bd75-3f9c-407a-a3fb-0254bd6bbcf2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ad29fd82-c022-0d56-72c1-ac5cff211ec5" executionId="3a68dfa3-91ea-4896-ae76-9d8126609493" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2935108c-a215-7139-c787-6c22cb52019e" executionId="25540240-561b-483d-8693-b0fcb4c46027" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="208eee22-1697-f132-6439-5a1276d0406b" executionId="e287da0d-06e4-480a-ab84-ddb26b08b902" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6ed7793e-b24b-33d3-cc65-9ab68d99ed2a" executionId="71efdf8f-e480-4251-b190-9cf23707f682" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="142cbc91-d1be-1aa2-ccdf-c522e1fec4d8" executionId="b26244d4-62ae-44cc-a1db-8e66607e64ce" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8c18e05b-0d28-1ee3-14b9-3cae97fa3409" executionId="9f320f3d-9f63-4af3-be8a-3fac9e47cc45" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b6c589d4-ec4a-2aa0-0a14-21feb20a4dc7" executionId="fe448930-b71a-4fe3-8610-9ca3e7d80de0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ef1a12a5-26ce-d562-104a-44295c8675db" executionId="19412b8e-c0e0-4661-8ead-3a5a95db842b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0492377c-ca62-49dc-94ed-bb08eea38d4c" executionId="ea44d106-2bcf-48ab-ac1e-f9e2d24607d6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4404e6e3-beb0-fb05-935b-0476a41e2757" executionId="5884f0c0-4192-41e0-b568-bf91887ccb2b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="dc30f87c-699b-0d64-387d-9403c0c004e4" executionId="01a7dec2-1c22-4938-a18f-8cf013638f82" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="49273e76-8545-5f31-dd74-7eeb45722c57" executionId="4716ee2f-7f5f-44f7-9730-4023947f262c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9c0e485c-3a29-adba-e8ca-7907306ed0bf" executionId="6f63bd27-730d-4b9c-8265-30619ee6975e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="19" executed="19" passed="19" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.3.1+6b60a9e56a (64-bit .NET 8.0.16)&#xD;
+[xUnit.net 00:00:00.07]   Discovering: BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.20]   Discovered:  BirkNext.Web.Tests&#xD;
+[xUnit.net 00:00:00.20]   Starting:    BirkNext.Web.Tests&#xD;
+����������������������������������������������������������������������������ͻ&#xD;
+�                  REVIEWCONTEXT RUNTIME VALIDATION REPORT                    �&#xD;
+����������������������������������������������������������������������������ͼ&#xD;
+Status: V PASSED&#xD;
+Results: 21 passed, 0 failed&#xD;
+�����������������������������������������������������������������������������Ŀ&#xD;
+� Metric                              � ReviewContext� Expected     � Match   �&#xD;
+�����������������������������������������������������������������������������Ĵ&#xD;
+� User Stories                        �            5 �            5 � V      �&#xD;
+� Requirements                        �           22 �           22 � V      �&#xD;
+� Success Criteria                    �            9 �            9 � V      �&#xD;
+� Tests (Acceptance Scenarios)        �           21 �           21 � V      �&#xD;
+� Clarifications                      �            8 �            8 � V      �&#xD;
+� Constitution Rules                  �           35 �           35 � V      �&#xD;
+� Tasks                               �           58 �           58 � V      �&#xD;
+� Data Entities                       �            0 �            0 � V      �&#xD;
+� Requirements With Tests             �            0 �            0 � V      �&#xD;
+� Requirements With Success Criteria  �            0 �            0 � V      �&#xD;
+� Missing Tests                       �           22 �           22 � V      �&#xD;
+� Missing Success Criteria            �           22 �           22 � V      �&#xD;
+� Coverage %                          �           45 �           45 � V      �&#xD;
+� Spec \u001a Constitution Links           �            0 �            0 � V      �&#xD;
+� Spec \u001a Plan Links                   �            0 �            0 � V      �&#xD;
+� Spec \u001a Tasks Links                  �           10 �           10 � V      �&#xD;
+� Spec \u001a DataModel Links              �            0 �            0 � V      �&#xD;
+� Plan \u001a Tasks Links                  �            0 �            0 � V      �&#xD;
+� Orphaned Tests                      �           21 �           21 � V      �&#xD;
+� Requirements Without Coverage       �           22 �           22 � V      �&#xD;
+� Specification Completeness %        �           45 �           45 � V      �&#xD;
+�������������������������������������������������������������������������������&#xD;
+VVV VALIDATION PASSED VVV&#xD;
+Conclusion: ReviewContext is now the canonical runtime source of truth.&#xD;
+     Warning:&#xD;
+     The component "Fluent Assertions" is governed by the rules defined in the Xceed License Agreement and&#xD;
+     the Xceed Fluent Assertions Community License. You may use Fluent Assertions free of charge for&#xD;
+     non-commercial use only. An active subscription is required to use Fluent Assertions for commercial use.&#xD;
+     Please contact Xceed Sales mailto:sales@xceed.com to acquire a subscription at a very low cost.&#xD;
+     A paid commercial license supports the development and continued increasing support of&#xD;
+     Fluent Assertions users under both commercial and community licenses. Help us&#xD;
+     keep Fluent Assertions at the forefront of unit testing.&#xD;
+     For more information, visit https://xceed.com/products/unit-testing/fluent-assertions/&#xD;
+[xUnit.net 00:00:00.68]   Finished:    BirkNext.Web.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

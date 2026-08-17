@@ -32,7 +32,6 @@ public class FeatureVisibilityService
     public bool RecommendedWorkflow  => _flags.RecommendedWorkflow;
     public bool UserGuide            => _flags.UserGuide;
     public bool Dashboard            => _flags.Dashboard;
-    public bool SpecificationReview  => _flags.SpecificationReview;
     public bool SpecificationExplorer => _flags.SpecificationExplorer;
     public bool QaArtifactLibrary    => _flags.QaArtifactLibrary;
     public bool SampleProjects       => _flags.SampleProjects;
@@ -66,7 +65,7 @@ public class FeatureVisibilityService
 
     // Section-level helpers: show the section header only if at least one child item is visible.
     public bool ShowSectionGettingStarted => RecommendedWorkflow || UserGuide;
-    public bool ShowSectionReview         => Dashboard || SpecificationReview || SpecificationExplorer || ConstitutionExplorer || DataModelExplorer || PlanExplorer || TaskExplorer;
+    public bool ShowSectionReview         => Dashboard || SpecificationExplorer || ConstitutionExplorer || DataModelExplorer || PlanExplorer || TaskExplorer;
     public bool ShowSectionLibrary        => QaArtifactLibrary || CreateTestScenario || SampleProjects;
     public bool ShowSectionTraceability   => LegacyTraceabilityNavigationEnabled
                                              && (TraceabilityCoverage || TraceabilitySuggestions || CodeTraceability);

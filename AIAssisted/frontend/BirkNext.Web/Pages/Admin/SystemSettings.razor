@@ -1410,7 +1410,7 @@ else if (_settings is not null)
     private static readonly HashSet<string> ReviewSectionKeys =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "SpecificationReview", "ConstitutionExplorer", "DataModelExplorer", "PlanExplorer", "TaskExplorer"
+            "SpecificationExplorer", "ConstitutionExplorer", "DataModelExplorer", "PlanExplorer", "TaskExplorer"
         };
 
     private static readonly HashSet<string> LibrarySectionKeys =
@@ -1456,7 +1456,7 @@ else if (_settings is not null)
 
         // Review
         ("Dashboard",               "Dashboard"),
-        ("Specification Review",    "SpecificationReview"),
+        ("Specification Explorer",  "SpecificationExplorer"),
         ("Constitution Explorer",   "ConstitutionExplorer"),
         ("Data Model Explorer",     "DataModelExplorer"),
         ("Plan Explorer",           "PlanExplorer"),
@@ -2750,7 +2750,7 @@ else if (_settings is not null)
     // All routes served by the application (one entry per @page directive).
     private static readonly HashSet<string> KnownRoutes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "/", "/dashboard", "/extract", "/constitution-explorer", "/data-model-explorer", "/plan-explorer",
+        "/", "/dashboard", "/specification-explorer", "/constitution-explorer", "/data-model-explorer", "/plan-explorer",
         "/task-explorer", "/scenarios", "/scenarios/new", "/sample-projects", "/traceability",
         "/traceability/suggestions", "/code-traceability", "/spec-drift",
         "/impact-analysis", "/artifact-traceability", "/task-alignment",
@@ -2774,7 +2774,7 @@ else if (_settings is not null)
         ("Recommended Workflow",         "getting-started"),
         ("User Guide",                   "user-guide"),
         ("Dashboard",                    "dashboard"),
-        ("Specification Review",         "extract"),
+        ("Specification Explorer",       "specification-explorer"),
         ("Constitution Explorer",        "constitution-explorer"),
         ("Data Model Explorer",          "data-model-explorer"),
         ("Plan Explorer",                "plan-explorer"),
@@ -2803,7 +2803,7 @@ else if (_settings is not null)
         // RecommendedWorkflow.razor
         ("Recommended Workflow", "constitution-explorer",       "Phase 1 CTA"),
         ("Recommended Workflow", "data-model-explorer",         "Phase 2 CTA"),
-        ("Recommended Workflow", "extract",                     "Phase 3 CTA"),
+        ("Recommended Workflow", "specification-explorer",      "Phase 3 CTA"),
         ("Recommended Workflow", "plan-explorer",               "Phase 4 CTA"),
         ("Recommended Workflow", "artifact-traceability",       "Phase 4 CTA"),
         ("Recommended Workflow", "quality-review",              "Phase 4 CTA (secondary)"),
@@ -2817,7 +2817,7 @@ else if (_settings is not null)
         ("User Guide", "/quality-review",                       "Quality Review feature links"),
         ("User Guide", "/constitution-explorer",                "Constitution Explorer link"),
         ("User Guide", "/data-model-explorer",                  "Data Model Explorer link"),
-        ("User Guide", "/extract",                              "Specification Review link"),
+        ("User Guide", "/specification-explorer",               "Specification Explorer link"),
         ("User Guide", "/plan-explorer",                        "Plan Explorer link"),
         ("User Guide", "/task-explorer",                        "Task Explorer link"),
         ("User Guide", "/scenarios",                            "QA Artifact Library link"),
@@ -2835,7 +2835,7 @@ else if (_settings is not null)
         ("User Guide", "/admin/system-settings",                "System Settings link"),
         // Dashboard.razor
         ("Dashboard", "constitution-explorer",                  "Governance Status artifact link"),
-        ("Dashboard", "extract",                                "Governance Status artifact link"),
+        ("Dashboard", "specification-explorer",                 "Governance Status artifact link"),
         ("Dashboard", "plan-explorer",                          "Governance Status artifact link"),
         ("Dashboard", "task-explorer",                          "Governance Status artifact link"),
         ("Dashboard", "quality-review",                         "Readiness Summary links"),
@@ -2845,7 +2845,7 @@ else if (_settings is not null)
         ("Dashboard", "wasm-performance-review",                "Analysis Summary card"),
         ("Dashboard", "getting-started",                        "Onboarding CTA"),
         ("Dashboard", "constitution-explorer",                  "Quick Actions"),
-        ("Dashboard", "extract",                                "Quick Actions"),
+        ("Dashboard", "specification-explorer",                 "Quick Actions"),
         ("Dashboard", "plan-explorer",                          "Quick Actions"),
         ("Dashboard", "task-explorer",                          "Quick Actions"),
         ("Dashboard", "artifact-traceability",                  "Quick Actions"),

@@ -103,7 +103,6 @@ builder.Services.AddScoped<IConstitutionExplorerPageModelBuilder, ConstitutionEx
 builder.Services.AddScoped<IDataModelExplorerPageModelBuilder, DataModelExplorerPageModelBuilder>();
 builder.Services.AddScoped<IPlanExplorerPageModelBuilder, PlanExplorerPageModelBuilder>();
 builder.Services.AddScoped<ITaskExplorerPageModelBuilder, TaskExplorerPageModelBuilder>();
-builder.Services.AddScoped<ISpecificationReviewPageModelBuilder, SpecificationReviewPageModelBuilder>();
 builder.Services.AddScoped<ReviewPageModelService>();
 builder.Services.AddScoped<IMigrationIntegrityValidator, MigrationIntegrityValidator>();
 builder.Services.AddScoped<IEnvironmentDiagnosticsService, EnvironmentDiagnosticsService>();

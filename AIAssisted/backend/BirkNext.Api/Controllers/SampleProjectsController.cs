@@ -15,7 +15,7 @@ public class SampleProjectsController(IConfiguration config) : ControllerBase
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["constitution.md"] = ("constitution", "Constitution Explorer", "/constitution-explorer"),
-            ["spec.md"]         = ("spec",         "Specification Review",  "/extract"),
+            ["spec.md"]         = ("spec",         "Specification Explorer", "/specification-explorer"),
             ["data-model.md"]   = ("datamodel",    "Data Model Explorer",   "/data-model-explorer"),
             ["plan.md"]         = ("plan",         "Plan Explorer",         "/plan-explorer"),
             ["tasks.md"]        = ("tasks",        "Task Explorer",         "/task-explorer"),

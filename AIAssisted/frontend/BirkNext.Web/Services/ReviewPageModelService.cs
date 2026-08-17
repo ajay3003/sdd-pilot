@@ -68,15 +68,4 @@ public class ReviewPageModelService(HttpClient httpClient)
         }
     }
 
-    public async Task<ReviewPageModel?> GetSpecificationReviewModelAsync()
-    {
-        try
-        {
-            return await httpClient.GetFromJsonAsync<ReviewPageModel>("api/review-page-model/specification-review");
-        }
-        catch
-        {
-            return null;
-        }
-    }
 }

@@ -407,7 +407,7 @@
         <p class="ug-section-lead">Several powerful analysis views are embedded as tabs inside existing workflows — they do not have dedicated menu items. This section tells you exactly where to find each one and how to activate it.</p>
 
         <div class="ug-callout ug-callout-tip">
-            <strong>Key rule:</strong> Run analysis first, then explore the result tabs. Once analysis completes, switching between tabs does not require re-uploading files — the session is preserved automatically.
+            <strong>Key rule:</strong> Run analysis first, then explore the result tabs. Once analysis completes, switching between tabs does not require re-selecting another source file — the session is preserved automatically.
         </div>
 
         <div class="ug-table-scroll">
@@ -423,20 +423,20 @@
                 <tbody>
                     <tr>
                         <td><strong>Traceability &amp; Coverage</strong></td>
-                        <td>Specification Review</td>
-                        <td class="ug-td-mono">/extract</td>
+                        <td>Specification Explorer</td>
+                        <td class="ug-td-mono">/specification-explorer</td>
                         <td>Analyse a spec → active by default in Analysis Results</td>
                     </tr>
                     <tr>
                         <td><strong>Flow View</strong></td>
-                        <td>Specification Review</td>
-                        <td class="ug-td-mono">/extract</td>
+                        <td>Specification Explorer</td>
+                        <td class="ug-td-mono">/specification-explorer</td>
                         <td>Analyse a spec → click <strong>Flow View</strong> tab in Analysis Results</td>
                     </tr>
                     <tr>
                         <td><strong>Spec Explorer</strong></td>
-                        <td>Specification Review</td>
-                        <td class="ug-td-mono">/extract</td>
+                        <td>Specification Explorer</td>
+                        <td class="ug-td-mono">/specification-explorer</td>
                         <td>Analyse a spec → click <strong>Spec Explorer</strong> tab in Analysis Results</td>
                     </tr>
                     <tr>
@@ -451,7 +451,7 @@
 
         <h3 class="ug-subsection-title" id="disc-spec-explorer">Spec Explorer</h3>
         <p><strong>Purpose:</strong> Spec Explorer is the specification structure and navigation layer. Use it to understand how the specification is organized, browse sections and headings, see which artifacts belong to each section, identify healthy versus unhealthy sections, and navigate into Traceability.</p>
-        <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>, then click the <strong>Spec Explorer</strong> tab in the Analysis Results area.</p>
+        <p><strong>How to access:</strong> Run analysis on <a href="/specification-explorer" class="ug-inline-link">Specification Explorer</a>, then click the <strong>Spec Explorer</strong> tab in the Analysis Results area.</p>
         <p><strong>When to use:</strong></p>
         <ul class="ug-fd-list">
             <li>Navigating a large or complex specification by structure rather than by extracted item</li>
@@ -465,7 +465,7 @@
 
         <h3 class="ug-subsection-title" id="disc-flow-view">Flow View</h3>
         <p><strong>Purpose:</strong> A QA Readiness dashboard for User Stories. Flow View groups requirements, acceptance tests, success criteria, and implementation tasks by user story — and surfaces gaps, readiness status, and QA Ready scores without requiring manual inspection of each story. It answers: <em>Which User Stories are ready for QA and release?</em></p>
-        <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>, then click the <strong>Flow View</strong> tab in the Analysis Results area.</p>
+        <p><strong>How to access:</strong> Run analysis on <a href="/specification-explorer" class="ug-inline-link">Specification Explorer</a>, then click the <strong>Flow View</strong> tab in the Analysis Results area.</p>
 
         <h4 class="ug-feature-title">Story Readiness Status</h4>
         <ul class="ug-fd-list">
@@ -481,7 +481,7 @@
 
         <h3 class="ug-subsection-title" id="disc-traceability-view">Traceability &amp; Coverage (Analysis Tab)</h3>
         <p><strong>Purpose:</strong> Shows the QA risk picture first: coverage status, missing tests, orphan tests, missing success criteria, missing user story mappings, and relationship gaps. This is the <em>default</em> view shown after analysis.</p>
-        <p><strong>How to access:</strong> Run analysis on <a href="/extract" class="ug-inline-link">Specification Review</a>. The Traceability &amp; Coverage tab is active by default in Analysis Results.</p>
+        <p><strong>How to access:</strong> Run analysis on <a href="/specification-explorer" class="ug-inline-link">Specification Explorer</a>. The Traceability &amp; Coverage tab is active by default in Analysis Results.</p>
         <div class="ug-callout ug-callout-tip">
             <strong>Traceability &amp; Coverage vs. Artifact Traceability:</strong> Traceability &amp; Coverage shows relationships <em>within the specification</em> (requirements to tests). <a href="/artifact-traceability" class="ug-inline-link">Artifact Traceability</a> shows relationships <em>across all four artifacts</em> (Constitution → Spec → Plan → Tasks).
         </div>
@@ -664,7 +664,7 @@
                 <div class="ug-eco-flow">
                     <div class="ug-eco-node">Constitution Explorer</div>
                     <div class="ug-eco-conn">↓</div>
-                    <div class="ug-eco-node">Specification Review</div>
+                    <div class="ug-eco-node">Specification Explorer</div>
                     <div class="ug-eco-conn">↓</div>
                     <div class="ug-eco-node">Plan Explorer</div>
                     <div class="ug-eco-conn">↓</div>
@@ -816,7 +816,7 @@
 
     private static readonly (string Role, string Desc)[] Audiences =
     [
-        ("Tester", "Use Specification Review, Traceability, and Quality Review to plan and execute test coverage."),
+        ("Tester", "Use Specification Explorer, Traceability, and Quality Review to plan and execute test coverage."),
         ("Test Lead", "Orchestrate the full SDD governance workflow, track compliance, and sign off on Quality Review readiness gates."),
         ("Scrum Master", "Monitor delivery quality, spot scope changes in Spec Drift, and track QA health on the Dashboard."),
         ("Product Owner", "Review spec alignment, verify requirements are covered, and use Quality Review to assess go/no-go readiness."),
@@ -836,7 +836,7 @@
             "Constitution Explorer", "/constitution-explorer"),
         new("Specification", "spec.md",
             "Functional requirements, user stories, acceptance criteria, and success criteria. The source of truth for what the system must do.",
-            "Specification Review", "/extract"),
+            "Specification Explorer", "/specification-explorer"),
         new("Plan", "plan.md",
             "Implementation plan — architecture decisions (ADRs), implementation phases, quality gates, risks, and dependencies.",
             "Plan Explorer", "/plan-explorer"),
@@ -888,8 +888,8 @@
             ["Starting an SDD governance review", "Understanding what rules apply before writing specs or plans", "Identifying mandatory rules that gate downstream approval"],
             ["Implementation-level analysis — use Artifact Traceability or Quality Review (QA Auditor pack) after loading all artifacts"]),
 
-        new("spec-review", "Specification Review", "Review", "review", "/extract",
-            "Upload and review a spec.md file; extract and classify candidates. Analysis results include Traceability & Coverage, Flow View, and Spec Explorer.",
+        new("spec-review", "Specification Explorer", "Review", "review", "/specification-explorer",
+            "Review the selected Sample Project spec.md and classify candidates. Analysis results include Traceability & Coverage, Flow View, and Spec Explorer.",
             "spec.md",
             "Extracted requirements, tests, and clarifications; Traceability & Coverage, Flow View, and Spec Explorer",
             "When starting work on a new feature or reviewing an updated spec.",
@@ -913,7 +913,7 @@
             "When reviewing or validating an implementation plan before or during development.",
             ["Architects", "Developers", "Test Leads"],
             ["Reviewing architecture decisions and rationale", "Checking plan phases for functional requirement coverage", "Reviewing constitution rule checks embedded in quality gates"],
-            ["Specification review — use Specification Review", "Task review — use Task Explorer"]),
+            ["Specification review — use Specification Explorer", "Task review — use Task Explorer"]),
 
         new("task-explorer", "Task Explorer", "Review", "review", "/task-explorer",
             "Review implementation coverage from tasks.md: linked requirements, missing implementation work, delivery risk, and task hierarchy.",
@@ -925,13 +925,13 @@
             ["Spec-aligned task analysis — use Implementation Review"]),
 
         new("artifact-library", "QA Artifact Library", "Library", "library", "/scenarios",
-            "Store, discover, and reuse curated QA assets — test scenarios, acceptance tests, requirements, and clarifications published from Specification Review.",
-            "Published artifacts from Specification Review",
+            "Store, discover, and reuse curated QA assets — test scenarios, acceptance tests, requirements, and clarifications published from Specification Explorer.",
+            "Published artifacts from Specification Explorer",
             "Searchable library of reusable QA assets grouped by type",
             "When you want to discover, reuse, or curate QA assets across specifications.",
             ["Testers", "Test Leads"],
             ["Discovering existing QA assets for reuse across projects", "Curating a shared QA knowledge base for the team", "Publishing useful artifacts after analysis"],
-            ["Coverage analysis — use Traceability & Coverage", "Real-time analysis — use Specification Review"]),
+            ["Coverage analysis — use Traceability & Coverage", "Real-time analysis — use Specification Explorer"]),
 
         new("sample-projects", "Sample Projects", "Library", "library", "/sample-projects",
             "Browse M2LB project folders and load supported SDD artifacts into BirkNext reviewers with one click.",
@@ -949,7 +949,7 @@
             "When you need to author a test case that is not captured by extraction.",
             ["Testers", "Test Leads"],
             ["Creating exploratory or regression test cases", "Refining extracted candidates"],
-            ["Bulk extraction — use Specification Review"]),
+            ["Bulk extraction — use Specification Explorer"]),
 
         new("spec-drift", "Spec Drift", "Analysis", "analysis", "/spec-drift",
             "Detect coverage gaps, orphan tests, and drift indicators. The Changes tab tracks specification comparison history.",
@@ -985,7 +985,7 @@
             "When you need a comprehensive quality assessment before a milestone — combine any of the eight available packs in one run.",
             ["Test Leads", "Architects", "Product Owners", "QA Engineers"],
             ["Pre-release quality gate combining compliance, audit, and readiness", "Running Constitution Compliance (Governance pack) to verify governance rules are covered", "Running QA Auditor (Quality pack) for deterministic rule-based findings", "Checking delivery gates with Delivery Readiness (Readiness pack)", "Assessing QA health with QA Readiness (Readiness pack)", "Checking accessibility, security, or privacy standards (Standards packs)"],
-            ["Individual artifact review — use the dedicated explorers (Constitution Explorer, Specification Review, Plan Explorer, Task Explorer)"]),
+            ["Individual artifact review — use the dedicated explorers (Constitution Explorer, Specification Explorer, Plan Explorer, Task Explorer)"]),
 
         new("impl-review", "Implementation Review", "Analysis", "analysis", "/task-alignment",
             "Validate a tasks.md against spec.md for alignment, risk, and test coverage.",
@@ -1042,13 +1042,13 @@
             ["SDD artifact analysis — use Artifact Traceability for cross-artifact coverage"]),
 
         new("traceability-coverage", "Traceability & Coverage", "Traceability", "traceability", "/traceability",
-            "Legacy session-level coverage view — hidden from the sidebar by default. Specification Review now embeds Traceability & Coverage after analysis.",
-            "Extracted analysis from Specification Review",
+            "Legacy session-level coverage view — hidden from the sidebar by default. Specification Explorer now embeds Traceability & Coverage after analysis.",
+            "Extracted analysis from Specification Explorer",
             "Coverage percentages, gap indicators, requirement and test counts by category",
             "When your team has enabled the legacy Traceability section and wants a persistent summary view of current-session coverage results.",
             ["Testers", "Test Leads"],
             ["Reviewing session coverage results without re-running analysis after enabling legacy Traceability", "Tracking requirement and test counts across the session"],
-            ["Running new coverage analysis — use Specification Review to re-analyse"]),
+            ["Running new coverage analysis — use Specification Explorer to re-analyse"]),
 
         new("traceability-suggestions", "Traceability Suggestions", "Traceability", "traceability", "/traceability/suggestions",
             "Legacy traceability suggestion workflow — hidden from the sidebar by default. Enable it from Feature Visibility only if your team still uses it.",
@@ -1057,7 +1057,7 @@
             "When legacy Traceability is enabled and coverage is low enough to justify suggested test-to-requirement links.",
             ["Testers", "Test Leads"],
             ["Improving coverage by acting on suggested traceability links after enabling legacy Traceability", "Prioritising link work by confidence score"],
-            ["Deep coverage analysis — use Specification Review for a fresh analysis run"]),
+            ["Deep coverage analysis — use Specification Explorer for a fresh analysis run"]),
 
         new("code-traceability", "Code Traceability", "Traceability", "traceability", "/code-traceability",
             "Legacy code-to-requirement linking workflow — hidden from the sidebar by default. Enable it from Feature Visibility only if your team still uses code-level traceability.",
@@ -1088,7 +1088,7 @@
         new("User Guide",               "Reference documentation",            "Getting Started", "getting-started", "/user-guide"),
         new("Dashboard",                "Project health KPIs at a glance",    "Review",      "review",      "/dashboard"),
         new("Constitution Explorer",    "Review governance rules",             "Review",      "review",      "/constitution-explorer"),
-        new("Specification Review",     "Review requirements & AC",            "Review",      "review",      "/extract"),
+        new("Specification Explorer",     "Review requirements & AC",            "Review",      "review",      "/specification-explorer"),
         new("Data Model Explorer",      "Review data model entities and relationships", "Review", "review", "/data-model-explorer"),
         new("Plan Explorer",            "Review implementation plans",         "Review",      "review",      "/plan-explorer"),
         new("Task Explorer",            "Review implementation tasks",         "Review",      "review",      "/task-explorer"),
@@ -1118,7 +1118,7 @@
             "Constitution Explorer", "/constitution-explorer",
             "Review the rule catalog before anything else"),
         new("I want to review a specification.",
-            "Specification Review", "/extract",
+            "Specification Explorer", "/specification-explorer",
             "Extract requirements, AC, and review coverage"),
         new("I want to load a sample project.",
             "Sample Projects", "/sample-projects",
@@ -1180,14 +1180,14 @@
             ["Sample Projects", "Verify Workspace Banner", "Explorer Pages", "Quality Review", "Artifact Traceability", "Implementation Review", "Implementation Traceability"],
             "Complete end-to-end workflow: load a sample or project workspace, verify the workspace banner, inspect explorer pages, run reviews and analysis, then sign off implementation traceability."),
         new("New Feature Review",
-            ["Specification Review", "Plan Explorer", "Quality Review", "Implementation Review"],
-            "Quality validation for a new feature — extract requirements, review the plan, run Quality Review with Quality and Readiness packs, then validate task alignment."),
+            ["Specification Explorer", "Plan Explorer", "Quality Review", "Implementation Review"],
+            "Quality validation for a new feature — review requirements, review the plan, run Quality Review with Quality and Readiness packs, then validate task alignment."),
         new("Existing Project Review",
-            ["Sample Projects", "Specification Review", "Constitution Explorer", "Spec Drift", "Quality Review"],
-            "Onboard an existing project: load supported artifacts from Sample Projects, extract the spec, review governance rules, identify drift, then run Quality Review with Governance and Readiness packs."),
+            ["Sample Projects", "Specification Explorer", "Constitution Explorer", "Spec Drift", "Quality Review"],
+            "Onboard an existing project: load supported artifacts from Sample Projects, review the spec, review governance rules, identify drift, then run Quality Review with Governance and Readiness packs."),
         new("Specification Validation",
-            ["Specification Review", "Traceability & Coverage", "Flow View", "Spec Explorer"],
-            "Deep review of a single specification — extract requirements, assess coverage, and explore story readiness."),
+            ["Specification Explorer", "Traceability & Coverage", "Flow View", "Spec Explorer"],
+            "Deep review of a single specification — review requirements, assess coverage, and explore story readiness."),
         new("Implementation Validation",
             ["Plan Explorer", "Task Explorer", "Quality Review", "Implementation Review", "Implementation Traceability"],
             "Validate that plans and tasks are correctly aligned to the specification and traceable to code — use the Quality (QA Auditor) and Readiness packs in Quality Review."),
@@ -1198,7 +1198,7 @@
             ["Constitution Explorer", "Quality Review"],
             "Focused governance review — run Quality Review with the Constitution Compliance (Governance) and QA Auditor (Quality) packs."),
         new("Bug Fix",
-            ["Specification Review", "Implementation Review", "Quality Review"],
+            ["Specification Explorer", "Implementation Review", "Quality Review"],
             "Fast-path quality check for a targeted bug fix — review the spec, validate task alignment, then run Quality Review with the QA Readiness (Readiness) pack."),
         new("Requirement Change",
             ["Spec Drift", "Impact Analysis", "Implementation Review", "Quality Review"],
@@ -1223,7 +1223,7 @@
 
         new("traceability-vs-artifact-traceability",
             "What is the difference between Traceability & Coverage and Artifact Traceability?",
-            "<p><strong>Traceability &amp; Coverage</strong> (inside Specification Review) analyzes relationships <em>within the specification</em> — which requirements have tests, which user stories are covered, and what is missing from the spec.</p><p><strong>Artifact Traceability</strong> (<a href='/artifact-traceability'>/artifact-traceability</a>) analyzes relationships <em>across all four artifacts</em> — does the Constitution→Spec→Plan→Tasks chain hold together? Are constitution rules traceable to spec requirements? Are spec requirements traceable to plan items? Are plan items covered by tasks?</p><p>Use both: Traceability &amp; Coverage for intra-spec QA analysis, and Artifact Traceability for cross-artifact governance coverage.</p>"),
+            "<p><strong>Traceability &amp; Coverage</strong> (inside Specification Explorer) analyzes relationships <em>within the specification</em> — which requirements have tests, which user stories are covered, and what is missing from the spec.</p><p><strong>Artifact Traceability</strong> (<a href='/artifact-traceability'>/artifact-traceability</a>) analyzes relationships <em>across all four artifacts</em> — does the Constitution→Spec→Plan→Tasks chain hold together? Are constitution rules traceable to spec requirements? Are spec requirements traceable to plan items? Are plan items covered by tasks?</p><p>Use both: Traceability &amp; Coverage for intra-spec QA analysis, and Artifact Traceability for cross-artifact governance coverage.</p>"),
 
         new("qa-auditor-vs-qa-readiness",
             "What is the difference between the QA Auditor pack and the QA Readiness pack in Quality Review?",
@@ -1235,7 +1235,7 @@
 
         new("embedded-views",
             "Where are Traceability & Coverage, Flow View, and Spec Explorer?",
-            "<p>These are embedded tabs inside <strong>Specification Review</strong> (<a href='/extract'>/extract</a>) and appear automatically after a successful spec analysis:</p><ul><li><strong>Traceability &amp; Coverage</strong> — active by default. Shows coverage gaps, missing tests, orphan tests.</li><li><strong>Flow View</strong> — QA readiness by user story. Click the Flow View tab.</li><li><strong>Spec Explorer</strong> — specification structure and navigation. Click the Spec Explorer tab.</li></ul><p>Once analysis completes, switching between tabs does not require re-uploading files. See the <a href='/user-guide#discovery'>Feature Discovery</a> section for full details.</p>"),
+            "<p>These are embedded tabs inside <strong>Specification Explorer</strong> (<a href='/specification-explorer'>/specification-explorer</a>) and appear automatically after a successful spec analysis:</p><ul><li><strong>Traceability &amp; Coverage</strong> — active by default. Shows coverage gaps, missing tests, orphan tests.</li><li><strong>Flow View</strong> — QA readiness by user story. Click the Flow View tab.</li><li><strong>Spec Explorer</strong> — specification structure and navigation. Click the Spec Explorer tab.</li></ul><p>Once analysis completes, switching between tabs does not require re-selecting another source file. See the <a href='/user-guide#discovery'>Feature Discovery</a> section for full details.</p>"),
 
         new("drift-vs-review",
             "What is the difference between Spec Drift and Implementation Review?",
@@ -1271,14 +1271,15 @@
 
         new("not-run",
             "What does 'Not Run' mean?",
-            "<p><strong>Not Run</strong> indicates that an analysis has not been executed yet for the current session. Most analysis modules require you to load one or more artifact files and then explicitly run analysis — results are not generated automatically on page load.</p><p>To resolve: open the relevant feature page, upload the required artifacts using the file import control, and click the analysis/run button. Once analysis completes, the 'Not Run' status is replaced with real results.</p>"),
+            "<p><strong>Not Run</strong> indicates that an analysis has not been executed yet for the current session. Most analysis modules require you to load one or more artifact files and then explicitly run analysis — results are not generated automatically on page load.</p><p>To resolve: open the relevant feature page, open the relevant selected-project page and click the analysis/run button. Once analysis completes, the 'Not Run' status is replaced with real results.</p>"),
 
         new("begin-review",
             "How do I begin a new review?",
-            "<p>Navigate to the relevant feature for your goal. For a full SDD governance review, follow the <a href='/getting-started'>Recommended Workflow</a> phase by phase. For a quick feature review, start with <a href='/extract'>Specification Review</a>.</p><p>For compliance, audit, or readiness checks, open <a href='/quality-review'>Quality Review</a>, select the review packs you need, load your artifact files, and click <strong>Run Quality Review</strong>. Session state is preserved automatically while you navigate between tabs and related features.</p>"),
+            "<p>Navigate to the relevant feature for your goal. For a full SDD governance review, follow the <a href='/getting-started'>Recommended Workflow</a> phase by phase. For a quick feature review, start with <a href='/specification-explorer'>Specification Explorer</a>.</p><p>For compliance, audit, or readiness checks, open <a href='/quality-review'>Quality Review</a>, select the review packs you need, load your artifact files, and click <strong>Run Quality Review</strong>. Session state is preserved automatically while you navigate between tabs and related features.</p>"),
 
         new("when-delivery-readiness",
             "When should I run the Delivery Readiness pack?",
             "<p>Run the <strong>Delivery Readiness</strong> pack (in <a href='/quality-review'>Quality Review</a>) when you need a formal go/no-go decision before a major milestone — before starting development, before handing off to QA, or before a release.</p><p>For maximum accuracy, also select the QA Auditor and Constitution Compliance packs in the same Quality Review run — Delivery Readiness aggregates all findings into gate decisions. Load all four artifacts (constitution, spec, plan, tasks) to enable all three gates: Development, Testing, and Release.</p>"),
     ];
 }
+

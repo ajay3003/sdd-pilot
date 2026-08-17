@@ -9,6 +9,7 @@
 @inject NavigationManager NavigationManager
 @inject BirkNext.Web.Services.IWorkspaceSessionService Workspace
 @inject BirkNext.Web.Services.ISampleProjectDocumentResolver DocumentResolver
+@inject BirkNext.Web.Services.IScenarioExtractionService ExtractionService
 
 <PageTitle>Specification Explorer — QA Review Studio</PageTitle>
 
@@ -37,6 +38,61 @@
                 InitialSpecMarkdown="@_initialText"
                 Candidates="@_candidates"
                 IsEmbeddedInReview="false" />
+
+            @if (!string.IsNullOrWhiteSpace(_initialText))
+            {
+                <section class="review-results-panel" aria-label="Selected project specification analysis">
+                    <div class="review-results-header">
+                        <div class="review-results-title">
+                            <p class="section-kicker">Selected Project Analysis</p>
+                            <h2>Analysis Results</h2>
+                            <p>Extract review candidates from the selected Sample Project spec.md.</p>
+                        </div>
+                        <div class="review-summary-strip" aria-label="Analysis summary metrics">
+                            <div class="summary-slot" data-testid="requirements-metric">
+                                <span>@RequirementMetric</span>
+                                <small>Requirements</small>
+                            </div>
+                            <div class="summary-slot" data-testid="tests-metric">
+                                <span>@TestMetric</span>
+                                <small>Tests</small>
+                            </div>
+                            <div class="summary-slot" data-testid="clarifications-metric">
+                                <span>@ClarificationMetric</span>
+                                <small>Clarifications</small>
+                            </div>
+                            <div class="summary-slot" data-testid="candidates-metric">
+                                <span>@CandidateMetric</span>
+                                <small>Candidates</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="button"
+                            class="btn-primary"
+                            data-testid="spec-explorer-analyze"
+                            disabled="@_isAnalyzing"
+                            @onclick="AnalyzeSelectedSpecificationAsync">
+                        @(_isAnalyzing ? "Analyzing..." : "Analyze Specification")
+                    </button>
+
+                    @if (!string.IsNullOrWhiteSpace(_analysisError))
+                    {
+                        <div class="notification notification-error" role="alert">@_analysisError</div>
+                    }
+                    else if (_pipelineResult is null)
+                    {
+                        <div class="extract-pre-state" data-testid="extract-pre-state">
+                            <h3>No review candidates yet</h3>
+                            <p>Analyze the selected Sample Project specification to generate review candidates.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <ExtractionReviewList PipelineResult="_pipelineResult" InitialSession="null" SpecMarkdown="@_pipelineResult.SpecMarkdown" />
+                    }
+                </section>
+            }
         </div>
     }
 
@@ -47,10 +103,18 @@
     private SpecTree? _parsedDocument;
     private SpecificationSemanticModel? _semanticModel;
     private List<ExtractionCandidate> _candidates = [];
+    private ExtractionPipelineResult? _pipelineResult;
     private string? _selectedProject;
     private string? _selectedProjectName;
     private bool _isMissingDocument;
+    private bool _isAnalyzing;
+    private string? _analysisError;
     private string? _previousProject;
+
+    private int RequirementMetric => _pipelineResult?.RequirementCount ?? 0;
+    private int TestMetric => _pipelineResult?.TestCount ?? 0;
+    private int ClarificationMetric => _pipelineResult?.NeedsClarificationCount ?? 0;
+    private int CandidateMetric => _pipelineResult?.Candidates.Count ?? 0;
 
     protected override async Task OnInitializedAsync()
     {
@@ -72,6 +136,8 @@
             _initialText = string.Empty;
             _parsedDocument = null;
             _semanticModel = null;
+            _pipelineResult = null;
+            _analysisError = null;
         }
     }
 
@@ -98,6 +164,8 @@
                     _parsedDocument = null;
                     _semanticModel = null;
                     _isMissingDocument = false;
+                    _pipelineResult = null;
+                    _analysisError = null;
                 }
                 StateHasChanged();
             }
@@ -116,6 +184,8 @@
             _isMissingDocument = false;
             await UpdateSelectedProjectName();
             BuildSemanticModel(result.Content);
+            _pipelineResult = null;
+            _analysisError = null;
         }
         else if (result.IsMissing)
         {
@@ -126,6 +196,8 @@
             _semanticModel = null;
             _candidates = [];
             _initialText = string.Empty;
+            _pipelineResult = null;
+            _analysisError = null;
         }
     }
 
@@ -155,5 +227,30 @@
         _semanticModel = SpecExplorerService.BuildSemanticModel(_parsedDocument, text);
         // Candidates remain empty for automatic loading (only populated from extraction results)
         _candidates = [];
+    }
+
+    private async Task AnalyzeSelectedSpecificationAsync()
+    {
+        if (_isAnalyzing || string.IsNullOrWhiteSpace(_initialText))
+            return;
+
+        try
+        {
+            _isAnalyzing = true;
+            _analysisError = null;
+            var result = await ExtractionService.ExtractAsync(_initialText, ExtractionProfile.Speckit);
+            _pipelineResult = result.WithSpecMarkdown(_initialText);
+            _candidates = _pipelineResult.Candidates.ToList();
+        }
+        catch (Exception ex)
+        {
+            _analysisError = $"Analysis failed: {ex.Message}";
+            _pipelineResult = null;
+            _candidates = [];
+        }
+        finally
+        {
+            _isAnalyzing = false;
+        }
     }
 }

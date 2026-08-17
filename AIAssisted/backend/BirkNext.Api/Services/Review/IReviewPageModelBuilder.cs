@@ -39,11 +39,3 @@ public interface ITaskExplorerPageModelBuilder
 {
     Task<ReviewPageModel> BuildAsync();
 }
-
-/// <summary>
-/// Builder for Specification Review/Explorer ReviewPageModel.
-/// </summary>
-public interface ISpecificationReviewPageModelBuilder
-{
-    Task<ReviewPageModel> BuildAsync();
-}

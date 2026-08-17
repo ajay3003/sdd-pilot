@@ -182,7 +182,7 @@ public class ExtractionReviewListSessionTests : BunitContext
     }
 
     [Fact]
-    public void SpecificationReview_RestoredSession_PreservesLastSelectedTab()
+    public void SpecificationExplorer_RestoredSession_PreservesLastSelectedTab()
     {
         var snapshot = MakeSnapshot(activeViewMode: ExtractionViewMode.SpecExplorer, hasActiveViewMode: true);
         var pipelineResult = ExtractionPipelineResult.Restore(snapshot);
@@ -197,7 +197,7 @@ public class ExtractionReviewListSessionTests : BunitContext
     }
 
     [Fact]
-    public void SpecificationReview_RestoredSessionWithoutTab_DefaultsToTraceabilityCoverage()
+    public void SpecificationExplorer_RestoredSessionWithoutTab_DefaultsToTraceabilityCoverage()
     {
         var snapshot = MakeSnapshot(activeViewMode: ExtractionViewMode.Extraction, hasActiveViewMode: false);
         var pipelineResult = ExtractionPipelineResult.Restore(snapshot);
@@ -408,3 +408,4 @@ public class ExtractionReviewListSessionTests : BunitContext
             "Server must be queried for prior review statuses when no InitialSession is present");
     }
 }
+

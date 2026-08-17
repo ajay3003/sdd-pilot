@@ -168,7 +168,7 @@ public class ExtractionReviewListTests : BunitContext
     }
 
     [Fact]
-    public void SpecificationReview_Tabs_AreInQaPriorityOrder()
+    public void SpecificationExplorer_Tabs_AreInQaPriorityOrder()
     {
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult()));
@@ -184,7 +184,7 @@ public class ExtractionReviewListTests : BunitContext
     }
 
     [Fact]
-    public void SpecificationReview_HidesAdvancedTabsWhenFeatureFlagsAreDisabled()
+    public void SpecificationExplorer_HidesAdvancedTabsWhenFeatureFlagsAreDisabled()
     {
         Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto
         {
@@ -219,7 +219,7 @@ public class ExtractionReviewListTests : BunitContext
     }
 
     [Fact]
-    public void SpecificationReview_DefaultTabAfterAnalysis_IsTraceabilityCoverage()
+    public void SpecificationExplorer_DefaultTabAfterAnalysis_IsTraceabilityCoverage()
     {
         var cut = Render<ExtractionReviewList>(p =>
             p.Add(c => c.PipelineResult, MakeResult()));
@@ -1049,80 +1049,8 @@ public class TestSubsectionGroupingTests : BunitContext
     private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut) =>
         cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Extraction Review")).Click();
 
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void SameContextHeading_RenderedInSameSubsection()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeTest("Given user logs in when credentials are valid", "User Story 1"),
-            MakeTest("Given admin views the dashboard", "User Story 2"),
-            MakeTest("Then user sees the home screen", "User Story 1"),
-        };
 
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
 
-        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
-        subsections.Should().HaveCount(2, "two unique headings → two subsection groups");
-
-        var us1 = subsections.First(s => s.TextContent.Contains("User Story 1"));
-        us1.QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(2);
-
-        var us2 = subsections.First(s => s.TextContent.Contains("User Story 2"));
-        us2.QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(1);
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void NullContextHeading_GroupedUnderOtherTests()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeTest("Given user logs in", null),
-            MakeTest("Then system validates token", null),
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
-        subsections.Should().HaveCount(1);
-        subsections[0].TextContent.Should().Contain("Other Tests");
-        subsections[0].QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(2);
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void RequirementSection_HasOwnSubgroups_WhenContextHeadingsPresent()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            new()
-            {
-                Title = "System must validate input",
-                Classification = ScenarioKind.Requirement,
-                ClassificationSignal = ClassificationSignal.Rfc2119Uppercase,
-                SourceBlockType = BlockType.UnorderedListItem,
-                ContextHeading = "User Story 1",
-            },
-            new()
-            {
-                Title = "System must log errors",
-                Classification = ScenarioKind.Requirement,
-                ClassificationSignal = ClassificationSignal.Rfc2119Uppercase,
-                SourceBlockType = BlockType.UnorderedListItem,
-                ContextHeading = "User Story 2",
-            },
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        cut.Find("[data-testid='group-requirement']").Should().NotBeNull();
-        cut.FindAll("[data-testid='test-subsection-group']").Should().HaveCount(2,
-            "requirement candidates with context headings are grouped into subsections");
-    }
 
     [Fact]
     public void SearchFilter_AppliesWithinSubgroups()
@@ -1145,42 +1073,7 @@ public class TestSubsectionGroupingTests : BunitContext
         rows[0].TextContent.Should().Contain("admin");
     }
 
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void CheckboxSelection_WorksInSubgroups()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeTest("Given user opens the app", "User Story 1"),
-        };
 
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        cut.Find("[data-testid='candidate-checkbox']").Change(true);
-
-        cut.Find("[data-testid='confirm-save-button']").HasAttribute("disabled").Should().BeFalse();
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeTest("Given user logs in", "User Story 1"),
-            MakeTest("Given admin configures system", "User Story 2"),
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        cut.Find(".search-input").Input("admin");
-
-        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
-        subsections.Should().HaveCount(1, "group with zero visible results should not be rendered");
-        subsections[0].TextContent.Should().Contain("User Story 2");
-    }
 }
 
 // ── T092 ─────────────────────────────────────────────────────────────────────
@@ -1254,99 +1147,9 @@ public class ClarificationSubsectionGroupingTests : BunitContext
     private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut) =>
         cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Extraction Review")).Click();
 
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void SameContextHeading_RenderedInSameSubsection()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeClarification("What happens when the token expires?", "Open Questions"),
-            MakeClarification("Who owns the retry logic?", "Business Rules"),
-            MakeClarification("Is this behaviour required for guest users?", "Open Questions"),
-        };
 
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
 
-        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
-        subsections.Should().HaveCount(2, "two unique headings → two subsection groups");
 
-        var oq = subsections.First(s => s.TextContent.Contains("Open Questions"));
-        oq.QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(2);
-
-        var br = subsections.First(s => s.TextContent.Contains("Business Rules"));
-        br.QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(1);
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void NullContextHeading_GroupedUnderOtherClarifications()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeClarification("TBD: confirm error message wording", null),
-            MakeClarification("TBD: confirm timeout value", null),
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
-        subsections.Should().HaveCount(1);
-        subsections[0].TextContent.Should().Contain("Other Clarifications");
-        subsections[0].QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(2);
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void TestSection_NotAffectedByClarificationGrouping()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            new()
-            {
-                Title = "Given user submits form when all fields are valid",
-                Classification = ScenarioKind.Test,
-                ClassificationSignal = ClassificationSignal.BddPattern,
-                SourceBlockType = BlockType.UnorderedListItem,
-                ContextHeading = "User Story 1",
-            },
-            MakeClarification("What validation rules apply?", "Edge Cases"),
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        // Both TEST and NEEDS_CLARIFICATION have one subsection each
-        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
-        subsections.Should().HaveCount(2);
-        subsections.Select(s => s.TextContent).Should().Contain(t => t.Contains("User Story 1"));
-        subsections.Select(s => s.TextContent).Should().Contain(t => t.Contains("Edge Cases"));
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void RequirementSection_HasOwnSubgroups_WhenContextHeadingPresent()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            new()
-            {
-                Title = "System must validate all required fields",
-                Classification = ScenarioKind.Requirement,
-                ClassificationSignal = ClassificationSignal.Rfc2119Uppercase,
-                SourceBlockType = BlockType.UnorderedListItem,
-                ContextHeading = "Open Questions",
-            },
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        cut.Find("[data-testid='group-requirement']").Should().NotBeNull();
-        cut.FindAll("[data-testid='test-subsection-group']").Should().HaveCount(1,
-            "requirement candidates with context headings are grouped into subsections");
-    }
 
     [Fact]
     public void SearchFilter_AppliesWithinClarificationSubgroups()
@@ -1366,42 +1169,7 @@ public class ClarificationSubsectionGroupingTests : BunitContext
         cut.FindAll("[data-testid='candidate-row']").Should().HaveCount(1);
     }
 
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void CheckboxSelection_WorksInClarificationSubgroups()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeClarification("TBD: define error recovery strategy", "Edge Cases"),
-        };
 
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        cut.Find("[data-testid='candidate-checkbox']").Change(true);
-
-        cut.Find("[data-testid='confirm-save-button']").HasAttribute("disabled").Should().BeFalse();
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void EmptyGroup_NotRendered_WhenSearchFiltersAllCandidates()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeClarification("What is the timeout?", "Edge Cases"),
-            MakeClarification("Who owns the business rule?", "Business Rules"),
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        cut.Find(".search-input").Input("timeout");
-
-        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
-        subsections.Should().HaveCount(1, "the Business Rules group has no visible candidates");
-        subsections[0].TextContent.Should().Contain("Edge Cases");
-    }
 }
 
 // ── T093 ─────────────────────────────────────────────────────────────────────
@@ -1475,101 +1243,9 @@ public class RequirementSubsectionGroupingTests : BunitContext
     private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut) =>
         cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Extraction Review")).Click();
 
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void SameContextHeading_RenderedInSameSubsection()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeRequirement("The system MUST validate credentials", "Functional Requirements"),
-            MakeRequirement("The system MUST enforce rate limits", "Non-Functional Requirements"),
-            MakeRequirement("The system SHALL store hashed passwords", "Functional Requirements"),
-        };
 
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
 
-        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
-        subsections.Should().HaveCount(2, "two unique headings → two subsection groups");
 
-        var func = subsections.First(s => s.TextContent.Contains("Functional Requirements"));
-        func.QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(2);
-
-        var nonfunc = subsections.First(s => s.TextContent.Contains("Non-Functional Requirements"));
-        nonfunc.QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(1);
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void NullContextHeading_GroupedUnderOtherRequirements()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeRequirement("The system MUST respond within 200ms", null),
-            MakeRequirement("The system SHALL support 1000 concurrent users", null),
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
-        subsections.Should().HaveCount(1);
-        subsections[0].TextContent.Should().Contain("Other Requirements");
-        subsections[0].QuerySelectorAll("[data-testid='candidate-row']").Should().HaveCount(2);
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void TestSection_NotAffectedByRequirementGrouping()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeRequirement("The system MUST validate input", "Functional Requirements"),
-            new()
-            {
-                Title = "Given user submits form when all fields are valid",
-                Classification = ScenarioKind.Test,
-                ClassificationSignal = ClassificationSignal.BddPattern,
-                SourceBlockType = BlockType.UnorderedListItem,
-                ContextHeading = "User Story 1",
-            },
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        // Both REQUIREMENT and TEST have one subsection each — grouping is independent
-        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
-        subsections.Should().HaveCount(2);
-        subsections.Select(s => s.TextContent).Should().Contain(t => t.Contains("Functional Requirements"));
-        subsections.Select(s => s.TextContent).Should().Contain(t => t.Contains("User Story 1"));
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void NeedsClarificationSection_NotAffectedByRequirementGrouping()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeRequirement("The system MUST log all errors", "Observability"),
-            new()
-            {
-                Title = "TBD: confirm retry policy",
-                Classification = ScenarioKind.NeedsClarification,
-                ClassificationSignal = ClassificationSignal.ClarificationSignal,
-                SourceBlockType = BlockType.UnorderedListItem,
-                ContextHeading = "Open Questions",
-            },
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
-        subsections.Should().HaveCount(2);
-        subsections.Select(s => s.TextContent).Should().Contain(t => t.Contains("Observability"));
-        subsections.Select(s => s.TextContent).Should().Contain(t => t.Contains("Open Questions"));
-    }
 
     [Fact]
     public void SearchFilter_AppliesWithinRequirementSubgroups()
@@ -1592,42 +1268,7 @@ public class RequirementSubsectionGroupingTests : BunitContext
         rows[0].TextContent.Should().Contain("rate");
     }
 
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void CheckboxSelection_WorksInRequirementSubgroups()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeRequirement("The system MUST validate input", "Functional Requirements"),
-        };
 
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        cut.Find("[data-testid='candidate-checkbox']").Change(true);
-
-        cut.Find("[data-testid='confirm-save-button']").HasAttribute("disabled").Should().BeFalse();
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void EmptyGroup_NotRendered_WhenSearchHidesAllCandidatesInThatGroup()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            MakeRequirement("The system MUST validate credentials", "Functional Requirements"),
-            MakeRequirement("The system SHALL respond within 200ms", "Performance"),
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        cut.Find(".search-input").Input("200ms");
-
-        var subsections = cut.FindAll("[data-testid='test-subsection-group']");
-        subsections.Should().HaveCount(1, "Functional Requirements group has no visible candidates");
-        subsections[0].TextContent.Should().Contain("Performance");
-    }
 }
 
 // ── T093 ─────────────────────────────────────────────────────────────────────
@@ -1699,130 +1340,10 @@ public class ExtractionReviewListDefaultExpansionTests : BunitContext
     private static void OpenDocumentView(IRenderedComponent<ExtractionReviewList> cut) =>
         cut.FindAll(".view-mode-tab").First(t => t.TextContent.Contains("Extraction Review")).Click();
 
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void AfterExtraction_TopLevelSections_AreExpandedByDefault()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            Make("The system MUST login", ScenarioKind.Requirement, "Auth"),
-            Make("Given user logs in", ScenarioKind.Test, "Feature X"),
-        };
 
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
 
-        var sectionBodies = cut.FindAll(".section-body");
-        sectionBodies.Should().NotBeEmpty();
-        sectionBodies.Should().AllSatisfy(b =>
-            b.ClassList.Should().Contain("is-expanded"));
-    }
 
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void AfterExtraction_Subgroups_AreCollapsedByDefault()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            Make("The system MUST login", ScenarioKind.Requirement, "Auth"),
-            Make("The system MUST logout", ScenarioKind.Requirement, "Auth"),
-            Make("Given user logs in", ScenarioKind.Test, "Feature X"),
-        };
 
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
 
-        var subgroupBodies = cut.FindAll(".subsection-body");
-        subgroupBodies.Should().NotBeEmpty();
-        subgroupBodies.Should().AllSatisfy(b =>
-            b.ClassList.Should().Contain("is-collapsed"));
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void ExpandAll_ExpandsAllSectionsAndSubgroups()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            Make("The system MUST login", ScenarioKind.Requirement, "Auth"),
-            Make("Given user logs in", ScenarioKind.Test, "Feature X"),
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        cut.Find("[aria-label='Expand all sections']").Click();
-
-        cut.FindAll(".section-body").Should().AllSatisfy(b =>
-            b.ClassList.Should().Contain("is-expanded"));
-        cut.FindAll(".subsection-body").Should().AllSatisfy(b =>
-            b.ClassList.Should().Contain("is-expanded"));
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void CollapseAll_CollapsesSectionsAndSubgroups()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            Make("The system MUST login", ScenarioKind.Requirement, "Auth"),
-            Make("Given user logs in", ScenarioKind.Test, "Feature X"),
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        cut.Find("[aria-label='Collapse all sections']").Click();
-
-        cut.FindAll(".section-body").Should().AllSatisfy(b =>
-            b.ClassList.Should().Contain("is-collapsed"));
-        cut.FindAll(".subsection-body").Should().AllSatisfy(b =>
-            b.ClassList.Should().Contain("is-collapsed"));
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void FilterChange_DoesNotExpandCollapsedSubgroups()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            Make("The system MUST login", ScenarioKind.Requirement, "Auth"),
-            Make("Given user logs in", ScenarioKind.Test, "Feature X"),
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        cut.Find(".filter-chip-requirement").Click();
-
-        cut.FindAll(".subsection-body").Should().NotBeEmpty();
-        cut.FindAll(".subsection-body").Should().AllSatisfy(b =>
-            b.ClassList.Should().Contain("is-collapsed"));
-    }
-
-    [Fact(Skip = "Obsolete: old ExtractionReviewList subsection markup was replaced by DocumentView sections.")]
-    public void ManuallyExpandedSubgroup_RemainsExpandedAfterSearchFilter()
-    {
-        var candidates = new List<ExtractionCandidate>
-        {
-            Make("The system MUST login", ScenarioKind.Requirement, "Auth"),
-            Make("The system MUST validate input", ScenarioKind.Requirement, "Validation"),
-        };
-
-        var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult(candidates)));
-        OpenDocumentView(cut);
-
-        // Manually expand the first subgroup (Auth)
-        cut.FindAll(".subsection-toggle")[0].Click();
-        cut.FindAll(".subsection-body")[0].ClassList.Should().Contain("is-expanded");
-
-        // Apply a search that keeps Auth visible but hides Validation
-        cut.Find(".search-input").Input("login");
-
-        // Auth is still the only rendered subgroup and should still be expanded
-        var remaining = cut.FindAll(".subsection-body");
-        remaining.Should().ContainSingle();
-        remaining[0].ClassList.Should().Contain("is-expanded");
-    }
 }
+

@@ -545,8 +545,8 @@ public class ScenariosPageTests : BunitContext
         cut.Markup.Should().NotContain("Release Readiness",         "Release Readiness belongs in Traceability & Coverage");
         cut.Markup.Should().NotContain("Recommended Actions",       "Coverage-oriented recommended actions belong in Traceability & Coverage");
         cut.Markup.Should().NotContain("Requirement coverage",      "Coverage % metric belongs in Traceability & Coverage");
-        cut.Markup.Should().NotContain("Requirements Not Imported", "Import workflow belongs in Specification Review, not the library");
-        cut.Markup.Should().NotContain("Import Requirements",       "Import Requirements CTA belongs in Specification Review");
+        cut.Markup.Should().NotContain("Requirements Not Imported", "Import workflow belongs in Specification Explorer, not the library");
+        cut.Markup.Should().NotContain("Import Requirements",       "Import Requirements CTA belongs in Specification Explorer");
     }
 
     [Fact]
@@ -664,3 +664,4 @@ public class ScenariosPageTests : BunitContext
         return mockScenario.Object;
     }
 }
+

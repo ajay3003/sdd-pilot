@@ -12,7 +12,6 @@ public class ReviewPageModelService(
     IDataModelExplorerPageModelBuilder dataModelBuilder,
     IPlanExplorerPageModelBuilder planBuilder,
     ITaskExplorerPageModelBuilder taskBuilder,
-    ISpecificationReviewPageModelBuilder specificationBuilder,
     IWorkspaceArtifactStatusService artifactStatus)
 {
     public async Task<ReviewPageModel> GetDashboardModelAsync()
@@ -131,32 +130,6 @@ public class ReviewPageModelService(
                 "Task Explorer",
                 "Navigate and analyze tasks.md files",
                 $"Failed to load tasks: {ex.Message}");
-        }
-    }
-
-    public async Task<ReviewPageModel> GetSpecificationReviewModelAsync()
-    {
-        try
-        {
-            var artifact = await artifactStatus.GetArtifactAsync(WorkspaceArtifactKind.Specification);
-
-            if (artifact == null)
-            {
-                return CreateBlockedOrEmptyModel(
-                    "Specification Review",
-                    "Review and analyze specification.md files",
-                    new[] { "Specification" },
-                    new[] { "Specification" });
-            }
-
-            return await specificationBuilder.BuildAsync();
-        }
-        catch (Exception ex)
-        {
-            return CreateFailedModel(
-                "Specification Review",
-                "Review and analyze specification.md files",
-                $"Failed to load specification: {ex.Message}");
         }
     }
 

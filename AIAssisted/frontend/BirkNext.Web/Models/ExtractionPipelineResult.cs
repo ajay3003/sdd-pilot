@@ -67,7 +67,7 @@ public sealed class ExtractionPipelineResult
 
     /// <summary>
     /// Returns a copy of this result with SpecMarkdown populated.
-    /// Called by ExtractionInput after the extraction service returns its result.
+    /// Called by SpecificationExplorer after the extraction service returns its result.
     /// </summary>
     public ExtractionPipelineResult WithSpecMarkdown(string markdown) =>
         new(Status, Candidates, InputLengthChars, InputLineCount, DurationMs,
@@ -117,3 +117,4 @@ public sealed class ExtractionPipelineResult
         return new(status, [], inputLengthChars, inputLineCount, durationMs, 0, 0, 0, profile);
     }
 }
+

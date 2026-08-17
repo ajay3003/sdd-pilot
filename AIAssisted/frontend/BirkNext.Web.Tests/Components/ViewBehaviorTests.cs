@@ -577,7 +577,7 @@ public class ViewBehaviorTests : BunitContext
     }
 
     [Fact]
-    public void UserGuide_DescribesStandardSpecificationReviewWorkflow()
+    public void UserGuide_DescribesStandardSpecificationExplorerWorkflow()
     {
         var cut = Render<UserGuide>();
 
@@ -1790,7 +1790,7 @@ public class ViewBehaviorTests : BunitContext
         var cut = Render<UserGuide>();
 
         var text = cut.Markup;
-        text.Should().Contain("Specification Review");
+        text.Should().Contain("Specification Explorer");
         text.Should().Contain("Traceability &amp; Coverage");
         text.Should().Contain("Legacy session-level coverage view");
         text.Should().Contain("hidden from the sidebar by default");
@@ -1884,7 +1884,7 @@ public class ViewBehaviorTests : BunitContext
                 new("Tasks", true),
                 new("Data Model", true)
             ],
-            SpecificationReviewState: null,
+            SpecificationExplorerState: null,
             TraceabilityState: traceabilityStep,
             ImplementationReviewState: null,
             QualityGateState: null,
@@ -1970,3 +1970,5 @@ public class ViewBehaviorTests : BunitContext
         return (specMarkdown, result.Candidates);
     }
 }
+
+

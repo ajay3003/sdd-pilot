@@ -2089,27 +2089,6 @@ Final narrative text.
         string.IsNullOrEmpty(doc.LastUpdated).Should().BeTrue("SCIM plan has no explicit Updated field");
     }
 
-    [Fact(Skip = "Diagnostic only")]
-    public void DIAGNOSTIC_Metadata_SCIMPlan()
-    {
-        var scimPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
-        if (!System.IO.File.Exists(scimPath)) return;
-
-        var markdown = File.ReadAllText(scimPath);
-        var doc = _svc.Parse(markdown);
-
-        Console.WriteLine($"\n=== SCIM PLAN METADATA ===");
-        Console.WriteLine($"Title: {doc.Title}");
-        Console.WriteLine($"Branch: {doc.Branch}");
-        Console.WriteLine($"Date: {doc.Date}");
-        Console.WriteLine($"CreatedDate: {doc.CreatedDate}");
-        Console.WriteLine($"LastUpdated: {doc.LastUpdated}");
-        Console.WriteLine($"Spec: {doc.SpecLink}");
-        Console.WriteLine($"InputSource: {doc.InputSource}");
-        Console.WriteLine($"FeatureName: {doc.FeatureName}");
-        Console.WriteLine($"Status: {doc.Status}");
-        Console.WriteLine($"Author: {doc.Author}");
-    }
 
     [Fact]
     public void Phase_ThematicBreak_IsIncludedInBlockParagraph()

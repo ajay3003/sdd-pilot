@@ -47,7 +47,7 @@ public class RecommendedWorkflowServiceTests : IDisposable
             hasDataModel: false);
 
         // Assert
-        var specReview = steps.FirstOrDefault(s => s.Key == "SpecificationReview");
+        var specReview = steps.FirstOrDefault(s => s.Key == "SpecificationExplorer");
         Assert.NotNull(specReview);
         Assert.Equal(WorkflowStepStatus.Available, specReview.Status);
         Assert.NotEqual(WorkflowStepStatus.Approved, specReview.Status);
@@ -58,13 +58,13 @@ public class RecommendedWorkflowServiceTests : IDisposable
     public async Task MarkStepReviewed_ChangesReviewState()
     {
         // Arrange
-        await _service.MarkStepInProgressAsync(_workspaceId, "SpecificationReview");
+        await _service.MarkStepInProgressAsync(_workspaceId, "SpecificationExplorer");
 
         // Act
-        await _service.MarkStepReviewedAsync(_workspaceId, "SpecificationReview");
+        await _service.MarkStepReviewedAsync(_workspaceId, "SpecificationExplorer");
 
         // Assert
-        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationExplorer");
         Assert.NotNull(progress);
         Assert.Equal(ReviewState.Reviewed, progress.ReviewState);
     }
@@ -74,13 +74,13 @@ public class RecommendedWorkflowServiceTests : IDisposable
     public async Task ApproveStep_SetsApprovedState()
     {
         // Arrange
-        await _service.MarkStepReviewedAsync(_workspaceId, "SpecificationReview");
+        await _service.MarkStepReviewedAsync(_workspaceId, "SpecificationExplorer");
 
         // Act
-        await _service.ApproveStepAsync(_workspaceId, "SpecificationReview");
+        await _service.ApproveStepAsync(_workspaceId, "SpecificationExplorer");
 
         // Assert
-        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationExplorer");
         Assert.NotNull(progress);
         Assert.Equal(ApprovalState.Approved, progress.ApprovalState);
     }
@@ -90,7 +90,7 @@ public class RecommendedWorkflowServiceTests : IDisposable
     public async Task ApprovedStep_PersistedInDatabase()
     {
         // Arrange
-        await _service.ApproveStepAsync(_workspaceId, "SpecificationReview", comment: "Test approval");
+        await _service.ApproveStepAsync(_workspaceId, "SpecificationExplorer", comment: "Test approval");
 
         // Act - Rebuild steps with same workspace ID
         var steps = await _service.BuildWorkflowStepsAsync(
@@ -102,7 +102,7 @@ public class RecommendedWorkflowServiceTests : IDisposable
             hasDataModel: false);
 
         // Assert
-        var specReview = steps.FirstOrDefault(s => s.Key == "SpecificationReview");
+        var specReview = steps.FirstOrDefault(s => s.Key == "SpecificationExplorer");
         Assert.NotNull(specReview);
         Assert.Equal(WorkflowStepStatus.Approved, specReview.Status);
     }
@@ -111,9 +111,9 @@ public class RecommendedWorkflowServiceTests : IDisposable
     [Fact]
     public async Task InvalidateApprovalsAsync_InvalidatesDependentSteps()
     {
-        // Arrange - Approve SpecificationReview
+        // Arrange - Approve SpecificationExplorer
         var hash1 = "hash_abc123";
-        await _service.ApproveStepAsync(_workspaceId, "SpecificationReview", artifactSetHash: hash1);
+        await _service.ApproveStepAsync(_workspaceId, "SpecificationExplorer", artifactSetHash: hash1);
 
         // Act - Invalidate because spec changed
         var hash2 = "hash_xyz789";
@@ -123,16 +123,16 @@ public class RecommendedWorkflowServiceTests : IDisposable
             hash2);
 
         // Assert
-        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationExplorer");
         Assert.NotNull(progress);
         Assert.Equal(ApprovalState.InvalidatedByArtifactChange, progress.ApprovalState);
     }
 
-    // Test 6: Artifact Traceability locked until prerequisites approved
+    // Test 6: Artifact Traceability is available once required artifacts are loaded
     [Fact]
-    public async Task BuildWorkflowSteps_LocksTraceabilityUntilPrerequisitesApproved()
+    public async Task BuildWorkflowSteps_TraceabilityAvailableWhenArtifactsLoaded()
     {
-        // Act - Without SpecificationReview approved
+        // Act
         var steps = await _service.BuildWorkflowStepsAsync(
             _workspaceId,
             hasConstitution: true,
@@ -141,25 +141,8 @@ public class RecommendedWorkflowServiceTests : IDisposable
             hasTasks: true,
             hasDataModel: false);
 
-        // Assert - ArtifactTraceability should be Locked
+        // Assert
         var traceability = steps.FirstOrDefault(s => s.Key == "ArtifactTraceability");
-        Assert.NotNull(traceability);
-        Assert.Equal(WorkflowStepStatus.Locked, traceability.Status);
-
-        // Now approve SpecificationReview
-        await _service.ApproveStepAsync(_workspaceId, "SpecificationReview");
-
-        // Act - Rebuild steps
-        steps = await _service.BuildWorkflowStepsAsync(
-            _workspaceId,
-            hasConstitution: true,
-            hasSpecification: true,
-            hasPlan: true,
-            hasTasks: true,
-            hasDataModel: false);
-
-        // Assert - ArtifactTraceability should now be Available
-        traceability = steps.FirstOrDefault(s => s.Key == "ArtifactTraceability");
         Assert.NotNull(traceability);
         Assert.Equal(WorkflowStepStatus.Available, traceability.Status);
     }
@@ -168,9 +151,6 @@ public class RecommendedWorkflowServiceTests : IDisposable
     [Fact]
     public async Task BuildWorkflowSteps_LocksImplementationReviewUntilTraceabilityApproved()
     {
-        // Arrange - Approve SpecificationReview
-        await _service.ApproveStepAsync(_workspaceId, "SpecificationReview");
-
         // Act - Without ArtifactTraceability approved
         var steps = await _service.BuildWorkflowStepsAsync(
             _workspaceId,
@@ -208,10 +188,10 @@ public class RecommendedWorkflowServiceTests : IDisposable
     public async Task RejectStep_SetsNeedsChangesState()
     {
         // Act
-        await _service.RejectStepAsync(_workspaceId, "SpecificationReview", comment: "Needs revision");
+        await _service.RejectStepAsync(_workspaceId, "SpecificationExplorer", comment: "Needs revision");
 
         // Assert
-        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationExplorer");
         Assert.NotNull(progress);
         Assert.Equal(ApprovalState.NeedsChanges, progress.ApprovalState);
     }
@@ -242,10 +222,10 @@ public class RecommendedWorkflowServiceTests : IDisposable
     public async Task MarkStepInProgress_UpdatesLastOpenedAt()
     {
         // Act
-        await _service.MarkStepInProgressAsync(_workspaceId, "SpecificationReview");
+        await _service.MarkStepInProgressAsync(_workspaceId, "SpecificationExplorer");
 
         // Assert
-        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationExplorer");
         Assert.NotNull(progress);
         Assert.NotNull(progress.LastOpenedAt);
         Assert.True(progress.LastOpenedAt > DateTimeOffset.UtcNow.AddSeconds(-5));
@@ -257,7 +237,7 @@ public class RecommendedWorkflowServiceTests : IDisposable
     {
         // Arrange
         var hash = "hash_abc123";
-        await _service.ApproveStepAsync(_workspaceId, "SpecificationReview", artifactSetHash: hash);
+        await _service.ApproveStepAsync(_workspaceId, "SpecificationExplorer", artifactSetHash: hash);
 
         // Act - Invalidate with same hash
         await _service.InvalidateArtifactDependentApprovalsAsync(
@@ -266,7 +246,7 @@ public class RecommendedWorkflowServiceTests : IDisposable
             hash);
 
         // Assert - Should still be Approved
-        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        var progress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationExplorer");
         Assert.NotNull(progress);
         Assert.Equal(ApprovalState.Approved, progress.ApprovalState);
     }
@@ -279,13 +259,13 @@ public class RecommendedWorkflowServiceTests : IDisposable
         var workspace2 = Guid.NewGuid();
 
         // Act
-        await _service.ApproveStepAsync(_workspaceId, "SpecificationReview");
+        await _service.ApproveStepAsync(_workspaceId, "SpecificationExplorer");
         // Mark step in progress in workspace2 to create it
-        await _service.MarkStepInProgressAsync(workspace2, "SpecificationReview");
+        await _service.MarkStepInProgressAsync(workspace2, "SpecificationExplorer");
 
         // Assert
-        var progress1 = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
-        var progress2 = await _service.GetReviewProgressAsync(workspace2, "SpecificationReview");
+        var progress1 = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationExplorer");
+        var progress2 = await _service.GetReviewProgressAsync(workspace2, "SpecificationExplorer");
 
         Assert.NotNull(progress1);
         Assert.Equal(ApprovalState.Approved, progress1.ApprovalState);
@@ -300,7 +280,7 @@ public class RecommendedWorkflowServiceTests : IDisposable
     public async Task InvalidateApprovalsAsync_OnlyInvalidatesDependentSteps()
     {
         // Arrange - Approve multiple steps
-        await _service.ApproveStepAsync(_workspaceId, "SpecificationReview", artifactSetHash: "spec_hash");
+        await _service.ApproveStepAsync(_workspaceId, "SpecificationExplorer", artifactSetHash: "spec_hash");
         await _service.ApproveStepAsync(_workspaceId, "PlanExplorer", artifactSetHash: "plan_hash");
 
         // Act - Invalidate only spec-dependent steps
@@ -310,7 +290,7 @@ public class RecommendedWorkflowServiceTests : IDisposable
             "new_hash");
 
         // Assert
-        var specProgress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationReview");
+        var specProgress = await _service.GetReviewProgressAsync(_workspaceId, "SpecificationExplorer");
         var planProgress = await _service.GetReviewProgressAsync(_workspaceId, "PlanExplorer");
 
         Assert.Equal(ApprovalState.InvalidatedByArtifactChange, specProgress.ApprovalState);
@@ -360,7 +340,7 @@ public class RecommendedWorkflowServiceTests : IDisposable
         var readinessInitial = _service.CalculateWorkflowReadiness(stepsInitial);
 
         // Act - Approve a step
-        await _service.ApproveStepAsync(_workspaceId, "SpecificationReview");
+        await _service.ApproveStepAsync(_workspaceId, "SpecificationExplorer");
         var stepsAfterApproval = await _service.BuildWorkflowStepsAsync(
             _workspaceId,
             hasConstitution: true,
@@ -413,7 +393,7 @@ public class RecommendedWorkflowServiceTests : IDisposable
             hasDataModel: true);
 
         // Approve all required steps
-        var requiredSteps = new[] { "ConstitutionExplorer", "PlanExplorer", "TaskExplorer", "SpecificationReview" };
+        var requiredSteps = new[] { "ConstitutionExplorer", "PlanExplorer", "TaskExplorer", "SpecificationExplorer" };
         foreach (var stepKey in requiredSteps)
         {
             await _service.ApproveStepAsync(_workspaceId, stepKey);
@@ -489,9 +469,9 @@ public class RecommendedWorkflowServiceTests : IDisposable
         Assert.Contains("DataModelExplorer", explorerKeys);
     }
 
-    // Test 20: SpecificationExplorer is distinct from SpecificationReview
+    // Test 20: Specification Review is retired from the workflow
     [Fact]
-    public async Task BuildWorkflowSteps_SpecificationExplorerDistinctFromSpecificationReview()
+    public async Task BuildWorkflowSteps_DoesNotContainSpecificationReview()
     {
         // Act
         var steps = await _service.BuildWorkflowStepsAsync(
@@ -503,41 +483,27 @@ public class RecommendedWorkflowServiceTests : IDisposable
             hasDataModel: false);
 
         // Assert
-        var specExplorer = steps.FirstOrDefault(s => s.Key == "SpecificationExplorer");
-        var specReview = steps.FirstOrDefault(s => s.Key == "SpecificationReview");
-
-        Assert.NotNull(specExplorer);
-        Assert.NotNull(specReview);
-        Assert.NotEqual(specExplorer.Route, specReview.Route);
-        Assert.Equal("specification-explorer", specExplorer.Route);
-        Assert.Equal("extract", specReview.Route);
+        Assert.Contains(steps, s => s.Key == "SpecificationExplorer" && s.Route == "specification-explorer");
+        Assert.DoesNotContain(steps, s => s.Key == "SpecificationReview");
     }
 
-    // Test 21: SpecificationExplorer approval state is independent from SpecificationReview
+    // Test 21: Artifact Traceability no longer depends on retired Specification Review approval
     [Fact]
-    public async Task BuildWorkflowSteps_SpecificationExplorerStateIndependentFromReview()
+    public async Task BuildWorkflowSteps_ArtifactTraceabilityAvailableWithoutSpecificationReviewApproval()
     {
-        // Arrange - Approve SpecificationExplorer
-        await _service.ApproveStepAsync(_workspaceId, "SpecificationExplorer");
-
-        // Act - Check both steps
+        // Act
         var steps = await _service.BuildWorkflowStepsAsync(
             _workspaceId,
             hasConstitution: true,
             hasSpecification: true,
-            hasPlan: false,
-            hasTasks: false,
+            hasPlan: true,
+            hasTasks: true,
             hasDataModel: false);
 
-        // Assert - SpecificationExplorer approved, Review not approved
-        var specExplorer = steps.FirstOrDefault(s => s.Key == "SpecificationExplorer");
-        var specReview = steps.FirstOrDefault(s => s.Key == "SpecificationReview");
-
-        Assert.NotNull(specExplorer);
-        Assert.Equal(WorkflowStepStatus.Approved, specExplorer.Status);
-
-        Assert.NotNull(specReview);
-        Assert.Equal(WorkflowStepStatus.Available, specReview.Status);
+        // Assert
+        var traceability = steps.FirstOrDefault(s => s.Key == "ArtifactTraceability");
+        Assert.NotNull(traceability);
+        Assert.NotEqual(WorkflowStepStatus.Locked, traceability.Status);
     }
 
     // Test 22: Workflow order is sequential with correct numbering
@@ -562,7 +528,6 @@ public class RecommendedWorkflowServiceTests : IDisposable
             "PlanExplorer",
             "TaskExplorer",
             "DataModelExplorer",
-            "SpecificationReview",
             "ArtifactTraceability",
             "ImplementationReview",
             "Dashboard"
@@ -578,9 +543,9 @@ public class RecommendedWorkflowServiceTests : IDisposable
         }
     }
 
-    // Test 23: SpecificationExplorer appears before Specification Review
+    // Test 23: SpecificationExplorer appears before Artifact Traceability
     [Fact]
-    public async Task BuildWorkflowSteps_SpecificationExplorerBeforeSpecificationReview()
+    public async Task BuildWorkflowSteps_SpecificationExplorerBeforeArtifactTraceability()
     {
         // Act
         var steps = await _service.BuildWorkflowStepsAsync(
@@ -593,11 +558,11 @@ public class RecommendedWorkflowServiceTests : IDisposable
 
         // Assert
         var explorerIndex = steps.FindIndex(s => s.Key == "SpecificationExplorer");
-        var reviewIndex = steps.FindIndex(s => s.Key == "SpecificationReview");
+        var traceabilityIndex = steps.FindIndex(s => s.Key == "ArtifactTraceability");
 
         Assert.True(explorerIndex >= 0);
-        Assert.True(reviewIndex >= 0);
-        Assert.True(explorerIndex < reviewIndex);
+        Assert.True(traceabilityIndex >= 0);
+        Assert.True(explorerIndex < traceabilityIndex);
     }
 
     // Test 24: Missing spec artifact locks SpecificationExplorer
@@ -619,3 +584,4 @@ public class RecommendedWorkflowServiceTests : IDisposable
         Assert.Equal(WorkflowStepStatus.Locked, specExplorer.Status);
     }
 }
+

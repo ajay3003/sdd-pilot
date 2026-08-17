@@ -53,7 +53,7 @@ public sealed class SampleProjectsNavigationTests : BunitContext
     [InlineData("Plan Explorer", "/plan-explorer", WorkspaceArtifactKind.Plan, "PERSON plan.md")]
     [InlineData("Task Explorer", "/task-explorer", WorkspaceArtifactKind.Tasks, "PERSON tasks.md")]
     [InlineData("Data Model Explorer", "/data-model-explorer", WorkspaceArtifactKind.DataModel, "PERSON data-model.md")]
-    [InlineData("Specification Review", "/extract", WorkspaceArtifactKind.Specification, "PERSON spec.md")]
+    [InlineData("Specification Explorer", "/specification-explorer", WorkspaceArtifactKind.Specification, "PERSON spec.md")]
     public void ReviewerLinksLoadSelectedProjectBeforeNavigating(
         string reviewerName,
         string expectedRoute,
@@ -177,7 +177,7 @@ public sealed class SampleProjectsNavigationTests : BunitContext
         var files = new[]
         {
             Supported("constitution.md", "constitution", "Constitution Explorer", "/constitution-explorer"),
-            Supported("spec.md", "spec", "Specification Review", "/extract"),
+            Supported("spec.md", "spec", "Specification Explorer", "/specification-explorer"),
             Supported("data-model.md", "datamodel", "Data Model Explorer", "/data-model-explorer"),
             Supported("plan.md", "plan", "Plan Explorer", "/plan-explorer"),
             Supported("tasks.md", "tasks", "Task Explorer", "/task-explorer")
@@ -256,3 +256,4 @@ public sealed class SampleProjectsNavigationTests : BunitContext
             });
     }
 }
+

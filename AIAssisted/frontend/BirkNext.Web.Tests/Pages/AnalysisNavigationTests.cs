@@ -86,8 +86,6 @@ public class AnalysisNavigationTests : BunitContext
         var nav = cut.Find("nav").TextContent;
 
         nav.IndexOf("Dashboard", StringComparison.Ordinal)
-            .Should().BeLessThan(nav.IndexOf("Specification Review", StringComparison.Ordinal));
-        nav.IndexOf("Specification Review", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Specification Explorer", StringComparison.Ordinal));
         nav.IndexOf("Specification Explorer", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Constitution Explorer", StringComparison.Ordinal));
@@ -175,3 +173,4 @@ public class AnalysisNavigationTests : BunitContext
             .Select(a => a.Template)
             .ToList();
 }
+

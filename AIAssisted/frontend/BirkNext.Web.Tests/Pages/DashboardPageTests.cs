@@ -220,7 +220,7 @@ public class DashboardPageTests : BunitContext
             LastSavedText: "-",
             ArtifactStatus: new WorkspaceArtifactStatus(false, false, false, false, false, 0, null),
             Artifacts: [],
-            SpecificationReviewState: null,
+            SpecificationExplorerState: null,
             TraceabilityState: null,
             ImplementationReviewState: null,
             QualityGateState: null,
@@ -255,3 +255,4 @@ public class DashboardPageTests : BunitContext
             }
         };
 }
+

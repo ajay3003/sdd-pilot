@@ -22,7 +22,7 @@ public sealed class WorkflowReadinessServiceTests
         readiness.ArtifactStatus.ArtifactCount.Should().Be(0);
         readiness.NextRecommendedAction.Should().NotBeNull();
         readiness.NextRecommendedAction!.Title.Should().Be("Load Sample Project");
-        readiness.SpecificationReviewState.Should().BeNull();
+        readiness.SpecificationExplorerState.Should().BeNull();
         readiness.TraceabilityState.Should().BeNull();
         readiness.ImplementationReviewState.Should().BeNull();
         readiness.CanRelease.Should().BeFalse();
@@ -56,7 +56,7 @@ public sealed class WorkflowReadinessServiceTests
         fixture.WorkspaceRestore.Setup(s => s.GetCurrentWorkspaceMetadataAsync()).ReturnsAsync(Workspace(count: 3));
         fixture.WorkspacePersistence.Setup(s => s.GetCurrentStateAsync()).ReturnsAsync(CurrentState(count: 3));
         fixture.WorkflowApi.SetupBuildSteps([
-            Step("SpecificationReview", "Specification Review", WorkflowStepStatus.Available, isCurrent: true),
+            Step("SpecificationExplorer", "Specification Explorer", WorkflowStepStatus.Available, isCurrent: true),
             Step("ArtifactTraceability", "Artifact Traceability", WorkflowStepStatus.Locked),
             Step("ImplementationReview", "Implementation Review", WorkflowStepStatus.Locked),
             Step("ReviewContextValidation", "ReviewContext Validation", WorkflowStepStatus.Available, requiresApproval: false)
@@ -73,7 +73,7 @@ public sealed class WorkflowReadinessServiceTests
         readiness.OverallReadiness.ReviewReadiness.Should().Be(0);
         readiness.OverallReadiness.ApprovalReadiness.Should().Be(0);
         readiness.OverallReadiness.OverallReadiness.Should().Be(0);
-        readiness.NextRecommendedAction!.Key.Should().Be("SpecificationReview");
+        readiness.NextRecommendedAction!.Key.Should().Be("SpecificationExplorer");
         readiness.CanRelease.Should().BeFalse();
     }
 
@@ -85,7 +85,7 @@ public sealed class WorkflowReadinessServiceTests
         fixture.WorkspaceRestore.Setup(s => s.GetCurrentWorkspaceMetadataAsync()).ReturnsAsync(Workspace());
         fixture.WorkspacePersistence.Setup(s => s.GetCurrentStateAsync()).ReturnsAsync(CurrentState());
         fixture.WorkflowApi.SetupBuildSteps([
-            Step("SpecificationReview", "Specification Review", WorkflowStepStatus.Reviewed, approvalState: ApprovalState.Pending),
+            Step("SpecificationExplorer", "Specification Explorer", WorkflowStepStatus.Reviewed, approvalState: ApprovalState.Pending),
             Step("ArtifactTraceability", "Artifact Traceability", WorkflowStepStatus.Available),
             Step("ImplementationReview", "Implementation Review", WorkflowStepStatus.Locked)
         ]);
@@ -114,7 +114,7 @@ public sealed class WorkflowReadinessServiceTests
         fixture.WorkspaceRestore.Setup(s => s.GetCurrentWorkspaceMetadataAsync()).ReturnsAsync(Workspace());
         fixture.WorkspacePersistence.Setup(s => s.GetCurrentStateAsync()).ReturnsAsync(CurrentState());
         fixture.WorkflowApi.SetupBuildSteps([
-            Step("SpecificationReview", "Specification Review", specificationStatus, expectedCurrentStep == "SpecificationReview"),
+            Step("SpecificationExplorer", "Specification Explorer", specificationStatus, expectedCurrentStep == "SpecificationExplorer"),
             Step("ArtifactTraceability", "Artifact Traceability", traceabilityStatus, expectedCurrentStep == "ArtifactTraceability"),
             Step("ImplementationReview", "Implementation Review", implementationStatus, expectedCurrentStep == "ImplementationReview"),
             Step("ReviewContextValidation", "ReviewContext Validation", WorkflowStepStatus.Available, requiresApproval: false)
@@ -142,7 +142,7 @@ public sealed class WorkflowReadinessServiceTests
         fixture.WorkspaceRestore.Setup(s => s.GetCurrentWorkspaceMetadataAsync()).ReturnsAsync((CurrentWorkspaceMetadata?)null);
         fixture.WorkspacePersistence.Setup(s => s.GetCurrentStateAsync()).ReturnsAsync((CurrentWorkspaceStateDto?)null);
         fixture.WorkflowApi.SetupBuildSteps([
-            Step("SpecificationReview", "Specification Review", WorkflowStepStatus.Approved),
+            Step("SpecificationExplorer", "Specification Explorer", WorkflowStepStatus.Approved),
             Step("ArtifactTraceability", "Artifact Traceability", WorkflowStepStatus.Approved),
             Step("ImplementationReview", "Implementation Review", WorkflowStepStatus.Approved)
         ]);
@@ -200,7 +200,7 @@ public sealed class WorkflowReadinessServiceTests
         {
             Number = key switch
             {
-                "SpecificationReview" => 1,
+                "SpecificationExplorer" => 1,
                 "ArtifactTraceability" => 2,
                 "ImplementationReview" => 3,
                 _ => 4
@@ -262,3 +262,4 @@ file static class RecommendedWorkflowApiMockExtensions
             .ReturnsAsync(steps);
     }
 }
+

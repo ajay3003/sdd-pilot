@@ -119,7 +119,7 @@ public class FeatureVisibilityInfo
     public bool RecommendedWorkflow { get; set; } = true;
     public bool UserGuide { get; set; } = true;
     public bool Dashboard { get; set; } = true;
-    public bool SpecificationReview { get; set; } = true;
+    public bool SpecificationExplorer { get; set; } = true;
     public bool QaArtifactLibrary { get; set; } = true;
     public bool SampleProjects { get; set; } = true;
     public bool CreateTestScenario { get; set; } = true;

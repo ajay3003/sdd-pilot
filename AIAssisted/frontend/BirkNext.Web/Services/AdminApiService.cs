@@ -321,7 +321,6 @@ public class FeatureVisibilityDto
     [JsonPropertyName("recommendedWorkflow")]  public bool RecommendedWorkflow  { get; set; } = true;
     [JsonPropertyName("userGuide")]            public bool UserGuide            { get; set; } = true;
     [JsonPropertyName("dashboard")]            public bool Dashboard            { get; set; } = true;
-    [JsonPropertyName("specificationReview")]  public bool SpecificationReview  { get; set; } = true;
     [JsonPropertyName("specificationExplorer")] public bool SpecificationExplorer { get; set; } = true;
     [JsonPropertyName("qaArtifactLibrary")]    public bool QaArtifactLibrary    { get; set; } = true;
     [JsonPropertyName("sampleProjects")]       public bool SampleProjects       { get; set; } = true;

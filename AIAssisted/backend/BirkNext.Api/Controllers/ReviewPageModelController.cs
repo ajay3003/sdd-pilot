@@ -44,11 +44,4 @@ public class ReviewPageModelController(ReviewPageModelService service) : Control
         var model = await service.GetTaskExplorerModelAsync();
         return Ok(model);
     }
-
-    [HttpGet("specification-review")]
-    public async Task<IActionResult> GetSpecificationReviewModel()
-    {
-        var model = await service.GetSpecificationReviewModelAsync();
-        return Ok(model);
-    }
 }

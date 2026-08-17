@@ -102,7 +102,6 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
         { "PlanExplorer", new[] { "Plan" } },
         { "TaskExplorer", new[] { "Tasks" } },
         { "DataModelExplorer", new[] { "DataModel" } },
-        { "SpecificationReview", new[] { "Specification" } },
         { "ArtifactTraceability", new[] { "Constitution", "Specification", "Plan", "Tasks" } },
         { "ImplementationReview", new[] { "Specification", "Tasks" } },
         { "ReviewContextValidation", Array.Empty<string>() },
@@ -112,7 +111,6 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
     // Approval dependencies per step (steps that must be approved first)
     private static readonly Dictionary<string, List<string>> ApprovalDependencies = new()
     {
-        { "ArtifactTraceability", new[] { "SpecificationReview" }.ToList() },
         { "ImplementationReview", new[] { "ArtifactTraceability" }.ToList() }
     };
 
@@ -535,7 +533,6 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
             { "PlanExplorer", "Plan" },
             { "TaskExplorer", "Tasks" },
             { "DataModelExplorer", "DataModel" },
-            { "SpecificationReview", "Specification" },
         };
 
         return steps

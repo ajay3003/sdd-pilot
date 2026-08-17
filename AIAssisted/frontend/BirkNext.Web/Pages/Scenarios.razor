@@ -20,7 +20,7 @@
     <div class="notification notification-info mb-0" role="note" data-testid="ql-traceability-redirect">
         <strong>Coverage analysis belongs in Traceability &amp; Coverage.</strong>
         For coverage gaps, missing tests, orphan tests, and requirement coverage metrics, use
-        <a href="extract">Traceability &amp; Coverage</a> (available after specification analysis)
+        <a href="specification-explorer">Specification Explorer</a> (available after loading a Sample Project)
         or the <a href="traceability">standalone Traceability page</a>.
         This library is a repository of reusable QA assets.
     </div>
@@ -111,10 +111,10 @@
                     @if (_scenarios.Count == 0)
                     {
                         <h3>No published assets yet</h3>
-                        <p>Publish QA assets from Specification Review to build your team's knowledge base.</p>
+                        <p>Publish QA assets from selected-project specification analysis to build your team's knowledge base.</p>
                         <p>Published assets are available for reuse across specifications and projects.</p>
                         <div class="empty-state-actions">
-                            <a href="/extract">Analyze Specification</a>
+                            <a href="/specification-explorer">Open Specification Explorer</a>
                             <a href="scenarios/new">Create Test Scenario</a>
                         </div>
                     }

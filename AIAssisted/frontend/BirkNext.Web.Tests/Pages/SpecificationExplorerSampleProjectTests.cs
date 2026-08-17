@@ -1,9 +1,12 @@
 using BirkNext.Web.Models;
+using BirkNext.Web.GraphQL;
 using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
+using StrawberryShake;
 
 namespace BirkNext.Web.Tests.Pages;
 
@@ -11,6 +14,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
 {
     private readonly WorkspaceArtifactRepository _workspace = new();
     private readonly MockSampleProjectDocumentResolver _documentResolver = new();
+    private readonly Mock<IScenarioExtractionService> _extractionService = new();
 
     public SpecificationExplorerSampleProjectTests()
     {
@@ -19,6 +23,33 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         Services.AddSingleton<IWorkspaceSessionService>(_workspace);
         Services.AddSingleton<MarkdownRenderingService>();
         Services.AddSingleton<ISampleProjectDocumentResolver>(_documentResolver);
+        Services.AddSingleton(_extractionService.Object);
+        Services.AddSingleton<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
+        Services.AddSingleton(new FeatureVisibilityService());
+        var session = new Mock<IExtractionSessionService>();
+        session.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
+        session.Setup(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>())).Returns(Task.CompletedTask);
+        session.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
+        session.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
+        Services.AddSingleton(session.Object);
+
+        var createScenarios = new Mock<ICreateScenariosMutation>();
+        var saveReviewed = new Mock<ISaveReviewedCandidatesMutation>();
+        saveReviewed
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveReviewedCandidatesInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveReviewedCandidatesResult>>());
+        var saveLinks = new Mock<ISaveCandidateLinksMutation>();
+        saveLinks
+            .Setup(m => m.ExecuteAsync(It.IsAny<SaveCandidateLinksInput>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<ISaveCandidateLinksResult>>());
+        var reviewed = new Mock<IGetReviewedCandidatesQuery>();
+        reviewed
+            .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
+        Services.AddSingleton(createScenarios.Object);
+        Services.AddSingleton(saveReviewed.Object);
+        Services.AddSingleton(saveLinks.Object);
+        Services.AddSingleton(reviewed.Object);
 
         JSInterop.SetupVoid("localStorage.setItem", _ => true).SetVoidResult();
         JSInterop.SetupVoid("localStorage.removeItem", _ => true).SetVoidResult();
@@ -178,5 +209,116 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
             secondFeatureCount.Should().Be(featureCount);
         });
     }
-}
 
+    [Fact]
+    public void SpecificationExplorer_AnalyzeUsesSelectedSampleProjectSpecification()
+    {
+        const string projectSlug = "project-a";
+        const string workspaceSpec = "# OLD WORKSPACE SPEC";
+        const string sampleProjectSpec = "# Project A Specification\n\n- FR-001: The system shall approve requests.";
+        string? analyzedText = null;
+
+        _documentResolver.SetProjectSpecification(projectSlug, sampleProjectSpec);
+        _documentResolver.SetSelectedProject(projectSlug);
+        _workspace.Set(WorkspaceArtifactKind.Specification, workspaceSpec);
+        _extractionService
+            .Setup(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
+            .Callback<string, ExtractionProfile, CancellationToken>((text, _, _) => analyzedText = text)
+            .ReturnsAsync(MakeResult([
+                new ExtractionCandidate
+                {
+                    Title = "FR-001: The system shall approve requests.",
+                    Classification = ScenarioKind.Requirement,
+                    ClassificationSignal = ClassificationSignal.Rfc2119Lowercase,
+                    SourceBlockType = BlockType.UnorderedListItem
+                }
+            ], sampleProjectSpec));
+
+        var cut = Render<SpecificationExplorer>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid='spec-explorer-analyze']").Should().NotBeNull());
+
+        cut.Find("[data-testid='spec-explorer-analyze']").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            analyzedText.Should().Be(sampleProjectSpec);
+            analyzedText.Should().NotBe(workspaceSpec);
+            cut.Find("[data-testid='requirements-metric']").TextContent.Should().Contain("1");
+            cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("1");
+            cut.Markup.Should().Contain("FR-001: The system shall approve requests.");
+        });
+    }
+
+    [Fact]
+    public void SpecificationExplorer_ProjectSwitchClearsPreviousAnalysisResult()
+    {
+        const string projectASlug = "project-a";
+        const string projectBSlug = "project-b";
+
+        _documentResolver.SetProjectSpecification(projectASlug, "# Project A Specification\n\n- FR-001: The system shall approve requests.");
+        _documentResolver.SetProjectSpecification(projectBSlug, "# Project B Specification");
+        _documentResolver.SetSelectedProject(projectASlug);
+        _extractionService
+            .Setup(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeResult([
+                new ExtractionCandidate
+                {
+                    Title = "FR-001: Project A only",
+                    Classification = ScenarioKind.Requirement,
+                    ClassificationSignal = ClassificationSignal.Rfc2119Lowercase,
+                    SourceBlockType = BlockType.UnorderedListItem
+                }
+            ], "# Project A Specification"));
+
+        var cut = Render<SpecificationExplorer>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid='spec-explorer-analyze']").Should().NotBeNull());
+        cut.Find("[data-testid='spec-explorer-analyze']").Click();
+        cut.WaitForAssertion(() =>
+            cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("1"));
+
+        _documentResolver.SetSelectedProject(projectBSlug);
+        cut.Render();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Project B Specification");
+            cut.Markup.Should().NotContain("FR-001: Project A only");
+            cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("0");
+        });
+    }
+
+    [Fact]
+    public void SpecificationExplorer_MissingSpecHasNoAnalyzeFallback()
+    {
+        const string projectSlug = "project-without-spec";
+
+        _documentResolver.RegisterProject(projectSlug);
+        _documentResolver.SetSelectedProject(projectSlug);
+        _workspace.Set(WorkspaceArtifactKind.Specification, "# OLD WORKSPACE SPEC");
+
+        var cut = Render<SpecificationExplorer>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("spec.md is not available");
+            cut.Markup.Should().NotContain("OLD WORKSPACE SPEC");
+            cut.FindAll("[data-testid='spec-explorer-analyze']").Should().BeEmpty();
+        });
+    }
+
+    private static ExtractionPipelineResult MakeResult(
+        IReadOnlyList<ExtractionCandidate> candidates,
+        string specMarkdown)
+    {
+        return ExtractionPipelineResult.Success(
+            candidates,
+            specMarkdown.Length,
+            specMarkdown.Split('\n').Length,
+            1,
+            candidates.Count(c => c.Classification == ScenarioKind.Requirement),
+            candidates.Count(c => c.Classification == ScenarioKind.Test),
+            candidates.Count(c => c.Classification == ScenarioKind.NeedsClarification),
+            ExtractionProfile.Speckit,
+            specMarkdown);
+    }
+}

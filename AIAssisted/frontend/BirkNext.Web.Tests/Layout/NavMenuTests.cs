@@ -26,7 +26,8 @@ public class NavMenuTests : BunitContext
         navText.Should().Contain("Library");
         navText.Should().Contain("Analysis");
         navText.Should().Contain("Dashboard");
-        navText.Should().Contain("Specification Review");
+        navText.Should().Contain("Specification Explorer");
+        navText.Should().NotContain("Specification Review");
         navText.Should().Contain("QA Artifact Library");
         navText.Should().Contain("Create Test Scenario");
         navText.Should().NotContain("AI REVIEW");
@@ -34,12 +35,13 @@ public class NavMenuTests : BunitContext
         navText.Should().NotContain("Spec Comparison");
         navText.Should().NotContain("Specification Deltas");
 
-        navText.IndexOf("Dashboard", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Review", StringComparison.Ordinal));
-        navText.IndexOf("Specification Review", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("QA Artifact Library", StringComparison.Ordinal));
+        navText.IndexOf("Dashboard", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Explorer", StringComparison.Ordinal));
+        navText.IndexOf("Specification Explorer", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("QA Artifact Library", StringComparison.Ordinal));
         navText.IndexOf("QA Artifact Library", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Create Test Scenario", StringComparison.Ordinal));
 
         cut.Find("a[href='dashboard']").Should().NotBeNull();
-        cut.Find("a[href='extract']").Should().NotBeNull();
+        cut.Find("a[href='specification-explorer']").Should().NotBeNull();
+        cut.FindAll("a[href='extract']").Should().BeEmpty();
         cut.Find("a[href='scenarios']").Should().NotBeNull();
         cut.Find("a[href='scenarios/new']").Should().NotBeNull();
         cut.FindAll("a[href='compare']").Should().BeEmpty();
@@ -141,3 +143,4 @@ public class NavMenuTests : BunitContext
             .Select(a => a.Template)
             .ToList();
 }
+

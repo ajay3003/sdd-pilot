@@ -22,7 +22,7 @@ public class AdminService
 
     private static readonly IReadOnlyList<(string Key, string Label)> CoreFeatures =
     [
-        ("SpecificationReview",        "Specification Review"),
+        ("SpecificationExplorer",      "Specification Explorer"),
         ("ConstitutionExplorer",       "Constitution Explorer"),
         ("DataModelExplorer",          "Data Model Explorer"),
         ("PlanExplorer",               "Plan Explorer"),
@@ -219,7 +219,7 @@ public class AdminService
             RecommendedWorkflow  = s.GetValue("RecommendedWorkflow",  true),
             UserGuide            = s.GetValue("UserGuide",            true),
             Dashboard            = s.GetValue("Dashboard",            true),
-            SpecificationReview  = s.GetValue("SpecificationReview",  true),
+            SpecificationExplorer = s.GetValue("SpecificationExplorer", true),
             QaArtifactLibrary    = s.GetValue("QaArtifactLibrary",    true),
             SampleProjects       = s.GetValue("SampleProjects",       true),
             CreateTestScenario   = s.GetValue("CreateTestScenario",   true),
