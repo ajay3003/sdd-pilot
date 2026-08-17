@@ -74,10 +74,8 @@
                     @if (_summary.TotalRequirements == 0)
                     {
                         <EmptyState Title="No requirements yet"
-                                    Description="Add requirement scenarios to the library to see their risk profile here."
-                                    Dashed="true">
-                            <a href="/scenarios">Go to QA Artifact Library</a>
-                        </EmptyState>
+                                    Description="Add requirement scenarios from specification analysis to see their risk profile here."
+                                    Dashed="true" />
                     }
                     else if (FilteredRequirements.Count == 0)
                     {

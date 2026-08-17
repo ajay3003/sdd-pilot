@@ -1109,32 +1109,6 @@ public class ViewBehaviorTests : BunitContext
     // =========================================================================
 
     [Fact]
-    public void UserGuide_ClearlyDifferentiatesTraceabilityAndLibrary()
-    {
-        var cut = Render<UserGuide>();
-
-        var text = cut.Markup;
-
-        // Coverage analysis ownership must be attributed to Traceability & Coverage
-        text.Should().Contain("Coverage analysis belongs in Traceability",
-            "User Guide must state that coverage analysis belongs in Traceability & Coverage");
-
-        // Library must be described as a reuse repository, not a coverage tool
-        text.Should().Contain("reusable QA assets",
-            "User Guide must describe the library as a repository of reusable QA assets");
-        text.Should().Contain("discover",
-            "User Guide must describe the library purpose as discovering/reusing assets");
-
-        // The Traceability section must distinguish itself from the library
-        text.Should().Contain("Traceability &amp; Coverage vs. QA Artifact Library",
-            "User Guide must include an explicit differentiation callout between Traceability and Library");
-
-        // Library must not be listed as a coverage analysis tool
-        text.Should().NotContain("Coverage analysis tool",
-            "User Guide must not describe the library as a coverage analysis tool");
-    }
-
-    [Fact]
     public void RecommendedWorkflow_MarksQaLibraryAsOptional()
     {
         var cut = RenderRecommendedWorkflowForTraceability();

@@ -1463,7 +1463,6 @@ else if (_settings is not null)
         ("Task Explorer",           "TaskExplorer"),
 
         // Library
-        ("QA Artifact Library",     "QaArtifactLibrary"),
         ("Sample Projects",         "SampleProjects"),
 
         // Traceability (legacy â€” shown only when LegacyTraceabilityNavigationEnabled)
@@ -2750,7 +2749,7 @@ else if (_settings is not null)
     private static readonly HashSet<string> KnownRoutes = new(StringComparer.OrdinalIgnoreCase)
     {
         "/", "/dashboard", "/specification-explorer", "/constitution-explorer", "/data-model-explorer", "/plan-explorer",
-        "/task-explorer", "/scenarios", "/sample-projects", "/traceability",
+        "/task-explorer", "/sample-projects", "/traceability",
         "/traceability/suggestions", "/code-traceability", "/spec-drift",
         "/impact-analysis", "/artifact-traceability", "/task-alignment",
         "/implementation-traceability", "/quality-review", "/wasm-security-review",
@@ -2778,7 +2777,6 @@ else if (_settings is not null)
         ("Data Model Explorer",          "data-model-explorer"),
         ("Plan Explorer",                "plan-explorer"),
         ("Task Explorer",                "task-explorer"),
-        ("QA Artifact Library",          "scenarios"),
         ("Sample Projects",              "sample-projects"),
         ("Traceability & Coverage",      "traceability"),
         ("Traceability Suggestions",     "traceability/suggestions"),
@@ -2807,7 +2805,6 @@ else if (_settings is not null)
         ("Recommended Workflow", "quality-review",              "Phase 4 CTA (secondary)"),
         ("Recommended Workflow", "task-alignment",              "Phase 5 CTA"),
         ("Recommended Workflow", "quality-review",              "Phase 6 CTA"),
-        ("Recommended Workflow", "scenarios",                   "Phase 7 CTA"),
         ("Recommended Workflow", "user-guide",                  "Footer cross-link"),
         // UserGuide.razor
         ("User Guide", "/getting-started",                      "Onboarding callout"),
@@ -2818,7 +2815,6 @@ else if (_settings is not null)
         ("User Guide", "/specification-explorer",               "Specification Explorer link"),
         ("User Guide", "/plan-explorer",                        "Plan Explorer link"),
         ("User Guide", "/task-explorer",                        "Task Explorer link"),
-        ("User Guide", "/scenarios",                            "QA Artifact Library link"),
         ("User Guide", "/spec-drift",                           "Spec Drift link"),
         ("User Guide", "/impact-analysis",                      "Impact Analysis link"),
         ("User Guide", "/artifact-traceability",                "Requirements Traceability link"),
