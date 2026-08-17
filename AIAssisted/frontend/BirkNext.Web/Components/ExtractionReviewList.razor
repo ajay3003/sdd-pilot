@@ -635,8 +635,7 @@ else
     [Parameter] public ExtractionPipelineResult? PipelineResult { get; set; }
     [Parameter] public ExtractionSessionSnapshot? InitialSession { get; set; }
     [Parameter] public string SpecMarkdown { get; set; } = string.Empty;
-
-    private const string ProjectId = "00000000-0000-0000-0000-000000000001";
+    [Parameter] public string? ProjectSlug { get; set; }
 
     private enum ReviewPersistState { Idle, Saving, Saved, Failed }
 
@@ -770,7 +769,7 @@ else
         if (PipelineResult is null) return;
         try
         {
-            var result = await GetReviewedCandidatesQuery.ExecuteAsync(ProjectId, null);
+            var result = await GetReviewedCandidatesQuery.ExecuteAsync(ProjectSlug ?? string.Empty, null);
             if (result?.Data?.ReviewedCandidates is not { } serverRecords) return;
 
             var serverById = serverRecords
@@ -811,7 +810,7 @@ else
                     ReviewStatus   = c.ReviewStatus,
                     SourceDocument = null,
                     SourceSection  = c.ContextHeading,
-                    ProjectId      = ProjectId,
+                    ProjectId      = ProjectSlug ?? string.Empty,
                     ReviewedBy     = null,
                     ReviewedAt     = c.ReviewStatus is CandidateReviewStatus.Accepted
                                      or CandidateReviewStatus.Rejected
@@ -1462,7 +1461,7 @@ else
                     ReviewStatus   = c.ReviewStatus,
                     SourceDocument = null,
                     SourceSection  = c.ContextHeading,
-                    ProjectId      = ProjectId,
+                    ProjectId      = ProjectSlug ?? string.Empty,
                     ReviewedBy     = null,
                     ReviewedAt     = c.ReviewStatus is CandidateReviewStatus.Accepted
                                      or CandidateReviewStatus.Rejected
@@ -1491,7 +1490,7 @@ else
 
             var linkInput = new SaveCandidateLinksInput
             {
-                ProjectId = ProjectId,
+                ProjectId = ProjectSlug ?? string.Empty,
                 SessionId = _sessionId,
                 Links     = linkItems,
             };
@@ -1539,6 +1538,14 @@ else
         if (PipelineResult is null || _selectedIds.Count == 0)
             return;
 
+        if (string.IsNullOrWhiteSpace(ProjectSlug))
+        {
+            _savePhase = ReviewSavePhase.Failed;
+            Logger.LogWarning("Cannot save artifacts: no valid project selected");
+            StateHasChanged();
+            return;
+        }
+
         _savePhase = ReviewSavePhase.Saving;
         _alreadySavedCount = 0;
 
@@ -1572,7 +1579,7 @@ else
                         Title = c.Title,
                         Description = null,
                         Kind = c.Classification,
-                        ProjectId = ProjectId,
+                        ProjectId = ProjectSlug ?? string.Empty,
                     })
                     .ToList();
 
