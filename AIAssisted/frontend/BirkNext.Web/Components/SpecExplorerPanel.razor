@@ -18,42 +18,11 @@
         }
         else
         {
-            <!-- ── Standalone: input state ──────────────────────────────────── -->
-            <div class="se-empty-state">
+            <!-- ── Empty state: no specification available ──────────────────── -->
+            <div class="se-no-spec-notice">
                 <div class="se-empty-icon" aria-hidden="true">🌳</div>
                 <h3 class="se-empty-title">Spec Explorer</h3>
-                <p class="se-empty-desc">Transform a specification into a navigable hierarchy. Paste, import, or drag a spec.md file to build the explorer.</p>
-
-                <div class="se-input-area">
-                    <div class="se-input-header">
-                        <span class="se-input-label">specification</span>
-                    </div>
-                    <SpecificationImport
-                        @ref="_importRef"
-                        InputId="se-file-input"
-                        OnFileImported="OnFileImported"
-                        OnFileRemoved="OnFileRemoved"
-                        IsDisabled="false" />
-                    <textarea
-                        class="se-textarea"
-                        placeholder="Or paste spec.md content here..."
-                        rows="12"
-                        @bind="_specText"></textarea>
-                    @if (!string.IsNullOrWhiteSpace(_specText))
-                    {
-                        <div class="se-input-footer">
-                            <span class="se-input-stat">@CountLines(_specText) lines · @_specText.Length chars</span>
-                            <button class="se-clear-btn" @onclick="ClearInput">Clear</button>
-                        </div>
-                    }
-                </div>
-
-                <button
-                    class="se-build-btn"
-                    disabled="@(!CanBuild)"
-                    @onclick="BuildTree">
-                    Build Spec Explorer
-                </button>
+                <p class="se-empty-desc">No specification is available.</p>
             </div>
         }
     }
@@ -615,8 +584,6 @@
     [Parameter] public string InitialSpecMarkdown { get; set; } = string.Empty;
     [Parameter] public bool IsEmbeddedInReview { get; set; }
 
-    private SpecificationImport? _importRef;
-    private string _specText = string.Empty;
     private string _lastBuiltMarkdown = string.Empty;
     private SpecTree? _tree;
     private SpecificationSemanticModel? _semanticModel;
@@ -661,14 +628,21 @@
         if (!string.IsNullOrWhiteSpace(InitialSpecMarkdown) && InitialSpecMarkdown != _lastBuiltMarkdown)
         {
             _lastBuiltMarkdown = InitialSpecMarkdown;
-            _specText = InitialSpecMarkdown;
-            BuildTree();
+            _tree = SpecExplorerService.Parse(InitialSpecMarkdown);
+            _semanticModel = SpecExplorerService.BuildSemanticModel(_tree, InitialSpecMarkdown);
+            _expandedIds = SpecExplorerService.GetDefaultExpanded(_tree.Roots);
+            _selectedNodeId = null;
+            _searchQuery = string.Empty;
+            _isMapView = false;
+            _sectionFilter = SectionFilter.All;
+            ApplyCoverageOverlay();
+            RefreshFlatCache();
         }
 
         if ((_tree is null || _tree.Roots.Count == 0) && Candidates is { Count: > 0 })
         {
             _tree = SpecExplorerService.BuildFromCandidates(Candidates);
-            _semanticModel = SpecExplorerService.BuildSemanticModel(_tree, _specText);
+            _semanticModel = SpecExplorerService.BuildSemanticModel(_tree, InitialSpecMarkdown ?? string.Empty);
             _expandedIds = SpecExplorerService.GetDefaultExpanded(_tree.Roots);
             _selectedNodeId = null;
             _searchQuery = string.Empty;
@@ -678,50 +652,16 @@
         }
     }
 
-    private bool CanBuild => !string.IsNullOrWhiteSpace(_specText);
-
     private int MissingCoverageSectionCount =>
         _semanticModel == null
             ? 0
             : _semanticModel.Requirements
                 .Count(r => r.LinkedAcceptanceScenarios.Count == 0);
 
-
-    private void OnFileImported(string content)
-    {
-        _specText = content;
-    }
-
-    private void OnFileRemoved()
-    {
-        _specText = string.Empty;
-    }
-
-    private void ClearInput()
-    {
-        _specText = string.Empty;
-        _importRef?.Reset();
-    }
-
-    private void BuildTree()
-    {
-        if (!CanBuild) return;
-        _tree = SpecExplorerService.Parse(_specText);
-        _semanticModel = SpecExplorerService.BuildSemanticModel(_tree, _specText);
-        _expandedIds = SpecExplorerService.GetDefaultExpanded(_tree.Roots);
-        _selectedNodeId = null;
-        _searchQuery = string.Empty;
-        _isMapView = false;
-        _sectionFilter = SectionFilter.All;
-        ApplyCoverageOverlay();
-        RefreshFlatCache();
-    }
-
     private void Reset()
     {
         _tree = null;
         _semanticModel = null;
-        _specText = string.Empty;
         _lastBuiltMarkdown = string.Empty;
         _expandedIds = [];
         _selectedNodeId = null;
@@ -731,7 +671,6 @@
         _flatCache = [];
         _hiddenIds = [];
         _hiddenCount = 0;
-        _importRef?.Reset();
     }
 
     private void RefreshFlatCache()
@@ -940,8 +879,6 @@
         _expandedIds.Clear();
         RefreshFlatCache();
     }
-
-    private static int CountLines(string text) => text.Split('\n').Length;
 
     // ── Table cross-reference lookup ──────────────────────────────────────────
 

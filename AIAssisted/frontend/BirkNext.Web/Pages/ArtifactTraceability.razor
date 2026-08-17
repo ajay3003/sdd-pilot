@@ -6,7 +6,7 @@
 @inject IPlanAnalysisService PlanService
 @inject IArtifactTraceabilityService TraceabilityService
 @inject IDashboardSnapshotService DashboardSnapshot
-@inject IWorkspaceSessionService Workspace
+@inject ISampleProjectDocumentResolver DocumentResolver
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
 
@@ -14,10 +14,23 @@
 
 <div class="at-page">
 
+    @if (!string.IsNullOrWhiteSpace(_selectedProjectName))
+    {
+        <div style="padding: 8px 16px; background: #f5f5f5; border-bottom: 1px solid #e0e0e0; font-size: 0.875rem; color: #666;">
+            Sample Project: <strong>@_selectedProjectName</strong>
+        </div>
+    }
+
     <PageHeader Title="Requirements Traceability"
                 Description="End-to-end traceability across Constitution → Specification → Plan → Tasks. Surface coverage gaps, orphaned items, and a unified traceability matrix." />
 
-    @if (_analysisError is not null)
+    @if (string.IsNullOrWhiteSpace(_selectedProject))
+    {
+        <div style="padding: 32px; text-align: center; color: #999;">
+            <p>No Sample Project selected.</p>
+        </div>
+    }
+    else if (_analysisError is not null)
     {
         <div class="notification notification-error" role="alert" data-testid="artifact-traceability-error">
             <strong>Traceability analysis could not be completed.</strong>
@@ -31,149 +44,114 @@
             }
         </div>
     }
+    else
+    {
+        <!-- ── Artifact status panel ─────────────────────────────────────── -->
+        <div class="at-input-panel">
+            <div class="at-input-panel-header">
+                <span class="at-input-panel-title">Artifacts</span>
+                @if (_report is not null)
+                {
+                    <button class="at-input-panel-toggle" @onclick="ToggleInputPanel">
+                        @(_inputExpanded ? "▾ Collapse" : "▸ Expand")
+                    </button>
+                }
+            </div>
 
-    <!-- ── Artifact input panel ──────────────────────────────────────────── -->
-    <div class="at-input-panel">
-        <div class="at-input-panel-header">
-            <span class="at-input-panel-title">Load Artifacts</span>
-            @if (_report is not null)
+            @if (_inputExpanded)
             {
-                <button class="at-input-panel-toggle" @onclick="ToggleInputPanel">
-                    @(_inputExpanded ? "▾ Collapse" : "▸ Expand")
-                </button>
+                <div class="at-artifact-grid">
+
+                    <!-- Constitution -->
+                    <div class="artifact-card @(_constitutionLoaded ? "is-loaded" : "")">
+                        <div class="artifact-card-header">
+                            <span class="artifact-icon" aria-hidden="true">📜</span>
+                            <span class="artifact-name">Constitution</span>
+                            <span class="artifact-status @(_constitutionLoaded ? "is-loaded" : "")">
+                                @(_constitutionLoaded ? "Loaded" : "Missing")
+                            </span>
+                        </div>
+                        <div style="padding: 8px 12px; font-size: 0.85rem; color: #666;">
+                            <div>constitution.md</div>
+                            <div style="margin-top: 4px; font-size: 0.75rem; color: #999;">Source: Sample Project</div>
+                        </div>
+                    </div>
+
+                    <!-- Specification -->
+                    <div class="artifact-card @(_specLoaded ? "is-loaded" : "")">
+                        <div class="artifact-card-header">
+                            <span class="artifact-icon" aria-hidden="true">📋</span>
+                            <span class="artifact-name">Specification</span>
+                            <span class="artifact-status @(_specLoaded ? "is-loaded" : "")">
+                                @(_specLoaded ? "Loaded" : "Missing")
+                            </span>
+                        </div>
+                        <div style="padding: 8px 12px; font-size: 0.85rem; color: #666;">
+                            <div>spec.md</div>
+                            <div style="margin-top: 4px; font-size: 0.75rem; color: #999;">Source: Sample Project</div>
+                        </div>
+                    </div>
+
+                    <!-- Plan -->
+                    <div class="artifact-card @(_planLoaded ? "is-loaded" : "")">
+                        <div class="artifact-card-header">
+                            <span class="artifact-icon" aria-hidden="true">📐</span>
+                            <span class="artifact-name">Plan</span>
+                            <span class="artifact-status @(_planLoaded ? "is-loaded" : "")">
+                                @(_planLoaded ? "Loaded" : "Missing")
+                            </span>
+                        </div>
+                        <div style="padding: 8px 12px; font-size: 0.85rem; color: #666;">
+                            <div>plan.md</div>
+                            <div style="margin-top: 4px; font-size: 0.75rem; color: #999;">Source: Sample Project</div>
+                        </div>
+                    </div>
+
+                    <!-- Tasks -->
+                    <div class="artifact-card @(_tasksLoaded ? "is-loaded" : "")">
+                        <div class="artifact-card-header">
+                            <span class="artifact-icon" aria-hidden="true">✅</span>
+                            <span class="artifact-name">Tasks</span>
+                            <span class="artifact-status @(_tasksLoaded ? "is-loaded" : "")">
+                                @(_tasksLoaded ? "Loaded" : "Missing")
+                            </span>
+                        </div>
+                        <div style="padding: 8px 12px; font-size: 0.85rem; color: #666;">
+                            <div>tasks.md</div>
+                            <div style="margin-top: 4px; font-size: 0.75rem; color: #999;">Source: Sample Project</div>
+                        </div>
+                    </div>
+
+                    <!-- Data Model -->
+                    <div class="artifact-card @(_dataModelLoaded ? "is-loaded" : "")">
+                        <div class="artifact-card-header">
+                            <span class="artifact-icon" aria-hidden="true">🗄️</span>
+                            <span class="artifact-name">Data Model</span>
+                            <span class="artifact-status @(_dataModelLoaded ? "is-loaded" : "")">
+                                @(_dataModelLoaded ? "Loaded" : "Missing")
+                            </span>
+                        </div>
+                        <div style="padding: 8px 12px; font-size: 0.85rem; color: #666;">
+                            <div>data-model.md</div>
+                            <div style="margin-top: 4px; font-size: 0.75rem; color: #999;">Source: Sample Project</div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="at-analyze-bar">
+                    <span class="at-loaded-summary">
+                        @LoadedCount artifact@(LoadedCount != 1 ? "s" : "") loaded
+                        @if (LoadedCount < 2)
+                        { <span> — load at least 2 to analyze</span> }
+                    </span>
+                    <PrimaryButton OnClick="RunAnalysis" Disabled="@(LoadedCount < 2)">
+                        Analyze Traceability
+                    </PrimaryButton>
+                </div>
             }
         </div>
-
-        @if (_inputExpanded)
-        {
-            <div class="at-artifact-grid">
-
-                <!-- Constitution -->
-                <div class="artifact-card @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
-                    <div class="artifact-card-header">
-                        <span class="artifact-icon" aria-hidden="true">📜</span>
-                        <span class="artifact-name">Constitution</span>
-                        <span class="artifact-status @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_constitutionText) ? "Loaded" : "Empty")
-                        </span>
-                    </div>
-                    <SpecificationImport
-                        InputId="at-const-import"
-                        OnFileImported="t => { _constitutionText = t; Workspace.Set(WorkspaceArtifactKind.Constitution, t); }"
-                        OnFileRemoved="() => { _constitutionText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Constitution); }"
-                        IsDisabled="false" />
-                    <textarea
-                        class="artifact-textarea"
-                        placeholder="Or paste constitution.md content here…"
-                        rows="4"
-                        @bind="_constitutionText"></textarea>
-                    @if (!string.IsNullOrEmpty(_constitutionText))
-                    {
-                        <div class="artifact-footer">
-                            <span>@_constitutionText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => { _constitutionText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Constitution); }'>Clear</button>
-                        </div>
-                    }
-                </div>
-
-                <!-- Specification -->
-                <div class="artifact-card @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
-                    <div class="artifact-card-header">
-                        <span class="artifact-icon" aria-hidden="true">📋</span>
-                        <span class="artifact-name">Specification</span>
-                        <span class="artifact-status @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_specText) ? "Loaded" : "Empty")
-                        </span>
-                    </div>
-                    <SpecificationImport
-                        InputId="at-spec-import"
-                        OnFileImported="t => { _specText = t; Workspace.Set(WorkspaceArtifactKind.Specification, t); }"
-                        OnFileRemoved="() => { _specText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Specification); }"
-                        IsDisabled="false" />
-                    <textarea
-                        class="artifact-textarea"
-                        placeholder="Or paste spec.md content here…"
-                        rows="4"
-                        @bind="_specText"></textarea>
-                    @if (!string.IsNullOrEmpty(_specText))
-                    {
-                        <div class="artifact-footer">
-                            <span>@_specText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => { _specText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Specification); }'>Clear</button>
-                        </div>
-                    }
-                </div>
-
-                <!-- Plan -->
-                <div class="artifact-card @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
-                    <div class="artifact-card-header">
-                        <span class="artifact-icon" aria-hidden="true">📐</span>
-                        <span class="artifact-name">Plan</span>
-                        <span class="artifact-status @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_planText) ? "Loaded" : "Empty")
-                        </span>
-                    </div>
-                    <SpecificationImport
-                        InputId="at-plan-import"
-                        OnFileImported="t => { _planText = t; Workspace.Set(WorkspaceArtifactKind.Plan, t); }"
-                        OnFileRemoved="() => { _planText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Plan); }"
-                        IsDisabled="false" />
-                    <textarea
-                        class="artifact-textarea"
-                        placeholder="Or paste plan.md content here…"
-                        rows="4"
-                        @bind="_planText"></textarea>
-                    @if (!string.IsNullOrEmpty(_planText))
-                    {
-                        <div class="artifact-footer">
-                            <span>@_planText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => { _planText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Plan); }'>Clear</button>
-                        </div>
-                    }
-                </div>
-
-                <!-- Tasks -->
-                <div class="artifact-card @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
-                    <div class="artifact-card-header">
-                        <span class="artifact-icon" aria-hidden="true">✅</span>
-                        <span class="artifact-name">Tasks</span>
-                        <span class="artifact-status @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_taskText) ? "Loaded" : "Empty")
-                        </span>
-                    </div>
-                    <SpecificationImport
-                        InputId="at-task-import"
-                        OnFileImported="t => { _taskText = t; Workspace.Set(WorkspaceArtifactKind.Tasks, t); }"
-                        OnFileRemoved="() => { _taskText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Tasks); }"
-                        IsDisabled="false" />
-                    <textarea
-                        class="artifact-textarea"
-                        placeholder="Or paste tasks.md content here…"
-                        rows="4"
-                        @bind="_taskText"></textarea>
-                    @if (!string.IsNullOrEmpty(_taskText))
-                    {
-                        <div class="artifact-footer">
-                            <span>@_taskText.Split('\n').Length lines</span>
-                            <button class="artifact-clear" @onclick='() => { _taskText = string.Empty; Workspace.Clear(WorkspaceArtifactKind.Tasks); }'>Clear</button>
-                        </div>
-                    }
-                </div>
-
-            </div>
-
-            <div class="at-analyze-bar">
-                <span class="at-loaded-summary">
-                    @LoadedCount artifact@(LoadedCount != 1 ? "s" : "") loaded
-                    @if (LoadedCount < 2)
-                    { <span> — load at least 2 to analyze</span> }
-                </span>
-                <PrimaryButton OnClick="RunAnalysis" Disabled="@(LoadedCount < 2)">
-                    Analyze Traceability
-                </PrimaryButton>
-            </div>
-        }
-    </div>
+    }
 
     <!-- ── Report view ────────────────────────────────────────────────────── -->
     @if (_report is not null)
@@ -669,6 +647,17 @@
     private string _specText         = string.Empty;
     private string _planText         = string.Empty;
     private string _taskText         = string.Empty;
+    private string _dataModelText    = string.Empty;
+
+    private bool _constitutionLoaded;
+    private bool _specLoaded;
+    private bool _planLoaded;
+    private bool _tasksLoaded;
+    private bool _dataModelLoaded;
+
+    private string? _selectedProject;
+    private string? _selectedProjectName;
+    private string? _previousProject;
 
     private ArtifactTraceabilityReport? _report;
     private string _tab    = "overview";
@@ -680,10 +669,10 @@
     private ArtifactType? _gapArtifactFilter;
 
     private int LoadedCount =>
-        (string.IsNullOrWhiteSpace(_constitutionText) ? 0 : 1) +
-        (string.IsNullOrWhiteSpace(_specText)         ? 0 : 1) +
-        (string.IsNullOrWhiteSpace(_planText)         ? 0 : 1) +
-        (string.IsNullOrWhiteSpace(_taskText)         ? 0 : 1);
+        (_constitutionLoaded ? 1 : 0) +
+        (_specLoaded         ? 1 : 0) +
+        (_planLoaded         ? 1 : 0) +
+        (_tasksLoaded        ? 1 : 0);
 
     // ── Computed filtered views ───────────────────────────────────────────
 
@@ -754,29 +743,125 @@
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
+    {
+        var selected = DocumentResolver.GetSelectedProject();
+        if (!string.IsNullOrWhiteSpace(selected))
+        {
+            await LoadFromSampleProject(selected);
+            _previousProject = selected;
+        }
+        else
+        {
+            _selectedProject = null;
+            _selectedProjectName = null;
+            ClearAllArtifacts();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            var currentProject = DocumentResolver.GetSelectedProject();
+            if (currentProject != _previousProject)
+            {
+                _previousProject = currentProject;
+
+                if (!string.IsNullOrWhiteSpace(currentProject))
+                {
+                    await LoadFromSampleProject(currentProject);
+                }
+                else
+                {
+                    _selectedProject = null;
+                    _selectedProjectName = null;
+                    ClearAllArtifacts();
+                }
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task LoadFromSampleProject(string projectSlug)
     {
         try
         {
-            var constitution = Workspace.Get(WorkspaceArtifactKind.Constitution);
-            var spec         = Workspace.Get(WorkspaceArtifactKind.Specification);
-            var plan         = Workspace.Get(WorkspaceArtifactKind.Plan);
-            var tasks        = Workspace.Get(WorkspaceArtifactKind.Tasks);
+            _analysisError = null;
+            _selectedProject = projectSlug;
 
-            if (constitution is not null) _constitutionText = constitution.Text ?? string.Empty;
-            if (spec is not null)         _specText         = spec.Text ?? string.Empty;
-            if (plan is not null)         _planText         = plan.Text ?? string.Empty;
-            if (tasks is not null)        _taskText         = tasks.Text ?? string.Empty;
+            var constitution = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Constitution);
+            var spec = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Specification);
+            var plan = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Plan);
+            var tasks = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Tasks);
+            var dataModel = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.DataModel);
+
+            _constitutionText = constitution.IsSuccess && !string.IsNullOrEmpty(constitution.Content) ? constitution.Content : string.Empty;
+            _specText = spec.IsSuccess && !string.IsNullOrEmpty(spec.Content) ? spec.Content : string.Empty;
+            _planText = plan.IsSuccess && !string.IsNullOrEmpty(plan.Content) ? plan.Content : string.Empty;
+            _taskText = tasks.IsSuccess && !string.IsNullOrEmpty(tasks.Content) ? tasks.Content : string.Empty;
+            _dataModelText = dataModel.IsSuccess && !string.IsNullOrEmpty(dataModel.Content) ? dataModel.Content : string.Empty;
+
+            _constitutionLoaded = !string.IsNullOrEmpty(_constitutionText);
+            _specLoaded = !string.IsNullOrEmpty(_specText);
+            _planLoaded = !string.IsNullOrEmpty(_planText);
+            _tasksLoaded = !string.IsNullOrEmpty(_taskText);
+            _dataModelLoaded = !string.IsNullOrEmpty(_dataModelText);
+
+            await UpdateSelectedProjectName();
 
             if (LoadedCount >= 2)
+            {
                 RunAnalysis();
+            }
+            else
+            {
+                _report = null;
+            }
         }
         catch (Exception ex)
         {
             _analysisError = ex;
             _report = null;
-            _inputExpanded = true;
+            ClearAllArtifacts();
         }
+    }
+
+    private async Task UpdateSelectedProjectName()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedProject))
+        {
+            _selectedProjectName = null;
+            return;
+        }
+
+        try
+        {
+            var projects = await DocumentResolver.GetAvailableProjectsAsync();
+            var project = projects.FirstOrDefault(p => p.Slug == _selectedProject);
+            _selectedProjectName = project?.Name ?? _selectedProject;
+        }
+        catch
+        {
+            _selectedProjectName = _selectedProject;
+        }
+    }
+
+    private void ClearAllArtifacts()
+    {
+        _constitutionText = string.Empty;
+        _specText = string.Empty;
+        _planText = string.Empty;
+        _taskText = string.Empty;
+        _dataModelText = string.Empty;
+
+        _constitutionLoaded = false;
+        _specLoaded = false;
+        _planLoaded = false;
+        _tasksLoaded = false;
+        _dataModelLoaded = false;
+
+        _report = null;
     }
 
     // ── Actions ───────────────────────────────────────────────────────────
@@ -882,7 +967,7 @@
     private async Task ExportHtml()
     {
         if (_report is null) return;
-        var html = ExportService.ExportArtifactTraceability(_report, Workspace.ProjectName);
+        var html = ExportService.ExportArtifactTraceability(_report, _selectedProjectName ?? string.Empty);
         await JS.InvokeVoidAsync("downloadHtmlFile", $"artifact-traceability-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 

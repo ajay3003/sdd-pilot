@@ -25,7 +25,13 @@
     <PageHeader Title="Specification Explorer"
                 Description="Navigate and analyze specification.md files — requirements, gaps, scenarios, and validation." />
 
-    @if (_isMissingDocument && !string.IsNullOrWhiteSpace(_selectedProjectName))
+    @if (string.IsNullOrWhiteSpace(_selectedProject))
+    {
+        <div style="padding: 32px; text-align: center; color: #999;">
+            <p>No Sample Project selected.</p>
+        </div>
+    }
+    else if (_isMissingDocument)
     {
         <div style="padding: 32px; text-align: center; color: #999;">
             <p>spec.md is not available for <strong>@_selectedProjectName</strong>.</p>

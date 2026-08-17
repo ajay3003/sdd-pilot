@@ -2,7 +2,7 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
-@inject IWorkspaceSessionService Workspace
+@inject ISampleProjectDocumentResolver DocumentResolver
 @inject TaskAlignmentSessionService AlignmentSession
 @inject IArtifactParserService MarkdownEngine
 @inject TaskSpecAlignmentService ImplementationReview
@@ -13,10 +13,23 @@
 
 <div class="align-page">
 
+    @if (!string.IsNullOrWhiteSpace(_selectedProjectName))
+    {
+        <div style="padding: 8px 16px; background: #f5f5f5; border-bottom: 1px solid #e0e0e0; font-size: 0.875rem; color: #666;">
+            Sample Project: <strong>@_selectedProjectName</strong>
+        </div>
+    }
+
     <PageHeader Title="Implementation Review"
                 Description="Review implementation tasks against the specification to detect undocumented behavior, identify risky areas, and surface recommended regression testing." />
 
-    @if (_analysisError is not null)
+    @if (string.IsNullOrWhiteSpace(_selectedProject))
+    {
+        <div style="padding: 32px; text-align: center; color: #999;">
+            <p>No Sample Project selected.</p>
+        </div>
+    }
+    else if (_analysisError is not null)
     {
         <div class="notification notification-error" role="alert" data-testid="implementation-review-error">
             <strong>Implementation review could not be completed.</strong>
@@ -75,107 +88,49 @@
             </div>
         </section>
 
-        <section class="align-input-section" aria-label="Analysis input">
-            <div class="align-input-grid">
+        <section class="align-input-section" aria-label="Artifact sources">
+            <div class="align-input-grid" style="grid-template-columns: 1fr 1fr;">
 
-                @* ── spec.md column ── *@
-                <div class="align-input-col">
-                    <label for="align-spec-text" class="align-input-label">
-                        <span class="align-input-icon" aria-hidden="true">📋</span>
-                        spec.md content
-                        <span class="align-required" aria-label="required">*</span>
-                    </label>
-                    <SpecificationImport @ref="_specImport"
-                                        InputId="align-spec-import"
-                                        OnFileImported="OnSpecFileImported"
-                                        OnFileRemoved="OnSpecFileRemoved" />
-                    <textarea id="align-spec-text"
-                              class="align-textarea @(string.IsNullOrWhiteSpace(_specText) && _analyseAttempted ? "align-textarea-invalid" : "")"
-                              placeholder="Or paste spec.md content here…&#10;Include FR-01, US-1, acceptance scenarios, success criteria…"
-                              rows="10"
-                              @bind="_specText"
-                              @bind:event="oninput"
-                              @bind:after="OnSpecTextChanged"
-                              aria-required="true"
-                              aria-describedby="spec-meta spec-err"></textarea>
-                    <div class="align-input-footer">
-                        @if (!string.IsNullOrWhiteSpace(_specText))
-                        {
-                            <span class="align-content-meta" id="spec-meta" aria-live="polite">
-                                @(_specText.Split('\n').Length) lines
-                            </span>
-                            <button type="button" class="align-clear-btn" @onclick="ClearSpec"
-                                    aria-label="Clear spec.md content">
-                                ✕ Clear
-                            </button>
-                        }
-                        else
-                        {
-                            <span class="align-empty-hint" id="spec-meta">
-                                Paste content or import a .md file to begin.
-                            </span>
-                        }
+                <!-- Specification -->
+                <div class="artifact-card @(_specLoaded ? "is-loaded" : "")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">📋</span>
+                        <span class="artifact-name">Specification</span>
+                        <span class="artifact-status @(_specLoaded ? "is-loaded" : "")">
+                            @(_specLoaded ? "Loaded" : "Missing")
+                        </span>
                     </div>
-                    @if (string.IsNullOrWhiteSpace(_specText) && _analyseAttempted)
-                    {
-                        <p class="align-field-error" id="spec-err" role="alert">spec.md content is required.</p>
-                    }
+                    <div style="padding: 8px 12px; font-size: 0.85rem; color: #666;">
+                        <div>spec.md</div>
+                        <div style="margin-top: 4px; font-size: 0.75rem; color: #999;">Source: Sample Project</div>
+                    </div>
                 </div>
 
-                @* ── tasks.md column ── *@
-                <div class="align-input-col">
-                    <label for="align-tasks-text" class="align-input-label">
-                        <span class="align-input-icon" aria-hidden="true">✅</span>
-                        tasks.md content
-                        <span class="align-required" aria-label="required">*</span>
-                    </label>
-                    <SpecificationImport @ref="_tasksImport"
-                                        InputId="align-tasks-import"
-                                        OnFileImported="OnTasksFileImported"
-                                        OnFileRemoved="OnTasksFileRemoved" />
-                    <textarea id="align-tasks-text"
-                              class="align-textarea @(string.IsNullOrWhiteSpace(_tasksText) && _analyseAttempted ? "align-textarea-invalid" : "")"
-                              placeholder="Or paste tasks.md content here…&#10;Supports T001 - Title format or - [ ] checkbox format."
-                              rows="10"
-                              @bind="_tasksText"
-                              @bind:event="oninput"
-                              @bind:after="OnTasksTextChanged"
-                              aria-required="true"
-                              aria-describedby="tasks-meta tasks-err"></textarea>
-                    <div class="align-input-footer">
-                        @if (!string.IsNullOrWhiteSpace(_tasksText))
-                        {
-                            <span class="align-content-meta" id="tasks-meta" aria-live="polite">
-                                @(_tasksText.Split('\n').Length) lines
-                            </span>
-                            <button type="button" class="align-clear-btn" @onclick="ClearTasks"
-                                    aria-label="Clear tasks.md content">
-                                ✕ Clear
-                            </button>
-                        }
-                        else
-                        {
-                            <span class="align-empty-hint" id="tasks-meta">
-                                Paste content or import a .md file to begin.
-                            </span>
-                        }
+                <!-- Tasks -->
+                <div class="artifact-card @(_tasksLoaded ? "is-loaded" : "")">
+                    <div class="artifact-card-header">
+                        <span class="artifact-icon" aria-hidden="true">✅</span>
+                        <span class="artifact-name">Tasks</span>
+                        <span class="artifact-status @(_tasksLoaded ? "is-loaded" : "")">
+                            @(_tasksLoaded ? "Loaded" : "Missing")
+                        </span>
                     </div>
-                    @if (string.IsNullOrWhiteSpace(_tasksText) && _analyseAttempted)
-                    {
-                        <p class="align-field-error" id="tasks-err" role="alert">tasks.md content is required.</p>
-                    }
+                    <div style="padding: 8px 12px; font-size: 0.85rem; color: #666;">
+                        <div>tasks.md</div>
+                        <div style="margin-top: 4px; font-size: 0.75rem; color: #999;">Source: Sample Project</div>
+                    </div>
                 </div>
 
             </div>
             <div class="align-input-actions">
                 <PrimaryButton OnClick="RunAnalysis"
-                               Disabled="@(string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))">
+                               Disabled="@(!_specLoaded || !_tasksLoaded)">
                     Analyse Alignment
                 </PrimaryButton>
-                @if (string.IsNullOrWhiteSpace(_specText) || string.IsNullOrWhiteSpace(_tasksText))
+                @if (!_specLoaded || !_tasksLoaded)
                 {
                     <span class="align-analyse-hint" aria-live="polite">
-                        Both inputs are required to run analysis.
+                        Both Specification and Tasks must be loaded to run analysis.
                     </span>
                 }
             </div>
@@ -661,6 +616,13 @@
 @code {
     private string _specText = string.Empty;
     private string _tasksText = string.Empty;
+    private bool _specLoaded;
+    private bool _tasksLoaded;
+
+    private string? _selectedProject;
+    private string? _selectedProjectName;
+    private string? _previousProject;
+
     private AlignmentReport? _report;
     private string? _activeFilter;
     private string? _activeImpactFilter;
@@ -669,89 +631,108 @@
     private Exception? _analysisError;
     private readonly HashSet<string> _expandedFindings = [];
 
-    private SpecificationImport? _specImport;
-    private SpecificationImport? _tasksImport;
+    protected override async Task OnInitializedAsync()
+    {
+        var selected = DocumentResolver.GetSelectedProject();
+        if (!string.IsNullOrWhiteSpace(selected))
+        {
+            await LoadFromSampleProject(selected);
+            _previousProject = selected;
+        }
+        else
+        {
+            _selectedProject = null;
+            _selectedProjectName = null;
+            ClearAllArtifacts();
+        }
+    }
 
-    protected override void OnInitialized()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            var currentProject = DocumentResolver.GetSelectedProject();
+            if (currentProject != _previousProject)
+            {
+                _previousProject = currentProject;
+
+                if (!string.IsNullOrWhiteSpace(currentProject))
+                {
+                    await LoadFromSampleProject(currentProject);
+                }
+                else
+                {
+                    _selectedProject = null;
+                    _selectedProjectName = null;
+                    ClearAllArtifacts();
+                }
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task LoadFromSampleProject(string projectSlug)
     {
         try
         {
-            var spec  = Workspace.Get(WorkspaceArtifactKind.Specification);
-            var tasks = Workspace.Get(WorkspaceArtifactKind.Tasks);
+            _analysisError = null;
+            _selectedProject = projectSlug;
 
-            if (spec  is not null) _specText  = spec.Text ?? string.Empty;
-            if (tasks is not null) _tasksText = tasks.Text ?? string.Empty;
+            var spec = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Specification);
+            var tasks = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Tasks);
 
-            RestoreOrRunAnalysis();
+            _specText = spec.IsSuccess && !string.IsNullOrEmpty(spec.Content) ? spec.Content : string.Empty;
+            _tasksText = tasks.IsSuccess && !string.IsNullOrEmpty(tasks.Content) ? tasks.Content : string.Empty;
+
+            _specLoaded = !string.IsNullOrEmpty(_specText);
+            _tasksLoaded = !string.IsNullOrEmpty(_tasksText);
+
+            await UpdateSelectedProjectName();
+
+            if (_specLoaded && _tasksLoaded)
+            {
+                RestoreOrRunAnalysis();
+            }
+            else
+            {
+                _report = null;
+            }
         }
         catch (Exception ex)
         {
             _analysisError = ex;
             _report = null;
+            ClearAllArtifacts();
         }
     }
 
-    private void OnSpecFileImported(string content)
+    private async Task UpdateSelectedProjectName()
     {
-        _specText = content;
-        Workspace.Set(WorkspaceArtifactKind.Specification, content);
-        AlignmentSession.Clear();
+        if (string.IsNullOrWhiteSpace(_selectedProject))
+        {
+            _selectedProjectName = null;
+            return;
+        }
+
+        try
+        {
+            var projects = await DocumentResolver.GetAvailableProjectsAsync();
+            var project = projects.FirstOrDefault(p => p.Slug == _selectedProject);
+            _selectedProjectName = project?.Name ?? _selectedProject;
+        }
+        catch
+        {
+            _selectedProjectName = _selectedProject;
+        }
     }
 
-    private void OnSpecFileRemoved()
+    private void ClearAllArtifacts()
     {
         _specText = string.Empty;
-        Workspace.Clear(WorkspaceArtifactKind.Specification);
-        AlignmentSession.Clear();
-    }
-
-    private void OnTasksFileImported(string content)
-    {
-        _tasksText = content;
-        Workspace.Set(WorkspaceArtifactKind.Tasks, content);
-        AlignmentSession.Clear();
-    }
-
-    private void OnTasksFileRemoved()
-    {
         _tasksText = string.Empty;
-        Workspace.Clear(WorkspaceArtifactKind.Tasks);
-        AlignmentSession.Clear();
-    }
-
-    private void OnSpecTextChanged()
-    {
-        if (string.IsNullOrWhiteSpace(_specText))
-            Workspace.Clear(WorkspaceArtifactKind.Specification);
-        else
-            Workspace.Set(WorkspaceArtifactKind.Specification, _specText);
-
-        AlignmentSession.Clear();
-    }
-
-    private void OnTasksTextChanged()
-    {
-        if (string.IsNullOrWhiteSpace(_tasksText))
-            Workspace.Clear(WorkspaceArtifactKind.Tasks);
-        else
-            Workspace.Set(WorkspaceArtifactKind.Tasks, _tasksText);
-
-        AlignmentSession.Clear();
-    }
-
-    private void ClearSpec()
-    {
-        _specText = string.Empty;
-        _specImport?.Reset();
-        Workspace.Clear(WorkspaceArtifactKind.Specification);
-        AlignmentSession.Clear();
-    }
-
-    private void ClearTasks()
-    {
-        _tasksText = string.Empty;
-        _tasksImport?.Reset();
-        Workspace.Clear(WorkspaceArtifactKind.Tasks);
+        _specLoaded = false;
+        _tasksLoaded = false;
+        _report = null;
         AlignmentSession.Clear();
     }
 
@@ -765,7 +746,7 @@
             return;
         }
 
-        if (AlignmentSession.HasCurrentResult(Workspace.ProjectName, _specText, _tasksText))
+        if (AlignmentSession.HasCurrentResult(_selectedProjectName ?? string.Empty, _specText, _tasksText))
         {
             if (TryNormalizeReport(AlignmentSession.Report, out var cachedReport))
             {
@@ -790,7 +771,7 @@
 
             var reviewContext = BuildReviewContext();
             _report = NormalizeReport(ImplementationReview.Analyse(reviewContext));
-            AlignmentSession.SaveResult(_report, Workspace.ProjectName, _specText, _tasksText);
+            AlignmentSession.SaveResult(_report, _selectedProjectName ?? string.Empty, _specText, _tasksText);
             _activeFilter = null;
             _activeImpactFilter = null;
             _activePageTab = "alignment";
@@ -807,16 +788,16 @@
     private async Task ExportHtml()
     {
         if (_report is null) return;
-        var html = ExportService.ExportImplementationReview(_report, Workspace.ProjectName);
+        var html = ExportService.ExportImplementationReview(_report, _selectedProjectName ?? string.Empty);
         await JS.InvokeVoidAsync("downloadHtmlFile", $"implementation-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
     private ReviewContext BuildReviewContext()
     {
         var parsed = MarkdownEngine.Parse(
-            Workspace.Get(WorkspaceArtifactKind.Constitution)?.Text,
+            null,
             _specText,
-            Workspace.Get(WorkspaceArtifactKind.Plan)?.Text,
+            null,
             _tasksText);
 
         var constitutionSemanticModel = parsed.Constitution is not null
