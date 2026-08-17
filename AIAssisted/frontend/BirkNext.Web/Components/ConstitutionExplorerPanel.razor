@@ -946,19 +946,36 @@
 
     protected override void OnParametersSet()
     {
-        if (ParsedDocument is not null)
+        bool documentChanged = false;
+
+        if (ParsedDocument is not null && _document != ParsedDocument)
         {
+            documentChanged = true;
             _document = ParsedDocument;
         }
         else if (!string.IsNullOrWhiteSpace(ConstitutionText) && _document is null)
         {
+            documentChanged = true;
             _localText = ConstitutionText;
             var service = new ConstitutionAnalysisService();
             _document = service.Parse(ConstitutionText);
         }
 
+        if (documentChanged)
+            ResetDocumentSpecificState();
+
         if (InitialView is not null && _document is not null)
             _activeTab = InitialView;
+    }
+
+    private void ResetDocumentSpecificState()
+    {
+        _searchQuery = string.Empty;
+        _expandedIds = [];
+        _mapRoots = null;
+        _mapExpandedIds = [];
+        _traceTypeFilter = null;
+        _showOrphanOnly = false;
     }
 
 

@@ -9,6 +9,7 @@ namespace BirkNext.Web.Tests.Pages;
 public sealed class ExplorerPageSourceOfTruthTests : BunitContext
 {
     private readonly WorkspaceArtifactRepository _workspace = new();
+    private readonly SampleProjectResolver _resolver = new();
 
     public ExplorerPageSourceOfTruthTests()
     {
@@ -20,6 +21,7 @@ public sealed class ExplorerPageSourceOfTruthTests : BunitContext
         Services.AddSingleton<IPlanAnalysisService, PlanAnalysisService>();
         Services.AddSingleton<IDataModelAnalysisService, DataModelAnalysisService>();
         Services.AddSingleton<IReportExportService, ReportExportService>();
+        Services.AddSingleton<ISampleProjectDocumentResolver>(_resolver);
 
         JSInterop.SetupVoid("localStorage.setItem", _ => true).SetVoidResult();
         JSInterop.SetupVoid("localStorage.removeItem", _ => true).SetVoidResult();
@@ -127,4 +129,30 @@ public sealed class ExplorerPageSourceOfTruthTests : BunitContext
             && string.Equals(invocation.Arguments[0]?.ToString(), storageKey, StringComparison.Ordinal))
             .SetResult(text);
     }
+}
+
+/// <summary>
+/// Simple test resolver that always returns no projects selected.
+/// Used for legacy explorers tests that don't require Sample Project loading.
+/// </summary>
+internal sealed class SampleProjectResolver : ISampleProjectDocumentResolver
+{
+    public Task<SampleProjectDocumentResult> ResolveAsync(
+        string projectSlug,
+        ExplorerDocumentType documentType,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(SampleProjectDocumentResult.InvalidProject("Test resolver"));
+    }
+
+    public Task<IReadOnlyList<Models.SampleProjectDto>> GetAvailableProjectsAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IReadOnlyList<Models.SampleProjectDto>>([]);
+    }
+
+    public string? GetSelectedProject() => null;
+
+    public void SetSelectedProject(string? projectSlug) { }
+
+    public void ClearProjectCache(string projectSlug) { }
 }

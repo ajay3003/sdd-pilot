@@ -125,6 +125,11 @@ builder.Services.AddHttpClient<ProjectDocumentApiService>(client =>
 builder.Services.AddHttpClient<SampleProjectsApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
+builder.Services.AddSingleton<ISampleProjectDocumentResolver>(sp =>
+    new SampleProjectDocumentResolver(
+        sp.GetRequiredService<SampleProjectsApiService>(),
+        sp.GetRequiredService<IWorkspaceSessionService>()));
+
 builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 

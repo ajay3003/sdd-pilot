@@ -213,7 +213,7 @@
         }
 
         var existingSession = await SessionService.LoadAsync();
-        if (existingSession is not null && !SessionService.IsExpired(existingSession))
+        if (ShouldConfirmReplace(existingSession))
         {
             _showReplaceConfirm = true;
             return;
@@ -230,6 +230,22 @@
     }
 
     private void CancelReplace() => _showReplaceConfirm = false;
+
+    private bool ShouldConfirmReplace(ExtractionSessionSnapshot? existingSession)
+    {
+        if (existingSession is null || SessionService.IsExpired(existingSession))
+            return false;
+
+        if (existingSession.PipelineStatus != PipelineStatus.Success || existingSession.Candidates.Count == 0)
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(existingSession.SpecMarkdown)
+            && !string.IsNullOrWhiteSpace(_rawInput)
+            && !string.Equals(existingSession.SpecMarkdown, _rawInput, StringComparison.Ordinal))
+            return false;
+
+        return true;
+    }
 
     private async Task RunExtractionAsync()
     {

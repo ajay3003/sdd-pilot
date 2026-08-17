@@ -87,6 +87,19 @@ public class ScenarioExtractionSessionTests : BunitContext
         ],
     };
 
+    private static ExtractionSessionSnapshot MakeNoResultsSession(string specMarkdown = "") => new()
+    {
+        SessionId = "page-test-empty-session",
+        Timestamp = DateTimeOffset.UtcNow,
+        Profile = ExtractionProfile.Speckit,
+        PipelineStatus = PipelineStatus.NoResults,
+        InputLengthChars = 100,
+        InputLineCount = 5,
+        DurationMs = 10,
+        SpecMarkdown = specMarkdown,
+        Candidates = [],
+    };
+
     [Fact]
     public async Task OnInit_WithNoSession_ShowsPreState()
     {
@@ -178,6 +191,86 @@ public class ScenarioExtractionSessionTests : BunitContext
     }
 
     [Fact]
+    public async Task Analyze_WithWorkspaceSpecAndStaleNoResultsSession_RunsExtractionAndUpdatesCounters()
+    {
+        const string specText = "## Requirements\n- FR-001: The system shall log in.";
+        _workspace.Set(WorkspaceArtifactKind.Specification, specText, "spec.md", "SampleData/person-module");
+        _mockSession.Setup(s => s.LoadAsync()).ReturnsAsync(MakeNoResultsSession(specText));
+        _mockSession.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
+
+        var result = ExtractionPipelineResult.Success(
+            [new ExtractionCandidate
+            {
+                Title = "FR-001: The system shall log in.",
+                Classification = ScenarioKind.Requirement,
+                ClassificationSignal = ClassificationSignal.FrPrefix,
+                SourceBlockType = BlockType.UnorderedListItem,
+            }],
+            inputLengthChars: specText.Length,
+            inputLineCount: 2,
+            durationMs: 5,
+            requirementCount: 1,
+            testCount: 0,
+            needsClarificationCount: 0,
+            profile: ExtractionProfile.Speckit);
+
+        _mockExtraction
+            .Setup(s => s.ExtractAsync(specText, ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(result);
+
+        var cut = Render<ScenarioExtraction>();
+        cut.Find("[data-testid='spec-textarea']").GetAttribute("value").Should().Be(specText);
+
+        cut.Find("[data-testid='extract-button']").Click();
+
+        await cut.WaitForAssertionAsync(() =>
+            cut.Markup.Should().Contain("FR-001: The system shall log in."));
+
+        _mockExtraction.Verify(
+            s => s.ExtractAsync(specText, ExtractionProfile.Speckit, It.IsAny<CancellationToken>()),
+            Times.Once);
+        cut.FindAll("[data-testid='replace-session-dialog']").Should().BeEmpty(
+            "a stale no-results session is not a restorable active review session");
+        cut.Find("[data-testid='requirements-metric']").TextContent.Should().Contain("1");
+        cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("1");
+    }
+
+    [Fact]
+    public async Task Analyze_WorkspaceSpecWithSpeckitProfile_PageCountsMatchDirectExtraction()
+    {
+        var specText = File.ReadAllText(FindRepoFile("examples/personSpec.md"));
+        var config = new ExtractionConfiguration
+        {
+            MaxInputLengthChars = 50_000,
+            MinCandidateLengthChars = 3,
+            MaxLineLengthForPatternMatching = 2_000,
+        };
+        var extractionService = new ScenarioExtractionService(config);
+        var directResult = await extractionService.ExtractAsync(specText, ExtractionProfile.Speckit);
+        directResult.Status.Should().Be(PipelineStatus.Success);
+        directResult.RequirementCount.Should().BeGreaterThan(0);
+        directResult.Candidates.Count.Should().BeGreaterThan(0);
+
+        Services.AddSingleton<IExtractionConfiguration>(config);
+        Services.AddSingleton<IScenarioExtractionService>(extractionService);
+        _workspace.Set(WorkspaceArtifactKind.Specification, specText, "spec.md", "examples/personSpec.md");
+        _mockSession.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
+
+        var cut = Render<ScenarioExtraction>();
+        cut.Find("[data-testid='spec-textarea']").GetAttribute("value").Should().Be(specText);
+
+        cut.Find("[data-testid='extract-button']").Click();
+
+        await cut.WaitForAssertionAsync(() =>
+            cut.Find("[data-testid='requirements-metric']").TextContent.Should().Contain(directResult.RequirementCount.ToString()));
+
+        cut.Find("[data-testid='tests-metric']").TextContent.Should().Contain(directResult.TestCount.ToString());
+        cut.Find("[data-testid='clarifications-metric']").TextContent.Should().Contain(directResult.NeedsClarificationCount.ToString());
+        cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain(directResult.Candidates.Count.ToString());
+        cut.Markup.Should().Contain("Traceability &amp; Coverage");
+    }
+
+    [Fact]
     public async Task OnInit_WithWorkspaceSpec_DoesNotRestoreSessionFromDifferentSpec()
     {
         _workspace.Set(WorkspaceArtifactKind.Specification, "PROJECT B SPEC", "spec.md", "SampleData/proxy");
@@ -191,5 +284,20 @@ public class ScenarioExtractionSessionTests : BunitContext
             "a global extraction session from another spec must not appear over the active workspace spec");
         cut.Find("[data-testid='spec-textarea']").GetAttribute("value")
             .Should().Be("PROJECT B SPEC");
+    }
+
+    private static string FindRepoFile(string relativePath)
+    {
+        var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, relativePath);
+            if (File.Exists(candidate))
+                return candidate;
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException($"Could not find {relativePath} from {Directory.GetCurrentDirectory()}");
     }
 }
