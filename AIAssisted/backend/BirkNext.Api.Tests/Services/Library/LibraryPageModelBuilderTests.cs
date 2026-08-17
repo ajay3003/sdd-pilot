@@ -28,23 +28,6 @@ public class LibraryPageModelBuilderTests
     }
 
     [Fact]
-    public async Task CreateTestScenario_NoWorkspace_ReturnsBlockedNotFail()
-    {
-        await using var db = CreateInMemoryDb();
-        var artifactStatus = new WorkspaceArtifactStatusService(db, NullLogger<WorkspaceArtifactStatusService>.Instance);
-        var builder = new CreateTestScenarioPageModelBuilder(
-            db,
-            artifactStatus,
-            NullLogger<CreateTestScenarioPageModelBuilder>.Instance);
-
-        var model = await builder.BuildPageModelAsync();
-
-        Assert.Equal(LibraryStatus.Blocked, model.ReadinessStatus);
-        Assert.NotEmpty(model.MissingInputs);
-        Assert.False(model.Summary.HasAvailableActions);
-    }
-
-    [Fact]
     public async Task QAArtifactLibrary_WithWorkspaceButNoArtifacts_ReturnsEmpty()
     {
         await using var db = CreateInMemoryDb();
@@ -101,82 +84,6 @@ public class LibraryPageModelBuilderTests
         Assert.Equal(LibraryStatus.Empty, model.ReadinessStatus);
         Assert.Equal(0, model.Summary.TotalItems);
         Assert.False(model.Summary.HasAvailableActions);
-    }
-
-    [Fact]
-    public async Task CreateTestScenario_WithWorkspaceButNoArtifacts_ReturnsBlockedNotFail()
-    {
-        await using var db = CreateInMemoryDb();
-        var workspaceId = await CreateWorkspaceAsync(db);
-
-        var artifactStatus = new WorkspaceArtifactStatusService(db, NullLogger<WorkspaceArtifactStatusService>.Instance);
-        var builder = new CreateTestScenarioPageModelBuilder(
-            db,
-            artifactStatus,
-            NullLogger<CreateTestScenarioPageModelBuilder>.Instance);
-
-        var model = await builder.BuildPageModelAsync();
-
-        Assert.Equal(LibraryStatus.Blocked, model.ReadinessStatus);
-        Assert.NotEmpty(model.MissingInputs);
-    }
-
-    [Fact]
-    public async Task CreateTestScenario_WithSpecification_ReturnsReady()
-    {
-        await using var db = CreateInMemoryDb();
-        var workspaceId = await CreateWorkspaceAsync(db);
-        await CreateArtifactAsync(db, workspaceId, ArtifactType.Specification);
-
-        var artifactStatus = new WorkspaceArtifactStatusService(db, NullLogger<WorkspaceArtifactStatusService>.Instance);
-        var builder = new CreateTestScenarioPageModelBuilder(
-            db,
-            artifactStatus,
-            NullLogger<CreateTestScenarioPageModelBuilder>.Instance);
-
-        var model = await builder.BuildPageModelAsync();
-
-        Assert.Equal(LibraryStatus.Ready, model.ReadinessStatus);
-        Assert.Empty(model.MissingInputs);
-        Assert.True(model.Summary.HasAvailableActions);
-    }
-
-    [Fact]
-    public async Task CreateTestScenario_WithSavedNonCurrentWorkspace_ReturnsBlocked()
-    {
-        await using var db = CreateInMemoryDb();
-        var workspaceId = await CreateWorkspaceAsync(db, isCurrent: false);
-        await CreateArtifactAsync(db, workspaceId, ArtifactType.Specification);
-
-        var artifactStatus = new WorkspaceArtifactStatusService(db, NullLogger<WorkspaceArtifactStatusService>.Instance);
-        var builder = new CreateTestScenarioPageModelBuilder(
-            db,
-            artifactStatus,
-            NullLogger<CreateTestScenarioPageModelBuilder>.Instance);
-
-        var model = await builder.BuildPageModelAsync();
-
-        Assert.Equal(LibraryStatus.Blocked, model.ReadinessStatus);
-        Assert.Contains("active workspace", model.MissingInputs);
-        Assert.False(model.Summary.HasAvailableActions);
-    }
-
-    [Fact]
-    public async Task CreateTestScenario_WithPlan_ReturnsReady()
-    {
-        await using var db = CreateInMemoryDb();
-        var workspaceId = await CreateWorkspaceAsync(db);
-        await CreateArtifactAsync(db, workspaceId, ArtifactType.Plan);
-
-        var artifactStatus = new WorkspaceArtifactStatusService(db, NullLogger<WorkspaceArtifactStatusService>.Instance);
-        var builder = new CreateTestScenarioPageModelBuilder(
-            db,
-            artifactStatus,
-            NullLogger<CreateTestScenarioPageModelBuilder>.Instance);
-
-        var model = await builder.BuildPageModelAsync();
-
-        Assert.Equal(LibraryStatus.Ready, model.ReadinessStatus);
     }
 
     [Fact]

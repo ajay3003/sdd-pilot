@@ -16,6 +16,4 @@ public interface ILibraryPageModelBuilder
 
 public interface IQAArtifactLibraryPageModelBuilder : ILibraryPageModelBuilder { }
 
-public interface ICreateTestScenarioPageModelBuilder : ILibraryPageModelBuilder { }
-
 public interface ISampleProjectsPageModelBuilder : ILibraryPageModelBuilder { }

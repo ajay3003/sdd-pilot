@@ -7,7 +7,6 @@ namespace BirkNext.Web.Services;
 public interface ILibraryPageModelService
 {
     Task<LibraryPageModel?> GetQAArtifactLibraryModelAsync();
-    Task<LibraryPageModel?> GetCreateTestScenarioModelAsync();
     Task<LibraryPageModel?> GetSampleProjectsModelAsync();
 }
 
@@ -45,31 +44,6 @@ public class LibraryPageModelService : ILibraryPageModelService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error loading QA Artifact Library model");
-            return null;
-        }
-    }
-
-    public async Task<LibraryPageModel?> GetCreateTestScenarioModelAsync()
-    {
-        try
-        {
-            _logger.LogInformation("Loading Create Test Scenario page model");
-            return await _httpClient.GetFromJsonAsync<LibraryPageModel>(
-                "api/library-page-model/create-test-scenario");
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogError(ex, "HTTP error loading Create Test Scenario model: {StatusCode}", ex.StatusCode);
-            return null;
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogError(ex, "JSON deserialization error loading Create Test Scenario model");
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error loading Create Test Scenario model");
             return null;
         }
     }

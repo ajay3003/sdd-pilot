@@ -29,7 +29,7 @@ public class NavMenuTests : BunitContext
         navText.Should().Contain("Specification Explorer");
         navText.Should().NotContain("Specification Review");
         navText.Should().Contain("QA Artifact Library");
-        navText.Should().Contain("Create Test Scenario");
+        navText.Should().NotContain("Create Test Scenario");
         navText.Should().NotContain("AI REVIEW");
         navText.Should().NotContain("AI Change Review");
         navText.Should().NotContain("Spec Comparison");
@@ -37,13 +37,12 @@ public class NavMenuTests : BunitContext
 
         navText.IndexOf("Dashboard", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Explorer", StringComparison.Ordinal));
         navText.IndexOf("Specification Explorer", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("QA Artifact Library", StringComparison.Ordinal));
-        navText.IndexOf("QA Artifact Library", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Create Test Scenario", StringComparison.Ordinal));
 
         cut.Find("a[href='dashboard']").Should().NotBeNull();
         cut.Find("a[href='specification-explorer']").Should().NotBeNull();
         cut.FindAll("a[href='extract']").Should().BeEmpty();
         cut.Find("a[href='scenarios']").Should().NotBeNull();
-        cut.Find("a[href='scenarios/new']").Should().NotBeNull();
+        cut.FindAll("a[href='scenarios/new']").Should().BeEmpty();
         cut.FindAll("a[href='compare']").Should().BeEmpty();
         cut.FindAll("a[href='compare/reviews']").Should().BeEmpty();
         cut.FindAll("a[href='ai-change-auditor']").Should().BeEmpty();

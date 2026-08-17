@@ -36,19 +36,6 @@ public class LibraryPageModelController : ControllerBase
     }
 
     /// <summary>
-    /// Get structured page model for Create Test Scenario page.
-    /// Returns readiness status and available scenario creation options.
-    /// </summary>
-    [HttpGet("create-test-scenario")]
-    [ProducesResponseType(typeof(LibraryPageModel), StatusCodes.Status200OK)]
-    public async Task<ActionResult<LibraryPageModel>> GetCreateTestScenarioModel()
-    {
-        _logger.LogInformation("Building Create Test Scenario page model");
-        var model = await _modelService.BuildCreateTestScenarioModelAsync();
-        return Ok(model);
-    }
-
-    /// <summary>
     /// Get structured page model for Sample Projects page.
     /// Returns available sample projects and load actions.
     /// </summary>

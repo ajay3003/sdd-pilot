@@ -1416,7 +1416,7 @@ else if (_settings is not null)
     private static readonly HashSet<string> LibrarySectionKeys =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "QaArtifactLibrary", "SampleProjects", "CreateTestScenario"
+            "QaArtifactLibrary", "SampleProjects"
         };
 
     private static readonly HashSet<string> AnalysisSectionKeys =
@@ -1465,7 +1465,6 @@ else if (_settings is not null)
         // Library
         ("QA Artifact Library",     "QaArtifactLibrary"),
         ("Sample Projects",         "SampleProjects"),
-        ("Create Test Scenario",    "CreateTestScenario"),
 
         // Traceability (legacy â€” shown only when LegacyTraceabilityNavigationEnabled)
         ("Traceability & Coverage", "TraceabilityCoverage"),
@@ -2751,7 +2750,7 @@ else if (_settings is not null)
     private static readonly HashSet<string> KnownRoutes = new(StringComparer.OrdinalIgnoreCase)
     {
         "/", "/dashboard", "/specification-explorer", "/constitution-explorer", "/data-model-explorer", "/plan-explorer",
-        "/task-explorer", "/scenarios", "/scenarios/new", "/sample-projects", "/traceability",
+        "/task-explorer", "/scenarios", "/sample-projects", "/traceability",
         "/traceability/suggestions", "/code-traceability", "/spec-drift",
         "/impact-analysis", "/artifact-traceability", "/task-alignment",
         "/implementation-traceability", "/quality-review", "/wasm-security-review",
@@ -2781,7 +2780,6 @@ else if (_settings is not null)
         ("Task Explorer",                "task-explorer"),
         ("QA Artifact Library",          "scenarios"),
         ("Sample Projects",              "sample-projects"),
-        ("Create Test Scenario",         "scenarios/new"),
         ("Traceability & Coverage",      "traceability"),
         ("Traceability Suggestions",     "traceability/suggestions"),
         ("Code Traceability",            "code-traceability"),
@@ -2821,7 +2819,6 @@ else if (_settings is not null)
         ("User Guide", "/plan-explorer",                        "Plan Explorer link"),
         ("User Guide", "/task-explorer",                        "Task Explorer link"),
         ("User Guide", "/scenarios",                            "QA Artifact Library link"),
-        ("User Guide", "/scenarios/new",                        "Create Test Scenario link"),
         ("User Guide", "/spec-drift",                           "Spec Drift link"),
         ("User Guide", "/impact-analysis",                      "Impact Analysis link"),
         ("User Guide", "/artifact-traceability",                "Requirements Traceability link"),

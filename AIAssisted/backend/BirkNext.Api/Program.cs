@@ -94,7 +94,6 @@ builder.Services.AddScoped<IImplementationTraceabilityPageModelBuilder, Implemen
 builder.Services.AddScoped<IAnalysisPageModelService, AnalysisPageModelService>();
 // ── Library Page Model Builders ──────────────────────────────────────────
 builder.Services.AddScoped<IQAArtifactLibraryPageModelBuilder, QAArtifactLibraryPageModelBuilder>();
-builder.Services.AddScoped<ICreateTestScenarioPageModelBuilder, CreateTestScenarioPageModelBuilder>();
 builder.Services.AddScoped<ISampleProjectsPageModelBuilder, SampleProjectsPageModelBuilder>();
 builder.Services.AddScoped<ILibraryPageModelService, LibraryPageModelService>();
 // ── Review Page Model Builders ───────────────────────────────────────────

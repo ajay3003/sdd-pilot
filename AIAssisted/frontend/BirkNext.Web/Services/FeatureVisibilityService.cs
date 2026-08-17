@@ -35,7 +35,6 @@ public class FeatureVisibilityService
     public bool SpecificationExplorer => _flags.SpecificationExplorer;
     public bool QaArtifactLibrary    => _flags.QaArtifactLibrary;
     public bool SampleProjects       => _flags.SampleProjects;
-    public bool CreateTestScenario   => _flags.CreateTestScenario;
     public bool LegacyTraceabilityNavigationEnabled => _flags.LegacyTraceabilityNavigationEnabled;
     public bool TraceabilityCoverage    => LegacyTraceabilityNavigationEnabled && _flags.TraceabilityCoverage;
     public bool TraceabilitySuggestions => LegacyTraceabilityNavigationEnabled && _flags.TraceabilitySuggestions;
@@ -66,7 +65,7 @@ public class FeatureVisibilityService
     // Section-level helpers: show the section header only if at least one child item is visible.
     public bool ShowSectionGettingStarted => RecommendedWorkflow || UserGuide;
     public bool ShowSectionReview         => Dashboard || SpecificationExplorer || ConstitutionExplorer || DataModelExplorer || PlanExplorer || TaskExplorer;
-    public bool ShowSectionLibrary        => QaArtifactLibrary || CreateTestScenario || SampleProjects;
+    public bool ShowSectionLibrary        => QaArtifactLibrary || SampleProjects;
     public bool ShowSectionTraceability   => LegacyTraceabilityNavigationEnabled
                                              && (TraceabilityCoverage || TraceabilitySuggestions || CodeTraceability);
     public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || ImplementationTraceability || ArtifactTraceability;

@@ -91,29 +91,6 @@ public class ScenariosPageTests : BunitContext
     }
 
     [Fact]
-    public void ScenarioForm_NetworkException_ShowsUserFriendlyErrorMessage()
-    {
-        var mockMutation = new Mock<ICreateScenarioMutation>();
-        mockMutation
-            .Setup(m => m.ExecuteAsync(It.IsAny<CreateScenarioInput>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new HttpRequestException("Network unavailable"));
-
-        var mockClient = new Mock<IBirkNextClient>();
-        mockClient.Setup(c => c.CreateScenario).Returns(mockMutation.Object);
-        Services.AddSingleton(mockClient.Object);
-
-        var cut = Render<ScenarioForm>();
-
-        cut.Find("input[id='title']").Change("Network test scenario");
-        cut.Find("button[type='submit']").Click();
-
-        cut.WaitForAssertion(() =>
-            cut.Find("[role='alert']").TextContent
-                .Should().Contain("Something went wrong"),
-            timeout: TimeSpan.FromSeconds(1));
-    }
-
-    [Fact]
     public void ScenariosPage_SuccessfulDelete_RemovesScenarioFromList()
     {
         var mockGetQuery = new Mock<IGetScenariosQuery>();

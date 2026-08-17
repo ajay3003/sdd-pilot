@@ -122,7 +122,6 @@ public class FeatureVisibilityInfo
     public bool SpecificationExplorer { get; set; } = true;
     public bool QaArtifactLibrary { get; set; } = true;
     public bool SampleProjects { get; set; } = true;
-    public bool CreateTestScenario { get; set; } = true;
     public bool LegacyTraceabilityNavigationEnabled { get; set; } = false;
     public bool TraceabilityCoverage { get; set; } = true;
     public bool TraceabilitySuggestions { get; set; } = true;

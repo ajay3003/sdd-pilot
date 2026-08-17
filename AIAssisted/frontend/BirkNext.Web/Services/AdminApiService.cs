@@ -324,7 +324,6 @@ public class FeatureVisibilityDto
     [JsonPropertyName("specificationExplorer")] public bool SpecificationExplorer { get; set; } = true;
     [JsonPropertyName("qaArtifactLibrary")]    public bool QaArtifactLibrary    { get; set; } = true;
     [JsonPropertyName("sampleProjects")]       public bool SampleProjects       { get; set; } = true;
-    [JsonPropertyName("createTestScenario")]   public bool CreateTestScenario   { get; set; } = true;
     [JsonPropertyName("legacyTraceabilityNavigationEnabled")] public bool LegacyTraceabilityNavigationEnabled { get; set; } = false;
     [JsonPropertyName("traceabilityCoverage")]    public bool TraceabilityCoverage    { get; set; } = true;
     [JsonPropertyName("traceabilitySuggestions")] public bool TraceabilitySuggestions { get; set; } = true;

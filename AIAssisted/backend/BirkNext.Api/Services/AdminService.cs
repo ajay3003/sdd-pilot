@@ -45,7 +45,6 @@ public class AdminService
     [
         ("EnableExtractionReview", "Extraction Review"),
         ("EnableArchitectureView", "Architecture View"),
-        ("CreateTestScenario",  "Create Test Scenario"),
         ("LegacyTraceabilityNavigationEnabled", "Legacy Traceability Navigation"),
         ("TraceabilitySuggestions", "Traceability Suggestions"),
         ("CodeTraceability",    "Code Traceability"),
@@ -222,7 +221,6 @@ public class AdminService
             SpecificationExplorer = s.GetValue("SpecificationExplorer", true),
             QaArtifactLibrary    = s.GetValue("QaArtifactLibrary",    true),
             SampleProjects       = s.GetValue("SampleProjects",       true),
-            CreateTestScenario   = s.GetValue("CreateTestScenario",   true),
             LegacyTraceabilityNavigationEnabled = s.GetValue("LegacyTraceabilityNavigationEnabled", false),
             TraceabilityCoverage = s.GetValue("TraceabilityCoverage", true),
             TraceabilitySuggestions = s.GetValue("TraceabilitySuggestions", true),

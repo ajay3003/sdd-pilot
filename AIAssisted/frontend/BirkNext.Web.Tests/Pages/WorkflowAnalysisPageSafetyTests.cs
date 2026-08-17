@@ -24,6 +24,7 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
         Services.AddSingleton<IArtifactTraceabilityService, ArtifactTraceabilityService>();
         Services.AddSingleton(new Mock<IDashboardSnapshotService>().Object);
         Services.AddSingleton(new Mock<IReportExportService>().Object);
+        Services.AddSingleton(new Mock<ISampleProjectDocumentResolver>().Object);
         Services.AddSingleton(_alignmentSession);
         Services.AddSingleton<TaskSpecAlignmentService>();
     }
