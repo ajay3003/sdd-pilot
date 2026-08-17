@@ -393,7 +393,10 @@ public class ExtractionReviewListTests : BunitContext
             .ReturnsAsync(MakeSuccessOperationResult());
 
         var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult()));
+        {
+            p.Add(c => c.PipelineResult, MakeResult());
+            p.Add(c => c.ProjectSlug, "test-project");
+        });
         OpenDocumentView(cut);
 
         SelectAndAcceptFirst(cut);
@@ -419,7 +422,10 @@ public class ExtractionReviewListTests : BunitContext
             .ReturnsAsync(MakeErrorOperationResult("Title too long"));
 
         var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult()));
+        {
+            p.Add(c => c.PipelineResult, MakeResult());
+            p.Add(c => c.ProjectSlug, "test-project");
+        });
         OpenDocumentView(cut);
 
         SelectAndAcceptFirst(cut);
@@ -445,7 +451,10 @@ public class ExtractionReviewListTests : BunitContext
             .ReturnsAsync(MakeSuccessOperationResult());
 
         var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult()));
+        {
+            p.Add(c => c.PipelineResult, MakeResult());
+            p.Add(c => c.ProjectSlug, "test-project");
+        });
         OpenDocumentView(cut);
 
         SelectAndAcceptFirst(cut);
@@ -933,7 +942,10 @@ public class ExtractionReviewListObservabilityTests : BunitContext
             .ReturnsAsync(MakeSuccessOperationResult());
 
         var cut = Render<ExtractionReviewList>(p =>
-            p.Add(c => c.PipelineResult, MakeResult()));
+        {
+            p.Add(c => c.PipelineResult, MakeResult());
+            p.Add(c => c.ProjectSlug, "test-project");
+        });
 
         SelectAndAcceptFirst(cut);
         await cut.WaitForStateAsync(
