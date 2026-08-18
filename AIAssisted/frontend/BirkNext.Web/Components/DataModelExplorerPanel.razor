@@ -80,7 +80,6 @@ else
                     Findings @if (_document.FindingCount > 0) { <span class="dme-tab-count @(_document.ErrorCount > 0 ? "dme-tab-count-warn" : "")">@_document.FindingCount</span> }
                 </button>
             </div>
-            <button class="dme-reset-btn" @onclick="Reset">← New Model</button>
         </div>
     </div>
 
@@ -578,14 +577,6 @@ else
         _searchQuery = string.Empty;
     }
 
-    private void Reset()
-    {
-        _document    = null;
-        _localText   = string.Empty;
-        _activeTab   = "overview";
-        _searchQuery = string.Empty;
-        _importRef?.Reset();
-    }
 
     private void ClearInput()
     {

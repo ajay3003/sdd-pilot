@@ -68,7 +68,6 @@
                     <button class='pe-view-btn @(_tab == "testing"        ? "is-active" : "")' @onclick='() => SetTab("testing")'>Testing @TestingBadge</button>
                     <button class='pe-view-btn @(_tab == "constitution"   ? "is-active" : "")' @onclick='() => SetTab("constitution")'>Constitution @ConstitutionBadge</button>
                 </div>
-                <button class="pe-reset-btn" @onclick="Reset">← New Plan</button>
             </div>
         </div>
 
@@ -1201,19 +1200,6 @@
         await OnTextChanged.InvokeAsync(_localText);
     }
 
-    private void Reset()
-    {
-        _plan = null;
-        _localText = string.Empty;
-        _tab = "overview";
-        _search = string.Empty;
-        _expanded = [];
-        _riskFilter = null;
-        _complexityFilter = null;
-        _checkFilter = null;
-        _gateFilter = null;
-        _importRef?.Reset();
-    }
 
     private void ClearInput() { _localText = string.Empty; _importRef?.Reset(); }
     private void SetTab(string tab) { _tab = tab; _search = string.Empty; }

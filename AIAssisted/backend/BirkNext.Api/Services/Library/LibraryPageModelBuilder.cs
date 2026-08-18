@@ -176,14 +176,14 @@ public class QAArtifactLibraryPageModelBuilder : IQAArtifactLibraryPageModelBuil
 /// </summary>
 public class SampleProjectsPageModelBuilder : ISampleProjectsPageModelBuilder
 {
-    private readonly AppDbContext _db;
+    private readonly ISampleProjectCatalogService _catalog;
     private readonly ILogger<SampleProjectsPageModelBuilder> _logger;
 
     public SampleProjectsPageModelBuilder(
-        AppDbContext db,
+        ISampleProjectCatalogService catalog,
         ILogger<SampleProjectsPageModelBuilder> logger)
     {
-        _db = db;
+        _catalog = catalog;
         _logger = logger;
     }
 
@@ -193,61 +193,10 @@ public class SampleProjectsPageModelBuilder : ISampleProjectsPageModelBuilder
         {
             await Task.CompletedTask;
 
-            // For now, provide sample project definitions
-            var sampleProjects = new List<LibraryItem>
-            {
-                new()
-                {
-                    Name = "E-Commerce Platform",
-                    Type = "Sample Project",
-                    Status = LibraryStatus.Ready,
-                    Source = "Built-in",
-                    Description = "Complete e-commerce system with specification, plan, and tasks",
-                    Actions = [
-                        new LibraryAction
-                        {
-                            Name = "Load",
-                            Status = LibraryStatus.Ready,
-                            Enabled = true,
-                            ExpectedEffect = "Load all sample project artifacts into workspace"
-                        }
-                    ]
-                },
-                new()
-                {
-                    Name = "Mobile App MVP",
-                    Type = "Sample Project",
-                    Status = LibraryStatus.Ready,
-                    Source = "Built-in",
-                    Description = "Minimal viable product mobile application with core requirements and test plan",
-                    Actions = [
-                        new LibraryAction
-                        {
-                            Name = "Load",
-                            Status = LibraryStatus.Ready,
-                            Enabled = true,
-                            ExpectedEffect = "Load all sample project artifacts into workspace"
-                        }
-                    ]
-                },
-                new()
-                {
-                    Name = "Data Pipeline ETL",
-                    Type = "Sample Project",
-                    Status = LibraryStatus.Ready,
-                    Source = "Built-in",
-                    Description = "Data extraction, transformation, and loading system with data model and compliance requirements",
-                    Actions = [
-                        new LibraryAction
-                        {
-                            Name = "Load",
-                            Status = LibraryStatus.Ready,
-                            Enabled = true,
-                            ExpectedEffect = "Load all sample project artifacts into workspace"
-                        }
-                    ]
-                }
-            };
+            var catalogProjects = _catalog.DiscoverProjects();
+            var sampleProjects = catalogProjects
+                .Select(p => BuildSampleProjectItem(p))
+                .ToList();
 
             if (sampleProjects.Count == 0)
             {
@@ -291,6 +240,28 @@ public class SampleProjectsPageModelBuilder : ISampleProjectsPageModelBuilder
             _logger.LogError(ex, "Error building Sample Projects page model");
             return ErrorModel("Sample Projects", "Failed to load sample projects: " + ex.Message);
         }
+    }
+
+    private LibraryItem BuildSampleProjectItem(SampleProjectInfo info)
+    {
+        var supportedCount = info.SupportedArtifacts.Count(f => f.Value);
+        return new LibraryItem
+        {
+            Name = info.DisplayName,
+            Type = "Sample Project",
+            Status = LibraryStatus.Ready,
+            Source = "Filesystem",
+            Description = info.Description.Length > 0 ? info.Description : $"Sample project with {supportedCount} artifact(s)",
+            Actions = [
+                new LibraryAction
+                {
+                    Name = "Load",
+                    Status = LibraryStatus.Ready,
+                    Enabled = true,
+                    ExpectedEffect = "Load all sample project artifacts into workspace"
+                }
+            ]
+        };
     }
 
     private static LibraryPageModel ErrorModel(string title, string message)

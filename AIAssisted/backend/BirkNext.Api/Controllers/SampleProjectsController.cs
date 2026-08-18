@@ -1,15 +1,15 @@
 using BirkNext.Api.Models;
+using BirkNext.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.RegularExpressions;
 using SysPath = System.IO.Path;
 using SysFile = System.IO.File;
-using SysDir  = System.IO.Directory;
 
 namespace BirkNext.Api.Controllers;
 
 [ApiController]
 [Route("api/sample-projects")]
-public class SampleProjectsController(IConfiguration config) : ControllerBase
+public class SampleProjectsController(ISampleProjectCatalogService catalog) : ControllerBase
 {
     private static readonly Dictionary<string, (string Kind, string Reviewer, string Route)> SupportedFiles =
         new(StringComparer.OrdinalIgnoreCase)
@@ -29,17 +29,9 @@ public class SampleProjectsController(IConfiguration config) : ControllerBase
     [HttpGet]
     public IActionResult GetProjects()
     {
-        var (fullBase, _) = ResolveBaseDirectory();
-        if (fullBase is null)
-            return Ok(Array.Empty<SampleProjectDto>());
-
-        var projects = SysDir
-            .GetDirectories(fullBase)
-            .OrderBy(d => d)
-            .Select(dir => BuildProject(dir, fullBase))
-            .ToList();
-
-        return Ok(projects);
+        var catalogProjects = catalog.DiscoverProjects();
+        var dtos = catalogProjects.Select(p => BuildProjectDto(p)).ToList();
+        return Ok(dtos);
     }
 
     // ── GET /api/sample-projects/meta ─────────────────────────────────────────
@@ -47,7 +39,7 @@ public class SampleProjectsController(IConfiguration config) : ControllerBase
     [HttpGet("meta")]
     public IActionResult GetMeta()
     {
-        var (path, source) = ResolveBaseDirectory();
+        var (path, source) = catalog.ResolveBaseDirectory();
         return Ok(new SampleProjectsMetaDto(
             ResolvedPath: path,
             Source: source,
@@ -83,52 +75,14 @@ public class SampleProjectsController(IConfiguration config) : ControllerBase
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Resolves the SampleData base directory.
-    /// Config override takes precedence; falls back to walking up the directory
-    /// tree from AppContext.BaseDirectory until a SampleData folder is found.
-    /// </summary>
-    private (string? Path, string Source) ResolveBaseDirectory()
+    private SampleProjectDto BuildProjectDto(SampleProjectInfo info)
     {
-        var configured = config["SampleProjects:BaseDirectory"];
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            var full = SysPath.GetFullPath(configured, AppContext.BaseDirectory);
-            return (SysDir.Exists(full) ? full : null, "config");
-        }
-
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            var candidate = SysPath.Combine(dir.FullName, "SampleData");
-            if (SysDir.Exists(candidate))
-                return (candidate, "auto");
-            dir = dir.Parent;
-        }
-
-        return (null, "auto");
-    }
-
-    private SampleProjectDto BuildProject(string dir, string baseDir)
-    {
-        var slug        = SysPath.GetFileName(dir);
-        var name        = ToTitleCase(slug);
-        var absPath     = SysPath.GetFullPath(dir);
-        var readmePath  = FindReadme(dir);
-        var hasReadme   = readmePath is not null;
-        var domain      = hasReadme ? ExtractDomain(readmePath!) : string.Empty;
-        var description = hasReadme ? ExtractDescription(readmePath!) : string.Empty;
-
-        var allMd = SysDir.GetFiles(dir, "*.md", SearchOption.TopDirectoryOnly)
-            .Select(f => SysPath.GetFileName(f))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
         var files = new List<SampleFileDto>();
 
         // Supported artifacts (fixed order)
         foreach (var (filename, (kind, reviewer, route)) in SupportedFiles)
         {
-            var exists = allMd.Contains(filename);
+            var exists = info.SupportedArtifacts.TryGetValue(filename, out var hasFile) && hasFile;
             files.Add(new SampleFileDto(
                 Filename:      filename,
                 Exists:        exists,
@@ -139,13 +93,8 @@ public class SampleProjectsController(IConfiguration config) : ControllerBase
                 IsContextOnly: false));
         }
 
-        // Context-only: any .md not in supported list and not README
-        var contextFiles = allMd
-            .Where(f => !SupportedFiles.ContainsKey(f) &&
-                        !f.Equals("README.md", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(f => f);
-
-        foreach (var filename in contextFiles)
+        // Context-only files
+        foreach (var filename in info.ContextOnlyFiles.OrderBy(f => f))
         {
             files.Add(new SampleFileDto(
                 Filename:      filename,
@@ -158,66 +107,22 @@ public class SampleProjectsController(IConfiguration config) : ControllerBase
         }
 
         return new SampleProjectDto(
-            Slug:         slug,
-            Name:         name,
-            Domain:       domain,
-            Description:  description,
-            AbsolutePath: absPath,
-            HasReadme:    hasReadme,
+            Slug:         info.Slug,
+            Name:         info.DisplayName,
+            Domain:       info.Domain,
+            Description:  info.Description,
+            AbsolutePath: info.DirectoryPath,
+            HasReadme:    !string.IsNullOrEmpty(info.Description),
             Files:        files);
     }
 
     private string? ResolveProjectDir(string slug)
     {
-        var (fullBase, _) = ResolveBaseDirectory();
-        if (fullBase is null) return null;
-
-        var projectDir = SysPath.GetFullPath(SysPath.Combine(fullBase, slug));
-        if (!projectDir.StartsWith(fullBase + SysPath.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        var catalogProjects = catalog.DiscoverProjects();
+        var project = catalogProjects.FirstOrDefault(p => p.Slug.Equals(slug, StringComparison.OrdinalIgnoreCase));
+        if (project is null)
             return null;
 
-        return SysDir.Exists(projectDir) ? projectDir : null;
+        return SysPath.Exists(project.DirectoryPath) ? project.DirectoryPath : null;
     }
-
-    private static string? FindReadme(string dir) =>
-        SysDir.GetFiles(dir, "README.md", SearchOption.TopDirectoryOnly)
-            .FirstOrDefault() ??
-        SysDir.GetFiles(dir, "readme.md", SearchOption.TopDirectoryOnly)
-            .FirstOrDefault();
-
-    private static string ExtractDomain(string readmePath)
-    {
-        try
-        {
-            foreach (var line in SysFile.ReadLines(readmePath).Take(20))
-            {
-                var trimmed = line.Trim();
-                if (trimmed.StartsWith("**Domain:**", StringComparison.OrdinalIgnoreCase))
-                    return trimmed[11..].Trim().TrimEnd('*').Trim();
-                if (trimmed.StartsWith("Domain:", StringComparison.OrdinalIgnoreCase))
-                    return trimmed[7..].Trim();
-            }
-        }
-        catch { /* ignore read errors */ }
-        return string.Empty;
-    }
-
-    private static string ExtractDescription(string readmePath)
-    {
-        try
-        {
-            var nonHeading = SysFile.ReadLines(readmePath)
-                .SkipWhile(l => l.TrimStart().StartsWith('#') || string.IsNullOrWhiteSpace(l))
-                .FirstOrDefault(l => !string.IsNullOrWhiteSpace(l));
-            if (nonHeading is not null)
-                return nonHeading.Trim().TrimStart('>', '-', '*', ' ');
-        }
-        catch { /* ignore read errors */ }
-        return string.Empty;
-    }
-
-    private static string ToTitleCase(string slug) =>
-        string.Join(' ', slug.Replace('-', ' ').Replace('_', ' ')
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Select(w => w.Length > 0 ? char.ToUpperInvariant(w[0]) + w[1..] : w));
 }

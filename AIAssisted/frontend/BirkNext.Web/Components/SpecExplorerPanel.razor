@@ -44,10 +44,6 @@
                         Map View
                     </button>
                 </div>
-                @if (!IsEmbeddedInReview)
-                {
-                    <button class="se-reset-btn" @onclick="Reset">← New Spec</button>
-                }
             </div>
         </div>
 
@@ -658,20 +654,6 @@
             : _semanticModel.Requirements
                 .Count(r => r.LinkedAcceptanceScenarios.Count == 0);
 
-    private void Reset()
-    {
-        _tree = null;
-        _semanticModel = null;
-        _lastBuiltMarkdown = string.Empty;
-        _expandedIds = [];
-        _selectedNodeId = null;
-        _searchQuery = string.Empty;
-        _isMapView = false;
-        _sectionFilter = SectionFilter.All;
-        _flatCache = [];
-        _hiddenIds = [];
-        _hiddenCount = 0;
-    }
 
     private void RefreshFlatCache()
     {

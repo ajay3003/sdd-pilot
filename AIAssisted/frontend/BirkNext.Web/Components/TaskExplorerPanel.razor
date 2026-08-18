@@ -88,7 +88,6 @@
                         Changes
                     </button>
                 </div>
-                <button class="te-reset-btn" @onclick="Reset">← New Tasks</button>
             </div>
         </div>
 
@@ -1336,7 +1335,7 @@
         if (!string.IsNullOrWhiteSpace(TasksText))
             RebuildTree(TasksText);
         else
-            Reset();
+            _tree = null;
     }
 
     private void ClearInput()
@@ -1379,26 +1378,6 @@
         RefreshFlatCache();
     }
 
-    private void Reset()
-    {
-        _tree = null;
-        _health = new();
-        _localTasksText = string.Empty;
-        _expandedIds = [];
-        _selectedNodeId = null;
-        _searchQuery = string.Empty;
-        _activeFilter = null;
-        _isMapView = false;
-        _isImpactView = false;
-        _isChangesView = false;
-        _isDependenciesView = false;
-        _isParallelView = false;
-        _flatCache = [];
-        _lastBuiltText = string.Empty;
-        _tableLinkedTaskIds = [];
-        _coverage = null;
-        _importRef?.Reset();
-    }
 
     private void RefreshFlatCache()
     {

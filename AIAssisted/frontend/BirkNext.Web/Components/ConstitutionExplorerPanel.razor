@@ -72,7 +72,6 @@
                     <button class='ce-view-btn @(_activeTab == "catalog"      ? "is-active" : "")' @onclick='() => SetTab("catalog")'>Rule Catalog @CatalogBadge</button>
                     <button class='ce-view-btn @(_activeTab == "map"          ? "is-active" : "")' @onclick='() => SetTab("map")'>Map</button>
                 </div>
-                <button class="ce-reset-btn" @onclick="Reset">← New Constitution</button>
             </div>
         </div>
 
@@ -986,18 +985,6 @@
         await OnTextChanged.InvokeAsync(_localText);
     }
 
-    private void Reset()
-    {
-        _document = null;
-        _localText = string.Empty;
-        _activeTab = "overview";
-        _searchQuery = string.Empty;
-        _expandedIds = [];
-        _mapRoots = null;
-        _mapExpandedIds = [];
-        _traceTypeFilter = null;
-        _importRef?.Reset();
-    }
 
     private void ClearInput()
     {

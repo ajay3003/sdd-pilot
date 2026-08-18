@@ -93,6 +93,7 @@ builder.Services.AddScoped<IImplementationReviewPageModelBuilder, Implementation
 builder.Services.AddScoped<IImplementationTraceabilityPageModelBuilder, ImplementationTraceabilityPageModelBuilder>();
 builder.Services.AddScoped<IAnalysisPageModelService, AnalysisPageModelService>();
 // ── Library Page Model Builders ──────────────────────────────────────────
+builder.Services.AddScoped<ISampleProjectCatalogService, SampleProjectCatalogService>();
 builder.Services.AddScoped<IQAArtifactLibraryPageModelBuilder, QAArtifactLibraryPageModelBuilder>();
 builder.Services.AddScoped<ISampleProjectsPageModelBuilder, SampleProjectsPageModelBuilder>();
 builder.Services.AddScoped<ILibraryPageModelService, LibraryPageModelService>();

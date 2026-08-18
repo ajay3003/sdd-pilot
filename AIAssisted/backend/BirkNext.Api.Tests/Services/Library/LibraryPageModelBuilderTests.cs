@@ -3,6 +3,7 @@ using BirkNext.Api.Models;
 using BirkNext.Api.Services;
 using BirkNext.Api.Services.Library;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -87,17 +88,41 @@ public class LibraryPageModelBuilderTests
     }
 
     [Fact]
-    public async Task SampleProjects_NoWorkspace_ReturnsReadySamples()
+    public async Task SampleProjects_NoSampleData_ReturnsEmpty()
     {
-        await using var db = CreateInMemoryDb();
+        // Create config that points to a non-existent directory
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[] { new KeyValuePair<string, string?>("SampleProjects:BaseDirectory", "/nonexistent") })
+            .Build();
+
+        var catalog = new SampleProjectCatalogService(config);
         var builder = new SampleProjectsPageModelBuilder(
-            db,
+            catalog,
             NullLogger<SampleProjectsPageModelBuilder>.Instance);
 
         var model = await builder.BuildPageModelAsync();
 
+        Assert.Equal(LibraryStatus.Empty, model.ReadinessStatus);
+        Assert.Equal(0, model.Items.Count);
+        Assert.False(model.Summary.HasAvailableActions);
+    }
+
+    [Fact]
+    public async Task SampleProjects_WithRealSampleData_DiscoversDynamically()
+    {
+        // Create config without explicit base directory to trigger auto-discovery
+        var config = new ConfigurationBuilder().Build();
+
+        var catalog = new SampleProjectCatalogService(config);
+        var builder = new SampleProjectsPageModelBuilder(
+            catalog,
+            NullLogger<SampleProjectsPageModelBuilder>.Instance);
+
+        var model = await builder.BuildPageModelAsync();
+
+        // Should discover actual projects from SampleData directory
+        Assert.True(model.Items.Count > 0, $"Expected to discover projects, but found {model.Items.Count}");
         Assert.Equal(LibraryStatus.Ready, model.ReadinessStatus);
-        Assert.Equal(3, model.Items.Count);
         Assert.True(model.Summary.HasAvailableActions);
     }
 
