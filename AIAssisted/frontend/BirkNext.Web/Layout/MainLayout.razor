@@ -2,6 +2,9 @@
 @using BirkNext.Web.Services
 @inject FeatureVisibilityService FeatureViz
 @inject AdminApiService AdminApi
+@inject IWorkspacePersistenceApiService WorkspacePersistence
+@inject IWorkspaceSessionRestoreService WorkspaceRestore
+@inject ILogger<MainLayout> Logger
 
 @if (!_ready)
 {
@@ -32,7 +35,38 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        await FeatureViz.LoadAsync(AdminApi);
-        _ready = true;
+        try
+        {
+            await FeatureViz.LoadAsync(AdminApi);
+
+            // Restore the last active workspace on app startup
+            await RestoreCurrentWorkspaceAsync();
+        }
+        finally
+        {
+            _ready = true;
+        }
+    }
+
+    private async Task RestoreCurrentWorkspaceAsync()
+    {
+        try
+        {
+            var currentState = await WorkspacePersistence.GetCurrentStateAsync();
+            if (currentState?.CurrentWorkspaceId is not null && currentState.CurrentWorkspaceId != Guid.Empty)
+            {
+                var workspace = await WorkspacePersistence.LoadAsync(currentState.CurrentWorkspaceId.Value);
+                if (workspace?.Artifacts.Count > 0)
+                {
+                    Logger.LogInformation("Restoring workspace: {WorkspaceName}", workspace.Name);
+                    await WorkspaceRestore.RestoreWorkspaceAsync(workspace);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to restore current workspace on startup");
+            // Continue with empty workspace if restoration fails
+        }
     }
 }
