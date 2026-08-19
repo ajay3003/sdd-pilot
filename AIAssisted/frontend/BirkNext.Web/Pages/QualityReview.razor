@@ -945,11 +945,11 @@
         var circ   = 2 * Math.PI * r;
         var offset = circ - score / 100.0 * circ;
         var cls    = score >= 80 ? "is-good" : score >= 50 ? "is-fair" : "is-poor";
-        var svg    = $"<svg viewBox=\"0 0 88 88\">" +
-                     $"<circle class=\"qr-ring-bg\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\" />" +
-                     $"<circle class=\"qr-ring-fill {cls}\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\"" +
-                     $" stroke-dasharray=\"{circ:0.00}\" stroke-dashoffset=\"{offset:0.00}\" />" +
-                     $"</svg>";
+        var svg    = "<svg viewBox='0 0 88 88'>" +
+                     $"<circle class='qr-ring-bg' cx='{cx}' cy='{cy}' r='{r}' fill='none' stroke-width='7' />" +
+                     $"<circle class='qr-ring-fill {cls}' cx='{cx}' cy='{cy}' r='{r}' fill='none' stroke-width='7' stroke-linecap='round'" +
+                     $" stroke-dasharray='{circ:0.00}' stroke-dashoffset='{offset:0.00}' />" +
+                     "</svg>";
         __builder.OpenElement(0, "div");
         __builder.AddAttribute(1, "class", "qr-score-ring-wrap");
         __builder.AddMarkupContent(2, svg);

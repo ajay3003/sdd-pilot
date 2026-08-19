@@ -340,6 +340,186 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         });
     }
 
+    [Fact]
+    public void OverallScoreRing_DoesNotRenderSolidFilledCircle()
+    {
+        // SVG circles must have fill="none" to prevent black solid disk rendering
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var report = MakeReport(new QualityReviewPackResult
+        {
+            PackName = "Test Pack",
+            Score = 33,
+            Critical = 0,
+            High = 0,
+            Medium = 0,
+            Low = 0,
+        });
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var svg = cut.Markup;
+            // Both circles must have fill="none"
+            svg.Should().Contain("fill='none'");
+            var fillNoneCount = svg.Split("fill='none'", StringSplitOptions.None).Length - 1;
+            fillNoneCount.Should().BeGreaterThanOrEqualTo(2, "both SVG circles require fill='none'");
+        });
+    }
+
+    [Fact]
+    public void OverallScoreRing_ThirtyThreePercent_RendersPartialProgress()
+    {
+        // Score of 33% should render as partial progress, not full circle
+        // Radius = 36, circumference ≈ 226.19
+        // stroke-dashoffset = circ - (0.33 * circ) = circ * 0.67 ≈ 151.55
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var report = MakeReport(new QualityReviewPackResult
+        {
+            PackName = "Test Pack",
+            Score = 33,
+            Critical = 0,
+            High = 0,
+            Medium = 0,
+            Low = 0,
+        });
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var svg = cut.Markup;
+            // Verify dynamic SVG attributes are present
+            svg.Should().Contain("stroke-dasharray=");
+            svg.Should().Contain("stroke-dashoffset=");
+            // Should NOT contain fill="black" or only fill (without none)
+            var singleQuotedFills = svg.Split("fill='none'", StringSplitOptions.None).Length;
+            singleQuotedFills.Should().BeGreaterThanOrEqualTo(3); // At least 2 matches + 1
+        });
+    }
+
+    [Fact]
+    public void OverallScoreRing_ZeroPercent_RendersEmpty()
+    {
+        // 0% score should produce full stroke-dashoffset = full circumference (empty ring)
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var report = MakeReport(new QualityReviewPackResult
+        {
+            PackName = "Test Pack",
+            Score = 0,
+            Critical = 0,
+            High = 0,
+            Medium = 0,
+            Low = 0,
+        });
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var svg = cut.Markup;
+            svg.Should().Contain("stroke-dashoffset=");
+            svg.Should().Contain("fill='none'");
+            // 0% → offset = circ - (0 * circ) = circ (full circumference offset hides all)
+            svg.Should().Contain("0%");
+        });
+    }
+
+    [Fact]
+    public void OverallScoreRing_HundredPercent_RendersFull()
+    {
+        // 100% score should produce stroke-dashoffset=0 (full circle visible)
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var report = MakeReport(new QualityReviewPackResult
+        {
+            PackName = "Test Pack",
+            Score = 100,
+            Critical = 0,
+            High = 0,
+            Medium = 0,
+            Low = 0,
+        });
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var svg = cut.Markup;
+            svg.Should().Contain("stroke-dashoffset=");
+            svg.Should().Contain("100"); // Score label shows 100
+            svg.Should().Contain("fill='none'");
+        });
+    }
+
+    [Fact]
+    public void OverallScoreRing_FiftyPercent_RendersHalf()
+    {
+        // 50% score should render approximately half progress
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var report = MakeReport(new QualityReviewPackResult
+        {
+            PackName = "Test Pack",
+            Score = 50,
+            Critical = 0,
+            High = 0,
+            Medium = 0,
+            Low = 0,
+        });
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var svg = cut.Markup;
+            svg.Should().Contain("50"); // Score label
+            svg.Should().Contain("stroke-dashoffset=");
+            svg.Should().Contain("stroke-linecap='round'");
+        });
+    }
+
+    [Fact]
+    public void OverallScoreRing_ScoreTextAccessible()
+    {
+        // Score must be displayed as human-readable text
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var report = MakeReport(new QualityReviewPackResult
+        {
+            PackName = "Test Pack",
+            Score = 75.5,
+            Critical = 0,
+            High = 0,
+            Medium = 0,
+            Low = 0,
+        });
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            markup.Should().Contain("<small>%</small>");
+            markup.Should().Contain("76"); // Rounded score
+        });
+    }
+
     private static IElement FindArtifactCard(IRenderedComponent<QualityReview> cut, string artifactName) =>
         cut.FindAll(".artifact-card").Single(card => card.TextContent.Contains(artifactName, StringComparison.Ordinal));
 
@@ -469,6 +649,9 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         ];
 
         public List<RunCall> Calls { get; } = [];
+        public QualityReviewReport? FixedReport { get; set; }
+
+        public void SetReport(QualityReviewReport report) => FixedReport = report;
 
         public Task InitializeAsync() => Task.CompletedTask;
 
@@ -482,6 +665,9 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             var selected = selectedPackIds.ToList();
             Calls.Add(new RunCall(constitutionText, specText, planText, taskText, dataModelText, selected));
+
+            if (FixedReport != null)
+                return Task.FromResult(FixedReport);
 
             var results = selected.Select(packId =>
             {
