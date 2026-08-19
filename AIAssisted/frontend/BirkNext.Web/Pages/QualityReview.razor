@@ -56,7 +56,7 @@
                         <span class="artifact-icon" aria-hidden="true">📜</span>
                         <span class="artifact-name">Constitution</span>
                         <span class="artifact-status @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_constitutionText) ? "Loaded" : "Missing")
+                            @(!string.IsNullOrEmpty(_constitutionText) ? "Available" : "Missing")
                         </span>
                     </div>
                     <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">constitution.md</div>
@@ -74,7 +74,7 @@
                         <span class="artifact-icon" aria-hidden="true">📋</span>
                         <span class="artifact-name">Specification</span>
                         <span class="artifact-status @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_specText) ? "Loaded" : "Missing")
+                            @(!string.IsNullOrEmpty(_specText) ? "Available" : "Missing")
                         </span>
                     </div>
                     <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">spec.md</div>
@@ -92,7 +92,7 @@
                         <span class="artifact-icon" aria-hidden="true">📐</span>
                         <span class="artifact-name">Plan</span>
                         <span class="artifact-status @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_planText) ? "Loaded" : "Missing")
+                            @(!string.IsNullOrEmpty(_planText) ? "Available" : "Missing")
                         </span>
                     </div>
                     <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">plan.md</div>
@@ -110,7 +110,7 @@
                         <span class="artifact-icon" aria-hidden="true">✅</span>
                         <span class="artifact-name">Tasks</span>
                         <span class="artifact-status @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_taskText) ? "Loaded" : "Missing")
+                            @(!string.IsNullOrEmpty(_taskText) ? "Available" : "Missing")
                         </span>
                     </div>
                     <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">tasks.md</div>
@@ -128,7 +128,7 @@
                         <span class="artifact-icon" aria-hidden="true">🗄️</span>
                         <span class="artifact-name">Data Model</span>
                         <span class="artifact-status @(!string.IsNullOrEmpty(_dataModelText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_dataModelText) ? "Loaded" : "Missing")
+                            @(!string.IsNullOrEmpty(_dataModelText) ? "Available" : "Missing")
                         </span>
                     </div>
                     <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">data-model.md</div>
@@ -590,7 +590,7 @@
             if (_selectedPacks.Count == 0) return "Select at least one review pack";
             int loaded = new[] { _constitutionText, _specText, _planText, _taskText, _dataModelText }
                             .Count(t => !string.IsNullOrWhiteSpace(t));
-            return $"{loaded} artifact{(loaded != 1 ? "s" : "")} loaded · {_selectedPacks.Count} pack{(_selectedPacks.Count != 1 ? "s" : "")} selected";
+            return $"{loaded} artifact{(loaded != 1 ? "s" : "")} available · {_selectedPacks.Count} pack{(_selectedPacks.Count != 1 ? "s" : "")} selected";
         }
     }
 

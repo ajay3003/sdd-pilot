@@ -46,7 +46,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             cut.Markup.Should().Contain("plan.md");
             cut.Markup.Should().Contain("tasks.md");
             cut.Markup.Should().Contain("data-model.md");
-            cut.Markup.Should().Contain("5 artifacts loaded");
+            cut.Markup.Should().Contain("5 artifacts available");
         });
     }
 
@@ -99,7 +99,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.FindAll(".artifact-status.is-loaded").Should().HaveCount(4);
-            cut.Markup.Should().Contain("4 artifacts loaded");
+            cut.Markup.Should().Contain("4 artifacts available");
 
             var dataModelCard = FindArtifactCard(cut, "Data Model");
             dataModelCard.TextContent.Should().Contain("Missing");
@@ -142,7 +142,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("Project A");
-            cut.Markup.Should().Contain("5 artifacts loaded");
+            cut.Markup.Should().Contain("5 artifacts available");
             FindPackLabel(cut, "Data Model Quality").ClassList.Should().NotContain("is-disabled");
         });
 
@@ -153,7 +153,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             cut.Markup.Should().Contain("Project B");
             cut.Markup.Should().NotContain("PROJECT A");
-            cut.Markup.Should().Contain("4 artifacts loaded");
+            cut.Markup.Should().Contain("4 artifacts available");
             FindPackLabel(cut, "Data Model Quality").ClassList.Should().Contain("is-disabled");
             cut.Instance.Should().NotBeNull();
         });
@@ -256,7 +256,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             FindPackLabel(cut, "Data Model Quality").ClassList.Should().NotContain("is-disabled");
-            cut.Markup.Should().Contain("5 artifacts loaded");
+            cut.Markup.Should().Contain("5 artifacts available");
         });
 
         _resolver.SetSelectedProject("project-b");
@@ -269,7 +269,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             dataModelPack.QuerySelector("input")!.HasAttribute("disabled").Should().BeTrue();
             dataModelPack.QuerySelector("input")!.HasAttribute("checked").Should().BeFalse();
             FindPackLabel(cut, "QA Auditor").ClassList.Should().NotContain("is-disabled");
-            cut.Markup.Should().Contain("4 artifacts loaded");
+            cut.Markup.Should().Contain("4 artifacts available");
         });
     }
 
@@ -317,7 +317,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             cut.Markup.Should().Contain("Sample Project:");
             cut.Markup.Should().Contain("Project A");
-            cut.Markup.Should().Contain("5 artifacts loaded");
+            cut.Markup.Should().Contain("5 artifacts available");
             cut.FindAll(".artifact-status.is-loaded").Should().HaveCount(5);
 
             // Verify exact content comes from resolver
