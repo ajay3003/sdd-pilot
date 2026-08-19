@@ -49,7 +49,8 @@ public sealed class StandardsKeywordRulePack : IRulePack
     {
         foreach (var term in rule.RequiredKeywords)
         {
-            if (lower.Contains(term.ToLowerInvariant()))
+            var evidence = ExtractPositiveEvidence(lines, term);
+            if (evidence is not null)
                 return new RuleFinding
                 {
                     RulePackId     = RulePackId,
@@ -59,13 +60,14 @@ public sealed class StandardsKeywordRulePack : IRulePack
                     Description    = rule.Description,
                     Severity       = rule.Severity,
                     Status         = "Passed",
-                    Evidence       = ExtractEvidence(lines, term),
+                    Evidence       = evidence,
                     Recommendation = string.Empty,
                 };
         }
         foreach (var term in rule.OptionalKeywords)
         {
-            if (lower.Contains(term.ToLowerInvariant()))
+            var evidence = ExtractPositiveEvidence(lines, term);
+            if (evidence is not null)
                 return new RuleFinding
                 {
                     RulePackId     = RulePackId,
@@ -75,7 +77,7 @@ public sealed class StandardsKeywordRulePack : IRulePack
                     Description    = rule.Description,
                     Severity       = rule.Severity,
                     Status         = "Warning",
-                    Evidence       = ExtractEvidence(lines, term),
+                    Evidence       = evidence,
                     Recommendation = rule.Recommendation,
                 };
         }
@@ -92,12 +94,83 @@ public sealed class StandardsKeywordRulePack : IRulePack
         };
     }
 
-    private static string? ExtractEvidence(string[] lines, string term)
+    private static string? ExtractPositiveEvidence(string[] lines, string term)
     {
         var lower = term.ToLowerInvariant();
-        var match = lines.FirstOrDefault(l => l.ToLowerInvariant().Contains(lower));
-        if (match is null) return null;
-        var trimmed = match.Trim().TrimStart('#').Trim();
-        return trimmed.Length > 120 ? trimmed[..120] + "…" : trimmed;
+
+        // Find the first line containing the keyword that is not explicitly negated
+        foreach (var line in lines)
+        {
+            var lineLower = line.ToLowerInvariant();
+            if (lineLower.Contains(lower) && !IsNegatedContext(line, term))
+            {
+                var trimmed = line.Trim().TrimStart('#').Trim();
+                return trimmed.Length > 120 ? trimmed[..120] + "…" : trimmed;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsNegatedContext(string line, string keyword)
+    {
+        var lineLower = line.ToLowerInvariant();
+        var keywordLower = keyword.ToLowerInvariant();
+
+        // Negation patterns: look for negation markers before the keyword
+        var negationMarkers = new[]
+        {
+            "no " + keywordLower,
+            "no explicit " + keywordLower,
+            "not " + keywordLower,
+            "does not " + keywordLower,
+            "do not " + keywordLower,
+            "doesn't " + keywordLower,
+            "don't " + keywordLower,
+            "does not provide " + keywordLower,
+            "does not include " + keywordLower,
+            "does not support " + keywordLower,
+            "does not exist",
+            "is not " + keywordLower,
+            "is not available",
+            "has not been " + keywordLower,
+            "have not been " + keywordLower,
+            "without " + keywordLower,
+            "lacking " + keywordLower,
+            "lacks " + keywordLower,
+        };
+
+        // Check for direct negation patterns
+        foreach (var marker in negationMarkers)
+        {
+            if (lineLower.Contains(marker))
+            {
+                // Verify the keyword actually appears in the negated phrase
+                var keywordIndex = lineLower.IndexOf(keywordLower);
+                var markerIndex = lineLower.IndexOf(marker);
+                if (keywordIndex >= markerIndex && keywordIndex < markerIndex + marker.Length)
+                    return true;
+            }
+        }
+
+        // Check for "does not ... <keyword>" pattern
+        if (lineLower.Contains("does not") && lineLower.Contains(keywordLower))
+        {
+            var notIndex = lineLower.IndexOf("does not");
+            var keywordIndex = lineLower.IndexOf(keywordLower);
+            if (keywordIndex > notIndex && keywordIndex < notIndex + 100)
+                return true;
+        }
+
+        // Check for "... is not <keyword>" pattern
+        if (lineLower.Contains(" is not ") && lineLower.Contains(keywordLower))
+        {
+            var isNotIndex = lineLower.IndexOf(" is not ");
+            var keywordIndex = lineLower.IndexOf(keywordLower);
+            if (keywordIndex > isNotIndex && keywordIndex < isNotIndex + 50)
+                return true;
+        }
+
+        return false;
     }
 }
