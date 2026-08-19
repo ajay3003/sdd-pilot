@@ -202,8 +202,12 @@
     <!-- ── Results ───────────────────────────────────────────────────────── -->
     @if (_report is not null)
     {
-        <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
+        <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-bottom:.5rem">
             <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportHtml">Export HTML</button>
+            @if (_diagnosticSnapshot is not null)
+            {
+                <button style="background:#10b981;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportJson">Export diagnostic JSON</button>
+            }
         </div>
 
         <!-- ── Overall summary ────────────────────────────────────────── -->
@@ -404,6 +408,7 @@
     private readonly HashSet<string> _expanded      = [];
 
     private QualityReviewReport? _report;
+    private QualityReviewDiagnosticExport? _diagnosticSnapshot;
     private List<TopIssueItem>   _topIssues = [];
     private bool _running;
     private bool _inputExpanded = true;
@@ -490,6 +495,7 @@
                     await LoadFromSampleProject(currentProject);
                     // Clear report when project changes
                     _report = null;
+                    _diagnosticSnapshot = null;
                     _inputExpanded = true;
                 }
                 else
@@ -499,6 +505,7 @@
                     _selectedProjectName = null;
                     ClearAllArtifacts();
                     _report = null;
+                    _diagnosticSnapshot = null;
                     _inputExpanded = true;
                 }
                 StateHasChanged();
@@ -683,6 +690,50 @@
         await JS.InvokeVoidAsync("downloadHtmlFile", $"quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
+    private async Task ExportJson()
+    {
+        if (_diagnosticSnapshot is null) return;
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            _diagnosticSnapshot,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        var filename = $"quality-review-{_selectedProject}-{DateTime.UtcNow:yyyy-MM-dd-HHmmss}.json";
+        await JS.InvokeVoidAsync("downloadJsonFile", filename, json);
+    }
+
+    private QualityReviewDiagnosticExport BuildDiagnosticExport(QualityReviewReport report, IEnumerable<string> selectedPackIds)
+    {
+        var projects = DocumentResolver.GetAvailableProjectsAsync().Result;
+        var projectName = projects.FirstOrDefault(p => p.Slug == _selectedProject)?.Name ?? _selectedProject ?? string.Empty;
+
+        var artifacts = new List<ArtifactInputDiagnostic>
+        {
+            ArtifactInputDiagnostic.FromContent("Constitution", "constitution.md", _constitutionText),
+            ArtifactInputDiagnostic.FromContent("Specification", "spec.md", _specText),
+            ArtifactInputDiagnostic.FromContent("Plan", "plan.md", _planText),
+            ArtifactInputDiagnostic.FromContent("Tasks", "tasks.md", _taskText),
+            ArtifactInputDiagnostic.FromContent("DataModel", "data-model.md", _dataModelText),
+        };
+
+        var packs = report.PackResults.Select(r => PackDiagnostic.FromPackResult(r)).ToList();
+
+        return new QualityReviewDiagnosticExport
+        {
+            SchemaVersion = 1,
+            ProjectSlug = _selectedProject ?? string.Empty,
+            ProjectDisplayName = projectName,
+            RunAtUtc = report.RunAt.UtcDateTime,
+            SelectedPackIds = selectedPackIds.ToList(),
+            Artifacts = artifacts,
+            Packs = packs,
+            OverallScore = report.OverallScore,
+            TotalFindings = report.TotalFindings,
+            CriticalCount = report.CriticalCount,
+            HighCount = report.HighCount,
+            MediumCount = report.MediumCount,
+            LowCount = report.LowCount,
+        };
+    }
+
     private async Task RunReview()
     {
         if (CannotRun) return;
@@ -690,7 +741,8 @@
         try
         {
             var artifactSnapshot = BuildArtifactSnapshot();
-            QualitySession.MarkRunning(_selectedPacks, _selectedProject ?? string.Empty, artifactSnapshot);
+            var selectedPackIds = _selectedPacks.ToArray();
+            QualitySession.MarkRunning(selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot);
 
             _report = await QrService.RunAsync(
                 string.IsNullOrWhiteSpace(_constitutionText) ? null : _constitutionText,
@@ -698,9 +750,12 @@
                 string.IsNullOrWhiteSpace(_planText)         ? null : _planText,
                 string.IsNullOrWhiteSpace(_taskText)         ? null : _taskText,
                 string.IsNullOrWhiteSpace(_dataModelText)    ? null : _dataModelText,
-                _selectedPacks);
+                selectedPackIds);
 
-            QualitySession.SaveResult(_report, _selectedPacks, _selectedProject ?? string.Empty, artifactSnapshot);
+            QualitySession.SaveResult(_report, selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot);
+
+            // Capture diagnostic snapshot from the exact run
+            _diagnosticSnapshot = BuildDiagnosticExport(_report, selectedPackIds);
 
             // Publish pack results so Dashboard can consume the shared quality session.
             var complianceResult = _report.PackResults.FirstOrDefault(r => r.Compliance is not null);
@@ -738,6 +793,7 @@
         catch (Exception ex)
         {
             QualitySession.MarkFailed(_selectedPacks, _selectedProject ?? string.Empty, BuildArtifactSnapshot(), ex.Message);
+            _diagnosticSnapshot = null;
             throw;
         }
         finally
