@@ -32,6 +32,10 @@ public class SavedWorkspaceDto
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = "";
+    /// <summary>
+    /// Project identity. For Sample Projects, contains the canonical lowercase slug (e.g., "autorisasjon").
+    /// NOT a display name. Used for session restoration and project-identity persistence.
+    /// </summary>
     public string ProjectName { get; set; } = "";
     public string? Description { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
@@ -243,9 +247,10 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
 
             _logger.LogInformation("TRACE: [WorkspacePersistenceApiService.AutoSaveAsync]");
             _logger.LogInformation("  GeneratedName={Name}", generatedName);
+            _logger.LogInformation("  CurrentProject={Project}", _artifactRepository.CurrentProject);
             _logger.LogInformation("  RequestArtifacts={Count}", artifacts.Count);
 
-            var request = new { generatedName, artifacts };
+            var request = new { generatedName, projectName = _artifactRepository.CurrentProject, artifacts };
             _logger.LogInformation("DIAG: [AutoSaveAsync] Request object created with {ArtifactCount} artifacts", artifacts.Count);
 
             var response = await _httpClient.PostAsJsonAsync(

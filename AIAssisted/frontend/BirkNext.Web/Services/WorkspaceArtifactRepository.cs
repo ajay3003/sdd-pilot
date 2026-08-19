@@ -12,8 +12,31 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     private readonly Dictionary<WorkspaceArtifactType, WorkspaceArtifact> _artifacts = new();
 
     public event EventHandler? ReviewContextRebuildNeeded;
+    public event EventHandler? ProjectSelectionChanged;
 
-    public string? ProjectName { get; set; }
+    private string? _projectName;
+    /// <summary>
+    /// For Sample Projects: stores the CANONICAL LOWERCASE SLUG (e.g., "autorisasjon").
+    /// NOT the display name ("Autorisasjon"). Used for identity-only persistence and restoration.
+    /// Fires ProjectSelectionChanged to trigger auto-save when changed.
+    /// </summary>
+    public string? ProjectName
+    {
+        get => _projectName;
+        set
+        {
+            if (_projectName != value)
+            {
+                _projectName = value;
+                // Fire ProjectSelectionChanged so AutoSave persists the new project identity
+                ProjectSelectionChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Convenience alias for ProjectName. Represents the canonical project identifier (slug for Sample Projects).
+    /// </summary>
     public string? CurrentProject
     {
         get => ProjectName;

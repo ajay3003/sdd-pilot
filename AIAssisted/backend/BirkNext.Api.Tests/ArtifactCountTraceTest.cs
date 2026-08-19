@@ -73,7 +73,7 @@ public class ArtifactCountTraceTest
             logger.LogInformation("PHASE 2: WorkspaceAutoSaveService.PerformAutoSaveAsync");
             logger.LogInformation("  (Calls AutoSaveAsync with artifacts)");
 
-            var workspace = await service.AutoSaveAsync("Test_Workspace_Auto", artifacts);
+            var workspace = await service.AutoSaveAsync("Test_Workspace_Auto", null, artifacts);
 
             logger.LogInformation("  WorkspaceId={WorkspaceId}", workspace.Id);
             logger.LogInformation("  SavedArtifactCount={Count}", workspace.Artifacts.Count);

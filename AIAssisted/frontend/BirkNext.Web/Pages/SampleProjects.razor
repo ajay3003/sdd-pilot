@@ -482,7 +482,7 @@
     }
 
     private bool IsCurrentWorkspace(SampleProjectDto project) =>
-        string.Equals(Workspace.CurrentProject, project.Name, StringComparison.Ordinal);
+        string.Equals(Workspace.CurrentProject, project.Slug, StringComparison.Ordinal);
 
     private IEnumerable<string> GetWorkspaceLoadedArtifactNames()
     {
@@ -602,32 +602,16 @@
         _ignoredHints.Remove(project.Slug);
         StateHasChanged();
 
+        // Validate project availability by checking supported files exist
         var supported = project.Files.Where(f => f.IsSupported && f.Exists).ToList();
-        var loaded = 0;
-        var skipped = new List<string>();
-        var fetched = new List<(SampleFileDto File, string Content)>();
+        var missing = project.Files.Where(f => f.IsSupported && !f.Exists).ToList();
 
-        foreach (var file in supported)
+        if (supported.Count == 0)
         {
-            var content = await ProjectsApi.GetFileAsync(project.Slug, file.Filename);
-            if (content is null)
-            {
-                skipped.Add(file.Filename);
-                continue;
-            }
-
-            fetched.Add((file, NormalizeArtifactText(content)));
-        }
-
-        if (skipped.Count > 0)
-        {
-            ClearWorkspaceArtifactSlots();
             Workspace.CurrentProject = null;
-
-            var failedMsg = $"Failed to fetch: {string.Join(", ", skipped)}.";
-            var failedMissing = project.Files.Where(f => f.IsSupported && !f.Exists).Select(f => f.Filename).ToList();
-            if (failedMissing.Count > 0)
-                failedMsg += $" Not found: {string.Join(", ", failedMissing)}.";
+            var failedMsg = "No supported artifacts found.";
+            if (missing.Count > 0)
+                failedMsg += $" Missing: {string.Join(", ", missing.Select(f => f.Filename))}.";
 
             _loadState[project.Slug] = new LoadResult(project.Name, failedMsg, true, [], []);
             _loadingSlug = null;
@@ -638,74 +622,23 @@
         QualitySession.Clear();
         DashboardSnapshot.ClearQualityReview();
 
-        System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] Before BeginUpdate");
-        Updates.BeginUpdate();
-        try
-        {
-            ClearWorkspaceArtifactSlots();
-            Workspace.CurrentProject = project.Name;
+        // Only set the project identity; artifact content comes from DocumentResolver
+        // (explorers and analysis features all use DocumentResolver directly)
+        Workspace.CurrentProject = project.Slug;
 
-            foreach (var (file, content) in fetched)
-            {
-                if (file.ArtifactKind is not null && _artifactKindMap.TryGetValue(file.ArtifactKind, out var kind))
-                    Workspace.Set(kind, content, fileName: file.Filename, sourcePath: project.AbsolutePath);
-                loaded++;
-            }
-
-            // Log repository state after all Set calls
-            var repoHash = RuntimeHelpers.GetHashCode(Workspace);
-            var allArtifacts = Workspace.GetAllArtifacts().ToList();
-            var artifactCount = allArtifacts.Count;
-            var artifactKinds = string.Join(",", allArtifacts.Select(a => a.Type.ToString()));
-
-            Logger.LogInformation("TRACE: [SampleProjects.LoadArtifacts]");
-            Logger.LogInformation("  RepositoryType={Type}", Workspace.GetType().Name);
-            Logger.LogInformation("  Hash={Hash}", repoHash);
-            Logger.LogInformation("  Count={Count}", artifactCount);
-            Logger.LogInformation("  Artifacts={Artifacts}", artifactKinds);
-
-            // Start auto-save monitoring before notifying mutations.
-            // This ensures monitoring is enabled when ArtifactsChanged event fires.
-            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] Before AutoSave.StartMonitoringAsync");
-            await AutoSave.StartMonitoringAsync();
-            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] After AutoSave.StartMonitoringAsync");
-
-            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] Before NotifyMutation");
-            Updates.NotifyMutation();
-            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] After NotifyMutation, before EndUpdate");
-        }
-        finally
-        {
-            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] Before EndUpdate");
-            Updates.EndUpdate();
-            System.Diagnostics.Debug.WriteLine("DIAG: [LoadArtifacts] After EndUpdate");
-        }
-
-        var loadedArtifacts = fetched.Select(x => x.File.Filename).ToList();
+        // Report project selection success
         var contextOnly = project.Files
             .Where(f => f.IsContextOnly && f.Exists)
             .Select(f => f.Filename)
             .ToList();
-        var missing = project.Files.Where(f => f.IsSupported && !f.Exists).Select(f => f.Filename).ToList();
-        var msg = $"✅ Loaded {loaded} artifact{(loaded != 1 ? "s" : "")}.";
-        var hasError = false;
-        if (skipped.Count > 0)
-        {
-            msg += $" ⚠ Failed to fetch: {string.Join(", ", skipped)}.";
-            hasError = true;
-        }
-        if (missing.Count > 0)
-        {
-            msg += $" Not found: {string.Join(", ", missing)}.";
-        }
+        var msg = $"✅ Selected {project.Name}. {supported.Count} artifact{(supported.Count != 1 ? "s" : "")} available.";
+        var supportedNames = supported.Select(f => f.Filename).ToList();
+        _loadState[project.Slug] = new LoadResult(project.Name, msg, false, supportedNames, contextOnly);
 
-        _loadState[project.Slug] = new LoadResult(project.Name, msg, hasError, loadedArtifacts, contextOnly);
-        if (!hasError)
-            _hintState[project.Slug] = TargetHintExtractor.Extract(project, await FetchProjectTextsAsync(project, fetched));
         _loadingSlug = null;
         StateHasChanged();
         System.Diagnostics.Debug.WriteLine("======== DIAG: [LoadArtifacts] END ========");
-        return !hasError;
+        return true;
     }
 
     private void ClearWorkspaceArtifactSlots()

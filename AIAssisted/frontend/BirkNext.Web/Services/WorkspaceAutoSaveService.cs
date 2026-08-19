@@ -88,6 +88,12 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
 
         // Subscribe to artifacts changed events
         _updates.ArtifactsChanged += OnArtifactsChanged;
+
+        // Also subscribe to project selection changes to persist project identity
+        if (artifactRepository is WorkspaceArtifactRepository repo)
+        {
+            repo.ProjectSelectionChanged += OnArtifactsChanged;
+        }
     }
 
     public async Task StartMonitoringAsync()
@@ -139,8 +145,10 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
         System.Diagnostics.Debug.WriteLine($"DIAG: [AutoSave] OnArtifactChanged ENTERED, _isMonitoring={_isMonitoring}");
         if (!_isMonitoring)
         {
-            System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] OnArtifactChanged RETURNED EARLY");
-            return;
+            System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] OnArtifactChanged RETURNED EARLY, starting monitoring");
+            // Auto-enable monitoring on first change (project selection or artifact update)
+            // This ensures identity-only persistence works without explicit StartMonitoringAsync
+            _isMonitoring = true;
         }
 
         // Restart the timer

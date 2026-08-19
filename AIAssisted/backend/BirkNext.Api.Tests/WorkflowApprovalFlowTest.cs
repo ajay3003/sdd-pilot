@@ -59,7 +59,7 @@ public class WorkflowApprovalFlowTest
                 new() { ArtifactType = ArtifactType.Tasks, FileName = "tasks.md", Content = "tasks" }
             };
 
-            var workspace = await persistenceService.AutoSaveAsync("Test_Workspace_Approval", artifacts);
+            var workspace = await persistenceService.AutoSaveAsync("Test_Workspace_Approval", null, artifacts);
             workspaceId = workspace.Id;
 
             _output.WriteLine($"✓ Created workspace {workspaceId}");
@@ -140,7 +140,7 @@ public class WorkflowApprovalFlowTest
             };
 
             _output.WriteLine("Calling AutoSaveAsync (like browser does)...");
-            var workspace = await persistenceService.AutoSaveAsync("Auto_Workspace", artifacts);
+            var workspace = await persistenceService.AutoSaveAsync("Auto_Workspace", null, artifacts);
             savedWorkspaceId = workspace.Id;
 
             _output.WriteLine($"AutoSave returned workspace ID: {savedWorkspaceId}");

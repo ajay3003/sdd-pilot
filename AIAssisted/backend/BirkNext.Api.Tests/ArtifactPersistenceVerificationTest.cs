@@ -62,7 +62,7 @@ public class ArtifactPersistenceVerificationTest
             };
 
             logger.LogInformation("Calling AutoSaveAsync with {Count} artifacts", artifacts.Count);
-            var workspace = await service.AutoSaveAsync("Test_Workspace", artifacts);
+            var workspace = await service.AutoSaveAsync("Test_Workspace", null, artifacts);
 
             savedWorkspaceId = workspace.Id;
             logger.LogInformation("AutoSave returned workspace {WorkspaceId} with {Count} artifacts in memory",

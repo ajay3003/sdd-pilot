@@ -5,6 +5,10 @@ public class SavedWorkspace
     public Guid Id { get; set; }
     public string UserId { get; set; } = "";
     public string Name { get; set; } = "";
+    /// <summary>
+    /// Project identity. For Sample Projects, stores the canonical lowercase slug (e.g., "autorisasjon").
+    /// NOT a display name. Use for session restoration and identity-only persistence.
+    /// </summary>
     public string ProjectName { get; set; } = "";
     public string? Description { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

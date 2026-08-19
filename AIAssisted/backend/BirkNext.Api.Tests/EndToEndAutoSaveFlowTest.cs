@@ -105,7 +105,7 @@ public class EndToEndAutoSaveFlowTest
             var generatedName = $"Auto_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
             logger.LogInformation("Calling AutoSaveAsync with {Count} artifacts", artifactsToLoad.Count);
 
-            var savedWorkspace = await persistenceService.AutoSaveAsync(generatedName, artifactsToLoad);
+            var savedWorkspace = await persistenceService.AutoSaveAsync(generatedName, null, artifactsToLoad);
 
             savedWorkspaceId = savedWorkspace.Id;
             var artifactCountInResponse = savedWorkspace.Artifacts.Count;

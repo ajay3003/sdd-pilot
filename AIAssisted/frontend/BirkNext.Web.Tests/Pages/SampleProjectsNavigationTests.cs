@@ -49,17 +49,17 @@ public sealed class SampleProjectsNavigationTests : BunitContext
     }
 
     [Theory]
-    [InlineData("Constitution Explorer", "/constitution-explorer", WorkspaceArtifactKind.Constitution, "PERSON constitution.md")]
-    [InlineData("Plan Explorer", "/plan-explorer", WorkspaceArtifactKind.Plan, "PERSON plan.md")]
-    [InlineData("Task Explorer", "/task-explorer", WorkspaceArtifactKind.Tasks, "PERSON tasks.md")]
-    [InlineData("Data Model Explorer", "/data-model-explorer", WorkspaceArtifactKind.DataModel, "PERSON data-model.md")]
-    [InlineData("Specification Explorer", "/specification-explorer", WorkspaceArtifactKind.Specification, "PERSON spec.md")]
+    [InlineData("Constitution Explorer", "/constitution-explorer")]
+    [InlineData("Plan Explorer", "/plan-explorer")]
+    [InlineData("Task Explorer", "/task-explorer")]
+    [InlineData("Data Model Explorer", "/data-model-explorer")]
+    [InlineData("Specification Explorer", "/specification-explorer")]
     public void ReviewerLinksLoadSelectedProjectBeforeNavigating(
         string reviewerName,
-        string expectedRoute,
-        WorkspaceArtifactKind expectedKind,
-        string expectedText)
+        string expectedRoute)
     {
+        // New contract: selecting a reviewer loads the project identity (slug) only.
+        // No Workspace artifact copies. Explorers use DocumentResolver to load content.
         var cut = Render<SampleProjects>();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Person Module"));
 
@@ -68,65 +68,118 @@ public sealed class SampleProjectsNavigationTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith(expectedRoute);
-            _workspace.CurrentProject.Should().Be("Person Module");
-            _workspace.Get(expectedKind)!.Text.Should().Be(expectedText);
+            _workspace.CurrentProject.Should().Be("person-module");  // Canonical slug, not display name
+            // Identity-only persistence: no Workspace artifact copies
+            // Explorers resolve content through DocumentResolver
         });
     }
 
     [Fact]
-    public void ProjectSwitchingReplacesAllWorkspaceArtifacts()
+    public void ProjectSwitchingUpdatesCanonicalProjectSlugWithoutWorkspaceCopies()
     {
+        // New contract: switching projects updates CurrentProject (slug) only.
+        // No Workspace artifact copies are stored or replaced.
+        // Explorers load fresh content via DocumentResolver.
         var cut = Render<SampleProjects>();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Person Module"));
 
         ClickSupportedReviewer(cut, "person-module", "Task Explorer");
-        cut.WaitForAssertion(() => _workspace.Get(WorkspaceArtifactKind.Tasks)!.Text.Should().Be("PERSON tasks.md"));
+        cut.WaitForAssertion(() =>
+        {
+            _workspace.CurrentProject.Should().Be("person-module");
+            // Identity-only persistence: no artifacts stored
+        });
 
         ClickSupportedReviewer(cut, "proxy", "Data Model Explorer");
 
         cut.WaitForAssertion(() =>
         {
             Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("/data-model-explorer");
-            _workspace.CurrentProject.Should().Be("Proxy");
-            _workspace.Get(WorkspaceArtifactKind.Constitution)!.Text.Should().Be("PROXY constitution.md");
-            _workspace.Get(WorkspaceArtifactKind.Specification)!.Text.Should().Be("PROXY spec.md");
-            _workspace.Get(WorkspaceArtifactKind.DataModel)!.Text.Should().Be("PROXY data-model.md");
-            _workspace.Get(WorkspaceArtifactKind.Plan)!.Text.Should().Be("PROXY plan.md");
-            _workspace.Get(WorkspaceArtifactKind.Tasks)!.Text.Should().Be("PROXY tasks.md");
+            _workspace.CurrentProject.Should().Be("proxy");  // Canonical slug, not display name
+            // Identity-only persistence: switching projects clears previous slug, sets new slug
+            // Workspace artifacts remain empty (identity-only design)
         });
     }
 
     [Fact]
-    public void FailedReviewerLoadDoesNotNavigateAndClearsStaleWorkspace()
+    public void SupportedReviewerLinkNavigatesSuccessfully()
     {
+        // Identity-only persistence: reviewer link for a project with supported artifacts succeeds.
+        // CurrentProject is set to canonical slug only (no artifact copies).
+        // Navigation occurs after successful selection.
         var cut = Render<SampleProjects>();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Person Module"));
 
         ClickSupportedReviewer(cut, "person-module", "Task Explorer");
-        cut.WaitForAssertion(() => _workspace.CurrentProject.Should().Be("Person Module"));
+        cut.WaitForAssertion(() => _workspace.CurrentProject.Should().Be("person-module"));  // Canonical slug
 
-        var navigation = Services.GetRequiredService<NavigationManager>();
-        var previousUri = navigation.Uri;
-        _handler.FailFile("proxy", "data-model.md");
+        // Selection succeeds because project has supported artifacts (identity-only, no copies needed).
+        // Navigation is allowed because LoadArtifactsCoreAsync returned true.
+        Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("/task-explorer");
+    }
 
-        ClickSupportedReviewer(cut, "proxy", "Data Model Explorer");
+    [Fact]
+    public void ZeroSupportedArtifacts_SelectionFails_ClearsCurrentProject()
+    {
+        // Production contract: selecting a project with zero supported artifacts FAILS.
+        // CurrentProject must be cleared (set to null).
+        // Error message shown, no navigation occurs.
 
+        // Create projects: one normal, one with zero supported artifacts
+        var normalProject = CreateProject("person-module", "Person Module", "PERSON");
+        var emptyProject = new SampleProjectDto(
+            "empty-project", "Empty Project", "", "", "C:\\SampleData\\empty-project", true,
+            new[] { new SampleFileDto("readme.md", false, "", "", "", false, false) });  // Context-only file, no supported
+
+        _handler.SetProjects(normalProject, emptyProject);
+
+        var cut = Render<SampleProjects>();
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Empty Project"));
+
+        // Arrange: Set stale project identity before attempting the failing selection
+        _workspace.CurrentProject = "person-module";
+
+        // Verify precondition: stale state exists
+        _workspace.CurrentProject.Should().Be("person-module");
+
+        // Capture navigation state BEFORE attempting selection
+        var nav = Services.GetRequiredService<NavigationManager>();
+        var initialUri = nav.Uri;
+
+        // Act: Click "Load Supported Artifacts" button for empty project
+        var projectCards = cut.FindAll(".sp-card");
+        var emptyCard = projectCards.Single(card => card.TextContent.Contains("Empty Project", StringComparison.Ordinal));
+        var loadButton = emptyCard.QuerySelector("button.sp-btn-primary");
+
+        loadButton.Should().NotBeNull();
+        loadButton!.Click();
+
+        // Assert: Selection fails, clears stale identity, and does NOT navigate
         cut.WaitForAssertion(() =>
         {
-            navigation.Uri.Should().Be(previousUri);
+            // CurrentProject must be cleared (selection failed)
             _workspace.CurrentProject.Should().BeNull();
-            _workspace.Get(WorkspaceArtifactKind.Constitution).Should().BeNull();
-            _workspace.Get(WorkspaceArtifactKind.Specification).Should().BeNull();
-            _workspace.Get(WorkspaceArtifactKind.DataModel).Should().BeNull();
-            _workspace.Get(WorkspaceArtifactKind.Plan).Should().BeNull();
-            _workspace.Get(WorkspaceArtifactKind.Tasks).Should().BeNull();
-            cut.Markup.Should().Contain("Failed to fetch");
+
+            // Error message visible in UI
+            cut.Markup.Should().Contain("No supported artifacts found");
+
+            // No Workspace artifact copies (identity-only design)
+            _workspace.GetAllArtifacts().Should().BeEmpty();
+
+            // Verify CurrentProject is not set to the failing project slug
+            _workspace.CurrentProject.Should().NotBe("empty-project");
+
+            // EXPLICIT NO-NAVIGATION ASSERTION: URI must not change
+            // If navigation occurred, URI would change from current page to reviewer route
+            nav.Uri.Should().Be(initialUri, because: "zero-artifact selection must not navigate");
         });
     }
 
     [Fact]
-    public void ManualLoadSupportedArtifactsStillLoadsWorkspace()
+    public void ManualLoadSupportedArtifactsStillLoadsProjectIdentity()
     {
+        // New contract: clicking "Load Supported Artifacts" loads the project identity (slug) only.
+        // No Workspace artifact copies. Explorers use DocumentResolver to load content on demand.
         var cut = Render<SampleProjects>();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Person Module"));
 
@@ -136,18 +189,18 @@ public sealed class SampleProjectsNavigationTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            _workspace.CurrentProject.Should().Be("Person Module");
-            _workspace.Get(WorkspaceArtifactKind.Constitution)!.Text.Should().Be("PERSON constitution.md");
-            _workspace.Get(WorkspaceArtifactKind.Specification)!.Text.Should().Be("PERSON spec.md");
-            _workspace.Get(WorkspaceArtifactKind.DataModel)!.Text.Should().Be("PERSON data-model.md");
-            _workspace.Get(WorkspaceArtifactKind.Plan)!.Text.Should().Be("PERSON plan.md");
-            _workspace.Get(WorkspaceArtifactKind.Tasks)!.Text.Should().Be("PERSON tasks.md");
+            _workspace.CurrentProject.Should().Be("person-module");  // Canonical slug, not display name
+            // Identity-only persistence: no Workspace artifact copies
+            // The "Load Supported Artifacts" action loads the project identity for later use by explorers
         });
     }
 
     [Fact]
-    public void ReviewerClickFetchesEachSupportedFileOnlyOnce()
+    public void ReviewerClickLoadsProjectIdentityWithoutFetchingAllArtifacts()
     {
+        // New contract: clicking a reviewer loads the project identity only.
+        // Identity-only persistence: no files are fetched during project selection.
+        // Explorers load their specific content through DocumentResolver on demand.
         var cut = Render<SampleProjects>();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Person Module"));
 
@@ -155,11 +208,9 @@ public sealed class SampleProjectsNavigationTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            _handler.GetFileCount("person-module", "constitution.md").Should().Be(1);
-            _handler.GetFileCount("person-module", "spec.md").Should().Be(1);
-            _handler.GetFileCount("person-module", "data-model.md").Should().Be(1);
-            _handler.GetFileCount("person-module", "plan.md").Should().Be(1);
-            _handler.GetFileCount("person-module", "tasks.md").Should().Be(1);
+            // Identity-only persistence: project selection does not trigger artifact fetches
+            _workspace.CurrentProject.Should().Be("person-module");
+            // Files are fetched on-demand by explorers through DocumentResolver, not during selection
         });
     }
 

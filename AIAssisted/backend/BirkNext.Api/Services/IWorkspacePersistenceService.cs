@@ -73,7 +73,7 @@ public interface IWorkspacePersistenceService
     Task DeleteAsync(Guid workspaceId);
 
     // Auto-save
-    Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null, List<WorkspaceArtifactDto>? artifacts = null);
+    Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null, string? projectName = null, List<WorkspaceArtifactDto>? artifacts = null);
 
     // Current workspace tracking
     Task SetCurrentWorkspaceAsync(Guid workspaceId);

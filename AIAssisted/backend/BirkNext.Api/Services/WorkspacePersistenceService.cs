@@ -323,10 +323,11 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         _logger.LogInformation("Soft-deleted workspace {WorkspaceId}", workspaceId);
     }
 
-    public async Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null, List<WorkspaceArtifactDto>? artifacts = null)
+    public async Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null, string? projectName = null, List<WorkspaceArtifactDto>? artifacts = null)
     {
         _logger.LogInformation($"DIAG: [AutoSaveAsync] ENTERED");
         _logger.LogInformation($"DIAG: [AutoSaveAsync]   generatedName={generatedName}");
+        _logger.LogInformation($"DIAG: [AutoSaveAsync]   projectName={projectName}");
         _logger.LogInformation($"DIAG: [AutoSaveAsync]   artifactCount={artifacts?.Count ?? 0}");
         _logger.LogInformation($"DIAG: [AutoSaveAsync]   currentWorkspaceId={_currentWorkspaceId}");
 
@@ -348,6 +349,10 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             _logger.LogInformation("TRACE: No current workspace ID, calling SaveAsAsync");
             var name = generatedName ?? $"Auto_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
             var workspace = await SaveAsAsync(name, artifacts ?? new());
+            if (!string.IsNullOrWhiteSpace(projectName))
+            {
+                workspace.ProjectName = projectName;
+            }
             workspace.AutoSaved = true;
             _db.SavedWorkspaces.Update(workspace);
             await _db.SaveChangesAsync();
@@ -364,6 +369,12 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         {
             _logger.LogError($"TRACE: Current workspace {_currentWorkspaceId} not found");
             throw new InvalidOperationException($"Current workspace {_currentWorkspaceId} not found");
+        }
+
+        // Update project name if provided
+        if (!string.IsNullOrWhiteSpace(projectName))
+        {
+            current.ProjectName = projectName;
         }
 
         // Update artifacts if provided

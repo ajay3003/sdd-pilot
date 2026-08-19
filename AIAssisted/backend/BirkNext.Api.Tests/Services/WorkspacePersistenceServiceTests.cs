@@ -311,11 +311,11 @@ public class WorkspacePersistenceServiceTests : IDisposable
     [Fact]
     public async Task AutoSaveAsync_AfterServiceRestart_UpdatesPersistedCurrentWorkspace()
     {
-        var workspace = await _service.AutoSaveAsync("Auto", [Artifact("constitution.md", ArtifactType.Constitution, "A")]);
+        var workspace = await _service.AutoSaveAsync("Auto", null, [Artifact("constitution.md", ArtifactType.Constitution, "A")]);
         _db.ChangeTracker.Clear();
         var restartedService = CreateService();
 
-        var updated = await restartedService.AutoSaveAsync("Auto", [Artifact("constitution.md", ArtifactType.Constitution, "B")]);
+        var updated = await restartedService.AutoSaveAsync("Auto", null, [Artifact("constitution.md", ArtifactType.Constitution, "B")]);
 
         Assert.Equal(workspace.Id, updated.Id);
         var artifact = await _db.SavedWorkspaceArtifacts.SingleAsync(a => a.WorkspaceId == workspace.Id);

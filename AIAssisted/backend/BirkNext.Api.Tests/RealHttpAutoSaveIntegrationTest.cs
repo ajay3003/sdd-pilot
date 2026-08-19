@@ -140,7 +140,7 @@ public class RealHttpAutoSaveIntegrationTest
             var service = scope.ServiceProvider.GetRequiredService<IWorkspacePersistenceService>();
 
             // This is what the controller calls
-            var workspace = await service.AutoSaveAsync("Deserialized_Test", deserializedArtifacts);
+            var workspace = await service.AutoSaveAsync("Deserialized_Test", null, deserializedArtifacts);
 
             _output.WriteLine($"✓ Service.AutoSaveAsync returned workspace {workspace.Id}");
             _output.WriteLine($"✓ Response workspace contains {workspace.Artifacts.Count} artifacts");

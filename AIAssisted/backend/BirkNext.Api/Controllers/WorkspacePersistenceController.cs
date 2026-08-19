@@ -164,9 +164,10 @@ public class WorkspacePersistenceController : ControllerBase
         try
         {
             _logger.LogInformation("TRACE: [WorkspacePersistenceController.AutoSave]");
+            _logger.LogInformation("  ProjectName={Project}", request?.ProjectName);
             _logger.LogInformation("  RequestArtifacts={Count}", request?.Artifacts?.Count ?? 0);
 
-            var result = await _service.AutoSaveAsync(request?.GeneratedName, request?.Artifacts ?? new());
+            var result = await _service.AutoSaveAsync(request?.GeneratedName, request?.ProjectName, request?.Artifacts ?? new());
             _logger.LogInformation("  ResponseArtifacts={Count}", result.Artifacts.Count);
 
             var dto = MapWorkspaceToDto(result);
@@ -258,6 +259,11 @@ public class WorkspacePersistenceController : ControllerBase
     public class AutoSaveRequest
     {
         public string? GeneratedName { get; set; }
+        /// <summary>
+        /// For Sample Projects: canonical lowercase slug (e.g., "autorisasjon").
+        /// NOT a display name. Persisted in SavedWorkspace.ProjectName for identity-only persistence.
+        /// </summary>
+        public string? ProjectName { get; set; }
         public List<WorkspaceArtifactDto> Artifacts { get; set; } = new();
     }
 
