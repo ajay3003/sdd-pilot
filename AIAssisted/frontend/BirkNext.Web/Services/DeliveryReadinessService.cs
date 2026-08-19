@@ -49,9 +49,9 @@ public sealed class DeliveryReadinessService : IDeliveryReadinessAssessmentServi
         var allBlockers = devGate.Blockers
             .Concat(testGate.Blockers)
             .Concat(relGate.Blockers)
-            .GroupBy(b => b.Title)
-            .Select(g => g.OrderBy(b => b.Severity).First())
-            .OrderBy(b => b.Severity)
+            .GroupBy(b => GetBlockerLogicalIdentity(b))
+            .Select(g => g.OrderBy(b => (int)b.Severity).First())
+            .OrderBy(b => (int)b.Severity)
             .ToList();
 
         var recs = BuildRecommendations(devGate, testGate, relGate, allBlockers);
@@ -499,6 +499,22 @@ public sealed class DeliveryReadinessService : IDeliveryReadinessAssessmentServi
 
     private static double GetReadinessScore(QAReadinessReport readiness, string category) =>
         readiness.Scores.FirstOrDefault(s => s.Category == category)?.Score ?? 0;
+
+    private static string GetBlockerLogicalIdentity(ReadinessBlocker blocker)
+    {
+        // Use RuleCode as primary identity if available (from QA findings, architectural checks)
+        if (!string.IsNullOrWhiteSpace(blocker.RuleCode))
+            return $"rule:{blocker.RuleCode.Trim()}";
+
+        // Fallback for blockers without RuleCode: use composite logical identity
+        // This prevents merging of distinct logical issues that happen to have the same Title
+        // Example: two "Missing prerequisite" blockers with different descriptions/categories remain distinct
+        // Constitution violations include RuleId in Title, so Title+Description+Category uniquely identifies the logical issue
+        var titleNorm = (blocker.Title ?? string.Empty).Trim();
+        var descNorm = (blocker.Description ?? string.Empty).Trim();
+        var catNorm = (blocker.Category ?? string.Empty).Trim();
+        return $"logical:{titleNorm}|{descNorm}|{catNorm}";
+    }
 
     private static ReadinessBlocker B(
         string title, string description,
