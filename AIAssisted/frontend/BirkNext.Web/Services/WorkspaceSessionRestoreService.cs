@@ -1,6 +1,35 @@
 namespace BirkNext.Web.Services;
 
 /// <summary>
+/// Saved workspace type classification.
+/// Used to determine safe artifact restoration policy.
+/// </summary>
+public enum SavedWorkspaceClassification
+{
+    /// <summary>
+    /// ProjectName resolves to a Sample Project catalog entry.
+    /// Artifacts are legacy copied Markdown files.
+    /// Restore: identity only, skip persisted artifacts.
+    /// </summary>
+    SampleProject,
+
+    /// <summary>
+    /// ProjectName is either null/empty or does NOT resolve to Sample Project catalog.
+    /// Artifacts are legitimate generic/manual workspace artifacts.
+    /// Restore: project name and persisted artifacts normally.
+    /// </summary>
+    GenericWorkspace,
+
+    /// <summary>
+    /// Cannot safely determine workspace type (catalog lookup failed/unavailable).
+    /// Unknown status means: do NOT restore persisted artifacts.
+    /// Preserve identity but withhold artifact restoration.
+    /// Log warning for diagnostic visibility.
+    /// </summary>
+    Unknown
+}
+
+/// <summary>
 /// Handles restoring saved workspaces into the active session.
 /// Bridges backend SavedWorkspace → frontend WorkspaceArtifactRepository → ReviewContext rebuild.
 ///
@@ -59,6 +88,7 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
     private readonly IWorkspaceArtifactRepository _artifactRepository;
     private readonly IWorkspaceStateManager _stateManager;
     private readonly IReviewContextProvider _reviewContextProvider;
+    private readonly SampleProjectsApiService _sampleProjects;
     private readonly ILogger<WorkspaceSessionRestoreService> _logger;
     private CurrentWorkspaceMetadata? _currentMetadata;
 
@@ -68,11 +98,13 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
         IWorkspaceArtifactRepository artifactRepository,
         IWorkspaceStateManager stateManager,
         IReviewContextProvider reviewContextProvider,
+        SampleProjectsApiService sampleProjects,
         ILogger<WorkspaceSessionRestoreService> logger)
     {
         _artifactRepository = artifactRepository;
         _stateManager = stateManager;
         _reviewContextProvider = reviewContextProvider;
+        _sampleProjects = sampleProjects;
         _logger = logger;
     }
 
@@ -94,27 +126,57 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
             _artifactRepository.Clear(WorkspaceArtifactType.DataModel);
             _artifactRepository.Clear(WorkspaceArtifactType.Research);
 
-            // Restore artifacts
+            // Classify the workspace to determine safe restoration policy
+            var classification = await ClassifyWorkspaceAsync(workspace.ProjectName);
+
             var restoredCount = 0;
-            foreach (var artifact in workspace.Artifacts)
+
+            // Apply classification-specific restoration policy
+            switch (classification)
             {
-                if (!Enum.TryParse<WorkspaceArtifactType>(artifact.ArtifactType, out var type))
-                {
-                    _logger.LogWarning("Unsupported artifact type: {ArtifactType}", artifact.ArtifactType);
-                    continue;
-                }
+                case SavedWorkspaceClassification.SampleProject:
+                    // Sample Project: restore identity only
+                    // Do NOT restore persisted Markdown artifact copies
+                    _logger.LogInformation(
+                        "Workspace {WorkspaceId} ({ProjectName}) classified as Sample Project: restoring identity only, skipping persisted artifact copies",
+                        workspace.Id, workspace.ProjectName);
+                    break;
 
-                _artifactRepository.Set(
-                    type,
-                    artifact.Content,
-                    artifact.FileName,
-                    artifact.OriginalPath,
-                    DateTime.UtcNow);
+                case SavedWorkspaceClassification.GenericWorkspace:
+                    // Generic/manual workspace: restore artifacts normally
+                    foreach (var artifact in workspace.Artifacts)
+                    {
+                        if (!Enum.TryParse<WorkspaceArtifactType>(artifact.ArtifactType, out var type))
+                        {
+                            _logger.LogWarning("Unsupported artifact type: {ArtifactType}", artifact.ArtifactType);
+                            continue;
+                        }
 
-                restoredCount++;
+                        _artifactRepository.Set(
+                            type,
+                            artifact.Content,
+                            artifact.FileName,
+                            artifact.OriginalPath,
+                            DateTime.UtcNow);
+
+                        restoredCount++;
+                    }
+
+                    _logger.LogInformation(
+                        "Workspace {WorkspaceId} ({ProjectName}) classified as GenericWorkspace: restored {ArtifactCount} artifacts",
+                        workspace.Id, workspace.ProjectName, restoredCount);
+                    break;
+
+                case SavedWorkspaceClassification.Unknown:
+                    // Catalog lookup failed: preserve identity but withhold artifact restoration
+                    // This prevents re-introducing phantom artifacts if catalog is temporarily unavailable
+                    _logger.LogWarning(
+                        "Workspace {WorkspaceId} ({ProjectName}) classification unknown (catalog unavailable): restoring identity only, withholding persisted artifacts for safety",
+                        workspace.Id, workspace.ProjectName);
+                    break;
             }
 
-            // Update project name
+            // Update project name (always restored regardless of classification)
             _artifactRepository.ProjectName = workspace.ProjectName;
 
             // Track metadata
@@ -186,5 +248,39 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
     protected virtual void OnReviewContextRebuildNeeded()
     {
         ReviewContextRebuildNeeded?.Invoke(this, EventArgs.Empty);
+    }
+
+    private async Task<SavedWorkspaceClassification> ClassifyWorkspaceAsync(string? projectName)
+    {
+        // Empty or null project name → generic workspace
+        if (string.IsNullOrWhiteSpace(projectName))
+            return SavedWorkspaceClassification.GenericWorkspace;
+
+        try
+        {
+            // Attempt to load Sample Project catalog
+            var projects = await _sampleProjects.GetProjectsAsync();
+
+            // If project name matches a Sample Project slug (case-sensitive, canonical)
+            // then this is a legacy Sample Project workspace
+            if (projects.Any(p => p.Slug == projectName))
+            {
+                return SavedWorkspaceClassification.SampleProject;
+            }
+
+            // Project name exists but doesn't match any Sample Project
+            // Treat as generic/manual workspace
+            return SavedWorkspaceClassification.GenericWorkspace;
+        }
+        catch (Exception ex)
+        {
+            // Catalog lookup failed — cannot safely determine type
+            // Return Unknown to trigger safe (identity-only) policy
+            _logger.LogWarning(
+                ex,
+                "Failed to classify workspace {ProjectName}: catalog lookup unavailable",
+                projectName);
+            return SavedWorkspaceClassification.Unknown;
+        }
     }
 }

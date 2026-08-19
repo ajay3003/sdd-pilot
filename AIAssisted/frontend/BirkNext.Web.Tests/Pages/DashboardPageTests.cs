@@ -444,6 +444,72 @@ public class DashboardPageTests : BunitContext
         });
     }
 
+    [Fact]
+    public void EmptyWorkspaceDashboardDoesNotShowLoadedArtifacts()
+    {
+        var ctx = new BunitContext();
+        ctx.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
+        ctx.Services.AddSingleton(new Mock<IReportExportService>().Object);
+
+        var artifactStatus = new Mock<IWorkspaceArtifactStatusService>();
+        artifactStatus.Setup(s => s.GetStatus())
+            .Returns(new WorkspaceArtifactStatus(false, false, false, false, false, 0, null));
+        ctx.Services.AddSingleton(artifactStatus.Object);
+
+        var mockWorkspace = new Mock<IWorkspaceSessionService>();
+        mockWorkspace.Setup(w => w.CurrentProject).Returns(null as string);
+        ctx.Services.AddSingleton(mockWorkspace.Object);
+
+        ctx.Services.AddSingleton(new Mock<IDashboardSnapshotService>().Object);
+        ctx.Services.AddSingleton(new RuntimeReviewSessionService());
+        ctx.Services.AddSingleton(new QualityReviewSessionService());
+        ctx.Services.AddSingleton(_workflowReadiness.Object);
+
+        var handler = new SampleProjectsHttpHandler();
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost/")
+        };
+        ctx.Services.AddSingleton(new SampleProjectsApiService(client));
+
+        var cut = ctx.Render<Dashboard>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().NotContain("5 / 5 artifacts loaded");
+            cut.Markup.Should().NotContain("Ready for review");
+            cut.Markup.Should().NotContain("Governance = 100%");
+        });
+    }
+
+    [Fact]
+    public void LegacySampleProjectWorkspaceRestoresSlugOnlyAndSkipsPersistedArtifactCopies()
+    {
+        var autorisasjonProject = CreateSampleProject("autorisasjon", "Autorisasjon");
+
+        var workspace = new WorkspaceArtifactRepository();
+        workspace.CurrentProject = "autorisasjon";
+
+        // Simulate restored Workspace with legacy Sample Project artifact copies
+        workspace.Set(WorkspaceArtifactType.Constitution, "old constitution content");
+        workspace.Set(WorkspaceArtifactType.Specification, "old spec content");
+        workspace.Set(WorkspaceArtifactType.Plan, "old plan content");
+        workspace.Set(WorkspaceArtifactType.Tasks, "old tasks content");
+        workspace.Set(WorkspaceArtifactType.DataModel, "old datamodel content");
+
+        var cut = RenderDashboardWithWorkspace(
+            "autorisasjon",
+            h => { },
+            autorisasjonProject);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Autorisasjon");
+            cut.Markup.Should().Contain("5 / 5 artifacts available");
+            cut.Markup.Should().NotContain("artifacts loaded");
+        });
+    }
+
     private SampleProjectDto CreateSampleProject(string slug, string name)
     {
         return new SampleProjectDto(
