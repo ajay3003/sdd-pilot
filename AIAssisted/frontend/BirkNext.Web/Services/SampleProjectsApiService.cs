@@ -7,15 +7,8 @@ public class SampleProjectsApiService(HttpClient client)
 {
     public async Task<List<SampleProjectDto>> GetProjectsAsync()
     {
-        try
-        {
-            var result = await client.GetFromJsonAsync<List<SampleProjectDto>>("api/sample-projects");
-            return result ?? [];
-        }
-        catch
-        {
-            return [];
-        }
+        var result = await client.GetFromJsonAsync<List<SampleProjectDto>>("api/sample-projects");
+        return result ?? [];
     }
 
     public async Task<SampleProjectsMetaDto?> GetMetaAsync()

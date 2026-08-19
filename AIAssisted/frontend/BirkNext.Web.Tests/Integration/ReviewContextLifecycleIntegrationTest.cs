@@ -237,8 +237,14 @@ public class ReviewContextLifecycleIntegrationTest
             new MockLogger<ReviewContextProvider>());
 
         var stateManager = new Mock<IWorkspaceStateManager>();
+
+        // Create a real SampleProjectsApiService with a stub HTTP handler (no projects)
+        var handler = new EmptySampleProjectsHandler();
+        var client = new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") };
+        var sampleProjects = new SampleProjectsApiService(client);
+
         var restoreService = new WorkspaceSessionRestoreService(
-            repository, stateManager.Object, provider, new MockLogger<WorkspaceSessionRestoreService>());
+            repository, stateManager.Object, provider, sampleProjects, new MockLogger<WorkspaceSessionRestoreService>());
 
         var rebuilds = new Mock<EventHandler>();
         provider.ReviewContextChanged += rebuilds.Object;
@@ -371,4 +377,27 @@ internal class MockLogger<T> : ILogger<T>
     public IDisposable? BeginScope<TState>(TState state) => null;
     public bool IsEnabled(LogLevel logLevel) => false;
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) { }
+}
+
+/// <summary>
+/// Stub HTTP handler for SampleProjectsApiService that returns empty projects.
+/// Used in tests where Sample Project classification is being tested.
+/// </summary>
+internal sealed class EmptySampleProjectsHandler : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var path = request.RequestUri?.AbsolutePath.Trim('/');
+
+        if (request.Method == HttpMethod.Get && path == "api/sample-projects")
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(new List<object>());
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+            });
+        }
+
+        return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+    }
 }
