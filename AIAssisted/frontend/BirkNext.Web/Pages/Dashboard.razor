@@ -9,6 +9,7 @@
 @inject IWorkspaceArtifactStatusService ArtifactStatus
 @inject IReportExportService ExportService
 @inject IWorkflowReadinessService WorkflowReadiness
+@inject SampleProjectsApiService SampleProjects
 @inject IJSRuntime JS
 
 <PageTitle>Dashboard</PageTitle>
@@ -44,7 +45,7 @@
             <span class="db-workspace-title">Current Workspace</span>
         </div>
 
-        @if (_workspaceStatus.ArtifactCount == 0)
+        @if (_workspaceStatus.ArtifactCount == 0 && !_isSampleProjectMode && !_sampleProjectCatalogFailed)
         {
             <div class="db-workspace-content">
                 <div class="db-workspace-empty">
@@ -57,29 +58,73 @@
         {
             <div class="db-workspace-content">
                 <div class="db-workspace-info">
-                    @if (!string.IsNullOrEmpty(_workspaceStatus.ActiveProjectName))
+                    @if (!string.IsNullOrEmpty(_sampleProjectDisplayName))
+                    {
+                        <span class="db-workspace-project">📁 @_sampleProjectDisplayName</span>
+                    }
+                    else if (!string.IsNullOrEmpty(_workspaceStatus.ActiveProjectName))
                     {
                         <span class="db-workspace-project">📁 @_workspaceStatus.ActiveProjectName</span>
                     }
-                    <span class="db-workspace-count">@_workspaceStatus.ArtifactCount / 5 artifacts loaded</span>
+                    @if (_sampleProjectCatalogFailed && !string.IsNullOrEmpty(Workspace.CurrentProject))
+                    {
+                        <span class="db-workspace-count">Artifact availability unavailable</span>
+                    }
+                    else if (_isSampleProjectMode)
+                    {
+                        <span class="db-workspace-count">@_sampleProjectAvailableCount / 5 artifacts available</span>
+                    }
+                    else
+                    {
+                        <span class="db-workspace-count">@_workspaceStatus.ArtifactCount / 5 artifacts loaded</span>
+                    }
                 </div>
 
                 <div class="db-workspace-badges">
-                    <span class="db-artifact-badge @(_workspaceStatus.HasConstitution ? "is-loaded" : "is-missing")">
-                        @(_workspaceStatus.HasConstitution ? "✓" : "○") Constitution
-                    </span>
-                    <span class="db-artifact-badge @(_workspaceStatus.HasSpecification ? "is-loaded" : "is-missing")">
-                        @(_workspaceStatus.HasSpecification ? "✓" : "○") Specification
-                    </span>
-                    <span class="db-artifact-badge @(_workspaceStatus.HasPlan ? "is-loaded" : "is-missing")">
-                        @(_workspaceStatus.HasPlan ? "✓" : "○") Plan
-                    </span>
-                    <span class="db-artifact-badge @(_workspaceStatus.HasTasks ? "is-loaded" : "is-missing")">
-                        @(_workspaceStatus.HasTasks ? "✓" : "○") Tasks
-                    </span>
-                    <span class="db-artifact-badge @(_workspaceStatus.HasDataModel ? "is-loaded" : "is-missing")">
-                        @(_workspaceStatus.HasDataModel ? "✓" : "○") Data Model
-                    </span>
+                    @if (_sampleProjectCatalogFailed && !string.IsNullOrEmpty(Workspace.CurrentProject))
+                    {
+                        <span class="db-artifact-badge is-missing">○ Constitution</span>
+                        <span class="db-artifact-badge is-missing">○ Specification</span>
+                        <span class="db-artifact-badge is-missing">○ Plan</span>
+                        <span class="db-artifact-badge is-missing">○ Tasks</span>
+                        <span class="db-artifact-badge is-missing">○ Data Model</span>
+                    }
+                    else if (_isSampleProjectMode)
+                    {
+                        <span class="db-artifact-badge @(_sampleProjectArtifacts[WorkspaceArtifactKind.Constitution] ? "is-loaded" : "is-missing")">
+                            @(_sampleProjectArtifacts[WorkspaceArtifactKind.Constitution] ? "✓" : "○") Constitution
+                        </span>
+                        <span class="db-artifact-badge @(_sampleProjectArtifacts[WorkspaceArtifactKind.Specification] ? "is-loaded" : "is-missing")">
+                            @(_sampleProjectArtifacts[WorkspaceArtifactKind.Specification] ? "✓" : "○") Specification
+                        </span>
+                        <span class="db-artifact-badge @(_sampleProjectArtifacts[WorkspaceArtifactKind.Plan] ? "is-loaded" : "is-missing")">
+                            @(_sampleProjectArtifacts[WorkspaceArtifactKind.Plan] ? "✓" : "○") Plan
+                        </span>
+                        <span class="db-artifact-badge @(_sampleProjectArtifacts[WorkspaceArtifactKind.Tasks] ? "is-loaded" : "is-missing")">
+                            @(_sampleProjectArtifacts[WorkspaceArtifactKind.Tasks] ? "✓" : "○") Tasks
+                        </span>
+                        <span class="db-artifact-badge @(_sampleProjectArtifacts[WorkspaceArtifactKind.DataModel] ? "is-loaded" : "is-missing")">
+                            @(_sampleProjectArtifacts[WorkspaceArtifactKind.DataModel] ? "✓" : "○") Data Model
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="db-artifact-badge @(_workspaceStatus.HasConstitution ? "is-loaded" : "is-missing")">
+                            @(_workspaceStatus.HasConstitution ? "✓" : "○") Constitution
+                        </span>
+                        <span class="db-artifact-badge @(_workspaceStatus.HasSpecification ? "is-loaded" : "is-missing")">
+                            @(_workspaceStatus.HasSpecification ? "✓" : "○") Specification
+                        </span>
+                        <span class="db-artifact-badge @(_workspaceStatus.HasPlan ? "is-loaded" : "is-missing")">
+                            @(_workspaceStatus.HasPlan ? "✓" : "○") Plan
+                        </span>
+                        <span class="db-artifact-badge @(_workspaceStatus.HasTasks ? "is-loaded" : "is-missing")">
+                            @(_workspaceStatus.HasTasks ? "✓" : "○") Tasks
+                        </span>
+                        <span class="db-artifact-badge @(_workspaceStatus.HasDataModel ? "is-loaded" : "is-missing")">
+                            @(_workspaceStatus.HasDataModel ? "✓" : "○") Data Model
+                        </span>
+                    }
                 </div>
 
                 <div class="db-workspace-status">
@@ -835,6 +880,7 @@
         try
         {
             await RefreshWorkflowReadinessAsync();
+            await RefreshSampleProjectStatusAsync();
         }
         catch (Exception ex)
         {
@@ -846,6 +892,7 @@
     {
         _workspaceStatus = ArtifactStatus.GetStatus();
         _ = RefreshWorkflowReadinessAsync();
+        _ = RefreshSampleProjectStatusAsync();
         StateHasChanged();
     }
 
@@ -1218,6 +1265,79 @@
             _perfReport,
             _iqrReport);
         await JS.InvokeVoidAsync("downloadHtmlFile", $"dashboard-summary-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
+    }
+
+    // ── Sample Project status ─────────────────────────────────────────────────
+
+    private bool _isSampleProjectMode = false;
+    private bool _sampleProjectCatalogFailed = false;
+    private string? _sampleProjectDisplayName = null;
+    private int _sampleProjectAvailableCount = 0;
+    private Dictionary<WorkspaceArtifactKind, bool> _sampleProjectArtifacts = new();
+
+    private async Task RefreshSampleProjectStatusAsync()
+    {
+        _isSampleProjectMode = false;
+        _sampleProjectCatalogFailed = false;
+        _sampleProjectDisplayName = null;
+        _sampleProjectAvailableCount = 0;
+        _sampleProjectArtifacts = new();
+
+        try
+        {
+            var currentProject = Workspace.CurrentProject;
+            if (string.IsNullOrWhiteSpace(currentProject))
+            {
+                return;
+            }
+
+            var projects = await SampleProjects.GetProjectsAsync();
+            var project = projects.FirstOrDefault(p => p.Slug == currentProject);
+
+            if (project is null)
+            {
+                if (projects.Count == 0)
+                {
+                    _sampleProjectCatalogFailed = true;
+                }
+                return;
+            }
+
+            _isSampleProjectMode = true;
+            _sampleProjectDisplayName = project.Name;
+
+            var canonicalMapping = new Dictionary<string, WorkspaceArtifactKind>
+            {
+                { "constitution.md", WorkspaceArtifactKind.Constitution },
+                { "spec.md", WorkspaceArtifactKind.Specification },
+                { "plan.md", WorkspaceArtifactKind.Plan },
+                { "tasks.md", WorkspaceArtifactKind.Tasks },
+                { "data-model.md", WorkspaceArtifactKind.DataModel }
+            };
+
+            foreach (var (filename, artifactKind) in canonicalMapping)
+            {
+                var file = project.Files.FirstOrDefault(f => f.Filename == filename);
+                var isAvailable = file is not null && file.Exists && file.IsSupported;
+                _sampleProjectArtifacts[artifactKind] = isAvailable;
+                if (isAvailable)
+                {
+                    _sampleProjectAvailableCount++;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading sample project status: {ex.Message}");
+            if (!string.IsNullOrWhiteSpace(Workspace.CurrentProject))
+            {
+                _sampleProjectCatalogFailed = true;
+            }
+        }
+        finally
+        {
+            StateHasChanged();
+        }
     }
 
     // ── Data loading ──────────────────────────────────────────────────────────

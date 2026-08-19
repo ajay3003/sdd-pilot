@@ -412,10 +412,10 @@
                     <div class="sp-card-actions">
                         <button class="sp-btn sp-btn-primary"
                                 disabled="@(supported.Count == 0 || _loadingSlug == project.Slug)"
-                                @onclick="() => LoadArtifacts(project)">
+                                @onclick="() => SelectProject(project)">
                             @if (_loadingSlug == project.Slug)
                             { <span class="sp-btn-spinner" aria-hidden="true"></span> }
-                            Load Supported Artifacts
+                            Select Project
                         </button>
                         <button class="sp-btn sp-btn-secondary" @onclick="() => ToggleAllFiles(project.Slug)">
                             @(allOpen ? "Hide Files" : "View All Files")
@@ -572,26 +572,26 @@
         if (!IsReviewerRoute(route) || _loadingSlug is not null)
             return;
 
-        var loaded = await LoadArtifactsCoreAsync(project, requireConfirmation: false);
-        if (loaded)
+        var selected = await SelectProjectCoreAsync(project, requireConfirmation: false);
+        if (selected)
             Navigation.NavigateTo(route!);
     }
 
-    private async Task LoadArtifacts(SampleProjectDto project)
+    private async Task SelectProject(SampleProjectDto project)
     {
-        await LoadArtifactsCoreAsync(project, requireConfirmation: true);
+        await SelectProjectCoreAsync(project, requireConfirmation: true);
     }
 
-    private async Task<bool> LoadArtifactsCoreAsync(SampleProjectDto project, bool requireConfirmation)
+    private async Task<bool> SelectProjectCoreAsync(SampleProjectDto project, bool requireConfirmation)
     {
-        System.Diagnostics.Debug.WriteLine("======== DIAG: [LoadArtifacts] START ========");
+        System.Diagnostics.Debug.WriteLine("======== DIAG: [SelectProject] START ========");
         if (_loadingSlug is not null)
             return false;
 
         if (requireConfirmation)
         {
             var confirmed = await JS.InvokeAsync<bool>("confirm",
-                $"Load supported artifacts from \"{project.Name}\"?\n\nThis will overwrite any currently loaded documents for these artifact types.");
+                $"Select project \"{project.Name}\"?\n\nThis will replace the current project context.");
             if (!confirmed) return false;
         }
 
@@ -631,13 +631,13 @@
             .Where(f => f.IsContextOnly && f.Exists)
             .Select(f => f.Filename)
             .ToList();
-        var msg = $"✅ Selected {project.Name}. {supported.Count} artifact{(supported.Count != 1 ? "s" : "")} available.";
+        var msg = $"✅ Selected {project.Name}. {supported.Count} artifact{(supported.Count != 1 ? "s" : "")} available for review.";
         var supportedNames = supported.Select(f => f.Filename).ToList();
         _loadState[project.Slug] = new LoadResult(project.Name, msg, false, supportedNames, contextOnly);
 
         _loadingSlug = null;
         StateHasChanged();
-        System.Diagnostics.Debug.WriteLine("======== DIAG: [LoadArtifacts] END ========");
+        System.Diagnostics.Debug.WriteLine("======== DIAG: [SelectProject] END ========");
         return true;
     }
 

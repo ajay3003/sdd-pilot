@@ -176,29 +176,29 @@ public sealed class SampleProjectsNavigationTests : BunitContext
     }
 
     [Fact]
-    public void ManualLoadSupportedArtifactsStillLoadsProjectIdentity()
+    public void ManualProjectSelectionSetsCanonicalProjectIdentity()
     {
-        // New contract: clicking "Load Supported Artifacts" loads the project identity (slug) only.
+        // New contract: clicking "Select Project" button sets the project identity (slug) only.
         // No Workspace artifact copies. Explorers use DocumentResolver to load content on demand.
         var cut = Render<SampleProjects>();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Person Module"));
 
-        var firstLoadButton = cut.FindAll("button")
-            .First(button => button.TextContent.Contains("Load Supported Artifacts", StringComparison.Ordinal));
-        firstLoadButton.Click();
+        var selectButton = cut.FindAll("button")
+            .First(button => button.TextContent.Contains("Select Project", StringComparison.Ordinal));
+        selectButton.Click();
 
         cut.WaitForAssertion(() =>
         {
             _workspace.CurrentProject.Should().Be("person-module");  // Canonical slug, not display name
             // Identity-only persistence: no Workspace artifact copies
-            // The "Load Supported Artifacts" action loads the project identity for later use by explorers
+            // The "Select Project" action sets the project identity for use by explorers
         });
     }
 
     [Fact]
-    public void ReviewerClickLoadsProjectIdentityWithoutFetchingAllArtifacts()
+    public void ReviewerClickSelectsProjectWithoutFetchingArtifacts()
     {
-        // New contract: clicking a reviewer loads the project identity only.
+        // New contract: clicking a reviewer selects the project identity only.
         // Identity-only persistence: no files are fetched during project selection.
         // Explorers load their specific content through DocumentResolver on demand.
         var cut = Render<SampleProjects>();

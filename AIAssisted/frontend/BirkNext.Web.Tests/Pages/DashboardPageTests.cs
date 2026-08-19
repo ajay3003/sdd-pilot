@@ -1,11 +1,16 @@
 using BirkNext.Web.GraphQL;
+using BirkNext.Web.Models;
 using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using StrawberryShake;
+using System.Net;
+using System.Text;
+using System.Text.Json;
 
 namespace BirkNext.Web.Tests.Pages;
 
@@ -29,6 +34,13 @@ public class DashboardPageTests : BunitContext
             .Setup(service => service.GetReadinessAsync())
             .ReturnsAsync(EmptyWorkflowReadiness());
         Services.AddSingleton(_workflowReadiness.Object);
+
+        var handler = new SampleProjectsHttpHandler();
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost/")
+        };
+        Services.AddSingleton(new SampleProjectsApiService(client));
     }
 
     [Fact]
@@ -254,5 +266,245 @@ public class DashboardPageTests : BunitContext
                 OverallReadiness = 30
             }
         };
+
+
+    private IRenderedComponent<Dashboard> RenderDashboardWithWorkspace(
+        string currentProject,
+        params SampleProjectDto[] projects)
+        => RenderDashboardWithWorkspace(currentProject, null, projects);
+
+    private IRenderedComponent<Dashboard> RenderDashboardWithWorkspace(
+        string currentProject,
+        Action<SampleProjectsHttpHandler>? configureHandler,
+        params SampleProjectDto[] projects)
+    {
+        var handler = new SampleProjectsHttpHandler();
+        handler.SetProjects(projects);
+        configureHandler?.Invoke(handler);
+
+        var workspace = new WorkspaceArtifactRepository();
+        workspace.CurrentProject = currentProject;
+
+        var ctx = new BunitContext();
+        ctx.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
+        ctx.Services.AddSingleton(new Mock<IReportExportService>().Object);
+
+        var artifactStatus = new Mock<IWorkspaceArtifactStatusService>();
+        artifactStatus.Setup(s => s.GetStatus())
+            .Returns(new WorkspaceArtifactStatus(false, false, false, false, false, 0, null));
+        ctx.Services.AddSingleton(artifactStatus.Object);
+
+        ctx.Services.AddSingleton<IWorkspaceArtifactRepository>(workspace);
+        ctx.Services.AddSingleton<IWorkspaceSessionService>(workspace);
+        ctx.Services.AddSingleton(new Mock<IDashboardSnapshotService>().Object);
+        ctx.Services.AddSingleton(new RuntimeReviewSessionService());
+        ctx.Services.AddSingleton(new QualityReviewSessionService());
+        ctx.Services.AddSingleton(_workflowReadiness.Object);
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost/")
+        };
+        ctx.Services.AddSingleton(new SampleProjectsApiService(client));
+
+        return ctx.Render<Dashboard>();
+    }
+
+    [Fact]
+    public void SelectedSampleProjectShowsAvailabilityWithoutWorkspaceCopies()
+    {
+        var cut = RenderDashboardWithWorkspace("autorisasjon", CreateSampleProject("autorisasjon", "Autorisasjon"));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Autorisasjon");
+            cut.Markup.Should().Contain("5 / 5 artifacts available");
+            cut.Markup.Should().NotContain("artifacts loaded");
+        });
+    }
+
+    [Fact]
+    public void RestartedSampleProjectShowsAvailabilityWithoutWorkspaceCopies()
+    {
+        var cut = RenderDashboardWithWorkspace("autorisasjon", CreateSampleProject("autorisasjon", "Autorisasjon"));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("5 / 5 artifacts available");
+            cut.Markup.Should().NotContain("artifacts loaded");
+        });
+    }
+
+    [Fact]
+    public void PartialSampleProjectShowsCorrectAvailableArtifactCount()
+    {
+        var partialProject = new SampleProjectDto(
+            "partial-project",
+            "Partial Project",
+            "PARTIAL",
+            "A project with some artifacts",
+            "C:\\SampleData\\partial",
+            true,
+            new[]
+            {
+                new SampleFileDto("spec.md", true, "Specification", "", "", true, false),
+                new SampleFileDto("plan.md", true, "Plan", "", "", true, false),
+                new SampleFileDto("tasks.md", true, "Tasks", "", "", true, false),
+                new SampleFileDto("constitution.md", false, "Constitution", "", "", true, false),
+                new SampleFileDto("data-model.md", false, "DataModel", "", "", true, false),
+            });
+
+        var cut = RenderDashboardWithWorkspace("partial-project", partialProject);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("3 / 5 artifacts available");
+        });
+    }
+
+    [Fact]
+    public void ResolvedZeroArtifactSampleProjectShowsZeroAvailable()
+    {
+        var emptyProject = new SampleProjectDto(
+            "empty-project",
+            "Empty Project",
+            "EMPTY",
+            "A project with no artifacts",
+            "C:\\SampleData\\empty",
+            true,
+            new[]
+            {
+                new SampleFileDto("constitution.md", false, "Constitution", "", "", true, false),
+                new SampleFileDto("spec.md", false, "Specification", "", "", true, false),
+                new SampleFileDto("plan.md", false, "Plan", "", "", true, false),
+                new SampleFileDto("tasks.md", false, "Tasks", "", "", true, false),
+                new SampleFileDto("data-model.md", false, "DataModel", "", "", true, false),
+            });
+
+        var cut = RenderDashboardWithWorkspace("empty-project", emptyProject);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("0 / 5 artifacts available");
+            cut.Markup.Should().NotContain("artifacts loaded");
+        });
+    }
+
+
+    [Fact]
+    public void CatalogAPIFailureShowsUnavailableState()
+    {
+        var cut = RenderDashboardWithWorkspace(
+            "autorisasjon",
+            h => h.FailGetProjects(),
+            CreateSampleProject("autorisasjon", "Autorisasjon"));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Artifact availability unavailable");
+            cut.Markup.Should().NotContain("artifacts loaded");
+            cut.Markup.Should().NotContain("artifacts available");
+        });
+    }
+
+    [Fact]
+    public void GenericWorkspaceWithoutSampleProjectShowsLoadedCount()
+    {
+        var ctx = new BunitContext();
+        ctx.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
+        ctx.Services.AddSingleton(new Mock<IReportExportService>().Object);
+
+        var artifactStatus = new Mock<IWorkspaceArtifactStatusService>();
+        artifactStatus.Setup(s => s.GetStatus())
+            .Returns(new WorkspaceArtifactStatus(true, true, false, false, false, 2, null));
+        ctx.Services.AddSingleton(artifactStatus.Object);
+
+        var mockWorkspace = new Mock<IWorkspaceSessionService>();
+        mockWorkspace.Setup(w => w.CurrentProject).Returns(null as string);
+        ctx.Services.AddSingleton(mockWorkspace.Object);
+
+        ctx.Services.AddSingleton(new Mock<IDashboardSnapshotService>().Object);
+        ctx.Services.AddSingleton(new RuntimeReviewSessionService());
+        ctx.Services.AddSingleton(new QualityReviewSessionService());
+        ctx.Services.AddSingleton(_workflowReadiness.Object);
+
+        var handler = new SampleProjectsHttpHandler();
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost/")
+        };
+        ctx.Services.AddSingleton(new SampleProjectsApiService(client));
+
+        var cut = ctx.Render<Dashboard>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("2 / 5 artifacts loaded");
+            cut.Markup.Should().NotContain("artifacts available");
+        });
+    }
+
+    private SampleProjectDto CreateSampleProject(string slug, string name)
+    {
+        return new SampleProjectDto(
+            slug,
+            name,
+            slug.ToUpper(),
+            $"{name} description",
+            $"C:\\SampleData\\{slug}",
+            true,
+            new[]
+            {
+                new SampleFileDto("constitution.md", true, "Constitution", "", "", true, false),
+                new SampleFileDto("spec.md", true, "Specification", "", "", true, false),
+                new SampleFileDto("plan.md", true, "Plan", "", "", true, false),
+                new SampleFileDto("tasks.md", true, "Tasks", "", "", true, false),
+                new SampleFileDto("data-model.md", true, "DataModel", "", "", true, false),
+            });
+    }
+
+    public sealed class SampleProjectsHttpHandler : HttpMessageHandler
+    {
+        private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+        private readonly Dictionary<string, SampleProjectDto> _projects = new(StringComparer.OrdinalIgnoreCase);
+        private bool _throwOnGetProjects = false;
+
+        public void SetProjects(params SampleProjectDto[] projects)
+        {
+            foreach (var project in projects)
+                _projects[project.Slug] = project;
+        }
+
+        public void FailGetProjects()
+        {
+            _throwOnGetProjects = true;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath.Trim('/');
+
+            if (request.Method == HttpMethod.Get && path == "api/sample-projects")
+            {
+                if (_throwOnGetProjects)
+                    return Task.FromException<HttpResponseMessage>(new HttpRequestException("Catalog unavailable"));
+                return Json(_projects.Values.ToList());
+            }
+
+            if (request.Method == HttpMethod.Get && path == "api/sample-projects/meta")
+                return Json(new SampleProjectsMetaDto("C:\\SampleData", "test", true));
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+
+        private static Task<HttpResponseMessage> Json<T>(T value)
+        {
+            var json = JsonSerializer.Serialize(value, JsonOptions);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            });
+        }
+    }
 }
 
