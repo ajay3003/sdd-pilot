@@ -135,6 +135,19 @@ public sealed class RuntimeReviewSessionService
 
     public void ClearIntegrationQualityResult() => IntegrationQualityReview.Clear();
 
+    /// <summary>
+    /// Clear all runtime review session state.
+    /// Called by ApplicationRuntimeResetService after backend database reset.
+    /// </summary>
+    public void ClearAll()
+    {
+        SecurityReview.Clear();
+        PerformanceReview.Clear();
+        QualityReview.Clear();
+        ApiQualityReview.Clear();
+        IntegrationQualityReview.Clear();
+    }
+
     private static RuntimeReviewContextSnapshot CreateSnapshot(FrontendAnalysisContext context) =>
         new(
             context.TargetUrl,

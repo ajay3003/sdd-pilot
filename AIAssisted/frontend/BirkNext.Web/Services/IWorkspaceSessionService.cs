@@ -32,6 +32,12 @@ public interface IWorkspaceSessionService : IWorkspaceArtifactRepository
     void Clear(WorkspaceArtifactKind kind);
 
     /// <summary>
+    /// Clear all workspace state: project identity and all artifacts.
+    /// Called by ApplicationRuntimeResetService after backend database reset.
+    /// </summary>
+    void ClearAll();
+
+    /// <summary>
     /// Notify that artifacts have changed and ReviewContext needs rebuild.
     /// </summary>
     void NotifyArtifactsChanged();

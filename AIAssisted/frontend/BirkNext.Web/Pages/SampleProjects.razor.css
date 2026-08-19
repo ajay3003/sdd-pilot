@@ -118,6 +118,26 @@
     text-transform: uppercase;
 }
 
+.sp-card-selected {
+    border-color: #10b981;
+    border-width: 2px;
+    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.15);
+}
+
+.sp-card-selected .sp-card-header {
+    background: #f0fdf4;
+}
+
+.sp-card-selected-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.12rem 0.5rem;
+    border-radius: var(--radius-pill, 999px);
+    background: #d1fae5;
+    color: #065f46;
+    letter-spacing: 0.03em;
+}
+
 .sp-card-desc {
     font-size: 0.83rem;
     color: var(--text-muted, #666);

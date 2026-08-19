@@ -38,6 +38,7 @@ public class SystemSettingsReviewContextValidationTests : BunitContext
         Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
         Services.AddScoped<RuntimeReviewSessionService>();
         Services.AddScoped<QualityReviewSessionService>();
+        Services.AddScoped<ApplicationRuntimeResetService>();
         Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
     }
 

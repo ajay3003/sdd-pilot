@@ -296,6 +296,50 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         });
     }
 
+    [Fact]
+    public void RestartedSampleProject_QAReviewLoadsFromResolverWithoutWorkspaceCopies()
+    {
+        // Arrange: Simulate restart with persisted CurrentProject="project-a" but empty Workspace
+        // (identity-only restoration: no Markdown copies persisted)
+        SeedProjectA(
+            constitution: "RESTORED CONSTITUTION",
+            specification: "RESTORED SPECIFICATION",
+            plan: "RESTORED PLAN",
+            tasks: "RESTORED TASKS",
+            dataModel: "RESTORED DATA MODEL");
+        _resolver.SetSelectedProject("project-a");
+
+        // Act: Render QualityReview on startup (simulating restart)
+        var cut = Render<QualityReview>();
+
+        // Assert: All five documents loaded from resolver, not Workspace
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Sample Project:");
+            cut.Markup.Should().Contain("Project A");
+            cut.Markup.Should().Contain("5 artifacts loaded");
+            cut.FindAll(".artifact-status.is-loaded").Should().HaveCount(5);
+
+            // Verify exact content comes from resolver
+            _qualityReview.Calls.Should().BeEmpty("review has not run yet");
+        });
+
+        // Act: Run review to confirm resolver-loaded content is used
+        ClickRun(cut);
+
+        // Assert: Review used resolver-loaded documents, not stale Workspace copies
+        cut.WaitForAssertion(() =>
+        {
+            _qualityReview.Calls.Should().HaveCount(1);
+            var call = _qualityReview.Calls[0];
+            call.Constitution.Should().Be("RESTORED CONSTITUTION");
+            call.Specification.Should().Be("RESTORED SPECIFICATION");
+            call.Plan.Should().Be("RESTORED PLAN");
+            call.Tasks.Should().Be("RESTORED TASKS");
+            call.DataModel.Should().Be("RESTORED DATA MODEL");
+        });
+    }
+
     private static IElement FindArtifactCard(IRenderedComponent<QualityReview> cut, string artifactName) =>
         cut.FindAll(".artifact-card").Single(card => card.TextContent.Contains(artifactName, StringComparison.Ordinal));
 

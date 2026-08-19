@@ -39,6 +39,13 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
 
     public void Clear(WorkspaceArtifactKind kind) => _artifacts.Remove(kind);
 
+    public void ClearAll()
+    {
+        ProjectName = null;
+        _artifacts.Clear();
+        NotifyArtifactsChanged();
+    }
+
     // IWorkspaceArtifactRepository (WorkspaceArtifactType) — bridge via cast
 
     public void Set(WorkspaceArtifactType type, string text,

@@ -101,6 +101,7 @@ builder.Services.AddScoped<IWorkflowReadinessService, WorkflowReadinessService>(
 builder.Services.AddScoped<IWorkspaceAutoSaveService, WorkspaceAutoSaveService>();
 builder.Services.AddScoped<RuntimeReviewSessionService>();
 builder.Services.AddScoped<QualityReviewSessionService>();
+builder.Services.AddScoped<ApplicationRuntimeResetService>();
 builder.Services.AddScoped<TaskAlignmentSessionService>();
 
 builder.Services.AddHttpClient<ImplementationTraceabilityApiService>(client =>

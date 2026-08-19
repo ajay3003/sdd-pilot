@@ -25,9 +25,13 @@
 
     @if (!string.IsNullOrWhiteSpace(Workspace.CurrentProject))
     {
-        <div class="sp-workspace-banner" role="status">
-            Current Workspace: <strong>@Workspace.CurrentProject</strong> · @LoadedWorkspaceArtifactCount artifact@(LoadedWorkspaceArtifactCount == 1 ? "" : "s") loaded
-        </div>
+        var selectedProject = _projects.FirstOrDefault(p => string.Equals(p.Slug, Workspace.CurrentProject, StringComparison.Ordinal));
+        if (selectedProject is not null)
+        {
+            <div class="sp-workspace-banner" role="status" aria-live="polite">
+                Selected Sample Project: <strong>@selectedProject.Name</strong>
+            </div>
+        }
     }
 
     @if (_loading)
@@ -76,12 +80,16 @@
                 var readmeOpen = _readmeOpen.Contains(project.Slug);
                 var allOpen    = _allFilesOpen.Contains(project.Slug);
 
-                <div class="sp-card">
+                <div class="sp-card @(IsCurrentWorkspace(project) ? "sp-card-selected" : "")">
                     @* ── Card header ──────────────────────────────────────── *@
                     <div class="sp-card-header">
                         <div class="sp-card-title-row">
                             <span class="sp-card-icon" aria-hidden="true">📁</span>
                             <span class="sp-card-name">@project.Name</span>
+                            @if (IsCurrentWorkspace(project))
+                            {
+                                <span class="sp-card-selected-badge" aria-label="Active project">✓ Selected</span>
+                            }
                             @if (!string.IsNullOrEmpty(project.Domain))
                             {
                                 <span class="sp-domain-tag">@project.Domain</span>
@@ -410,12 +418,21 @@
 
                     @* ── Card actions ─────────────────────────────────────── *@
                     <div class="sp-card-actions">
+                        @{
+                            var isSelectedProject = IsCurrentWorkspace(project);
+                            var isLoading = _loadingSlug == project.Slug;
+                            var isDisabled = isSelectedProject || supported.Count == 0 || isLoading;
+                        }
                         <button class="sp-btn sp-btn-primary"
-                                disabled="@(supported.Count == 0 || _loadingSlug == project.Slug)"
-                                @onclick="() => SelectProject(project)">
-                            @if (_loadingSlug == project.Slug)
+                                disabled="@isDisabled"
+                                @onclick="() => SelectProject(project)"
+                                aria-current="@(isSelectedProject ? "true" : "false")">
+                            @if (isLoading)
                             { <span class="sp-btn-spinner" aria-hidden="true"></span> }
-                            Select Project
+                            @if (isSelectedProject)
+                            { <span aria-hidden="true">✓</span> <span>Selected</span> }
+                            else
+                            { <span>Select Project</span> }
                         </button>
                         <button class="sp-btn sp-btn-secondary" @onclick="() => ToggleAllFiles(project.Slug)">
                             @(allOpen ? "Hide Files" : "View All Files")

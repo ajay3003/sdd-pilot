@@ -94,6 +94,17 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
 
     public void Clear(WorkspaceArtifactKind kind) => Clear((WorkspaceArtifactType)(int)kind);
 
+    /// <summary>
+    /// Clear all workspace state: project identity and all artifacts.
+    /// Called by ApplicationRuntimeResetService after backend database reset.
+    /// </summary>
+    public void ClearAll()
+    {
+        ProjectName = null;
+        _artifacts.Clear();
+        NotifyArtifactsChanged();
+    }
+
     public void NotifyArtifactsChanged()
     {
         ReviewContextRebuildNeeded?.Invoke(this, EventArgs.Empty);

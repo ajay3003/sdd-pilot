@@ -14,6 +14,7 @@
 @inject QualityReviewSessionService QualitySession
 @inject IDashboardSnapshotService AnalysisSessions
 @inject IExtractionSessionService ExtractionSession
+@inject ApplicationRuntimeResetService RuntimeReset
 @inject IArtifactParserService MarkdownEngine
 @inject IReviewContextValidator ReviewContextValidator
 @inject WasmSecurityApiService SecurityApi
@@ -2727,10 +2728,15 @@ else if (_settings is not null)
             _resetResultMessage = message;
             if (success)
             {
+                // Clear frontend localStorage
                 await JS.InvokeVoidAsync("localStorage.removeItem", "ce-standalone-constitution");
                 await JS.InvokeVoidAsync("localStorage.removeItem", "pe-standalone-plan");
                 await JS.InvokeVoidAsync("localStorage.removeItem", "te-standalone-tasks");
                 await JS.InvokeVoidAsync("localStorage.removeItem", "birknext:extraction:session");
+
+                // Clear frontend runtime/session state that corresponds to deleted DB data
+                // This prevents stale Workspace/Dashboard state from appearing after reset
+                await RuntimeReset.ClearFrontendRuntimeStateAsync();
             }
         }
         finally
