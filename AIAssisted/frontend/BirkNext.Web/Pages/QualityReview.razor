@@ -1373,9 +1373,10 @@
                 if (renderedCount >= visibleCount) break;
                 __builder.OpenComponent<IssueCard>(seq++);
                 __builder.AddAttribute(seq++, "Severity", gap.Severity.ToString());
-                __builder.AddAttribute(seq++, "Component", $"{gap.RuleId} · {gap.RuleType}");
-                __builder.AddAttribute(seq++, "Description", gap.RuleTitle);
-                __builder.AddAttribute(seq++, "SuggestedFix", $"Missing in: {gap.MissingSummary}");
+                __builder.AddAttribute(seq++, "Component", FormatComplianceGapTitle(gap.RuleId, gap.RuleTitle));
+                var fullDescription = FormattedComplianceGapType(gap.RuleType) + "\n" + FormatComplianceGapDescription(gap);
+                __builder.AddAttribute(seq++, "Description", fullDescription);
+                __builder.AddAttribute(seq++, "SuggestedFix", FormatComplianceGapFix(gap));
                 __builder.CloseComponent();
                 renderedCount++;
             }
@@ -1386,7 +1387,7 @@
             __builder.OpenElement(seq++, "button");
             __builder.AddAttribute(seq++, "class", "qr-show-toggle");
             __builder.AddAttribute(seq++, "type", "button");
-            __builder.AddAttribute(seq++, "@onclick", EventCallback.Factory.Create(this, () => _showAllConstitutionFindings = !_showAllConstitutionFindings));
+            __builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => _showAllConstitutionFindings = !_showAllConstitutionFindings));
             if (_showAllConstitutionFindings)
                 __builder.AddAttribute(seq++, "aria-label", "Show fewer Constitution findings");
             else
@@ -1478,7 +1479,7 @@
                 <div class="qr-score-label">@report.OverallScore.ToString("0.#")<small>/ 100</small></div>
             </div>
             <div>
-                <div class="qr-score-meta-title">@QrStatusLabel(report.OverallStatus) Readiness</div>
+                <div class="qr-score-meta-title">@QrStatusLabel(report.OverallStatus)</div>
                 <div class="qr-score-meta-sub">
                     @report.OverallScore.ToString("0.#")% overall · @report.Scores.Count(s => s.IsAssessed) of 5 categories assessed
                 </div>
@@ -1538,6 +1539,9 @@
             }
         </div>
 
+        // Build canonical metadata for recommendations
+        var canonicalMetadata = BuildQaReadinessCanonicalMetadata();
+
         // Gaps
         @if (report.Gaps.Count > 0)
         {
@@ -1545,15 +1549,25 @@
                            Description="@($"{report.Gaps.Count} gap{(report.Gaps.Count != 1 ? "s" : "")} · sorted by severity")" />
             @foreach (var gap in (_qaGapShowAll ? report.Gaps : report.Gaps.Take(6)))
             {
-                <IssueCard Severity="@gap.Severity.ToString().ToLowerInvariant()"
-                           Component="@QrShortCategory(gap.Category)"
-                           Description="@gap.Description" />
+                <div class="qr-gap-card" data-severity="@gap.Severity.ToString().ToLowerInvariant()">
+                    <div class="qr-gap-meta">
+                        <span class="qr-gap-severity">[<strong>@(gap.Severity.ToString()[..3].ToUpperInvariant())</strong>]</span>
+                        <span class="qr-gap-category">@QrShortCategory(gap.Category)</span>
+                    </div>
+                    <div class="qr-gap-description">@gap.Description</div>
+                </div>
             }
             @if (report.Gaps.Count > 6)
             {
-                <GhostButton OnClick="() => _qaGapShowAll = !_qaGapShowAll">
-                    @(_qaGapShowAll ? "Show less" : $"Show all {report.Gaps.Count} gaps")
-                </GhostButton>
+                var gapAriaLabel = _qaGapShowAll ? "Show fewer gaps" : $"Show all {report.Gaps.Count} gaps";
+                __builder.OpenElement(1000, "button");
+                __builder.AddAttribute(1001, "class", "qr-show-toggle");
+                __builder.AddAttribute(1002, "type", "button");
+                __builder.AddAttribute(1003, "aria-label", gapAriaLabel);
+                __builder.AddEventPreventDefaultAttribute(1004, "onclick", true);
+                __builder.AddAttribute(1005, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, () => _qaGapShowAll = !_qaGapShowAll));
+                __builder.AddContent(1006, _qaGapShowAll ? "Show less" : $"Show all {report.Gaps.Count} gaps");
+                __builder.CloseElement();
             }
         }
 
@@ -1564,15 +1578,34 @@
                            Description="@($"{report.Recommendations.Count} recommendation{(report.Recommendations.Count != 1 ? "s" : "")} · highest priority first")" />
             @foreach (var rec in (_qaRecShowAll ? report.Recommendations : report.Recommendations.Take(5)))
             {
-                <RecommendationCard Title="@rec.Text"
-                                    Description="@rec.TargetArtifact.ToString()"
-                                    Priority="@rec.Priority.ToString().ToLowerInvariant()" />
+                var ruleInfo = ExtractRuleIdFromRecommendationText(rec.Text);
+                <div class="qr-recommendation-card">
+                    <div class="qr-rec-meta">
+                        <span class="qr-rec-priority">[<strong>@(rec.Priority.ToString()[..3].ToUpperInvariant())</strong>]</span>
+                        <span class="qr-rec-target">@QrShortCategory(rec.Category)</span>
+                    </div>
+                    @if (!string.IsNullOrEmpty(ruleInfo.RuleId) && canonicalMetadata.TryGetValue(ruleInfo.RuleId, out var metadata))
+                    {
+                        <div class="qr-rec-rule-title">@ruleInfo.RuleId — @metadata.RuleTitle</div>
+                    }
+                    else if (!string.IsNullOrEmpty(ruleInfo.RuleId))
+                    {
+                        <div class="qr-rec-rule-title">@ruleInfo.RuleId</div>
+                    }
+                    <div class="qr-rec-action">@ruleInfo.ActionText</div>
+                </div>
             }
             @if (report.Recommendations.Count > 5)
             {
-                <GhostButton OnClick="() => _qaRecShowAll = !_qaRecShowAll">
-                    @(_qaRecShowAll ? "Show less" : $"Show all {report.Recommendations.Count} recommendations")
-                </GhostButton>
+                var recAriaLabel = _qaRecShowAll ? "Show fewer recommendations" : $"Show all {report.Recommendations.Count} recommendations";
+                __builder.OpenElement(2000, "button");
+                __builder.AddAttribute(2001, "class", "qr-show-toggle");
+                __builder.AddAttribute(2002, "type", "button");
+                __builder.AddAttribute(2003, "aria-label", recAriaLabel);
+                __builder.AddEventPreventDefaultAttribute(2004, "onclick", true);
+                __builder.AddAttribute(2005, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, () => _qaRecShowAll = !_qaRecShowAll));
+                __builder.AddContent(2006, _qaRecShowAll ? "Show less" : $"Show all {report.Recommendations.Count} recommendations");
+                __builder.CloseElement();
             }
         }
     };
@@ -1662,6 +1695,51 @@
         "Compliance"            => "Compliance",
         _                       => category,
     };
+
+    private Dictionary<string, ConstitutionRulePresentationMetadata> BuildQaReadinessCanonicalMetadata()
+    {
+        var lookup = new Dictionary<string, ConstitutionRulePresentationMetadata>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var r in _report?.PackResults ?? [])
+        {
+            if (r.Compliance?.Results != null)
+            {
+                foreach (var result in r.Compliance.Results)
+                {
+                    var key = result.RuleId.ToUpperInvariant();
+                    if (!lookup.ContainsKey(key))
+                    {
+                        lookup[key] = new ConstitutionRulePresentationMetadata(result.RuleTitle, result.RuleType.ToString());
+                    }
+                }
+            }
+        }
+        return lookup;
+    }
+
+    private record RuleIdExtractionResult(string RuleId, string ActionText);
+
+    private RuleIdExtractionResult ExtractRuleIdFromRecommendationText(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return new("", text);
+
+        // Try to extract rule ID from common patterns:
+        // "Add PP-02 requirements to the specification."
+        // "Add PRINCIPLE-005 (V. Testing is Mandatory) implementation strategy to the plan."
+        // "Constitution→Spec coverage low (0%)"
+
+        // Pattern 1: RuleId in "Add RuleId ..." or similar
+        var match = System.Text.RegularExpressions.Regex.Match(text, @"\b([A-Z]+-\d+|PRINCIPLE-\d+|PP-\d+)\b");
+        if (match.Success)
+        {
+            var ruleId = match.Groups[1].Value;
+            // Keep the action text as-is (it already contains the meaningful action)
+            return new(ruleId, text);
+        }
+
+        return new("", text);
+    }
 
     // ── Delivery Readiness helpers ────────────────────────────────────────────
 
@@ -1942,6 +2020,64 @@
         GateSeverity.Medium   => "warning",
         _                     => "info",
     };
+
+    // ── Compliance gap presentation ────────────────────────────────────────────
+
+    private string FormatComplianceGapTitle(string ruleId, string? ruleTitle)
+    {
+        if (string.IsNullOrEmpty(ruleTitle) || ruleTitle == ruleId)
+            return ruleId;
+        return $"{ruleId} — {ruleTitle}";
+    }
+
+    private string FormattedComplianceGapType(ConstitutionRuleType ruleType) =>
+        ruleType.ToString() switch
+        {
+            "Principle" => "Principle",
+            "Standard" => "Standard",
+            "Constraint" => "Constraint",
+            _ => ruleType.ToString(),
+        };
+
+    private string FormatComplianceGapDescription(ComplianceGap gap)
+    {
+        var missing = new List<string>();
+        if (gap.MissingInSpec) missing.Add("Specification");
+        if (gap.MissingInPlan) missing.Add("Plan");
+        if (gap.MissingInTasks) missing.Add("Tasks");
+
+        if (missing.Count == 0)
+            return "No coverage gaps identified.";
+
+        var formatted = missing.Count switch
+        {
+            1 => missing[0],
+            2 => $"{missing[0]} and {missing[1]}",
+            _ => $"{string.Join(", ", missing.SkipLast(1))} and {missing.Last()}"
+        };
+
+        return $"Missing coverage in {formatted}.";
+    }
+
+    private string FormatComplianceGapFix(ComplianceGap gap)
+    {
+        var missing = new List<string>();
+        if (gap.MissingInSpec) missing.Add("Specification");
+        if (gap.MissingInPlan) missing.Add("Plan");
+        if (gap.MissingInTasks) missing.Add("Tasks");
+
+        if (missing.Count == 0)
+            return "All artifacts have coverage.";
+
+        var formatted = missing.Count switch
+        {
+            1 => missing[0],
+            2 => $"{missing[0]} and {missing[1]}",
+            _ => $"{string.Join(", ", missing.SkipLast(1))} and {missing.Last()}"
+        };
+
+        return $"Add coverage in {formatted}.";
+    }
 
     // ── Severity string helpers ────────────────────────────────────────────────
 

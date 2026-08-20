@@ -1,0 +1,92 @@
+﻿  Determining projects to restore...
+  All projects are up-to-date for restore.
+  BirkNext.Web -> C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web\bin\Debug\net8.0\BirkNext.Web.dll
+  BirkNext.Web (Blazor output) -> C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web\bin\Debug\net8.0\wwwroot
+  BirkNext.Web.Tests -> C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll
+Test run for C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.13.0 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+dotnet : [xUnit.net 00:00:01.68]     BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.QualityReview_QaReadinessGap_RendersCompactHierarchy [FAIL]
+At line:1 char:388
++ ... Web.Tests"; dotnet test --filter "QualityReview_QaReadinessGap_Render ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([xUnit.net 00:0...ierarchy [FAIL]:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  Failed BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.QualityReview_QaReadinessGap_RendersCompactHierarchy [1 s]
+  Error Message:
+   Bunit.Extensions.WaitForHelpers.WaitForFailedException : The assertion did not pass within the timeout period.
+
+If this test does not fail consistently, the reason may be that
+the wait timeout is too short, and the runtime did not have enough
+time to complete the necessary number of renders of the component under test.
+This can happen on highly utilized or slower hardware, for example.
+
+To determine if this is the cause, compare the check and render count(s) below
+and see if they match what is expected. If they do not,
+consider increasing the timeout, either at the individual
+method call level, e.g. WaitForElement("div", TimeSpan.FromSeconds(15)),
+or via the static TestContext.DefaultWaitTimeout property.
+
+Check count: 1.
+Component render count: 3.
+Total render count across all components: 0.
+---- Expected cut.Markup "
+
+<div class="qr-page" b-3z2gliybql><div style="padding: 8px 16px; background: #f5f5f5; border-bottom: 1px solid #e0e0e0; font-size: 0.875rem; color: #666;" b-3z2gliybql>
+            Sample Project: <strong b-3z2gliybql>Project A</strong></div><div class="page-header"><div class="page-header-left"><h1>Quality Review</h1><p class="page-lead">Run quality, compliance, and readiness reviews against the selected Sample Project. Choose review packs and generate a comprehensive report.</p></div></div><div class="qr-input-panel" b-3z2gliybql><div class="qr-input-panel-header" b-3z2gliybql><span class="qr-input-panel-title" b-3z2gliybql><span class="qr-step-badge" b-3z2gliybql>1</span> Sample Project Artifacts</span><button class="qr-input-panel-toggle" blazor:onclick="13" b-3z2gliybql>▸ Expand</button></div></div><div style="display:flex;justify-content:flex-end;gap:.5rem;margin-bottom:0.25rem" b-3z2gliybql><button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" blazor:onclick="14" b-3z2gliybql>Export HTML</button><button style="background:#10b981;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" blazor:onclick="15" b-3z2gliybql>Export diagnostic JSON</button></div><div class="qr-overall" b-3z2gliybql><div class="qr-score-ring-wrap is-poor" b-3z2gliybql><div class="qr-score-ring-wrap"><svg viewBox='0 0 88 88'><circle class='qr-ring-bg' cx='44' cy='44' r='36' fill='none' stroke-width='7' /><circle class='qr-ring-fill is-poor' cx='44' cy='44' r='36' fill='none' stroke-width='7' stroke-linecap='round' stroke-dasharray='226,19' stroke-dashoffset='133,45' /></svg><div class="qr-score-ring-label">41<small>%</small></div></div></div>
+            <div class="qr-overall-meta" b-3z2gliybql><div class="qr-overall-label" b-3z2gliybql><span class="qr-score-status" b-3z2gliybql>Needs attention</span></div>
+                <div class="qr-overall-sub" b-3z2gliybql>1 finding across
+                    1 pack</div></div></div><div class="qr-count-grid" b-3z2gliybql><div class="qr-count-group qr-findings-group" b-3z2gliybql><div class="qr-count-card qr-count-total" b-3z2gliybql><div class="qr-count-num" b-3z2gliybql>1</div>
+                    <div class="qr-count-label" b-3z2gliybql>Findings</div></div>
+                <div class="qr-count-card qr-count-critical" b-3z2gliybql><div class="qr-count-num" b-3z2gliybql>0</div>
+                    <div class="qr-count-label" b-3z2gliybql>Critical</div></div>
+                <div class="qr-count-card qr-count-high" b-3z2gliybql><div class="qr-count-num" b-3z2gliybql>1</div>
+                    <div class="qr-count-label" b-3z2gliybql>High</div></div>
+                <div class="qr-count-card qr-count-medium" b-3z2gliybql><div class="qr-count-num" b-3z2gliybql>0</div>
+                    <div class="qr-count-label" b-3z2gliybql>Medium</div></div>
+                <div class="qr-count-card qr-count-low" b-3z2gliybql><div class="qr-count-num" b-3z2gliybql>0</div>
+                    <div class="qr-count-label" b-3z2gliybql>Low</div></div></div>
+            <div class="qr-count-group qr-risk-group" b-3z2gliybql><div class="qr-count-card qr-count-blocker" b-3z2gliybql><div class="qr-count-num" b-3z2gliybql>0</div>
+                    <div class="qr-count-label" b-3z2gliybql>Blockers</div></div>
+                <div class="qr-count-card qr-count-warnings" b-3z2gliybql><div class="qr-count-num" b-3z2gliybql>0</div>
+                    <div class="qr-count-label" b-3z2gliybql>Warnings</div></div></div></div><div class="qr-pack-cards-section" b-3z2gliybql><div class="qr-pack-cards-title" b-3z2gliybql>By Review Pack</div>
+                <div class="qr-pack-cards" b-3z2gliybql><button class="qr-pack-card is-poor" blazor:onclick="19" type="button" aria-label="Open QA Readiness details" b-3z2gliybql><div class="qr-pack-card-header" b-3z2gliybql><div class="qr-pack-card-name" b-3z2gliybql>QA Readiness</div></div><div class="qr-pack-card-score" b-3z2gliybql>41%</div>
+                                <div class="qr-pack-card-metadata" b-3z2gliybql><span b-3z2gliybql>1 finding · Highest: High</span></div>
+                                <div class="qr-pack-card-status" b-3z2gliybql><span class="qr-result-score is-poor" b-3z2gliybql>Needs attention</span></div></button></div></div><div class="qr-top-issues" b-3z2gliybql><div class="qr-top-issues-title" b-3z2gliybql>Top Issues</div><button class="qr-issue-card" blazor:onclick="20" type="button" b-3z2gliybql><div class="qr-issue-severity" data-severity="error" b-3z2gliybql>ERROR</div>
+                        <div class="qr-issue-content" b-3z2gliybql><div class="qr-issue-title" b-3z2gliybql>No implementation phases — add phased delivery plan.</div><div class="qr-issue-sources" b-3z2gliybql>
+                                Reported by QA Readiness</div></div></button></div><div class="qr-results" b-3z2gliybql><div class="qr-result-section" b-3z2gliybql><button class="qr-result-header" blazor:onclick="21" b-3z2gliybql><span class="qr-result-name" b-3z2gliybql>QA Readiness</span>
+                        <span class="qr-result-meta" b-3z2gliybql><span class="qr-result-score is-poor" b-3z2gliybql>41%</span><span class="qr-result-findings" b-3z2gliybql>1 finding</span></span>
+                        <span class="qr-result-toggle" aria-hidden="true" b-3z2gliybql>▾</span></button><div class="qr-result-body" b-3z2gliybql><div class="qr-score-row" b-3z2gliybql><div class="qr-score-ring" b-3z2gliybql><svg viewBox="0 0 120 120"><circle class="qr-score-ring-bg" cx="60" cy="60" r="44" /><circle class="qr-score-ring-fill is-needs-work" cx="60" cy="60" r="44" stroke-dasharray="276,46" stroke-dashoffset="162,56" /></svg>
+                <div class="qr-score-label" b-3z2gliybql>41,2<small b-3z2gliybql>/ 100</small></div></div>
+            <div b-3z2gliybql><div class="qr-score-meta-title" b-3z2gliybql>Needs Work</div>
+                <div class="qr-score-meta-sub" b-3z2gliybql>41,2% overall · 5 of 5 categories assessed
+                </div>
+                <span class="status-chip status-chip-warning">Needs Work</span></div></div><div class="qr-category-grid" b-3z2gliybql><div class="qr-category-card is-needs-work" blazor:onclick="22" b-3z2gliybql><div class="qr-category-score" b-3z2gliybql>30</div>
+                    <div class="qr-category-name" b-3z2gliybql>Plan</div>
+                    <div class="qr-category-status" b-3z2gliybql>Needs Work</div></div><div class="qr-category-card is-ready" blazor:onclick="23" b-3z2gliybql><div class="qr-category-score" b-3z2gliybql>85</div>
+                    <div class="qr-category-name" b-3z2gliybql>Spec</div>
+                    <div class="qr-category-status" b-3z2gliybql>Ready</div></div><div class="qr-category-card is-needs-work" blazor:onclick="24" b-3z2gliybql><div class="qr-category-score" b-3z2gliybql>40</div>
+                    <div class="qr-category-name" b-3z2gliybql>Tasks</div>
+                    <div class="qr-category-status" b-3z2gliybql>Needs Work</div></div><div class="qr-category-card is-not-ready" blazor:onclick="25" b-3z2gliybql><div class="qr-category-score" b-3z2gliybql>0</div>
+                    <div class="qr-category-name" b-3z2gliybql>Traceability</div>
+                    <div class="qr-category-status" b-3z2gliybql>Not Ready</div></div><div class="qr-category-card is-needs-work" blazor:onclick="26" b-3z2gliybql><div class="qr-category-score" b-3z2gliybql>30</div>
+                    <div class="qr-category-name" b-3z2gliybql>Compliance</div>
+                    <div class="qr-category-status" b-3z2gliybql>Needs Work</div></div></div><div class="section-header"><div class="section-header-left"><div class="section-title">Readiness Gates</div></div></div>
+        <div class="qr-gate-grid" b-3z2gliybql></div><div class="section-header"><div class="section-header-left"><div class="section-title">Readiness Gaps</div><div class="section-desc">1 gap · sorted by severity</div></div></div><div class="qr-gap-card" data-severity="high" b-3z2gliybql><div class="qr-gap-meta" b-3z2gliybql><span class="qr-gap-severity" b-3z2gliybql>[<strong b-3z2gliybql>HIG</strong>]</span>
+                        <span class="qr-gap-category" b-3z2gliybql>Plan</span></div>
+                    <div class="qr-gap-description" b-3z2gliybql>No implementation phases — add phased delivery plan.</div></div></div></div></div></div>" to contain "[HIG]".
+  Stack Trace:
+     at Bunit.RenderedComponentWaitForHelperExtensions.WaitForAssertion[TComponent](IRenderedComponent`1 renderedComponent, Action assertion, Nullable`1 timeout) in /_/src/bunit/Extensions/WaitForHelpers/RenderedComponentWaitForHelperExtensions.WaitForState.cs:line 77
+   at BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.QualityReview_QaReadinessGap_RendersCompactHierarchy() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Pages\QualityReviewSampleProjectTests.cs:line 3894
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+----- Inner Stack Trace -----
+   at FluentAssertions.Primitives.StringAssertions`1.Contain(String expected, String because, Object[] becauseArgs)
+   at BirkNext.Web.Tests.Pages.QualityReviewSampleProjectTests.<>c__DisplayClass90_0.<QualityReview_QaReadinessGap_RendersCompactHierarchy>b__1() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Pages\QualityReviewSampleProjectTests.cs:line 3898
+   at Bunit.Extensions.WaitForHelpers.WaitForAssertionHelper`1.<>c__DisplayClass6_0.<.ctor>b__0() in /_/src/bunit/Extensions/WaitForHelpers/WaitForAssertionHelper.cs:line 35
+   at Bunit.Extensions.WaitForHelpers.WaitForHelper`2.OnAfterRender(Object sender, EventArgs args) in /_/src/bunit/Extensions/WaitForHelpers/WaitForHelper.cs:line 173
+
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 1 s - BirkNext.Web.Tests.dll (net8.0)

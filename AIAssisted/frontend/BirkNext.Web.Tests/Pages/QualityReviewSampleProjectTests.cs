@@ -3060,6 +3060,303 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
     }
 
     [Fact]
+    public void QualityReview_ConstitutionComplianceGap_ShowsCanonicalRuleTitle()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            },
+            Gaps = new List<ComplianceGap>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = true,
+                    MissingInPlan = true,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Critical = 1,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var complianceHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("Constitution Compliance"));
+            complianceHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var cardText = cut.Find(".qr-result-body").TextContent;
+            cardText.Should().Contain("PP-02 — Clear and Testable Requirements", "canonical title should be primary");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_ConstitutionComplianceGaps_ShowCanonicalTitlesForMultipleRules()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = Enumerable.Range(1, 3)
+                .Select(i => new ComplianceResult
+                {
+                    RuleId = $"PP-{i:D2}",
+                    RuleTitle = $"Rule Title {i}",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                })
+                .ToList(),
+            Gaps = Enumerable.Range(1, 3)
+                .Select(i => new ComplianceGap
+                {
+                    RuleId = $"PP-{i:D2}",
+                    RuleTitle = $"Rule Title {i}",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = true,
+                    MissingInPlan = true,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                })
+                .ToList()
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Critical = 1,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var complianceHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("Constitution Compliance"));
+            complianceHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var body = cut.Find(".qr-result-body").TextContent;
+            body.Should().Contain("PP-01 — Rule Title 1");
+            body.Should().Contain("PP-02 — Rule Title 2");
+            body.Should().Contain("PP-03 — Rule Title 3");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_ConstitutionComplianceGap_RendersMissingCoverageDescription()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Gaps = new List<ComplianceGap>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = true,
+                    MissingInPlan = true,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Critical = 1,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var complianceHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("Constitution Compliance"));
+            complianceHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var body = cut.Find(".qr-result-body").TextContent;
+            body.Should().Contain("Missing coverage in Specification, Plan and Tasks.", "description should state what is wrong");
+            body.Should().NotContain("Missing in:", "should not use abbreviated form");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_ConstitutionComplianceGap_RendersActionableFix()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Gaps = new List<ComplianceGap>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = true,
+                    MissingInPlan = false,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Critical = 1,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var complianceHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("Constitution Compliance"));
+            complianceHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var body = cut.Find(".qr-result-body").TextContent;
+            body.Should().Contain("Add coverage in Specification and Tasks.", "fix should state actionable step");
+            body.Should().NotContain("Plan", "plan is not missing");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_ConstitutionCompliance_ShowAllButtonUsesCorrectEventBinding()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        // Create Constitution Compliance report with >5 gaps to trigger Show all button
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Gaps = Enumerable.Range(1, 36)
+                .Select(i => new ComplianceGap
+                {
+                    RuleId = $"PP-{i:D2}",
+                    RuleTitle = $"Principle {i}",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = true,
+                    MissingInPlan = true,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                })
+                .ToList()
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Critical = 1,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        // Open Constitution Compliance - this previously crashed with WASM unboxing error
+        cut.WaitForAssertion(() =>
+        {
+            var complianceHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("Constitution Compliance"));
+            complianceHeader.Click();
+        });
+
+        // Regression test: Show all button must render without WASM failure
+        // Previously failed because attribute name was literally "@onclick" instead of "onclick"
+        cut.WaitForAssertion(() =>
+        {
+            var showAllButton = cut.Find("button.qr-show-toggle");
+            showAllButton.Should().NotBeNull();
+            showAllButton.TextContent.Should().Contain("Show all");
+
+            // Button click should work without WASM unboxing exception
+            showAllButton.Click();
+        });
+
+        // After clicking, all items should be visible
+        cut.WaitForAssertion(() =>
+        {
+            var cardCount = cut.FindAll(".qr-cat-title");
+            cardCount.Should().HaveCountGreaterThanOrEqualTo(1);
+        });
+    }
+
+    [Fact]
     public void QualityReview_QaAuditorNonConstitutionFinding_PreservesExistingPrimaryTitle()
     {
         SeedProjectA();
@@ -3538,6 +3835,696 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
             // Verify old primary title is NOT rendered
             findingCard.TextContent.Should().NotContain("CONST-001 — Constitution rule PP-02 not covered");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaReadinessGap_RendersCompactHierarchy()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var readinessReport = new QAReadinessReport
+        {
+            OverallScore = 41.2,
+            OverallStatus = ReadinessStatus.NeedsWork,
+            Scores = new List<ReadinessScore>
+            {
+                new() { Category = "Plan Quality", Score = 30, Status = ReadinessStatus.NeedsWork, IsAssessed = true },
+                new() { Category = "Specification Quality", Score = 85, Status = ReadinessStatus.Ready, IsAssessed = true },
+                new() { Category = "Task Readiness", Score = 40, Status = ReadinessStatus.NeedsWork, IsAssessed = true },
+                new() { Category = "Traceability", Score = 0, Status = ReadinessStatus.NotReady, IsAssessed = true },
+                new() { Category = "Compliance", Score = 30, Status = ReadinessStatus.NeedsWork, IsAssessed = true }
+            },
+            Gaps = new List<ReadinessGap>
+            {
+                new()
+                {
+                    Category = "Plan Quality",
+                    Description = "No implementation phases — add phased delivery plan.",
+                    Severity = ViolationSeverity.High
+                }
+            },
+            Gates = new List<ReadinessGate>(),
+            Recommendations = new List<ReadinessRecommendation>()
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-readiness",
+                PackName = "QA Readiness",
+                Score = 41,
+                High = 1,
+                QaReadiness = readinessReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        // Open QA Readiness detail
+        cut.WaitForAssertion(() =>
+        {
+            var qaReadinessHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Readiness"));
+            qaReadinessHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            // Verify gap card structure is rendered
+            cut.Markup.Should().Contain("qr-gap-card");
+            cut.Markup.Should().Contain("HIG");
+            cut.Markup.Should().Contain("Plan");
+            cut.Markup.Should().Contain("No implementation phases");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaReadinessRecommendation_UsesCanonicalRuleTitle()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var readinessReport = new QAReadinessReport
+        {
+            OverallScore = 41.2,
+            OverallStatus = ReadinessStatus.NeedsWork,
+            Scores = new List<ReadinessScore>(),
+            Gaps = new List<ReadinessGap>(),
+            Gates = new List<ReadinessGate>(),
+            Recommendations = new List<ReadinessRecommendation>
+            {
+                new()
+                {
+                    Category = "Specification Quality",
+                    Text = "Add PP-02 requirements to the specification.",
+                    Priority = ViolationSeverity.Critical,
+                    TargetArtifact = ArtifactType.Specification
+                }
+            }
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-readiness",
+                PackName = "QA Readiness",
+                Score = 41,
+                Critical = 1,
+                QaReadiness = readinessReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 30,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaReadinessHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Readiness"));
+            qaReadinessHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var recCard = cut.Find(".qr-recommendation-card");
+            recCard.TextContent.Should().Contain("PP-02 — Clear and Testable Requirements");
+            recCard.TextContent.Should().NotContain("PP-02 (PP-02)");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaReadinessRecommendation_UsesCanonicalPrincipleTitle()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var readinessReport = new QAReadinessReport
+        {
+            OverallScore = 41.2,
+            OverallStatus = ReadinessStatus.NeedsWork,
+            Scores = new List<ReadinessScore>(),
+            Gaps = new List<ReadinessGap>(),
+            Gates = new List<ReadinessGate>(),
+            Recommendations = new List<ReadinessRecommendation>
+            {
+                new()
+                {
+                    Category = "Plan Quality",
+                    Text = "Add PRINCIPLE-005 (V. Testing is Mandatory) implementation strategy to the plan.",
+                    Priority = ViolationSeverity.Critical,
+                    TargetArtifact = ArtifactType.Plan
+                }
+            }
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PRINCIPLE-005",
+                    RuleTitle = "V. Testing is Mandatory",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-readiness",
+                PackName = "QA Readiness",
+                Score = 41,
+                Critical = 1,
+                QaReadiness = readinessReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 30,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaReadinessHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Readiness"));
+            qaReadinessHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var recCard = cut.Find(".qr-recommendation-card");
+            recCard.TextContent.Should().Contain("PRINCIPLE-005 — V. Testing is Mandatory");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaReadinessRecommendation_RendersPriorityAndTargetAsMetadata()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var readinessReport = new QAReadinessReport
+        {
+            OverallScore = 41.2,
+            OverallStatus = ReadinessStatus.NeedsWork,
+            Scores = new List<ReadinessScore>(),
+            Gaps = new List<ReadinessGap>(),
+            Gates = new List<ReadinessGate>(),
+            Recommendations = new List<ReadinessRecommendation>
+            {
+                new()
+                {
+                    Category = "Plan Quality",
+                    Text = "Add implementation phases to the plan.",
+                    Priority = ViolationSeverity.Critical,
+                    TargetArtifact = ArtifactType.Plan
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-readiness",
+                PackName = "QA Readiness",
+                Score = 41,
+                Critical = 1,
+                QaReadiness = readinessReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaReadinessHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Readiness"));
+            qaReadinessHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var recCard = cut.Find(".qr-recommendation-card");
+
+            // Verify priority and target in metadata
+            recCard.TextContent.Should().Contain("[CRI]");
+            recCard.TextContent.Should().Contain("Plan");
+
+            // Verify NOT raw "CRITICAL PRIORITY"
+            recCard.TextContent.Should().NotContain("CRITICAL PRIORITY");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaReadinessRecommendation_DoesNotDuplicateRuleId()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var readinessReport = new QAReadinessReport
+        {
+            OverallScore = 41.2,
+            OverallStatus = ReadinessStatus.NeedsWork,
+            Scores = new List<ReadinessScore>(),
+            Gaps = new List<ReadinessGap>(),
+            Gates = new List<ReadinessGate>(),
+            Recommendations = new List<ReadinessRecommendation>
+            {
+                new()
+                {
+                    Category = "Specification Quality",
+                    Text = "Add PP-02 requirements to the specification.",
+                    Priority = ViolationSeverity.Critical,
+                    TargetArtifact = ArtifactType.Specification
+                }
+            }
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-readiness",
+                PackName = "QA Readiness",
+                Score = 41,
+                Critical = 1,
+                QaReadiness = readinessReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 30,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaReadinessHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Readiness"));
+            qaReadinessHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var recCard = cut.Find(".qr-recommendation-card");
+
+            // Should NOT have duplication
+            recCard.TextContent.Should().NotContain("PP-02 (PP-02)");
+            recCard.TextContent.Should().NotContain("PP-02 — PP-02");
+
+            // Should have clean presentation
+            recCard.TextContent.Should().Contain("PP-02 — Clear and Testable Requirements");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaReadinessRecommendation_MissingCanonicalTitleFallsBackCleanly()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var readinessReport = new QAReadinessReport
+        {
+            OverallScore = 41.2,
+            OverallStatus = ReadinessStatus.NeedsWork,
+            Scores = new List<ReadinessScore>(),
+            Gaps = new List<ReadinessGap>(),
+            Gates = new List<ReadinessGate>(),
+            Recommendations = new List<ReadinessRecommendation>
+            {
+                new()
+                {
+                    Category = "Specification Quality",
+                    Text = "Add PP-99 requirements to the specification.",
+                    Priority = ViolationSeverity.Critical,
+                    TargetArtifact = ArtifactType.Specification
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-readiness",
+                PackName = "QA Readiness",
+                Score = 41,
+                Critical = 1,
+                QaReadiness = readinessReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaReadinessHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Readiness"));
+            qaReadinessHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var recCard = cut.Find(".qr-recommendation-card");
+
+            // Should render the rule ID
+            recCard.TextContent.Should().Contain("PP-99");
+
+            // Should NOT have malformed suffix
+            recCard.TextContent.Should().NotContain("PP-99 —");
+            recCard.TextContent.Should().NotContain("PP-99 (PP-99)");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaReadinessRecommendation_PreservesActionableText()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var readinessReport = new QAReadinessReport
+        {
+            OverallScore = 41.2,
+            OverallStatus = ReadinessStatus.NeedsWork,
+            Scores = new List<ReadinessScore>
+            {
+                new() { Category = "Plan Quality", Score = 30, Status = ReadinessStatus.NeedsWork, IsAssessed = true },
+                new() { Category = "Specification Quality", Score = 85, Status = ReadinessStatus.Ready, IsAssessed = true },
+                new() { Category = "Task Readiness", Score = 40, Status = ReadinessStatus.NeedsWork, IsAssessed = true },
+                new() { Category = "Traceability", Score = 0, Status = ReadinessStatus.NotReady, IsAssessed = true },
+                new() { Category = "Compliance", Score = 30, Status = ReadinessStatus.NeedsWork, IsAssessed = true }
+            },
+            Gaps = new List<ReadinessGap>(),
+            Gates = new List<ReadinessGate>(),
+            Recommendations = new List<ReadinessRecommendation>
+            {
+                new()
+                {
+                    Category = "Plan Quality",
+                    Text = "Add PRINCIPLE-005 (V. Testing is Mandatory) implementation strategy to the plan. Consider adding authorization requirements.",
+                    Priority = ViolationSeverity.Critical,
+                    TargetArtifact = ArtifactType.Plan
+                }
+            }
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new() { RuleId = "PRINCIPLE-005", RuleTitle = "V. Testing is Mandatory", RuleType = ConstitutionRuleType.Principle, Status = ComplianceStatus.Missing }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-readiness",
+                PackName = "QA Readiness",
+                Score = 41,
+                Critical = 1,
+                QaReadiness = readinessReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 30,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaReadinessHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Readiness"));
+            qaReadinessHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var recMarkup = cut.Markup;
+            // Verify both main action and secondary advice are preserved
+            recMarkup.Should().Contain("Add PRINCIPLE-005");
+            recMarkup.Should().Contain("implementation strategy");
+            recMarkup.Should().Contain("Consider adding authorization requirements");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaReadinessGaps_ShowAllUsesSafeToggle()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var readinessReport = new QAReadinessReport
+        {
+            OverallScore = 41.2,
+            OverallStatus = ReadinessStatus.NeedsWork,
+            Scores = new List<ReadinessScore>
+            {
+                new() { Category = "Plan Quality", Score = 30, Status = ReadinessStatus.NeedsWork, IsAssessed = true },
+                new() { Category = "Specification Quality", Score = 85, Status = ReadinessStatus.Ready, IsAssessed = true },
+                new() { Category = "Task Readiness", Score = 40, Status = ReadinessStatus.NeedsWork, IsAssessed = true },
+                new() { Category = "Traceability", Score = 0, Status = ReadinessStatus.NotReady, IsAssessed = true },
+                new() { Category = "Compliance", Score = 30, Status = ReadinessStatus.NeedsWork, IsAssessed = true }
+            },
+            Gaps = Enumerable.Range(1, 10)
+                .Select(i => new ReadinessGap
+                {
+                    Category = i % 2 == 0 ? "Plan Quality" : "Specification Quality",
+                    Description = $"Gap {i}",
+                    Severity = ViolationSeverity.High
+                })
+                .ToList(),
+            Gates = new List<ReadinessGate>(),
+            Recommendations = new List<ReadinessRecommendation>()
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-readiness",
+                PackName = "QA Readiness",
+                Score = 41,
+                High = 10,
+                QaReadiness = readinessReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaReadinessHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Readiness"));
+            qaReadinessHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var button = cut.Find("button.qr-show-toggle");
+            button.Should().NotBeNull();
+            button.TagName.Should().Be("BUTTON");
+            button.TextContent.Should().Contain("Show all");
+            button.GetAttribute("@onclick").Should().BeNull("literal @onclick attribute should not exist");
+
+            // Click show all
+            button.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            for (int i = 1; i <= 10; i++)
+            {
+                markup.Should().Contain($"Gap {i}");
+            }
+
+            var button = cut.Find("button.qr-show-toggle");
+            button.TextContent.Should().Be("Show less");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaReadinessHeader_RemovesRedundantReadinessSuffix()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var readinessReport = new QAReadinessReport
+        {
+            OverallScore = 41.2,
+            OverallStatus = ReadinessStatus.NeedsWork,
+            Scores = new List<ReadinessScore>
+            {
+                new() { Category = "Plan Quality", Score = 30, Status = ReadinessStatus.NeedsWork, IsAssessed = true },
+                new() { Category = "Specification Quality", Score = 85, Status = ReadinessStatus.Ready, IsAssessed = true },
+                new() { Category = "Task Readiness", Score = 40, Status = ReadinessStatus.NeedsWork, IsAssessed = true },
+                new() { Category = "Traceability", Score = 0, Status = ReadinessStatus.NotReady, IsAssessed = true },
+                new() { Category = "Compliance", Score = 30, Status = ReadinessStatus.NeedsWork, IsAssessed = true }
+            },
+            Gaps = new List<ReadinessGap>(),
+            Gates = new List<ReadinessGate>(),
+            Recommendations = new List<ReadinessRecommendation>()
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-readiness",
+                PackName = "QA Readiness",
+                Score = 41,
+                QaReadiness = readinessReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaReadinessHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Readiness"));
+            qaReadinessHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            // Verify header shows "Needs Work" without redundant "Readiness" suffix
+            markup.Should().Contain("Needs Work");
+            markup.Should().NotContain("Needs Work Readiness");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaReadinessRecommendations_ShowAllUsesSafeToggle()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var readinessReport = new QAReadinessReport
+        {
+            OverallScore = 41.2,
+            OverallStatus = ReadinessStatus.NeedsWork,
+            Scores = new List<ReadinessScore>
+            {
+                new() { Category = "Plan Quality", Score = 30, Status = ReadinessStatus.NeedsWork, IsAssessed = true },
+                new() { Category = "Specification Quality", Score = 85, Status = ReadinessStatus.Ready, IsAssessed = true },
+                new() { Category = "Task Readiness", Score = 40, Status = ReadinessStatus.NeedsWork, IsAssessed = true },
+                new() { Category = "Traceability", Score = 0, Status = ReadinessStatus.NotReady, IsAssessed = true },
+                new() { Category = "Compliance", Score = 30, Status = ReadinessStatus.NeedsWork, IsAssessed = true }
+            },
+            Gaps = new List<ReadinessGap>(),
+            Gates = new List<ReadinessGate>(),
+            Recommendations = Enumerable.Range(1, 8)
+                .Select(i => new ReadinessRecommendation
+                {
+                    Category = "Plan Quality",
+                    Text = $"Recommendation {i}",
+                    Priority = ViolationSeverity.Critical,
+                    TargetArtifact = ArtifactType.Plan
+                })
+                .ToList()
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-readiness",
+                PackName = "QA Readiness",
+                Score = 41,
+                Critical = 8,
+                QaReadiness = readinessReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaReadinessHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Readiness"));
+            qaReadinessHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var buttons = cut.FindAll("button.qr-show-toggle");
+            buttons.Should().HaveCountGreaterThanOrEqualTo(1);
+
+            var showAllButton = buttons.Last();
+            showAllButton.TextContent.Should().Contain("Show all");
+            showAllButton.GetAttribute("@onclick").Should().BeNull("literal @onclick should not exist");
+
+            showAllButton.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            for (int i = 1; i <= 8; i++)
+            {
+                markup.Should().Contain($"Recommendation {i}");
+            }
         });
     }
 
