@@ -147,12 +147,12 @@
             <div class="qr-packs-section">
                 <div class="qr-packs-title"><span class="qr-step-badge">2</span> Review Packs</div>
                 <div class="qr-shortcut-bar">
-                    <button class="qr-shortcut-btn" @onclick="SelectAllPacks">All</button>
-                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Quality")'>Quality</button>
-                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Governance")'>Governance</button>
-                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Standards")'>Standards</button>
-                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Readiness")'>Readiness</button>
-                    <button class="qr-shortcut-btn qr-shortcut-btn--clear" @onclick="() => _selectedPacks.Clear()">Clear</button>
+                    <button class="qr-shortcut-btn" @onclick="SelectAllPacks" title="Select all available packs">Select All</button>
+                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Quality")' title="Select all Quality packs">Quality</button>
+                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Governance")' title="Select all Governance packs">Governance</button>
+                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Standards")' title="Select all Standards packs">Standards</button>
+                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Readiness")' title="Select all Readiness packs">Readiness</button>
+                    <button class="qr-shortcut-btn qr-shortcut-btn--clear" @onclick="() => _selectedPacks.Clear()" title="Clear all selections">Clear</button>
                 </div>
                 <div class="qr-packs-grid">
                     @foreach (var group in QrService.AvailablePacks
@@ -191,7 +191,10 @@
 
             <!-- ── Run bar ──────────────────────────────────────────────── -->
             <div class="qr-run-bar">
-                <span class="qr-run-summary"><span class="qr-step-badge">3</span> @RunSummaryText</span>
+                <div class="qr-run-summary-section">
+                    <span class="qr-run-title"><span class="qr-step-badge">3</span> Review Summary</span>
+                    <span class="qr-run-details">@RunSummaryText</span>
+                </div>
                 <PrimaryButton OnClick="RunReview" Disabled="@CannotRun">
                     @if (_running) { <span>Running…</span> } else { <span>Run Quality Review</span> }
                 </PrimaryButton>
@@ -276,7 +279,7 @@
                                         : result.Medium > 0   ? "Medium"
                                         : result.Low > 0      ? "Low" : "None";
 
-                        <div class="qr-pack-card @cardClass">
+                        <button class="qr-pack-card @cardClass" @onclick="() => ExpandPackFromCard(result.PackId)" type="button" aria-label="Open @result.PackName details">
                             @if (isWeakest || isStrongest)
                             {
                                 <span class="qr-pack-card-highlight">@(isStrongest ? "Strongest" : "Weakest")</span>
@@ -302,7 +305,7 @@
                                     <span class="qr-result-score @ScoreVariant(result.Score)">@ScoreLabel(result.Score)</span>
                                 </div>
                             }
-                        </div>
+                        </button>
                     }
                 </div>
             </div>
@@ -417,6 +420,10 @@
     {
         ["Quality"] = 0, ["Governance"] = 1, ["Standards"] = 2, ["Readiness"] = 3,
     };
+
+    // ── QA Auditor preview state ─────────────────────────────────────────────
+    private readonly HashSet<string> _expandedQaAuditorGroups = [];
+    private bool _showAllConstitutionFindings;
 
     // ── QA Readiness detail state ─────────────────────────────────────────────
     private string? _qaExpandedCategory;
@@ -700,9 +707,9 @@
         await JS.InvokeVoidAsync("downloadJsonFile", filename, json);
     }
 
-    private QualityReviewDiagnosticExport BuildDiagnosticExport(QualityReviewReport report, IEnumerable<string> selectedPackIds)
+    private async Task<QualityReviewDiagnosticExport> BuildDiagnosticExportAsync(QualityReviewReport report, IEnumerable<string> selectedPackIds)
     {
-        var projects = DocumentResolver.GetAvailableProjectsAsync().Result;
+        var projects = await DocumentResolver.GetAvailableProjectsAsync();
         var projectName = projects.FirstOrDefault(p => p.Slug == _selectedProject)?.Name ?? _selectedProject ?? string.Empty;
 
         var artifacts = new List<ArtifactInputDiagnostic>
@@ -755,7 +762,7 @@
             QualitySession.SaveResult(_report, selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot);
 
             // Capture diagnostic snapshot from the exact run
-            _diagnosticSnapshot = BuildDiagnosticExport(_report, selectedPackIds);
+            _diagnosticSnapshot = await BuildDiagnosticExportAsync(_report, selectedPackIds);
 
             // Publish pack results so Dashboard can consume the shared quality session.
             var complianceResult = _report.PackResults.FirstOrDefault(r => r.Compliance is not null);
@@ -777,13 +784,18 @@
             _topIssues     = GetTopIssues(5);
             _inputExpanded = false;
             _expanded.Clear();
-            foreach (var r in _report.PackResults)
-                _expanded.Add(r.PackId);
+            // Don't auto-expand packs - let user click to expand via pack cards
+            // foreach (var r in _report.PackResults)
+            //     _expanded.Add(r.PackId);
+
+            // Reset all preview state.
+            _expandedQaAuditorGroups.Clear();
+            _showAllConstitutionFindings = false;
+            _qaGapShowAll                = false;
+            _qaRecShowAll                = false;
 
             // Reset readiness detail state.
             _qaExpandedCategory      = null;
-            _qaGapShowAll            = false;
-            _qaRecShowAll            = false;
             _drTab                   = "overview";
             _drBlockerSeverityFilter = null;
             _drBlockerPhaseFilter    = null;
@@ -812,6 +824,25 @@
     {
         if (!_expanded.Remove(packId))
             _expanded.Add(packId);
+    }
+
+    private void ExpandPackFromCard(string packId)
+    {
+        // Single-open behavior: close other packs when opening one
+        _expanded.Clear();
+        _expanded.Add(packId);
+
+        // Reset all preview state for the new pack
+        _expandedQaAuditorGroups.Clear();
+        _showAllConstitutionFindings = false;
+        _qaGapShowAll = false;
+        _qaRecShowAll = false;
+    }
+
+    private void ToggleQaAuditorGroup(string groupKey)
+    {
+        if (!_expandedQaAuditorGroups.Remove(groupKey))
+            _expandedQaAuditorGroups.Add(groupKey);
     }
 
     private void SelectAllPacks()
@@ -860,8 +891,15 @@
         _topIssues = GetTopIssues(5);
         _inputExpanded = false;
         _expanded.Clear();
-        foreach (var result in report.PackResults)
-            _expanded.Add(result.PackId);
+        // Don't auto-expand packs when restoring
+        // foreach (var result in report.PackResults)
+        //     _expanded.Add(result.PackId);
+
+        // Reset all preview state.
+        _expandedQaAuditorGroups.Clear();
+        _showAllConstitutionFindings = false;
+        _qaGapShowAll = false;
+        _qaRecShowAll = false;
     }
 
     private record TopIssueItem(string PackName, string Title, string Severity, int SortKey, string? Detail = null);
@@ -926,7 +964,37 @@
                     items.Add(new(r.PackName, b.Title, sev, SeveritySortKey(sev), b.Description));
                 }
         }
-        return [.. items.OrderBy(i => i.SortKey).Take(limit)];
+
+        // Sort by severity first
+        var sorted = items.OrderBy(i => i.SortKey).ToList();
+
+        // Apply diversity rule: max 2 from same PackName, then fill from others
+        var result = new List<TopIssueItem>();
+        var packCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in sorted)
+        {
+            if (result.Count >= limit) break;
+
+            var key = item.PackName;
+            if (!packCounts.ContainsKey(key))
+                packCounts[key] = 0;
+
+            if (packCounts[key] < 2)
+            {
+                result.Add(item);
+                packCounts[key]++;
+            }
+        }
+
+        // Fill remaining slots from items we skipped
+        if (result.Count < limit)
+        {
+            var remaining = sorted.Except(result).ToList();
+            result.AddRange(remaining.Take(limit - result.Count));
+        }
+
+        return result;
     }
 
     // ── Score helpers ─────────────────────────────────────────────────────────
@@ -960,9 +1028,9 @@
         __builder.CloseElement();
     };
 
-    // ── Per-pack result renderers — static ────────────────────────────────────
+    // ── Per-pack result renderers ──────────────────────────────────────────────
 
-    private static RenderFragment RenderQaSection(QaAuditReport report) => __builder =>
+    private RenderFragment RenderQaSection(QaAuditReport report) => __builder =>
     {
         if (report.Findings.Count == 0)
         {
@@ -976,17 +1044,22 @@
         int seq = 0;
         foreach (var grp in report.Findings.GroupBy(f => f.Category).OrderBy(g => g.Key))
         {
+            var groupKey = grp.Key.ToString();
             __builder.OpenElement(seq++, "div");
             __builder.AddAttribute(seq++, "class", "qr-cat-section");
             __builder.OpenElement(seq++, "div");
             __builder.AddAttribute(seq++, "class", "qr-cat-title");
-            __builder.AddContent(seq++, grp.Key.ToString());
-            __builder.OpenElement(seq++, "span");
-            __builder.AddAttribute(seq++, "class", "qr-cat-badge");
-            __builder.AddContent(seq++, grp.Count().ToString());
+            var count = grp.Count();
+            var categoryLabel = $"{grp.Key} ({count})";
+            __builder.AddContent(seq++, categoryLabel);
             __builder.CloseElement();
-            __builder.CloseElement();
-            foreach (var f in grp.OrderBy(f => f.Severity))
+
+            var isExpanded = _expandedQaAuditorGroups.Contains(groupKey);
+            var findings = grp.OrderBy(f => f.Severity).ToList();
+            var previewLimit = 5;
+            var visibleFindings = isExpanded ? findings : findings.Take(previewLimit).ToList();
+
+            foreach (var f in visibleFindings)
             {
                 __builder.OpenComponent<IssueCard>(seq++);
                 __builder.AddAttribute(seq++, "Severity", QaSevString(f.Severity));
@@ -994,11 +1067,26 @@
                 __builder.AddAttribute(seq++, "Description", $"{f.Title} — {f.Description}");
                 __builder.CloseComponent();
             }
+
+            if (count > previewLimit)
+            {
+                __builder.OpenElement(seq++, "button");
+                __builder.AddAttribute(seq++, "class", "qr-show-toggle");
+                __builder.AddAttribute(seq++, "type", "button");
+                __builder.AddAttribute(seq++, "@onclick", EventCallback.Factory.Create(this, () => ToggleQaAuditorGroup(groupKey)));
+                if (isExpanded)
+                    __builder.AddAttribute(seq++, "aria-label", $"Show fewer {groupKey} findings");
+                else
+                    __builder.AddAttribute(seq++, "aria-label", $"Show all {count} {groupKey} findings");
+                __builder.AddContent(seq++, isExpanded ? "Show less" : $"Show all {count}");
+                __builder.CloseElement();
+            }
+
             __builder.CloseElement();
         }
     };
 
-    private static RenderFragment RenderComplianceSection(ConstitutionComplianceReport report) => __builder =>
+    private RenderFragment RenderComplianceSection(ConstitutionComplianceReport report) => __builder =>
     {
         if (report.Violations.Count == 0 && report.Gaps.Count == 0)
         {
@@ -1009,7 +1097,16 @@
             return;
         }
 
+        var allFindings = new List<object>();
+        allFindings.AddRange(report.Violations.Cast<object>());
+        allFindings.AddRange(report.Gaps.Cast<object>());
+        var totalCount = allFindings.Count;
+        var previewLimit = 5;
+        var visibleCount = _showAllConstitutionFindings ? totalCount : previewLimit;
+
         int seq = 0;
+        int renderedCount = 0;
+
         if (report.Violations.Count > 0)
         {
             __builder.OpenElement(seq++, "div");
@@ -1018,14 +1115,17 @@
             __builder.CloseElement();
             foreach (var v in report.Violations)
             {
+                if (renderedCount >= visibleCount) break;
                 __builder.OpenComponent<IssueCard>(seq++);
                 __builder.AddAttribute(seq++, "Severity", v.Severity.ToString());
                 __builder.AddAttribute(seq++, "Component", $"{v.RuleId} · {v.Artifact}");
                 __builder.AddAttribute(seq++, "Description", $"{v.RuleTitle} — {v.Issue}");
                 __builder.CloseComponent();
+                renderedCount++;
             }
         }
-        if (report.Gaps.Count > 0)
+
+        if (report.Gaps.Count > 0 && renderedCount < visibleCount)
         {
             __builder.OpenElement(seq++, "div");
             __builder.AddAttribute(seq++, "class", "qr-cat-title");
@@ -1033,13 +1133,29 @@
             __builder.CloseElement();
             foreach (var gap in report.Gaps)
             {
+                if (renderedCount >= visibleCount) break;
                 __builder.OpenComponent<IssueCard>(seq++);
                 __builder.AddAttribute(seq++, "Severity", gap.Severity.ToString());
                 __builder.AddAttribute(seq++, "Component", $"{gap.RuleId} · {gap.RuleType}");
                 __builder.AddAttribute(seq++, "Description", gap.RuleTitle);
                 __builder.AddAttribute(seq++, "SuggestedFix", $"Missing in: {gap.MissingSummary}");
                 __builder.CloseComponent();
+                renderedCount++;
             }
+        }
+
+        if (totalCount > previewLimit)
+        {
+            __builder.OpenElement(seq++, "button");
+            __builder.AddAttribute(seq++, "class", "qr-show-toggle");
+            __builder.AddAttribute(seq++, "type", "button");
+            __builder.AddAttribute(seq++, "@onclick", EventCallback.Factory.Create(this, () => _showAllConstitutionFindings = !_showAllConstitutionFindings));
+            if (_showAllConstitutionFindings)
+                __builder.AddAttribute(seq++, "aria-label", "Show fewer Constitution findings");
+            else
+                __builder.AddAttribute(seq++, "aria-label", $"Show all {totalCount} Constitution findings");
+            __builder.AddContent(seq++, _showAllConstitutionFindings ? "Show less" : $"Show all {totalCount}");
+            __builder.CloseElement();
         }
     };
 
@@ -1056,10 +1172,13 @@
             __builder.AddAttribute(seq++, "class", "qr-std-passed");
             __builder.AddContent(seq++, $"{summary.Passed} passed");
             __builder.CloseElement();
+            __builder.AddMarkupContent(seq++, " · ");
             __builder.OpenElement(seq++, "span");
             __builder.AddAttribute(seq++, "class", "qr-std-warning");
-            __builder.AddContent(seq++, $"{summary.Warnings} potential gaps");
+            var gapLabel = summary.Warnings == 1 ? "potential gap" : "potential gaps";
+            __builder.AddContent(seq++, $"{summary.Warnings} {gapLabel}");
             __builder.CloseElement();
+            __builder.AddMarkupContent(seq++, " · ");
             __builder.OpenElement(seq++, "span");
             __builder.AddAttribute(seq++, "class", "qr-std-failed");
             __builder.AddContent(seq++, $"{summary.Failed} failed");
@@ -1083,11 +1202,9 @@
             __builder.AddAttribute(seq++, "class", "qr-cat-section");
             __builder.OpenElement(seq++, "div");
             __builder.AddAttribute(seq++, "class", "qr-cat-title");
-            __builder.AddContent(seq++, grp.Key);
-            __builder.OpenElement(seq++, "span");
-            __builder.AddAttribute(seq++, "class", "qr-cat-badge");
-            __builder.AddContent(seq++, grp.Count().ToString());
-            __builder.CloseElement();
+            var count = grp.Count();
+            var subgroupLabel = $"{grp.Key} ({count})";
+            __builder.AddContent(seq++, subgroupLabel);
             __builder.CloseElement();
             foreach (var r in grp)
             {
@@ -1189,15 +1306,17 @@
         {
             <SectionHeader Title="Readiness Gaps"
                            Description="@($"{report.Gaps.Count} gap{(report.Gaps.Count != 1 ? "s" : "")} · sorted by severity")" />
-            @foreach (var gap in report.Gaps.Take(_qaGapShowAll ? 999 : 8))
+            @foreach (var gap in report.Gaps.Take(_qaGapShowAll ? 999 : 6))
             {
                 <IssueCard Severity="@gap.Severity.ToString().ToLowerInvariant()"
                            Component="@QrShortCategory(gap.Category)"
                            Description="@gap.Description" />
             }
-            @if (report.Gaps.Count > 8 && !_qaGapShowAll)
+            @if (report.Gaps.Count > 6)
             {
-                <GhostButton OnClick="() => _qaGapShowAll = true">Show all @report.Gaps.Count gaps</GhostButton>
+                <GhostButton OnClick="() => _qaGapShowAll = !_qaGapShowAll">
+                    @(_qaGapShowAll ? "Show less" : $"Show all {report.Gaps.Count} gaps")
+                </GhostButton>
             }
         }
 
@@ -1206,15 +1325,17 @@
         {
             <SectionHeader Title="Recommendations"
                            Description="@($"{report.Recommendations.Count} recommendation{(report.Recommendations.Count != 1 ? "s" : "")} · highest priority first")" />
-            @foreach (var rec in report.Recommendations.Take(_qaRecShowAll ? 999 : 8))
+            @foreach (var rec in report.Recommendations.Take(_qaRecShowAll ? 999 : 5))
             {
                 <RecommendationCard Title="@rec.Text"
                                     Description="@rec.TargetArtifact.ToString()"
                                     Priority="@rec.Priority.ToString().ToLowerInvariant()" />
             }
-            @if (report.Recommendations.Count > 8 && !_qaRecShowAll)
+            @if (report.Recommendations.Count > 5)
             {
-                <GhostButton OnClick="() => _qaRecShowAll = true">Show all @report.Recommendations.Count recommendations</GhostButton>
+                <GhostButton OnClick="() => _qaRecShowAll = !_qaRecShowAll">
+                    @(_qaRecShowAll ? "Show less" : $"Show all {report.Recommendations.Count} recommendations")
+                </GhostButton>
             }
         }
     };

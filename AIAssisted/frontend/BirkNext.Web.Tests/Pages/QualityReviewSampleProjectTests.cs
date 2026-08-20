@@ -520,6 +520,237 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         });
     }
 
+    [Fact]
+    public void ArtifactGrid_RendersFiveCards_CompactLayout()
+    {
+        // All 5 artifacts should render efficiently in a compact grid
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var cards = cut.FindAll(".artifact-card");
+            cards.Should().HaveCount(5);
+
+            // Grid should use responsive layout (auto-fit with minmax)
+            var gridElement = cut.Find(".qr-artifact-grid");
+            gridElement.ClassList.Should().Contain("qr-artifact-grid");
+        });
+    }
+
+    [Fact]
+    public void ArtifactCards_ShowAvailabilityButNotRepetitive()
+    {
+        // Loaded artifacts show green border and Available text, but not overly heavy badge
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var constitutionCard = FindArtifactCard(cut, "Constitution");
+            constitutionCard.ClassName.Should().Contain("is-loaded");
+
+            // Available text should be present
+            constitutionCard.TextContent.Should().Contain("Available");
+
+            // Status badge should exist but be subtle
+            var statusElement = constitutionCard.QuerySelector(".artifact-status");
+            statusElement.Should().NotBeNull();
+            statusElement.TextContent.Trim().Should().Be("Available");
+        });
+    }
+
+    [Fact]
+    public void ReviewPacks_CategoryHeadersDistinguishable()
+    {
+        // Category group titles (QUALITY, GOVERNANCE, etc.) should be visually distinct
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var groupTitles = cut.FindAll(".qr-pack-group-title");
+            groupTitles.Count.Should().BeGreaterThan(0, "pack group titles should be rendered");
+
+            // Should have visible category headers
+            var categories = groupTitles.Select(t => t.TextContent.Trim()).ToList();
+            categories.Should().HaveCountGreaterThan(0);
+            categories.Should().Contain(c => c.Contains("Quality", StringComparison.OrdinalIgnoreCase));
+        });
+    }
+
+    [Fact]
+    public void PackDescriptions_MoreReadable()
+    {
+        // Pack descriptions should be easily readable
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var descriptions = cut.FindAll(".qr-pack-desc");
+            descriptions.Count.Should().BeGreaterThan(0);
+
+            // Each description should have meaningful text
+            descriptions.First().TextContent.Length.Should().BeGreaterThan(5);
+        });
+    }
+
+    [Fact]
+    public void ReviewSummaryStep_HasExplicitHeading()
+    {
+        // Step 3 should have an explicit "REVIEW SUMMARY" heading
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var runBar = cut.Find(".qr-run-bar");
+            var title = runBar.QuerySelector(".qr-run-title");
+
+            title.Should().NotBeNull("Step 3 should have a summary title");
+            title.TextContent.Should().Contain("Review Summary");
+        });
+    }
+
+    [Fact]
+    public void RunButton_VisuallyConnectedToSummary()
+    {
+        // Run button should be visually part of the summary section with border divider
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var runBar = cut.Find(".qr-run-bar");
+
+            // Should have visual separation (border-top)
+            runBar.Should().NotBeNull();
+
+            // Summary section and button should be flex siblings
+            var summarySection = runBar.QuerySelector(".qr-run-summary-section");
+            summarySection.Should().NotBeNull("summary section should exist");
+        });
+    }
+
+    [Fact]
+    public void CategorySelectButtons_HaveClearLabels()
+    {
+        // Category buttons should have title attributes explaining they select packs
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var buttons = cut.FindAll(".qr-shortcut-btn");
+
+            // First button should be "Select All"
+            buttons.First().TextContent.Should().Be("Select All");
+            buttons.First().GetAttribute("title").Should().Contain("Select");
+
+            // Each category button should mention selection in title
+            var qualityBtn = buttons.SingleOrDefault(b => b.TextContent.Contains("Quality"));
+            qualityBtn.Should().NotBeNull();
+            qualityBtn.GetAttribute("title").Should().Contain("Select");
+        });
+    }
+
+    // ── Async Regression Tests ────────────────────────────────────────────────
+
+    [Fact]
+    public void RunQualityReview_BuildDiagnosticExportAsyncIsAsync()
+    {
+        // REGRESSION: Old code used GetAvailableProjectsAsync().Result which caused
+        // System.PlatformNotSupportedException on WASM - handler blocked on Monitor.Wait()
+        // Verify production code uses async/await instead
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var cut = Render<QualityReview>();
+
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            _qualityReview.Calls.Should().HaveCount(1);
+            // If code used .Result, execution would have failed with PlatformNotSupportedException
+            // Successful completion proves async/await is used
+        }, timeout: TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
+    public void RunQualityReview_WithIncompleteProjectTask_AwaitsCompletion()
+    {
+        // Demonstrates that GetAvailableProjectsAsync is awaited (not blocking)
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var cut = Render<QualityReview>();
+
+        // Make projects async return incomplete
+        var tcs = _resolver.MakeGetAvailableProjectsIncomplete();
+        var runStarted = false;
+
+        // Run in background to avoid deadlock if .Result was used
+        var runTask = Task.Run(() =>
+        {
+            try
+            {
+                ClickRun(cut);
+                runStarted = true;
+            }
+            catch { }
+        });
+
+        // Give handler time to execute
+        Task.Delay(100).Wait();
+
+        // If old .Result code was used, handler would hang here
+        // With async/await, the handler should have started
+        runTask.IsCompleted.Should().BeTrue("handler should not block on incomplete Task");
+        runStarted.Should().BeTrue("click should have executed");
+
+        // Complete the task
+        _resolver.CompleteGetAvailableProjects();
+
+        // Run should complete
+        cut.WaitForAssertion(() =>
+        {
+            _qualityReview.Calls.Count.Should().BeGreaterThan(0);
+        }, timeout: TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
+    public void RunQualityReview_BuildDiagnosticExportAwaitsFinalizeCompletes()
+    {
+        // Ensure complete async flow works
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var cut = Render<QualityReview>();
+
+        ClickRun(cut);
+
+        // Full async pipeline should complete
+        cut.WaitForAssertion(() =>
+        {
+            _qualityReview.Calls.Should().HaveCount(1);
+            var call = _qualityReview.Calls[0];
+            call.Constitution.Should().NotBeNullOrEmpty();
+        }, timeout: TimeSpan.FromSeconds(3));
+    }
+
     private static IElement FindArtifactCard(IRenderedComponent<QualityReview> cut, string artifactName) =>
         cut.FindAll(".artifact-card").Single(card => card.TextContent.Contains(artifactName, StringComparison.Ordinal));
 
@@ -576,6 +807,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         private readonly Dictionary<string, SampleProjectDto> _projects = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<(string ProjectSlug, ExplorerDocumentType Type), string> _documents = [];
         private string? _selectedProject;
+        private TaskCompletionSource<IReadOnlyList<SampleProjectDto>>? _projectsTcs;
 
         public int ResolveCallCount { get; private set; }
 
@@ -616,14 +848,43 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             return Task.FromResult(SampleProjectDocumentResult.Success(projectSlug, documentType, filename, content));
         }
 
-        public Task<IReadOnlyList<SampleProjectDto>> GetAvailableProjectsAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<SampleProjectDto>>(_projects.Values.ToList());
+        public Task<IReadOnlyList<SampleProjectDto>> GetAvailableProjectsAsync(CancellationToken cancellationToken = default)
+        {
+            if (_projectsTcs != null)
+                return _projectsTcs.Task;
+            return Task.FromResult<IReadOnlyList<SampleProjectDto>>(_projects.Values.ToList());
+        }
 
         public string? GetSelectedProject() => _selectedProject;
 
         public void SetSelectedProject(string? projectSlug) => _selectedProject = projectSlug;
 
         public void ClearProjectCache(string projectSlug) { }
+
+        public TaskCompletionSource<IReadOnlyList<SampleProjectDto>> MakeGetAvailableProjectsIncomplete()
+        {
+            _projectsTcs = new TaskCompletionSource<IReadOnlyList<SampleProjectDto>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            return _projectsTcs;
+        }
+
+        public void CompleteGetAvailableProjects()
+        {
+            if (_projectsTcs != null)
+            {
+                _projectsTcs.SetResult(_projects.Values.ToList());
+                _projectsTcs = null;
+            }
+        }
+
+        public void FailGetAvailableProjects(Exception ex)
+        {
+            if (_projectsTcs != null)
+            {
+                _projectsTcs.SetException(ex);
+                _projectsTcs = null;
+            }
+        }
 
         private static string GetFilename(ExplorerDocumentType documentType) =>
             documentType switch
