@@ -3,9 +3,24 @@
 <div class="qr-qa-preview-list">
     @foreach (var finding in VisibleFindings)
     {
-        <IssueCard Severity="@QaSevString(finding.Severity)"
-                   Component="@GetComponent(finding)"
-                   Description="@($"{finding.Title} — {finding.Description}")" />
+        <div class="qr-finding-card" data-severity="@QaSevString(finding.Severity).ToLowerInvariant()">
+            <div class="qr-finding-header">
+                <span class="qr-finding-severity" data-severity="@QaSevString(finding.Severity).ToLowerInvariant()">@QaSevString(finding.Severity)</span>
+                <div class="qr-finding-title">@FormatTitle(finding)</div>
+            </div>
+            @if (!string.IsNullOrEmpty(finding.Category.ToString()))
+            {
+                <div class="qr-finding-category">@finding.Category</div>
+            }
+            @if (!string.IsNullOrEmpty(FormatDescription(finding)))
+            {
+                <div class="qr-finding-description">@FormatDescription(finding)</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(GetComponent(finding)))
+            {
+                <div style="font-size: 0.75rem; color: var(--clr-text-muted, #64748b); margin-top: 0.2rem;">@GetComponent(finding)</div>
+            }
+        </div>
     }
 
     @if (Items.Count > PreviewLimit && !ShowAll)
@@ -50,4 +65,55 @@
         $"{finding.RuleCode}{(finding.AffectedArtifact is not null ? " · " + finding.AffectedArtifact : "")}";
 
     private string QaSevString(QaSeverity sev) => sev.ToString();
+
+    private string FormatFindingPresentation(QaFinding finding)
+    {
+        var title = FormatTitle(finding);
+        var desc = FormatDescription(finding);
+        var category = finding.Category.ToString();
+
+        if (string.IsNullOrEmpty(desc))
+            return title;
+
+        return $"{title} · {category} · {desc}";
+    }
+
+    private string FormatTitle(QaFinding finding)
+    {
+        if (string.IsNullOrEmpty(finding.RuleCode))
+            return finding.Title;
+
+        if (finding.RuleCode == finding.Title)
+            return finding.RuleCode;
+
+        return $"{finding.RuleCode} — {finding.Title}";
+    }
+
+    private string FormatDescription(QaFinding finding)
+    {
+        // For Constitution coverage findings, derive concise description
+        if (finding.Category == QaCategory.Constitution && !string.IsNullOrEmpty(finding.Description))
+        {
+            if (finding.Description.Contains("not covered") || finding.Description.Contains("no coverage"))
+            {
+                var missing = new List<string>();
+                if (finding.Description.Contains("Specification")) missing.Add("Specification");
+                if (finding.Description.Contains("Plan")) missing.Add("Plan");
+                if (finding.Description.Contains("Tasks")) missing.Add("Tasks");
+
+                if (missing.Count > 0)
+                {
+                    string formatted = missing.Count switch
+                    {
+                        1 => missing[0],
+                        2 => $"{missing[0]} and {missing[1]}",
+                        _ => $"{string.Join(", ", missing.SkipLast(1))} and {missing.Last()}"
+                    };
+                    return $"Missing coverage in {formatted}.";
+                }
+            }
+        }
+
+        return finding.Description ?? "";
+    }
 }

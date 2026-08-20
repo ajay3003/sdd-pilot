@@ -136,4 +136,161 @@ public sealed class QaFindingPreviewListTests : BunitContext
             host.Markup.Should().Contain("QA-FINDING-1001");
         });
     }
+
+    [Fact]
+    public void QaFindingPreviewList_CoverageFinding_RendersConciseDescription()
+    {
+        var items = new List<QaFinding>
+        {
+            new()
+            {
+                RuleCode = "PP-02",
+                Title = "Principle 2",
+                Description = "Rule 'PP-02' (Principle) has no coverage in the Specification, Plan and Tasks.",
+                Severity = QaSeverity.High,
+                Category = QaCategory.Constitution,
+                AffectedArtifact = null,
+            }
+        };
+
+        var host = Render<TestHost>(p => p.Add(h => h.Items, items));
+
+        host.Markup.Should().Contain("PP-02");
+        host.Markup.Should().Contain("Constitution");
+        host.Markup.Should().Contain("Missing coverage in Specification, Plan and Tasks.");
+        host.Markup.Should().NotContain("Rule 'PP-02' (Principle) has no coverage");
+    }
+
+    [Fact]
+    public void QaFindingPreviewList_Finding_ShowsCanonicalRuleTitle()
+    {
+        var items = new List<QaFinding>
+        {
+            new()
+            {
+                RuleCode = "PRINCIPLE-001",
+                Title = "Headless API Communication",
+                Description = "Test description",
+                Severity = QaSeverity.Medium,
+                Category = QaCategory.Architecture,
+                AffectedArtifact = null,
+            }
+        };
+
+        var host = Render<TestHost>(p => p.Add(h => h.Items, items));
+
+        host.Markup.Should().Contain("PRINCIPLE-001 — Headless API Communication");
+        host.Markup.Should().Contain("Architecture");
+    }
+
+    [Fact]
+    public void QaFindingPreviewList_Finding_DoesNotDuplicateRuleCode()
+    {
+        var items = new List<QaFinding>
+        {
+            new()
+            {
+                RuleCode = "PP-02",
+                Title = "PP-02",
+                Description = "Some description",
+                Severity = QaSeverity.Critical,
+                Category = QaCategory.Constitution,
+                AffectedArtifact = null,
+            }
+        };
+
+        var host = Render<TestHost>(p => p.Add(h => h.Items, items));
+
+        host.Markup.Should().Contain("PP-02");
+        host.Markup.Should().NotContain("PP-02 — PP-02");
+    }
+
+    [Fact]
+    public void QaFindingPreviewList_Finding_RendersCategoryAsSecondaryMetadata()
+    {
+        var items = new List<QaFinding>
+        {
+            new()
+            {
+                RuleCode = "PP-02",
+                Title = "Principle 2",
+                Description = "Test description",
+                Severity = QaSeverity.High,
+                Category = QaCategory.Constitution,
+                AffectedArtifact = null,
+            }
+        };
+
+        var host = Render<TestHost>(p => p.Add(h => h.Items, items));
+
+        var markup = host.Markup;
+        // Verify Principle is rendered with secondary metadata styling
+        markup.Should().Contain("qr-finding-category");
+        markup.Should().Contain("Constitution");
+    }
+
+    [Fact]
+    public void QaFindingPreviewList_ShowAll_UsesSemanticStyledButton()
+    {
+        var items = Enumerable.Range(1, 8)
+            .Select(i => new QaFinding
+            {
+                RuleCode = $"TEST-{i:D3}",
+                Title = $"Finding {i}",
+                Description = $"Description {i}",
+                Severity = QaSeverity.Medium,
+                Category = QaCategory.Constitution,
+                AffectedArtifact = null,
+            })
+            .ToList();
+
+        var host = Render<TestHost>(p => p.Add(h => h.Items, items).Add(h => h.PreviewLimit, 5));
+
+        // Initial state: Show all button visible
+        var showAllButton = host.Find("button.qr-show-toggle");
+        showAllButton.Should().NotBeNull();
+        showAllButton.TagName.Should().Be("BUTTON");
+        showAllButton.TextContent.Trim().Should().Be("Show all 8");
+        showAllButton.GetAttribute("aria-label").Should().Be("Show all 8 findings");
+
+        // Click to show all
+        showAllButton.Click();
+
+        host.WaitForAssertion(() =>
+        {
+            // All 8 should be visible
+            host.Markup.Should().Contain("TEST-006");
+            host.Markup.Should().Contain("TEST-008");
+
+            // Button changes to "Show less"
+            var showLessButton = host.Find("button.qr-show-toggle");
+            showLessButton.TextContent.Trim().Should().Be("Show less");
+            showLessButton.TagName.Should().Be("BUTTON");
+            showLessButton.HasAttribute("aria-label").Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public void QaFindingPreviewList_NonCoverageFinding_PreservesMeaningfulDescription()
+    {
+        var items = new List<QaFinding>
+        {
+            new()
+            {
+                RuleCode = "SPEC-001",
+                Title = "Specification Clarity",
+                Description = "The specification should clearly define all API endpoints",
+                Severity = QaSeverity.Medium,
+                Category = QaCategory.Specification,
+                AffectedArtifact = null,
+            }
+        };
+
+        var host = Render<TestHost>(p => p.Add(h => h.Items, items));
+
+        // Should preserve the meaningful description for non-coverage findings
+        host.Markup.Should().Contain("The specification should clearly define all API endpoints");
+        // Should NOT incorrectly replace with coverage text
+        host.Markup.Should().NotContain("Missing coverage in");
+    }
 }

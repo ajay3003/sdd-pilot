@@ -1,0 +1,106 @@
+.qr-qa-preview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.qr-finding-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.5rem 0.7rem;
+    background: var(--clr-surface, #f8fafc);
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: 4px;
+    font-size: 0.82rem;
+}
+
+.qr-finding-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.qr-finding-severity {
+    display: inline-block;
+    padding: 0.2rem 0.4rem;
+    border-radius: 2px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    white-space: nowrap;
+    flex-shrink: 0;
+    color: #fff;
+}
+
+.qr-finding-severity[data-severity="critical"] {
+    background: #dc2626;
+}
+
+.qr-finding-severity[data-severity="high"] {
+    background: #ea580c;
+}
+
+.qr-finding-severity[data-severity="medium"] {
+    background: #d97706;
+}
+
+.qr-finding-severity[data-severity="low"] {
+    background: #64748b;
+}
+
+.qr-finding-severity[data-severity="info"] {
+    background: #6b7280;
+}
+
+.qr-finding-title {
+    font-weight: 600;
+    color: var(--clr-text, #1e293b);
+    flex: 1;
+    line-height: 1.2;
+}
+
+.qr-finding-category {
+    font-size: 0.75rem;
+    color: var(--clr-text-muted, #64748b);
+    font-style: italic;
+}
+
+.qr-finding-description {
+    font-size: 0.80rem;
+    color: var(--clr-text-muted, #64748b);
+    line-height: 1.35;
+}
+
+.qr-show-toggle {
+    align-self: flex-start;
+    margin-top: 0.25rem;
+    padding: 0.35rem 0.7rem;
+    background: transparent;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: 4px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    color: var(--clr-text-muted, #64748b);
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.qr-show-toggle:hover {
+    background: var(--clr-surface-hover, #f1f5f9);
+    border-color: var(--clr-border-hover, #cbd5e1);
+}
+
+.qr-cat-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-bottom: 0.8rem;
+}
+
+.qr-cat-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--clr-text-muted, #64748b);
+    margin-bottom: 0.2rem;
+}

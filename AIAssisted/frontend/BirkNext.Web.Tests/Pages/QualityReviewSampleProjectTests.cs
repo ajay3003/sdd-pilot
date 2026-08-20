@@ -1534,6 +1534,250 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         });
     }
 
+    [Fact]
+    public void QualityReview_QaAuditorCoverageFinding_RendersConciseDescription()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new() { RuleCode = "PP-02", Title = "Principle 2", Description = "Rule 'PP-02' (Principle) has no coverage in the Specification, Plan, or Tasks.", Severity = QaSeverity.Critical, Category = QaCategory.Constitution },
+            },
+            HasConstitution = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, Critical = 1, QaAudit = qaReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        // Open QA Auditor section to see findings
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var findingCard = cut.Find(".qr-finding-card");
+            // Should show concise coverage description
+            findingCard.TextContent.Should().Contain("Missing coverage in");
+            // Should NOT show the redundant raw sentence as primary
+            findingCard.TextContent.Should().NotContain("Rule 'PP-02' (Principle) has no coverage");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorFinding_ShowsCanonicalRuleTitle()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new() { RuleCode = "PRINCIPLE-001", Title = "Headless API Communication", Severity = QaSeverity.High, Category = QaCategory.Specification },
+            },
+            HasConstitution = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, High = 1, QaAudit = qaReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var findingCard = cut.Find(".qr-finding-card");
+            findingCard.TextContent.Should().Contain("PRINCIPLE-001");
+            findingCard.TextContent.Should().Contain("Headless API Communication");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorFinding_DoesNotDuplicateRuleCode()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new() { RuleCode = "PP-02", Title = "PP-02", Severity = QaSeverity.Critical, Category = QaCategory.Constitution },
+            },
+            HasConstitution = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, Critical = 1, QaAudit = qaReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var findingCard = cut.Find(".qr-finding-card");
+            var content = findingCard.TextContent;
+            // Should not show "PP-02 — PP-02"
+            content.Should().NotContain("PP-02 — PP-02");
+            // But should show PP-02 at least once
+            content.Should().Contain("PP-02");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorFinding_CategoryVisible()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new() { RuleCode = "PP-02", Title = "Principle 2", Severity = QaSeverity.Critical, Category = QaCategory.Constitution },
+            },
+            HasConstitution = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, Critical = 1, QaAudit = qaReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var categoryElement = cut.Find(".qr-finding-category");
+            categoryElement.TextContent.Should().Contain("Constitution");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorShowAll_UsesSemanticButton()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = Enumerable.Range(1, 10)
+                .Select(i => new QaFinding
+                {
+                    RuleCode = $"TEST-{i:D3}",
+                    Title = $"Finding {i}",
+                    Severity = QaSeverity.High,
+                    Category = QaCategory.Specification,
+                })
+                .ToList(),
+            HasConstitution = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, High = 10, QaAudit = qaReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var showAllButton = cut.Find(".qr-show-toggle");
+            // Should be a semantic button element
+            showAllButton.TagName.Should().Be("BUTTON");
+            // Should show the count
+            showAllButton.TextContent.Should().Contain("10");
+            // Should have aria-label
+            showAllButton.HasAttribute("aria-label").Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorFinding_UsesCompactPreviewPresentation()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new() { RuleCode = "PP-02", Title = "Principle 2", Description = "Rule 'PP-02' (Principle) has no coverage in the Specification, Plan and Tasks.", Severity = QaSeverity.Critical, Category = QaCategory.Constitution },
+            },
+            HasConstitution = true,
+            HasSpecification = true,
+            HasPlan = true,
+            HasTasks = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, Critical = 1, QaAudit = qaReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var findingCard = cut.Find(".qr-finding-card");
+            // Should show compact presentation
+            findingCard.TextContent.Should().Contain("PP-02");
+            findingCard.TextContent.Should().Contain("Constitution");
+            findingCard.TextContent.Should().Contain("Missing coverage in Specification, Plan and Tasks.");
+            // Should NOT show duplicated code
+            var content = findingCard.TextContent;
+            content.Should().NotContain("PP-02 — PP-02");
+        });
+    }
+
     private sealed record RunCall(
         string? Constitution,
         string? Specification,
