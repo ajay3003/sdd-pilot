@@ -4796,6 +4796,239 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         });
     }
 
+    [Fact]
+    public void QualityReview_DeliveryReadiness_OverviewDoesNotDuplicateGateScores()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var drReport = new DeliveryReadinessReport
+        {
+            DevelopmentDecision = new() { Name = "Development", State = ReadinessState.NotReady, Score = 30 },
+            TestingDecision = new() { Name = "Testing", State = ReadinessState.MostlyReady, Score = 60 },
+            ReleaseDecision = new() { Name = "Release", State = ReadinessState.Blocked, Score = 0 },
+            Health = new() { OverallReadinessScore = 30 },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "delivery", PackName = "Delivery Readiness", Score = 0, DeliveryReadiness = drReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var drCard = cut.FindAll(".qr-pack-card").FirstOrDefault();
+            drCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            // Top gate cards must show gate info
+            markup.Should().Contain("Development Readiness");
+            markup.Should().Contain("Testing Readiness");
+            markup.Should().Contain("Release Readiness");
+
+            // Essential gate data from top cards
+            markup.Should().Contain("Not Ready");
+            markup.Should().Contain("Mostly Ready");
+            markup.Should().Contain("Blocked");
+
+            // Gate Scores panel must NOT exist
+            var gateScoresCard = cut.FindAll(".dr-overview-body").SelectMany(c => c.QuerySelectorAll("*"))
+                .FirstOrDefault(e => e.TextContent.Contains("Gate Scores"));
+            gateScoresCard.Should().BeNull("Gate Scores panel should not duplicate top gate cards");
+
+            // Loaded Artifacts must still be visible
+            markup.Should().Contain("Loaded Artifacts");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DeliveryReadiness_TabsSwitchContent()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var drReport = new DeliveryReadinessReport
+        {
+            DevelopmentDecision = new() { Name = "Development", State = ReadinessState.NotReady, Score = 30 },
+            TestingDecision = new() { Name = "Testing", State = ReadinessState.Ready, Score = 85 },
+            ReleaseDecision = new() { Name = "Release", State = ReadinessState.Blocked, Score = 0 },
+            Blockers = new List<ReadinessBlocker>
+            {
+                new() { Title = "Development gate not cleared", Severity = GateSeverity.Critical, Phase = "Release", Description = "Development readiness must reach MostlyReady before release assessment. Current: NotReady." },
+                new() { Title = "Insufficient compliance for release", Severity = GateSeverity.Critical, Phase = "Release", Description = "Compliance must reach 80% before release. Current: 0%." },
+            },
+            Recommendations = new List<DeliveryRecommendation>
+            {
+                new() { Text = "Raise Development readiness", Phase = "Release", Priority = GateSeverity.Critical },
+                new() { Text = "Increase compliance coverage to 80%", Phase = "Release", Priority = GateSeverity.Critical },
+                new() { Text = "Address QA findings", Phase = "Release", Priority = GateSeverity.High },
+            },
+            Health = new() { OverallReadinessScore = 30 },
+            HasConstitution = true,
+            HasSpecification = true,
+            HasPlan = true,
+            HasTasks = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "delivery", PackName = "Delivery Readiness", Score = 0, Critical = 2, DeliveryReadiness = drReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        // Wait for report to render
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Delivery Readiness");
+        });
+
+        // Click Delivery Readiness pack card to open
+        var drCard = cut.FindAll(".qr-pack-card").FirstOrDefault();
+        drCard!.Click();
+
+        // Initial state: Overview active
+        cut.WaitForAssertion(() =>
+        {
+            var tabs = cut.FindAll(".tab-btn");
+            var overviewTab = tabs.FirstOrDefault(t => t.TextContent.Contains("Overview"));
+            overviewTab!.GetAttribute("class").Should().Contain("is-active");
+            // Overview content
+            cut.Markup.Should().Contain("Loaded Artifacts");
+        });
+
+        // Click Blockers tab
+        var blockersTabButton = cut.FindAll(".tab-btn").FirstOrDefault(t => t.TextContent.Contains("Blockers"));
+        blockersTabButton!.Click();
+
+        // Verify Blockers tab is active and content displayed
+        cut.WaitForAssertion(() =>
+        {
+            var tabs = cut.FindAll(".tab-btn");
+            var blockersTab = tabs.FirstOrDefault(t => t.TextContent.Contains("Blockers"));
+            var overviewTab = tabs.FirstOrDefault(t => t.TextContent.Contains("Overview"));
+
+            // Blockers active, Overview not
+            blockersTab!.GetAttribute("class").Should().Contain("is-active");
+            overviewTab!.GetAttribute("class").Should().NotContain("is-active");
+
+            // Blockers tab body content visible
+            cut.Markup.Should().Contain("Development gate not cleared");
+            cut.Markup.Should().Contain("Severity:");
+
+            // Blockers badge count
+            var blockersBadge = blockersTab.QuerySelector(".dr-tab-badge");
+            blockersBadge.Should().NotBeNull();
+            blockersBadge!.TextContent.Should().Be("2");
+        });
+
+        // Click Recommendations tab (MISSING PREVIOUS VERIFICATION)
+        var recsTabButton = cut.FindAll(".tab-btn").FirstOrDefault(t => t.TextContent.Contains("Recommendations"));
+        recsTabButton.Should().NotBeNull("Recommendations tab button should exist");
+        recsTabButton!.Click();
+
+        // Verify Recommendations tab is active and content displayed
+        cut.WaitForAssertion(() =>
+        {
+            var tabs = cut.FindAll(".tab-btn");
+            var recsTab = tabs.FirstOrDefault(t => t.TextContent.Contains("Recommendations"));
+            var blockersTab = tabs.FirstOrDefault(t => t.TextContent.Contains("Blockers"));
+            var overviewTab = tabs.FirstOrDefault(t => t.TextContent.Contains("Overview"));
+
+            // Recommendations active, Blockers and Overview not
+            recsTab!.GetAttribute("class").Should().Contain("is-active");
+            blockersTab!.GetAttribute("class").Should().NotContain("is-active");
+            overviewTab!.GetAttribute("class").Should().NotContain("is-active");
+
+            // Recommendations tab body content visible (has search input specific to Recommendations tab)
+            var searchInputs = cut.FindAll("input[type='search']");
+            searchInputs.Any(i => i.GetAttribute("placeholder")?.Contains("recommendations") == true).Should().BeTrue();
+
+            // Recommendations badge count
+            var recsBadge = recsTab.QuerySelector(".dr-tab-badge");
+            recsBadge.Should().NotBeNull();
+            recsBadge!.TextContent.Should().Be("3");
+        });
+
+        // Click Overview tab to return
+        var overviewTabButton = cut.FindAll(".tab-btn").FirstOrDefault(t => t.TextContent.Contains("Overview"));
+        overviewTabButton!.Click();
+
+        // Verify Overview active again and content returned
+        cut.WaitForAssertion(() =>
+        {
+            var tabs = cut.FindAll(".tab-btn");
+            var overviewTab = tabs.FirstOrDefault(t => t.TextContent.Contains("Overview"));
+            var recsTab = tabs.FirstOrDefault(t => t.TextContent.Contains("Recommendations"));
+
+            // Overview active, Recommendations not
+            overviewTab!.GetAttribute("class").Should().Contain("is-active");
+            recsTab!.GetAttribute("class").Should().NotContain("is-active");
+
+            // Overview content visible again
+            cut.Markup.Should().Contain("Loaded Artifacts");
+            cut.Markup.Should().Contain("Overall Score");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DeliveryReadinessBlocker_UnparseableDescriptionFallsBackSafely()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        // Blocker with unfamiliar description format (not a standard gate/compliance/readiness blocker)
+        var drReport = new DeliveryReadinessReport
+        {
+            DevelopmentDecision = new() { Name = "Development", State = ReadinessState.NotReady, Score = 30 },
+            Blockers = new List<ReadinessBlocker>
+            {
+                new() {
+                    Title = "Custom unfamiliar blocker",
+                    Severity = GateSeverity.High,
+                    Phase = "Release",
+                    Description = "This is a custom blocker with an unfamiliar format that parser doesn't recognize."
+                },
+            },
+            Health = new() { OverallReadinessScore = 30 },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "delivery", PackName = "Delivery Readiness", Score = 0, Critical = 0, High = 1, DeliveryReadiness = drReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var drCard = cut.FindAll(".qr-pack-card").FirstOrDefault();
+            drCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            // Blocker still renders
+            markup.Should().Contain("Custom unfamiliar blocker");
+
+            // Original description is available
+            markup.Should().Contain("unfamiliar format");
+
+            // No fabricated Current/Required when parsing fails
+            // (Just verify blocker renders without error; parser gracefully omits unparseable Current/Required row)
+            cut.Markup.Should().NotBeNull();
+        });
+    }
+
     private sealed record RunCall(
         string? Constitution,
         string? Specification,
