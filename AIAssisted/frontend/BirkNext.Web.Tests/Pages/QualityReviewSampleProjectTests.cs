@@ -1318,6 +1318,222 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         });
     }
 
+    [Fact]
+    public void QualityReview_TopIssues_ShowsRuleCodeAndDescription()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var compReport = new ConstitutionComplianceReport
+        {
+            Gaps = new List<ComplianceGap>
+            {
+                new() { RuleId = "PP-02", RuleTitle = "Principle 2 — Clarity", RuleType = ConstitutionRuleType.Principle, MissingInSpec = true, MissingInPlan = true, Severity = ViolationSeverity.Critical },
+            },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "compliance", PackName = "Constitution Compliance", Score = 50, Critical = 1, Compliance = compReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var topIssueCard = cut.Find(".qr-issue-card");
+            // Should show code AND meaningful title/description
+            topIssueCard.TextContent.Should().Contain("PP-02");
+            topIssueCard.TextContent.Should().Contain("Clarity");
+            topIssueCard.TextContent.Should().Contain("Missing");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_DoesNotRenderDuplicateRuleCodeTitle()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new() { RuleCode = "TEST-001", Title = "TEST-001", Severity = QaSeverity.Critical, Category = QaCategory.Constitution },
+            },
+            HasConstitution = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, Critical = 1, QaAudit = qaReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var topIssueCard = cut.Find(".qr-issue-card");
+            // Should NOT show duplicated code like "TEST-001 — TEST-001"
+            var content = topIssueCard.TextContent;
+            content.Should().NotContain("TEST-001 — TEST-001");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_DoesNotFillSlotsWithDuplicateSources()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new() { RuleCode = "PP-02", Title = "Principle 2", Severity = QaSeverity.Critical, Category = QaCategory.Constitution },
+                new() { RuleCode = "PP-04", Title = "Principle 4", Severity = QaSeverity.High, Category = QaCategory.Constitution },
+            },
+            HasConstitution = true,
+        };
+
+        var compReport = new ConstitutionComplianceReport
+        {
+            Gaps = new List<ComplianceGap>
+            {
+                new() { RuleId = "PP-02", RuleTitle = "Principle 2", RuleType = ConstitutionRuleType.Principle, MissingInSpec = true, Severity = ViolationSeverity.Critical },
+                new() { RuleId = "PP-04", RuleTitle = "Principle 4", RuleType = ConstitutionRuleType.Principle, MissingInPlan = true, Severity = ViolationSeverity.High },
+            },
+        };
+
+        var drReport = new DeliveryReadinessReport
+        {
+            Blockers = new List<ReadinessBlocker>
+            {
+                new() { Title = "Release gate", Severity = GateSeverity.Critical },
+            },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, Critical = 2, High = 1, QaAudit = qaReport },
+            new QualityReviewPackResult { PackId = "compliance", PackName = "Constitution Compliance", Score = 50, Critical = 1, High = 1, Compliance = compReport },
+            new QualityReviewPackResult { PackId = "delivery", PackName = "Delivery Readiness", Score = 70, Critical = 1, DeliveryReadiness = drReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var topIssueCards = cut.FindAll(".qr-issue-card");
+            // Should have exactly 3 unique logical issues, NOT 5 with duplicate fills
+            topIssueCards.Count.Should().Be(3);
+
+            // Verify the three are the expected unique logical IDs
+            var content = string.Concat(topIssueCards.Select(c => c.TextContent));
+            content.Should().Contain("PP-02");
+            content.Should().Contain("PP-04");
+            content.Should().Contain("Release gate");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssue_ClickOpensCanonicalPack()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new() { RuleCode = "PP-02", Title = "Principle 2", Severity = QaSeverity.Critical, Category = QaCategory.Constitution },
+            },
+            HasConstitution = true,
+        };
+
+        var compReport = new ConstitutionComplianceReport
+        {
+            Gaps = new List<ComplianceGap>
+            {
+                new() { RuleId = "PP-02", RuleTitle = "Principle 2", RuleType = ConstitutionRuleType.Principle, MissingInSpec = true, Severity = ViolationSeverity.Critical },
+            },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, Critical = 1, QaAudit = qaReport },
+            new QualityReviewPackResult { PackId = "compliance", PackName = "Constitution Compliance", Score = 50, Critical = 1, Compliance = compReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            // Initial state: packs collapsed
+            var complianceSection = cut.FindAll(".qr-result-section").FirstOrDefault(s => s.TextContent.Contains("Constitution Compliance"));
+            complianceSection.Should().NotBeNull();
+
+            // Find and click the PP-02 Top Issue card (should be semantic button)
+            var topIssueButton = cut.FindAll(".qr-issue-card").FirstOrDefault(c => c.TextContent.Contains("PP-02"));
+            topIssueButton.Should().NotBeNull();
+
+            // Verify it's a button element
+            topIssueButton!.TagName.Should().Be("BUTTON");
+
+            // Click it
+            topIssueButton.Click();
+
+            // After click: Constitution Compliance should be expanded, QA Auditor collapsed
+            cut.WaitForAssertion(() =>
+            {
+                var qaSection = cut.FindAll(".qr-result-section").FirstOrDefault(s => s.TextContent.Contains("QA Auditor"));
+                var compSection = cut.FindAll(".qr-result-section").FirstOrDefault(s => s.TextContent.Contains("Constitution Compliance"));
+
+                // Verify Constitution Compliance opened
+                compSection?.GetAttribute("style").Should().NotContain("display:none");
+            });
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_DeliveryBlockerKeepsFix()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var drReport = new DeliveryReadinessReport
+        {
+            Blockers = new List<ReadinessBlocker>
+            {
+                new() { Title = "Development gate not cleared", Severity = GateSeverity.Critical, Description = "Development readiness must reach MostlyReady before release assessment." },
+            },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "delivery", PackName = "Delivery Readiness", Score = 70, Critical = 1, DeliveryReadiness = drReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var topIssueCard = cut.Find(".qr-issue-card");
+            // Should show blocker title
+            topIssueCard.TextContent.Should().Contain("Development gate");
+            // Should show Delivery Readiness source
+            topIssueCard.TextContent.Should().Contain("Delivery Readiness");
+            // Should show Fix: and recommendation
+            topIssueCard.TextContent.Should().Contain("Fix:");
+            topIssueCard.TextContent.Should().Contain("MostlyReady");
+        });
+    }
+
     private sealed record RunCall(
         string? Constitution,
         string? Specification,

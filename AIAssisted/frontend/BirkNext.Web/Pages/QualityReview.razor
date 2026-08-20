@@ -323,7 +323,7 @@
                     <button class="qr-issue-card" @onclick="() => ExpandPackFromCard(issue.PrimaryPackId)" type="button">
                         <div class="qr-issue-severity" data-severity="@issue.Severity.ToLowerInvariant()">@issue.Severity.ToUpper()</div>
                         <div class="qr-issue-content">
-                            <div class="qr-issue-title">@issue.RuleCode — @issue.Title</div>
+                            <div class="qr-issue-title">@(issue.RuleCode == issue.Title ? issue.RuleCode : $"{issue.RuleCode} — {issue.Title}")</div>
                             @if (!string.IsNullOrEmpty(issue.Description))
                             {
                                 <div class="qr-issue-desc">@issue.Description</div>
