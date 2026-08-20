@@ -60,7 +60,7 @@
     public string ContextLabel { get; set; } = "findings";
 
     [Parameter]
-    public Dictionary<string, (string RuleTitle, string RuleType)>? CanonicalMetadata { get; set; }
+    public Dictionary<string, ConstitutionRulePresentationMetadata>? CanonicalMetadata { get; set; }
 
     private IEnumerable<QaFinding> VisibleFindings => ShowAll ? Items : Items.Take(PreviewLimit);
 

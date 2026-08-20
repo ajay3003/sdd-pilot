@@ -3341,6 +3341,105 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
     }
 
     [Fact]
+    public void QualityReview_ConstitutionCompliance_ClickOpensWithoutRenderException()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' (Principle) has no coverage...",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            },
+            Gaps = new List<ComplianceGap>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = true,
+                    MissingInPlan = true,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Critical = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        // Open Constitution Compliance and verify it renders correctly
+        // This regression test ensures that the reference-type ConstitutionRulePresentationMetadata
+        // (instead of ValueTuple) doesn't cause WASM boxing exceptions when rendering
+        cut.WaitForAssertion(() =>
+        {
+            var headers = cut.FindAll("button.qr-result-header");
+            headers.Should().HaveCountGreaterThanOrEqualTo(2);
+
+            var complianceHeader = headers.First(b => b.TextContent.Contains("Constitution Compliance"));
+            complianceHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            // Verify Constitution Compliance detail body is rendered
+            var bodies = cut.FindAll(".qr-result-body");
+            bodies.Should().HaveCountGreaterThanOrEqualTo(1);
+
+            var complianceBody = bodies.LastOrDefault();
+            complianceBody.Should().NotBeNull();
+            complianceBody!.TextContent.Should().Contain("Coverage Gaps");
+        });
+    }
+
+    [Fact]
     public void QualityReview_QaAuditorConstitutionFinding_FullPageWiringUsesCanonicalMetadata()
     {
         SeedProjectA();

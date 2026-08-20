@@ -1302,9 +1302,9 @@
         }
     };
 
-    private Dictionary<string, (string RuleTitle, string RuleType)> BuildConstitutionMetadataForPresentation()
+    private Dictionary<string, ConstitutionRulePresentationMetadata> BuildConstitutionMetadataForPresentation()
     {
-        var lookup = new Dictionary<string, (string RuleTitle, string RuleType)>(StringComparer.OrdinalIgnoreCase);
+        var lookup = new Dictionary<string, ConstitutionRulePresentationMetadata>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var r in _report?.PackResults ?? [])
         {
@@ -1315,7 +1315,7 @@
                     var key = result.RuleId.ToUpperInvariant();
                     if (!lookup.ContainsKey(key))
                     {
-                        lookup[key] = (result.RuleTitle, result.RuleType.ToString());
+                        lookup[key] = new ConstitutionRulePresentationMetadata(result.RuleTitle, result.RuleType.ToString());
                     }
                 }
             }
