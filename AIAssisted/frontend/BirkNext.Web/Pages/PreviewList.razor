@@ -1,0 +1,57 @@
+@typeparam TItem
+
+<div class="preview-list">
+    @foreach (var item in VisibleItems)
+    {
+        @ItemTemplate(item)
+    }
+
+    @if (Items.Count > PreviewLimit && !ShowAll)
+    {
+        <button class="qr-show-toggle"
+                type="button"
+                @onclick="async () => await OnShowAllChanged.InvokeAsync(true)"
+                aria-label="@GetAriaLabel(true)">
+            Show all @Items.Count
+        </button>
+    }
+    else if (Items.Count > PreviewLimit && ShowAll)
+    {
+        <button class="qr-show-toggle"
+                type="button"
+                @onclick="async () => await OnShowAllChanged.InvokeAsync(false)"
+                aria-label="@GetAriaLabel(false)">
+            Show less
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public List<TItem> Items { get; set; } = [];
+
+    [Parameter]
+    public int PreviewLimit { get; set; } = 5;
+
+    [Parameter]
+    public bool ShowAll { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OnShowAllChanged { get; set; }
+
+    [Parameter]
+    public RenderFragment<TItem>? ItemTemplate { get; set; }
+
+    [Parameter]
+    public string? ContextLabel { get; set; }
+
+    private IEnumerable<TItem> VisibleItems => ShowAll ? Items : Items.Take(PreviewLimit);
+
+    private string GetAriaLabel(bool willShowAll)
+    {
+        var context = ContextLabel ?? "items";
+        return willShowAll
+            ? $"Show all {Items.Count} {context}"
+            : $"Show fewer {context}";
+    }
+}

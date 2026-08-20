@@ -1054,33 +1054,17 @@
             __builder.AddContent(seq++, categoryLabel);
             __builder.CloseElement();
 
-            var isExpanded = _expandedQaAuditorGroups.Contains(groupKey);
+            var groupKeyCopy = groupKey;
+            var isExpanded = _expandedQaAuditorGroups.Contains(groupKeyCopy);
             var findings = grp.OrderBy(f => f.Severity).ToList();
-            var previewLimit = 5;
-            var visibleFindings = isExpanded ? findings : findings.Take(previewLimit).ToList();
 
-            foreach (var f in visibleFindings)
-            {
-                __builder.OpenComponent<IssueCard>(seq++);
-                __builder.AddAttribute(seq++, "Severity", QaSevString(f.Severity));
-                __builder.AddAttribute(seq++, "Component", $"{f.RuleCode}{(f.AffectedArtifact is not null ? " · " + f.AffectedArtifact : "")}");
-                __builder.AddAttribute(seq++, "Description", $"{f.Title} — {f.Description}");
-                __builder.CloseComponent();
-            }
-
-            if (count > previewLimit)
-            {
-                __builder.OpenElement(seq++, "button");
-                __builder.AddAttribute(seq++, "class", "qr-show-toggle");
-                __builder.AddAttribute(seq++, "type", "button");
-                __builder.AddAttribute(seq++, "@onclick", EventCallback.Factory.Create(this, () => ToggleQaAuditorGroup(groupKey)));
-                if (isExpanded)
-                    __builder.AddAttribute(seq++, "aria-label", $"Show fewer {groupKey} findings");
-                else
-                    __builder.AddAttribute(seq++, "aria-label", $"Show all {count} {groupKey} findings");
-                __builder.AddContent(seq++, isExpanded ? "Show less" : $"Show all {count}");
-                __builder.CloseElement();
-            }
+            __builder.OpenComponent<QaFindingPreviewList>(seq++);
+            __builder.AddAttribute(seq++, "Items", findings);
+            __builder.AddAttribute(seq++, "PreviewLimit", 5);
+            __builder.AddAttribute(seq++, "ShowAll", isExpanded);
+            __builder.AddAttribute(seq++, "OnShowAllChanged", EventCallback.Factory.Create<bool>(this, (val) => ToggleQaAuditorGroup(groupKeyCopy)));
+            __builder.AddAttribute(seq++, "ContextLabel", $"{groupKey.ToLower()} findings");
+            __builder.CloseComponent();
 
             __builder.CloseElement();
         }
@@ -1306,7 +1290,7 @@
         {
             <SectionHeader Title="Readiness Gaps"
                            Description="@($"{report.Gaps.Count} gap{(report.Gaps.Count != 1 ? "s" : "")} · sorted by severity")" />
-            @foreach (var gap in report.Gaps.Take(_qaGapShowAll ? 999 : 6))
+            @foreach (var gap in (_qaGapShowAll ? report.Gaps : report.Gaps.Take(6)))
             {
                 <IssueCard Severity="@gap.Severity.ToString().ToLowerInvariant()"
                            Component="@QrShortCategory(gap.Category)"
@@ -1325,7 +1309,7 @@
         {
             <SectionHeader Title="Recommendations"
                            Description="@($"{report.Recommendations.Count} recommendation{(report.Recommendations.Count != 1 ? "s" : "")} · highest priority first")" />
-            @foreach (var rec in report.Recommendations.Take(_qaRecShowAll ? 999 : 5))
+            @foreach (var rec in (_qaRecShowAll ? report.Recommendations : report.Recommendations.Take(5)))
             {
                 <RecommendationCard Title="@rec.Text"
                                     Description="@rec.TargetArtifact.ToString()"

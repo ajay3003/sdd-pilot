@@ -1,0 +1,53 @@
+@using BirkNext.Web.Models
+
+<div class="qr-qa-preview-list">
+    @foreach (var finding in VisibleFindings)
+    {
+        <IssueCard Severity="@QaSevString(finding.Severity)"
+                   Component="@GetComponent(finding)"
+                   Description="@($"{finding.Title} — {finding.Description}")" />
+    }
+
+    @if (Items.Count > PreviewLimit && !ShowAll)
+    {
+        <button class="qr-show-toggle"
+                type="button"
+                @onclick="async () => await OnShowAllChanged.InvokeAsync(true)"
+                aria-label="@($"Show all {Items.Count} {ContextLabel}")">
+            Show all @Items.Count
+        </button>
+    }
+    else if (Items.Count > PreviewLimit && ShowAll)
+    {
+        <button class="qr-show-toggle"
+                type="button"
+                @onclick="async () => await OnShowAllChanged.InvokeAsync(false)"
+                aria-label="@($"Show fewer {ContextLabel}")">
+            Show less
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public List<QaFinding> Items { get; set; } = [];
+
+    [Parameter]
+    public int PreviewLimit { get; set; } = 5;
+
+    [Parameter]
+    public bool ShowAll { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OnShowAllChanged { get; set; }
+
+    [Parameter]
+    public string ContextLabel { get; set; } = "findings";
+
+    private IEnumerable<QaFinding> VisibleFindings => ShowAll ? Items : Items.Take(PreviewLimit);
+
+    private string GetComponent(QaFinding finding) =>
+        $"{finding.RuleCode}{(finding.AffectedArtifact is not null ? " · " + finding.AffectedArtifact : "")}";
+
+    private string QaSevString(QaSeverity sev) => sev.ToString();
+}
