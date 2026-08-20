@@ -457,6 +457,7 @@
 
     // ── Delivery Readiness detail state ───────────────────────────────────────
     private string        _drTab                   = "overview";
+    private bool          _drBlockerShowAll        = false;
     private GateSeverity? _drBlockerSeverityFilter;
     private string?       _drBlockerPhaseFilter;
     private string?       _drRecPhaseFilter;
@@ -1743,6 +1744,124 @@
 
     // ── Delivery Readiness helpers ────────────────────────────────────────────
 
+    private RenderFragment DrBlockerCard(ReadinessBlocker blocker) => __builder =>
+    {
+        var severityLabel = DrFormatGateSeverity(blocker.Severity);
+        var phaseLabel = blocker.Phase ?? "General";
+        <div class="dr-blocker-card">
+            <div class="dr-blocker-meta">
+                <span class="dr-blocker-severity">[@severityLabel]</span>
+                <span class="dr-blocker-phase">@phaseLabel</span>
+            </div>
+            <div class="dr-blocker-title">@blocker.Title</div>
+            @if (!string.IsNullOrEmpty(blocker.Description))
+            {
+                var currentState = DrParseBlockerCurrentState(blocker.Description, blocker.Category);
+                var requiredState = DrParseBlockerRequiredState(blocker.Title, blocker.Category);
+                <div class="dr-blocker-state">
+                    @if (!string.IsNullOrEmpty(currentState) && !string.IsNullOrEmpty(requiredState))
+                    {
+                        <span>Current: @currentState</span>
+                        <span> · </span>
+                        <span>Required: @requiredState</span>
+                    }
+                </div>
+            }
+            <div class="dr-blocker-fix">
+                @DrFormatBlockerFix(blocker.Title, blocker.Description, blocker.Category)
+            </div>
+        </div>
+    };
+
+    private static string DrFormatGateSeverity(GateSeverity severity) => severity switch
+    {
+        GateSeverity.Critical => "CRITICAL",
+        GateSeverity.High     => "HIGH",
+        GateSeverity.Medium   => "MEDIUM",
+        GateSeverity.Low      => "LOW",
+        _                     => severity.ToString(),
+    };
+
+    private static string DrParseBlockerCurrentState(string description, string category)
+    {
+        if (string.IsNullOrEmpty(description))
+            return "";
+
+        // Pattern: "Current: {state}."
+        var match = System.Text.RegularExpressions.Regex.Match(description, @"Current:\s*([^\.]+)");
+        if (match.Success)
+        {
+            var rawValue = match.Groups[1].Value.Trim();
+            return DrFormatStateValue(rawValue);
+        }
+
+        return "";
+    }
+
+    private static string DrParseBlockerRequiredState(string title, string category)
+    {
+        // Gate blockers: required = MostlyReady
+        if (title.Contains("gate", StringComparison.OrdinalIgnoreCase))
+            return "Mostly Ready";
+
+        // Compliance: required = 80%
+        if (title.Contains("Insufficient compliance", StringComparison.OrdinalIgnoreCase))
+            return "80%";
+
+        // Readiness score: required = 75/100
+        if (title.Contains("readiness too low", StringComparison.OrdinalIgnoreCase))
+            return "75 / 100";
+
+        return "";
+    }
+
+    private static string DrFormatStateValue(string rawValue)
+    {
+        // Format enum values as human-readable
+        return rawValue switch
+        {
+            "NotReady"    => "Not Ready",
+            "MostlyReady" => "Mostly Ready",
+            "Ready"       => "Ready",
+            "Blocked"     => "Blocked",
+            _             => rawValue, // Already formatted or percentage/number
+        };
+    }
+
+    private static string DrFormatBlockerFix(string title, string description, string category)
+    {
+        if (string.IsNullOrEmpty(description))
+            return "Resolve this blocker to proceed.";
+
+        // Development/Testing gate: "Raise X readiness to Mostly Ready."
+        if (title.Contains("Development gate", StringComparison.OrdinalIgnoreCase))
+            return "Fix: Raise Development readiness to Mostly Ready.";
+
+        if (title.Contains("Testing gate", StringComparison.OrdinalIgnoreCase))
+            return "Fix: Raise Testing readiness to Mostly Ready.";
+
+        // Compliance: "Raise compliance to at least 80%."
+        if (title.Contains("Insufficient compliance", StringComparison.OrdinalIgnoreCase))
+            return "Fix: Raise compliance to at least 80%.";
+
+        // Readiness score: extract target
+        if (title.Contains("readiness too low", StringComparison.OrdinalIgnoreCase))
+            return "Fix: Raise readiness score to at least 75 / 100.";
+
+        // Generic: extract action from description if present
+        if (description.Contains("must reach", StringComparison.OrdinalIgnoreCase))
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(description, @"must reach\s+(\w+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success)
+            {
+                var target = match.Groups[1].Value;
+                return $"Fix: Raise to {DrFormatStateValue(target)}.";
+            }
+        }
+
+        return "Fix: Resolve to proceed.";
+    }
+
     private RenderFragment DrDecisionCard(ReadinessDecision decision) => __builder =>
     {
         <Card Title="@($"{decision.Name} Readiness")">
@@ -1782,32 +1901,29 @@
                         @DrArtifactRow("Tasks", r.HasTasks)
                     </KeyValueList>
                 </Card>
-                <Card Title="Gate Scores">
-                    <div style="display:flex;flex-direction:column;gap:12px">
-                        @DrGateScoreRow("Development", r.DevelopmentDecision)
-                        @DrGateScoreRow("Testing",     r.TestingDecision)
-                        @DrGateScoreRow("Release",     r.ReleaseDecision)
-                    </div>
-                </Card>
             </div>
             @if (r.Blockers.Count > 0)
             {
                 <div>
                     <SectionHeader Title="Critical Blockers" />
-                    <div class="issue-cards">
-                        @foreach (var b in r.Blockers.Where(b => b.Severity == GateSeverity.Critical).Take(3))
+                    <div class="dr-blocker-cards">
+                        @foreach (var b in (_drBlockerShowAll ? r.Blockers : r.Blockers.Take(3)))
                         {
-                            <IssueCard Severity="critical" Component="@b.Phase" Description="@b.Title"
-                                       SuggestedFix="@(string.IsNullOrEmpty(b.Description) ? null : b.Description)" />
-                        }
-                        @if (r.Blockers.Count(b => b.Severity == GateSeverity.Critical) > 3)
-                        {
-                            <div class="dr-see-more">
-                                + @(r.Blockers.Count(b => b.Severity == GateSeverity.Critical) - 3) more —
-                                <button class="dr-see-more-btn" @onclick='() => _drTab = "blockers"'>view all</button>
-                            </div>
+                            @DrBlockerCard(b)
                         }
                     </div>
+                    @if (r.Blockers.Count > 3)
+                    {
+                        var showAllLabel = _drBlockerShowAll ? "Show less" : $"Show all {r.Blockers.Count} blockers";
+                        __builder.OpenElement(3000, "button");
+                        __builder.AddAttribute(3001, "class", "qr-show-toggle");
+                        __builder.AddAttribute(3002, "type", "button");
+                        __builder.AddAttribute(3003, "aria-label", showAllLabel);
+                        __builder.AddEventPreventDefaultAttribute(3004, "onclick", true);
+                        __builder.AddAttribute(3005, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, () => _drBlockerShowAll = !_drBlockerShowAll));
+                        __builder.AddContent(3006, showAllLabel);
+                        __builder.CloseElement();
+                    }
                 </div>
             }
         </div>

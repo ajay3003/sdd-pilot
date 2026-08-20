@@ -4528,6 +4528,274 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         });
     }
 
+    [Fact]
+    public void QualityReview_DeliveryReadiness_FormatsGateStatusesForDisplay()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var drReport = new DeliveryReadinessReport
+        {
+            DevelopmentDecision = new() { Name = "Development", State = ReadinessState.NotReady, Score = 30 },
+            TestingDecision = new() { Name = "Testing", State = ReadinessState.MostlyReady, Score = 60 },
+            ReleaseDecision = new() { Name = "Release", State = ReadinessState.Blocked, Score = 0 },
+            Blockers = new List<ReadinessBlocker>
+            {
+                new() { Title = "Development gate not cleared", Severity = GateSeverity.Critical, Phase = "Release", Description = "Development readiness must reach MostlyReady before release assessment. Current: NotReady." },
+            },
+            Health = new() { OverallReadinessScore = 30 },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "delivery", PackName = "Delivery Readiness", Score = 0, Critical = 1, DeliveryReadiness = drReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var drCard = cut.FindAll(".qr-pack-card").FirstOrDefault();
+            drCard.Should().NotBeNull();
+            drCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            // Verify human-readable status appears
+            markup.Should().Contain("Not Ready");
+            markup.Should().Contain("Mostly Ready");
+            markup.Should().Contain("Blocked");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DeliveryReadinessBlocker_RendersCurrentRequiredAndFix()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var drReport = new DeliveryReadinessReport
+        {
+            DevelopmentDecision = new() { Name = "Development", State = ReadinessState.NotReady, Score = 30 },
+            Blockers = new List<ReadinessBlocker>
+            {
+                new() { Title = "Development gate not cleared", Severity = GateSeverity.Critical, Phase = "Release", Description = "Development readiness must reach MostlyReady before release assessment. Current: NotReady." },
+            },
+            Health = new() { OverallReadinessScore = 30 },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "delivery", PackName = "Delivery Readiness", Score = 0, Critical = 1, DeliveryReadiness = drReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var drCard = cut.FindAll(".qr-pack-card").FirstOrDefault();
+            drCard.Should().NotBeNull();
+            drCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            // Verify hierarchy
+            markup.Should().Contain("[CRITICAL]");
+            markup.Should().Contain("Release");
+            markup.Should().Contain("Development gate not cleared");
+            // Verify state row
+            markup.Should().Contain("Current: Not Ready");
+            markup.Should().Contain("Required: Mostly Ready");
+            // Verify actionable fix
+            markup.Should().Contain("Fix: Raise Development readiness to Mostly Ready");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DeliveryReadinessBlocker_RendersComplianceThreshold()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var drReport = new DeliveryReadinessReport
+        {
+            DevelopmentDecision = new() { Name = "Development", State = ReadinessState.Ready, Score = 80 },
+            ReleaseDecision = new() { Name = "Release", State = ReadinessState.NotReady, Score = 0 },
+            Blockers = new List<ReadinessBlocker>
+            {
+                new() { Title = "Insufficient compliance for release", Severity = GateSeverity.Critical, Phase = "Release", Description = "Compliance must reach 80% before release. Current: 0%." },
+            },
+            Health = new() { OverallReadinessScore = 50 },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "delivery", PackName = "Delivery Readiness", Score = 0, Critical = 1, DeliveryReadiness = drReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var drCard = cut.FindAll(".qr-pack-card").FirstOrDefault();
+            drCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            // Verify state row with percentages
+            markup.Should().Contain("Current: 0%");
+            markup.Should().Contain("Required: 80%");
+            // Verify actionable fix
+            markup.Should().Contain("Fix: Raise compliance to at least 80%");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DeliveryReadinessBlockers_ShowAllUsesSafeToggle()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var drReport = new DeliveryReadinessReport
+        {
+            DevelopmentDecision = new() { Name = "Development", State = ReadinessState.NotReady, Score = 30 },
+            Blockers = new List<ReadinessBlocker>
+            {
+                new() { Title = "Blocker 1", Severity = GateSeverity.Critical, Phase = "Release" },
+                new() { Title = "Blocker 2", Severity = GateSeverity.Critical, Phase = "Release" },
+                new() { Title = "Blocker 3", Severity = GateSeverity.Critical, Phase = "Release" },
+                new() { Title = "Blocker 4", Severity = GateSeverity.Critical, Phase = "Release" },
+            },
+            Health = new() { OverallReadinessScore = 30 },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "delivery", PackName = "Delivery Readiness", Score = 0, Critical = 4, DeliveryReadiness = drReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var drCard = cut.FindAll(".qr-pack-card").FirstOrDefault();
+            drCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            // Initial state: only 3 blockers visible
+            var blockerCards = cut.FindAll(".dr-blocker-card");
+            blockerCards.Count.Should().Be(3);
+
+            // Verify Show all button exists
+            var showAllButton = cut.FindAll(".qr-show-toggle").FirstOrDefault();
+            showAllButton.Should().NotBeNull();
+            showAllButton!.TextContent.Should().Contain("Show all 4 blockers");
+
+            // Verify button is semantic and uses safe event binding
+            showAllButton.TagName.Should().Be("BUTTON");
+            // Event binding exists (either "onclick" or "blazor:onclick" depending on rendering mode)
+            var hasEventBinding = showAllButton.GetAttribute("onclick") != null ||
+                                  showAllButton.GetAttribute("blazor:onclick") != null;
+            hasEventBinding.Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DeliveryReadiness_LoadedArtifacts_RendersCompactStatus()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var drReport = new DeliveryReadinessReport
+        {
+            DevelopmentDecision = new() { Name = "Development", State = ReadinessState.Ready, Score = 85 },
+            HasConstitution = true,
+            HasSpecification = true,
+            HasPlan = true,
+            HasTasks = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "delivery", PackName = "Delivery Readiness", Score = 85, DeliveryReadiness = drReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var drCard = cut.FindAll(".qr-pack-card").FirstOrDefault();
+            drCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            // Verify all artifacts appear
+            markup.Should().Contain("Constitution");
+            markup.Should().Contain("Specification");
+            markup.Should().Contain("Plan");
+            markup.Should().Contain("Tasks");
+            // Verify status shown
+            markup.Should().Contain("Loaded");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DeliveryReadiness_TabsUseSemanticControls()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var drReport = new DeliveryReadinessReport
+        {
+            DevelopmentDecision = new() { Name = "Development", State = ReadinessState.Ready, Score = 85 },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "delivery", PackName = "Delivery Readiness", Score = 85, DeliveryReadiness = drReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var drCard = cut.FindAll(".qr-pack-card").FirstOrDefault();
+            drCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var tabs = cut.FindAll(".tab-btn");
+            tabs.Count.Should().BeGreaterThan(0);
+
+            // All tabs should be semantic button elements
+            foreach (var tab in tabs)
+            {
+                tab.TagName.Should().Be("BUTTON");
+                tab.GetAttribute("role").Should().Be("tab");
+            }
+
+            // First tab should have is-active class
+            tabs.First().GetAttribute("class").Should().Contain("is-active");
+        });
+    }
+
     private sealed record RunCall(
         string? Constitution,
         string? Specification,
