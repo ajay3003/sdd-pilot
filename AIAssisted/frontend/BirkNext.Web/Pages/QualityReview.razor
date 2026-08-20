@@ -280,11 +280,13 @@
                                         : result.Low > 0      ? "Low" : "None";
 
                         <button class="qr-pack-card @cardClass" @onclick="() => ExpandPackFromCard(result.PackId)" type="button" aria-label="Open @result.PackName details">
-                            @if (isWeakest || isStrongest)
-                            {
-                                <span class="qr-pack-card-highlight">@(isStrongest ? "Strongest" : "Weakest")</span>
-                            }
-                            <div class="qr-pack-card-name">@result.PackName</div>
+                            <div style="display:flex;align-items:flex-start;gap:0.3rem;justify-content:space-between">
+                                <div class="qr-pack-card-name">@result.PackName</div>
+                                @if (isWeakest || isStrongest)
+                                {
+                                    <span class="qr-pack-card-highlight">@(isStrongest ? "Strongest" : "Weakest")</span>
+                                }
+                            </div>
                             @if (result.Error is not null)
                             {
                                 <div class="qr-pack-card-score qr-pack-card-score--na">—</div>
@@ -318,10 +320,27 @@
                 <div class="qr-top-issues-title">Top Issues</div>
                 @foreach (var issue in _topIssues)
                 {
-                    <IssueCard Severity="@issue.Severity"
-                               Component="@issue.PackName"
-                               Description="@issue.Title"
-                               SuggestedFix="@(string.IsNullOrEmpty(issue.Detail) ? null : issue.Detail)" />
+                    <button class="qr-issue-card" @onclick="() => ExpandPackFromCard(issue.PrimaryPackId)" type="button">
+                        <div class="qr-issue-severity" data-severity="@issue.Severity.ToLowerInvariant()">@issue.Severity.ToUpper()</div>
+                        <div class="qr-issue-content">
+                            <div class="qr-issue-title">@issue.RuleCode — @issue.Title</div>
+                            @if (!string.IsNullOrEmpty(issue.Description))
+                            {
+                                <div class="qr-issue-desc">@issue.Description</div>
+                            }
+                            @if (!string.IsNullOrEmpty(issue.Fix))
+                            {
+                                <div class="qr-issue-fix">Fix: @issue.Fix</div>
+                            }
+                            <div class="qr-issue-sources">
+                                Reported by @string.Join(" · ", issue.SourcePacks)
+                                @if (issue.SourcePacks.Count > 1)
+                                {
+                                    <span class="qr-issue-source-count"> · Reported by @issue.SourcePacks.Count packs</span>
+                                }
+                            </div>
+                        </div>
+                    </button>
                 }
             </div>
         }
@@ -902,7 +921,9 @@
         _qaRecShowAll = false;
     }
 
-    private record TopIssueItem(string PackName, string Title, string Severity, int SortKey, string? Detail = null);
+    private record TopIssueItem(string LogicalId, string RuleCode, string Title, string Description, string Severity, int SortKey, List<string> SourcePacks, string PrimaryPackId, string? Fix = null);
+
+    private record TopIssueSource(string PackName, string PackId, string Title, string? Description, string? Fix);
 
     private static int SeveritySortKey(string sev) => sev.ToLowerInvariant() switch
     {
@@ -923,78 +944,113 @@
     private List<TopIssueItem> GetTopIssues(int limit = 5)
     {
         if (_report is null) return [];
-        var items = new List<TopIssueItem>();
+
+        // Collect all findings with their source packs and severity info
+        var allIssues = new List<(string LogicalId, string RuleCode, string Title, string Description, string Severity, int SortKey, string PackName, string PackId)>();
+
         foreach (var r in _report.PackResults.Where(r => r.Error is null))
         {
             if (r.QaAudit is not null)
                 foreach (var f in r.QaAudit.Findings)
                 {
                     var sev = QaSevString(f.Severity);
-                    items.Add(new(r.PackName, f.Title, sev, SeveritySortKey(sev)));
+                    var logicalId = string.IsNullOrEmpty(f.RuleCode) ? $"SEMANTIC:{f.Title}" : f.RuleCode;
+                    allIssues.Add((logicalId, f.RuleCode ?? f.Title, f.Title, f.Description, sev, SeveritySortKey(sev), r.PackName, r.PackId));
                 }
             if (r.Compliance is not null)
             {
                 foreach (var v in r.Compliance.Violations)
                 {
                     var sev = ViolSevToCard(v.Severity);
-                    items.Add(new(r.PackName, v.RuleTitle, sev, SeveritySortKey(sev), v.Issue));
+                    allIssues.Add((v.RuleId, v.RuleId, v.RuleTitle, v.Issue, sev, SeveritySortKey(sev), r.PackName, r.PackId));
                 }
                 foreach (var g in r.Compliance.Gaps)
                 {
                     var sev = ViolSevToCard(g.Severity);
-                    items.Add(new(r.PackName, g.RuleTitle, sev, SeveritySortKey(sev)));
+                    var gapDesc = BuildGapDescription(g);
+                    allIssues.Add((g.RuleId, g.RuleId, g.RuleTitle, gapDesc, sev, SeveritySortKey(sev), r.PackName, r.PackId));
                 }
             }
             if (r.Standards is not null)
                 foreach (var s in r.Standards.Results.Where(s => s.Status == CheckStatus.Failed))
                 {
                     var sev = StdSevString(s.Severity);
-                    items.Add(new(r.PackName, s.Title, sev, SeveritySortKey(sev), s.Recommendation));
+                    var logicalId = $"SEMANTIC:{s.Title}";
+                    allIssues.Add((logicalId, s.Title, s.Title, s.Recommendation ?? "", sev, SeveritySortKey(sev), r.PackName, r.PackId));
                 }
             if (r.QaReadiness is not null)
                 foreach (var g in r.QaReadiness.Gaps)
                 {
                     var sev = ViolSevToCard(g.Severity);
-                    items.Add(new(r.PackName, g.Description, sev, SeveritySortKey(sev)));
+                    var logicalId = $"SEMANTIC:{g.Description}";
+                    allIssues.Add((logicalId, g.Description, g.Description, "", sev, SeveritySortKey(sev), r.PackName, r.PackId));
                 }
             if (r.DeliveryReadiness is not null)
                 foreach (var b in r.DeliveryReadiness.Blockers)
                 {
                     var sev = DrSevCard(b.Severity);
-                    items.Add(new(r.PackName, b.Title, sev, SeveritySortKey(sev), b.Description));
+                    var logicalId = $"SEMANTIC:{b.Title}";
+                    allIssues.Add((logicalId, b.Title, b.Title, b.Description ?? "", sev, SeveritySortKey(sev), r.PackName, r.PackId));
                 }
         }
 
-        // Sort by severity first
-        var sorted = items.OrderBy(i => i.SortKey).ToList();
+        // Group by logical ID and aggregate
+        var grouped = allIssues.GroupBy(i => i.LogicalId, StringComparer.OrdinalIgnoreCase);
+        var aggregated = new List<(string LogicalId, string RuleCode, string Title, string Description, string Severity, int SortKey, List<string> SourcePacks, string PrimaryPackId, string? Fix)>();
 
-        // Apply diversity rule: max 2 from same PackName, then fill from others
-        var result = new List<TopIssueItem>();
-        var packCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var item in sorted)
+        foreach (var group in grouped)
         {
-            if (result.Count >= limit) break;
+            var issues = group.ToList();
 
-            var key = item.PackName;
-            if (!packCounts.ContainsKey(key))
-                packCounts[key] = 0;
+            // Keep highest severity
+            var maxSortKey = issues.Min(i => i.SortKey);
+            var maxSeverity = issues.First(i => i.SortKey == maxSortKey).Severity;
 
-            if (packCounts[key] < 2)
-            {
-                result.Add(item);
-                packCounts[key]++;
-            }
+            // Canonical title from first issue
+            var title = issues.First().Title;
+
+            // Get unique source packs
+            var sourcePacks = issues.Select(i => i.PackName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+            // Determine primary pack ID
+            var primaryPackId = DeterminePrimaryPackId(sourcePacks, issues);
+
+            // Get best fix/description
+            var fix = issues.Where(i => !string.IsNullOrEmpty(i.Description)).Select(i => i.Description).FirstOrDefault() ?? "";
+
+            // Rule code
+            var ruleCode = issues.First().RuleCode;
+
+            aggregated.Add((group.Key, ruleCode, title, "", maxSeverity, maxSortKey, sourcePacks, primaryPackId, string.IsNullOrEmpty(fix) ? null : fix));
         }
 
-        // Fill remaining slots from items we skipped
-        if (result.Count < limit)
-        {
-            var remaining = sorted.Except(result).ToList();
-            result.AddRange(remaining.Take(limit - result.Count));
-        }
+        // Sort by severity then keep unique logical issues up to limit
+        var sorted = aggregated.OrderBy(a => a.SortKey).Take(limit).ToList();
+
+        var result = sorted
+            .Select(a => new TopIssueItem(a.LogicalId, a.RuleCode, a.Title, a.Description, a.Severity, a.SortKey, a.SourcePacks, a.PrimaryPackId, a.Fix))
+            .ToList();
 
         return result;
+    }
+
+    private string DeterminePrimaryPackId(List<string> sourcePacks, List<(string LogicalId, string RuleCode, string Title, string Description, string Severity, int SortKey, string PackName, string PackId)> allIssues)
+    {
+        // Prefer Constitution Compliance for Constitution rules
+        if (sourcePacks.Contains("Constitution Compliance", StringComparer.OrdinalIgnoreCase))
+            return allIssues.First(i => i.PackName.Equals("Constitution Compliance", StringComparison.OrdinalIgnoreCase)).PackId;
+
+        // Otherwise use first pack's ID
+        return allIssues.First().PackId;
+    }
+
+    private static string BuildGapDescription(ComplianceGap g)
+    {
+        var missing = new List<string>();
+        if (g.MissingInSpec) missing.Add("Specification");
+        if (g.MissingInPlan) missing.Add("Plan");
+        if (g.MissingInTasks) missing.Add("Tasks");
+        return missing.Count > 0 ? $"Missing coverage in {string.Join(", ", missing)}." : "Coverage gap";
     }
 
     // ── Score helpers ─────────────────────────────────────────────────────────

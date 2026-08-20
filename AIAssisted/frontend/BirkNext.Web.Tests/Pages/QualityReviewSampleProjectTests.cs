@@ -751,6 +751,219 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         }, timeout: TimeSpan.FromSeconds(3));
     }
 
+    [Fact]
+    public void QualityReview_OverallSummary_RendersScoreWithStatus()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 75 },
+            new QualityReviewPackResult { PackId = "compliance", PackName = "Constitution Compliance", Score = 50 }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            // Overall summary should contain score, status, and findings info
+            cut.Markup.Should().Contain("qr-overall");
+            cut.Markup.Should().Contain("Fair Overall");
+            cut.Markup.Should().Contain("2 packs");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_OverallSummary_RendersAllSevenMetrics()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new() { RuleCode = "QA-1", Title = "T1", Description = "D1", Severity = QaSeverity.Critical, Category = QaCategory.Constitution },
+                new() { RuleCode = "QA-2", Title = "T2", Description = "D2", Severity = QaSeverity.High, Category = QaCategory.Constitution },
+                new() { RuleCode = "QA-3", Title = "T3", Description = "D3", Severity = QaSeverity.High, Category = QaCategory.Constitution },
+                new() { RuleCode = "QA-4", Title = "T4", Description = "D4", Severity = QaSeverity.Medium, Category = QaCategory.Constitution },
+                new() { RuleCode = "QA-5", Title = "T5", Description = "D5", Severity = QaSeverity.Low, Category = QaCategory.Constitution },
+            },
+            HasConstitution = true,
+        };
+
+        var report = MakeReport(new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, Critical = 1, High = 2, Medium = 1, Low = 1, QaAudit = qaReport });
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            // All 7 metrics should render: Findings, Critical, High, Medium, Low, Blockers, Warnings
+            cut.FindAll(".qr-count-card").Should().HaveCount(7);
+            cut.Markup.Should().Contain("Findings");
+            cut.Markup.Should().Contain("Critical");
+            cut.Markup.Should().Contain("High");
+            cut.Markup.Should().Contain("Medium");
+            cut.Markup.Should().Contain("Low");
+            cut.Markup.Should().Contain("Blockers");
+            cut.Markup.Should().Contain("Warnings");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_ReviewPackCards_RenderCompactSummary()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new() { RuleCode = "QA-1", Title = "Issue 1", Description = "Desc", Severity = QaSeverity.High, Category = QaCategory.Constitution },
+            },
+            HasConstitution = true,
+        };
+
+        var report = MakeReport(new QualityReviewPackResult
+        {
+            PackId = "qa-auditor",
+            PackName = "QA Auditor",
+            Score = 75,
+            High = 1,
+            QaAudit = qaReport
+        });
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var packCard = cut.Find(".qr-pack-card");
+            packCard.TextContent.Should().Contain("QA Auditor");
+            packCard.TextContent.Should().Contain("75");
+            packCard.TextContent.Should().Contain("1 finding");
+            packCard.TextContent.Should().Contain("Highest: High");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_ReviewPackCards_RenderStrongestAndWeakestBadges()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 95 },
+            new QualityReviewPackResult { PackId = "compliance", PackName = "Compliance", Score = 30 }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var badges = cut.FindAll(".qr-pack-card-highlight");
+            badges.Count.Should().Be(2);
+            badges.Any(b => b.TextContent == "Strongest").Should().BeTrue();
+            badges.Any(b => b.TextContent == "Weakest").Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorPreview_WiresToQaFindingPreviewList()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaFindings = new List<QaFinding>
+        {
+            new() { RuleCode = "QA-001", Title = "Finding 1", Description = "D1", Severity = QaSeverity.High, Category = QaCategory.Constitution },
+            new() { RuleCode = "QA-002", Title = "Finding 2", Description = "D2", Severity = QaSeverity.Medium, Category = QaCategory.Constitution },
+            new() { RuleCode = "QA-003", Title = "Finding 3", Description = "D3", Severity = QaSeverity.High, Category = QaCategory.Constitution },
+            new() { RuleCode = "QA-004", Title = "Finding 4", Description = "D4", Severity = QaSeverity.Medium, Category = QaCategory.Constitution },
+            new() { RuleCode = "QA-005", Title = "Finding 5", Description = "D5", Severity = QaSeverity.High, Category = QaCategory.Constitution },
+            new() { RuleCode = "QA-006", Title = "Finding 6", Description = "D6", Severity = QaSeverity.Low, Category = QaCategory.Constitution },
+            new() { RuleCode = "QA-007", Title = "Finding 7", Description = "D7", Severity = QaSeverity.Low, Category = QaCategory.Constitution },
+            new() { RuleCode = "QA-008", Title = "Finding 8", Description = "D8", Severity = QaSeverity.Info, Category = QaCategory.Constitution },
+        };
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = qaFindings,
+            HasConstitution = true,
+            HasSpecification = true,
+            HasPlan = true,
+            HasTasks = true,
+        };
+
+        var report = MakeReport(new QualityReviewPackResult
+        {
+            PackId = "qa-auditor",
+            PackName = "QA Auditor",
+            PackGroup = "Quality",
+            Score = 75,
+            Critical = 0,
+            High = 4,
+            Medium = 2,
+            Low = 1,
+            Info = 1,
+            QaAudit = qaReport,
+        });
+
+        _qualityReview.SetReport(report);
+        var cut = Render<QualityReview>();
+
+        // Select QA Auditor pack
+        cut.WaitForAssertion(() =>
+        {
+            var qaLabel = FindPackLabel(cut, "QA Auditor");
+            var qaCheckbox = qaLabel.QuerySelector("input[type=checkbox]");
+            if (qaCheckbox != null && !qaCheckbox.HasAttribute("checked"))
+                qaCheckbox.Click();
+        });
+
+        // Run review
+        ClickRun(cut);
+
+        // Open QA Auditor pack to see findings
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            // Initially, only 5 findings visible (QaFindingPreviewList preview limit)
+            cut.Markup.Should().Contain("QA-001");
+            cut.Markup.Should().Contain("QA-005");
+            cut.Markup.Should().NotContain("QA-006");
+            cut.Markup.Should().NotContain("QA-008");
+
+            // Show all button from QaFindingPreviewList is present and clickable
+            var showAllButton = cut.Find("button.qr-show-toggle");
+            showAllButton.Should().NotBeNull();
+            showAllButton.TextContent.Should().Contain("Show all");
+
+            // Click Show all
+            showAllButton.Click();
+        }, timeout: TimeSpan.FromSeconds(3));
+
+        // After toggle, all 8 findings visible
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("QA-006");
+            cut.Markup.Should().Contain("QA-008");
+        });
+    }
+
     private static IElement FindArtifactCard(IRenderedComponent<QualityReview> cut, string artifactName) =>
         cut.FindAll(".artifact-card").Single(card => card.TextContent.Contains(artifactName, StringComparison.Ordinal));
 
@@ -944,6 +1157,165 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
             return Task.FromResult(MakeReport(results));
         }
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_DeduplicatesSameRuleAcrossPacks()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new() { RuleCode = "PP-02", Title = "Principle 2", Description = "Missing coverage", Severity = QaSeverity.Critical, Category = QaCategory.Constitution },
+            },
+            HasConstitution = true,
+        };
+
+        var compReport = new ConstitutionComplianceReport
+        {
+            Gaps = new List<ComplianceGap>
+            {
+                new() { RuleId = "PP-02", RuleTitle = "Principle 2", RuleType = ConstitutionRuleType.Principle, MissingInSpec = true, MissingInPlan = true, Severity = ViolationSeverity.Critical },
+            },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, Critical = 1, QaAudit = qaReport },
+            new QualityReviewPackResult { PackId = "compliance", PackName = "Constitution Compliance", Score = 50, Critical = 1, Compliance = compReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var topIssueCards = cut.FindAll(".qr-issue-card");
+            // Should have only ONE top issue for PP-02, not duplicated across packs
+            var pp02Cards = topIssueCards.Where(c => c.TextContent.Contains("PP-02")).ToList();
+            pp02Cards.Count.Should().Be(1);
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_ShowsAllReportingPacks()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new() { RuleCode = "PP-02", Title = "Principle 2", Description = "Missing coverage", Severity = QaSeverity.Critical, Category = QaCategory.Constitution },
+            },
+            HasConstitution = true,
+        };
+
+        var compReport = new ConstitutionComplianceReport
+        {
+            Gaps = new List<ComplianceGap>
+            {
+                new() { RuleId = "PP-02", RuleTitle = "Principle 2", RuleType = ConstitutionRuleType.Principle, MissingInSpec = true, Severity = ViolationSeverity.Critical },
+            },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, Critical = 1, QaAudit = qaReport },
+            new QualityReviewPackResult { PackId = "compliance", PackName = "Constitution Compliance", Score = 50, Critical = 1, Compliance = compReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var topIssueCard = cut.FindAll(".qr-issue-card").FirstOrDefault(c => c.TextContent.Contains("PP-02"));
+            topIssueCard.Should().NotBeNull();
+            // Should show both source packs
+            topIssueCard!.TextContent.Should().Contain("QA Auditor");
+            topIssueCard.TextContent.Should().Contain("Constitution Compliance");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_DuplicateRuleUsesHighestSeverity()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new() { RuleCode = "PP-02", Title = "Principle 2", Severity = QaSeverity.High, Category = QaCategory.Constitution },
+            },
+            HasConstitution = true,
+        };
+
+        var compReport = new ConstitutionComplianceReport
+        {
+            Gaps = new List<ComplianceGap>
+            {
+                new() { RuleId = "PP-02", RuleTitle = "Principle 2", RuleType = ConstitutionRuleType.Principle, MissingInSpec = true, Severity = ViolationSeverity.Critical },
+            },
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, High = 1, QaAudit = qaReport },
+            new QualityReviewPackResult { PackId = "compliance", PackName = "Constitution Compliance", Score = 50, Critical = 1, Compliance = compReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var topIssueCard = cut.Find(".qr-issue-card");
+            // Should show highest severity (Critical, not High)
+            topIssueCard.TextContent.ToUpper().Should().Contain("CRITICAL");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_LimitsToFiveUniqueLogicalIssues()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = Enumerable.Range(1, 10)
+                .Select(i => new QaFinding
+                {
+                    RuleCode = $"PP-{i:D2}",
+                    Title = $"Principle {i}",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                })
+                .ToList(),
+            HasConstitution = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, Critical = 10, QaAudit = qaReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var topIssueCards = cut.FindAll(".qr-issue-card");
+            // Should show at most 5 unique logical issues
+            topIssueCards.Count.Should().BeLessThanOrEqualTo(5);
+        });
     }
 
     private sealed record RunCall(
