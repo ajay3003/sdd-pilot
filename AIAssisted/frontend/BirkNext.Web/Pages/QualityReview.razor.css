@@ -25,7 +25,7 @@
     background: var(--clr-surface, #f8fafc);
     border: 1px solid var(--clr-border, #e2e8f0);
     border-radius: var(--radius-lg, 8px);
-    padding: 1.25rem 1.5rem 1.5rem;
+    padding: 0.85rem 1.5rem;
     display: flex;
     flex-direction: column;
     gap: 1.1rem;
@@ -35,6 +35,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid var(--clr-border, #e2e8f0);
+    margin-bottom: 0.25rem;
 }
 
 .qr-input-panel-title {
@@ -248,6 +251,13 @@
     font-size: 1rem;
     font-weight: 700;
     color: var(--clr-text, #1e293b);
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.qr-score-status {
+    display: inline;
 }
 
 .qr-overall-sub {
@@ -260,9 +270,23 @@
 
 .qr-count-grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(5, 1fr) repeat(2, 1fr);
     gap: 0.6rem;
     margin-top: 0.5rem;
+}
+
+.qr-count-group {
+    display: contents;
+}
+
+.qr-findings-group {
+    display: contents;
+}
+
+.qr-risk-group {
+    display: contents;
+    border-left: 1px solid var(--clr-border, #e2e8f0);
+    padding-left: 0.6rem;
 }
 
 @media (max-width: 1024px) {
@@ -492,7 +516,25 @@
     flex-direction: column;
     gap: 0.25rem;
     position: relative;
-    transition: border-color 0.15s;
+    transition: border-color 0.15s, background-color 0.15s;
+    cursor: pointer;
+}
+
+.qr-pack-card:hover {
+    border-color: var(--clr-primary, #6366f1);
+    background: var(--clr-surface-hover, #f1f5f9);
+}
+
+.qr-pack-card:focus-visible {
+    outline: 2px solid var(--clr-primary, #6366f1);
+    outline-offset: 2px;
+}
+
+.qr-pack-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
 }
 
 .qr-pack-card.is-weakest {
@@ -552,7 +594,7 @@
 .is-fair .qr-pack-card-score { color: #a16207; }
 .is-poor .qr-pack-card-score { color: #b91c1c; }
 
-.qr-pack-card-findings {
+.qr-pack-card-metadata {
     font-size: 0.72rem;
     color: var(--clr-text-muted, #64748b);
     line-height: 1.2;
@@ -561,11 +603,6 @@
 .qr-pack-card-ok {
     color: #15803d;
     font-weight: 600;
-}
-
-.qr-pack-card-sev {
-    font-size: 0.70rem;
-    color: var(--clr-text-muted, #64748b);
 }
 
 .qr-pack-card-error {

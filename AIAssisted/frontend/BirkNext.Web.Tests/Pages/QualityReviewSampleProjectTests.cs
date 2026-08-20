@@ -770,7 +770,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             // Overall summary should contain score, status, and findings info
             cut.Markup.Should().Contain("qr-overall");
-            cut.Markup.Should().Contain("Fair Overall");
+            cut.Markup.Should().Contain("qr-score-status");
+            cut.Markup.Should().Contain("Fair");
             cut.Markup.Should().Contain("2 packs");
         });
     }
@@ -1775,6 +1776,1669 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             // Should NOT show duplicated code
             var content = findingCard.TextContent;
             content.Should().NotContain("PP-02 — PP-02");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_OverallSummary_RenderScoreAndStatusTogether()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 37 }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var overallSummary = cut.Find(".qr-overall");
+            overallSummary.Should().NotBeNull();
+
+            var scoreRing = overallSummary.QuerySelector(".qr-score-ring-wrap");
+            scoreRing.Should().NotBeNull("score ring visible");
+
+            var scoreStatus = overallSummary.QuerySelector(".qr-score-status");
+            scoreStatus.Should().NotBeNull("status text visible");
+            scoreStatus.TextContent.Should().Contain("Needs attention");
+
+            var overallContainer = overallSummary.QuerySelector(".qr-overall-meta");
+            overallContainer.TextContent.Should().Contain("finding");
+            overallContainer.TextContent.Should().Contain("pack");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_ReviewPackCard_ClickOpensPack()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding> { new() { RuleCode = "QA-001", Title = "Finding 1", Severity = QaSeverity.High, Category = QaCategory.Constitution } },
+            HasConstitution = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 75, High = 1, QaAudit = qaReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorCard = cut.FindAll(".qr-pack-card").FirstOrDefault(c => c.TextContent.Contains("QA Auditor"));
+            qaAuditorCard.Should().NotBeNull();
+            qaAuditorCard.TagName.Should().Be("BUTTON");
+
+            // Initially collapsed
+            var qaSection = cut.FindAll(".qr-result-section").FirstOrDefault(s => s.TextContent.Contains("QA Auditor"));
+            qaSection?.GetAttribute("style")?.Should().Contain("display:none");
+
+            // Click pack card
+            qaAuditorCard.Click();
+        }, timeout: TimeSpan.FromSeconds(2));
+
+        cut.WaitForAssertion(() =>
+        {
+            // Now QA Auditor should be expanded
+            var qaSection = cut.FindAll(".qr-result-section").FirstOrDefault(s => s.TextContent.Contains("QA Auditor"));
+            qaSection?.GetAttribute("style")?.Should().NotContain("display:none");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_ReviewPackCard_SingleOpenBehavior()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport { HasConstitution = true };
+        var compReport = new ConstitutionComplianceReport { };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 75, QaAudit = qaReport },
+            new QualityReviewPackResult { PackId = "compliance", PackName = "Constitution Compliance", Score = 50, Compliance = compReport }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaCard = cut.FindAll(".qr-pack-card").FirstOrDefault(c => c.TextContent.Contains("QA Auditor"));
+            qaCard.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaSection = cut.FindAll(".qr-result-section").FirstOrDefault(s => s.TextContent.Contains("QA Auditor"));
+            qaSection?.GetAttribute("style")?.Should().NotContain("display:none");
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var compCard = cut.FindAll(".qr-pack-card").FirstOrDefault(c => c.TextContent.Contains("Constitution Compliance"));
+            compCard.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaSection = cut.FindAll(".qr-result-section").FirstOrDefault(s => s.TextContent.Contains("QA Auditor"));
+            var compSection = cut.FindAll(".qr-result-section").FirstOrDefault(s => s.TextContent.Contains("Constitution Compliance"));
+
+            compSection?.GetAttribute("style")?.Should().NotContain("display:none");
+            qaSection?.GetAttribute("style")?.Should().Contain("display:none");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_ReviewPackCard_ZeroFindings_CompactMetadata()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 100, Critical = 0, High = 0, Medium = 0, Low = 0, QaAudit = new QaAuditReport { HasConstitution = true } }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var packCard = cut.Find(".qr-pack-card");
+            var metadata = packCard.QuerySelector(".qr-pack-card-metadata");
+            metadata.Should().NotBeNull();
+            metadata.TextContent.Should().Contain("No issues");
+            metadata.TextContent.Should().NotContain("Highest:");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_SampleProjectArtifacts_CollapsedStateCompact()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 75 },
+            new QualityReviewPackResult { PackId = "compliance", PackName = "Constitution Compliance", Score = 50 }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var inputPanel = cut.Find(".qr-input-panel");
+            inputPanel.ClassList.Should().Contain("qr-input-panel");
+
+            var header = inputPanel.QuerySelector(".qr-input-panel-header");
+            header.Should().NotBeNull();
+            header.TextContent.Should().Contain("Sample Project Artifacts");
+
+            var toggle = header.QuerySelector(".qr-input-panel-toggle");
+            toggle.Should().NotBeNull("toggle button should exist in input panel header");
+            toggle.TextContent.Should().Contain("Expand");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_QaAuditorConst001AndCompliancePp02_DeduplicateByAffectedRule()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' (Principle) has no coverage...",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            },
+            Gaps = new List<ComplianceGap>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = true,
+                    MissingInPlan = true,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Critical = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var topIssueCards = cut.FindAll(".qr-issue-card");
+            // Must contain exactly ONE PP-02 issue (not separate CONST-001 + PP-02)
+            var pp02Cards = topIssueCards.Where(c => c.TextContent.Contains("PP-02")).ToList();
+            pp02Cards.Should().HaveCount(1, "PP-02 from QA Auditor and Constitution Compliance should deduplicate");
+
+            var card = pp02Cards.First();
+            card.TextContent.Should().Contain("PP-02");
+            card.TextContent.Should().Contain("Clear and Testable Requirements");
+            card.TextContent.Should().NotContain("CONST-001");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_RuntimeCoverageDuplicate_ShowsBothReportingPacks()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' (Principle) has no coverage...",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            },
+            Gaps = new List<ComplianceGap>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = true,
+                    MissingInPlan = true,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Critical = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var pp02Card = cut.FindAll(".qr-issue-card").First(c => c.TextContent.Contains("PP-02"));
+            pp02Card.TextContent.Should().Contain("QA Auditor");
+            pp02Card.TextContent.Should().Contain("Constitution Compliance");
+            pp02Card.TextContent.Should().Contain("Reported by 2 packs");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_ConstitutionCoverage_UsesCanonicalRuleTitle()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' (Principle) has no coverage...",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            },
+            Gaps = new List<ComplianceGap>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = true,
+                    MissingInPlan = true,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Critical = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var pp02Card = cut.FindAll(".qr-issue-card").First(c => c.TextContent.Contains("PP-02"));
+            pp02Card.TextContent.Should().Contain("PP-02 — Clear and Testable Requirements");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_ConstitutionCoverage_EnrichesMultipleRuleTitles()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' (Principle) has no coverage...",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                },
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-04 not covered by any artifact",
+                    Description = "Rule 'PP-04' (Principle) has no coverage...",
+                    Severity = QaSeverity.High,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-04",
+                },
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-09 not covered by any artifact",
+                    Description = "Rule 'PP-09' (Standard) has no coverage...",
+                    Severity = QaSeverity.Medium,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-09",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new() { RuleId = "PP-02", RuleTitle = "Title A", RuleType = ConstitutionRuleType.Principle, Status = ComplianceStatus.Missing, HasSpecCoverage = false, HasPlanCoverage = false, HasTaskCoverage = false },
+                new() { RuleId = "PP-04", RuleTitle = "Title B", RuleType = ConstitutionRuleType.Principle, Status = ComplianceStatus.Missing, HasSpecCoverage = false, HasPlanCoverage = false, HasTaskCoverage = false },
+                new() { RuleId = "PP-09", RuleTitle = "Title C", RuleType = ConstitutionRuleType.Standard, Status = ComplianceStatus.Missing, HasSpecCoverage = false, HasPlanCoverage = false, HasTaskCoverage = false },
+            },
+            Gaps = new List<ComplianceGap>
+            {
+                new() { RuleId = "PP-02", RuleTitle = "Title A", RuleType = ConstitutionRuleType.Principle, MissingInSpec = true, MissingInPlan = true, MissingInTasks = true, Severity = ViolationSeverity.Critical },
+                new() { RuleId = "PP-04", RuleTitle = "Title B", RuleType = ConstitutionRuleType.Principle, MissingInSpec = true, MissingInPlan = true, MissingInTasks = true, Severity = ViolationSeverity.High },
+                new() { RuleId = "PP-09", RuleTitle = "Title C", RuleType = ConstitutionRuleType.Standard, MissingInSpec = true, MissingInPlan = true, MissingInTasks = true, Severity = ViolationSeverity.Medium },
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 30,
+                Critical = 1,
+                High = 1,
+                Medium = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 30,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var cards = cut.FindAll(".qr-issue-card");
+            cards.Select(c => c.TextContent).Should().Contain(t => t.Contains("PP-02 — Title A"));
+            cards.Select(c => c.TextContent).Should().Contain(t => t.Contains("PP-04 — Title B"));
+            cards.Select(c => c.TextContent).Should().Contain(t => t.Contains("PP-09 — Title C"));
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_ConstitutionCoverage_MissingCanonicalTitleFallsBackToRuleId()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-99 not covered by any artifact",
+                    Description = "Rule 'PP-99' has no coverage...",
+                    Severity = QaSeverity.Medium,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-99",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Medium = 1,
+                QaAudit = qaReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var card = cut.FindAll(".qr-issue-card").First(c => c.TextContent.Contains("PP-99"));
+            // Without canonical title, should just show rule ID
+            card.TextContent.Should().Contain("PP-99");
+            // Should NOT show "PP-99 — " with empty title
+            card.TextContent.Should().NotContain("PP-99 — ");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_ConstitutionCoverage_RendersActionableFix()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' (Principle) has no coverage...",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            },
+            Gaps = new List<ComplianceGap>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = true,
+                    MissingInPlan = true,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Critical = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var card = cut.FindAll(".qr-issue-card").First(c => c.TextContent.Contains("PP-02"));
+            card.TextContent.Should().Contain("Fix: Add coverage in Specification, Plan and Tasks.");
+            card.TextContent.Should().NotContain("Rule 'PP-02' (Principle) has no coverage");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_ConstitutionCoverage_FixUsesActualMissingArtifacts()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' (Principle) has no coverage...",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = true,  // Only Spec is covered
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            },
+            Gaps = new List<ComplianceGap>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = false,
+                    MissingInPlan = true,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Critical = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var card = cut.FindAll(".qr-issue-card").First(c => c.TextContent.Contains("PP-02"));
+            card.TextContent.Should().Contain("Fix: Add coverage in Plan and Tasks.");
+            card.TextContent.Should().NotContain("Specification");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssue_RuntimeConst001Duplicate_ClickOpensConstitutionCompliance()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' (Principle) has no coverage...",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            },
+            Gaps = new List<ComplianceGap>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = true,
+                    MissingInPlan = true,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Critical = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var pp02Card = cut.FindAll(".qr-issue-card").First(c => c.TextContent.Contains("PP-02"));
+            pp02Card.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            // After clicking, Constitution Compliance section should be expanded
+            var constitutionResults = cut.FindAll(".qr-result-name").Where(e => e.TextContent.Contains("Constitution Compliance")).ToList();
+            constitutionResults.Should().NotBeEmpty();
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_RuntimeDedup_DoesNotModifyUnderlyingPackFindings()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' (Principle) has no coverage...",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            },
+            Gaps = new List<ComplianceGap>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = true,
+                    MissingInPlan = true,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Critical = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            // Verify Top Issues shows ONE PP-02 entry
+            var topIssueCards = cut.FindAll(".qr-issue-card").Where(c => c.TextContent.Contains("PP-02")).ToList();
+            topIssueCards.Should().HaveCount(1);
+
+            // Verify underlying pack findings are still separate
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            // QA Auditor should still show its CONST-001 finding with enriched presentation
+            cut.Markup.Should().Contain("PP-02 — Clear and Testable Requirements");
+            cut.Markup.Should().Contain("Check CONST-001");
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var complianceHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("Constitution Compliance"));
+            complianceHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            // Constitution Compliance should still show its PP-02 gap
+            cut.Markup.Should().Contain("Clear and Testable Requirements");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_TopIssues_NonConstitutionQaFinding_DoesNotStripDetectorIdentity()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "SPEC-001",
+                    Title = "Specification is missing critical section",
+                    Description = "The specification does not include API documentation",
+                    Severity = QaSeverity.High,
+                    Category = QaCategory.Specification,
+                    AffectedArtifact = null,
+                }
+            },
+            HasSpecification = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 60,
+                High = 1,
+                QaAudit = qaReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var specCard = cut.FindAll(".qr-issue-card").First(c => c.TextContent.Contains("SPEC-001"));
+            // Non-Constitution findings should keep their detector code
+            specCard.TextContent.Should().Contain("SPEC-001");
+            specCard.TextContent.Should().Contain("Specification is missing critical section");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorConstitutionFinding_UsesAffectedRuleAsPrimaryIdentity()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' (Principle) has no coverage...",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Critical = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var findingCard = cut.Find(".qr-finding-card");
+            // Primary title should use affected rule
+            findingCard.TextContent.Should().Contain("PP-02 — Clear and Testable Requirements");
+            // Should NOT show CONST-001 as primary
+            findingCard.TextContent.Should().NotContain("CONST-001 — Constitution rule PP-02");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorConstitutionFinding_RendersDetectorAsSecondaryMetadata()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' (Principle) has no coverage...",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Critical = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var findingCard = cut.Find(".qr-finding-card");
+            // Detector should appear as secondary metadata
+            findingCard.TextContent.Should().Contain("Check CONST-001");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorConstitutionFinding_DoesNotRepeatAffectedRuleInFooter()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' (Principle) has no coverage...",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Critical = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var findingCard = cut.Find(".qr-finding-card");
+            // Should NOT have redundant "CONST-001 · PP-02" in footer
+            findingCard.TextContent.Should().NotContain("CONST-001 · PP-02");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorConstitutionFinding_ShowsCanonicalPrincipleTitle()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PRINCIPLE-001 not covered by any artifact",
+                    Description = "Rule 'PRINCIPLE-001' has no coverage...",
+                    Severity = QaSeverity.High,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PRINCIPLE-001",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PRINCIPLE-001",
+                    RuleTitle = "I. Headless API Communication",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                High = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var findingCard = cut.Find(".qr-finding-card");
+            findingCard.TextContent.Should().Contain("PRINCIPLE-001 — I. Headless API Communication");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorNonConstitutionFinding_PreservesExistingPrimaryTitle()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "PLAN-001",
+                    Title = "Missing implementation phases",
+                    Description = "The plan does not define phases",
+                    Severity = QaSeverity.Medium,
+                    Category = QaCategory.Plan,
+                    AffectedArtifact = null,
+                }
+            },
+            HasPlan = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 60,
+                Medium = 1,
+                QaAudit = qaReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var findingCard = cut.Find(".qr-finding-card");
+            // Non-Constitution findings preserve original behavior
+            findingCard.TextContent.Should().Contain("PLAN-001 — Missing implementation phases");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorConstitutionFindings_UseCanonicalTitlesForMultipleRules()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' has no coverage...",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                },
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-04 not covered by any artifact",
+                    Description = "Rule 'PP-04' has no coverage...",
+                    Severity = QaSeverity.High,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-04",
+                },
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-09 not covered by any artifact",
+                    Description = "Rule 'PP-09' has no coverage...",
+                    Severity = QaSeverity.Medium,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-09",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Title A",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                },
+                new()
+                {
+                    RuleId = "PP-04",
+                    RuleTitle = "Title B",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                },
+                new()
+                {
+                    RuleId = "PP-09",
+                    RuleTitle = "Title C",
+                    RuleType = ConstitutionRuleType.Standard,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 30,
+                Critical = 1,
+                High = 1,
+                Medium = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 30,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var findingCards = cut.FindAll(".qr-finding-card");
+            findingCards.Should().HaveCountGreaterThanOrEqualTo(3);
+
+            var cardTexts = string.Join(" ", findingCards.Select(c => c.TextContent));
+            cardTexts.Should().Contain("PP-02 — Title A");
+            cardTexts.Should().Contain("PP-04 — Title B");
+            cardTexts.Should().Contain("PP-09 — Title C");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorConstitutionFinding_MissingCanonicalTitleFallsBackToRuleId()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-99 not covered by any artifact",
+                    Description = "Rule 'PP-99' has no coverage...",
+                    Severity = QaSeverity.Medium,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-99",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Medium = 1,
+                QaAudit = qaReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var findingCard = cut.Find(".qr-finding-card");
+            findingCard.TextContent.Should().Contain("PP-99");
+            findingCard.TextContent.Should().Contain("Check CONST-001");
+            // Should NOT have empty title suffix
+            findingCard.TextContent.Should().NotContain("PP-99 — ");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorConstitutionFinding_MissingAffectedArtifactUsesSafeFallback()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution coverage issue with original title",
+                    Description = "Some coverage problem",
+                    Severity = QaSeverity.Low,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = null,  // Missing affected artifact
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 60,
+                Low = 1,
+                QaAudit = qaReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var findingCard = cut.Find(".qr-finding-card");
+            // Should preserve original meaningful title
+            findingCard.TextContent.Should().Contain("Constitution coverage issue with original title");
+            // Should NOT fabricate a Constitution rule ID
+            findingCard.TextContent.Should().NotContain("PP-");
+            findingCard.TextContent.Should().NotContain("PRINCIPLE-");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditorConstitutionFinding_FullPageWiringUsesCanonicalMetadata()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qaReport = new QaAuditReport
+        {
+            Findings = new List<QaFinding>
+            {
+                new()
+                {
+                    RuleCode = "CONST-001",
+                    Title = "Constitution rule PP-02 not covered by any artifact",
+                    Description = "Rule 'PP-02' (Principle) has no coverage in the Specification, Plan, or Tasks.",
+                    Severity = QaSeverity.Critical,
+                    Category = QaCategory.Constitution,
+                    AffectedArtifact = "PP-02",
+                }
+            },
+            HasConstitution = true,
+        };
+
+        var complianceReport = new ConstitutionComplianceReport
+        {
+            Results = new List<ComplianceResult>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    Status = ComplianceStatus.Missing,
+                    HasSpecCoverage = false,
+                    HasPlanCoverage = false,
+                    HasTaskCoverage = false,
+                }
+            },
+            Gaps = new List<ComplianceGap>
+            {
+                new()
+                {
+                    RuleId = "PP-02",
+                    RuleTitle = "Clear and Testable Requirements",
+                    RuleType = ConstitutionRuleType.Principle,
+                    MissingInSpec = true,
+                    MissingInPlan = true,
+                    MissingInTasks = true,
+                    Severity = ViolationSeverity.Critical,
+                }
+            }
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult
+            {
+                PackId = "qa-auditor",
+                PackName = "QA Auditor",
+                Score = 50,
+                Critical = 1,
+                QaAudit = qaReport
+            },
+            new QualityReviewPackResult
+            {
+                PackId = "compliance",
+                PackName = "Constitution Compliance",
+                Score = 50,
+                Compliance = complianceReport
+            }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            // Open QA Auditor through rendered UI
+            var qaAuditorHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            qaAuditorHeader.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var findingCard = cut.Find(".qr-finding-card");
+
+            // Verify canonical title with metadata
+            findingCard.TextContent.Should().Contain("PP-02 — Clear and Testable Requirements");
+
+            // Verify detector as secondary metadata
+            findingCard.TextContent.Should().Contain("Check CONST-001");
+
+            // Verify concise coverage text
+            findingCard.TextContent.Should().Contain("Specification");
+            findingCard.TextContent.Should().Contain("Plan");
+            findingCard.TextContent.Should().Contain("Tasks");
+
+            // Verify old primary title is NOT rendered
+            findingCard.TextContent.Should().NotContain("CONST-001 — Constitution rule PP-02 not covered");
         });
     }
 

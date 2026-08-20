@@ -205,7 +205,7 @@
     <!-- ── Results ───────────────────────────────────────────────────────── -->
     @if (_report is not null)
     {
-        <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-bottom:.5rem">
+        <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-bottom:0.25rem">
             <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportHtml">Export HTML</button>
             @if (_diagnosticSnapshot is not null)
             {
@@ -219,7 +219,7 @@
                 @RenderScoreRing(_report.OverallScore)
             </div>
             <div class="qr-overall-meta">
-                <div class="qr-overall-label">@ScoreLabel(_report.OverallScore) Overall</div>
+                <div class="qr-overall-label"><span class="qr-score-status">@ScoreLabel(_report.OverallScore)</span></div>
                 <div class="qr-overall-sub">
                     @_report.TotalFindings finding@(_report.TotalFindings != 1 ? "s" : "") across
                     @_report.PackResults.Count(r => r.Error is null) pack@(_report.PackResults.Count(r => r.Error is null) != 1 ? "s" : "")
@@ -229,33 +229,37 @@
 
         <!-- ── Finding counts ─────────────────────────────────────────── -->
         <div class="qr-count-grid">
-            <div class="qr-count-card qr-count-total">
-                <div class="qr-count-num">@_report.TotalFindings</div>
-                <div class="qr-count-label">Findings</div>
+            <div class="qr-count-group qr-findings-group">
+                <div class="qr-count-card qr-count-total">
+                    <div class="qr-count-num">@_report.TotalFindings</div>
+                    <div class="qr-count-label">Findings</div>
+                </div>
+                <div class="qr-count-card qr-count-critical">
+                    <div class="qr-count-num">@_report.CriticalCount</div>
+                    <div class="qr-count-label">Critical</div>
+                </div>
+                <div class="qr-count-card qr-count-high">
+                    <div class="qr-count-num">@_report.HighCount</div>
+                    <div class="qr-count-label">High</div>
+                </div>
+                <div class="qr-count-card qr-count-medium">
+                    <div class="qr-count-num">@_report.MediumCount</div>
+                    <div class="qr-count-label">Medium</div>
+                </div>
+                <div class="qr-count-card qr-count-low">
+                    <div class="qr-count-num">@_report.LowCount</div>
+                    <div class="qr-count-label">Low</div>
+                </div>
             </div>
-            <div class="qr-count-card qr-count-critical">
-                <div class="qr-count-num">@_report.CriticalCount</div>
-                <div class="qr-count-label">Critical</div>
-            </div>
-            <div class="qr-count-card qr-count-high">
-                <div class="qr-count-num">@_report.HighCount</div>
-                <div class="qr-count-label">High</div>
-            </div>
-            <div class="qr-count-card qr-count-medium">
-                <div class="qr-count-num">@_report.MediumCount</div>
-                <div class="qr-count-label">Medium</div>
-            </div>
-            <div class="qr-count-card qr-count-low">
-                <div class="qr-count-num">@_report.LowCount</div>
-                <div class="qr-count-label">Low</div>
-            </div>
-            <div class="qr-count-card qr-count-blocker">
-                <div class="qr-count-num">@TotalDeliveryBlockers</div>
-                <div class="qr-count-label">Blockers</div>
-            </div>
-            <div class="qr-count-card qr-count-warnings">
-                <div class="qr-count-num">@(_report.MediumCount + _report.LowCount)</div>
-                <div class="qr-count-label">Warnings</div>
+            <div class="qr-count-group qr-risk-group">
+                <div class="qr-count-card qr-count-blocker">
+                    <div class="qr-count-num">@TotalDeliveryBlockers</div>
+                    <div class="qr-count-label">Blockers</div>
+                </div>
+                <div class="qr-count-card qr-count-warnings">
+                    <div class="qr-count-num">@(_report.MediumCount + _report.LowCount)</div>
+                    <div class="qr-count-label">Warnings</div>
+                </div>
             </div>
         </div>
 
@@ -280,7 +284,7 @@
                                         : result.Low > 0      ? "Low" : "None";
 
                         <button class="qr-pack-card @cardClass" @onclick="() => ExpandPackFromCard(result.PackId)" type="button" aria-label="Open @result.PackName details">
-                            <div style="display:flex;align-items:flex-start;gap:0.3rem;justify-content:space-between">
+                            <div class="qr-pack-card-header">
                                 <div class="qr-pack-card-name">@result.PackName</div>
                                 @if (isWeakest || isStrongest)
                                 {
@@ -295,14 +299,16 @@
                             else
                             {
                                 <div class="qr-pack-card-score">@((int)Math.Round(result.Score))%</div>
-                                <div class="qr-pack-card-findings">
-                                    @if (totalF == 0) { <span class="qr-pack-card-ok">No issues</span> }
-                                    else { <span>@totalF finding@(totalF != 1 ? "s" : "")</span> }
+                                <div class="qr-pack-card-metadata">
+                                    @if (totalF == 0)
+                                    {
+                                        <span class="qr-pack-card-ok">No issues</span>
+                                    }
+                                    else
+                                    {
+                                        <span>@totalF finding@(totalF != 1 ? "s" : "") @(totalF > 0 ? "· Highest: " + hSev : "")</span>
+                                    }
                                 </div>
-                                @if (totalF > 0)
-                                {
-                                    <div class="qr-pack-card-sev">Highest: @hSev</div>
-                                }
                                 <div class="qr-pack-card-status">
                                     <span class="qr-result-score @ScoreVariant(result.Score)">@ScoreLabel(result.Score)</span>
                                 </div>
@@ -923,6 +929,8 @@
 
     private record TopIssueItem(string LogicalId, string RuleCode, string Title, string Description, string Severity, int SortKey, List<string> SourcePacks, string PrimaryPackId, string? Fix = null);
 
+    private record ConstitutionRuleMetadata(string RuleId, string RuleTitle, string RuleType, List<string> MissingArtifacts);
+
     private record TopIssueSource(string PackName, string PackId, string Title, string? Description, string? Fix);
 
     private static int SeveritySortKey(string sev) => sev.ToLowerInvariant() switch
@@ -945,6 +953,9 @@
     {
         if (_report is null) return [];
 
+        // Build canonical Constitution metadata lookup from Compliance report
+        var constitutionMetadata = BuildConstitutionMetadataLookup();
+
         // Collect all findings with their source packs and severity info
         var allIssues = new List<(string LogicalId, string RuleCode, string Title, string Description, string Severity, int SortKey, string PackName, string PackId)>();
 
@@ -954,21 +965,27 @@
                 foreach (var f in r.QaAudit.Findings)
                 {
                     var sev = QaSevString(f.Severity);
-                    var logicalId = string.IsNullOrEmpty(f.RuleCode) ? $"SEMANTIC:{f.Title}" : f.RuleCode;
-                    allIssues.Add((logicalId, f.RuleCode ?? f.Title, f.Title, f.Description, sev, SeveritySortKey(sev), r.PackName, r.PackId));
+                    // For Constitution coverage findings, use affected rule ID for deduplication
+                    var logicalId = GetQaFindingLogicalId(f, constitutionMetadata);
+                    var enrichedTitle = EnrichQaFindingTitle(f, constitutionMetadata);
+                    allIssues.Add((logicalId, f.RuleCode ?? f.Title, enrichedTitle, f.Description, sev, SeveritySortKey(sev), r.PackName, r.PackId));
                 }
             if (r.Compliance is not null)
             {
                 foreach (var v in r.Compliance.Violations)
                 {
                     var sev = ViolSevToCard(v.Severity);
-                    allIssues.Add((v.RuleId, v.RuleId, v.RuleTitle, v.Issue, sev, SeveritySortKey(sev), r.PackName, r.PackId));
+                    var logicalId = GetComplianceLogicalId(v.RuleId);
+                    allIssues.Add((logicalId, v.RuleId, v.RuleTitle, v.Issue, sev, SeveritySortKey(sev), r.PackName, r.PackId));
                 }
                 foreach (var g in r.Compliance.Gaps)
                 {
                     var sev = ViolSevToCard(g.Severity);
+                    var logicalId = GetComplianceLogicalId(g.RuleId);
                     var gapDesc = BuildGapDescription(g);
-                    allIssues.Add((g.RuleId, g.RuleId, g.RuleTitle, gapDesc, sev, SeveritySortKey(sev), r.PackName, r.PackId));
+                    var fix = BuildGapFix(g);
+                    // Store gap for potential fix enrichment during aggregation
+                    allIssues.Add((logicalId, g.RuleId, g.RuleTitle, gapDesc, sev, SeveritySortKey(sev), r.PackName, r.PackId));
                 }
             }
             if (r.Standards is not null)
@@ -1006,22 +1023,30 @@
             var maxSortKey = issues.Min(i => i.SortKey);
             var maxSeverity = issues.First(i => i.SortKey == maxSortKey).Severity;
 
-            // Canonical title from first issue
-            var title = issues.First().Title;
+            // Canonical title (prefer Constitution Compliance title if available)
+            var complianceIssue = issues.FirstOrDefault(i => i.PackName.Contains("Compliance", StringComparison.OrdinalIgnoreCase));
+            var title = complianceIssue != default ? complianceIssue.Title : issues.First().Title;
 
-            // Get unique source packs
-            var sourcePacks = issues.Select(i => i.PackName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            // Get unique source packs in stable order
+            var sourcePacks = issues.Select(i => i.PackName).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(p => p).ToList();
 
-            // Determine primary pack ID
+            // Determine primary pack ID (prefer Constitution Compliance)
             var primaryPackId = DeterminePrimaryPackId(sourcePacks, issues);
 
-            // Get best fix/description
-            var fix = issues.Where(i => !string.IsNullOrEmpty(i.Description)).Select(i => i.Description).FirstOrDefault() ?? "";
+            // Build actionable fix for Constitution coverage issues
+            var fix = BuildAggregatedFix(group.Key, issues, constitutionMetadata);
 
-            // Rule code
-            var ruleCode = issues.First().RuleCode;
+            // Rule code - prefer non-detector codes for Constitution coverage
+            var ruleCode = ExtractCanonicalRuleCode(issues);
 
-            aggregated.Add((group.Key, ruleCode, title, "", maxSeverity, maxSortKey, sourcePacks, primaryPackId, string.IsNullOrEmpty(fix) ? null : fix));
+            // Get description from first non-empty entry, but clear for Constitution coverage if we have a better fix
+            var description = issues.FirstOrDefault(i => !string.IsNullOrEmpty(i.Description)).Description ?? "";
+            if (group.Key.StartsWith("CONSTITUTION-COVERAGE:", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(fix))
+            {
+                description = "";
+            }
+
+            aggregated.Add((group.Key, ruleCode, title, description, maxSeverity, maxSortKey, sourcePacks, primaryPackId, fix));
         }
 
         // Sort by severity then keep unique logical issues up to limit
@@ -1032,6 +1057,149 @@
             .ToList();
 
         return result;
+    }
+
+    private string GetQaFindingLogicalId(QaFinding f, Dictionary<string, ConstitutionRuleMetadata> metadata)
+    {
+        // For Constitution coverage findings (CONST-00x), use affected rule as logical ID
+        if (f.RuleCode?.StartsWith("CONST-") == true && !string.IsNullOrEmpty(f.AffectedArtifact))
+        {
+            var normalizedRuleId = f.AffectedArtifact.ToUpperInvariant().Trim();
+            return $"CONSTITUTION-COVERAGE:{normalizedRuleId}";
+        }
+
+        // Handle synthetic test pattern: QA finding with RuleCode=PP-02 directly (matches Constitution rule format)
+        if (!string.IsNullOrEmpty(f.RuleCode) && IsConstitutionRuleFormat(f.RuleCode) && f.Category == QaCategory.Constitution)
+        {
+            var normalizedRuleId = f.RuleCode.ToUpperInvariant().Trim();
+            return $"CONSTITUTION-COVERAGE:{normalizedRuleId}";
+        }
+
+        // Default fallback
+        return string.IsNullOrEmpty(f.RuleCode) ? $"SEMANTIC:{f.Title}" : f.RuleCode;
+    }
+
+    private bool IsConstitutionRuleFormat(string ruleCode)
+    {
+        // Check if RuleCode looks like a Constitution rule (PP-02, PRINCIPLE-001, etc.)
+        return ruleCode.StartsWith("PP-") || ruleCode.StartsWith("PRINCIPLE-") ||
+               ruleCode.StartsWith("STD-") || ruleCode.StartsWith("CON-");
+    }
+
+    private string GetComplianceLogicalId(string ruleId)
+    {
+        var normalizedRuleId = ruleId.ToUpperInvariant().Trim();
+        return $"CONSTITUTION-COVERAGE:{normalizedRuleId}";
+    }
+
+    private string EnrichQaFindingTitle(QaFinding f, Dictionary<string, ConstitutionRuleMetadata> metadata)
+    {
+        // For Constitution coverage findings (CONST-001 pattern), include the affected rule and its title if available
+        if (f.RuleCode?.StartsWith("CONST-") == true && !string.IsNullOrEmpty(f.AffectedArtifact))
+        {
+            var affectedRule = f.AffectedArtifact.Trim();
+            var normalizedKey = affectedRule.ToUpperInvariant();
+
+            if (metadata.TryGetValue(normalizedKey, out var ruleMetadata))
+            {
+                return $"{affectedRule} — {ruleMetadata.RuleTitle}";
+            }
+            return affectedRule;
+        }
+
+        // Handle synthetic test pattern: RuleCode=PP-02 directly
+        if (!string.IsNullOrEmpty(f.RuleCode) && IsConstitutionRuleFormat(f.RuleCode) && f.Category == QaCategory.Constitution)
+        {
+            var normalizedKey = f.RuleCode.ToUpperInvariant();
+            if (metadata.TryGetValue(normalizedKey, out var ruleMetadata))
+            {
+                return $"{f.RuleCode} — {ruleMetadata.RuleTitle}";
+            }
+        }
+
+        return f.Title;
+    }
+
+    private Dictionary<string, ConstitutionRuleMetadata> BuildConstitutionMetadataLookup()
+    {
+        var lookup = new Dictionary<string, ConstitutionRuleMetadata>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var r in _report?.PackResults ?? [])
+        {
+            if (r.Compliance?.Results != null)
+            {
+                foreach (var result in r.Compliance.Results)
+                {
+                    var key = result.RuleId.ToUpperInvariant();
+                    if (!lookup.ContainsKey(key))
+                    {
+                        var missing = new List<string>();
+                        if (!result.HasSpecCoverage) missing.Add("Specification");
+                        if (!result.HasPlanCoverage) missing.Add("Plan");
+                        if (!result.HasTaskCoverage) missing.Add("Tasks");
+
+                        lookup[key] = new ConstitutionRuleMetadata(
+                            result.RuleId,
+                            result.RuleTitle,
+                            result.RuleType.ToString(),
+                            missing
+                        );
+                    }
+                }
+            }
+        }
+        return lookup;
+    }
+
+    private string BuildGapFix(ComplianceGap g)
+    {
+        var missing = new List<string>();
+        if (g.MissingInSpec) missing.Add("Specification");
+        if (g.MissingInPlan) missing.Add("Plan");
+        if (g.MissingInTasks) missing.Add("Tasks");
+
+        if (missing.Count == 0) return "";
+
+        return missing.Count switch
+        {
+            1 => $"Add coverage in {missing[0]}.",
+            2 => $"Add coverage in {missing[0]} and {missing[1]}.",
+            _ => $"Add coverage in {string.Join(", ", missing.SkipLast(1))} and {missing.Last()}."
+        };
+    }
+
+    private string? BuildAggregatedFix(string logicalId, List<(string LogicalId, string RuleCode, string Title, string Description, string Severity, int SortKey, string PackName, string PackId)> issues, Dictionary<string, ConstitutionRuleMetadata> metadata)
+    {
+        // For Constitution coverage issues, build actionable fix
+        if (logicalId.StartsWith("CONSTITUTION-COVERAGE:", StringComparison.OrdinalIgnoreCase))
+        {
+            var ruleId = logicalId.Substring("CONSTITUTION-COVERAGE:".Length);
+            if (metadata.TryGetValue(ruleId, out var ruleMetadata) && ruleMetadata.MissingArtifacts.Count > 0)
+            {
+                var missing = ruleMetadata.MissingArtifacts;
+                return missing.Count switch
+                {
+                    1 => $"Add coverage in {missing[0]}.",
+                    2 => $"Add coverage in {missing[0]} and {missing[1]}.",
+                    _ => $"Add coverage in {string.Join(", ", missing.SkipLast(1))} and {missing.Last()}."
+                };
+            }
+        }
+
+        // For other findings, use the first non-empty description as the fix
+        var description = issues.FirstOrDefault(i => !string.IsNullOrEmpty(i.Description)).Description;
+        return string.IsNullOrEmpty(description) ? null : description;
+    }
+
+    private string ExtractCanonicalRuleCode(List<(string LogicalId, string RuleCode, string Title, string Description, string Severity, int SortKey, string PackName, string PackId)> issues)
+    {
+        // For Constitution coverage, prefer the actual rule ID (PP-02) over detector ID (CONST-001)
+        var complianceIssue = issues.FirstOrDefault(i => !i.RuleCode.StartsWith("CONST-"));
+        if (!string.IsNullOrEmpty(complianceIssue.RuleCode))
+            return complianceIssue.RuleCode;
+
+        // Otherwise use first available rule code
+        return issues.First().RuleCode;
     }
 
     private string DeterminePrimaryPackId(List<string> sourcePacks, List<(string LogicalId, string RuleCode, string Title, string Description, string Severity, int SortKey, string PackName, string PackId)> allIssues)
@@ -1097,6 +1265,9 @@
             return;
         }
 
+        // Build canonical Constitution metadata for enriching Constitution findings
+        var constitutionMetadata = BuildConstitutionMetadataForPresentation();
+
         int seq = 0;
         foreach (var grp in report.Findings.GroupBy(f => f.Category).OrderBy(g => g.Key))
         {
@@ -1120,11 +1291,37 @@
             __builder.AddAttribute(seq++, "ShowAll", isExpanded);
             __builder.AddAttribute(seq++, "OnShowAllChanged", EventCallback.Factory.Create<bool>(this, (val) => ToggleQaAuditorGroup(groupKeyCopy)));
             __builder.AddAttribute(seq++, "ContextLabel", $"{groupKey.ToLower()} findings");
+            // Pass canonical Constitution metadata for Constitution findings
+            if (grp.Key == QaCategory.Constitution && constitutionMetadata.Count > 0)
+            {
+                __builder.AddAttribute(seq++, "CanonicalMetadata", constitutionMetadata);
+            }
             __builder.CloseComponent();
 
             __builder.CloseElement();
         }
     };
+
+    private Dictionary<string, (string RuleTitle, string RuleType)> BuildConstitutionMetadataForPresentation()
+    {
+        var lookup = new Dictionary<string, (string RuleTitle, string RuleType)>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var r in _report?.PackResults ?? [])
+        {
+            if (r.Compliance?.Results != null)
+            {
+                foreach (var result in r.Compliance.Results)
+                {
+                    var key = result.RuleId.ToUpperInvariant();
+                    if (!lookup.ContainsKey(key))
+                    {
+                        lookup[key] = (result.RuleTitle, result.RuleType.ToString());
+                    }
+                }
+            }
+        }
+        return lookup;
+    }
 
     private RenderFragment RenderComplianceSection(ConstitutionComplianceReport report) => __builder =>
     {

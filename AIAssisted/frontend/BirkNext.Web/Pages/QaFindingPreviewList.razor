@@ -59,10 +59,22 @@
     [Parameter]
     public string ContextLabel { get; set; } = "findings";
 
+    [Parameter]
+    public Dictionary<string, (string RuleTitle, string RuleType)>? CanonicalMetadata { get; set; }
+
     private IEnumerable<QaFinding> VisibleFindings => ShowAll ? Items : Items.Take(PreviewLimit);
 
-    private string GetComponent(QaFinding finding) =>
-        $"{finding.RuleCode}{(finding.AffectedArtifact is not null ? " · " + finding.AffectedArtifact : "")}";
+    private string GetComponent(QaFinding finding)
+    {
+        // For Constitution coverage findings, don't repeat the affected rule (it's now primary)
+        // Show detector metadata instead
+        var detector = GetDetectorMetadata(finding);
+        if (!string.IsNullOrEmpty(detector))
+            return detector;
+
+        // For other findings, show RuleCode and AffectedArtifact if available
+        return $"{finding.RuleCode}{(finding.AffectedArtifact is not null ? " · " + finding.AffectedArtifact : "")}";
+    }
 
     private string QaSevString(QaSeverity sev) => sev.ToString();
 
@@ -80,6 +92,22 @@
 
     private string FormatTitle(QaFinding finding)
     {
+        // For Constitution coverage findings, use affected rule as primary identity
+        if (IsConstitutionCoverageFinding(finding))
+        {
+            var affectedRule = finding.AffectedArtifact?.Trim();
+            if (!string.IsNullOrEmpty(affectedRule))
+            {
+                var normalizedKey = affectedRule.ToUpperInvariant();
+                if (CanonicalMetadata?.TryGetValue(normalizedKey, out var metadata) == true && !string.IsNullOrEmpty(metadata.RuleTitle))
+                {
+                    return $"{affectedRule} — {metadata.RuleTitle}";
+                }
+                return affectedRule;
+            }
+        }
+
+        // Default behavior for non-Constitution findings
         if (string.IsNullOrEmpty(finding.RuleCode))
             return finding.Title;
 
@@ -87,6 +115,23 @@
             return finding.RuleCode;
 
         return $"{finding.RuleCode} — {finding.Title}";
+    }
+
+    private bool IsConstitutionCoverageFinding(QaFinding finding)
+    {
+        return finding.Category == QaCategory.Constitution &&
+               finding.RuleCode?.StartsWith("CONST-") == true &&
+               !string.IsNullOrEmpty(finding.AffectedArtifact);
+    }
+
+    private string? GetDetectorMetadata(QaFinding finding)
+    {
+        // For Constitution coverage findings, show detector as secondary metadata
+        if (IsConstitutionCoverageFinding(finding))
+        {
+            return $"Check {finding.RuleCode}";
+        }
+        return null;
     }
 
     private string FormatDescription(QaFinding finding)
