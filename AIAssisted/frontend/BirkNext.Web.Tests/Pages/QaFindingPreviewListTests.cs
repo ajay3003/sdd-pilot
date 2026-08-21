@@ -156,8 +156,9 @@ public sealed class QaFindingPreviewListTests : BunitContext
         var host = Render<TestHost>(p => p.Add(h => h.Items, items));
 
         host.Markup.Should().Contain("PP-02");
-        host.Markup.Should().Contain("Constitution");
+        host.Markup.Should().NotContain("qr-finding-category");
         host.Markup.Should().Contain("Missing coverage in Specification, Plan and Tasks.");
+        host.Markup.Should().Contain("Problem:");
         host.Markup.Should().NotContain("Rule 'PP-02' (Principle) has no coverage");
     }
 
@@ -180,7 +181,8 @@ public sealed class QaFindingPreviewListTests : BunitContext
         var host = Render<TestHost>(p => p.Add(h => h.Items, items));
 
         host.Markup.Should().Contain("PRINCIPLE-001 — Headless API Communication");
-        host.Markup.Should().Contain("Architecture");
+        host.Find(".qr-finding-description").TextContent.Should().Contain("Problem: Test description");
+        host.Markup.Should().NotContain("qr-finding-category");
     }
 
     [Fact]
@@ -206,7 +208,7 @@ public sealed class QaFindingPreviewListTests : BunitContext
     }
 
     [Fact]
-    public void QaFindingPreviewList_Finding_RendersCategoryAsSecondaryMetadata()
+    public void QaFindingPreviewList_Finding_DoesNotRepeatCategoryInsideGroupedCard()
     {
         var items = new List<QaFinding>
         {
@@ -224,9 +226,9 @@ public sealed class QaFindingPreviewListTests : BunitContext
         var host = Render<TestHost>(p => p.Add(h => h.Items, items));
 
         var markup = host.Markup;
-        // Verify Principle is rendered with secondary metadata styling
-        markup.Should().Contain("qr-finding-category");
-        markup.Should().Contain("Constitution");
+        markup.Should().NotContain("qr-finding-category");
+        markup.Should().NotContain("Constitution");
+        markup.Should().Contain("PP-02 — Principle 2");
     }
 
     [Fact]

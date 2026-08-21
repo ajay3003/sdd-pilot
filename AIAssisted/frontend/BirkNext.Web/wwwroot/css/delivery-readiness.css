@@ -90,16 +90,43 @@
 
 /* ── Decision cards ───────────────────────────────────────────────────────── */
 
-.dr-decision-grid {
+.dr-decision-hierarchy {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1rem;
+    grid-template-columns: minmax(260px, 1.35fr) minmax(240px, 1fr);
+    gap: 0.9rem;
 }
 
-@media (max-width: 900px) {
-    .dr-decision-grid {
-        grid-template-columns: 1fr;
-    }
+.dr-release-decision {
+    padding: 1rem 1.1rem;
+    background: var(--clr-surface);
+    border: 1px solid var(--clr-border);
+    border-left: 4px solid var(--clr-border);
+    border-radius: var(--radius-lg);
+}
+
+.dr-release-decision.is-healthy { border-left-color: var(--clr-success); }
+.dr-release-decision.is-warning { border-left-color: var(--clr-warning); }
+.dr-release-decision.is-critical { border-left-color: var(--clr-danger); }
+.dr-release-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--clr-text-muted); }
+.dr-release-state { margin-top: 0.2rem; font-size: 1.25rem; font-weight: 800; color: var(--clr-text-heading); }
+.dr-release-issues { margin-top: 0.25rem; font-size: 0.84rem; font-weight: 600; color: var(--clr-text); }
+.dr-release-summary { margin-top: 0.35rem; font-size: 0.8rem; color: var(--clr-text-muted); }
+
+.dr-supporting-decisions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; }
+.dr-supporting-decision { padding: 0.75rem 0.85rem; background: var(--clr-surface); border: 1px solid var(--clr-border); border-radius: var(--radius-md); }
+.dr-supporting-state { display: flex; flex-wrap: wrap; gap: 0.3rem; font-size: 0.8rem; color: var(--clr-text-muted); }
+.dr-supporting-state strong { font-size: 0.78rem; color: var(--clr-text-heading); }
+.dr-supporting-state strong.is-healthy { color: var(--clr-success); }
+.dr-supporting-state strong.is-warning { color: var(--clr-warning); }
+.dr-supporting-state strong.is-critical { color: var(--clr-danger); }
+.dr-supporting-score, .dr-supporting-summary { margin-top: 0.25rem; font-size: 0.74rem; color: var(--clr-text-muted); }
+
+@media (max-width: 760px) {
+    .dr-decision-hierarchy { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+    .dr-supporting-decisions { grid-template-columns: 1fr; }
 }
 
 /* ── Tab badge (replaces Bootstrap .badge) ────────────────────────────────── */
@@ -144,9 +171,17 @@
     gap: 1.25rem;
 }
 
-.dr-overview-body .metric-strip {
-    gap: 0.75rem;
+.dr-readiness-score {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--clr-border);
+    font-size: 0.82rem;
+    color: var(--clr-text-muted);
 }
+
+.dr-readiness-score strong { color: var(--clr-text); font-size: 0.9rem; }
 
 /* ── Score ring SVG ───────────────────────────────────────────────────────── */
 

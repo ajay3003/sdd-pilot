@@ -673,9 +673,12 @@
 .issue-sev-success  { background: var(--clr-success-bg); color: var(--clr-success); border: 1px solid var(--clr-success-border); }
 
 .issue-content    { flex: 1; min-width: 0; }
-.issue-component  { font-size: 0.72rem; font-weight: 600; color: var(--clr-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.15rem; }
+.issue-component  { font-size: 0.84rem; font-weight: 600; color: var(--clr-text-heading); margin-bottom: 0.15rem; }
+.issue-status     { font-size: 0.75rem; font-weight: 600; color: var(--clr-text-muted); margin-bottom: 0.15rem; }
 .issue-body       { font-size: 0.845rem; color: var(--clr-text-body); line-height: 1.5; }
 .issue-fix        { font-size: 0.79rem; color: var(--clr-text-subtle); margin-top: 0.25rem; font-style: italic; }
+.issue-reference  { font-size: 0.75rem; color: var(--clr-text-muted); margin-top: 0.2rem; }
+.issue-field-label { font-weight: 600; }
 
 
 /* ======================================================

@@ -8,17 +8,13 @@
                 <span class="qr-finding-severity" data-severity="@QaSevString(finding.Severity).ToLowerInvariant()">@QaSevString(finding.Severity)</span>
                 <div class="qr-finding-title">@FormatTitle(finding)</div>
             </div>
-            @if (!string.IsNullOrEmpty(finding.Category.ToString()))
-            {
-                <div class="qr-finding-category">@finding.Category</div>
-            }
             @if (!string.IsNullOrEmpty(FormatDescription(finding)))
             {
-                <div class="qr-finding-description">@FormatDescription(finding)</div>
+                <div class="qr-finding-description"><strong>Problem:</strong> @FormatDescription(finding)</div>
             }
-            @if (!string.IsNullOrWhiteSpace(GetComponent(finding)))
+            @if (!string.IsNullOrWhiteSpace(GetReference(finding)))
             {
-                <div style="font-size: 0.75rem; color: var(--clr-text-muted, #64748b); margin-top: 0.2rem;">@GetComponent(finding)</div>
+                <div class="qr-finding-reference"><strong>Reference:</strong> @GetReference(finding)</div>
             }
         </div>
     }
@@ -64,7 +60,7 @@
 
     private IEnumerable<QaFinding> VisibleFindings => ShowAll ? Items : Items.Take(PreviewLimit);
 
-    private string GetComponent(QaFinding finding)
+    private string? GetReference(QaFinding finding)
     {
         // For Constitution coverage findings, don't repeat the affected rule (it's now primary)
         // Show detector metadata instead
@@ -72,8 +68,11 @@
         if (!string.IsNullOrEmpty(detector))
             return detector;
 
-        // For other findings, show RuleCode and AffectedArtifact if available
-        return $"{finding.RuleCode}{(finding.AffectedArtifact is not null ? " · " + finding.AffectedArtifact : "")}";
+        // The rule code is already part of the identity; retain only distinct traceability.
+        return !string.IsNullOrWhiteSpace(finding.AffectedArtifact) &&
+               !string.Equals(finding.RuleCode?.Trim(), finding.AffectedArtifact.Trim(), StringComparison.OrdinalIgnoreCase)
+            ? finding.AffectedArtifact.Trim()
+            : null;
     }
 
     private string QaSevString(QaSeverity sev) => sev.ToString();
@@ -92,6 +91,9 @@
 
     private string FormatTitle(QaFinding finding)
     {
+        var ruleCode = finding.RuleCode?.Trim() ?? string.Empty;
+        var rawTitle = finding.Title?.Trim() ?? string.Empty;
+
         // For Constitution coverage findings, use affected rule as primary identity
         if (IsConstitutionCoverageFinding(finding))
         {
@@ -107,14 +109,40 @@
             }
         }
 
+        // Direct Constitution rule IDs can use the same canonical metadata as detector findings.
+        if (finding.Category == QaCategory.Constitution &&
+            !string.IsNullOrEmpty(ruleCode) &&
+            CanonicalMetadata?.TryGetValue(ruleCode.ToUpperInvariant(), out var directMetadata) == true &&
+            !string.IsNullOrWhiteSpace(directMetadata.RuleTitle))
+        {
+            return ComposeIdentity(ruleCode, directMetadata.RuleTitle);
+        }
+
         // Default behavior for non-Constitution findings
-        if (string.IsNullOrEmpty(finding.RuleCode))
-            return finding.Title;
+        return ComposeIdentity(ruleCode, rawTitle);
+    }
 
-        if (finding.RuleCode == finding.Title)
-            return finding.RuleCode;
+    private static string ComposeIdentity(string ruleCode, string title)
+    {
+        if (string.IsNullOrWhiteSpace(ruleCode)) return title.Trim();
 
-        return $"{finding.RuleCode} — {finding.Title}";
+        var code = ruleCode.Trim();
+        var name = title.Trim();
+        if (string.IsNullOrEmpty(name) || string.Equals(code, name, StringComparison.OrdinalIgnoreCase)) return code;
+
+        foreach (var separator in new[] { "—", "–", "-" })
+        {
+            var prefix = $"{code} {separator}";
+            if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var suffix = name[prefix.Length..].Trim();
+                return string.IsNullOrEmpty(suffix) || string.Equals(code, suffix, StringComparison.OrdinalIgnoreCase)
+                    ? code
+                    : $"{code} — {suffix}";
+            }
+        }
+
+        return $"{code} — {name}";
     }
 
     private bool IsConstitutionCoverageFinding(QaFinding finding)
@@ -129,7 +157,7 @@
         // For Constitution coverage findings, show detector as secondary metadata
         if (IsConstitutionCoverageFinding(finding))
         {
-            return $"Check {finding.RuleCode}";
+            return finding.RuleCode?.Trim();
         }
         return null;
     }

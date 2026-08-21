@@ -1666,8 +1666,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            var categoryElement = cut.Find(".qr-finding-category");
-            categoryElement.TextContent.Should().Contain("Constitution");
+            cut.Find(".qr-cat-title").TextContent.Should().Contain("Constitution (1)");
+            cut.Find(".qr-finding-card").QuerySelector(".qr-finding-category").Should().BeNull();
         });
     }
 
@@ -1754,7 +1754,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             var findingCard = cut.Find(".qr-finding-card");
             // Should show compact presentation
             findingCard.TextContent.Should().Contain("PP-02");
-            findingCard.TextContent.Should().Contain("Constitution");
+            findingCard.TextContent.Should().NotContain("Constitution");
+            findingCard.TextContent.Should().Contain("Problem:");
             findingCard.TextContent.Should().Contain("Missing coverage in Specification, Plan and Tasks.");
             // Should NOT show duplicated code
             var content = findingCard.TextContent;
@@ -2771,7 +2772,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             // QA Auditor should still show its CONST-001 finding with enriched presentation
             cut.Markup.Should().Contain("PP-02 — Clear and Testable Requirements");
-            cut.Markup.Should().Contain("Check CONST-001");
+            cut.Markup.Should().Contain("Reference:</");
+            cut.Markup.Should().Contain("CONST-001");
         });
 
         cut.WaitForAssertion(() =>
@@ -2986,7 +2988,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             var findingCard = cut.Find(".qr-finding-card");
             // Detector should appear as secondary metadata
-            findingCard.TextContent.Should().Contain("Check CONST-001");
+            findingCard.TextContent.Should().Contain("Reference: CONST-001");
         });
     }
 
@@ -3316,6 +3318,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var body = cut.Find(".qr-result-body").TextContent;
+            body.Should().Contain("Missing coverage:");
             body.Should().Contain("Missing coverage in Specification, Plan and Tasks.", "description should state what is wrong");
             body.Should().NotContain("Missing in:", "should not use abbreviated form");
         });
@@ -3368,7 +3371,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var body = cut.Find(".qr-result-body").TextContent;
-            body.Should().Contain("Add coverage in Specification and Tasks.", "fix should state actionable step");
+            body.Should().Contain("Fix: Add coverage in Specification and Tasks.", "fix should state actionable step");
             body.Should().NotContain("Plan", "plan is not missing");
         });
     }
@@ -3658,7 +3661,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             var findingCard = cut.Find(".qr-finding-card");
             findingCard.TextContent.Should().Contain("PP-99");
-            findingCard.TextContent.Should().Contain("Check CONST-001");
+            findingCard.TextContent.Should().Contain("Reference: CONST-001");
             // Should NOT have empty title suffix
             findingCard.TextContent.Should().NotContain("PP-99 — ");
         });
@@ -3908,7 +3911,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             findingCard.TextContent.Should().Contain("PP-02 — Clear and Testable Requirements");
 
             // Verify detector as secondary metadata
-            findingCard.TextContent.Should().Contain("Check CONST-001");
+            findingCard.TextContent.Should().Contain("Reference: CONST-001");
 
             // Verify concise coverage text
             findingCard.TextContent.Should().Contain("Specification");
@@ -4910,14 +4913,14 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             var markup = cut.Markup;
             // Top gate cards must show gate info
-            markup.Should().Contain("Development Readiness");
-            markup.Should().Contain("Testing Readiness");
-            markup.Should().Contain("Release Readiness");
+            markup.Should().Contain("Development:");
+            markup.Should().Contain("Testing:");
+            markup.Should().Contain("Release");
 
             // Essential gate data from top cards
-            markup.Should().Contain("Not Ready");
-            markup.Should().Contain("Mostly Ready");
-            markup.Should().Contain("Blocked");
+            markup.Should().Contain("NOT READY");
+            markup.Should().Contain("MOSTLY READY");
+            markup.Should().Contain("BLOCKED");
 
             // Gate Scores panel must NOT exist
             var gateScoresCard = cut.FindAll(".dr-overview-body").SelectMany(c => c.QuerySelectorAll("*"))
@@ -5056,7 +5059,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
             // Overview content visible again
             cut.Markup.Should().Contain("Loaded Artifacts");
-            cut.Markup.Should().Contain("Overall Score");
+            cut.Markup.Should().Contain("Readiness score");
+            cut.Markup.Should().NotContain("Overall Score");
         });
     }
 
@@ -5455,6 +5459,154 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             var markup = cut.Markup;
             markup.Should().Contain("No indexes are defined");
             markup.Should().Contain("frequently queried columns");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DeliveryOverview_LabelsUnfilteredPreviewAsDeliveryGateIssues()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var delivery = new DeliveryReadinessReport
+        {
+            DevelopmentDecision = new() { Name = "Development", State = ReadinessState.NotReady, Score = 32 },
+            TestingDecision = new() { Name = "Testing", State = ReadinessState.MostlyReady, Score = 68 },
+            ReleaseDecision = new() { Name = "Release", State = ReadinessState.Blocked, Score = 24 },
+            Blockers =
+            [
+                new() { Title = "Critical release gate", Severity = GateSeverity.Critical, Phase = "Release" },
+                new() { Title = "Medium testing gate", Severity = GateSeverity.Medium, Phase = "Testing" },
+            ],
+            Recommendations = [new() { Text = "Resolve release gates", Phase = "Release", Priority = GateSeverity.Critical }],
+            Health = new() { OverallReadinessScore = 24.2 },
+        };
+        _qualityReview.SetReport(MakeReport(
+            new QualityReviewPackResult { PackId = "delivery", PackName = "Delivery Readiness", Score = 30, Critical = 1, Medium = 1, DeliveryReadiness = delivery }));
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+        cut.WaitForAssertion(() => cut.Find(".qr-pack-card").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            var overview = cut.Find(".dr-overview-body");
+            overview.QuerySelectorAll(".section-header").Select(e => e.TextContent.Trim()).Should().Contain("Delivery Gate Issues");
+            overview.QuerySelectorAll(".section-header").Select(e => e.TextContent.Trim()).Should().NotContain("Critical Blockers");
+            overview.TextContent.Should().Contain("Critical release gate");
+            overview.TextContent.Should().Contain("Medium testing gate");
+            overview.QuerySelector(".dr-readiness-score strong")!.TextContent.Should().Be("24.2 / 100");
+            overview.TextContent.Should().NotContain("Recommendations");
+            overview.QuerySelector(".metric-strip").Should().BeNull();
+
+            var release = cut.Find(".dr-release-decision");
+            release.TextContent.Should().Contain("Release");
+            release.TextContent.Should().Contain("BLOCKED");
+            release.TextContent.Should().Contain("2 delivery gate issues · 1 critical");
+            cut.FindAll(".dr-supporting-state").Select(e => string.Join(" ", e.TextContent.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)))
+                .Should().Equal("Development: NOT READY", "Testing: MOSTLY READY");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_Standards_PreservesSeverityAndSeparatesStatusAndRuleIdentity()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var standards = new StandardsComplianceReport
+        {
+            Results =
+            [
+                new() { RuleId = "STD-H", Title = "High rule", Category = "Security", Description = "High problem", Recommendation = "Apply high remediation", Severity = CheckSeverity.High, Status = CheckStatus.Failed },
+                new() { RuleId = "STD-M", Title = "Medium rule", Category = "Security", Description = "Medium problem", Severity = CheckSeverity.Medium, Status = CheckStatus.Warning },
+                new() { RuleId = "STD-L", Title = "Low rule", Category = "Security", Description = "Low problem", Severity = CheckSeverity.Low, Status = CheckStatus.Failed },
+            ],
+        };
+        _qualityReview.SetReport(MakeReport(
+            new QualityReviewPackResult { PackId = "wcag", PackName = "WCAG 2.2", Score = 40, High = 1, Medium = 1, Low = 1, Standards = standards }));
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+        cut.WaitForAssertion(() => cut.Find(".qr-pack-card").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".issue-sev").Select(e => e.TextContent.Trim()).Should().Equal("High", "Medium", "Low");
+            cut.FindAll(".issue-status").Select(e => e.TextContent.Trim()).Should().Equal("Status: Failed", "Status: Potential gap", "Status: Failed");
+            cut.FindAll(".issue-component").Select(e => e.TextContent.Trim()).Should().ContainInOrder(
+                "STD-H — High rule", "STD-M — Medium rule", "STD-L — Low rule");
+            cut.FindAll(".issue-sev").Select(e => e.TextContent).Should().NotContain(new[] { "Error", "Warning", "Info" });
+            var highCard = cut.FindAll(".issue-card").First(e => e.TextContent.Contains("STD-H"));
+            highCard.TextContent.Should().Contain("Problem: High problem");
+            highCard.TextContent.Should().Contain("Fix: Apply high remediation");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DataModel_UsesEntityIdentityWithoutDuplicatingSeverity()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var dataModel = new DataModelDocument
+        {
+            Findings =
+            [
+                new() { Severity = DataModelSeverity.Warning, Category = "Schema", EntityName = "Operation", Description = "Entity-specific problem" },
+                new() { Severity = DataModelSeverity.Info, Category = "Schema", Description = "General schema problem" },
+            ],
+        };
+        _qualityReview.SetReport(MakeReport(
+            new QualityReviewPackResult { PackId = "data-model", PackName = "Data Model Quality", Score = 60, Low = 2, DataModel = dataModel }));
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+        cut.WaitForAssertion(() => cut.Find(".qr-pack-card").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            var cards = cut.FindAll(".issue-card");
+            var entityCard = cards.First(c => c.TextContent.Contains("Entity-specific problem"));
+            entityCard.QuerySelector(".issue-sev")!.TextContent.Should().Be("Warning");
+            entityCard.QuerySelector(".issue-component")!.TextContent.Should().Be("Operation");
+            entityCard.QuerySelector(".issue-component")!.TextContent.Should().NotContain("Warning");
+            entityCard.TextContent.Should().Contain("Problem: Entity-specific problem");
+
+            var generalCard = cards.First(c => c.TextContent.Contains("General schema problem"));
+            generalCard.QuerySelector(".issue-sev")!.TextContent.Should().Be("Info");
+            generalCard.QuerySelector(".issue-component").Should().BeNull();
+        });
+    }
+
+    [Fact]
+    public void QualityReview_QaAuditor_DirectConstitutionIdUsesGapCanonicalTitleWithoutDuplication()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var qa = new QaAuditReport
+        {
+            Findings = [new() { RuleCode = " PP-02 ", Title = " pp-02 ", Severity = QaSeverity.Critical, Category = QaCategory.Constitution }],
+        };
+        var compliance = new ConstitutionComplianceReport
+        {
+            Gaps = [new() { RuleId = "PP-02", RuleTitle = "Clear and Testable Requirements", RuleType = ConstitutionRuleType.Principle, MissingInSpec = true, Severity = ViolationSeverity.Critical }],
+        };
+        _qualityReview.SetReport(MakeReport(
+            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 20, Critical = 1, QaAudit = qa },
+            new QualityReviewPackResult { PackId = "compliance", PackName = "Constitution Compliance", Score = 20, Critical = 1, Compliance = compliance }));
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+        cut.WaitForAssertion(() => cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor")).Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            var title = cut.Find(".qr-finding-title").TextContent;
+            title.Should().Be("PP-02 — Clear and Testable Requirements");
+            System.Text.RegularExpressions.Regex.Matches(title, "PP-02").Should().HaveCount(1);
+            title.Should().NotContain("PP-02 — PP-02");
         });
     }
 

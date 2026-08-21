@@ -9,10 +9,21 @@
         {
             <div class="issue-component">@Component</div>
         }
-        <div class="issue-body">@Description</div>
+        @if (!string.IsNullOrWhiteSpace(Status))
+        {
+            <div class="issue-status">Status: @Status</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Description))
+        {
+            <div class="issue-body"><span class="issue-field-label">@DescriptionLabel:</span> @Description</div>
+        }
         @if (!string.IsNullOrWhiteSpace(SuggestedFix))
         {
             <div class="issue-fix">Fix: @SuggestedFix</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Reference))
+        {
+            <div class="issue-reference"><span class="issue-field-label">Reference:</span> @Reference</div>
         }
     </div>
 </div>
@@ -20,8 +31,11 @@
 @code {
     [Parameter, EditorRequired] public string Severity     { get; set; } = "warning";
     [Parameter]                 public string? Component   { get; set; }
+    [Parameter]                 public string? Status      { get; set; }
+    [Parameter]                 public string DescriptionLabel { get; set; } = "Problem";
     [Parameter, EditorRequired] public string Description  { get; set; } = "";
     [Parameter]                 public string? SuggestedFix { get; set; }
+    [Parameter]                 public string? Reference   { get; set; }
 
     private string _sev => Severity.ToLowerInvariant();
 }

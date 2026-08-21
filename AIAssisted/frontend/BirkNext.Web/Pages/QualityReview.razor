@@ -1347,6 +1347,18 @@
                     }
                 }
             }
+
+            if (r.Compliance?.Gaps != null)
+            {
+                foreach (var gap in r.Compliance.Gaps)
+                {
+                    var key = gap.RuleId.Trim().ToUpperInvariant();
+                    if (!lookup.ContainsKey(key) && !string.IsNullOrWhiteSpace(gap.RuleTitle))
+                    {
+                        lookup[key] = new ConstitutionRulePresentationMetadata(gap.RuleTitle.Trim(), gap.RuleType.ToString());
+                    }
+                }
+            }
         }
         return lookup;
     }
@@ -1383,8 +1395,9 @@
                 if (renderedCount >= visibleCount) break;
                 __builder.OpenComponent<IssueCard>(seq++);
                 __builder.AddAttribute(seq++, "Severity", v.Severity.ToString());
-                __builder.AddAttribute(seq++, "Component", $"{v.RuleId} · {v.Artifact}");
-                __builder.AddAttribute(seq++, "Description", $"{v.RuleTitle} — {v.Issue}");
+                __builder.AddAttribute(seq++, "Component", FormatComplianceGapTitle(v.RuleId, v.RuleTitle));
+                __builder.AddAttribute(seq++, "Description", v.Issue);
+                __builder.AddAttribute(seq++, "Reference", v.Artifact.ToString());
                 __builder.CloseComponent();
                 renderedCount++;
             }
@@ -1402,8 +1415,8 @@
                 __builder.OpenComponent<IssueCard>(seq++);
                 __builder.AddAttribute(seq++, "Severity", gap.Severity.ToString());
                 __builder.AddAttribute(seq++, "Component", FormatComplianceGapTitle(gap.RuleId, gap.RuleTitle));
-                var fullDescription = FormattedComplianceGapType(gap.RuleType) + "\n" + FormatComplianceGapDescription(gap);
-                __builder.AddAttribute(seq++, "Description", fullDescription);
+                __builder.AddAttribute(seq++, "DescriptionLabel", "Missing coverage");
+                __builder.AddAttribute(seq++, "Description", FormatComplianceGapDescription(gap));
                 __builder.AddAttribute(seq++, "SuggestedFix", FormatComplianceGapFix(gap));
                 __builder.CloseComponent();
                 renderedCount++;
@@ -1475,8 +1488,9 @@
             foreach (var r in grp)
             {
                 __builder.OpenComponent<IssueCard>(seq++);
-                __builder.AddAttribute(seq++, "Severity", StdSevString(r.Severity));
-                __builder.AddAttribute(seq++, "Component", r.Title);
+                __builder.AddAttribute(seq++, "Severity", r.Severity.ToString());
+                __builder.AddAttribute(seq++, "Status", StandardStatusLabel(r.Status));
+                __builder.AddAttribute(seq++, "Component", FormatStandardIdentity(r.RuleId, r.Title));
                 __builder.AddAttribute(seq++, "Description", r.Description);
                 if (!string.IsNullOrEmpty(r.Recommendation))
                     __builder.AddAttribute(seq++, "SuggestedFix", r.Recommendation);
@@ -1642,11 +1656,26 @@
 
     private RenderFragment RenderDeliveryReadinessSection(DeliveryReadinessReport report) => __builder =>
     {
-        // Decision cards
-        <div class="dr-decision-grid">
-            @DrDecisionCard(report.DevelopmentDecision)
-            @DrDecisionCard(report.TestingDecision)
-            @DrDecisionCard(report.ReleaseDecision)
+        <div class="dr-decision-hierarchy">
+            <div class="dr-release-decision is-@DrStateChip(report.ReleaseDecision.State)">
+                <div class="dr-release-label">Release</div>
+                <div class="dr-release-state">@DrStateLabel(report.ReleaseDecision.State).ToUpperInvariant()</div>
+                <div class="dr-release-issues">
+                    @report.Blockers.Count delivery gate issue@(report.Blockers.Count != 1 ? "s" : "")
+                    @if (report.Blockers.Any(b => b.Severity == GateSeverity.Critical))
+                    {
+                        <span> · @report.Blockers.Count(b => b.Severity == GateSeverity.Critical) critical</span>
+                    }
+                </div>
+                @if (!string.IsNullOrWhiteSpace(report.ReleaseDecision.Summary))
+                {
+                    <div class="dr-release-summary">@report.ReleaseDecision.Summary</div>
+                }
+            </div>
+            <div class="dr-supporting-decisions">
+                @DrSupportingDecision(report.DevelopmentDecision)
+                @DrSupportingDecision(report.TestingDecision)
+            </div>
         </div>
 
         // Tabs
@@ -1889,50 +1918,28 @@
         return "Fix: Resolve to proceed.";
     }
 
-    private RenderFragment DrDecisionCard(ReadinessDecision decision) => __builder =>
+    private RenderFragment DrSupportingDecision(ReadinessDecision decision) => __builder =>
     {
-        <Card Title="@($"{decision.Name} Readiness")">
-            <Header>
-                <StatusChip Status="@DrStateChip(decision.State)" Label="@DrStateLabel(decision.State)" />
-            </Header>
-            <ChildContent>
-                <KeyValueList>
-                    <InfoRow Label="Score" Value="@($"{decision.Score:0.#} / 100")" />
-                    @if (!string.IsNullOrEmpty(decision.Summary))
-                    {
-                        <InfoRow Label="Summary" Value="@decision.Summary" />
-                    }
-                </KeyValueList>
-            </ChildContent>
-        </Card>
+        <div class="dr-supporting-decision">
+            <div class="dr-supporting-state">
+                <span>@decision.Name:</span>
+                <strong class="is-@DrStateChip(decision.State)">@DrStateLabel(decision.State).ToUpperInvariant()</strong>
+            </div>
+            <div class="dr-supporting-score">@decision.Score.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) / 100</div>
+            @if (!string.IsNullOrWhiteSpace(decision.Summary))
+            {
+                <div class="dr-supporting-summary">@decision.Summary</div>
+            }
+        </div>
     };
 
     private RenderFragment DrOverviewTab(DeliveryReadinessReport r) => __builder =>
     {
         <div class="dr-overview-body">
-            <div class="metric-strip">
-                <MetricCard Value="@r.Health.OverallReadinessScore.ToString("0.#")" Label="Overall Score" Sublabel="/ 100"
-                            Variant="@DrStateChip(r.DevelopmentDecision.State)" />
-                <MetricCard Value="@r.Blockers.Count(b => b.Severity == GateSeverity.Critical).ToString()" Label="Critical Blockers"
-                            Variant="@(r.Blockers.Any(b => b.Severity == GateSeverity.Critical) ? "danger" : null)" />
-                <MetricCard Value="@r.Blockers.Count.ToString()" Label="Total Blockers"
-                            Variant="@(r.Blockers.Count > 0 ? "warning" : null)" />
-                <MetricCard Value="@r.Recommendations.Count.ToString()" Label="Recommendations" />
-            </div>
-            <div class="dr-check-columns">
-                <Card Title="Loaded Artifacts">
-                    <KeyValueList>
-                        @DrArtifactRow("Constitution", r.HasConstitution)
-                        @DrArtifactRow("Specification", r.HasSpecification)
-                        @DrArtifactRow("Plan", r.HasPlan)
-                        @DrArtifactRow("Tasks", r.HasTasks)
-                    </KeyValueList>
-                </Card>
-            </div>
             @if (r.Blockers.Count > 0)
             {
                 <div>
-                    <SectionHeader Title="Critical Blockers" />
+                    <SectionHeader Title="Delivery Gate Issues" />
                     <div class="dr-blocker-cards">
                         @foreach (var b in (_drBlockerShowAll ? r.Blockers : r.Blockers.Take(3)))
                         {
@@ -1953,6 +1960,20 @@
                     }
                 </div>
             }
+            <div class="dr-readiness-score">
+                <span>Readiness score:</span>
+                <strong>@r.Health.OverallReadinessScore.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) / 100</strong>
+            </div>
+            <div class="dr-check-columns">
+                <Card Title="Loaded Artifacts">
+                    <KeyValueList>
+                        @DrArtifactRow("Constitution", r.HasConstitution)
+                        @DrArtifactRow("Specification", r.HasSpecification)
+                        @DrArtifactRow("Plan", r.HasPlan)
+                        @DrArtifactRow("Tasks", r.HasTasks)
+                    </KeyValueList>
+                </Card>
+            </div>
         </div>
     };
 
@@ -2174,9 +2195,9 @@
                 if (renderedCount >= visibleCount) break;
 
                 var cleanDescription = CleanMarkdownHeadings(finding.Description);
-                var component = string.IsNullOrEmpty(finding.EntityName)
-                    ? finding.Severity.ToString()
-                    : $"{finding.Severity} · {finding.EntityName}";
+                var component = string.IsNullOrWhiteSpace(finding.EntityName)
+                    ? null
+                    : finding.EntityName.Trim();
 
                 __builder.OpenComponent<IssueCard>(seq++);
                 __builder.AddAttribute(seq++, "Severity", finding.Severity.ToString());
@@ -2269,15 +2290,6 @@
         return $"{ruleId} — {ruleTitle}";
     }
 
-    private string FormattedComplianceGapType(ConstitutionRuleType ruleType) =>
-        ruleType.ToString() switch
-        {
-            "Principle" => "Principle",
-            "Standard" => "Standard",
-            "Constraint" => "Constraint",
-            _ => ruleType.ToString(),
-        };
-
     private string FormatComplianceGapDescription(ComplianceGap gap)
     {
         var missing = new List<string>();
@@ -2335,5 +2347,22 @@
         CheckSeverity.Medium => "warning",
         _                    => "info",
     };
+
+    private static string StandardStatusLabel(CheckStatus status) => status switch
+    {
+        CheckStatus.Warning       => "Potential gap",
+        CheckStatus.Failed        => "Failed",
+        CheckStatus.NotApplicable => "Not applicable",
+        _                         => "Passed",
+    };
+
+    private static string FormatStandardIdentity(string? ruleId, string? title)
+    {
+        var code = ruleId?.Trim() ?? string.Empty;
+        var name = title?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(code)) return name;
+        if (string.IsNullOrEmpty(name) || string.Equals(code, name, StringComparison.OrdinalIgnoreCase)) return code;
+        return $"{code} — {name}";
+    }
 
 }

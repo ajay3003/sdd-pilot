@@ -59,16 +59,16 @@
     line-height: 1.2;
 }
 
-.qr-finding-category {
-    font-size: 0.75rem;
-    color: var(--clr-text-muted, #64748b);
-    font-style: italic;
-}
-
 .qr-finding-description {
     font-size: 0.80rem;
     color: var(--clr-text-muted, #64748b);
     line-height: 1.35;
+}
+
+.qr-finding-reference {
+    margin-top: 0.1rem;
+    font-size: 0.75rem;
+    color: var(--clr-text-muted, #64748b);
 }
 
 .qr-show-toggle {
