@@ -194,6 +194,110 @@ steps:
   displayName: 'Verify frontend Blazor WebAssembly publish'
   condition: eq(variables['BUILD_FRONTEND'], 'true')
 
+# -------------------------------------------------------
+# Frontend Playwright E2E Tests (Quality Gate)
+# Blocks pipeline on WASM runtime regressions
+# -------------------------------------------------------
+
+- bash: |
+    set -e
+    echo "Starting backend with correct environment..."
+    nohup dotnet run --project BirkNext.Api/BirkNext.Api.csproj --configuration Release > /tmp/backend.log 2>&1 &
+    echo $! > /tmp/backend.pid
+  displayName: 'Start backend service'
+  workingDirectory: AIAssisted/backend
+  condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  env:
+    ASPNETCORE_URLS: 'http://localhost:5000'
+    ASPNETCORE_ENVIRONMENT: 'Development'
+    ConnectionStrings__Default: 'Host=localhost;Port=5432;Database=birknext;Username=birknext;Password=birknext'
+
+- bash: |
+    set -e
+    echo "Waiting for backend HTTP readiness..."
+    for i in {1..60}; do
+      HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/api/sampleprojects 2>/dev/null || echo "000")
+      if [ "$HTTP_CODE" = "200" ]; then
+        echo "✓ Backend ready (HTTP 200)"
+        exit 0
+      fi
+      echo "Attempt $i/60: HTTP $HTTP_CODE"
+      sleep 1
+    done
+    echo "✗ Backend not ready after 60 seconds"
+    cat /tmp/backend.log || echo "(log not found)"
+    exit 1
+  displayName: 'Wait for backend readiness'
+  condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  continueOnError: false
+
+- bash: |
+    set -e
+    echo "Starting frontend with correct environment..."
+    nohup dotnet run --project BirkNext.Web/BirkNext.Web.csproj --configuration Release > /tmp/frontend.log 2>&1 &
+    echo $! > /tmp/frontend.pid
+  displayName: 'Start frontend service'
+  workingDirectory: AIAssisted/frontend
+  condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  env:
+    ASPNETCORE_URLS: 'http://localhost:5173'
+    ASPNETCORE_ENVIRONMENT: 'Development'
+
+- bash: |
+    set -e
+    echo "Waiting for frontend HTTP readiness..."
+    for i in {1..30}; do
+      HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/ 2>/dev/null || echo "000")
+      if [ "$HTTP_CODE" = "200" ]; then
+        echo "✓ Frontend ready (HTTP 200)"
+        exit 0
+      fi
+      echo "Attempt $i/30: HTTP $HTTP_CODE"
+      sleep 1
+    done
+    echo "✗ Frontend not ready after 30 seconds"
+    cat /tmp/frontend.log || echo "(log not found)"
+    exit 1
+  displayName: 'Wait for frontend readiness'
+  condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  continueOnError: false
+
+- bash: |
+    set -e
+    echo "Installing Playwright browsers..."
+    pwsh BirkNext.Web.PlaywrightTests/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
+  displayName: 'Install Playwright browsers'
+  workingDirectory: AIAssisted/frontend
+  condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  continueOnError: false
+
+- script: |
+    dotnet test BirkNext.Web.PlaywrightTests/BirkNext.Web.PlaywrightTests.csproj \
+      --configuration Release \
+      --no-build \
+      --logger trx \
+      --results-directory $(Agent.TempDirectory)/test-results/frontend \
+      --filter "PreStarted"
+  displayName: 'Run frontend Playwright E2E tests (Quality Gate)'
+  workingDirectory: AIAssisted/frontend
+  condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  continueOnError: false
+  timeoutInMinutes: 5
+
+- bash: |
+    echo "Stopping background services..."
+    if [ -f /tmp/backend.pid ]; then
+      kill $(cat /tmp/backend.pid) 2>/dev/null || true
+    fi
+    if [ -f /tmp/frontend.pid ]; then
+      kill $(cat /tmp/frontend.pid) 2>/dev/null || true
+    fi
+    sleep 2
+    echo "Services stopped"
+  displayName: 'Cleanup services'
+  condition: always()
+  continueOnError: true
+
 # -------------------------
 # Test results
 # -------------------------
