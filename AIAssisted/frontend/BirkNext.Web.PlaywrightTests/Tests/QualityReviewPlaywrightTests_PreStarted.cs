@@ -55,8 +55,8 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
             page.Console += (sender, e) => consoleMessages.Add(e.Text);
             page.PageError += (sender, error) => pageErrors.Add(error);
 
-            // 1. Navigate to Quality Review page
-            await page.GotoAsync($"{_fixture.FrontendUrl}/quality-review", new PageGotoOptions
+            // 1. Navigate to Sample Projects page first to select a project
+            await page.GotoAsync($"{_fixture.FrontendUrl}/sample-projects", new PageGotoOptions
             {
                 WaitUntil = WaitUntilState.NetworkIdle,
                 Timeout = 30000,
@@ -66,35 +66,78 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
             await page.WaitForTimeoutAsync(500);
 
             // 2. Select first available sample project
-            var projectOptions = await page.QuerySelectorAllAsync("label.qr-pack-option");
-            projectOptions.Count.Should().BeGreaterThan(0, "Should have project options");
+            // Projects are rendered as .sp-card divs with select buttons inside
+            var projectCards = await page.QuerySelectorAllAsync(".sp-card");
+            projectCards.Count.Should().BeGreaterThan(0, "Should have project cards on Sample Projects page");
 
-            await projectOptions[0].ClickAsync();
+            // 3. Click the "Select Project" button in the first card
+            var selectButton = await projectCards[0].QuerySelectorAsync("button.sp-btn-primary:not(:disabled)");
+            selectButton.Should().NotBeNull("First project card should have a clickable 'Select Project' button");
 
-            // 3. Run quality review
+            // Handle confirmation dialog
+            var dialogHandler = new TaskCompletionSource<bool>();
+            page.Dialog += async (_, dialog) =>
+            {
+                // Accept the "Select project?" confirmation dialog
+                await dialog.AcceptAsync();
+                dialogHandler.SetResult(true);
+            };
+
+            // Click the button and wait for navigation
+            await selectButton!.ClickAsync();
+
+            // Wait for the dialog to be handled (with timeout)
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await dialogHandler.Task;
+            }
+            catch (OperationCanceledException)
+            {
+                // Dialog might not appear if this is the first project
+            }
+
+            // Wait for the page to update after project selection
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+            // 4. Navigate to Quality Review page (now with project selected)
+            await page.GotoAsync($"{_fixture.FrontendUrl}/quality-review", new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.NetworkIdle,
+                Timeout = 30000,
+            });
+
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForTimeoutAsync(500);
+
+            // 5. Verify Quality Review page loaded with project context
+            var pageContent = await page.ContentAsync();
+            pageContent.Should().Contain("Quality Review", "Quality Review page should be displayed");
+
+            // 6. Run quality review
             var runButton = page.Locator("button.btn-primary");
             await runButton.WaitForAsync();
             (await runButton.IsDisabledAsync()).Should().BeFalse();
             await runButton.ClickAsync();
 
-            // 4. Expand Data Model Quality
+            // 7. Expand Data Model Quality
             var dmCard = page.Locator("text=Data Model Quality").First;
             await dmCard.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
             await dmCard.ClickAsync();
 
-            // 5. Verify toggle button exists (indicates findings > 5)
+            // 8. Verify toggle button exists (indicates findings > 5)
             var toggleBtn = page.Locator("button.qr-show-toggle").First;
             await toggleBtn.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
 
-            // 6. Verify initial findings
+            // 9. Verify initial findings
             var findings = await page.QuerySelectorAllAsync(".qr-cat-title");
             findings.Count.Should().BeGreaterThan(0);
 
-            // 7. Verify no raw markdown
-            var pageContent = await page.ContentAsync();
-            pageContent.Should().NotContain("##", "Should not have raw markdown ##");
+            // 10. Verify no raw markdown
+            var pageContent2 = await page.ContentAsync();
+            pageContent2.Should().NotContain("##", "Should not have raw markdown ##");
 
-            // 8. Show all
+            // 11. Show all
             await toggleBtn.ClickAsync();
             await page.WaitForFunctionAsync(@"
                 () => {
@@ -106,7 +149,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
             var allFindings = await page.QuerySelectorAllAsync(".qr-cat-title");
             allFindings.Count.Should().BeGreaterThan(findings.Count);
 
-            // 9. Show less
+            // 12. Show less
             await toggleBtn.ClickAsync();
             await page.WaitForFunctionAsync(@"
                 () => {
@@ -118,7 +161,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
             var previewFindings = await page.QuerySelectorAllAsync(".qr-cat-title");
             previewFindings.Count.Should().BeLessThan(allFindings.Count);
 
-            // 10. Repeat toggle cycle
+            // 13. Repeat toggle cycle
             await toggleBtn.ClickAsync();
             await page.WaitForFunctionAsync(@"
                 () => {
@@ -127,7 +170,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
                 }
             ");
 
-            // 11. Verify no WASM errors
+            // 14. Verify no WASM errors
             var unboxErrors = consoleMessages
                 .Where(m => m.Contains("no idea on how to unbox value types", StringComparison.OrdinalIgnoreCase))
                 .ToList();

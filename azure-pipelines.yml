@@ -169,7 +169,7 @@ steps:
   condition: eq(variables['BUILD_FRONTEND'], 'true')
 
 - script: |
-    dotnet test BirkNext.sln \
+    dotnet test BirkNext.Web.Tests/BirkNext.Web.Tests.csproj \
       --configuration Release \
       --no-build \
       --logger trx \
@@ -290,7 +290,7 @@ steps:
       --configuration Release \
       --no-build \
       --logger trx \
-      --results-directory $(Agent.TempDirectory)/test-results/frontend \
+      --results-directory $(Agent.TempDirectory)/test-results/frontend-playwright \
       --filter "PreStarted"
   displayName: 'Run frontend Playwright E2E tests (Quality Gate)'
   workingDirectory: AIAssisted/frontend
