@@ -1,6 +1,207 @@
-AIAssisted/.env
+# =========================================================
+# .NET / Visual Studio
+# =========================================================
 
-# Development scoped CSS - generated during build, never commit
-# The file is auto-generated and copied to wwwroot during build
-# Committing it causes StaticWebAssets duplication errors
+.vs/
+.vscode/
+
+**/bin/
+**/obj/
+
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build artifacts
+*.dll
+*.exe
+*.pdb
+*.cache
+*.log
+*.binlog
+
+
+# =========================================================
+# Rider / JetBrains
+# =========================================================
+
+.idea/
+*.sln.iml
+
+
+# =========================================================
+# OS files
+# =========================================================
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+
+# =========================================================
+# Environment / secrets
+# =========================================================
+
+.env
+.env.*
+!.env.example
+
+AIAssisted/.env
+AIAssisted/**/.env
+
+
+# =========================================================
+# Test output
+# =========================================================
+
+# Root/local test results
+test-results/
+**/test-results/
+
+# dotnet test default output folders
+**/TestResults/
+
+# Test result files
+*.trx
+*.coverage
+*.coveragexml
+
+# Playwright generated output
+playwright-report/
+blob-report/
+**/playwright-report/
+**/blob-report/
+
+# Playwright screenshots/videos/traces if generated
+test-results/
+**/test-results/
+**/playwright/.cache/
+
+
+# =========================================================
+# Playwright browser/cache
+# =========================================================
+
+.playwright/
+ms-playwright/
+**/.playwright/
+
+
+# =========================================================
+# Generated scoped CSS
+# =========================================================
+
+# IMPORTANT:
+# This file must never exist as tracked source.
+#
+# Blazor generates BirkNext.Web.styles.css automatically from
+# scoped *.razor.css files during the build.
+#
+# A physical copy under wwwroot can collide with the generated
+# scoped CSS bundle and cause:
+#
+# GenerateStaticWebAssetsDevelopmentManifest
+# InvalidOperationException:
+# Sequence contains more than one element
+#
+# The generated version under obj/ is valid.
+# The physical wwwroot copy is not source code and must not
+# be committed.
 AIAssisted/frontend/BirkNext.Web/wwwroot/BirkNext.Web.styles.css
+
+
+# =========================================================
+# Frontend generated / temporary files
+# =========================================================
+
+AIAssisted/frontend/build-output.txt
+AIAssisted/frontend/current-build.binlog
+
+frontend-devserver.err.log
+frontend-devserver.out.log
+
+
+# =========================================================
+# Temporary / local files
+# =========================================================
+
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+
+~$*
+
+
+# =========================================================
+# Local development generated data
+# =========================================================
+
+logs/
+**/logs/
+
+
+# =========================================================
+# NuGet
+# =========================================================
+
+*.nupkg
+*.snupkg
+
+packages/
+.nuget/
+
+# Keep NuGet configuration if committed
+!NuGet.Config
+!nuget.config
+
+
+# =========================================================
+# Node / JavaScript tooling
+# =========================================================
+
+node_modules/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+
+# =========================================================
+# Coverage
+# =========================================================
+
+coverage/
+coverage-results/
+.coverage/
+
+
+# =========================================================
+# Docker local overrides
+# =========================================================
+
+docker-compose.override.yml
+
+
+# =========================================================
+# Local Git diagnostic worktrees
+# =========================================================
+
+# Temporary worktrees previously used for baseline/bisect analysis.
+# Prefer removing registered worktrees with:
+# git worktree remove <path>
+# rather than relying only on gitignore.
+
+AIAssisted/birk-baseline/
+AIAssisted/bisect-wt/
+
+
+# =========================================================
+# Misc generated diagnostics
+# =========================================================
+
+*.pid
+*.lock

@@ -13,5 +13,13 @@
     <PackageReference Include="Markdig" Version="0.37.0" />
   </ItemGroup>
 
+  <!-- Guard against stale scoped CSS bundle collision.
+       Blazor generates BirkNext.Web.styles.css during scoped CSS build.
+       A physical wwwroot/BirkNext.Web.styles.css causes StaticWebAssets duplicate error. -->
+  <Target Name="FailIfStaleScopedCssBundleExists"
+          BeforeTargets="PrepareForBuild"
+          Condition="Exists('$(ProjectDir)wwwroot/BirkNext.Web.styles.css')">
+    <Error Text="Stale scoped CSS bundle found at wwwroot/BirkNext.Web.styles.css. Remove this file. Blazor generates BirkNext.Web.styles.css during the scoped CSS build process, and a physical wwwroot copy causes a Static Web Assets duplicate collision (InvalidOperationException: Sequence contains more than one element)." />
+  </Target>
 
 </Project>

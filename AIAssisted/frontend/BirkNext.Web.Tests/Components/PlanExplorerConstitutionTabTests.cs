@@ -86,7 +86,7 @@ public sealed class PlanExplorerConstitutionTabTests : BunitContext
     [Fact]
     public void Constitution_SCIMPlan_HidesEvidenceColumnAndPreservesGateStateAndNotes()
     {
-        var markdown = File.ReadAllText(@"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md");
+        var markdown = File.ReadAllText(TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md"));
         var plan = _analysisService.Parse(markdown);
 
         plan.Gates.Should().HaveCount(13);

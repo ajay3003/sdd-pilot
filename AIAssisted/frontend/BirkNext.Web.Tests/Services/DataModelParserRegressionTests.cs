@@ -730,7 +730,7 @@ public class DataModelParserRegressionTests
     {
         // Audit the Person Module Core sample to verify Indexes parsing
         var markdown = System.IO.File.ReadAllText(
-            "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\person-module\\data-model.md");
+            TestDataHelper.ResolveSampleDataPath("person-module", "data-model.md"));
 
         var result = _service.Parse(markdown);
 
@@ -751,7 +751,7 @@ public class DataModelParserRegressionTests
     {
         // Verify the canonical names of important indexes
         var markdown = System.IO.File.ReadAllText(
-            "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\person-module\\data-model.md");
+            TestDataHelper.ResolveSampleDataPath("person-module", "data-model.md"));
 
         var result = _service.Parse(markdown);
 
@@ -774,7 +774,7 @@ public class DataModelParserRegressionTests
     {
         // Verify IsUnique flag on specific indexes
         var markdown = System.IO.File.ReadAllText(
-            "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\person-module\\data-model.md");
+            TestDataHelper.ResolveSampleDataPath("person-module", "data-model.md"));
 
         var result = _service.Parse(markdown);
 
@@ -874,7 +874,7 @@ public class DataModelParserRegressionTests
     {
         // Autorisasjon has index definitions only in EF Core code block,
         // not in markdown **Indexes** sections, so zero indexes expected
-        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\autorisasjon\\data-model.md";
+        var path = TestDataHelper.ResolveSampleDataPath("autorisasjon", "data-model.md");
         if (!System.IO.File.Exists(path)) return;
 
         var markdown = System.IO.File.ReadAllText(path);
@@ -888,7 +888,7 @@ public class DataModelParserRegressionTests
     public void Parse_HendelseAdapter_ContainsNoMarkdownIndexes()
     {
         // Hendelse Adapter has no explicit **Indexes** section
-        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\hendelse-adapter\\data-model.md";
+        var path = TestDataHelper.ResolveSampleDataPath("hendelse-adapter", "data-model.md");
         if (!System.IO.File.Exists(path)) return;
 
         var markdown = System.IO.File.ReadAllText(path);
@@ -907,7 +907,7 @@ public class DataModelParserRegressionTests
         //
         // All three are legitimate Data Model index definitions
         // Parsing requires: inline syntax support + continuation-line handling + composite index name extraction
-        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\hendelsestjenesten\\data-model.md";
+        var path = TestDataHelper.ResolveSampleDataPath("hendelsestjenesten", "data-model.md");
         if (!System.IO.File.Exists(path)) return;
 
         var markdown = System.IO.File.ReadAllText(path);
@@ -935,7 +935,7 @@ public class DataModelParserRegressionTests
         // - `utloper_tidspunkt` — expiry purge batch job
         // These are documentation notes, not formal index definitions.
         // Parser behavior: rejected because they don't match IX_ pattern
-        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\person-adapter\\data-model.md";
+        var path = TestDataHelper.ResolveSampleDataPath("person-adapter", "data-model.md");
         if (!System.IO.File.Exists(path)) return;
 
         var markdown = System.IO.File.ReadAllText(path);
@@ -949,7 +949,7 @@ public class DataModelParserRegressionTests
     public void Parse_Revisjon_ContainsNoIndexes()
     {
         // Revisjon sample has no index definitions
-        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\revisjon\\data-model.md";
+        var path = TestDataHelper.ResolveSampleDataPath("revisjon", "data-model.md");
         if (!System.IO.File.Exists(path)) return;
 
         var markdown = System.IO.File.ReadAllText(path);
@@ -962,7 +962,7 @@ public class DataModelParserRegressionTests
     public void Parse_FrontendAdminPanel_ContainsNoIndexes()
     {
         // Frontend Admin Panel has no index definitions
-        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\frontend-admin-panel\\data-model.md";
+        var path = TestDataHelper.ResolveSampleDataPath("frontend-admin-panel", "data-model.md");
         if (!System.IO.File.Exists(path)) return;
 
         var markdown = System.IO.File.ReadAllText(path);
@@ -975,7 +975,7 @@ public class DataModelParserRegressionTests
     public void Parse_Proxy_ContainsNoIndexes()
     {
         // Proxy sample has no index definitions
-        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\proxy\\data-model.md";
+        var path = TestDataHelper.ResolveSampleDataPath("proxy", "data-model.md");
         if (!System.IO.File.Exists(path)) return;
 
         var markdown = System.IO.File.ReadAllText(path);
@@ -988,7 +988,7 @@ public class DataModelParserRegressionTests
     public void Parse_Tjeneste_ContainsNoIndexes()
     {
         // Tjeneste sample has no index definitions
-        var path = "C:\\Users\\ajaan\\source\\sdd-repos\\BirkNext\\SampleData\\tjeneste\\data-model.md";
+        var path = TestDataHelper.ResolveSampleDataPath("tjeneste", "data-model.md");
         if (!System.IO.File.Exists(path)) return;
 
         var markdown = System.IO.File.ReadAllText(path);

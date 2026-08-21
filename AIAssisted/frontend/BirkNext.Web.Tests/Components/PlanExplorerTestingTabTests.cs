@@ -57,7 +57,7 @@ public sealed class PlanExplorerTestingTabTests : BunitContext
     [Fact]
     public void TestingTab_SCIMPlan_RendersStrategiesAndAllMeaningfulScenariosWithoutHorizontalRules()
     {
-        var markdown = File.ReadAllText(@"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md");
+        var markdown = File.ReadAllText(TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md"));
         var plan = _analysisService.Parse(markdown);
 
         var cut = Render<PlanExplorerPanel>(parameters => parameters

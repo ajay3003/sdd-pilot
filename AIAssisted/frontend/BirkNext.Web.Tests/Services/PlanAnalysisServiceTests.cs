@@ -522,7 +522,7 @@ public sealed class PlanAnalysisServiceTests
     public void GateStatus_SCIMPlanRegression_ParsesAllGates()
     {
         // Real SCIM plan.md regression test
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -629,7 +629,7 @@ public sealed class PlanAnalysisServiceTests
     public void ComplexityTracking_SCIMPlan_ParsesExplicitDeviationTable()
     {
         // Real SCIM plan.md regression test
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -665,7 +665,7 @@ public sealed class PlanAnalysisServiceTests
     public void Testing_SCIMPlan_ParsesFromTechnicalContextAndPhases()
     {
         // AFTER FIX: Testing info extracted from Technical Context + Steps 8/9
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -763,7 +763,7 @@ public sealed class PlanAnalysisServiceTests
     [Fact]
     public void Testing_SCIMPlan_NoTestingBlockContainsHorizontalRuleText()
     {
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -815,7 +815,7 @@ public sealed class PlanAnalysisServiceTests
     [Fact]
     public void Testing_SCIMPlan_PreservesAllSourceFrameworkVersions()
     {
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -872,7 +872,7 @@ public sealed class PlanAnalysisServiceTests
     {
         // REGRESSION TEST: Dependencies extraction from real SCIM plan
         // Must extract exactly 5 primary dependencies, not overmatch Technical Context fields
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -916,7 +916,7 @@ public sealed class PlanAnalysisServiceTests
     public void TechnicalContext_RawContentPreservesLineBreaks()
     {
         // Verify RawContent contains original Markdown with line breaks preserved
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -947,7 +947,7 @@ public sealed class PlanAnalysisServiceTests
     public void TechnicalContext_MarkdigRendersWithBoldLabels()
     {
         // Verify that Markdig renders the RawContent with bold labels intact
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -982,7 +982,7 @@ public sealed class PlanAnalysisServiceTests
     public void TechnicalContext_RawTextPreservesNewlines_SCIMPlan()
     {
         // Diagnostic: Verify RawText has newlines between fields
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1086,7 +1086,7 @@ public sealed class PlanAnalysisServiceTests
     public void Constraint_SCIMPlan_NoduplicateRendering()
     {
         // Real SCIM regression: all fallback constraints should not duplicate Title/Description
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1105,7 +1105,7 @@ public sealed class PlanAnalysisServiceTests
     public void Constraint_TitleDescription_SCIMPlan()
     {
         // Diagnostic: Check if Title and Description are duplicated
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1195,7 +1195,7 @@ Some content.
     public void SCIMPlan_ComplexityProvenanceCorrect()
     {
         // Real SCIM regression: complexity must be marked as explicit source
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1218,7 +1218,7 @@ Some content.
     public void Complexity_Provenance_SCIMPlan()
     {
         // Diagnostic: Check how complexity section is classified and what provenance state is set
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1303,7 +1303,7 @@ Initial content.
     public void Phase_SCIMPlan_P2_NotEmpty()
     {
         // P2 should have meaningful content (not just empty because no Tasks)
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1332,7 +1332,7 @@ Initial content.
     [Fact]
     public void Phase_SCIMPlan_P3_NotEmpty()
     {
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1346,7 +1346,7 @@ Initial content.
     [Fact]
     public void Phase_SCIMPlan_P5_NotEmpty()
     {
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1361,7 +1361,7 @@ Initial content.
     [Fact]
     public void Phase_SCIMPlan_P6_NotEmpty()
     {
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1375,7 +1375,7 @@ Initial content.
     [Fact]
     public void Phase_SCIMPlan_P7_NotEmpty()
     {
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1390,7 +1390,7 @@ Initial content.
     public void Phase_SCIMPlan_P1_P4_P8_P9_TasksPreserved()
     {
         // Verify that P1, P4, P8, P9 still have their task counts (not duplicated)
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1404,7 +1404,7 @@ Initial content.
     public void Phase_ContentPreservation_SCIMPlan()
     {
         // Diagnostic: Examine what content is preserved in each phase
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1443,7 +1443,7 @@ Initial content.
     public void ProjectStructure_DiagnosticTest_SCIMPlan()
     {
         // Diagnostic: Show what's happening with Project Structure subsections
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1596,7 +1596,7 @@ specs/
         // Updated regression test: SCIM plan has no genuine Architecture Decisions
         // "Documentation (this feature)" and "Source Code Changes" are now correctly
         // classified as ProjectStructure subsections, not Architecture Decisions
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1699,7 +1699,7 @@ Content.
     public void Metadata_SCIMPlan_RegressionTest()
     {
         // REGRESSION TEST: Real SCIM plan metadata extraction
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -1726,7 +1726,7 @@ Content.
     public void Constraints_SCIMPlan_ExtractsFromTechnicalContext()
     {
         // AFTER FIX: Constraints extracted from Technical Context structured fields
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
@@ -2077,7 +2077,7 @@ Final narrative text.
     [Fact]
     public void Metadata_SCIMPlan_DateOnlyNoCreatedOrUpdated()
     {
-        var scimPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var scimPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         if (!System.IO.File.Exists(scimPath)) return;
 
         var markdown = File.ReadAllText(scimPath);
@@ -2152,7 +2152,7 @@ More content.";
     public void RealSCIM_P2_NoExtraneousSeparatorBeforeCode()
     {
         // Verify P2 structure matches expectation: --- paragraph + XML code block
-        var planPath = @"C:\Users\ajaan\source\sdd-repos\BirkNext\SampleData\autorisasjon\plan.md";
+        var planPath = TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md");
         var markdown = File.ReadAllText(planPath);
         var doc = _svc.Parse(markdown);
 
