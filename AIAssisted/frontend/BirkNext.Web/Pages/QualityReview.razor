@@ -407,6 +407,10 @@
                             {
                                 @RenderDeliveryReadinessSection(result.DeliveryReadiness)
                             }
+                            else if (result.DataModel is not null)
+                            {
+                                @RenderDataModelSection(result.DataModel)
+                            }
                         </div>
                     }
                 </div>
@@ -449,6 +453,7 @@
     // ── QA Auditor preview state ─────────────────────────────────────────────
     private readonly HashSet<string> _expandedQaAuditorGroups = [];
     private bool _showAllConstitutionFindings;
+    private bool _dataModelShowAll;
 
     // ── QA Readiness detail state ─────────────────────────────────────────────
     private string? _qaExpandedCategory;
@@ -817,6 +822,7 @@
             // Reset all preview state.
             _expandedQaAuditorGroups.Clear();
             _showAllConstitutionFindings = false;
+            _dataModelShowAll            = false;
             _qaGapShowAll                = false;
             _qaRecShowAll                = false;
 
@@ -2101,6 +2107,102 @@
             </div>
         }
     };
+
+    // ── Data Model Quality detail section ───────────────────────────────────────
+
+    private RenderFragment RenderDataModelSection(DataModelDocument report) => __builder =>
+    {
+        if (report.Findings.Count == 0)
+        {
+            __builder.OpenComponent<EmptyState>(0);
+            __builder.AddAttribute(1, "Icon", "✓");
+            __builder.AddAttribute(2, "Title", "No findings detected.");
+            __builder.CloseComponent();
+            return;
+        }
+
+        var severityOrder = new Dictionary<DataModelSeverity, int>
+        {
+            { DataModelSeverity.Critical, 0 },
+            { DataModelSeverity.Error,    1 },
+            { DataModelSeverity.Warning,  2 },
+            { DataModelSeverity.Info,     3 }
+        };
+
+        var sorted = report.Findings
+            .OrderBy(f => f.Category)
+            .ThenBy(f => severityOrder[f.Severity])
+            .ToList();
+
+        var totalCount = sorted.Count;
+        var previewLimit = 5;
+        var visibleCount = _dataModelShowAll ? totalCount : previewLimit;
+
+        int seq = 0;
+        int renderedCount = 0;
+
+        foreach (var grp in sorted.GroupBy(f => f.Category).OrderBy(g => g.Key))
+        {
+            __builder.OpenElement(seq++, "div");
+            __builder.AddAttribute(seq++, "class", "qr-cat-title");
+            __builder.AddContent(seq++, $"{grp.Key} ({grp.Count()})");
+            __builder.CloseElement();
+
+            foreach (var finding in grp)
+            {
+                if (renderedCount >= visibleCount) break;
+
+                var cleanDescription = CleanMarkdownHeadings(finding.Description);
+                var component = string.IsNullOrEmpty(finding.EntityName)
+                    ? finding.Severity.ToString()
+                    : $"{finding.Severity} · {finding.EntityName}";
+
+                __builder.OpenComponent<IssueCard>(seq++);
+                __builder.AddAttribute(seq++, "Severity", finding.Severity.ToString());
+                __builder.AddAttribute(seq++, "Component", component);
+                __builder.AddAttribute(seq++, "Description", cleanDescription);
+                __builder.CloseComponent();
+
+                renderedCount++;
+            }
+
+            if (renderedCount >= visibleCount) break;
+        }
+
+        if (totalCount > previewLimit)
+        {
+            __builder.OpenElement(seq++, "button");
+            __builder.AddAttribute(seq++, "class", "qr-show-toggle");
+            __builder.AddAttribute(seq++, "type", "button");
+            __builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => _dataModelShowAll = !_dataModelShowAll));
+            if (_dataModelShowAll)
+                __builder.AddAttribute(seq++, "aria-label", "Show fewer data model findings");
+            else
+                __builder.AddAttribute(seq++, "aria-label", $"Show all {totalCount} data model findings");
+            __builder.AddContent(seq++, _dataModelShowAll ? "Show less" : $"Show all {totalCount}");
+            __builder.CloseElement();
+        }
+    };
+
+    private static string CleanMarkdownHeadings(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+
+        var lines = text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+        var cleaned = lines
+            .Select(line =>
+            {
+                var trimmed = line.TrimStart();
+                if (trimmed.StartsWith("##"))
+                    return trimmed.Substring(2).TrimStart();
+
+                return line.Replace(" ## ", " ").Replace("##", "");
+            })
+            .ToList();
+
+        return string.Join("\n", cleaned);
+    }
 
     private static string DrStateLabel(ReadinessState s) => s switch
     {

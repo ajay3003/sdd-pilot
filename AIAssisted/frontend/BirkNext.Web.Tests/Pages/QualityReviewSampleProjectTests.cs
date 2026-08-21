@@ -5029,6 +5029,353 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         });
     }
 
+    [Fact]
+    public void QualityReview_DataModelQuality_ExpandPackShowsFindingDetails()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var dataModel = new DataModelDocument
+        {
+            Findings =
+            [
+                new DataModelFinding { Severity = DataModelSeverity.Warning, Category = "Schema", Description = "No indexes are defined.", EntityName = "Users" }
+            ]
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "data-model", PackName = "Data Model Quality", Score = 50, DataModel = dataModel }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var dmCard = cut.FindAll(".qr-pack-card").FirstOrDefault(c => c.TextContent.Contains("Data Model"));
+            dmCard.Should().NotBeNull();
+            dmCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            markup.Should().Contain("Schema");
+            markup.Should().Contain("No indexes are defined.");
+            markup.Should().Contain("Users");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DataModelQuality_EmptyFindingsShowsEmptyState()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var dataModel = new DataModelDocument { Findings = [] };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "data-model", PackName = "Data Model Quality", Score = 100, DataModel = dataModel }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var dmCard = cut.FindAll(".qr-pack-card").FirstOrDefault(c => c.TextContent.Contains("Data Model"));
+            dmCard.Should().NotBeNull();
+            dmCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("No findings detected.");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DataModelQuality_ShowAllToggleWorks()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var dataModel = new DataModelDocument
+        {
+            Findings = Enumerable.Range(0, 8)
+                .Select(i => new DataModelFinding
+                {
+                    Severity = i % 2 == 0 ? DataModelSeverity.Warning : DataModelSeverity.Info,
+                    Category = $"Category{i / 2}",
+                    Description = $"Finding {i}",
+                    EntityName = $"Entity{i}"
+                })
+                .ToList()
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "data-model", PackName = "Data Model Quality", Score = 20, DataModel = dataModel }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var dmCard = cut.FindAll(".qr-pack-card").FirstOrDefault(c => c.TextContent.Contains("Data Model"));
+            dmCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            markup.Should().Contain("Show all 8");
+            markup.Should().Contain("Finding 0");
+            markup.Should().Contain("Finding 4");
+            markup.Should().NotContain("Finding 5");
+        });
+
+        cut.InvokeAsync(() =>
+        {
+            var toggleButton = cut.FindAll("button.qr-show-toggle").FirstOrDefault();
+            toggleButton.Should().NotBeNull();
+            toggleButton!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            markup.Should().Contain("Show less");
+            markup.Should().Contain("Finding 5");
+            markup.Should().Contain("Finding 7");
+        });
+
+        cut.InvokeAsync(() =>
+        {
+            var toggleButton = cut.FindAll("button.qr-show-toggle").FirstOrDefault();
+            toggleButton!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            markup.Should().Contain("Show all");
+            markup.Should().NotContain("Finding 5");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DataModelQuality_UsesSafeEventBinding()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var dataModel = new DataModelDocument
+        {
+            Findings = Enumerable.Range(0, 7)
+                .Select(i => new DataModelFinding
+                {
+                    Severity = i % 2 == 0 ? DataModelSeverity.Error : DataModelSeverity.Warning,
+                    Category = "Schema",
+                    Description = i == 0 ? "Missing column definition." : i == 1 ? "Index not optimal." : $"Finding {i}"
+                })
+                .ToList()
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "data-model", PackName = "Data Model Quality", Score = 50, DataModel = dataModel }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() => cut.FindAll(".qr-pack-card").Count.Should().BeGreaterThan(0));
+
+        cut.InvokeAsync(() =>
+        {
+            var dmCard = cut.FindAll(".qr-pack-card").FirstOrDefault(c => c.TextContent.Contains("Data Model"));
+            dmCard.Should().NotBeNull();
+            dmCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var button = cut.FindAll("button.qr-show-toggle").FirstOrDefault();
+            button.Should().NotBeNull("Show all button should exist");
+            button!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            markup.Should().Contain("Show less");
+            markup.Should().Contain("Missing column definition.");
+            markup.Should().Contain("Index not optimal.");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DataModelQuality_UsesExistingFindingCardPresentation()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var dataModel = new DataModelDocument
+        {
+            Findings =
+            [
+                new DataModelFinding { Severity = DataModelSeverity.Critical, Category = "Schema", Description = "Critical schema issue.", EntityName = "Orders" }
+            ]
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "data-model", PackName = "Data Model Quality", Score = 0, DataModel = dataModel }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var dmCard = cut.FindAll(".qr-pack-card").FirstOrDefault(c => c.TextContent.Contains("Data Model"));
+            dmCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Critical");
+            cut.Markup.Should().Contain("Orders");
+            cut.Markup.Should().Contain("Critical schema issue.");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DataModelQuality_RendersSeverityAsMetadata()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var dataModel = new DataModelDocument
+        {
+            Findings =
+            [
+                new DataModelFinding { Severity = DataModelSeverity.Warning, Category = "Schema", Description = "Missing indexes.", EntityName = "Products" }
+            ]
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "data-model", PackName = "Data Model Quality", Score = 50, DataModel = dataModel }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var dmCard = cut.FindAll(".qr-pack-card").FirstOrDefault(c => c.TextContent.Contains("Data Model"));
+            dmCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            markup.Should().Contain("Warning");
+            markup.Should().Contain("Products");
+            markup.Should().Contain("Missing indexes.");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DataModelQuality_DoesNotLeakMarkdownHeadingSyntax()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var dataModel = new DataModelDocument
+        {
+            Findings =
+            [
+                new DataModelFinding
+                {
+                    Severity = DataModelSeverity.Info,
+                    Category = "Documentation",
+                    Description = "No ## Overview section found.",
+                    EntityName = "Catalog"
+                }
+            ]
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "data-model", PackName = "Data Model Quality", Score = 100, DataModel = dataModel }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var dmCard = cut.FindAll(".qr-pack-card").FirstOrDefault(c => c.TextContent.Contains("Data Model"));
+            dmCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            markup.Should().NotContain("##");
+            markup.Should().Contain("Overview section found");
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DataModelQuality_PreservesMeaningfulDescription()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var descriptionText = "No indexes are defined. Consider adding indexes for foreign key and frequently queried columns.";
+        var dataModel = new DataModelDocument
+        {
+            Findings =
+            [
+                new DataModelFinding
+                {
+                    Severity = DataModelSeverity.Warning,
+                    Category = "Performance",
+                    Description = descriptionText,
+                    EntityName = "Users"
+                }
+            ]
+        };
+
+        var report = MakeReport(
+            new QualityReviewPackResult { PackId = "data-model", PackName = "Data Model Quality", Score = 75, DataModel = dataModel }
+        );
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var dmCard = cut.FindAll(".qr-pack-card").FirstOrDefault(c => c.TextContent.Contains("Data Model"));
+            dmCard!.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            var markup = cut.Markup;
+            markup.Should().Contain("No indexes are defined");
+            markup.Should().Contain("frequently queried columns");
+        });
+    }
+
     private sealed record RunCall(
         string? Constitution,
         string? Specification,
