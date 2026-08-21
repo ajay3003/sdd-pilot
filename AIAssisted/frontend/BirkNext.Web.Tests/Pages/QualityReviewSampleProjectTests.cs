@@ -4,6 +4,7 @@ using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 
@@ -1832,7 +1833,12 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             qaAuditorCard.Should().NotBeNull();
             qaAuditorCard.TagName.Should().Be("BUTTON");
             qaAuditorCard.GetAttribute("aria-expanded").Should().Be("false");
-            qaAuditorCard.GetAttribute("aria-controls").Should().Be("qr-pack-details-qa-auditor");
+            qaAuditorCard.GetAttribute("aria-controls").Should().Be("qr-pack-panel-qa-auditor");
+            cut.Find("#qr-pack-panel-qa-auditor").Should().NotBeNull();
+
+            var detailHeader = cut.FindAll("button.qr-result-header").First(b => b.TextContent.Contains("QA Auditor"));
+            detailHeader.GetAttribute("aria-expanded").Should().Be("false");
+            detailHeader.GetAttribute("aria-controls").Should().Be("qr-pack-panel-qa-auditor");
 
             // Initially collapsed
             var qaSection = cut.FindAll(".qr-result-section").FirstOrDefault(s => s.TextContent.Contains("QA Auditor"));
@@ -1846,6 +1852,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             // Now QA Auditor should be expanded
             cut.Find(".qr-pack-card").GetAttribute("aria-expanded").Should().Be("true");
+            cut.Find("button.qr-result-header").GetAttribute("aria-expanded").Should().Be("true");
             var qaSection = cut.FindAll(".qr-result-section").FirstOrDefault(s => s.TextContent.Contains("QA Auditor"));
             qaSection?.Id.Should().Be("qr-pack-details-qa-auditor");
             qaSection?.GetAttribute("style")?.Should().NotContain("display:none");
@@ -2505,7 +2512,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             card.TextContent.Should().NotContain("Rule 'PP-02' (Principle) has no coverage");
             card.TextContent.Should().Contain("View details →");
             card.GetAttribute("aria-expanded").Should().Be("false");
-            card.GetAttribute("aria-controls").Should().Be("qr-pack-details-compliance");
+            card.GetAttribute("aria-controls").Should().Be("qr-pack-panel-compliance");
         });
     }
 
@@ -4869,15 +4876,78 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             var tabs = cut.FindAll(".tab-btn");
             tabs.Count.Should().BeGreaterThan(0);
 
-            // All tabs should be semantic button elements
+            cut.Find("[role='tablist']").GetAttribute("aria-label").Should().Be("Delivery readiness details");
+
+            // All tabs should be fully associated with their tab panel.
             foreach (var tab in tabs)
             {
                 tab.TagName.Should().Be("BUTTON");
                 tab.GetAttribute("role").Should().Be("tab");
+                tab.GetAttribute("id").Should().StartWith("delivery-tab-");
+                tab.GetAttribute("aria-controls").Should().StartWith("delivery-panel-");
             }
 
-            // First tab should have is-active class
+            tabs.First().GetAttribute("aria-selected").Should().Be("true");
+            tabs.First().GetAttribute("tabindex").Should().Be("0");
+            tabs.Skip(1).Should().OnlyContain(tab => tab.GetAttribute("aria-selected") == "false");
+            tabs.Skip(1).Should().OnlyContain(tab => tab.GetAttribute("tabindex") == "-1");
             tabs.First().GetAttribute("class").Should().Contain("is-active");
+
+            var panel = cut.Find("[role='tabpanel']");
+            panel.Id.Should().Be("delivery-panel-overview");
+            panel.GetAttribute("aria-labelledby").Should().Be("delivery-tab-overview");
+        });
+
+        cut.Find("#delivery-tab-overview").KeyDown(new KeyboardEventArgs { Key = "ArrowRight" });
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("#delivery-tab-development").GetAttribute("aria-selected").Should().Be("true");
+            cut.Find("[role='tabpanel']").Id.Should().Be("delivery-panel-development");
+        });
+
+        cut.Find("#delivery-tab-development").KeyDown(new KeyboardEventArgs { Key = "End" });
+        cut.WaitForAssertion(() => cut.Find("#delivery-tab-recommendations").GetAttribute("aria-selected").Should().Be("true"));
+
+        cut.Find("#delivery-tab-recommendations").KeyDown(new KeyboardEventArgs { Key = "Home" });
+        cut.WaitForAssertion(() => cut.Find("#delivery-tab-overview").GetAttribute("aria-selected").Should().Be("true"));
+    }
+
+    [Fact]
+    public void QualityReview_QaReadinessCategories_AreNativeDisclosureButtons()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var readinessReport = new QAReadinessReport
+        {
+            Scores = new List<ReadinessScore>
+            {
+                new() { Category = "Specification Quality", IsAssessed = true, Score = 70, Status = ReadinessStatus.MostlyReady,
+                    Signals = new List<string> { "Requirements are present." } }
+            }
+        };
+        _qualityReview.SetReport(MakeReport(new QualityReviewPackResult
+        {
+            PackId = "qa-readiness", PackName = "QA Readiness", Score = 70, QaReadiness = readinessReport
+        }));
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+        cut.WaitForAssertion(() => cut.Find(".qr-pack-card").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            var category = cut.Find(".qr-category-card");
+            category.TagName.Should().Be("BUTTON");
+            category.GetAttribute("aria-expanded").Should().Be("false");
+            category.GetAttribute("aria-controls").Should().Be("qa-readiness-category-specification-quality");
+            category.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".qr-category-card").GetAttribute("aria-expanded").Should().Be("true");
+            cut.Find("#qa-readiness-category-specification-quality").TextContent.Should().Contain("Requirements are present.");
         });
     }
 

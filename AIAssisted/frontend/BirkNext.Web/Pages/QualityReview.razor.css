@@ -314,6 +314,11 @@
     background: var(--clr-surface-hover, rgba(0,0,0,0.03));
 }
 
+.qr-result-header:focus-visible {
+    outline: 2px solid var(--clr-primary, #6366f1);
+    outline-offset: -2px;
+}
+
 .qr-result-name {
     font-weight: 700;
     font-size: 0.9rem;

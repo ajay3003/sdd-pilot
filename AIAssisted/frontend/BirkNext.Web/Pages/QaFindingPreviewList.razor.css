@@ -89,6 +89,11 @@
     border-color: var(--clr-border-hover, #cbd5e1);
 }
 
+.qr-show-toggle:focus-visible {
+    outline: 2px solid var(--clr-primary, #6366f1);
+    outline-offset: 2px;
+}
+
 .qr-cat-section {
     display: flex;
     flex-direction: column;

@@ -1,6 +1,6 @@
 @using BirkNext.Web.Models
 
-<div class="qr-qa-preview-list">
+<div class="qr-qa-preview-list" id="@ListId">
     @foreach (var finding in VisibleFindings)
     {
         <div class="qr-finding-card" data-severity="@QaSevString(finding.Severity).ToLowerInvariant()">
@@ -24,6 +24,8 @@
         <button class="qr-show-toggle"
                 type="button"
                 @onclick="async () => await OnShowAllChanged.InvokeAsync(true)"
+                aria-expanded="false"
+                aria-controls="@ListId"
                 aria-label="@($"Show all {Items.Count} {ContextLabel}")">
             Show all @Items.Count
         </button>
@@ -33,6 +35,8 @@
         <button class="qr-show-toggle"
                 type="button"
                 @onclick="async () => await OnShowAllChanged.InvokeAsync(false)"
+                aria-expanded="true"
+                aria-controls="@ListId"
                 aria-label="@($"Show fewer {ContextLabel}")">
             Show less
         </button>
@@ -54,6 +58,9 @@
 
     [Parameter]
     public string ContextLabel { get; set; } = "findings";
+
+    [Parameter]
+    public string ListId { get; set; } = "qa-finding-list";
 
     [Parameter]
     public Dictionary<string, ConstitutionRulePresentationMetadata>? CanonicalMetadata { get; set; }

@@ -1169,6 +1169,11 @@
 
 .tab-btn:hover { color: var(--clr-text); }
 
+.tab-btn:focus-visible {
+    outline: 2px solid var(--clr-primary, #2563eb);
+    outline-offset: -2px;
+}
+
 .tab-btn.is-active {
     color: var(--clr-primary);
     border-bottom-color: var(--clr-primary);

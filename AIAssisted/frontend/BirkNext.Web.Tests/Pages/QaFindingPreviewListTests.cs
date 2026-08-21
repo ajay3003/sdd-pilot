@@ -63,6 +63,9 @@ public sealed class QaFindingPreviewListTests : BunitContext
         showAllButton.Should().NotBeNull();
         showAllButton.TextContent.Trim().Should().Be("Show all 8");
         showAllButton.GetAttribute("aria-label").Should().Be("Show all 8 constitution findings");
+        showAllButton.GetAttribute("aria-expanded").Should().Be("false");
+        showAllButton.GetAttribute("aria-controls").Should().Be("qa-finding-list");
+        host.Find("#qa-finding-list").Should().NotBeNull();
 
         // Click Show all
         showAllButton.Click();
@@ -78,6 +81,8 @@ public sealed class QaFindingPreviewListTests : BunitContext
         var showLessButton = host.Find("button.qr-show-toggle");
         showLessButton.TextContent.Trim().Should().Be("Show less");
         showLessButton.GetAttribute("aria-label").Should().Be("Show fewer constitution findings");
+        showLessButton.GetAttribute("aria-expanded").Should().Be("true");
+        showLessButton.GetAttribute("aria-controls").Should().Be("qa-finding-list");
 
         // Click Show less
         showLessButton.Click();

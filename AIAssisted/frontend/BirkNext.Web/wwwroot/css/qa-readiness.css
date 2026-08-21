@@ -214,10 +214,18 @@
     cursor: pointer;
     transition: box-shadow 0.15s, border-color 0.15s;
     text-align: center;
+    width: 100%;
+    color: inherit;
+    font: inherit;
 }
 
 .qr-category-card:hover {
     box-shadow: var(--shadow-sm);
+}
+
+.qr-category-card:focus-visible {
+    outline: 2px solid var(--clr-primary, #2563eb);
+    outline-offset: 2px;
 }
 
 .qr-category-card.is-not-assessed {
