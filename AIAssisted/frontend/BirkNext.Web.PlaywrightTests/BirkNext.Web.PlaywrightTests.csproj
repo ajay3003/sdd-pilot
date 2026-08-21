@@ -23,6 +23,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BirkNext.Web\BirkNext.Web.csproj" />
+    <ProjectReference Include="..\..\backend\BirkNext.Api\BirkNext.Api.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(RunPreStartedPlaywrightTests)' != 'true'">
+    <Compile Remove="Tests\*_PreStarted.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(RunPreStartedPlaywrightTests)' == 'true'">
+    <Compile Remove="Tests\QualityReviewPlaywrightTests.cs" />
   </ItemGroup>
 
 </Project>

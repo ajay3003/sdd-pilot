@@ -14,6 +14,12 @@ namespace BirkNext.Web.PlaywrightTests.Fixtures;
 /// </summary>
 public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
 {
+#if DEBUG
+    private const string BuildConfiguration = "Debug";
+#else
+    private const string BuildConfiguration = "Release";
+#endif
+
     private readonly string _repoRoot;
     private readonly string _backendPath;
     private readonly string _frontendPath;
@@ -106,7 +112,7 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         var psi = new ProcessStartInfo
         {
             FileName = "dotnet",
-            Arguments = $"run --project \"{apiProjectPath}\" --no-build",
+            Arguments = $"run --project \"{apiProjectPath}\" --no-build --configuration {BuildConfiguration}",
             WorkingDirectory = _backendPath,
             UseShellExecute = false,
             RedirectStandardOutput = true,
@@ -125,6 +131,8 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         {
             throw new InvalidOperationException("Failed to start backend process");
         }
+
+        DrainProcessOutput(_backendProcess);
 
         // Wait for backend to be ready (extended timeout for migrations on first run)
         await WaitForPortReadyAsync(5000, "Backend", maxRetries: 120, delayMs: 500);
@@ -246,7 +254,7 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         var psi = new ProcessStartInfo
         {
             FileName = "dotnet",
-            Arguments = $"run --project \"{webProjectPath}\" --no-build",
+            Arguments = $"run --project \"{webProjectPath}\" --no-build --configuration {BuildConfiguration}",
             WorkingDirectory = _frontendPath,
             UseShellExecute = false,
             RedirectStandardOutput = true,
@@ -259,6 +267,8 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         {
             throw new InvalidOperationException("Failed to start frontend process");
         }
+
+        DrainProcessOutput(_frontendProcess);
 
         // Wait for frontend to be ready
         await WaitForPortReadyAsync(5173, "Frontend");
@@ -345,6 +355,14 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         {
             // Process may have already exited
         }
+    }
+
+    private static void DrainProcessOutput(Process process)
+    {
+        process.OutputDataReceived += static (_, _) => { };
+        process.ErrorDataReceived += static (_, _) => { };
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
     }
 
     private static string FindRepositoryRoot(string startPath)

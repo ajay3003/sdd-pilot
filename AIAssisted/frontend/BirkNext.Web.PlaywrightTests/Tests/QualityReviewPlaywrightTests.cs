@@ -18,24 +18,11 @@ namespace BirkNext.Web.PlaywrightTests.Tests;
 public sealed class QualityReviewPlaywrightTests : IAsyncLifetime
 {
     private BirkNextWebApplicationFixture _fixture = null!;
-    private List<string> _consoleMessages = [];
-    private List<string> _pageErrors = [];
 
     public async Task InitializeAsync()
     {
         _fixture = new BirkNextWebApplicationFixture();
         await _fixture.InitializeAsync();
-
-        // Attach console and error listeners for this test
-        _fixture.Context.Pages[0].Console += (sender, e) =>
-        {
-            _consoleMessages.Add(e.Text);
-        };
-
-        _fixture.Context.Pages[0].PageError += (sender, error) =>
-        {
-            _pageErrors.Add(error);
-        };
     }
 
     public async Task DisposeAsync()
@@ -64,34 +51,37 @@ public sealed class QualityReviewPlaywrightTests : IAsyncLifetime
                 pageErrors.Add(error);
             };
 
-            // 1. Navigate to Quality Review page
-            await page.GotoAsync($"{_fixture.FrontendUrl}/quality-review", new PageGotoOptions
+            // 1. Select a real sample project. Quality Review consumes the shared
+            // workspace selection; its pack checkboxes are not project options.
+            await page.GotoAsync($"{_fixture.FrontendUrl}/sample-projects", new PageGotoOptions
             {
                 WaitUntil = WaitUntilState.NetworkIdle,
                 Timeout = 30000,
             });
 
-            // 2. Wait for the app to load and present the Sample Project selection
-            // The page should have a quality-review-page component with project selection
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            var selectProjectButton = page.GetByRole(AriaRole.Button, new() { Name = "Select Project", Exact = true }).First;
+            await selectProjectButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
+            page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
+            await selectProjectButton.ClickAsync();
+            await page.GetByRole(AriaRole.Button, new() { Name = "Selected", Exact = true })
+                .WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
 
-            // Give React/Blazor time to fully render after network load
-            await page.WaitForTimeoutAsync(1000);
+            // 2. Use client-side navigation so the selected project remains in
+            // the current WASM application session.
+            await page.GetByRole(AriaRole.Navigation)
+                .GetByRole(AriaRole.Link, new() { Name = "Quality Review", Exact = true })
+                .ClickAsync();
+            await page.WaitForURLAsync("**/quality-review", new PageWaitForURLOptions { Timeout = 10000 });
 
-            // 3. Select a sample project
-            // Look for a project option that contains "Sample" (e.g., "Sample Project A")
-            var projectOptions = await page.QuerySelectorAllAsync("label.qr-pack-option");
+            // Keep this integration test focused and deterministic: run only the
+            // Data Model Quality pack instead of relying on changing defaults.
+            await page.GetByRole(AriaRole.Button, new() { Name = "Clear", Exact = true }).ClickAsync();
+            var dataModelPack = page.Locator("label.qr-pack-option")
+                .Filter(new LocatorFilterOptions { HasText = "Data Model Quality" })
+                .Locator("input[type=checkbox]");
+            await dataModelPack.CheckAsync();
 
-            if (projectOptions.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    "No project options found. Quality Review may not have loaded correctly.");
-            }
-
-            // Click the first available project option
-            await projectOptions[0].ClickAsync();
-
-            // 4. Wait for the Run button to become enabled
+            // 3. Wait for the Run button to become enabled
             var runButton = page.Locator("button.btn-primary");
             await runButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
 
@@ -111,14 +101,15 @@ public sealed class QualityReviewPlaywrightTests : IAsyncLifetime
 
             // 8. Wait for findings to render and toggle button to appear
             // If there are more than 5 findings, a "Show all" button will appear
-            var showToggleButton = page.Locator("button.qr-show-toggle").First;
+            var showToggleButton = page.Locator("button.qr-show-toggle[aria-controls='data-model-findings-list']");
 
             // Wait for the button with a longer timeout to allow rendering
             await showToggleButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
 
             // 9. Verify initial findings are visible
-            var initialFindings = await page.QuerySelectorAllAsync(".qr-cat-title");
-            initialFindings.Count.Should().BeGreaterThan(0, "Should have at least one category of findings");
+            var dataModelFindings = page.Locator("#data-model-findings-list .issue-card");
+            var initialFindingCount = await dataModelFindings.CountAsync();
+            initialFindingCount.Should().BeGreaterThan(0, "Should have at least one data model finding");
 
             // 10. Verify no raw markdown heading syntax is visible
             var pageText = await page.ContentAsync();
@@ -127,61 +118,61 @@ public sealed class QualityReviewPlaywrightTests : IAsyncLifetime
             // 11. Click Show all
             await showToggleButton.ClickAsync();
 
-            // Wait for the button text to change to "Show less"
+            // Wait for the button text to change to "Show fewer findings"
             await page.WaitForFunctionAsync(@"
                 () => {
-                    const btn = document.querySelector('button.qr-show-toggle');
-                    return btn && btn.textContent.includes('Show less');
+                    const btn = document.querySelector('button.qr-show-toggle[aria-controls=data-model-findings-list]');
+                    return btn && btn.textContent.includes('Show fewer');
                 }
             ");
 
             // 12. Verify all findings are now visible (count increased)
-            var allFindings = await page.QuerySelectorAllAsync(".qr-cat-title");
-            allFindings.Count.Should().BeGreaterThan(initialFindings.Count,
+            var allFindingCount = await dataModelFindings.CountAsync();
+            allFindingCount.Should().BeGreaterThan(initialFindingCount,
                 "Show all should display more findings than initial preview");
 
-            // 13. Click Show less
+            // 13. Click Show fewer
             await showToggleButton.ClickAsync();
 
             // Wait for the button text to change back to "Show all"
             await page.WaitForFunctionAsync(@"
                 () => {
-                    const btn = document.querySelector('button.qr-show-toggle');
+                    const btn = document.querySelector('button.qr-show-toggle[aria-controls=data-model-findings-list]');
                     return btn && btn.textContent.includes('Show all');
                 }
             ");
 
             // 14. Verify findings returned to preview count
-            var previewFindings = await page.QuerySelectorAllAsync(".qr-cat-title");
-            previewFindings.Count.Should().BeLessThan(allFindings.Count,
-                "Show less should return to preview count");
+            var previewFindingCount = await dataModelFindings.CountAsync();
+            previewFindingCount.Should().BeLessThan(allFindingCount,
+                "Show fewer should return to preview count");
 
             // 15. Repeat the toggle cycle one more time (real interaction stress test)
             await showToggleButton.ClickAsync();
 
             await page.WaitForFunctionAsync(@"
                 () => {
-                    const btn = document.querySelector('button.qr-show-toggle');
-                    return btn && btn.textContent.includes('Show less');
+                    const btn = document.querySelector('button.qr-show-toggle[aria-controls=data-model-findings-list]');
+                    return btn && btn.textContent.includes('Show fewer');
                 }
             ");
 
-            var secondShowAll = await page.QuerySelectorAllAsync(".qr-cat-title");
-            secondShowAll.Count.Should().BeGreaterThan(previewFindings.Count,
+            var secondShowAllCount = await dataModelFindings.CountAsync();
+            secondShowAllCount.Should().BeGreaterThan(previewFindingCount,
                 "Second Show all should expand findings again");
 
             await showToggleButton.ClickAsync();
 
             await page.WaitForFunctionAsync(@"
                 () => {
-                    const btn = document.querySelector('button.qr-show-toggle');
+                    const btn = document.querySelector('button.qr-show-toggle[aria-controls=data-model-findings-list]');
                     return btn && btn.textContent.includes('Show all');
                 }
             ");
 
-            var secondShowLess = await page.QuerySelectorAllAsync(".qr-cat-title");
-            secondShowLess.Count.Should().BeLessThan(secondShowAll.Count,
-                "Second Show less should return to preview count");
+            var secondShowLessCount = await dataModelFindings.CountAsync();
+            secondShowLessCount.Should().BeLessThan(secondShowAllCount,
+                "Second Show fewer should return to preview count");
 
             // 16. Verify WASM console has no unboxing or rendering errors
             var unboxingErrors = consoleMessages
