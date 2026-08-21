@@ -27,7 +27,7 @@
                 aria-expanded="false"
                 aria-controls="@ListId"
                 aria-label="@($"Show all {Items.Count} {ContextLabel}")">
-            Show all @Items.Count
+            Show all @Items.Count @ContextLabel
         </button>
     }
     else if (Items.Count > PreviewLimit && ShowAll)
@@ -38,7 +38,7 @@
                 aria-expanded="true"
                 aria-controls="@ListId"
                 aria-label="@($"Show fewer {ContextLabel}")">
-            Show less
+            Show fewer @ContextLabel
         </button>
     }
 </div>

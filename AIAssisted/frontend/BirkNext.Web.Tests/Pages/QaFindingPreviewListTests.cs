@@ -61,7 +61,7 @@ public sealed class QaFindingPreviewListTests : BunitContext
         // Find Show all button
         var showAllButton = host.Find("button.qr-show-toggle");
         showAllButton.Should().NotBeNull();
-        showAllButton.TextContent.Trim().Should().Be("Show all 8");
+        showAllButton.TextContent.Trim().Should().Be("Show all 8 constitution findings");
         showAllButton.GetAttribute("aria-label").Should().Be("Show all 8 constitution findings");
         showAllButton.GetAttribute("aria-expanded").Should().Be("false");
         showAllButton.GetAttribute("aria-controls").Should().Be("qa-finding-list");
@@ -79,7 +79,7 @@ public sealed class QaFindingPreviewListTests : BunitContext
 
         // Find Show less button
         var showLessButton = host.Find("button.qr-show-toggle");
-        showLessButton.TextContent.Trim().Should().Be("Show less");
+        showLessButton.TextContent.Trim().Should().Be("Show fewer constitution findings");
         showLessButton.GetAttribute("aria-label").Should().Be("Show fewer constitution findings");
         showLessButton.GetAttribute("aria-expanded").Should().Be("true");
         showLessButton.GetAttribute("aria-controls").Should().Be("qa-finding-list");
@@ -257,7 +257,7 @@ public sealed class QaFindingPreviewListTests : BunitContext
         var showAllButton = host.Find("button.qr-show-toggle");
         showAllButton.Should().NotBeNull();
         showAllButton.TagName.Should().Be("BUTTON");
-        showAllButton.TextContent.Trim().Should().Be("Show all 8");
+        showAllButton.TextContent.Trim().Should().Be("Show all 8 findings");
         showAllButton.GetAttribute("aria-label").Should().Be("Show all 8 findings");
 
         // Click to show all
@@ -271,7 +271,7 @@ public sealed class QaFindingPreviewListTests : BunitContext
 
             // Button changes to "Show less"
             var showLessButton = host.Find("button.qr-show-toggle");
-            showLessButton.TextContent.Trim().Should().Be("Show less");
+            showLessButton.TextContent.Trim().Should().Be("Show fewer findings");
             showLessButton.TagName.Should().Be("BUTTON");
             showLessButton.HasAttribute("aria-label").Should().BeTrue();
         });

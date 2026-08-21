@@ -1931,6 +1931,53 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
     }
 
     [Fact]
+    public void QualityReview_QaAuditorPreview_IsFiveTotalAcrossCategoriesAndResetsOnRerun()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var findings = Enumerable.Range(1, 8).Select(i => new QaFinding
+        {
+            RuleCode = $"QA-{i:D2}", Title = $"Finding {i}", Severity = QaSeverity.High,
+            Category = i <= 4 ? QaCategory.Constitution : QaCategory.Specification
+        }).ToList();
+        var report = MakeReport(new QualityReviewPackResult
+        {
+            PackId = "qa-auditor", PackName = "QA Auditor", Score = 40, High = 8,
+            QaAudit = new QaAuditReport { Findings = findings, HasConstitution = true, HasSpecification = true }
+        });
+        _qualityReview.SetReport(report);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+        cut.WaitForAssertion(() => cut.Find(".qr-pack-card").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".qr-finding-card").Should().HaveCount(5);
+            cut.FindAll(".qr-cat-title").Select(e => e.TextContent.Trim())
+                .Should().Contain(new[] { "Constitution (4)", "Specification (4)" });
+            cut.Find("button.qr-show-toggle").TextContent.Trim().Should().Be("Show all 8 findings");
+        });
+
+        cut.Find("button.qr-show-toggle").Click();
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".qr-finding-card").Should().HaveCount(8);
+            cut.Find("button.qr-show-toggle").TextContent.Trim().Should().Be("Show fewer findings");
+        });
+
+        cut.Find("button.qr-show-toggle").Click();
+        cut.WaitForAssertion(() => cut.FindAll(".qr-finding-card").Should().HaveCount(5));
+
+        cut.Find(".qr-input-panel-toggle").Click();
+        _qualityReview.SetReport(report);
+        ClickRun(cut);
+        cut.WaitForAssertion(() => cut.Find(".qr-pack-card").Click());
+        cut.WaitForAssertion(() => cut.FindAll(".qr-finding-card").Should().HaveCount(5));
+    }
+
+    [Fact]
     public void QualityReview_DeliveryReadinessCard_PrioritizesReleaseDecisionAndGateIssues()
     {
         SeedProjectA();
@@ -3434,7 +3481,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             var showAllButton = cut.Find("button.qr-show-toggle");
             showAllButton.Should().NotBeNull();
-            showAllButton.TextContent.Should().Contain("Show all");
+            showAllButton.TextContent.Trim().Should().Be("Show all 36 findings");
+            cut.FindAll(".issue-card").Should().HaveCount(5);
 
             // Button click should work without WASM unboxing exception
             showAllButton.Click();
@@ -3443,9 +3491,12 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         // After clicking, all items should be visible
         cut.WaitForAssertion(() =>
         {
-            var cardCount = cut.FindAll(".qr-cat-title");
-            cardCount.Should().HaveCountGreaterThanOrEqualTo(1);
+            cut.FindAll(".issue-card").Should().HaveCount(36);
+            cut.Find("button.qr-show-toggle").TextContent.Trim().Should().Be("Show fewer findings");
         });
+
+        cut.Find("button.qr-show-toggle").Click();
+        cut.WaitForAssertion(() => cut.FindAll(".issue-card").Should().HaveCount(5));
     }
 
     [Fact]
@@ -4474,7 +4525,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             var button = cut.Find("button.qr-show-toggle");
             button.Should().NotBeNull();
             button.TagName.Should().Be("BUTTON");
-            button.TextContent.Should().Contain("Show all");
+            button.TextContent.Trim().Should().Be("Show all 10 gaps");
+            cut.FindAll(".qr-gap-card").Should().HaveCount(5);
             button.GetAttribute("@onclick").Should().BeNull("literal @onclick attribute should not exist");
 
             // Click show all
@@ -4490,8 +4542,11 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             }
 
             var button = cut.Find("button.qr-show-toggle");
-            button.TextContent.Should().Be("Show less");
+            button.TextContent.Should().Be("Show fewer gaps");
         });
+
+        cut.Find("button.qr-show-toggle").Click();
+        cut.WaitForAssertion(() => cut.FindAll(".qr-gap-card").Should().HaveCount(5));
     }
 
     [Fact]
@@ -4793,7 +4848,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             // Verify Show all button exists
             var showAllButton = cut.FindAll(".qr-show-toggle").FirstOrDefault();
             showAllButton.Should().NotBeNull();
-            showAllButton!.TextContent.Should().Contain("Show all 4 blockers");
+            showAllButton!.TextContent.Should().Contain("Show all 4 delivery gate issues");
 
             // Verify button is semantic and uses safe event binding
             showAllButton.TagName.Should().Be("BUTTON");
@@ -4801,6 +4856,14 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             var hasEventBinding = showAllButton.GetAttribute("onclick") != null ||
                                   showAllButton.GetAttribute("blazor:onclick") != null;
             hasEventBinding.Should().BeTrue();
+
+            showAllButton.Click();
+        });
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".dr-blocker-card").Should().HaveCount(4);
+            cut.Find("button.qr-show-toggle").TextContent.Trim().Should().Be("Show fewer delivery gate issues");
         });
     }
 
@@ -5288,7 +5351,9 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().Contain("Show all 8");
+            markup.Should().Contain("Show all 8 findings");
+            cut.FindAll(".issue-card").Should().HaveCount(5);
+            cut.FindAll(".qr-cat-title").Select(e => e.TextContent.Trim()).Should().Contain("Category2 (2)");
             markup.Should().Contain("Finding 0");
             markup.Should().Contain("Finding 4");
             markup.Should().NotContain("Finding 5");
@@ -5304,7 +5369,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().Contain("Show less");
+            markup.Should().Contain("Show fewer findings");
+            cut.FindAll(".issue-card").Should().HaveCount(8);
             markup.Should().Contain("Finding 5");
             markup.Should().Contain("Finding 7");
         });
@@ -5319,6 +5385,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             var markup = cut.Markup;
             markup.Should().Contain("Show all");
+            cut.FindAll(".issue-card").Should().HaveCount(5);
             markup.Should().NotContain("Finding 5");
         });
     }
@@ -5368,7 +5435,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().Contain("Show less");
+            markup.Should().Contain("Show fewer findings");
             markup.Should().Contain("Missing column definition.");
             markup.Should().Contain("Index not optimal.");
         });
@@ -5610,7 +5677,51 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             var highCard = cut.FindAll(".issue-card").First(e => e.TextContent.Contains("STD-H"));
             highCard.TextContent.Should().Contain("Problem: High problem");
             highCard.TextContent.Should().Contain("Fix: Apply high remediation");
+            cut.FindAll("button.qr-show-toggle").Should().BeEmpty("three findings need no preview toggle");
         });
+    }
+
+    [Fact]
+    public void QualityReview_StandardsPreview_IsFiveTotalAcrossCategories()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var standards = new StandardsComplianceReport
+        {
+            Results = Enumerable.Range(1, 8).Select(i => new StandardCheckResult
+            {
+                RuleId = $"STD-{i:D2}", Title = $"Rule {i}",
+                Category = i <= 4 ? "Accessibility" : "Security",
+                Description = $"Problem {i}", Severity = CheckSeverity.Medium, Status = CheckStatus.Warning
+            }).ToList()
+        };
+        _qualityReview.SetReport(MakeReport(new QualityReviewPackResult
+        {
+            PackId = "wcag", PackName = "WCAG 2.2", Score = 30, Medium = 8, Standards = standards
+        }));
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+        cut.WaitForAssertion(() => cut.Find(".qr-pack-card").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".issue-card").Should().HaveCount(5);
+            cut.FindAll(".qr-cat-title").Select(e => e.TextContent.Trim())
+                .Should().Contain(new[] { "Accessibility (4)", "Security (4)" });
+            cut.Find("button.qr-show-toggle").TextContent.Trim().Should().Be("Show all 8 findings");
+        });
+
+        cut.Find("button.qr-show-toggle").Click();
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".issue-card").Should().HaveCount(8);
+            cut.Find("button.qr-show-toggle").TextContent.Trim().Should().Be("Show fewer findings");
+        });
+
+        cut.Find("button.qr-show-toggle").Click();
+        cut.WaitForAssertion(() => cut.FindAll(".issue-card").Should().HaveCount(5));
     }
 
     [Fact]
