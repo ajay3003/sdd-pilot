@@ -220,7 +220,7 @@ steps:
     echo $! > /tmp/backend.pid
   displayName: 'Start backend service'
   workingDirectory: AIAssisted/backend
-  condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  condition: and(succeeded(), eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
   env:
     ASPNETCORE_URLS: 'http://localhost:5000'
     ASPNETCORE_ENVIRONMENT: 'Development'
@@ -230,7 +230,7 @@ steps:
     set -e
     echo "Waiting for backend HTTP readiness..."
     for i in {1..60}; do
-      HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/api/sampleprojects 2>/dev/null || echo "000")
+      HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/api/sample-projects 2>/dev/null || echo "000")
       if [ "$HTTP_CODE" = "200" ]; then
         echo "✓ Backend ready (HTTP 200)"
         exit 0
@@ -252,7 +252,7 @@ steps:
     echo $! > /tmp/frontend.pid
   displayName: 'Start frontend service'
   workingDirectory: AIAssisted/frontend
-  condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  condition: and(succeeded(), eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
   env:
     ASPNETCORE_URLS: 'http://localhost:5173'
     ASPNETCORE_ENVIRONMENT: 'Development'
@@ -273,7 +273,7 @@ steps:
     cat /tmp/frontend.log || echo "(log not found)"
     exit 1
   displayName: 'Wait for frontend readiness'
-  condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  condition: and(succeeded(), eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
   continueOnError: false
 
 - bash: |
@@ -282,7 +282,7 @@ steps:
     pwsh BirkNext.Web.PlaywrightTests/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
   displayName: 'Install Playwright browsers'
   workingDirectory: AIAssisted/frontend
-  condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  condition: and(succeeded(), eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
   continueOnError: false
 
 - script: |
@@ -294,7 +294,7 @@ steps:
       --filter "PreStarted"
   displayName: 'Run frontend Playwright E2E tests (Quality Gate)'
   workingDirectory: AIAssisted/frontend
-  condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  condition: and(succeeded(), eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
   continueOnError: false
   timeoutInMinutes: 5
 
