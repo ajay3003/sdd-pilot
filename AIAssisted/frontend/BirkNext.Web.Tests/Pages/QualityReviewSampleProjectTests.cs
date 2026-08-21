@@ -341,37 +341,27 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
     }
 
     [Fact]
-    public void OverallScoreRing_DoesNotRenderSolidFilledCircle()
+    public void OverallSummary_RendersSelectedPackAverageWithoutProgressRing()
     {
-        // SVG circles must have fill="none" to prevent black solid disk rendering
         SeedProjectA();
         _resolver.SetSelectedProject("project-a");
-        var report = MakeReport(new QualityReviewPackResult
-        {
-            PackName = "Test Pack",
-            Score = 33,
-            Critical = 0,
-            High = 0,
-            Medium = 0,
-            Low = 0,
-        });
-        _qualityReview.SetReport(report);
+        _qualityReview.SetReport(MakeReport(new QualityReviewPackResult { PackName = "Test Pack", Score = 33 }));
 
         var cut = Render<QualityReview>();
         ClickRun(cut);
 
         cut.WaitForAssertion(() =>
         {
-            var svg = cut.Markup;
-            // Both circles must have fill="none"
-            svg.Should().Contain("fill='none'");
-            var fillNoneCount = svg.Split("fill='none'", StringSplitOptions.None).Length - 1;
-            fillNoneCount.Should().BeGreaterThanOrEqualTo(2, "both SVG circles require fill='none'");
+            var summary = cut.Find(".qr-review-summary");
+            summary.TextContent.Should().Contain("Selected-pack average:");
+            summary.TextContent.Should().Contain("33%");
+            summary.QuerySelector("svg").Should().BeNull();
+            summary.QuerySelector(".qr-score-ring-wrap").Should().BeNull();
         });
     }
 
     [Fact]
-    public void OverallScoreRing_ThirtyThreePercent_RendersPartialProgress()
+    public void OverallSummary_ThirtyThreePercent_RendersAsTextOnly()
     {
         // Score of 33% should render as partial progress, not full circle
         // Radius = 36, circumference ≈ 226.19
@@ -394,18 +384,13 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            var svg = cut.Markup;
-            // Verify dynamic SVG attributes are present
-            svg.Should().Contain("stroke-dasharray=");
-            svg.Should().Contain("stroke-dashoffset=");
-            // Should NOT contain fill="black" or only fill (without none)
-            var singleQuotedFills = svg.Split("fill='none'", StringSplitOptions.None).Length;
-            singleQuotedFills.Should().BeGreaterThanOrEqualTo(3); // At least 2 matches + 1
+            cut.Find(".qr-review-summary").TextContent.Should().Contain("33%");
+            cut.Find(".qr-review-summary").QuerySelector("svg").Should().BeNull();
         });
     }
 
     [Fact]
-    public void OverallScoreRing_ZeroPercent_RendersEmpty()
+    public void OverallSummary_ZeroPercent_RendersAsTextOnly()
     {
         // 0% score should produce full stroke-dashoffset = full circumference (empty ring)
         SeedProjectA();
@@ -426,16 +411,13 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            var svg = cut.Markup;
-            svg.Should().Contain("stroke-dashoffset=");
-            svg.Should().Contain("fill='none'");
-            // 0% → offset = circ - (0 * circ) = circ (full circumference offset hides all)
-            svg.Should().Contain("0%");
+            cut.Find(".qr-review-summary").TextContent.Should().Contain("0%");
+            cut.Find(".qr-review-summary").QuerySelector("svg").Should().BeNull();
         });
     }
 
     [Fact]
-    public void OverallScoreRing_HundredPercent_RendersFull()
+    public void OverallSummary_HundredPercent_RendersAsTextOnly()
     {
         // 100% score should produce stroke-dashoffset=0 (full circle visible)
         SeedProjectA();
@@ -456,15 +438,13 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            var svg = cut.Markup;
-            svg.Should().Contain("stroke-dashoffset=");
-            svg.Should().Contain("100"); // Score label shows 100
-            svg.Should().Contain("fill='none'");
+            cut.Find(".qr-review-summary").TextContent.Should().Contain("100%");
+            cut.Find(".qr-review-summary").QuerySelector("svg").Should().BeNull();
         });
     }
 
     [Fact]
-    public void OverallScoreRing_FiftyPercent_RendersHalf()
+    public void OverallSummary_FiftyPercent_RendersAsTextOnly()
     {
         // 50% score should render approximately half progress
         SeedProjectA();
@@ -485,15 +465,13 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            var svg = cut.Markup;
-            svg.Should().Contain("50"); // Score label
-            svg.Should().Contain("stroke-dashoffset=");
-            svg.Should().Contain("stroke-linecap='round'");
+            cut.Find(".qr-review-summary").TextContent.Should().Contain("50%");
+            cut.Find(".qr-review-summary").QuerySelector("svg").Should().BeNull();
         });
     }
 
     [Fact]
-    public void OverallScoreRing_ScoreTextAccessible()
+    public void OverallSummary_PreservesDecimalScoreText()
     {
         // Score must be displayed as human-readable text
         SeedProjectA();
@@ -514,9 +492,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            var markup = cut.Markup;
-            markup.Should().Contain("<small>%</small>");
-            markup.Should().Contain("76"); // Rounded score
+            cut.Find(".qr-review-summary").TextContent.Should().Contain("75.5%");
         });
     }
 
@@ -752,7 +728,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
     }
 
     [Fact]
-    public void QualityReview_OverallSummary_RendersScoreWithStatus()
+    public void QualityReview_OverallSummary_RendersScoreContextAndUnassessedReadiness()
     {
         SeedProjectA();
         _resolver.SetSelectedProject("project-a");
@@ -768,16 +744,16 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            // Overall summary should contain score, status, and findings info
-            cut.Markup.Should().Contain("qr-overall");
-            cut.Markup.Should().Contain("qr-score-status");
-            cut.Markup.Should().Contain("Fair");
-            cut.Markup.Should().Contain("2 packs");
+            var summary = cut.Find(".qr-review-summary");
+            summary.TextContent.Should().Contain("Readiness not assessed");
+            summary.TextContent.Should().Contain("Selected-pack average:");
+            summary.TextContent.Should().Contain("62.5%");
+            summary.QuerySelector(".qr-findings-context")!.TextContent.Should().ContainAll("0 findings across", "2 completed packs");
         });
     }
 
     [Fact]
-    public void QualityReview_OverallSummary_RendersAllSevenMetrics()
+    public void QualityReview_OverallSummary_RendersOnlyTopSeveritySignals()
     {
         SeedProjectA();
         _resolver.SetSelectedProject("project-a");
@@ -803,15 +779,15 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            // All 7 metrics should render: Findings, Critical, High, Medium, Low, Blockers, Warnings
-            cut.FindAll(".qr-count-card").Should().HaveCount(7);
-            cut.Markup.Should().Contain("Findings");
-            cut.Markup.Should().Contain("Critical");
-            cut.Markup.Should().Contain("High");
-            cut.Markup.Should().Contain("Medium");
-            cut.Markup.Should().Contain("Low");
-            cut.Markup.Should().Contain("Blockers");
-            cut.Markup.Should().Contain("Warnings");
+            var summary = cut.Find(".qr-review-summary");
+            summary.QuerySelectorAll(".qr-severity-signal").Should().HaveCount(2);
+            summary.TextContent.Should().Contain("1 Critical");
+            summary.TextContent.Should().Contain("2 High");
+            summary.TextContent.Should().NotContain("Medium");
+            summary.TextContent.Should().NotContain("Low");
+            summary.TextContent.Should().NotContain("Warnings");
+            summary.QuerySelector(".qr-count-card").Should().BeNull();
+            summary.QuerySelector(".qr-count-total").Should().BeNull();
         });
     }
 
@@ -847,14 +823,18 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             var packCard = cut.Find(".qr-pack-card");
             packCard.TextContent.Should().Contain("QA Auditor");
-            packCard.TextContent.Should().Contain("75");
+            packCard.TextContent.Should().Contain("HIGH");
             packCard.TextContent.Should().Contain("1 finding");
-            packCard.TextContent.Should().Contain("Highest: High");
+            packCard.TextContent.Should().Contain("Pack score 75%");
+            packCard.TextContent.Should().Contain("View details →");
+            packCard.TextContent.Should().NotContain("Fair");
+            packCard.TextContent.Should().NotContain("Needs attention");
+            packCard.QuerySelector(".qr-pack-card-severity")!.TextContent.Should().Be("HIGH");
         });
     }
 
     [Fact]
-    public void QualityReview_ReviewPackCards_RenderStrongestAndWeakestBadges()
+    public void QualityReview_ReviewPackCards_DoNotRankHeterogeneousScores()
     {
         SeedProjectA();
         _resolver.SetSelectedProject("project-a");
@@ -870,10 +850,10 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            var badges = cut.FindAll(".qr-pack-card-highlight");
-            badges.Count.Should().Be(2);
-            badges.Any(b => b.TextContent == "Strongest").Should().BeTrue();
-            badges.Any(b => b.TextContent == "Weakest").Should().BeTrue();
+            cut.FindAll(".qr-pack-card-highlight").Should().BeEmpty();
+            var cardsText = string.Join(" ", cut.FindAll(".qr-pack-card").Select(c => c.TextContent));
+            cardsText.Should().NotContain("Strongest");
+            cardsText.Should().NotContain("Weakest");
         });
     }
 
@@ -1315,7 +1295,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             var topIssueCards = cut.FindAll(".qr-issue-card");
             // Should show at most 5 unique logical issues
-            topIssueCards.Count.Should().BeLessThanOrEqualTo(5);
+            topIssueCards.Should().HaveCount(5);
+            cut.Find(".qr-top-issues-title").TextContent.Should().Be("Top 5 Issues");
         });
     }
 
@@ -1529,9 +1510,11 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             topIssueCard.TextContent.Should().Contain("Development gate");
             // Should show Delivery Readiness source
             topIssueCard.TextContent.Should().Contain("Delivery Readiness");
-            // Should show Fix: and recommendation
-            topIssueCard.TextContent.Should().Contain("Fix:");
+            // The description is the only remediation text, so it should not be duplicated as a Fix.
+            topIssueCard.TextContent.Should().Contain("Problem:");
+            topIssueCard.TextContent.Should().NotContain("Fix:");
             topIssueCard.TextContent.Should().Contain("MostlyReady");
+            topIssueCard.TextContent.Should().Contain("View details");
         });
     }
 
@@ -1780,14 +1763,29 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
     }
 
     [Fact]
-    public void QualityReview_OverallSummary_RenderScoreAndStatusTogether()
+    public void QualityReview_OverallSummary_RendersDeliveryStateAndIssuesSeparatelyFromSeverity()
     {
         SeedProjectA();
         _resolver.SetSelectedProject("project-a");
 
-        var report = MakeReport(
-            new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 37 }
-        );
+        var delivery = new DeliveryReadinessReport
+        {
+            ReleaseDecision = new() { Name = "Release", State = ReadinessState.Blocked, Score = 37 },
+            Blockers =
+            [
+                new() { Title = "Release gate", Severity = GateSeverity.Critical },
+                new() { Title = "Testing coverage", Severity = GateSeverity.High },
+            ],
+        };
+        var report = MakeReport(new QualityReviewPackResult
+        {
+            PackId = "delivery-readiness",
+            PackName = "Delivery Readiness",
+            Score = 37,
+            Critical = 1,
+            High = 1,
+            DeliveryReadiness = delivery,
+        });
         _qualityReview.SetReport(report);
 
         var cut = Render<QualityReview>();
@@ -1795,19 +1793,15 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            var overallSummary = cut.Find(".qr-overall");
-            overallSummary.Should().NotBeNull();
-
-            var scoreRing = overallSummary.QuerySelector(".qr-score-ring-wrap");
-            scoreRing.Should().NotBeNull("score ring visible");
-
-            var scoreStatus = overallSummary.QuerySelector(".qr-score-status");
-            scoreStatus.Should().NotBeNull("status text visible");
-            scoreStatus.TextContent.Should().Contain("Needs attention");
-
-            var overallContainer = overallSummary.QuerySelector(".qr-overall-meta");
-            overallContainer.TextContent.Should().Contain("finding");
-            overallContainer.TextContent.Should().Contain("pack");
+            var summary = cut.Find(".qr-review-summary");
+            summary.QuerySelectorAll(".qr-review-summary").Should().BeEmpty();
+            summary.QuerySelector(".qr-readiness-summary")!.TextContent.Should().Contain("Release:");
+            summary.QuerySelector(".qr-readiness-summary")!.TextContent.Should().Contain("Blocked");
+            summary.QuerySelector(".qr-gate-issues")!.TextContent.Should().Contain("2 delivery gate issues");
+            summary.QuerySelector(".qr-severity-summary")!.TextContent.Should().Contain("1 Critical");
+            summary.QuerySelector(".qr-severity-summary")!.TextContent.Should().Contain("1 High");
+            summary.QuerySelector(".qr-findings-context")!.TextContent.Should().ContainAll("2 findings across", "1 completed pack");
+            summary.QuerySelector("svg").Should().BeNull();
         });
     }
 
@@ -1836,6 +1830,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             var qaAuditorCard = cut.FindAll(".qr-pack-card").FirstOrDefault(c => c.TextContent.Contains("QA Auditor"));
             qaAuditorCard.Should().NotBeNull();
             qaAuditorCard.TagName.Should().Be("BUTTON");
+            qaAuditorCard.GetAttribute("aria-expanded").Should().Be("false");
+            qaAuditorCard.GetAttribute("aria-controls").Should().Be("qr-pack-details-qa-auditor");
 
             // Initially collapsed
             var qaSection = cut.FindAll(".qr-result-section").FirstOrDefault(s => s.TextContent.Contains("QA Auditor"));
@@ -1848,7 +1844,9 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             // Now QA Auditor should be expanded
+            cut.Find(".qr-pack-card").GetAttribute("aria-expanded").Should().Be("true");
             var qaSection = cut.FindAll(".qr-result-section").FirstOrDefault(s => s.TextContent.Contains("QA Auditor"));
+            qaSection?.Id.Should().Be("qr-pack-details-qa-auditor");
             qaSection?.GetAttribute("style")?.Should().NotContain("display:none");
         });
     }
@@ -1917,9 +1915,84 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             var packCard = cut.Find(".qr-pack-card");
             var metadata = packCard.QuerySelector(".qr-pack-card-metadata");
-            metadata.Should().NotBeNull();
-            metadata.TextContent.Should().Contain("No issues");
-            metadata.TextContent.Should().NotContain("Highest:");
+            metadata.Should().BeNull();
+            packCard.TextContent.Should().Contain("No issues");
+            packCard.TextContent.Should().Contain("Pack score 100%");
+            packCard.QuerySelector(".qr-pack-card-severity").Should().BeNull();
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DeliveryReadinessCard_PrioritizesReleaseDecisionAndGateIssues()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+
+        var delivery = new DeliveryReadinessReport
+        {
+            ReleaseDecision = new() { Name = "Release", State = ReadinessState.NotReady, Score = 24 },
+            Blockers =
+            [
+                new() { Title = "Development gate", Severity = GateSeverity.Critical },
+                new() { Title = "Testing gate", Severity = GateSeverity.High },
+            ],
+        };
+        _qualityReview.SetReport(MakeReport(new QualityReviewPackResult
+        {
+            PackId = "delivery-readiness",
+            PackName = "Delivery Readiness",
+            Score = 24,
+            Critical = 1,
+            High = 1,
+            DeliveryReadiness = delivery,
+        }));
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var card = cut.Find(".qr-pack-card");
+            card.TextContent.Should().Contain("Delivery Readiness");
+            card.TextContent.Should().Contain("Release:");
+            card.TextContent.Should().Contain("NOT READY");
+            card.TextContent.Should().Contain("2 delivery gate issues");
+            card.TextContent.Should().Contain("Readiness score 24%");
+            card.TextContent.Should().Contain("View gates →");
+            card.TextContent.Should().NotContain("Needs attention");
+            card.TextContent.Should().NotContain("Strongest");
+            card.TextContent.Should().NotContain("Weakest");
+            card.QuerySelector(".qr-pack-card-severity").Should().BeNull();
+        });
+    }
+
+    [Fact]
+    public void QualityReview_DeliveryReadinessCard_ZeroGateIssuesReportsNone()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var delivery = new DeliveryReadinessReport
+        {
+            ReleaseDecision = new() { Name = "Release", State = ReadinessState.Ready, Score = 92 },
+            Blockers = [],
+        };
+        _qualityReview.SetReport(MakeReport(new QualityReviewPackResult
+        {
+            PackId = "delivery-readiness",
+            PackName = "Delivery Readiness",
+            Score = 92,
+            DeliveryReadiness = delivery,
+        }));
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+
+        cut.WaitForAssertion(() =>
+        {
+            var card = cut.Find(".qr-pack-card");
+            card.TextContent.Should().Contain("Release:");
+            card.TextContent.Should().Contain("READY");
+            card.TextContent.Should().Contain("No delivery gate issues");
         });
     }
 
@@ -2122,7 +2195,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             var pp02Card = cut.FindAll(".qr-issue-card").First(c => c.TextContent.Contains("PP-02"));
             pp02Card.TextContent.Should().Contain("QA Auditor");
             pp02Card.TextContent.Should().Contain("Constitution Compliance");
-            pp02Card.TextContent.Should().Contain("Reported by 2 packs");
+            pp02Card.TextContent.Should().Contain("Sources: Constitution Compliance · QA Auditor");
+            pp02Card.TextContent.Should().NotContain("Reported by");
         });
     }
 
@@ -2204,7 +2278,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var pp02Card = cut.FindAll(".qr-issue-card").First(c => c.TextContent.Contains("PP-02"));
-            pp02Card.TextContent.Should().Contain("PP-02 — Clear and Testable Requirements");
+            pp02Card.QuerySelector(".qr-issue-title")!.TextContent.Should().Be("PP-02 — Clear and Testable Requirements");
+            System.Text.RegularExpressions.Regex.Matches(pp02Card.QuerySelector(".qr-issue-title")!.TextContent, "PP-02").Should().HaveCount(1);
         });
     }
 
@@ -2424,8 +2499,12 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var card = cut.FindAll(".qr-issue-card").First(c => c.TextContent.Contains("PP-02"));
+            card.TextContent.Should().Contain("Missing coverage: Specification · Plan · Tasks");
             card.TextContent.Should().Contain("Fix: Add coverage in Specification, Plan and Tasks.");
             card.TextContent.Should().NotContain("Rule 'PP-02' (Principle) has no coverage");
+            card.TextContent.Should().Contain("View details →");
+            card.GetAttribute("aria-expanded").Should().Be("false");
+            card.GetAttribute("aria-controls").Should().Be("qr-pack-details-compliance");
         });
     }
 
@@ -2507,6 +2586,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var card = cut.FindAll(".qr-issue-card").First(c => c.TextContent.Contains("PP-02"));
+            card.TextContent.Should().Contain("Missing coverage: Plan · Tasks");
             card.TextContent.Should().Contain("Fix: Add coverage in Plan and Tasks.");
             card.TextContent.Should().NotContain("Specification");
         });
@@ -2750,7 +2830,9 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             var specCard = cut.FindAll(".qr-issue-card").First(c => c.TextContent.Contains("SPEC-001"));
             // Non-Constitution findings should keep their detector code
             specCard.TextContent.Should().Contain("SPEC-001");
-            specCard.TextContent.Should().Contain("Specification is missing critical section");
+            specCard.TextContent.Should().Contain("SPEC-001 — Specification is missing critical section");
+            specCard.TextContent.Should().Contain("Problem: The specification does not include API documentation");
+            specCard.TextContent.Should().NotContain("Fix:");
         });
     }
 
