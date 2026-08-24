@@ -285,13 +285,42 @@ steps:
   condition: and(succeeded(), eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
   continueOnError: false
 
-- script: |
-    dotnet test BirkNext.Web.PlaywrightTests/BirkNext.Web.PlaywrightTests.csproj \
+- bash: |
+    set -euo pipefail
+    PROJECT="BirkNext.Web.PlaywrightTests/BirkNext.Web.PlaywrightTests.csproj"
+    FILTER="Category=PreStarted"
+
+    # The CI-specific source file is selected at compile time. Build that exact
+    # variant before discovery because the solution build uses the default variant.
+    dotnet build "$PROJECT" \
+      --configuration Release \
+      --no-restore \
+      --no-dependencies \
+      -p:RunPreStartedPlaywrightTests=true
+
+    DISCOVERY_OUTPUT="$(mktemp)"
+    trap 'rm -f "$DISCOVERY_OUTPUT"' EXIT
+    dotnet test "$PROJECT" \
       --configuration Release \
       --no-build \
+      -p:RunPreStartedPlaywrightTests=true \
+      --list-tests \
+      --filter "$FILTER" | tee "$DISCOVERY_OUTPUT"
+
+    SELECTED_COUNT=$(grep -Ec '^[[:space:]]+BirkNext\.Web\.PlaywrightTests\.' "$DISCOVERY_OUTPUT" || true)
+    echo "Selected tests: $SELECTED_COUNT"
+    if [ "$SELECTED_COUNT" -eq 0 ]; then
+      echo "ERROR: Playwright Quality Gate selected 0 tests."
+      exit 1
+    fi
+
+    dotnet test "$PROJECT" \
+      --configuration Release \
+      --no-build \
+      -p:RunPreStartedPlaywrightTests=true \
       --logger trx \
       --results-directory $(Agent.TempDirectory)/test-results/frontend-playwright \
-      --filter "PreStarted"
+      --filter "$FILTER"
   displayName: 'Run frontend Playwright E2E tests (Quality Gate)'
   workingDirectory: AIAssisted/frontend
   condition: and(succeeded(), eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))

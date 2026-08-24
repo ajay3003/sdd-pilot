@@ -42,6 +42,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("Category", "PreStarted")]
     public async Task DataModelQuality_WasmInteractionHasNoRuntimeErrors()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -62,67 +63,20 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
                 Timeout = 30000,
             });
 
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.WaitForTimeoutAsync(1000);
+            // 2. Select a real sample project using the stable accessible UI.
+            var selectProjectButton = page.GetByRole(AriaRole.Button, new() { Name = "Select Project", Exact = true }).First;
+            await selectProjectButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
+            page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
+            await selectProjectButton.ClickAsync();
+            await page.GetByRole(AriaRole.Button, new() { Name = "Selected", Exact = true })
+                .WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
 
-            // 2. Select first available sample project
-            // Debug: capture actual HTML to understand page state
-            var actualHtml = await page.ContentAsync();
-            if (actualHtml.Length < 5000) {
-                // Page didn't load properly
-                throw new InvalidOperationException($"Sample Projects page HTML too small ({actualHtml.Length} bytes). Page likely didn't load. Content:\n{actualHtml.Substring(0, Math.Min(1000, actualHtml.Length))}");
-            }
-
-            // Projects are rendered as .sp-card divs with select buttons inside
-            var projectCards = await page.QuerySelectorAllAsync(".sp-card");
-            if (projectCards.Count == 0) {
-                // Try to find what's actually on the page
-                var hasLoading = await page.QuerySelectorAsync(".sp-loading") != null;
-                var hasEmpty = await page.QuerySelectorAsync(".sp-empty") != null;
-                var debugInfo = $"Project cards: 0, has-sp-loading: {hasLoading}, has-sp-empty: {hasEmpty}";
-                throw new InvalidOperationException($"No project cards found. {debugInfo}");
-            }
-            projectCards.Count.Should().BeGreaterThan(0);
-
-            // 3. Click the "Select Project" button in the first card
-            var selectButton = await projectCards[0].QuerySelectorAsync("button.sp-btn-primary:not(:disabled)");
-            selectButton.Should().NotBeNull("First project card should have a clickable 'Select Project' button");
-
-            // Handle confirmation dialog
-            var dialogHandler = new TaskCompletionSource<bool>();
-            page.Dialog += async (_, dialog) =>
-            {
-                // Accept the "Select project?" confirmation dialog
-                await dialog.AcceptAsync();
-                dialogHandler.SetResult(true);
-            };
-
-            // Click the button and wait for navigation
-            await selectButton!.ClickAsync();
-
-            // Wait for the dialog to be handled (with timeout)
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            try
-            {
-                await dialogHandler.Task;
-            }
-            catch (OperationCanceledException)
-            {
-                // Dialog might not appear if this is the first project
-            }
-
-            // Wait for the page to update after project selection
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-
-            // 4. Navigate to Quality Review page (now with project selected)
-            await page.GotoAsync($"{_fixture.FrontendUrl}/quality-review", new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.NetworkIdle,
-                Timeout = 30000,
-            });
-
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.WaitForTimeoutAsync(500);
+            // 3. Preserve the selected project by navigating within the current
+            // WASM application session.
+            await page.GetByRole(AriaRole.Navigation)
+                .GetByRole(AriaRole.Link, new() { Name = "Quality Review", Exact = true })
+                .ClickAsync();
+            await page.WaitForURLAsync("**/quality-review", new PageWaitForURLOptions { Timeout = 10000 });
 
             // 5. Verify Quality Review page loaded with project context
             var pageContent = await page.ContentAsync();
@@ -210,7 +164,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
                 await page.WaitForFunctionAsync(@"
                     () => {
                         const btn = document.querySelector('button.qr-show-toggle');
-                        return btn && btn.textContent.includes('Show less');
+                        return btn && btn.textContent.includes('Show fewer');
                     }
                 ");
 
@@ -218,9 +172,9 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
                 // If there are more than initial, great; if equal, that's fine too (all visible initially)
                 allFindings.Count.Should().BeGreaterThanOrEqualTo(initialFindings.Count, "Show all should show at least the preview count");
 
-                // Only test Show less if there's actually a difference to show
+                // Only test Show fewer if there's actually a difference to show
                 if (allFindings.Count > 3) {
-                    // 16. Show less
+                    // 16. Show fewer
                     await toggleBtn.ClickAsync();
                     await page.WaitForFunctionAsync(@"
                         () => {
@@ -237,7 +191,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
                     await page.WaitForFunctionAsync(@"
                         () => {
                             const btn = document.querySelector('button.qr-show-toggle');
-                            return btn && btn.textContent.includes('Show less');
+                            return btn && btn.textContent.includes('Show fewer');
                         }
                     ");
                 }
