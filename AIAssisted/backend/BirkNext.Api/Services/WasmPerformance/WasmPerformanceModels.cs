@@ -37,6 +37,16 @@ public sealed class DiscoveredAsset
 public sealed class WasmAssetDiscoveryRequest
 {
     public required string TargetUrl { get; init; }
+    public PerformanceThresholdsPayload? Thresholds { get; init; }
+}
+
+public sealed class PerformanceThresholdsPayload
+{
+    public int? MaxStartupRequests { get; init; }
+    public double? MaxStartupDownloadMB { get; init; }
+    public double? MaxFrameworkMB { get; init; }
+    public double? MaxApplicationMB { get; init; }
+    public double? MaxIndividualAssetMB { get; init; }
 }
 
 public sealed class WasmAssetDiscoveryResult

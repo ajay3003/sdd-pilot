@@ -57,7 +57,8 @@ public class WasmPerformanceController : ControllerBase
             var apiTask = _api.AnalyzeAsync(request.TargetUrl, ct: ct);
 
             // Synchronous analyses — pure computation over discovered assets (milliseconds)
-            var startupAnalysis  = _startup.Analyze(discovery.Assets);
+            var thresholds = request.Thresholds is not null ? MapThresholds(request.Thresholds) : null;
+            var startupAnalysis  = _startup.Analyze(discovery.Assets, thresholds);
             var cachingAnalysis  = _caching.Analyze(discovery.Assets);
 
             // Wait for API probing to complete
@@ -104,5 +105,20 @@ public class WasmPerformanceController : ControllerBase
                 correlationId);
             return StatusCode(500, new { message = "Review failed unexpectedly. Check backend logs.", correlationId });
         }
+    }
+
+    private static StartupAnalysisThresholds? MapThresholds(dynamic payload)
+    {
+        if (payload?.MaxStartupRequests == null && payload?.MaxStartupDownloadMB == null)
+            return null;
+
+        return new StartupAnalysisThresholds
+        {
+            MaxStartupRequests = payload?.MaxStartupRequests ?? 150,
+            MaxStartupDownloadMB = payload?.MaxStartupDownloadMB ?? 5.0,
+            MaxFrameworkMB = payload?.MaxFrameworkMB ?? 3.0,
+            MaxApplicationMB = payload?.MaxApplicationMB ?? 1.0,
+            MaxIndividualAssetMB = payload?.MaxIndividualAssetMB ?? 0.5,
+        };
     }
 }

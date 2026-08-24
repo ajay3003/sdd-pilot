@@ -11,11 +11,15 @@ public sealed class BlazorWasmPerformanceReviewService : IBlazorWasmPerformanceR
     public BlazorWasmPerformanceReviewService(HttpClient client) => _client = client;
 
     public async Task<WasmAssetDiscoveryResult> DiscoverAssetsAsync(
-        string targetUrl, CancellationToken cancellationToken = default)
+        string targetUrl, FrontendPerformanceThresholds? thresholds = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            var request  = new WasmAssetDiscoveryRequest { TargetUrl = targetUrl };
+            var request = new WasmAssetDiscoveryRequest
+            {
+                TargetUrl = targetUrl,
+                Thresholds = thresholds is not null ? MapThresholds(thresholds) : null
+            };
             var response = await _client.PostAsJsonAsync(
                 "api/wasm-performance/discover-assets", request, cancellationToken);
 
@@ -51,9 +55,9 @@ public sealed class BlazorWasmPerformanceReviewService : IBlazorWasmPerformanceR
     }
 
     public async Task<WasmPerformanceReviewReport> RunReviewAsync(
-        string targetUrl, CancellationToken cancellationToken = default)
+        string targetUrl, FrontendPerformanceThresholds? thresholds = null, CancellationToken cancellationToken = default)
     {
-        var result = await DiscoverAssetsAsync(targetUrl, cancellationToken);
+        var result = await DiscoverAssetsAsync(targetUrl, thresholds, cancellationToken);
 
         if (result.Error is not null)
         {
@@ -138,4 +142,18 @@ public sealed class BlazorWasmPerformanceReviewService : IBlazorWasmPerformanceR
 
     public WasmPerformanceReviewReport? GetCached() => _cached;
     public void ClearCache() => _cached = null;
+
+    private static PerformanceThresholdsPayload MapThresholds(FrontendPerformanceThresholds frontend)
+    {
+        return new PerformanceThresholdsPayload
+        {
+            MaxStartupRequests = frontend.MaxStartupRequests,
+            MaxStartupDownloadMB = BytesToMB(frontend.MaxStartupSizeBytes),
+            MaxFrameworkMB = BytesToMB(frontend.MaxFrameworkSizeBytes),
+            MaxApplicationMB = BytesToMB(frontend.MaxApplicationAssemblySizeBytes),
+            MaxIndividualAssetMB = BytesToMB(frontend.MaxIndividualAssetSizeBytes),
+        };
+    }
+
+    private static double BytesToMB(long bytes) => Math.Ceiling(bytes / (1024.0 * 1024.0));
 }

@@ -250,14 +250,60 @@ public sealed class ReportExportService : IReportExportService
     {
         var sb = new StringBuilder();
 
+        // ── Assessment Metadata ────────────────────────────────────────
+        sb.Append("<section class=\"block\">\n<h2>Assessment Summary</h2>\n");
+        sb.Append("<dl style=\"display:grid;grid-template-columns:120px 1fr;gap:0.5rem;font-size:.9rem;margin-left:1rem\">\n");
+
+        sb.Append($"<dt><strong>Target URL:</strong></dt><dd>{Esc(report.TargetUrl)}</dd>\n");
+        if (!string.IsNullOrEmpty(report.FinalUrl) && report.FinalUrl != report.TargetUrl)
+            sb.Append($"<dt><strong>Final URL:</strong></dt><dd>{Esc(report.FinalUrl)}</dd>\n");
+
+        sb.Append($"<dt><strong>Generated:</strong></dt><dd>{report.GeneratedAt:yyyy-MM-dd HH:mm:ss} UTC</dd>\n");
+        if (report.CompletedAt.HasValue)
+            sb.Append($"<dt><strong>Completed:</strong></dt><dd>{report.CompletedAt.Value:yyyy-MM-dd HH:mm:ss} UTC</dd>\n");
+
+        if (report.DurationMs.HasValue)
+            sb.Append($"<dt><strong>Duration:</strong></dt><dd>{report.DurationMs:N0} ms</dd>\n");
+
+        var completenessLabel = report.Completeness switch
+        {
+            AssessmentCompleteness.Full => "Full Assessment",
+            AssessmentCompleteness.Partial => "Partial Assessment",
+            AssessmentCompleteness.Failed => "Assessment Failed",
+            _ => "Unknown"
+        };
+        sb.Append($"<dt><strong>Completeness:</strong></dt><dd>{completenessLabel}</dd>\n");
+
+        sb.Append("</dl>\n");
+
+        // ── Engine Status ──────────────────────────────────────────────
+        if (report.AssessedEngines.Count > 0 || report.FailedEngines.Count > 0 || report.SkippedEngines.Count > 0)
+        {
+            sb.Append("<dl style=\"display:grid;grid-template-columns:120px 1fr;gap:0.5rem;font-size:.85rem;margin-left:1rem\">\n");
+
+            if (report.AssessedEngines.Count > 0)
+                sb.Append($"<dt><strong>Assessed:</strong></dt><dd>{Esc(string.Join(", ", report.AssessedEngines))}</dd>\n");
+
+            if (report.FailedEngines.Count > 0)
+                sb.Append($"<dt><strong>Failed:</strong></dt><dd>{Esc(string.Join(", ", report.FailedEngines))}</dd>\n");
+
+            if (report.SkippedEngines.Count > 0)
+                sb.Append($"<dt><strong>Skipped/Disabled:</strong></dt><dd>{Esc(string.Join(", ", report.SkippedEngines))}</dd>\n");
+
+            sb.Append("</dl>\n");
+        }
+
+        sb.Append("</section>\n");
+
+        // ── KPI Scores (with null safety) ──────────────────────────────
         sb.Append("<div class=\"kpi-row\">");
-        sb.Append(Kpi(report.OverallScore.ToString(),       "Overall Score"));
-        sb.Append(Kpi(report.PerformanceScore.ToString(),   "Performance"));
-        sb.Append(Kpi(report.SecurityScore.ToString(),      "Security"));
-        sb.Append(Kpi(report.AccessibilityScore.ToString(), "Accessibility"));
-        sb.Append(Kpi(report.StandardsScore.ToString(),     "Standards"));
-        sb.Append(Kpi(report.WasmScore.ToString(),          "Blazor WASM"));
-        sb.Append(Kpi(report.ReadinessScore.ToString(),     "Readiness"));
+        sb.Append(Kpi(report.OverallScore?.ToString() ?? "Not Assessed",       "Overall Score"));
+        sb.Append(Kpi(report.PerformanceScore?.ToString() ?? "Not Assessed",   "Performance"));
+        sb.Append(Kpi(report.SecurityScore?.ToString() ?? "Not Assessed",      "Security"));
+        sb.Append(Kpi(report.AccessibilityScore?.ToString() ?? "Not Assessed", "Accessibility"));
+        sb.Append(Kpi(report.StandardsScore?.ToString() ?? "Not Assessed",     "Standards"));
+        sb.Append(Kpi(report.WasmScore?.ToString() ?? "Not Assessed",          "Blazor WASM"));
+        sb.Append(Kpi(report.ReadinessScore?.ToString() ?? "Not Assessed",     "Readiness"));
         sb.Append("</div>\n");
 
         // Per-category sections
@@ -289,11 +335,14 @@ public sealed class ReportExportService : IReportExportService
 
         if (report.Limitations.Count > 0)
         {
-            sb.Append("<section class=\"block\">\n<h2>Limitations</h2>\n");
+            sb.Append("<section class=\"block\">\n<h2>Assessment Limitations & Scope</h2>\n");
             sb.Append("<ul style=\"margin-left:1.2rem;font-size:.85rem;color:#374151\">\n");
             foreach (var l in report.Limitations)
                 sb.Append($"<li>{Esc(l)}</li>\n");
-            sb.Append("</ul>\n</section>\n");
+            sb.Append("</ul>\n");
+            sb.Append("<p style=\"margin-top:0.5rem;font-size:.8rem;color:#6b7280\"><strong>Note:</strong> This review uses passive static analysis. " +
+                      "Runtime behavior, browser-dependent features (Core Web Vitals, WCAG dynamic rendering), and active vulnerability testing are not included.</p>\n");
+            sb.Append("</section>\n");
         }
 
         var subtitle = string.IsNullOrWhiteSpace(report.TargetUrl)

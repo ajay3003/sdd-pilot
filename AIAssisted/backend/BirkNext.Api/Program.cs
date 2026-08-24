@@ -12,6 +12,7 @@ using BirkNext.Api.Services.Library;
 using BirkNext.Api.Services.Review;
 using BirkNext.Api.Services.WasmPerformance;
 using BirkNext.Api.Services.WasmSecurity;
+using BirkNext.Api.Services.FrontendBrowserRuntime;
 using HotChocolate.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -174,6 +175,13 @@ builder.Services.AddHttpClient<IWasmApiAnalysisService, WasmApiAnalysisService>(
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-WasmPerfScanner/1.0");
 });
 builder.Services.AddSingleton<IWasmPerformanceReadinessService, WasmPerformanceReadinessService>();
+
+// Frontend Browser Runtime Review — Chromium-based runtime analysis
+builder.Services.AddScoped<BrowserTargetValidator>();
+builder.Services.AddScoped<BrowserResourceClassifier>();
+builder.Services.AddScoped<BrowserEvidenceSanitizer>();
+builder.Services.AddScoped<BrowserRuntimeFindingClassifier>();
+builder.Services.AddScoped<IFrontendBrowserRuntimeReviewService, FrontendBrowserRuntimeReviewService>();
 
 // API Quality Review
 builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService>(client =>

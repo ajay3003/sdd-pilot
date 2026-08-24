@@ -716,8 +716,16 @@
                 </div>
                 @if (_fqrReport is { } fqrCard)
                 {
-                    <div class="db-analysis-score @ScoreClass(fqrCard.OverallScore)">@fqrCard.OverallScore</div>
-                    <span class="db-analysis-status @KpiStatusClass(fqrCard.OverallScore, true)">@KpiStatusLabel(fqrCard.OverallScore, true)</span>
+                    @if (fqrCard.OverallScore.HasValue)
+                    {
+                        <div class="db-analysis-score @ScoreClass(fqrCard.OverallScore.Value)">@fqrCard.OverallScore.Value</div>
+                        <span class="db-analysis-status @KpiStatusClass(fqrCard.OverallScore.Value, true)">@KpiStatusLabel(fqrCard.OverallScore.Value, true)</span>
+                    }
+                    else
+                    {
+                        <div class="db-analysis-score">—</div>
+                        <span class="db-analysis-status">Partial assessment</span>
+                    }
                     @if (fqrCard.Findings.OrderBy(f => f.Severity).FirstOrDefault() is { } topFqrFinding)
                     {
                         <div class="db-analysis-finding">@topFqrFinding.Title</div>

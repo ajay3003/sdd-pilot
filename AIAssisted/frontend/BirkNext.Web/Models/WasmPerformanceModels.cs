@@ -75,6 +75,27 @@ public sealed class WasmAssetDiscoveryRequest
 {
     [JsonPropertyName("targetUrl")]
     public string TargetUrl { get; init; } = "";
+
+    [JsonPropertyName("thresholds")]
+    public PerformanceThresholdsPayload? Thresholds { get; init; }
+}
+
+public sealed class PerformanceThresholdsPayload
+{
+    [JsonPropertyName("maxStartupRequests")]
+    public int? MaxStartupRequests { get; init; }
+
+    [JsonPropertyName("maxStartupDownloadMB")]
+    public double? MaxStartupDownloadMB { get; init; }
+
+    [JsonPropertyName("maxFrameworkMB")]
+    public double? MaxFrameworkMB { get; init; }
+
+    [JsonPropertyName("maxApplicationMB")]
+    public double? MaxApplicationMB { get; init; }
+
+    [JsonPropertyName("maxIndividualAssetMB")]
+    public double? MaxIndividualAssetMB { get; init; }
 }
 
 public enum PerformanceReadinessState

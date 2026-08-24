@@ -57,11 +57,15 @@ public sealed class FrontendAnalysisSettings
 public sealed class TargetApiCredentials
 {
     [JsonPropertyName("authType")]         public TargetApiAuthType AuthType         { get; set; } = TargetApiAuthType.None;
-    [JsonPropertyName("bearerToken")]      public string?           BearerToken      { get; set; }
-    [JsonPropertyName("apiKey")]           public string?           ApiKey           { get; set; }
     [JsonPropertyName("apiKeyHeaderName")] public string?           ApiKeyHeaderName { get; set; }
     [JsonPropertyName("basicUsername")]    public string?           BasicUsername    { get; set; }
-    [JsonPropertyName("basicPassword")]    public string?           BasicPassword    { get; set; }
+
+    // CRITICAL: These secret properties use [JsonIgnore] to prevent serialization to browser storage.
+    // They can be set during runtime editing but are NEVER persisted.
+    // After page reload, they will be null and the UI must indicate credentials need to be re-entered.
+    [JsonIgnore] public string?            BearerToken      { get; set; }
+    [JsonIgnore] public string?            ApiKey           { get; set; }
+    [JsonIgnore] public string?            BasicPassword    { get; set; }
 }
 
 public sealed class FrontendAnalysisProfile
@@ -165,6 +169,10 @@ public sealed class FrontendSecuritySettings
 
 public sealed class FrontendAnalysisFeatureToggles
 {
+    [JsonPropertyName("enableSecurityEngine")]        public bool EnableSecurityEngine        { get; set; } = true;
+    [JsonPropertyName("enablePerformanceEngine")]     public bool EnablePerformanceEngine     { get; set; } = true;
+    [JsonPropertyName("enableBrowserRuntimeEngine")]  public bool EnableBrowserRuntimeEngine  { get; set; } = false;
+
     [JsonPropertyName("assetDiscovery")]              public bool AssetDiscovery              { get; set; } = true;
     [JsonPropertyName("startupAnalysis")]             public bool StartupAnalysis             { get; set; } = true;
     [JsonPropertyName("restAnalysis")]                public bool RestAnalysis                { get; set; } = true;

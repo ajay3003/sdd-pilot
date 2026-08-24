@@ -511,6 +511,85 @@ public sealed class FrontendAnalysisContextFactoryTests
         ctx.CoreWebVitalsThresholds.LcpPoorMs.Should().Be(3500);
     }
 
+    // ── P1 SECURITY: Safe snapshot strips credentials ──────────────────────────
+
+    [Fact]
+    public async Task ContextFactory_CreateSafeProfileSnapshot_NeverPersistsBearerToken()
+    {
+        var profile = new FrontendAnalysisProfile
+        {
+            Id = "p1", Name = "P", EnvironmentType = FrontendEnvironmentType.QA,
+            ApiAuth = new TargetApiCredentials
+            {
+                AuthType = TargetApiAuthType.BearerToken,
+                BearerToken = "super-secret-bearer-token-12345",
+            },
+            Performance = new(), CoreWebVitals = new(), Security = new(), Features = new()
+        };
+
+        var settings   = MockSettings(profile);
+        var sessionSvc = CreateSessionService(settings.Object);
+        var factory    = CreateFactory(settings.Object, sessionSvc);
+
+        var ctx = await factory.GetActiveContextAsync();
+
+        // BearerToken should never be persisted (no JsonPropertyName attribute on the model)
+        ctx.ActiveProfile.ApiAuth.BearerToken.Should().BeNullOrEmpty();
+        ctx.ActiveProfile.ApiAuth.AuthType.Should().Be(TargetApiAuthType.BearerToken);
+    }
+
+    [Fact]
+    public async Task ContextFactory_CreateSafeProfileSnapshot_NeverPersistsApiKey()
+    {
+        var profile = new FrontendAnalysisProfile
+        {
+            Id = "p1", Name = "P", EnvironmentType = FrontendEnvironmentType.QA,
+            ApiAuth = new TargetApiCredentials
+            {
+                AuthType = TargetApiAuthType.ApiKey,
+                ApiKey = "super-secret-api-key-xyz",
+                ApiKeyHeaderName = "X-API-Key",
+            },
+            Performance = new(), CoreWebVitals = new(), Security = new(), Features = new()
+        };
+
+        var settings   = MockSettings(profile);
+        var sessionSvc = CreateSessionService(settings.Object);
+        var factory    = CreateFactory(settings.Object, sessionSvc);
+
+        var ctx = await factory.GetActiveContextAsync();
+
+        // ApiKey should never be persisted (no JsonPropertyName attribute on the model)
+        ctx.ActiveProfile.ApiAuth.ApiKey.Should().BeNullOrEmpty();
+        ctx.ActiveProfile.ApiAuth.ApiKeyHeaderName.Should().Be("X-API-Key");
+    }
+
+    [Fact]
+    public async Task ContextFactory_CreateSafeProfileSnapshot_NeverPersistsBasicPassword()
+    {
+        var profile = new FrontendAnalysisProfile
+        {
+            Id = "p1", Name = "P", EnvironmentType = FrontendEnvironmentType.QA,
+            ApiAuth = new TargetApiCredentials
+            {
+                AuthType = TargetApiAuthType.BasicAuth,
+                BasicUsername = "admin",
+                BasicPassword = "super-secret-password-abc123",
+            },
+            Performance = new(), CoreWebVitals = new(), Security = new(), Features = new()
+        };
+
+        var settings   = MockSettings(profile);
+        var sessionSvc = CreateSessionService(settings.Object);
+        var factory    = CreateFactory(settings.Object, sessionSvc);
+
+        var ctx = await factory.GetActiveContextAsync();
+
+        // BasicPassword should never be persisted (no JsonPropertyName attribute on the model)
+        ctx.ActiveProfile.ApiAuth.BasicPassword.Should().BeNullOrEmpty();
+        ctx.ActiveProfile.ApiAuth.BasicUsername.Should().Be("admin");
+    }
+
     // ── Feature toggles passed to both reviews ────────────────────────────────
 
     [Fact]

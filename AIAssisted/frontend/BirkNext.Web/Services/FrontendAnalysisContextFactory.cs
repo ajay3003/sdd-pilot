@@ -91,6 +91,17 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
 
     private static FrontendAnalysisProfile CreateSafeProfileSnapshot(FrontendAnalysisProfile profile)
     {
+        // Create snapshot that preserves configuration but excludes secret credential values.
+        // Secrets (BearerToken, ApiKey, BasicPassword) are NOT serialized to JSON by design.
+        // The JSON serialization skips them because they lack [JsonPropertyName] attributes.
+        var safeApiAuth = new TargetApiCredentials
+        {
+            AuthType = profile.ApiAuth.AuthType,
+            ApiKeyHeaderName = profile.ApiAuth.ApiKeyHeaderName,
+            BasicUsername = profile.ApiAuth.BasicUsername,
+            // BearerToken, ApiKey, and BasicPassword are NOT included in serialization.
+        };
+
         var snapshot = new FrontendAnalysisProfile
         {
             Id = profile.Id,
@@ -103,7 +114,7 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             HealthEndpoint = profile.HealthEndpoint,
             SwaggerUrl = profile.SwaggerUrl,
             GraphQlEndpoint = profile.GraphQlEndpoint,
-            ApiAuth = new TargetApiCredentials { AuthType = profile.ApiAuth.AuthType },
+            ApiAuth = safeApiAuth,
             RequestTimeoutSeconds = profile.RequestTimeoutSeconds,
             RetryCount = profile.RetryCount,
             ExpectedApiGateway = profile.ExpectedApiGateway,

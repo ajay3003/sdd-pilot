@@ -14,6 +14,33 @@ public enum FrontendQualityCategory
     Readiness,
 }
 
+public enum CheckExecutionStatus
+{
+    NotAssessed,
+    Skipped,
+    Passed,
+    Failed,
+    EngineError,
+    NotApplicable,
+}
+
+public enum AssessmentCompleteness
+{
+    Full,
+    Partial,
+    Failed,
+}
+
+public enum PreflightStatus
+{
+    Ready,
+    ReadyWithWarnings,
+    AuthenticationRequired,
+    Unreachable,
+    InvalidTarget,
+    ScannerUnavailable,
+}
+
 public sealed class FrontendQualityFinding
 {
     [JsonPropertyName("id")]             public string                   Id             { get; init; } = "";
@@ -24,29 +51,34 @@ public sealed class FrontendQualityFinding
     [JsonPropertyName("recommendation")] public string                   Recommendation { get; init; } = "";
     [JsonPropertyName("evidence")]       public List<string>             Evidence       { get; init; } = [];
     [JsonPropertyName("sourceSystem")]   public string?                  SourceSystem   { get; init; }
+    [JsonPropertyName("status")]         public CheckExecutionStatus     Status         { get; init; } = CheckExecutionStatus.Passed;
 }
 
 public sealed class FrontendQualityCategoryScore
 {
     [JsonPropertyName("category")]     public FrontendQualityCategory Category     { get; init; }
-    [JsonPropertyName("score")]        public int                     Score        { get; init; }
+    [JsonPropertyName("score")]        public int?                    Score        { get; init; }
     [JsonPropertyName("findingCount")] public int                     FindingCount { get; init; }
     [JsonPropertyName("critical")]     public int                     Critical     { get; init; }
     [JsonPropertyName("high")]         public int                     High         { get; init; }
     [JsonPropertyName("assessed")]     public bool                    Assessed     { get; init; }
+    [JsonPropertyName("notAssessedReason")] public string?            NotAssessedReason { get; init; }
 }
 
 public sealed class FrontendQualityReviewReport
 {
     [JsonPropertyName("targetUrl")]          public string                           TargetUrl          { get; init; } = "";
+    [JsonPropertyName("finalUrl")]           public string?                          FinalUrl           { get; init; }
     [JsonPropertyName("generatedAt")]        public DateTime                         GeneratedAt        { get; init; }
-    [JsonPropertyName("overallScore")]       public int                              OverallScore       { get; init; }
-    [JsonPropertyName("performanceScore")]   public int                              PerformanceScore   { get; init; }
-    [JsonPropertyName("securityScore")]      public int                              SecurityScore      { get; init; }
-    [JsonPropertyName("accessibilityScore")] public int                              AccessibilityScore { get; init; }
-    [JsonPropertyName("standardsScore")]     public int                              StandardsScore     { get; init; }
-    [JsonPropertyName("wasmScore")]          public int                              WasmScore          { get; init; }
-    [JsonPropertyName("readinessScore")]     public int                              ReadinessScore     { get; init; }
+    [JsonPropertyName("completedAt")]        public DateTime?                        CompletedAt        { get; init; }
+    [JsonPropertyName("durationMs")]         public long?                            DurationMs         { get; init; }
+    [JsonPropertyName("overallScore")]       public int?                             OverallScore       { get; init; }
+    [JsonPropertyName("performanceScore")]   public int?                             PerformanceScore   { get; init; }
+    [JsonPropertyName("securityScore")]      public int?                             SecurityScore      { get; init; }
+    [JsonPropertyName("accessibilityScore")] public int?                             AccessibilityScore { get; init; }
+    [JsonPropertyName("standardsScore")]     public int?                             StandardsScore     { get; init; }
+    [JsonPropertyName("wasmScore")]          public int?                             WasmScore          { get; init; }
+    [JsonPropertyName("readinessScore")]     public int?                             ReadinessScore     { get; init; }
     [JsonPropertyName("findings")]           public List<FrontendQualityFinding>     Findings           { get; init; } = [];
     [JsonPropertyName("categoryScores")]     public List<FrontendQualityCategoryScore> CategoryScores   { get; init; } = [];
     [JsonPropertyName("recommendations")]    public List<string>                     Recommendations    { get; init; } = [];
@@ -54,4 +86,66 @@ public sealed class FrontendQualityReviewReport
     [JsonPropertyName("limitations")]        public List<string>                     Limitations        { get; init; } = [];
     [JsonPropertyName("isBlazorWasm")]       public bool                             IsBlazorWasm       { get; init; }
     [JsonPropertyName("errorMessage")]       public string?                          ErrorMessage       { get; init; }
+    [JsonPropertyName("completeness")]       public AssessmentCompleteness?          Completeness       { get; init; }
+    [JsonPropertyName("preflightStatus")]    public PreflightStatus?                 PreflightStatus    { get; init; }
+    [JsonPropertyName("preflightMessage")]   public string?                          PreflightMessage   { get; init; }
+    [JsonPropertyName("redirectOccurred")]   public bool                             RedirectOccurred   { get; init; }
+    [JsonPropertyName("assessedEngines")]    public List<string>                     AssessedEngines    { get; init; } = [];
+    [JsonPropertyName("failedEngines")]      public List<string>                     FailedEngines      { get; init; } = [];
+    [JsonPropertyName("skippedEngines")]     public List<string>                     SkippedEngines     { get; init; } = [];
 }
+
+// ── Browser Runtime DTOs ────────────────────────────────────────────
+public enum BrowserRuntimeEngineStatusDto
+{
+    NotAssessed,
+    Assessed,
+    EngineError,
+    Skipped,
+    NotApplicable,
+}
+
+public enum BrowserStartupStateDto
+{
+    Started,
+    StartedWithErrors,
+    Failed,
+    TimedOut,
+    NotApplicable,
+}
+
+public enum BrowserRuntimeFindingSeverityDto
+{
+    Critical,
+    High,
+    Medium,
+    Low,
+    Info,
+}
+
+public sealed record BrowserRuntimeFindingDto(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("severity")] BrowserRuntimeFindingSeverityDto Severity,
+    [property: JsonPropertyName("category")] string Category,
+    [property: JsonPropertyName("description")] string Description,
+    [property: JsonPropertyName("recommendation")] string Recommendation,
+    [property: JsonPropertyName("evidence")] List<string> Evidence = default!);
+
+public sealed record BrowserRuntimeResultDto(
+    [property: JsonPropertyName("status")] BrowserRuntimeEngineStatusDto Status = BrowserRuntimeEngineStatusDto.NotAssessed,
+    [property: JsonPropertyName("engineName")] string EngineName = "Browser Runtime",
+    [property: JsonPropertyName("browserName")] string? BrowserName = null,
+    [property: JsonPropertyName("browserVersion")] string? BrowserVersion = null,
+    [property: JsonPropertyName("requestedUrl")] string? RequestedUrl = null,
+    [property: JsonPropertyName("finalUrl")] string? FinalUrl = null,
+    [property: JsonPropertyName("startedAt")] DateTime StartedAt = default,
+    [property: JsonPropertyName("completedAt")] DateTime? CompletedAt = null,
+    [property: JsonPropertyName("durationMs")] long? DurationMs = null,
+    [property: JsonPropertyName("startupState")] BrowserStartupStateDto StartupState = BrowserStartupStateDto.NotApplicable,
+    [property: JsonPropertyName("consoleErrorCount")] int ConsoleErrorCount = 0,
+    [property: JsonPropertyName("pageErrorCount")] int PageErrorCount = 0,
+    [property: JsonPropertyName("criticalResourceFailureCount")] int CriticalResourceFailureCount = 0,
+    [property: JsonPropertyName("findings")] List<BrowserRuntimeFindingDto>? Findings = null,
+    [property: JsonPropertyName("engineError")] string? EngineError = null,
+    [property: JsonPropertyName("limitations")] List<string>? Limitations = null);

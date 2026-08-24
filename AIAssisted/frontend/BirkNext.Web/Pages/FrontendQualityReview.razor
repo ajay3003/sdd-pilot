@@ -9,6 +9,7 @@
 @inject RuntimeReviewSessionService RuntimeReviews
 @inject IWorkspaceSessionService Workspace
 @inject IReportExportService ExportService
+@inject ITargetPreflightService Preflight
 @inject IJSRuntime JS
 
 <PageTitle>Frontend Quality Review</PageTitle>
@@ -27,7 +28,7 @@
     @if (_report is null)
     {
         <ReviewLanding Title="Run a production-style frontend audit"
-                       Description="Review performance, security, accessibility, standards, Blazor WASM behavior, and QA readiness for the active target environment."
+                       Description="Review performance, security, accessibility, standards, Blazor WASM behavior, and QA readiness for the active target environment. Assessment completeness depends on available engines and target configuration."
                        PrimaryButtonText="@(_running ? "Analysing..." : "Run Frontend Quality Review")"
                        PrimaryRun="RunReview"
                        PrimaryDisabled="@(_running || _context is null || !_context.HasTargetUrl)"
@@ -38,7 +39,7 @@
                        AnalysisCards="FrontendAnalysisCards"
                        Checks="FrontendChecks"
                        Metadata="BuildFrontendMetadata()"
-                       EstimatedDuration="1-3 minutes" />
+                       EstimatedDuration="Scan duration depends on target size and enabled checks." />
 
         @if (_running)
         {
@@ -71,14 +72,44 @@
         var filtered = FilteredFindings(report.Findings).ToList();
         var recommendations = BuildRecommendationCards(report).ToList();
 
+        @if (report.Completeness == AssessmentCompleteness.Partial)
+        {
+            <div class="wsr-banner wsr-banner-warn wsr-banner-standalone" role="status">
+                <span aria-hidden="true">!</span> Partial assessment: Only @string.Join(", ", report.AssessedEngines) ran successfully. Assessment completeness is limited.
+            </div>
+        }
+        else if (report.Completeness == AssessmentCompleteness.Failed)
+        {
+            <div class="wsr-banner wsr-banner-error wsr-banner-standalone" role="status">
+                <span aria-hidden="true">⚠</span> Assessment failed: All engines encountered errors. Review is not available.
+            </div>
+        }
+
         <section class="fqr-summary-grid" aria-label="Frontend quality score summary">
-            <MetricCard Value="@report.OverallScore.ToString()" Label="Overall Score" Sublabel="@QualityLabel(report.OverallScore)" Variant="@ScoreVariant(report.OverallScore)" />
-            <MetricCard Value="@report.PerformanceScore.ToString()" Label="Performance" Sublabel="@QualityLabel(report.PerformanceScore)" Variant="@ScoreVariant(report.PerformanceScore)" />
-            <MetricCard Value="@report.SecurityScore.ToString()" Label="Security" Sublabel="@QualityLabel(report.SecurityScore)" Variant="@ScoreVariant(report.SecurityScore)" />
-            <MetricCard Value="@report.AccessibilityScore.ToString()" Label="Accessibility" Sublabel="@QualityLabel(report.AccessibilityScore)" Variant="@ScoreVariant(report.AccessibilityScore)" />
-            <MetricCard Value="@report.StandardsScore.ToString()" Label="Standards" Sublabel="@QualityLabel(report.StandardsScore)" Variant="@ScoreVariant(report.StandardsScore)" />
-            <MetricCard Value="@report.WasmScore.ToString()" Label="Blazor WASM" Sublabel="@(report.IsBlazorWasm ? QualityLabel(report.WasmScore) : "Not detected")" Variant="@ScoreVariant(report.WasmScore)" />
-            <MetricCard Value="@report.ReadinessScore.ToString()" Label="QA Readiness" Sublabel="@QualityLabel(report.ReadinessScore)" Variant="@ScoreVariant(report.ReadinessScore)" />
+            @if (report.OverallScore.HasValue)
+            {
+                <MetricCard Value="@report.OverallScore.Value.ToString()" Label="Overall Score" Sublabel="@QualityLabel(report.OverallScore.Value)" Variant="@ScoreVariant(report.OverallScore.Value)" />
+            }
+            else
+            {
+                <MetricCard Value="—" Label="Overall Score" Sublabel="Partial assessment" Variant="warning" />
+            }
+
+            @foreach (var cat in report.CategoryScores)
+            {
+                @if (cat.Assessed && cat.Score.HasValue)
+                {
+                    <MetricCard Value="@cat.Score.Value.ToString()" Label="@CategoryLabel(cat.Category)" Sublabel="@QualityLabel(cat.Score.Value)" Variant="@ScoreVariant(cat.Score.Value)" />
+                }
+                else if (cat.Assessed)
+                {
+                    <MetricCard Value="—" Label="@CategoryLabel(cat.Category)" Sublabel="@(cat.NotAssessedReason ?? "Engine not available")" Variant="warning" />
+                }
+                else
+                {
+                    <MetricCard Value="—" Label="@CategoryLabel(cat.Category)" Sublabel="Not assessed" Variant="neutral" />
+                }
+            }
         </section>
 
         <section class="fqr-section" aria-label="Top risks">
@@ -234,8 +265,34 @@
             <details class="fqr-technical-details">
                 <summary>Technical Details</summary>
                 <div class="fqr-technical-grid">
-                    <InfoRow Label="Target URL">@report.TargetUrl</InfoRow>
-                    <InfoRow Label="Generated">@report.GeneratedAt.ToString("yyyy-MM-dd HH:mm") UTC</InfoRow>
+                    <InfoRow Label="Target URL (Requested)">@report.TargetUrl</InfoRow>
+                    @if (!string.IsNullOrWhiteSpace(report.FinalUrl) && report.FinalUrl != report.TargetUrl)
+                    {
+                        <InfoRow Label="Target URL (Final)">@report.FinalUrl</InfoRow>
+                        @if (report.RedirectOccurred)
+                        {
+                            <InfoRow Label="Redirect Occurred">Yes</InfoRow>
+                        }
+                    }
+                    <InfoRow Label="Generated">@report.GeneratedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</InfoRow>
+                    @if (report.CompletedAt.HasValue && report.DurationMs.HasValue)
+                    {
+                        <InfoRow Label="Completed">@report.CompletedAt.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</InfoRow>
+                        <InfoRow Label="Duration">@(report.DurationMs.Value / 1000.0)s</InfoRow>
+                    }
+                    <InfoRow Label="Assessment Completeness">@(report.Completeness?.ToString() ?? "Unknown")</InfoRow>
+                    @if (report.AssessedEngines.Count > 0)
+                    {
+                        <InfoRow Label="Assessed Engines">@string.Join(", ", report.AssessedEngines)</InfoRow>
+                    }
+                    @if (report.SkippedEngines.Count > 0)
+                    {
+                        <InfoRow Label="Skipped Engines">@string.Join(", ", report.SkippedEngines)</InfoRow>
+                    }
+                    @if (report.FailedEngines.Count > 0)
+                    {
+                        <InfoRow Label="Failed Engines">@string.Join(", ", report.FailedEngines)</InfoRow>
+                    }
                     <InfoRow Label="Application">@(report.IsBlazorWasm ? "Blazor WASM detected" : "Blazor WASM not detected")</InfoRow>
                     @if (!string.IsNullOrWhiteSpace(report.ErrorMessage))
                     {
@@ -256,7 +313,7 @@
                     @if (report.Limitations.Count > 0)
                     {
                         <div class="fqr-technical-list">
-                            <h3>Scanner Limitations</h3>
+                            <h3>Assessment Limitations</h3>
                             <ul>
                                 @foreach (var limitation in report.Limitations)
                                 {
@@ -265,6 +322,18 @@
                             </ul>
                         </div>
                     }
+                    <div class="fqr-technical-list">
+                        <h3>Scope</h3>
+                        <p>This review performs <strong>passive HTTP analysis and static code inspection</strong> of frontend assets. It does not include:</p>
+                        <ul>
+                            <li>Active vulnerability scanning or penetration testing</li>
+                            <li>Browser runtime analysis (requires Playwright or similar)</li>
+                            <li>Automated accessibility audit (requires axe-core or Lighthouse)</li>
+                            <li>Performance metrics: Core Web Vitals, LCP, CLS, INP, FCP, TBT (requires real browser)</li>
+                            <li>Runtime exceptions or console errors</li>
+                            <li>End-to-end user flow validation</li>
+                        </ul>
+                    </div>
                     @if (report.Findings.Any(f => f.Evidence.Count > 0))
                     {
                         <div class="fqr-technical-list fqr-technical-evidence">
@@ -294,30 +363,30 @@
     private sealed record RecommendationView(string Priority, string Title, string Description, string ExpectedBenefit);
     private static readonly ReviewLanding.AnalysisCard[] FrontendAnalysisCards =
     [
-        new("PF", "Performance", "Measures loading, rendering, caching, and runtime responsiveness."),
-        new("SC", "Security", "Reviews browser-exposed attack surface and security posture."),
-        new("AX", "Accessibility", "Checks user-facing accessibility signals and WCAG readiness."),
-        new("ST", "Standards Compliance", "Validates platform, policy, and delivery best-practice signals."),
-        new("BW", "Blazor WASM", "Inspects startup behavior and WebAssembly-specific runtime concerns."),
-        new("QA", "QA Readiness", "Summarizes release risk, testability, and operational review signals."),
+        new("PF", "Performance", "Passive asset analysis: measures bundle size, HTTP timing, compression, and caching heuristics."),
+        new("SC", "Security", "Passive security scan: reviews headers, exposed configuration, and attack surface indicators."),
+        new("AX", "Accessibility", "Static accessibility signals only — full WCAG verification requires browser tools."),
+        new("ST", "Standards Compliance", "Security header compliance and standards validation."),
+        new("BW", "Blazor WASM", "Static Blazor artifact analysis and bundle optimization indicators."),
+        new("QA", "QA Readiness", "Deployment readiness signals derived from performance metrics."),
     ];
 
     private static readonly string[] FrontendChecks =
     [
-        "Core Web Vitals",
-        "WCAG 2.2",
-        "OWASP",
-        "Security Headers",
-        "CSP",
-        "CORS",
-        "Bundle Size",
-        "Lazy Loading",
-        "Compression",
-        "Cache Headers",
-        "Service Worker",
-        "Startup Waterfall",
-        "Testability",
-        "Observability",
+        "Security Headers (Assessed)",
+        "CSP (Assessed)",
+        "CORS (Assessed)",
+        "Bundle Size (Assessed)",
+        "Compression (Assessed)",
+        "Cache Headers (Assessed)",
+        "Startup Asset Analysis (Assessed)",
+        "Service Worker Detection",
+        "Core Web Vitals (Not Assessed — requires browser runtime)",
+        "WCAG 2.2 (Not Assessed — requires browser tools: axe-core, Lighthouse)",
+        "OWASP (Passive scan only — no active vulnerability testing)",
+        "Testability (Not Assessed — not implemented)",
+        "Observability (Not Assessed — not implemented)",
+        "Lazy Loading (Static detection only)",
     ];
 
     private FrontendAnalysisContext? _context;
@@ -354,36 +423,110 @@
         RuntimeReviews.MarkQualityRunning(_context);
         StateHasChanged();
 
+        var startTime = DateTime.UtcNow;
         WasmSecurityReviewReport?    secReport  = null;
         WasmPerformanceReviewReport? perfReport = null;
+        var skippedEngines = new List<string>();
+        PreflightStatus preflightStatus = PreflightStatus.Ready;
+        string? preflightMessage = null;
 
-        _progressMessage = "Running security scan...";
+        // ── Preflight target validation before scanning ────────────────
+        _progressMessage = "Validating target...";
         StateHasChanged();
         try
         {
-            var scanRequest = BuildScanRequest(_context);
-            var (report, error) = await Scanner.ScanAsync(scanRequest);
-            secReport = report;
-            _secError = error;
+            var preflightResult = await Preflight.CheckTargetAsync(_context.TargetUrl);
+            preflightStatus = preflightResult.Status;
+            preflightMessage = preflightResult.Message;
+
+            if (preflightStatus is PreflightStatus.Unreachable or PreflightStatus.InvalidTarget)
+            {
+                _running = false;
+                var errorMsg = $"Preflight check failed: {preflightMessage} Scan cannot proceed.";
+                RuntimeReviews.MarkQualityFailed(_context, errorMsg);
+                StateHasChanged();
+                return;
+            }
+
+            if (preflightStatus == PreflightStatus.AuthenticationRequired)
+            {
+                _running = false;
+                preflightMessage = preflightMessage ?? "Target requires authentication that is not configured.";
+                RuntimeReviews.MarkQualityFailed(_context, preflightMessage);
+                StateHasChanged();
+                return;
+            }
+
+            if (preflightStatus == PreflightStatus.ScannerUnavailable)
+            {
+                _running = false;
+                preflightMessage = preflightMessage ?? "Scanner service is unavailable. Try again later.";
+                RuntimeReviews.MarkQualityFailed(_context, preflightMessage);
+                StateHasChanged();
+                return;
+            }
         }
         catch (Exception ex)
         {
-            _secError = ex.Message;
+            _running = false;
+            RuntimeReviews.MarkQualityFailed(_context, $"Preflight validation error: {ex.Message}");
+            StateHasChanged();
+            return;
         }
 
-        _progressMessage = "Running performance scan...";
-        StateHasChanged();
-        try
+        // ── Security scan — respects EnableSecurityEngine toggle ──
+        if (_context.FeatureToggles.EnableSecurityEngine)
         {
-            perfReport = await PerfService.RunReviewAsync(_context.TargetUrl);
+            _progressMessage = "Running security scan...";
+            StateHasChanged();
+            try
+            {
+                var scanRequest = BuildScanRequest(_context);
+                var (report, error) = await Scanner.ScanAsync(scanRequest);
+                secReport = report;
+                _secError = error;
+            }
+            catch (Exception ex)
+            {
+                _secError = ex.Message;
+            }
         }
-        catch (Exception ex)
+        else
         {
-            _perfError = ex.Message;
+            skippedEngines.Add("Security");
+        }
+
+        // ── Performance scan — respects EnablePerformanceEngine toggle ──
+        if (_context.FeatureToggles.EnablePerformanceEngine)
+        {
+            _progressMessage = "Running performance scan...";
+            StateHasChanged();
+            try
+            {
+                perfReport = await PerfService.RunReviewAsync(_context.TargetUrl, _context.ActiveProfile.Performance);
+            }
+            catch (Exception ex)
+            {
+                _perfError = ex.Message;
+            }
+        }
+        else
+        {
+            skippedEngines.Add("Performance");
         }
 
         _progressMessage = "Building quality report...";
         StateHasChanged();
+
+        if (secReport is null && perfReport is null && skippedEngines.Count > 0)
+        {
+            _running = false;
+            var engineList = string.Join(" and ", skippedEngines);
+            var errorMsg = $"{engineList} engine(s) disabled by feature toggles.";
+            RuntimeReviews.MarkQualityFailed(_context, errorMsg);
+            StateHasChanged();
+            return;
+        }
 
         if (secReport is null && perfReport is null)
         {
@@ -395,7 +538,37 @@
         }
 
         var qualityReport = QualityService.BuildReport(_context.TargetUrl, secReport, perfReport);
-        _report  = qualityReport;
+
+        // Enhance report with timing and completion info.
+        var completedReport = new FrontendQualityReviewReport
+        {
+            TargetUrl = qualityReport.TargetUrl,
+            FinalUrl = qualityReport.FinalUrl,
+            GeneratedAt = qualityReport.GeneratedAt,
+            CompletedAt = DateTime.UtcNow,
+            DurationMs = (long)(DateTime.UtcNow - startTime).TotalMilliseconds,
+            OverallScore = qualityReport.OverallScore,
+            PerformanceScore = qualityReport.PerformanceScore,
+            SecurityScore = qualityReport.SecurityScore,
+            AccessibilityScore = qualityReport.AccessibilityScore,
+            StandardsScore = qualityReport.StandardsScore,
+            WasmScore = qualityReport.WasmScore,
+            ReadinessScore = qualityReport.ReadinessScore,
+            Findings = qualityReport.Findings,
+            CategoryScores = qualityReport.CategoryScores,
+            Recommendations = qualityReport.Recommendations,
+            Risks = qualityReport.Risks,
+            Limitations = qualityReport.Limitations,
+            IsBlazorWasm = qualityReport.IsBlazorWasm,
+            Completeness = qualityReport.Completeness,
+            AssessedEngines = qualityReport.AssessedEngines,
+            FailedEngines = qualityReport.FailedEngines,
+            SkippedEngines = qualityReport.SkippedEngines.Concat(skippedEngines).Distinct().ToList(),
+            PreflightStatus = preflightStatus,
+            PreflightMessage = preflightMessage,
+        };
+
+        _report  = completedReport;
         _running = false;
         RuntimeReviews.SaveQualityResult(_report, _context);
         ClearFilters();
@@ -483,8 +656,8 @@
         {
             return new(
                 ReviewLanding.ConfigurationStatus.Warning,
-                "Configuration warnings",
-                string.Join(" | ", _context.ValidationWarnings),
+                "Configuration valid with warnings",
+                $"Configuration is valid but has concerns: {string.Join(" | ", _context.ValidationWarnings)} Target reachability will be verified during scan.",
                 [],
                 "Review Settings",
                 "/admin/system-settings");
@@ -492,8 +665,8 @@
 
         return new(
             ReviewLanding.ConfigurationStatus.Success,
-            "Ready to run",
-            "Frontend target configuration is sufficient for a quality review.",
+            "Configuration valid — ready to scan",
+            "Frontend target is configured. Target reachability will be verified when you start the review.",
             []);
     }
 

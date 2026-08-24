@@ -15,6 +15,9 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
         var recommendations = new List<string>();
         var risks           = new List<string>();
         var limitations     = new List<string>();
+        var assessedEngines = new List<string>();
+        var failedEngines   = new List<string>();
+        var skippedEngines  = new List<string>();
 
         bool isBlazorWasm = securityReport?.IsBlazorWasm ?? performanceReport?.IsBlazorWasm ?? false;
 
@@ -23,10 +26,12 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
         {
             foreach (var f in securityReport.Findings)
                 findings.Add(MapSecurityFinding(f));
+            assessedEngines.Add("Security");
         }
         else
         {
             limitations.Add("Security scan was not available — security findings cannot be assessed.");
+            skippedEngines.Add("Security");
         }
 
         // ── Performance findings ──────────────────────────────────────────────
@@ -34,10 +39,12 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
         {
             foreach (var f in performanceReport.Findings)
                 findings.Add(MapPerformanceFinding(f));
+            assessedEngines.Add("Performance");
         }
         else
         {
             limitations.Add("Performance scan was not available — performance findings cannot be assessed.");
+            skippedEngines.Add("Performance");
         }
 
         // ── Standards findings derived from security headers ──────────────────
@@ -70,28 +77,64 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
         }
 
         // ── Compute per-category scores ───────────────────────────────────────
-        int perfScore   = ComputeScore(findings, FrontendQualityCategory.Performance,
-                              performanceReport?.ReadinessReport?.OverallScore);
-        int secScore    = securityReport is not null
+        // Only compute scores for assessed categories.
+        int? perfScore   = securityReport is not null || performanceReport is not null
+                              ? ComputeScore(findings, FrontendQualityCategory.Performance,
+                                  performanceReport?.ReadinessReport?.OverallScore)
+                              : null;
+        int? secScore    = securityReport is not null
                               ? securityReport.Health.Score
-                              : ComputeScore(findings, FrontendQualityCategory.Security, null);
-        int accessScore = ComputeScore(findings, FrontendQualityCategory.Accessibility, null);
-        int stdScore    = ComputeScore(findings, FrontendQualityCategory.Standards, null);
-        int wasmScore   = ComputeScore(findings, FrontendQualityCategory.BlazorWasm, null);
-        int rdyScore    = ComputeScore(findings, FrontendQualityCategory.Readiness,
-                              performanceReport?.ReadinessReport?.OverallScore);
+                              : null;
+        int? accessScore = null; // Accessibility is not fully assessed without browser tools.
+        int? stdScore    = securityReport?.Headers?.Count > 0
+                              ? ComputeScore(findings, FrontendQualityCategory.Standards, null)
+                              : null;
+        int? wasmScore   = isBlazorWasm
+                              ? ComputeScore(findings, FrontendQualityCategory.BlazorWasm, null)
+                              : null;
+        int? rdyScore    = performanceReport?.ReadinessReport?.HasData == true
+                              ? ComputeScore(findings, FrontendQualityCategory.Readiness,
+                                  performanceReport.ReadinessReport.OverallScore)
+                              : null;
 
-        int overallScore = (int)Math.Round(new[] { perfScore, secScore, accessScore, stdScore, wasmScore, rdyScore }.Average());
+        // Only average assessed (non-null) scores.
+        var assessedScores = new[] { perfScore, secScore, stdScore, wasmScore, rdyScore }
+            .Where(s => s.HasValue)
+            .Select(s => s.Value)
+            .ToList();
+
+        int? overallScore = assessedScores.Count > 0
+            ? (int?)Math.Round(assessedScores.Average())
+            : null;
 
         var categoryScores = new List<FrontendQualityCategoryScore>
         {
-            CategoryScoreEntry(findings, FrontendQualityCategory.Performance,   perfScore,   securityReport is not null || performanceReport is not null),
-            CategoryScoreEntry(findings, FrontendQualityCategory.Security,      secScore,    securityReport is not null),
-            CategoryScoreEntry(findings, FrontendQualityCategory.Accessibility, accessScore, true),
-            CategoryScoreEntry(findings, FrontendQualityCategory.Standards,     stdScore,    securityReport?.Headers?.Count > 0),
-            CategoryScoreEntry(findings, FrontendQualityCategory.BlazorWasm,    wasmScore,   isBlazorWasm),
-            CategoryScoreEntry(findings, FrontendQualityCategory.Readiness,     rdyScore,    performanceReport?.ReadinessReport?.HasData == true),
+            CategoryScoreEntry(findings, FrontendQualityCategory.Performance,   perfScore,
+                securityReport is not null || performanceReport is not null,
+                perfScore.HasValue ? null : "Performance engine not available"),
+            CategoryScoreEntry(findings, FrontendQualityCategory.Security,      secScore,
+                securityReport is not null,
+                secScore.HasValue ? null : "Security scan not available"),
+            CategoryScoreEntry(findings, FrontendQualityCategory.Accessibility, accessScore,
+                false,
+                "Automated accessibility audit requires browser tools (axe-core, Lighthouse) — not enabled"),
+            CategoryScoreEntry(findings, FrontendQualityCategory.Standards,     stdScore,
+                securityReport?.Headers?.Count > 0,
+                stdScore.HasValue ? null : "Security scan not available"),
+            CategoryScoreEntry(findings, FrontendQualityCategory.BlazorWasm,    wasmScore,
+                isBlazorWasm,
+                wasmScore.HasValue ? null : "Target is not a Blazor WASM application"),
+            CategoryScoreEntry(findings, FrontendQualityCategory.Readiness,     rdyScore,
+                performanceReport?.ReadinessReport?.HasData == true,
+                rdyScore.HasValue ? null : "Performance readiness data not available"),
         };
+
+        // Determine overall assessment completeness.
+        var completeness = securityReport is not null || performanceReport is not null
+            ? (securityReport is not null && performanceReport is not null
+                ? AssessmentCompleteness.Full
+                : AssessmentCompleteness.Partial)
+            : AssessmentCompleteness.Failed;
 
         // ── Recommendations ───────────────────────────────────────────────────
         if (securityReport?.Recommendations is { Count: > 0 } secRecs)
@@ -124,6 +167,10 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
             Risks              = risks,
             Limitations        = limitations,
             IsBlazorWasm       = isBlazorWasm,
+            Completeness       = completeness,
+            AssessedEngines    = assessedEngines,
+            FailedEngines      = failedEngines,
+            SkippedEngines     = skippedEngines,
         };
     }
 
@@ -434,8 +481,9 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
     private static FrontendQualityCategoryScore CategoryScoreEntry(
         IEnumerable<FrontendQualityFinding> findings,
         FrontendQualityCategory category,
-        int score,
-        bool assessed)
+        int? score,
+        bool assessed,
+        string? notAssessedReason)
     {
         var catFindings = findings.Where(f => f.Category == category).ToList();
         return new FrontendQualityCategoryScore
@@ -446,6 +494,7 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
             Critical     = catFindings.Count(f => f.Severity == FrontendQualitySeverity.Critical),
             High         = catFindings.Count(f => f.Severity == FrontendQualitySeverity.High),
             Assessed     = assessed,
+            NotAssessedReason = !assessed ? notAssessedReason : null,
         };
     }
 
