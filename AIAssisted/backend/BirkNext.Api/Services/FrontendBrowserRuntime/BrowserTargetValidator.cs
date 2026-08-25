@@ -6,6 +6,18 @@ namespace BirkNext.Api.Services.FrontendBrowserRuntime;
 /// </summary>
 public sealed class BrowserTargetValidator
 {
+    private readonly bool _allowLoopback;
+
+    public BrowserTargetValidator()
+        : this(allowLoopback: false)
+    {
+    }
+
+    internal BrowserTargetValidator(bool allowLoopback)
+    {
+        _allowLoopback = allowLoopback;
+    }
+
     public sealed record ValidationResult(
         bool IsValid,
         string? BlockReason = null,
@@ -73,7 +85,7 @@ public sealed class BrowserTargetValidator
             return new ValidationResult(false, "Metadata endpoint blocked");
 
         // Block loopback and link-local
-        if (IsLoopback(host) || IsLinkLocal(host))
+        if ((IsLoopback(host) && !_allowLoopback) || IsLinkLocal(host))
             return new ValidationResult(false, "Loopback/link-local addresses blocked by default");
 
         // Classify the target
@@ -88,7 +100,9 @@ public sealed class BrowserTargetValidator
 
     private static bool IsLoopback(string host)
     {
-        return host == "localhost" || host == "127.0.0.1" || host == "::1" || host.StartsWith("127.");
+        var normalizedHost = host.Trim('[', ']');
+        return normalizedHost == "localhost" || normalizedHost == "127.0.0.1" ||
+               normalizedHost == "::1" || normalizedHost.StartsWith("127.");
     }
 
     private static bool IsLinkLocal(string host)

@@ -2,14 +2,11 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
-@inject WasmSecurityApiService Scanner
-@inject IBlazorWasmPerformanceReviewService PerfService
-@inject IFrontendQualityReviewService QualityService
+@inject IFrontendQualityReviewOrchestrator Orchestrator
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject RuntimeReviewSessionService RuntimeReviews
 @inject IWorkspaceSessionService Workspace
 @inject IReportExportService ExportService
-@inject ITargetPreflightService Preflight
 @inject IJSRuntime JS
 
 <PageTitle>Frontend Quality Review</PageTitle>
@@ -83,6 +80,23 @@
             <div class="wsr-banner wsr-banner-error wsr-banner-standalone" role="status">
                 <span aria-hidden="true">⚠</span> Assessment failed: All engines encountered errors. Review is not available.
             </div>
+        }
+
+        @if (report.AccessibilityReport is { } accessibility)
+        {
+            <section class="fqr-section" aria-label="Automated accessibility checks">
+                <SectionHeader Title="Automated accessibility checks" />
+                @if (accessibility.ExecutionStatus == AccessibilityExecutionStatusDto.Assessed)
+                {
+                    <p>Automated assessment completed with axe-core @accessibility.AxeVersion on @accessibility.BrowserName @accessibility.BrowserVersion.</p>
+                    <p><strong>Automated violations:</strong> @accessibility.ViolationCount &nbsp; <strong>Needs manual review:</strong> @accessibility.IncompleteCount</p>
+                }
+                else
+                {
+                    <p><strong>Accessibility engine:</strong> @accessibility.ExecutionStatus — @accessibility.EngineError</p>
+                }
+                <p>Automated tooling cannot verify all WCAG requirements. Manual accessibility testing is still required. Zero automated violations does not establish WCAG conformance.</p>
+            </section>
         }
 
         <section class="fqr-summary-grid" aria-label="Frontend quality score summary">
@@ -365,7 +379,7 @@
     [
         new("PF", "Performance", "Passive asset analysis: measures bundle size, HTTP timing, compression, and caching heuristics."),
         new("SC", "Security", "Passive security scan: reviews headers, exposed configuration, and attack surface indicators."),
-        new("AX", "Accessibility", "Static accessibility signals only — full WCAG verification requires browser tools."),
+        new("AX", "Accessibility", "Optional axe-core checks inspect the rendered DOM. Manual accessibility testing remains required."),
         new("ST", "Standards Compliance", "Security header compliance and standards validation."),
         new("BW", "Blazor WASM", "Static Blazor artifact analysis and bundle optimization indicators."),
         new("QA", "QA Readiness", "Deployment readiness signals derived from performance metrics."),
@@ -382,7 +396,7 @@
         "Startup Asset Analysis (Assessed)",
         "Service Worker Detection",
         "Core Web Vitals (Not Assessed — requires browser runtime)",
-        "WCAG 2.2 (Not Assessed — requires browser tools: axe-core, Lighthouse)",
+        "WCAG-related automated checks (axe-core when enabled; manual testing still required)",
         "OWASP (Passive scan only — no active vulnerability testing)",
         "Testability (Not Assessed — not implemented)",
         "Observability (Not Assessed — not implemented)",
@@ -424,120 +438,29 @@
         StateHasChanged();
 
         var startTime = DateTime.UtcNow;
-        WasmSecurityReviewReport?    secReport  = null;
-        WasmPerformanceReviewReport? perfReport = null;
-        var skippedEngines = new List<string>();
-        PreflightStatus preflightStatus = PreflightStatus.Ready;
-        string? preflightMessage = null;
+        _progressMessage = "Running enabled review engines...";
+        StateHasChanged();
+        var orchestration = await Orchestrator.RunAsync(_context.TargetUrl, _context);
+        _secError = orchestration.SecurityError;
+        _perfError = orchestration.PerformanceError;
 
         // ── Preflight target validation before scanning ────────────────
-        _progressMessage = "Validating target...";
-        StateHasChanged();
-        try
-        {
-            var preflightResult = await Preflight.CheckTargetAsync(_context.TargetUrl);
-            preflightStatus = preflightResult.Status;
-            preflightMessage = preflightResult.Message;
-
-            if (preflightStatus is PreflightStatus.Unreachable or PreflightStatus.InvalidTarget)
-            {
-                _running = false;
-                var errorMsg = $"Preflight check failed: {preflightMessage} Scan cannot proceed.";
-                RuntimeReviews.MarkQualityFailed(_context, errorMsg);
-                StateHasChanged();
-                return;
-            }
-
-            if (preflightStatus == PreflightStatus.AuthenticationRequired)
-            {
-                _running = false;
-                preflightMessage = preflightMessage ?? "Target requires authentication that is not configured.";
-                RuntimeReviews.MarkQualityFailed(_context, preflightMessage);
-                StateHasChanged();
-                return;
-            }
-
-            if (preflightStatus == PreflightStatus.ScannerUnavailable)
-            {
-                _running = false;
-                preflightMessage = preflightMessage ?? "Scanner service is unavailable. Try again later.";
-                RuntimeReviews.MarkQualityFailed(_context, preflightMessage);
-                StateHasChanged();
-                return;
-            }
-        }
-        catch (Exception ex)
+        if (orchestration.PreflightBlocked || orchestration.QualityReport is null)
         {
             _running = false;
-            RuntimeReviews.MarkQualityFailed(_context, $"Preflight validation error: {ex.Message}");
+            RuntimeReviews.MarkQualityFailed(
+                _context,
+                orchestration.PreflightBlockReason ?? "Enabled review engines did not produce a quality report.");
             StateHasChanged();
             return;
         }
 
         // ── Security scan — respects EnableSecurityEngine toggle ──
-        if (_context.FeatureToggles.EnableSecurityEngine)
-        {
-            _progressMessage = "Running security scan...";
-            StateHasChanged();
-            try
-            {
-                var scanRequest = BuildScanRequest(_context);
-                var (report, error) = await Scanner.ScanAsync(scanRequest);
-                secReport = report;
-                _secError = error;
-            }
-            catch (Exception ex)
-            {
-                _secError = ex.Message;
-            }
-        }
-        else
-        {
-            skippedEngines.Add("Security");
-        }
-
         // ── Performance scan — respects EnablePerformanceEngine toggle ──
-        if (_context.FeatureToggles.EnablePerformanceEngine)
-        {
-            _progressMessage = "Running performance scan...";
-            StateHasChanged();
-            try
-            {
-                perfReport = await PerfService.RunReviewAsync(_context.TargetUrl, _context.ActiveProfile.Performance);
-            }
-            catch (Exception ex)
-            {
-                _perfError = ex.Message;
-            }
-        }
-        else
-        {
-            skippedEngines.Add("Performance");
-        }
-
         _progressMessage = "Building quality report...";
         StateHasChanged();
 
-        if (secReport is null && perfReport is null && skippedEngines.Count > 0)
-        {
-            _running = false;
-            var engineList = string.Join(" and ", skippedEngines);
-            var errorMsg = $"{engineList} engine(s) disabled by feature toggles.";
-            RuntimeReviews.MarkQualityFailed(_context, errorMsg);
-            StateHasChanged();
-            return;
-        }
-
-        if (secReport is null && perfReport is null)
-        {
-            _running = false;
-            var errorMsg = "Both security and performance scans failed - unable to produce a quality report.";
-            RuntimeReviews.MarkQualityFailed(_context, errorMsg);
-            StateHasChanged();
-            return;
-        }
-
-        var qualityReport = QualityService.BuildReport(_context.TargetUrl, secReport, perfReport);
+        var qualityReport = orchestration.QualityReport;
 
         // Enhance report with timing and completion info.
         var completedReport = new FrontendQualityReviewReport
@@ -563,9 +486,10 @@
             Completeness = qualityReport.Completeness,
             AssessedEngines = qualityReport.AssessedEngines,
             FailedEngines = qualityReport.FailedEngines,
-            SkippedEngines = qualityReport.SkippedEngines.Concat(skippedEngines).Distinct().ToList(),
-            PreflightStatus = preflightStatus,
-            PreflightMessage = preflightMessage,
+            SkippedEngines = qualityReport.SkippedEngines,
+            PreflightStatus = qualityReport.PreflightStatus,
+            PreflightMessage = qualityReport.PreflightMessage,
+            AccessibilityReport = qualityReport.AccessibilityReport,
         };
 
         _report  = completedReport;
@@ -621,6 +545,7 @@
         [
             new("Environment", _context.ActiveProfile.EnvironmentType.ToString()),
             new("Authentication", _context.AuthenticationType.ToString()),
+            new("Accessibility", _context.FeatureToggles.EnableAccessibilityEngine ? "Enabled (automated axe-core checks)" : "Disabled"),
         ];
     }
 
@@ -668,33 +593,6 @@
             "Configuration valid — ready to scan",
             "Frontend target is configured. Target reachability will be verified when you start the review.",
             []);
-    }
-
-    private static WasmScanRequest BuildScanRequest(FrontendAnalysisContext ctx)
-    {
-        var allowedHosts = ctx.AllowedBackendDomains
-            .Concat(ctx.AllowedRestHosts)
-            .Distinct()
-            .ToList();
-
-        var clientIds = new List<string>();
-        if (!string.IsNullOrWhiteSpace(ctx.SecuritySettings.ExpectedClientId))
-            clientIds.Add(ctx.SecuritySettings.ExpectedClientId);
-
-        var knownSafe = ctx.AllowedGraphQlEndpoints
-            .Concat(ctx.AllowedCdnHosts)
-            .ToList();
-
-        return new WasmScanRequest
-        {
-            TargetUrl                  = ctx.TargetUrl,
-            EnvironmentName            = ctx.ActiveProfile.EnvironmentType.ToString(),
-            ExpectedApiGatewayBasePath = ctx.ActiveProfile.ExpectedApiGateway,
-            AllowedBackendHostnames    = allowedHosts,
-            AllowedAuthority           = ctx.SecuritySettings.ExpectedAuthority,
-            AllowedClientIds           = clientIds,
-            KnownSafeDomains           = knownSafe
-        };
     }
 
     private void SetCategoryFilter(FrontendQualityCategory cat)

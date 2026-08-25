@@ -285,6 +285,18 @@ steps:
   condition: and(succeeded(), eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
   continueOnError: false
 
+- pwsh: ./scripts/run-frontend-browser-runtime-tests.ps1
+  displayName: 'Run frontend browser runtime tests'
+  workingDirectory: AIAssisted
+  condition: and(succeeded(), eq(variables['BUILD_BACKEND'], 'true'), eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  continueOnError: false
+
+- pwsh: ./scripts/run-frontend-accessibility-tests.ps1
+  displayName: 'Run frontend axe-core accessibility tests'
+  workingDirectory: AIAssisted
+  condition: and(succeeded(), eq(variables['BUILD_BACKEND'], 'true'), eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  continueOnError: false
+
 - bash: |
     set -euo pipefail
     PROJECT="BirkNext.Web.PlaywrightTests/BirkNext.Web.PlaywrightTests.csproj"

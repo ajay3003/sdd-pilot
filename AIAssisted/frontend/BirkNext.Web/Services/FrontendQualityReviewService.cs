@@ -62,9 +62,7 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
             findings.AddRange(DeriveWasmFindings(sm, performanceReport));
 
         // ── Accessibility findings (lightweight, static analysis) ─────────────
-        findings.AddRange(DeriveAccessibilityFindings(securityReport, isBlazorWasm));
-        if (isBlazorWasm)
-            limitations.Add("Accessibility deep analysis (WCAG 2.2 full coverage) requires a running browser — dynamic rendering cannot be assessed statically.");
+        limitations.Add("Accessibility is assessed only when the optional axe-core browser engine executes. Automated tooling cannot verify all WCAG requirements. Manual accessibility testing is still required.");
 
         // ── Readiness findings derived from performance readiness report ───────
         if (performanceReport?.ReadinessReport is { HasData: true } rdyReport)

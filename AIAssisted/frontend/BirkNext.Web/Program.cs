@@ -75,6 +75,8 @@ builder.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>
 builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
 builder.Services.AddSingleton<IReportExportService, ReportExportService>();
 builder.Services.AddSingleton<IFrontendQualityReviewService, FrontendQualityReviewService>();
+builder.Services.AddScoped<ISecurityScanner, SecurityScannerAdapter>();
+builder.Services.AddScoped<IFrontendQualityReviewOrchestrator, FrontendQualityReviewOrchestrator>();
 builder.Services.AddHttpClient<IQualityReviewPageModelService, QualityReviewPageModelService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddHttpClient<IAnalysisPageModelService, AnalysisPageModelService>(client =>
@@ -140,6 +142,8 @@ builder.Services.AddHttpClient<IIntegrationQualityReviewService, IntegrationQual
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
 builder.Services.AddHttpClient<IFrontendBrowserRuntimeReviewApiService, FrontendBrowserRuntimeReviewApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
+builder.Services.AddHttpClient<IFrontendAccessibilityReviewApiService, FrontendAccessibilityReviewApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
 await builder.Build().RunAsync();

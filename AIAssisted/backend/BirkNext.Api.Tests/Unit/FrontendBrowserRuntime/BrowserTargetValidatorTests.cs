@@ -12,7 +12,6 @@ public sealed class BrowserTargetValidatorTests
     [InlineData("https://example.com")]
     [InlineData("http://example.com")]
     [InlineData("https://api.github.com")]
-    [InlineData("http://localhost:5000")]
     public void ValidateTarget_ValidPublicUrls_ReturnsValid(string url)
     {
         var result = _validator.ValidateTarget(url, "Public");
@@ -45,12 +44,23 @@ public sealed class BrowserTargetValidatorTests
     [Theory]
     [InlineData("http://localhost")]
     [InlineData("http://127.0.0.1")]
-    [InlineData("http://::1")]
+    [InlineData("http://[::1]")]
     public void ValidateTarget_LoopbackAddresses_ReturnsBlocked(string url)
     {
         var result = _validator.ValidateTarget(url);
         Assert.False(result.IsValid);
         Assert.Contains("Loopback", result.BlockReason ?? "");
+    }
+
+    [Fact]
+    public void ValidateTarget_LoopbackAllowedExplicitly_ReturnsValidLoopbackClassification()
+    {
+        var validator = new BrowserTargetValidator(allowLoopback: true);
+
+        var result = validator.ValidateTarget("http://localhost:5000", "Public");
+
+        Assert.True(result.IsValid);
+        Assert.Equal("Loopback", result.ClassifiedType);
     }
 
     [Theory]

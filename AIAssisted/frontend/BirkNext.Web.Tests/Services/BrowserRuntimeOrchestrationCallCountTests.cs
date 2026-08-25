@@ -148,8 +148,48 @@ public sealed class BrowserRuntimeOrchestrationCallCountTests
         Assert.Equal(1, mockRuntime.CallCount);
     }
 
+    [Fact]
+    public async Task RuntimeEngineError_PreservesSuccessfulEngines_AndProducesPartialAssessment()
+    {
+        var security = new MockSecurityScanner();
+        var performance = new MockPerformanceScanner();
+        var runtime = new MockBrowserRuntimeService(BrowserRuntimeEngineStatusDto.EngineError);
+        var orchestrator = new FrontendQualityReviewOrchestrator(
+            security,
+            performance,
+            new MockPreflightService(PreflightStatus.Ready),
+            new FrontendQualityReviewService(),
+            runtime);
+        var context = new FrontendAnalysisContext
+        {
+            TargetUrl = "https://example.com",
+            FeatureToggles = new FrontendAnalysisFeatureToggles
+            {
+                EnableSecurityEngine = true,
+                EnablePerformanceEngine = true,
+                EnableBrowserRuntimeEngine = true
+            }
+        };
+
+        var result = await orchestrator.RunAsync(context.TargetUrl, context);
+
+        Assert.Equal(1, security.CallCount);
+        Assert.Equal(1, performance.CallCount);
+        Assert.Equal(1, runtime.CallCount);
+        Assert.NotNull(result.SecurityReport);
+        Assert.NotNull(result.PerformanceReport);
+        Assert.Equal(BrowserRuntimeEngineStatusDto.EngineError, result.BrowserRuntimeReport?.Status);
+        Assert.Equal(AssessmentCompleteness.Partial, result.QualityReport?.Completeness);
+        Assert.Contains("Browser Runtime", result.QualityReport!.FailedEngines);
+        Assert.NotNull(result.QualityReport.SecurityScore);
+        Assert.NotNull(result.QualityReport.PerformanceScore);
+    }
+
     private sealed class MockBrowserRuntimeService : IFrontendBrowserRuntimeReviewApiService
     {
+        private readonly BrowserRuntimeEngineStatusDto _status;
+        public MockBrowserRuntimeService(BrowserRuntimeEngineStatusDto status = BrowserRuntimeEngineStatusDto.Assessed) =>
+            _status = status;
         public int CallCount { get; private set; }
 
         public Task<BrowserRuntimeResultDto> ReviewAsync(
@@ -160,7 +200,8 @@ public sealed class BrowserRuntimeOrchestrationCallCountTests
         {
             CallCount++;
             return Task.FromResult(new BrowserRuntimeResultDto(
-                Status: BrowserRuntimeEngineStatusDto.Assessed,
+                Status: _status,
+                EngineError: _status == BrowserRuntimeEngineStatusDto.EngineError ? "deterministic runtime failure" : null,
                 RequestedUrl: targetUrl));
         }
 
@@ -170,17 +211,31 @@ public sealed class BrowserRuntimeOrchestrationCallCountTests
 
     private sealed class MockSecurityScanner : ISecurityScanner
     {
+        public int CallCount { get; private set; }
         public Task<(WasmSecurityReviewReport?, string?)> ScanAsync(WasmScanRequest request) =>
-            Task.FromResult<(WasmSecurityReviewReport?, string?)>((new WasmSecurityReviewReport(), null));
+            Task.FromResult<(WasmSecurityReviewReport?, string?)>((CreateReport(), null));
+
+        private WasmSecurityReviewReport CreateReport()
+        {
+            CallCount++;
+            return new WasmSecurityReviewReport { Health = new WasmSecurityHealth { Score = 90 } };
+        }
     }
 
     private sealed class MockPerformanceScanner : IBlazorWasmPerformanceReviewService
     {
+        public int CallCount { get; private set; }
         public Task<WasmPerformanceReviewReport> RunReviewAsync(
             string targetUrl,
-            FrontendPerformanceThresholds thresholds,
+            FrontendPerformanceThresholds? thresholds = null,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(new WasmPerformanceReviewReport());
+            Task.FromResult(CreateReport());
+
+        private WasmPerformanceReviewReport CreateReport()
+        {
+            CallCount++;
+            return new WasmPerformanceReviewReport();
+        }
 
         public Task<WasmAssetDiscoveryResult> DiscoverAssetsAsync(
             string targetUrl,

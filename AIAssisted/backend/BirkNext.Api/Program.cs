@@ -13,6 +13,7 @@ using BirkNext.Api.Services.Review;
 using BirkNext.Api.Services.WasmPerformance;
 using BirkNext.Api.Services.WasmSecurity;
 using BirkNext.Api.Services.FrontendBrowserRuntime;
+using BirkNext.Api.Services.FrontendAccessibility;
 using HotChocolate.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -182,6 +183,9 @@ builder.Services.AddScoped<BrowserResourceClassifier>();
 builder.Services.AddScoped<BrowserEvidenceSanitizer>();
 builder.Services.AddScoped<BrowserRuntimeFindingClassifier>();
 builder.Services.AddScoped<IFrontendBrowserRuntimeReviewService, FrontendBrowserRuntimeReviewService>();
+builder.Services.AddScoped<AccessibilityEvidenceSanitizer>();
+builder.Services.AddScoped<AccessibilityNormalizer>();
+builder.Services.AddScoped<IFrontendAccessibilityReviewService, FrontendAccessibilityReviewService>();
 
 // API Quality Review
 builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService>(client =>

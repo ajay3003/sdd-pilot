@@ -93,7 +93,46 @@ public sealed class FrontendQualityReviewReport
     [JsonPropertyName("assessedEngines")]    public List<string>                     AssessedEngines    { get; init; } = [];
     [JsonPropertyName("failedEngines")]      public List<string>                     FailedEngines      { get; init; } = [];
     [JsonPropertyName("skippedEngines")]     public List<string>                     SkippedEngines     { get; init; } = [];
+    [JsonPropertyName("accessibilityReport")] public AccessibilityResultDto?          AccessibilityReport { get; init; }
 }
+
+public enum AccessibilityExecutionStatusDto { NotAssessed, Assessed, EngineError, Skipped, AuthenticationRequired }
+public enum AccessibilityFindingKindDto { Violation, NeedsManualReview }
+
+public sealed record AccessibilityFindingDto(
+    [property: JsonPropertyName("ruleId")] string RuleId,
+    [property: JsonPropertyName("kind")] AccessibilityFindingKindDto Kind,
+    [property: JsonPropertyName("severity")] FrontendQualitySeverity Severity,
+    [property: JsonPropertyName("impact")] string? Impact,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("description")] string Description,
+    [property: JsonPropertyName("wcagTags")] List<string> WcagTags,
+    [property: JsonPropertyName("affectedNodeCount")] int AffectedNodeCount,
+    [property: JsonPropertyName("selectors")] List<string> Selectors,
+    [property: JsonPropertyName("htmlSnippets")] List<string> HtmlSnippets,
+    [property: JsonPropertyName("failureSummaries")] List<string> FailureSummaries,
+    [property: JsonPropertyName("helpUrl")] string? HelpUrl,
+    [property: JsonPropertyName("recommendation")] string Recommendation);
+
+public sealed record AccessibilityResultDto(
+    [property: JsonPropertyName("executionStatus")] AccessibilityExecutionStatusDto ExecutionStatus = AccessibilityExecutionStatusDto.NotAssessed,
+    [property: JsonPropertyName("engineName")] string EngineName = "Accessibility (axe-core)",
+    [property: JsonPropertyName("axeVersion")] string? AxeVersion = null,
+    [property: JsonPropertyName("browserName")] string? BrowserName = null,
+    [property: JsonPropertyName("browserVersion")] string? BrowserVersion = null,
+    [property: JsonPropertyName("requestedUrl")] string? RequestedUrl = null,
+    [property: JsonPropertyName("finalUrl")] string? FinalUrl = null,
+    [property: JsonPropertyName("startedAt")] DateTime StartedAt = default,
+    [property: JsonPropertyName("completedAt")] DateTime? CompletedAt = null,
+    [property: JsonPropertyName("durationMs")] long? DurationMs = null,
+    [property: JsonPropertyName("ruleTags")] List<string>? RuleTags = null,
+    [property: JsonPropertyName("violationCount")] int ViolationCount = 0,
+    [property: JsonPropertyName("incompleteCount")] int IncompleteCount = 0,
+    [property: JsonPropertyName("passCount")] int PassCount = 0,
+    [property: JsonPropertyName("inapplicableCount")] int InapplicableCount = 0,
+    [property: JsonPropertyName("findings")] List<AccessibilityFindingDto>? Findings = null,
+    [property: JsonPropertyName("limitations")] List<string>? Limitations = null,
+    [property: JsonPropertyName("engineError")] string? EngineError = null);
 
 // ── Browser Runtime DTOs ────────────────────────────────────────────
 public enum BrowserRuntimeEngineStatusDto

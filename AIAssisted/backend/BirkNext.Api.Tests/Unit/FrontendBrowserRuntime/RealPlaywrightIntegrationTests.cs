@@ -1,7 +1,9 @@
 using BirkNext.Api.Services.FrontendBrowserRuntime;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using System.Net;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace BirkNext.Api.Tests.Unit.FrontendBrowserRuntime;
 
@@ -15,6 +17,12 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     private SimpleHttpTestServer? _server;
     private FrontendBrowserRuntimeReviewService? _service;
     private readonly ILogger<FrontendBrowserRuntimeReviewService> _logger = new TestLogger();
+    private readonly ITestOutputHelper _output;
+
+    public RealPlaywrightIntegrationTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
 
     public async Task InitializeAsync()
     {
@@ -35,6 +43,7 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     {
         var url = _server!.GetUrl("/healthy.html");
         var result = await _service!.ReviewAsync(url);
+        WriteResult("healthy", result);
 
         Assert.NotNull(result);
         Assert.Equal(BrowserRuntimeEngineStatus.Assessed, result.Status);
@@ -42,6 +51,9 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
         Assert.Equal(0, result.ConsoleErrorCount);
         Assert.Equal(0, result.PageErrorCount);
         Assert.NotNull(result.FinalUrl);
+        Assert.Equal("Chromium", result.BrowserName);
+        Assert.False(string.IsNullOrWhiteSpace(result.BrowserVersion));
+        Assert.NotEqual("1.48.0.0", result.BrowserVersion);
     }
 
     [Fact]
@@ -49,10 +61,14 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     {
         var url = _server!.GetUrl("/console-error.html");
         var result = await _service!.ReviewAsync(url);
+        WriteResult("console-error", result);
 
         Assert.NotNull(result);
         Assert.Equal(BrowserRuntimeEngineStatus.Assessed, result.Status);
         Assert.True(result.ConsoleErrorCount > 0, "Expected to capture console error");
+        Assert.Contains(result.Findings ?? [], finding =>
+            finding.Category == "ConsoleError" &&
+            finding.Description.Contains("runtime-test-error", StringComparison.Ordinal));
         Assert.Equal(BrowserStartupState.StartedWithErrors, result.StartupState);
     }
 
@@ -61,6 +77,7 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     {
         var url = _server!.GetUrl("/uncaught-error.html");
         var result = await _service!.ReviewAsync(url);
+        WriteResult("page-error", result);
 
         Assert.NotNull(result);
         Assert.Equal(BrowserRuntimeEngineStatus.Assessed, result.Status);
@@ -73,11 +90,13 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     {
         var url = _server!.GetUrl("/missing-resource.html");
         var result = await _service!.ReviewAsync(url);
+        WriteResult("failed-resource", result);
 
         Assert.NotNull(result);
         Assert.Equal(BrowserRuntimeEngineStatus.Assessed, result.Status);
-        // Missing resources may or may not result in page errors depending on how they're handled
-        // The important part is the service completes without crashing
+        Assert.Contains(result.Findings ?? [], finding =>
+            finding.Category == "ResourceFailure" &&
+            finding.Evidence?.Any(evidence => evidence.Contains("missing.js", StringComparison.Ordinal)) == true);
     }
 
     [Fact]
@@ -87,21 +106,30 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
 
         Assert.Equal(BrowserRuntimeEngineStatus.Skipped, result.Status);
         Assert.NotNull(result.EngineError);
-        Assert.Contains("blocked", result.EngineError, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("not allowed", result.EngineError, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public async Task BrowserRuntime_Readiness_ReturnsAvailable()
     {
         var readiness = await _service!.CheckReadinessAsync();
+        _output.WriteLine("readiness: {0}", JsonSerializer.Serialize(readiness));
 
         // May be available or not depending on environment, but should not throw
         Assert.NotNull(readiness);
+        Assert.True(readiness.IsAvailable, readiness.ErrorMessage);
+        Assert.Equal("Chromium", readiness.BrowserName);
+        Assert.False(string.IsNullOrWhiteSpace(readiness.BrowserVersion));
+        Assert.NotEqual("1.48.0.0", readiness.BrowserVersion);
+        Assert.Null(readiness.ErrorMessage);
     }
+
+    private void WriteResult(string scenario, BrowserRuntimeResult result) =>
+        _output.WriteLine("{0}: {1}", scenario, JsonSerializer.Serialize(result));
 
     private FrontendBrowserRuntimeReviewService CreateService()
     {
-        var targetValidator = new BrowserTargetValidator();
+        var targetValidator = new BrowserTargetValidator(allowLoopback: true);
         var resourceClassifier = new BrowserResourceClassifier();
         var evidenceSanitizer = new BrowserEvidenceSanitizer();
         var findingClassifier = new BrowserRuntimeFindingClassifier(resourceClassifier);
@@ -162,11 +190,12 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
         public async Task StopAsync()
         {
             _cts?.Cancel();
+            _listener?.Stop();
             if (_serverTask != null)
                 await _serverTask;
 
-            _listener?.Stop();
             (_listener as IDisposable)?.Dispose();
+            _cts?.Dispose();
         }
 
         private async Task RunServerAsync(CancellationToken ct)
@@ -191,7 +220,7 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
             var html = path switch
             {
                 "/healthy.html" => "<html><body>Healthy</body></html>",
-                "/console-error.html" => "<html><body><script>console.error('test-error')</script></body></html>",
+                "/console-error.html" => "<html><body><script>console.error('runtime-test-error')</script></body></html>",
                 "/uncaught-error.html" => "<html><body><script>throw new Error('uncaught')</script></body></html>",
                 "/missing-resource.html" => "<html><body><script src='/missing.js'></script></body></html>",
                 _ => "<html><body>Not Found</body></html>"
@@ -199,7 +228,7 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
 
             var statusCode = path switch
             {
-                _ when path.StartsWith("/missing") => 200,
+                "/missing.js" => 404,
                 _ => 200
             };
 

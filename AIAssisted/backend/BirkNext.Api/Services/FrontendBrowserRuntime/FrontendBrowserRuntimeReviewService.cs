@@ -199,7 +199,7 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
                     Status: BrowserRuntimeEngineStatus.Assessed,
                     EngineName: "Browser Runtime",
                     BrowserName: "Chromium",
-                    BrowserVersion: GetChromiumVersion(),
+                    BrowserVersion: browser.Version,
                     RequestedUrl: targetUrl,
                     FinalUrl: page.Url,
                     StartedAt: startedAt,
@@ -275,8 +275,12 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
                         Args = new[] { "--no-sandbox", "--disable-dev-shm-usage" }
                     });
 
+                var browserVersion = browser.Version;
                 await browser.CloseAsync();
-                return new BrowserRuntimeReadinessResult(IsAvailable: true);
+                return new BrowserRuntimeReadinessResult(
+                    IsAvailable: true,
+                    BrowserName: "Chromium",
+                    BrowserVersion: browserVersion);
             }
             finally
             {
@@ -288,7 +292,8 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
             _logger.LogWarning("Chromium not available: {Message}", ex.Message);
             return new BrowserRuntimeReadinessResult(
                 IsAvailable: false,
-                ErrorMessage: "Chromium executable not available");
+                ErrorMessage: "Chromium executable not available",
+                BrowserName: "Chromium");
         }
         catch (Exception ex)
         {
@@ -364,19 +369,6 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
     {
         var critical = new[] { "_framework", "blazor", ".wasm", "app.js", "app.css" };
         return critical.Any(c => url.Contains(c, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static string GetChromiumVersion()
-    {
-        try
-        {
-            var version = typeof(BrowserType).Assembly.GetName().Version;
-            return version?.ToString() ?? "Unknown";
-        }
-        catch
-        {
-            return "Unknown";
-        }
     }
 
     // Helper class for collecting observations during page load

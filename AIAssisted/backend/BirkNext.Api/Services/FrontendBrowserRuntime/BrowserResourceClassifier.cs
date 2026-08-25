@@ -13,6 +13,7 @@ public sealed class BrowserResourceClassifier
         "blazor.boot.json",
         "_framework",
         "dotnet.wasm",
+        ".wasm",
         "dotnet.js",
 
         // Critical startup resources

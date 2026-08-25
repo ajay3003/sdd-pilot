@@ -20,4 +20,6 @@ public interface IFrontendBrowserRuntimeReviewService
 
 public sealed record BrowserRuntimeReadinessResult(
     bool IsAvailable,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    string? BrowserName = null,
+    string? BrowserVersion = null);

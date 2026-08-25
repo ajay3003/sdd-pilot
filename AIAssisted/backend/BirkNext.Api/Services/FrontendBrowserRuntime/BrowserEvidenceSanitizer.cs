@@ -20,8 +20,9 @@ public sealed class BrowserEvidenceSanitizer
     private static readonly string[] SensitivePatterns = new[]
     {
         @"Bearer\s+[A-Za-z0-9\-._~+/]+=*", // Bearer tokens
+        @"\bsk_(?:live|test)_[A-Za-z0-9_-]+", // Common secret-key formats
         @"[A-Za-z0-9]{32,}", // Generic 32+ char tokens
-        @"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", // JWT
+        @"\beyJ[A-Za-z0-9_-]+", // JWT/JWT fragments
     };
 
     public string SanitizeUrl(string url)
@@ -34,8 +35,12 @@ public sealed class BrowserEvidenceSanitizer
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
                 return url;
 
-            var sanitizedQuery = SanitizeQueryString(uri.Query);
-            var sanitizedUrl = url.Replace(uri.Query, sanitizedQuery);
+            var sanitizedUrl = url;
+            if (!string.IsNullOrEmpty(uri.Query))
+            {
+                var sanitizedQuery = SanitizeQueryString(uri.Query);
+                sanitizedUrl = url.Replace(uri.Query, sanitizedQuery);
+            }
 
             // Remove userinfo (credentials in URL)
             if (!string.IsNullOrEmpty(uri.UserInfo))

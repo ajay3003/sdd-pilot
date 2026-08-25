@@ -306,6 +306,24 @@ public sealed class ReportExportService : IReportExportService
         sb.Append(Kpi(report.ReadinessScore?.ToString() ?? "Not Assessed",     "Readiness"));
         sb.Append("</div>\n");
 
+        if (report.AccessibilityReport is { } accessibility)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Automated Accessibility Checks</h2>\n");
+            sb.Append($"<p><strong>Status:</strong> {Esc(accessibility.ExecutionStatus.ToString())}</p>\n");
+            sb.Append($"<p><strong>axe-core:</strong> {Esc(accessibility.AxeVersion ?? "Unavailable")} &nbsp; <strong>Browser:</strong> {Esc($"{accessibility.BrowserName} {accessibility.BrowserVersion}".Trim())}</p>\n");
+            sb.Append($"<p><strong>Executed tags:</strong> {Esc(string.Join(", ", accessibility.RuleTags ?? []))}</p>\n");
+            sb.Append($"<p><strong>Automated violations:</strong> {accessibility.ViolationCount} &nbsp; <strong>Needs manual review:</strong> {accessibility.IncompleteCount}</p>\n");
+            sb.Append("<p>Automated tooling cannot verify all WCAG requirements. Manual accessibility testing is still required. Zero automated violations does not establish WCAG conformance.</p>\n");
+            foreach (var finding in accessibility.Findings ?? [])
+            {
+                sb.Append($"<h3>{Esc(finding.RuleId)} — {Esc(finding.Title)}</h3>\n");
+                sb.Append($"<p>{Esc(finding.Kind.ToString())}; impact {Esc(finding.Impact ?? "unspecified")}; affected nodes {finding.AffectedNodeCount}.</p>\n");
+                if (finding.Selectors.Count > 0) sb.Append($"<p><strong>Selectors:</strong> {Esc(string.Join(", ", finding.Selectors))}</p>\n");
+                if (finding.HtmlSnippets.Count > 0) sb.Append($"<p><strong>Bounded evidence:</strong> {Esc(string.Join(" | ", finding.HtmlSnippets))}</p>\n");
+            }
+            sb.Append("</section>\n");
+        }
+
         // Per-category sections
         var categories = Enum.GetValues<FrontendQualityCategory>();
         foreach (var cat in categories)
@@ -341,7 +359,7 @@ public sealed class ReportExportService : IReportExportService
                 sb.Append($"<li>{Esc(l)}</li>\n");
             sb.Append("</ul>\n");
             sb.Append("<p style=\"margin-top:0.5rem;font-size:.8rem;color:#6b7280\"><strong>Note:</strong> This review uses passive static analysis. " +
-                      "Runtime behavior, browser-dependent features (Core Web Vitals, WCAG dynamic rendering), and active vulnerability testing are not included.</p>\n");
+                      "Automated tooling cannot verify all WCAG requirements. Manual accessibility testing is still required. Core Web Vitals and active vulnerability testing are not included.</p>\n");
             sb.Append("</section>\n");
         }
 
