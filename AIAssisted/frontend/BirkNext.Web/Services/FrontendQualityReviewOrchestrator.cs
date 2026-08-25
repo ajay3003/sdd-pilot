@@ -35,11 +35,13 @@ public sealed record FrontendQualityReviewOrchestrationResult(
     WasmPerformanceReviewReport? PerformanceReport = null,
     BrowserRuntimeResultDto? BrowserRuntimeReport = null,
     AccessibilityResultDto? AccessibilityReport = null,
+    LighthouseResultDto? LighthouseReport = null,
     FrontendQualityReviewReport? QualityReport = null,
     string? SecurityError = null,
     string? PerformanceError = null,
     string? BrowserRuntimeError = null,
     string? AccessibilityError = null,
+    string? LighthouseError = null,
     List<string>? SkippedEngines = null,
     bool PreflightBlocked = false,
     string? PreflightBlockReason = null,
@@ -56,6 +58,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     private readonly IFrontendQualityReviewService _quality;
     private readonly IFrontendBrowserRuntimeReviewApiService? _runtime;
     private readonly IFrontendAccessibilityReviewApiService? _accessibility;
+    private readonly IFrontendLighthouseReviewApiService? _lighthouse;
 
     public FrontendQualityReviewOrchestrator(
         ISecurityScanner security,
@@ -63,7 +66,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         ITargetPreflightService preflight,
         IFrontendQualityReviewService quality,
         IFrontendBrowserRuntimeReviewApiService? runtime = null,
-        IFrontendAccessibilityReviewApiService? accessibility = null)
+        IFrontendAccessibilityReviewApiService? accessibility = null,
+        IFrontendLighthouseReviewApiService? lighthouse = null)
     {
         _security = security;
         _performance = performance;
@@ -71,6 +75,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         _quality = quality;
         _runtime = runtime;
         _accessibility = accessibility;
+        _lighthouse = lighthouse;
     }
 
     public async Task<FrontendQualityReviewOrchestrationResult> RunAsync(
@@ -199,6 +204,22 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Accessibility"] };
         }
 
+        if (context.FeatureToggles.EnableLighthouseEngine && _lighthouse is not null)
+        {
+            try
+            {
+                result = result with { LighthouseReport = await _lighthouse.ReviewAsync(targetUrl, context.RequiresAuthentication, cancellationToken) };
+            }
+            catch (Exception ex)
+            {
+                result = result with { LighthouseError = ex.Message };
+            }
+        }
+        else
+        {
+            result = result with { SkippedEngines = [.. result.SkippedEngines, "Lighthouse"] };
+        }
+
         if (result.SecurityReport is null && result.PerformanceReport is null)
             return result;
 
@@ -212,16 +233,23 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         if (accessibilitySkipped && !result.SkippedEngines.Contains("Accessibility"))
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Accessibility"] };
         var accessibilityAssessed = result.AccessibilityReport?.ExecutionStatus == AccessibilityExecutionStatusDto.Assessed;
+        var lighthouseFailed = result.LighthouseReport?.ExecutionStatus is LighthouseExecutionStatusDto.EngineError or LighthouseExecutionStatusDto.TimedOut
+            || result.LighthouseError is not null;
+        var lighthouseSkipped = result.LighthouseReport?.ExecutionStatus is LighthouseExecutionStatusDto.Skipped or LighthouseExecutionStatusDto.AuthenticationRequired;
+        if (lighthouseSkipped && !result.SkippedEngines.Contains("Lighthouse"))
+            result = result with { SkippedEngines = [.. result.SkippedEngines, "Lighthouse"] };
         var enrichedReport = ApplyAccessibility(qualityReport, result.AccessibilityReport, accessibilityAssessed);
+        enrichedReport = ApplyLighthouse(enrichedReport, result.LighthouseReport);
 
         return result with
         {
             QualityReport = CopyReport(
                 enrichedReport,
-                runtimeFailed || accessibilityFailed ? AssessmentCompleteness.Partial : enrichedReport.Completeness,
+                runtimeFailed || accessibilityFailed || lighthouseFailed ? AssessmentCompleteness.Partial : enrichedReport.Completeness,
                 enrichedReport.FailedEngines
                     .Concat(runtimeFailed ? ["Browser Runtime"] : [])
                     .Concat(accessibilityFailed ? ["Accessibility"] : [])
+                    .Concat(lighthouseFailed ? ["Lighthouse"] : [])
                     .Distinct().ToList(),
                 enrichedReport.SkippedEngines.Concat(result.SkippedEngines).Distinct().ToList(),
                 result.PreflightStatus,
@@ -247,7 +275,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         Completeness = completeness, PreflightStatus = preflightStatus, PreflightMessage = preflightMessage,
         RedirectOccurred = report.RedirectOccurred, AssessedEngines = report.AssessedEngines,
         FailedEngines = failedEngines, SkippedEngines = skippedEngines,
-        AccessibilityReport = report.AccessibilityReport
+        AccessibilityReport = report.AccessibilityReport, LighthouseReport = report.LighthouseReport
     };
 
     private static FrontendQualityReviewReport ApplyAccessibility(
@@ -287,7 +315,38 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             IsBlazorWasm = report.IsBlazorWasm, Completeness = report.Completeness,
             AssessedEngines = assessed ? report.AssessedEngines.Append("Accessibility").Distinct().ToList() : report.AssessedEngines,
             FailedEngines = report.FailedEngines, SkippedEngines = report.SkippedEngines,
-            AccessibilityReport = accessibility
+            AccessibilityReport = accessibility, LighthouseReport = report.LighthouseReport
+        };
+    }
+
+    private static FrontendQualityReviewReport ApplyLighthouse(FrontendQualityReviewReport report, LighthouseResultDto? lighthouse)
+    {
+        if (lighthouse is null) return report;
+        var findings = (lighthouse.Audits ?? []).Select(a => new FrontendQualityFinding
+        {
+            Id = $"lighthouse-{a.AuditId}", Title = a.Title, Severity = FrontendQualitySeverity.Medium,
+            Category = FrontendQualityCategory.Performance, Description = a.Description ?? a.Title,
+            Recommendation = "Review the Lighthouse diagnostic and optimize the measured rendering or delivery path.",
+            Evidence = [a.DisplayValue ?? $"Audit score: {a.Score}"], SourceSystem = "Lighthouse",
+            Status = CheckExecutionStatus.Failed
+        });
+        return new FrontendQualityReviewReport
+        {
+            TargetUrl = report.TargetUrl, FinalUrl = report.FinalUrl, GeneratedAt = report.GeneratedAt,
+            CompletedAt = report.CompletedAt, DurationMs = report.DurationMs, OverallScore = report.OverallScore,
+            PerformanceScore = report.PerformanceScore, SecurityScore = report.SecurityScore,
+            AccessibilityScore = report.AccessibilityScore, StandardsScore = report.StandardsScore,
+            WasmScore = report.WasmScore, ReadinessScore = report.ReadinessScore,
+            Findings = report.Findings.Concat(findings).ToList(), CategoryScores = report.CategoryScores,
+            Recommendations = report.Recommendations, Risks = report.Risks,
+            Limitations = report.Limitations.Concat(lighthouse.Limitations ?? []).Distinct().ToList(),
+            IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage, Completeness = report.Completeness,
+            PreflightStatus = report.PreflightStatus, PreflightMessage = report.PreflightMessage,
+            RedirectOccurred = report.RedirectOccurred,
+            AssessedEngines = lighthouse.ExecutionStatus == LighthouseExecutionStatusDto.Assessed
+                ? report.AssessedEngines.Append("Lighthouse").Distinct().ToList() : report.AssessedEngines,
+            FailedEngines = report.FailedEngines, SkippedEngines = report.SkippedEngines,
+            AccessibilityReport = report.AccessibilityReport, LighthouseReport = lighthouse
         };
     }
 

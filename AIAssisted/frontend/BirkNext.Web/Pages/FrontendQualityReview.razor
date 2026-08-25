@@ -99,6 +99,26 @@
             </section>
         }
 
+        @if (report.LighthouseReport is { } lighthouse)
+        {
+            <section class="fqr-section" aria-label="Lighthouse lab performance">
+                <SectionHeader Title="Lighthouse Lab Performance" />
+                @if (lighthouse.ExecutionStatus == LighthouseExecutionStatusDto.Assessed)
+                {
+                    <p><strong>Lighthouse Performance Score:</strong> @lighthouse.PerformanceScore/100</p>
+                    @foreach (var metric in lighthouse.Metrics ?? [])
+                    {
+                        <span><strong>Lab @metric.Name:</strong> @(metric.ObservedValue?.ToString("0.##") ?? "Not available") @metric.Unit &nbsp; </span>
+                    }
+                }
+                else
+                {
+                    <p><strong>Lighthouse engine:</strong> @lighthouse.ExecutionStatus — @lighthouse.EngineError</p>
+                }
+                <p><strong>Measurement:</strong> Synthetic / Lab. Field data is not included; INP requires real-user field data.</p>
+            </section>
+        }
+
         <section class="fqr-summary-grid" aria-label="Frontend quality score summary">
             @if (report.OverallScore.HasValue)
             {
@@ -490,6 +510,7 @@
             PreflightStatus = qualityReport.PreflightStatus,
             PreflightMessage = qualityReport.PreflightMessage,
             AccessibilityReport = qualityReport.AccessibilityReport,
+            LighthouseReport = qualityReport.LighthouseReport,
         };
 
         _report  = completedReport;
@@ -546,6 +567,7 @@
             new("Environment", _context.ActiveProfile.EnvironmentType.ToString()),
             new("Authentication", _context.AuthenticationType.ToString()),
             new("Accessibility", _context.FeatureToggles.EnableAccessibilityEngine ? "Enabled (automated axe-core checks)" : "Disabled"),
+            new("Lighthouse", _context.FeatureToggles.EnableLighthouseEngine ? "Enabled (synthetic lab measurement)" : "Disabled"),
         ];
     }
 

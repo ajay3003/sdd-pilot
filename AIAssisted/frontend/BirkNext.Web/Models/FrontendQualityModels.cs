@@ -94,7 +94,45 @@ public sealed class FrontendQualityReviewReport
     [JsonPropertyName("failedEngines")]      public List<string>                     FailedEngines      { get; init; } = [];
     [JsonPropertyName("skippedEngines")]     public List<string>                     SkippedEngines     { get; init; } = [];
     [JsonPropertyName("accessibilityReport")] public AccessibilityResultDto?          AccessibilityReport { get; init; }
+    [JsonPropertyName("lighthouseReport")]    public LighthouseResultDto?              LighthouseReport { get; init; }
 }
+
+public enum LighthouseExecutionStatusDto { NotAssessed, Assessed, EngineError, Skipped, AuthenticationRequired, TimedOut }
+public enum LighthouseMetricStatusDto { Measured, Good, NeedsImprovement, Poor, NotAvailable, FieldDataRequired }
+public sealed record LighthouseMetricDto(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("observedValue")] double? ObservedValue = null,
+    [property: JsonPropertyName("unit")] string? Unit = null,
+    [property: JsonPropertyName("status")] LighthouseMetricStatusDto Status = LighthouseMetricStatusDto.NotAvailable,
+    [property: JsonPropertyName("source")] string Source = "Lighthouse",
+    [property: JsonPropertyName("measurementType")] string MeasurementType = "Lab",
+    [property: JsonPropertyName("auditId")] string? AuditId = null,
+    [property: JsonPropertyName("threshold")] double? Threshold = null,
+    [property: JsonPropertyName("thresholdSource")] string? ThresholdSource = null);
+public sealed record LighthouseAuditFindingDto(
+    [property: JsonPropertyName("auditId")] string AuditId,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("description")] string? Description = null,
+    [property: JsonPropertyName("score")] double? Score = null,
+    [property: JsonPropertyName("displayValue")] string? DisplayValue = null,
+    [property: JsonPropertyName("sources")] List<string>? Sources = null);
+public sealed record LighthouseResultDto(
+    [property: JsonPropertyName("executionStatus")] LighthouseExecutionStatusDto ExecutionStatus = LighthouseExecutionStatusDto.NotAssessed,
+    [property: JsonPropertyName("engineName")] string EngineName = "Lighthouse Lab Performance",
+    [property: JsonPropertyName("measurementType")] string MeasurementType = "Lab",
+    [property: JsonPropertyName("fieldDataAvailable")] bool FieldDataAvailable = false,
+    [property: JsonPropertyName("lighthouseVersion")] string? LighthouseVersion = null,
+    [property: JsonPropertyName("nodeVersion")] string? NodeVersion = null,
+    [property: JsonPropertyName("browserName")] string? BrowserName = null,
+    [property: JsonPropertyName("browserVersion")] string? BrowserVersion = null,
+    [property: JsonPropertyName("requestedUrl")] string? RequestedUrl = null,
+    [property: JsonPropertyName("finalUrl")] string? FinalUrl = null,
+    [property: JsonPropertyName("durationMs")] long? DurationMs = null,
+    [property: JsonPropertyName("performanceScore")] int? PerformanceScore = null,
+    [property: JsonPropertyName("metrics")] List<LighthouseMetricDto>? Metrics = null,
+    [property: JsonPropertyName("audits")] List<LighthouseAuditFindingDto>? Audits = null,
+    [property: JsonPropertyName("limitations")] List<string>? Limitations = null,
+    [property: JsonPropertyName("engineError")] string? EngineError = null);
 
 public enum AccessibilityExecutionStatusDto { NotAssessed, Assessed, EngineError, Skipped, AuthenticationRequired }
 public enum AccessibilityFindingKindDto { Violation, NeedsManualReview }

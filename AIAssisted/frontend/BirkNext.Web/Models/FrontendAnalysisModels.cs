@@ -173,6 +173,7 @@ public sealed class FrontendAnalysisFeatureToggles
     [JsonPropertyName("enablePerformanceEngine")]     public bool EnablePerformanceEngine     { get; set; } = true;
     [JsonPropertyName("enableBrowserRuntimeEngine")]  public bool EnableBrowserRuntimeEngine  { get; set; } = false;
     [JsonPropertyName("enableAccessibilityEngine")]   public bool EnableAccessibilityEngine   { get; set; } = false;
+    [JsonPropertyName("enableLighthouseEngine")]      public bool EnableLighthouseEngine      { get; set; } = false;
 
     [JsonPropertyName("assetDiscovery")]              public bool AssetDiscovery              { get; set; } = true;
     [JsonPropertyName("startupAnalysis")]             public bool StartupAnalysis             { get; set; } = true;

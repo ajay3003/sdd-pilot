@@ -1,0 +1,11 @@
+{
+  "name": "birknext-lighthouse-runner",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "chrome-launcher": "1.2.1",
+    "lighthouse": "12.2.1",
+    "playwright-core": "1.48.0"
+  }
+}

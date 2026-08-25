@@ -299,6 +299,20 @@ steps:
 
 - bash: |
     set -euo pipefail
+    npm ci --ignore-scripts
+  displayName: 'Install pinned Lighthouse runner dependencies'
+  workingDirectory: AIAssisted/backend/BirkNext.Api/Tools/LighthouseRunner
+  condition: and(succeeded(), eq(variables['BUILD_BACKEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  continueOnError: false
+
+- pwsh: ./scripts/run-frontend-lighthouse-tests.ps1
+  displayName: 'Run frontend Lighthouse lab tests'
+  workingDirectory: AIAssisted
+  condition: and(succeeded(), eq(variables['BUILD_BACKEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  continueOnError: false
+
+- bash: |
+    set -euo pipefail
     PROJECT="BirkNext.Web.PlaywrightTests/BirkNext.Web.PlaywrightTests.csproj"
     FILTER="Category=PreStarted"
 

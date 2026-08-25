@@ -145,5 +145,7 @@ builder.Services.AddHttpClient<IFrontendBrowserRuntimeReviewApiService, Frontend
     client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddHttpClient<IFrontendAccessibilityReviewApiService, FrontendAccessibilityReviewApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
+builder.Services.AddHttpClient<IFrontendLighthouseReviewApiService, FrontendLighthouseReviewApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
 
 await builder.Build().RunAsync();

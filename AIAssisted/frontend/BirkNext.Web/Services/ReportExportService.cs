@@ -324,6 +324,17 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("</section>\n");
         }
 
+        if (report.LighthouseReport is { } lighthouse)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Lighthouse Lab Performance</h2>\n");
+            sb.Append($"<p><strong>Status:</strong> {Esc(lighthouse.ExecutionStatus.ToString())} &nbsp; <strong>Measurement:</strong> Synthetic / Lab</p>\n");
+            sb.Append($"<p><strong>Lighthouse:</strong> {Esc(lighthouse.LighthouseVersion ?? "Unavailable")} &nbsp; <strong>Node:</strong> {Esc(lighthouse.NodeVersion ?? "Unavailable")} &nbsp; <strong>Chromium:</strong> {Esc(lighthouse.BrowserVersion ?? "Unavailable")}</p>\n");
+            sb.Append($"<p><strong>Lighthouse Performance Score:</strong> {Esc(lighthouse.PerformanceScore?.ToString() ?? "Not assessed")}</p>\n");
+            foreach (var metric in lighthouse.Metrics ?? [])
+                sb.Append($"<p><strong>Lab {Esc(metric.Name)}:</strong> {Esc(metric.ObservedValue?.ToString("0.##") ?? metric.Status.ToString())} {Esc(metric.Unit ?? "")} ({Esc(metric.Status.ToString())}){(metric.Threshold.HasValue ? $"; threshold {metric.Threshold:0.##} — {Esc(metric.ThresholdSource ?? "configured lab threshold")}" : "")}</p>\n");
+            sb.Append("<p>Field data is not included. Lighthouse is a synthetic lab measurement; INP and real-user Core Web Vitals require field data.</p>\n</section>\n");
+        }
+
         // Per-category sections
         var categories = Enum.GetValues<FrontendQualityCategory>();
         foreach (var cat in categories)
@@ -359,7 +370,7 @@ public sealed class ReportExportService : IReportExportService
                 sb.Append($"<li>{Esc(l)}</li>\n");
             sb.Append("</ul>\n");
             sb.Append("<p style=\"margin-top:0.5rem;font-size:.8rem;color:#6b7280\"><strong>Note:</strong> This review uses passive static analysis. " +
-                      "Automated tooling cannot verify all WCAG requirements. Manual accessibility testing is still required. Core Web Vitals and active vulnerability testing are not included.</p>\n");
+                      "Automated tooling cannot verify all WCAG requirements. Manual accessibility testing is still required. Lighthouse lab measurements do not include field/real-user Core Web Vitals. Active vulnerability testing is not included.</p>\n");
             sb.Append("</section>\n");
         }
 
