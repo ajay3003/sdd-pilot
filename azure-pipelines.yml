@@ -179,6 +179,12 @@ steps:
   condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
   continueOnError: true
 
+- pwsh: ./scripts/run-frontend-quality-phase2e-tests.ps1
+  displayName: 'Run frontend Phase 2E aggregate coverage guard'
+  workingDirectory: AIAssisted
+  condition: and(eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  continueOnError: false
+
 - script: |
     dotnet publish BirkNext.Web/BirkNext.Web.csproj \
       --configuration Release \
@@ -355,6 +361,13 @@ steps:
   workingDirectory: AIAssisted
   condition: and(succeeded(), eq(variables['BUILD_BACKEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
   continueOnError: false
+
+- pwsh: ./scripts/run-frontend-quality-phase2e-real-tests.ps1
+  displayName: 'Run frontend Phase 2E real aggregate acceptance'
+  workingDirectory: AIAssisted
+  condition: and(succeeded(), eq(variables['BUILD_BACKEND'], 'true'), eq(variables['BUILD_FRONTEND'], 'true'), eq(variables['RUN_TESTS'], 'true'))
+  continueOnError: false
+  timeoutInMinutes: 10
 
 - bash: |
     set -euo pipefail

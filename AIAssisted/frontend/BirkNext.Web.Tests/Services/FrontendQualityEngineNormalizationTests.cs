@@ -8,14 +8,24 @@ namespace BirkNext.Web.Tests.Services;
 public sealed class FrontendQualityEngineNormalizationTests
 {
     [Fact]
+    [Trait("Category", "FrontendQualityAggregateGuard")]
     public async Task AllSixEnabledAndAssessed_ProduceExactlyOneOutcomeEach()
     {
         var fixture = new Fixture();
         var result = await fixture.RunAsync(AllEnabled());
 
-        result.QualityReport!.EngineOutcomes.Should().HaveCount(6);
-        result.QualityReport.EngineOutcomes.Select(o => o.EngineId).Should().BeEquivalentTo(Enum.GetValues<FrontendQualityEngineId>());
-        result.QualityReport.EngineOutcomes.Should().OnlyHaveUniqueItems(o => o.EngineId);
+        var expected = Enum.GetValues<FrontendQualityEngineId>();
+        var actual = result.QualityReport!.EngineOutcomes.Select(o => o.EngineId).ToArray();
+        var missing = expected.Except(actual).ToArray();
+        var duplicates = actual.GroupBy(id => id).Where(group => group.Count() > 1).Select(group => group.Key).ToArray();
+        var diagnostics = $"Expected=[{string.Join(",", expected)}]; Actual=[{string.Join(",", actual)}]; " +
+                          $"Missing=[{string.Join(",", missing)}]; Duplicates=[{string.Join(",", duplicates)}]; " +
+                          $"Coverage={result.QualityReport.Coverage?.RequiredCoverageState}; " +
+                          $"ReleaseDisposition={result.QualityReport.ReleaseDisposition}";
+
+        actual.Should().HaveCount(expected.Length, diagnostics);
+        actual.Should().BeEquivalentTo(expected, diagnostics);
+        duplicates.Should().BeEmpty(diagnostics);
         result.QualityReport.EngineOutcomes.Should().OnlyContain(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
         fixture.Runtime.CallCount.Should().Be(1);
         fixture.Accessibility.CallCount.Should().Be(1);

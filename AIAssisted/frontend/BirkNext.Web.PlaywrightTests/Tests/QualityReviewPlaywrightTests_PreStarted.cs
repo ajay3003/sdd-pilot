@@ -1,6 +1,8 @@
 using BirkNext.Web.PlaywrightTests.Fixtures;
 using FluentAssertions;
 using Microsoft.Playwright;
+using System.Collections.Concurrent;
+using System.Text.Json;
 
 namespace BirkNext.Web.PlaywrightTests.Tests;
 
@@ -215,4 +217,137 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
             await page.CloseAsync();
         }
     }
+
+    [Fact]
+    [Trait("Category", "FrontendQualityPhase2ERealAcceptance")]
+    public async Task FrontendQualityReview_RealEnginesReachDecisionSupportExactlyOnce()
+    {
+        var page = await _fixture.Context.NewPageAsync();
+        var consoleErrors = new ConcurrentBag<string>();
+        var pageErrors = new ConcurrentBag<string>();
+        var engineRequests = new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var endpoints = new[]
+        {
+            "api/frontend-runtime/review",
+            "api/frontend-accessibility/review",
+            "api/frontend-lighthouse/review",
+            "api/frontend-passive-security/review"
+        };
+
+        page.Console += (_, message) =>
+        {
+            if (message.Type == "error") consoleErrors.Add(message.Text);
+        };
+        page.PageError += (_, error) => pageErrors.Add(error);
+        page.Request += (_, request) =>
+        {
+            var endpoint = endpoints.SingleOrDefault(value => request.Url.Contains(value, StringComparison.OrdinalIgnoreCase));
+            if (endpoint is not null) engineRequests.AddOrUpdate(endpoint, 1, (_, count) => count + 1);
+        };
+
+        try
+        {
+            var settings = JsonSerializer.Serialize(new
+            {
+                profiles = new[]
+                {
+                    new
+                    {
+                        id = "phase2e-local",
+                        name = "Phase 2E Local",
+                        environmentType = "Local",
+                        targetUrl = _fixture.FrontendUrl,
+                        authentication = new { requiresAuthentication = false, authenticationType = "None" },
+                        performance = new { },
+                        coreWebVitals = new { },
+                        security = new { },
+                        features = new
+                        {
+                            enableSecurityEngine = true,
+                            enablePerformanceEngine = true,
+                            enableBrowserRuntimeEngine = true,
+                            enableAccessibilityEngine = true,
+                            enableLighthouseEngine = true,
+                            enablePassiveSecurityEngine = true
+                        },
+                        engineRequirements = new
+                        {
+                            staticSecurity = "Required",
+                            passivePerformance = "Required",
+                            browserRuntime = "Optional",
+                            accessibility = "Optional",
+                            lighthouse = "Optional",
+                            passiveSecurity = "Optional"
+                        },
+                        releasePolicy = new { blockingLogicalIssueIds = Array.Empty<string>(), reviewOptionalEngineFailures = true },
+                        integrations = Array.Empty<object>()
+                    }
+                },
+                activeProfileId = "phase2e-local"
+            });
+            var settingsLiteral = JsonSerializer.Serialize(settings);
+            await page.AddInitScriptAsync($"localStorage.setItem('birknext:frontend-analysis-settings', {settingsLiteral});");
+
+            await page.GotoAsync($"{_fixture.FrontendUrl}/frontend-quality-review", new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.NetworkIdle,
+                Timeout = 30000
+            });
+
+            var run = page.GetByRole(AriaRole.Button, new() { Name = "Run Frontend Quality Review", Exact = true });
+            await run.WaitForAsync(new LocatorWaitForOptions { Timeout = 15000 });
+            (await run.IsDisabledAsync()).Should().BeFalse("the local deterministic target is configured");
+            await run.ClickAsync();
+
+            var matrix = page.Locator("table.fqr-engine-matrix");
+            await matrix.WaitForAsync(new LocatorWaitForOptions { Timeout = 240000 });
+            var rows = matrix.Locator("tbody tr");
+            (await rows.CountAsync()).Should().Be(6, "all six configured engines must reach aggregate coverage");
+
+            var ids = await rows.EvaluateAllAsync<string[]>("rows => rows.map(row => row.dataset.engineId)");
+            ids.Should().OnlyHaveUniqueItems().And.BeEquivalentTo(
+                "StaticSecurity", "PassivePerformance", "BrowserRuntime", "Accessibility", "Lighthouse", "PassiveSecurity");
+            (await page.Locator("tr[data-engine-id='BrowserRuntime']").CountAsync()).Should().Be(1);
+
+            await page.GetByRole(AriaRole.Region, new() { Name = "Release disposition" }).ShouldBeVisibleAsync();
+            await page.GetByRole(AriaRole.Region, new() { Name = "Automated coverage and engine outcomes" }).ShouldBeVisibleAsync();
+            await page.GetByRole(AriaRole.Region, new() { Name = "Logical issues" }).ShouldBeVisibleAsync();
+            await page.GetByRole(AriaRole.Region, new() { Name = "Manual verification required" }).ShouldBeVisibleAsync();
+            await page.GetByRole(AriaRole.Region, new() { Name = "Browser Runtime details" }).ShouldBeVisibleAsync();
+            await page.GetByText("Legacy static review score", new() { Exact = true }).ShouldBeVisibleAsync();
+
+            foreach (var endpoint in endpoints)
+            {
+                engineRequests.GetValueOrDefault(endpoint).Should().Be(1, $"{endpoint} must execute exactly once");
+            }
+
+            var browserRow = page.Locator("tr[data-engine-id='BrowserRuntime']");
+            (await browserRow.InnerTextAsync()).Should().Contain("Chromium");
+            (await page.GetByRole(AriaRole.Region, new() { Name = "Release disposition" }).InnerTextAsync())
+                .Should().MatchRegex("Blocked|ReviewRequired|NoAutomatedBlockDetected");
+
+            await page.GotoAsync($"{_fixture.FrontendUrl}/dashboard", new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+            await page.GotoAsync($"{_fixture.FrontendUrl}/frontend-quality-review", new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+            await matrix.WaitForAsync(new LocatorWaitForOptions { Timeout = 15000 });
+            (await matrix.Locator("tbody tr").CountAsync()).Should().Be(6, "session reload must preserve aggregate outcomes");
+            foreach (var endpoint in endpoints)
+            {
+                engineRequests.GetValueOrDefault(endpoint).Should().Be(1, "rendering persisted results must not rerun engines");
+            }
+
+            pageErrors.Should().BeEmpty("Phase 2E rendering must not raise browser page errors");
+            consoleErrors.Where(message => message.Contains("Unhandled exception", StringComparison.OrdinalIgnoreCase))
+                .Should().BeEmpty("Phase 2E must not introduce rendering exceptions");
+        }
+        finally
+        {
+            await page.CloseAsync();
+        }
+    }
+}
+
+internal static class PlaywrightAssertions
+{
+    public static async Task ShouldBeVisibleAsync(this ILocator locator) =>
+        (await locator.IsVisibleAsync()).Should().BeTrue($"'{locator}' should be visible");
 }
