@@ -209,6 +209,51 @@ steps:
   condition: eq(variables['BUILD_FRONTEND'], 'true')
 
 # -------------------------------------------------------
+# Frontend Passive Security (Phase 2D)
+# Real OWASP ZAP 2.16.1 passive scanning gate
+# -------------------------------------------------------
+
+- bash: |
+    set -e
+    echo "Checking container runtime availability..."
+    if command -v docker &> /dev/null; then
+      RUNTIME="docker"
+      $RUNTIME --version
+    elif command -v podman &> /dev/null; then
+      RUNTIME="podman"
+      $RUNTIME --version
+    else
+      echo "ERROR: Neither docker nor podman found in PATH"
+      exit 1
+    fi
+    echo "Using container runtime: $RUNTIME"
+  displayName: 'Verify container runtime'
+  condition: eq(variables['BUILD_BACKEND'], 'true')
+
+- bash: |
+    set -e
+    RUNTIME="docker"
+    if ! command -v docker &> /dev/null; then
+      RUNTIME="podman"
+    fi
+
+    ZAP_IMAGE="ghcr.io/zaproxy/zaproxy:2.16.1"
+    echo "Pulling ZAP image: $ZAP_IMAGE"
+    $RUNTIME pull "$ZAP_IMAGE"
+    $RUNTIME image inspect "$ZAP_IMAGE" --format "Digest: {{index .RepoDigests 0}}"
+  displayName: 'Pull pinned ZAP image'
+  condition: eq(variables['BUILD_BACKEND'], 'true')
+  continueOnError: false
+
+- pwsh: ./scripts/run-frontend-zap-passive-tests.ps1 "Category=FrontendZapPassiveIntegration"
+  displayName: 'Run frontend passive-security gate (ZAP Phase 2D)'
+  workingDirectory: AIAssisted
+  condition: eq(variables['BUILD_BACKEND'], 'true')
+  continueOnError: false
+  env:
+    FrontendPassiveSecurity__ContainerRuntime: docker
+
+# -------------------------------------------------------
 # Frontend Playwright E2E Tests (Quality Gate)
 # Blocks pipeline on WASM runtime regressions
 # -------------------------------------------------------
