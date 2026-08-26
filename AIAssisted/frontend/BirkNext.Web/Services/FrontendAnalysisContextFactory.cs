@@ -78,6 +78,7 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             CoreWebVitalsThresholds     = profile.CoreWebVitals,
             SecuritySettings            = profile.Security,
             FeatureToggles              = profile.Features,
+            EngineRequirements          = profile.EngineRequirements,
             AllowedRestHosts            = allowedRestHosts,
             AllowedGraphQlEndpoints     = allowedGraphQlEndpoints,
             AllowedBackendDomains       = allowedBackendDomains,
@@ -134,6 +135,7 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             CoreWebVitals = profile.CoreWebVitals,
             Security = profile.Security,
             Features = profile.Features,
+            EngineRequirements = profile.EngineRequirements,
             Integrations = [.. profile.Integrations]
         };
 

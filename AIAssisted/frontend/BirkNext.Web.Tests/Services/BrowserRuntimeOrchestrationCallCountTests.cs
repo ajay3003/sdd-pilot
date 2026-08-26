@@ -29,6 +29,7 @@ public sealed class BrowserRuntimeOrchestrationCallCountTests
         var context = new FrontendAnalysisContext
         {
             TargetUrl = "https://example.com",
+            EngineRequirements = new() { BrowserRuntime = FrontendQualityEngineRequirement.Required },
             FeatureToggles = new FrontendAnalysisFeatureToggles
             {
                 EnableBrowserRuntimeEngine = false,
@@ -163,6 +164,7 @@ public sealed class BrowserRuntimeOrchestrationCallCountTests
         var context = new FrontendAnalysisContext
         {
             TargetUrl = "https://example.com",
+            EngineRequirements = new() { BrowserRuntime = FrontendQualityEngineRequirement.Required },
             FeatureToggles = new FrontendAnalysisFeatureToggles
             {
                 EnableSecurityEngine = true,

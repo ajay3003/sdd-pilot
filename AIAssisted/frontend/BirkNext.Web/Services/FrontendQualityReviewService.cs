@@ -160,6 +160,7 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
             WasmScore          = wasmScore,
             ReadinessScore     = rdyScore,
             Findings           = findings,
+            LogicalIssues      = FrontendQualityLogicalIssueGrouper.Group(findings),
             CategoryScores     = categoryScores,
             Recommendations    = recommendations,
             Risks              = risks,
@@ -194,6 +195,8 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
             Recommendation = f.Recommendation,
             Evidence       = f.Evidence.Select(e => $"{e.Key}: {e.MaskedValue}").ToList(),
             SourceSystem   = "Security",
+            EngineId       = FrontendQualityEngineId.StaticSecurity,
+            SourceRuleId   = f.Id,
         };
     }
 
@@ -216,6 +219,8 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
             Recommendation = f.Recommendation,
             Evidence       = f.Evidence,
             SourceSystem   = "Performance",
+            EngineId       = FrontendQualityEngineId.PassivePerformance,
+            SourceRuleId   = f.Id,
         };
     }
 
@@ -238,6 +243,8 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
                 Description    = "No CSP header was returned. Without CSP, the browser cannot enforce restrictions on script execution, blocking XSS attacks.",
                 Recommendation = "Define a strict Content-Security-Policy. Start with 'default-src self' and expand as needed. Use nonces or hashes for inline scripts.",
                 SourceSystem   = "Standards",
+                EngineId       = FrontendQualityEngineId.StaticSecurity,
+                SourceRuleId   = "std-csp-missing",
             };
         }
 
@@ -252,6 +259,8 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
                 Description    = "HSTS is absent. Browsers cannot enforce HTTPS-only connections, leaving users vulnerable to SSL-stripping attacks.",
                 Recommendation = "Add 'Strict-Transport-Security: max-age=31536000; includeSubDomains' to all HTTPS responses.",
                 SourceSystem   = "Standards",
+                EngineId       = FrontendQualityEngineId.StaticSecurity,
+                SourceRuleId   = "std-hsts-missing",
             };
         }
 
@@ -276,6 +285,8 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
                     Description    = desc,
                     Recommendation = $"Add a '{name}' header to your server or CDN configuration.",
                     SourceSystem   = "Standards",
+                    EngineId       = FrontendQualityEngineId.StaticSecurity,
+                    SourceRuleId   = $"std-{name.ToLowerInvariant().Replace("-", "")}-missing",
                 };
             }
         }

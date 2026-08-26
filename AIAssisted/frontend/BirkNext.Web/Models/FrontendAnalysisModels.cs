@@ -105,6 +105,7 @@ public sealed class FrontendAnalysisProfile
     [JsonPropertyName("coreWebVitals")]  public CoreWebVitalsThresholds        CoreWebVitals  { get; set; } = new();
     [JsonPropertyName("security")]       public FrontendSecuritySettings       Security       { get; set; } = new();
     [JsonPropertyName("features")]       public FrontendAnalysisFeatureToggles Features       { get; set; } = new();
+    [JsonPropertyName("engineRequirements")] public FrontendQualityEngineRequirementSettings EngineRequirements { get; set; } = new();
 
     [JsonPropertyName("integrations")]   public List<IntegrationConfig>        Integrations   { get; set; } = [];
 }
@@ -189,6 +190,27 @@ public sealed class FrontendAnalysisFeatureToggles
     [JsonPropertyName("authenticatedBrowserReview")]  public bool AuthenticatedBrowserReview  { get; set; } = false;
     [JsonPropertyName("lighthouseIntegration")]       public bool LighthouseIntegration       { get; set; } = false;
     [JsonPropertyName("playwrightRuntimeInspection")] public bool PlaywrightRuntimeInspection { get; set; } = false;
+}
+
+/// <summary>Explicit coverage policy; enabled state and tool availability never alter these values.</summary>
+public sealed class FrontendQualityEngineRequirementSettings
+{
+    [JsonPropertyName("staticSecurity")] public FrontendQualityEngineRequirement StaticSecurity { get; set; } = FrontendQualityEngineRequirement.Required;
+    [JsonPropertyName("passivePerformance")] public FrontendQualityEngineRequirement PassivePerformance { get; set; } = FrontendQualityEngineRequirement.Required;
+    [JsonPropertyName("browserRuntime")] public FrontendQualityEngineRequirement BrowserRuntime { get; set; } = FrontendQualityEngineRequirement.Optional;
+    [JsonPropertyName("accessibility")] public FrontendQualityEngineRequirement Accessibility { get; set; } = FrontendQualityEngineRequirement.Optional;
+    [JsonPropertyName("lighthouse")] public FrontendQualityEngineRequirement Lighthouse { get; set; } = FrontendQualityEngineRequirement.Optional;
+    [JsonPropertyName("passiveSecurity")] public FrontendQualityEngineRequirement PassiveSecurity { get; set; } = FrontendQualityEngineRequirement.Optional;
+
+    public FrontendQualityEngineRequirementPolicy ToPolicy() => new(new Dictionary<FrontendQualityEngineId, FrontendQualityEngineRequirement>
+    {
+        [FrontendQualityEngineId.StaticSecurity] = StaticSecurity,
+        [FrontendQualityEngineId.PassivePerformance] = PassivePerformance,
+        [FrontendQualityEngineId.BrowserRuntime] = BrowserRuntime,
+        [FrontendQualityEngineId.Accessibility] = Accessibility,
+        [FrontendQualityEngineId.Lighthouse] = Lighthouse,
+        [FrontendQualityEngineId.PassiveSecurity] = PassiveSecurity,
+    });
 }
 
 public sealed class ProfileValidationResult

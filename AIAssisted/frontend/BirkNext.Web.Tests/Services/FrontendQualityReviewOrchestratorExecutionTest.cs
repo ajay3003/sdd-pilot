@@ -33,6 +33,7 @@ public sealed class FrontendQualityReviewOrchestratorExecutionTest
     private static FrontendAnalysisContext PassiveContext(bool enabled) => new()
     {
         TargetUrl="https://example.com", ActiveProfile=new() { Id="trusted", TargetUrl="https://example.com", Performance=new() },
+        EngineRequirements=new() { PassiveSecurity=FrontendQualityEngineRequirement.Required },
         FeatureToggles=new() { EnableSecurityEngine=true, EnablePerformanceEngine=true, EnableBrowserRuntimeEngine=true,
             EnableAccessibilityEngine=true, EnableLighthouseEngine=true, EnablePassiveSecurityEngine=enabled }, SecuritySettings=new()
     };

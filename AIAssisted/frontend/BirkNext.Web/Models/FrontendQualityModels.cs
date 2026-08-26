@@ -51,6 +51,8 @@ public sealed class FrontendQualityFinding
     [JsonPropertyName("recommendation")] public string                   Recommendation { get; init; } = "";
     [JsonPropertyName("evidence")]       public List<string>             Evidence       { get; init; } = [];
     [JsonPropertyName("sourceSystem")]   public string?                  SourceSystem   { get; init; }
+    [JsonPropertyName("engineId")]       public FrontendQualityEngineId? EngineId       { get; init; }
+    [JsonPropertyName("sourceRuleId")]   public string?                  SourceRuleId   { get; init; }
     [JsonPropertyName("status")]         public CheckExecutionStatus     Status         { get; init; } = CheckExecutionStatus.Passed;
 }
 
@@ -67,6 +69,12 @@ public sealed class FrontendQualityCategoryScore
 
 public sealed class FrontendQualityReviewReport
 {
+    private List<string> _legacyAssessedEngines = [];
+    private List<string> _legacyFailedEngines = [];
+    private List<string> _legacySkippedEngines = [];
+    private FrontendQualityCoverage? _coverage;
+    private AssessmentCompleteness? _legacyCompleteness;
+
     [JsonPropertyName("targetUrl")]          public string                           TargetUrl          { get; init; } = "";
     [JsonPropertyName("finalUrl")]           public string?                          FinalUrl           { get; init; }
     [JsonPropertyName("generatedAt")]        public DateTime                         GeneratedAt        { get; init; }
@@ -80,22 +88,47 @@ public sealed class FrontendQualityReviewReport
     [JsonPropertyName("wasmScore")]          public int?                             WasmScore          { get; init; }
     [JsonPropertyName("readinessScore")]     public int?                             ReadinessScore     { get; init; }
     [JsonPropertyName("findings")]           public List<FrontendQualityFinding>     Findings           { get; init; } = [];
+    [JsonPropertyName("logicalIssues")]      public List<FrontendQualityLogicalIssue> LogicalIssues      { get; init; } = [];
     [JsonPropertyName("categoryScores")]     public List<FrontendQualityCategoryScore> CategoryScores   { get; init; } = [];
     [JsonPropertyName("recommendations")]    public List<string>                     Recommendations    { get; init; } = [];
     [JsonPropertyName("risks")]              public List<string>                     Risks              { get; init; } = [];
     [JsonPropertyName("limitations")]        public List<string>                     Limitations        { get; init; } = [];
     [JsonPropertyName("isBlazorWasm")]       public bool                             IsBlazorWasm       { get; init; }
     [JsonPropertyName("errorMessage")]       public string?                          ErrorMessage       { get; init; }
-    [JsonPropertyName("completeness")]       public AssessmentCompleteness?          Completeness       { get; init; }
+    [JsonPropertyName("coverage")]           public FrontendQualityCoverage? Coverage
+    {
+        get => _coverage ?? (EngineOutcomes.Count > 0 ? FrontendQualityCoverage.Evaluate(EngineOutcomes) : null);
+        init => _coverage = value;
+    }
+    [JsonPropertyName("releaseDisposition")] public FrontendQualityReleaseDisposition? ReleaseDisposition { get; init; }
+    [JsonPropertyName("engineOutcomes")]     public List<FrontendQualityEngineOutcome> EngineOutcomes   { get; init; } = [];
+    [JsonPropertyName("completeness")]       public AssessmentCompleteness? Completeness
+    {
+        get => Coverage?.ToLegacyCompleteness() ?? _legacyCompleteness;
+        init => _legacyCompleteness = value;
+    }
     [JsonPropertyName("preflightStatus")]    public PreflightStatus?                 PreflightStatus    { get; init; }
     [JsonPropertyName("preflightMessage")]   public string?                          PreflightMessage   { get; init; }
     [JsonPropertyName("redirectOccurred")]   public bool                             RedirectOccurred   { get; init; }
-    [JsonPropertyName("assessedEngines")]    public List<string>                     AssessedEngines    { get; init; } = [];
-    [JsonPropertyName("failedEngines")]      public List<string>                     FailedEngines      { get; init; } = [];
-    [JsonPropertyName("skippedEngines")]     public List<string>                     SkippedEngines     { get; init; } = [];
+    [JsonPropertyName("assessedEngines")]    public List<string> AssessedEngines
+    {
+        get => EngineOutcomes.Count > 0 ? FrontendQualityEngineCompatibility.Assessed(EngineOutcomes) : _legacyAssessedEngines;
+        init => _legacyAssessedEngines = value ?? [];
+    }
+    [JsonPropertyName("failedEngines")]      public List<string> FailedEngines
+    {
+        get => EngineOutcomes.Count > 0 ? FrontendQualityEngineCompatibility.Failed(EngineOutcomes) : _legacyFailedEngines;
+        init => _legacyFailedEngines = value ?? [];
+    }
+    [JsonPropertyName("skippedEngines")]     public List<string> SkippedEngines
+    {
+        get => EngineOutcomes.Count > 0 ? FrontendQualityEngineCompatibility.Skipped(EngineOutcomes) : _legacySkippedEngines;
+        init => _legacySkippedEngines = value ?? [];
+    }
     [JsonPropertyName("accessibilityReport")] public AccessibilityResultDto?          AccessibilityReport { get; init; }
     [JsonPropertyName("lighthouseReport")]    public LighthouseResultDto?              LighthouseReport { get; init; }
     [JsonPropertyName("passiveSecurityReport")] public PassiveSecurityResultDto?       PassiveSecurityReport { get; init; }
+    [JsonPropertyName("browserRuntimeReport")] public BrowserRuntimeResultDto?          BrowserRuntimeReport { get; init; }
 }
 
 public enum LighthouseExecutionStatusDto { NotAssessed, Assessed, EngineError, Skipped, AuthenticationRequired, TimedOut }

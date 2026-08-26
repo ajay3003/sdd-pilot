@@ -526,11 +526,15 @@
             WasmScore = qualityReport.WasmScore,
             ReadinessScore = qualityReport.ReadinessScore,
             Findings = qualityReport.Findings,
+            LogicalIssues = qualityReport.LogicalIssues,
             CategoryScores = qualityReport.CategoryScores,
             Recommendations = qualityReport.Recommendations,
             Risks = qualityReport.Risks,
             Limitations = qualityReport.Limitations,
             IsBlazorWasm = qualityReport.IsBlazorWasm,
+            Coverage = qualityReport.Coverage,
+            ReleaseDisposition = qualityReport.ReleaseDisposition,
+            EngineOutcomes = qualityReport.EngineOutcomes,
             Completeness = qualityReport.Completeness,
             AssessedEngines = qualityReport.AssessedEngines,
             FailedEngines = qualityReport.FailedEngines,
@@ -540,6 +544,7 @@
             AccessibilityReport = qualityReport.AccessibilityReport,
             LighthouseReport = qualityReport.LighthouseReport,
             PassiveSecurityReport = qualityReport.PassiveSecurityReport,
+            BrowserRuntimeReport = qualityReport.BrowserRuntimeReport,
         };
 
         _report  = completedReport;

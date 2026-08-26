@@ -66,6 +66,7 @@ public sealed class LighthouseOrchestrationTests
     private static FrontendAnalysisContext Context(bool enabled) => new()
     {
         TargetUrl = "https://example.com",
+        EngineRequirements = new() { Lighthouse = FrontendQualityEngineRequirement.Required },
         FeatureToggles = new() { EnableSecurityEngine = true, EnablePerformanceEngine = true, EnableLighthouseEngine = enabled }
     };
     private sealed class LighthouseSpy(LighthouseExecutionStatusDto status = LighthouseExecutionStatusDto.Assessed) : IFrontendLighthouseReviewApiService

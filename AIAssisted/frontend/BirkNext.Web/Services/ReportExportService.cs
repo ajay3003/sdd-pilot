@@ -1125,7 +1125,7 @@ public sealed class ReportExportService : IReportExportService
         return $"<span class=\"badge badge-{cls}\">{Esc(sev)}</span>";
     }
 
-    private static string SanitizePassive(string? value)
+    internal static string SanitizePassive(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return "";
         var safe = System.Text.RegularExpressions.Regex.Replace(value, @"(?i)SECRET-[A-Z0-9-]+", "[REDACTED]");

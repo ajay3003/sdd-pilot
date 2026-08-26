@@ -52,6 +52,7 @@ public sealed class AccessibilityOrchestrationCallCountTests
     private static FrontendAnalysisContext Context(bool accessibilityEnabled = true) => new()
     {
         TargetUrl = "https://example.com",
+        EngineRequirements = new() { Accessibility = FrontendQualityEngineRequirement.Required },
         FeatureToggles = new FrontendAnalysisFeatureToggles
         {
             EnableSecurityEngine = true,
