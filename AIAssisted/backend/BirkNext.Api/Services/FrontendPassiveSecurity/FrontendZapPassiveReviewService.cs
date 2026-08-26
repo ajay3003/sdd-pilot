@@ -115,7 +115,11 @@ public sealed class FrontendZapPassiveReviewService(
         return u.Uri.AbsoluteUri;
     }
     private static int FreePort() { var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); var p = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop(); return p; }
-    private static string ParseVersion(string s) => System.Text.RegularExpressions.Regex.Match(s, @"\d+\.\d+\.\d+").Value;
+    private static string ParseVersion(string s)
+    {
+        var matches = System.Text.RegularExpressions.Regex.Matches(s, @"\d+\.\d+\.\d+");
+        return matches.Count == 0 ? "" : matches[^1].Value;
+    }
     private static string CleanError(ZapProcessResult r) => string.IsNullOrWhiteSpace(r.Error) ? r.Output.Trim() : r.Error.Trim();
     private static PassiveSecurityResult Fail(PassiveSecurityExecutionStatus status, string url, DateTime started, string error) => new(status, RequestedUrl: url, StartedAt: started, CompletedAt: DateTime.UtcNow, EngineError: error, ConfigurationSummary: new());
 }

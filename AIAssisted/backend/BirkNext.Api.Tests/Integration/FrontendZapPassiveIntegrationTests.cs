@@ -35,6 +35,17 @@ public sealed class FrontendZapPassiveIntegrationTests
         finding.Evidence.Should().NotContain("SECRET-ZAP-TOKEN-12345");
     }
 
+    [Fact, Trait("Category", "FrontendZapPassiveIntegration")]
+    public async Task RealZap_PassiveAssessment_DoesNotCrawlLinkedPages()
+    {
+        await using var topology = await TestTopology.StartAsync();
+        var result = await topology.Service.ReviewAsync(topology.Request("/crawl-root"));
+        result.ExecutionStatus.Should().Be(PassiveSecurityExecutionStatus.Assessed, result.EngineError);
+        topology.RequestCount("/crawl-root").Should().BeGreaterThan(0);
+        topology.RequestCount("/should-not-be-crawled-1").Should().Be(0);
+        topology.RequestCount("/should-not-be-crawled-2").Should().Be(0);
+    }
+
     private sealed class TestTopology : IAsyncDisposable
     {
         private const string Image = FrontendZapPassiveReviewService.Image;
@@ -62,6 +73,7 @@ class H(BaseHTTPRequestHandler):
   b=b'<html><title>fixture</title><body>healthy</body></html>'
   h={'Content-Type':'text/html','Content-Length':str(len(b))}
   if p=='/missing-nosniff': pass
+ elif p=='/crawl-root': b=b""<html><a href='/should-not-be-crawled-1'>one</a><a href='/should-not-be-crawled-2'>two</a></html>""; h['Content-Length']=str(len(b))
   elif p=='/healthy': h['X-Content-Type-Options']='nosniff'
   else: b=b'fixture'; h['Content-Length']=str(len(b))
   self.send_response(200); [self.send_header(k,v) for k,v in h.items()]; self.end_headers(); self.wfile.write(b)
