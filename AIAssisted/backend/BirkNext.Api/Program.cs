@@ -15,6 +15,7 @@ using BirkNext.Api.Services.WasmSecurity;
 using BirkNext.Api.Services.FrontendBrowserRuntime;
 using BirkNext.Api.Services.FrontendAccessibility;
 using BirkNext.Api.Services.FrontendLighthouse;
+using BirkNext.Api.Services.FrontendPassiveSecurity;
 using HotChocolate.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -189,6 +190,10 @@ builder.Services.AddScoped<AccessibilityNormalizer>();
 builder.Services.AddScoped<IFrontendAccessibilityReviewService, FrontendAccessibilityReviewService>();
 builder.Services.AddScoped<LighthouseEvidenceSanitizer>();
 builder.Services.AddScoped<IFrontendLighthouseReviewService, FrontendLighthouseReviewService>();
+builder.Services.AddScoped<PassiveSecurityEvidenceSanitizer>();
+builder.Services.AddScoped<PassiveSecurityTargetAuthorizer>();
+builder.Services.AddSingleton<IZapProcessRunner, ZapProcessRunner>();
+builder.Services.AddScoped<IFrontendZapPassiveReviewService, FrontendZapPassiveReviewService>();
 
 // API Quality Review
 builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService>(client =>

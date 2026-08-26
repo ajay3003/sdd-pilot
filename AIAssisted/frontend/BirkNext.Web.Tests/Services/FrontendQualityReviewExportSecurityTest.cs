@@ -14,6 +14,25 @@ namespace BirkNext.Web.Tests.Services;
 public sealed class FrontendQualityReviewExportSecurityTest
 {
     [Fact]
+    public void Export_passive_security_contains_metadata_but_redacts_sentinel()
+    {
+        var passive=new PassiveSecurityResultDto(PassiveSecurityExecutionStatusDto.Assessed,"ZAP Passive","Passive","2.16.1","https://example.com", "https://example.com",DateTime.UtcNow,DateTime.UtcNow,1234,0,0,1,0,
+            [new("10021","10021-1","Missing X-Content-Type-Options","Low","Medium","description","https://example.com/?access_token=SECRET-ZAP-TOKEN-12345",null,"Bearer SECRET-ZAP-TOKEN-12345","Add nosniff",[],"693","15",1,"ZAP Passive")],
+            ["Passive automated scanning cannot prove that an application is secure and does not replace authenticated or active penetration testing."],null,"Configured target only",null);
+        var html=new ReportExportService().ExportFrontendQualityReview(new FrontendQualityReviewReport { TargetUrl="https://example.com",GeneratedAt=DateTime.UtcNow,PassiveSecurityReport=passive },null);
+        html.Should().Contain("Passive Security Assessment").And.Contain("Passive only").And.Contain("2.16.1").And.Contain("10021").And.Contain("Active scanning, spidering and authenticated penetration testing were not performed.");
+        html.Should().NotContain("SECRET-ZAP-TOKEN-12345");
+    }
+
+    [Fact]
+    public void Export_passive_engine_error_is_not_presented_as_zero_alerts_or_success()
+    {
+        var passive=new PassiveSecurityResultDto(PassiveSecurityExecutionStatusDto.EngineError,"ZAP Passive","Passive",null,"https://example.com",null,null,null,null,0,0,0,0,[],[],"Docker unavailable","Configured target only",null);
+        var html=new ReportExportService().ExportFrontendQualityReview(new FrontendQualityReviewReport { TargetUrl="https://example.com",GeneratedAt=DateTime.UtcNow,PassiveSecurityReport=passive },null);
+        html.Should().Contain("Engine Error / Not Assessed").And.Contain("Alert counts were not assessed");
+        html.Should().NotContain("Security Passed").And.NotContain("Secure").And.NotContain("0 alerts");
+    }
+    [Fact]
     public void ExportFrontendQualityReview_GeneratesActualHtml_ContainsAssessmentMetadata()
     {
         var report = new FrontendQualityReviewReport

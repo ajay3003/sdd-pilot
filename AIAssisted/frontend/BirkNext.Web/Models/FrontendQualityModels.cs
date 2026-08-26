@@ -95,6 +95,7 @@ public sealed class FrontendQualityReviewReport
     [JsonPropertyName("skippedEngines")]     public List<string>                     SkippedEngines     { get; init; } = [];
     [JsonPropertyName("accessibilityReport")] public AccessibilityResultDto?          AccessibilityReport { get; init; }
     [JsonPropertyName("lighthouseReport")]    public LighthouseResultDto?              LighthouseReport { get; init; }
+    [JsonPropertyName("passiveSecurityReport")] public PassiveSecurityResultDto?       PassiveSecurityReport { get; init; }
 }
 
 public enum LighthouseExecutionStatusDto { NotAssessed, Assessed, EngineError, Skipped, AuthenticationRequired, TimedOut }

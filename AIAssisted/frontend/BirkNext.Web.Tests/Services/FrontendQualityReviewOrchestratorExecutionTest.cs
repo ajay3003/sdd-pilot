@@ -12,6 +12,64 @@ namespace BirkNext.Web.Tests.Services;
 /// </summary>
 public sealed class FrontendQualityReviewOrchestratorExecutionTest
 {
+    private sealed class SpyPassiveSecurity : IFrontendPassiveSecurityApiService
+    {
+        public int CallCount { get; private set; }
+        public PassiveSecurityResultDto Result { get; set; } = Passive(PassiveSecurityExecutionStatusDto.Assessed);
+        public Task<PassiveSecurityResultDto> ReviewAsync(string targetUrl, string profileId, string configuredBaseUrl, string environmentType, bool requiresAuthentication, CancellationToken cancellationToken = default)
+        { CallCount++; return Task.FromResult(Result); }
+    }
+
+    private sealed class FixedRuntime : IFrontendBrowserRuntimeReviewApiService
+    { public Task<bool> IsReadyAsync(CancellationToken cancellationToken=default)=>Task.FromResult(true); public Task<BrowserRuntimeResultDto> ReviewAsync(string u,int n=30000,int s=5000,CancellationToken cancellationToken=default)=>Task.FromResult(new BrowserRuntimeResultDto(BrowserRuntimeEngineStatusDto.Assessed)); }
+    private sealed class FixedAccessibility : IFrontendAccessibilityReviewApiService
+    { public Task<AccessibilityResultDto> ReviewAsync(string u,string e,bool a,CancellationToken cancellationToken=default)=>Task.FromResult(new AccessibilityResultDto(AccessibilityExecutionStatusDto.Assessed)); }
+    private sealed class FixedLighthouse : IFrontendLighthouseReviewApiService
+    { public Task<LighthouseResultDto> ReviewAsync(string u,bool a,CancellationToken cancellationToken=default)=>Task.FromResult(new LighthouseResultDto(LighthouseExecutionStatusDto.Assessed)); }
+
+    private static PassiveSecurityResultDto Passive(PassiveSecurityExecutionStatusDto status, string? error=null) =>
+        new(status,"ZAP Passive","Passive",null,"https://example.com",null,null,null,null,0,0,0,0,[],[],error,"Configured target only",null);
+
+    private static FrontendAnalysisContext PassiveContext(bool enabled) => new()
+    {
+        TargetUrl="https://example.com", ActiveProfile=new() { Id="trusted", TargetUrl="https://example.com", Performance=new() },
+        FeatureToggles=new() { EnableSecurityEngine=true, EnablePerformanceEngine=true, EnableBrowserRuntimeEngine=true,
+            EnableAccessibilityEngine=true, EnableLighthouseEngine=true, EnablePassiveSecurityEngine=enabled }, SecuritySettings=new()
+    };
+
+    [Fact]
+    public async Task Orchestrate_PassiveSecurityDisabled_CallCountZero()
+    {
+        var passive=new SpyPassiveSecurity(); var result=await new FrontendQualityReviewOrchestrator(new SpySecurityScanner(),new SpyPerformanceService(),new FakePreflightService(),new MockQualityService(),passiveSecurity:passive).RunAsync("https://example.com",PassiveContext(false));
+        passive.CallCount.Should().Be(0); result.SkippedEngines.Should().Contain("Passive Security");
+    }
+
+    [Fact]
+    public async Task Orchestrate_PassiveSecurityEnabledReady_CallCountOne()
+    {
+        var passive=new SpyPassiveSecurity(); await new FrontendQualityReviewOrchestrator(new SpySecurityScanner(),new SpyPerformanceService(),new FakePreflightService(),new MockQualityService(),passiveSecurity:passive).RunAsync("https://example.com",PassiveContext(true));
+        passive.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Orchestrate_PreflightBlocked_PassiveSecurityCallCountZero()
+    {
+        var passive=new SpyPassiveSecurity(); var preflight=new FakePreflightService { Status=PreflightStatus.InvalidTarget };
+        await new FrontendQualityReviewOrchestrator(new SpySecurityScanner(),new SpyPerformanceService(),preflight,new MockQualityService(),passiveSecurity:passive).RunAsync("https://example.com",PassiveContext(true));
+        passive.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Orchestrate_PassiveEngineError_RetainsOtherResultsAndMarksPartialWithoutZapScore()
+    {
+        var passive=new SpyPassiveSecurity { Result=Passive(PassiveSecurityExecutionStatusDto.EngineError,"Docker unavailable") };
+        var result=await new FrontendQualityReviewOrchestrator(new SpySecurityScanner(),new SpyPerformanceService(),new FakePreflightService(),new MockQualityService(),new FixedRuntime(),new FixedAccessibility(),new FixedLighthouse(),passive)
+            .RunAsync("https://example.com",PassiveContext(true));
+        result.SecurityReport.Should().NotBeNull(); result.PerformanceReport.Should().NotBeNull(); result.BrowserRuntimeReport.Should().NotBeNull();
+        result.AccessibilityReport.Should().NotBeNull(); result.LighthouseReport.Should().NotBeNull(); result.PassiveSecurityReport!.ExecutionStatus.Should().Be(PassiveSecurityExecutionStatusDto.EngineError);
+        result.QualityReport!.Completeness.Should().Be(AssessmentCompleteness.Partial); result.QualityReport.FailedEngines.Should().Contain("Passive Security");
+        result.QualityReport.PassiveSecurityReport.Should().NotBeNull(); result.QualityReport.SecurityScore.Should().BeNull("ZAP alert counts are never converted into a score");
+    }
     private sealed class SpySecurityScanner : ISecurityScanner
     {
         public int CallCount { get; private set; }

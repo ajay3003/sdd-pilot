@@ -36,12 +36,14 @@ public sealed record FrontendQualityReviewOrchestrationResult(
     BrowserRuntimeResultDto? BrowserRuntimeReport = null,
     AccessibilityResultDto? AccessibilityReport = null,
     LighthouseResultDto? LighthouseReport = null,
+    PassiveSecurityResultDto? PassiveSecurityReport = null,
     FrontendQualityReviewReport? QualityReport = null,
     string? SecurityError = null,
     string? PerformanceError = null,
     string? BrowserRuntimeError = null,
     string? AccessibilityError = null,
     string? LighthouseError = null,
+    string? PassiveSecurityError = null,
     List<string>? SkippedEngines = null,
     bool PreflightBlocked = false,
     string? PreflightBlockReason = null,
@@ -59,6 +61,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     private readonly IFrontendBrowserRuntimeReviewApiService? _runtime;
     private readonly IFrontendAccessibilityReviewApiService? _accessibility;
     private readonly IFrontendLighthouseReviewApiService? _lighthouse;
+    private readonly IFrontendPassiveSecurityApiService? _passiveSecurity;
 
     public FrontendQualityReviewOrchestrator(
         ISecurityScanner security,
@@ -67,7 +70,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         IFrontendQualityReviewService quality,
         IFrontendBrowserRuntimeReviewApiService? runtime = null,
         IFrontendAccessibilityReviewApiService? accessibility = null,
-        IFrontendLighthouseReviewApiService? lighthouse = null)
+        IFrontendLighthouseReviewApiService? lighthouse = null,
+        IFrontendPassiveSecurityApiService? passiveSecurity = null)
     {
         _security = security;
         _performance = performance;
@@ -76,6 +80,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         _runtime = runtime;
         _accessibility = accessibility;
         _lighthouse = lighthouse;
+        _passiveSecurity = passiveSecurity;
     }
 
     public async Task<FrontendQualityReviewOrchestrationResult> RunAsync(
@@ -220,6 +225,17 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Lighthouse"] };
         }
 
+        if (context.FeatureToggles.EnablePassiveSecurityEngine && _passiveSecurity is not null)
+        {
+            try
+            {
+                result = result with { PassiveSecurityReport = await _passiveSecurity.ReviewAsync(targetUrl,
+                    context.ActiveProfile.Id, context.ActiveProfile.TargetUrl ?? "", context.ActiveProfile.EnvironmentType.ToString(), context.RequiresAuthentication, cancellationToken) };
+            }
+            catch (Exception ex) { result = result with { PassiveSecurityError = ex.Message }; }
+        }
+        else result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Security"] };
+
         if (result.SecurityReport is null && result.PerformanceReport is null)
             return result;
 
@@ -236,20 +252,25 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         var lighthouseFailed = result.LighthouseReport?.ExecutionStatus is LighthouseExecutionStatusDto.EngineError or LighthouseExecutionStatusDto.TimedOut
             || result.LighthouseError is not null;
         var lighthouseSkipped = result.LighthouseReport?.ExecutionStatus is LighthouseExecutionStatusDto.Skipped or LighthouseExecutionStatusDto.AuthenticationRequired;
+        var passiveFailed = result.PassiveSecurityReport?.ExecutionStatus is PassiveSecurityExecutionStatusDto.EngineError or PassiveSecurityExecutionStatusDto.TimedOut || result.PassiveSecurityError is not null;
+        var passiveSkipped = result.PassiveSecurityReport?.ExecutionStatus is PassiveSecurityExecutionStatusDto.Skipped or PassiveSecurityExecutionStatusDto.AuthenticationRequired;
+        if (passiveSkipped && !result.SkippedEngines.Contains("Passive Security")) result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Security"] };
         if (lighthouseSkipped && !result.SkippedEngines.Contains("Lighthouse"))
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Lighthouse"] };
         var enrichedReport = ApplyAccessibility(qualityReport, result.AccessibilityReport, accessibilityAssessed);
         enrichedReport = ApplyLighthouse(enrichedReport, result.LighthouseReport);
+        enrichedReport = ApplyPassiveSecurity(enrichedReport, result.PassiveSecurityReport);
 
         return result with
         {
             QualityReport = CopyReport(
                 enrichedReport,
-                runtimeFailed || accessibilityFailed || lighthouseFailed ? AssessmentCompleteness.Partial : enrichedReport.Completeness,
+                runtimeFailed || accessibilityFailed || lighthouseFailed || passiveFailed ? AssessmentCompleteness.Partial : enrichedReport.Completeness,
                 enrichedReport.FailedEngines
                     .Concat(runtimeFailed ? ["Browser Runtime"] : [])
                     .Concat(accessibilityFailed ? ["Accessibility"] : [])
                     .Concat(lighthouseFailed ? ["Lighthouse"] : [])
+                    .Concat(passiveFailed ? ["Passive Security"] : [])
                     .Distinct().ToList(),
                 enrichedReport.SkippedEngines.Concat(result.SkippedEngines).Distinct().ToList(),
                 result.PreflightStatus,
@@ -275,7 +296,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         Completeness = completeness, PreflightStatus = preflightStatus, PreflightMessage = preflightMessage,
         RedirectOccurred = report.RedirectOccurred, AssessedEngines = report.AssessedEngines,
         FailedEngines = failedEngines, SkippedEngines = skippedEngines,
-        AccessibilityReport = report.AccessibilityReport, LighthouseReport = report.LighthouseReport
+        AccessibilityReport = report.AccessibilityReport, LighthouseReport = report.LighthouseReport,
+        PassiveSecurityReport = report.PassiveSecurityReport
     };
 
     private static FrontendQualityReviewReport ApplyAccessibility(
@@ -315,7 +337,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             IsBlazorWasm = report.IsBlazorWasm, Completeness = report.Completeness,
             AssessedEngines = assessed ? report.AssessedEngines.Append("Accessibility").Distinct().ToList() : report.AssessedEngines,
             FailedEngines = report.FailedEngines, SkippedEngines = report.SkippedEngines,
-            AccessibilityReport = accessibility, LighthouseReport = report.LighthouseReport
+            AccessibilityReport = accessibility, LighthouseReport = report.LighthouseReport,
+            PassiveSecurityReport = report.PassiveSecurityReport
         };
     }
 
@@ -346,7 +369,36 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             AssessedEngines = lighthouse.ExecutionStatus == LighthouseExecutionStatusDto.Assessed
                 ? report.AssessedEngines.Append("Lighthouse").Distinct().ToList() : report.AssessedEngines,
             FailedEngines = report.FailedEngines, SkippedEngines = report.SkippedEngines,
-            AccessibilityReport = report.AccessibilityReport, LighthouseReport = lighthouse
+            AccessibilityReport = report.AccessibilityReport, LighthouseReport = lighthouse,
+            PassiveSecurityReport = report.PassiveSecurityReport
+        };
+    }
+
+    private static FrontendQualityReviewReport ApplyPassiveSecurity(FrontendQualityReviewReport report, PassiveSecurityResultDto? passive)
+    {
+        if (passive is null) return report;
+        var assessed = passive.ExecutionStatus == PassiveSecurityExecutionStatusDto.Assessed;
+        var findings = assessed ? (passive.Findings ?? []).Select(f => new FrontendQualityFinding
+        {
+            Id = $"zap-{f.PluginId}-{f.AlertRef}", Title = f.Name, Severity = f.Risk switch
+            { "High" => FrontendQualitySeverity.High, "Medium" => FrontendQualitySeverity.Medium, "Low" => FrontendQualitySeverity.Low, _ => FrontendQualitySeverity.Info },
+            Category = FrontendQualityCategory.Security, Description = f.Description, Recommendation = f.Solution,
+            Evidence = string.IsNullOrWhiteSpace(f.Evidence) ? [$"URL: {f.Url}; confidence: {f.Confidence}; instances: {f.InstancesCount}"] : [$"URL: {f.Url}; confidence: {f.Confidence}; instances: {f.InstancesCount}", f.Evidence],
+            SourceSystem = "ZAP Passive", Status = CheckExecutionStatus.Failed
+        }) : [];
+        return new FrontendQualityReviewReport
+        {
+            TargetUrl=report.TargetUrl, FinalUrl=report.FinalUrl, GeneratedAt=report.GeneratedAt, CompletedAt=report.CompletedAt,
+            DurationMs=report.DurationMs, OverallScore=report.OverallScore, PerformanceScore=report.PerformanceScore,
+            SecurityScore=report.SecurityScore, AccessibilityScore=report.AccessibilityScore, StandardsScore=report.StandardsScore,
+            WasmScore=report.WasmScore, ReadinessScore=report.ReadinessScore, Findings=report.Findings.Concat(findings).ToList(),
+            CategoryScores=report.CategoryScores, Recommendations=report.Recommendations, Risks=report.Risks,
+            Limitations=report.Limitations.Concat(passive.Limitations ?? []).Distinct().ToList(), IsBlazorWasm=report.IsBlazorWasm,
+            ErrorMessage=report.ErrorMessage, Completeness=report.Completeness, PreflightStatus=report.PreflightStatus,
+            PreflightMessage=report.PreflightMessage, RedirectOccurred=report.RedirectOccurred,
+            AssessedEngines=assessed ? report.AssessedEngines.Append("Passive Security").Distinct().ToList() : report.AssessedEngines,
+            FailedEngines=report.FailedEngines, SkippedEngines=report.SkippedEngines, AccessibilityReport=report.AccessibilityReport,
+            LighthouseReport=report.LighthouseReport, PassiveSecurityReport=passive
         };
     }
 

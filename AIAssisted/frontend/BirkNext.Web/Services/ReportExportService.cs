@@ -335,6 +335,24 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("<p>Field data is not included. Lighthouse is a synthetic lab measurement; INP and real-user Core Web Vitals require field data.</p>\n</section>\n");
         }
 
+        if (report.PassiveSecurityReport is { } passive)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Passive Security Assessment</h2>\n");
+            var status = passive.ExecutionStatus == PassiveSecurityExecutionStatusDto.Assessed ? "Assessed" : "Engine Error / Not Assessed";
+            sb.Append($"<p><strong>Engine status:</strong> {Esc(status)} &nbsp; <strong>Mode:</strong> Passive only &nbsp; <strong>ZAP version:</strong> {Esc(passive.ZapVersion ?? "Unavailable")}</p>\n");
+            sb.Append($"<p><strong>Configured scope:</strong> {Esc(SanitizePassive(passive.ScopeSummary))} &nbsp; <strong>Duration:</strong> {Esc(passive.DurationMs.HasValue ? $"{passive.DurationMs.Value} ms" : "Unavailable")}</p>\n");
+            if (passive.ExecutionStatus == PassiveSecurityExecutionStatusDto.Assessed)
+            {
+                sb.Append($"<p><strong>High:</strong> {passive.HighCount} &nbsp; <strong>Medium:</strong> {passive.MediumCount} &nbsp; <strong>Low:</strong> {passive.LowCount} &nbsp; <strong>Informational:</strong> {passive.InformationalCount}</p>\n");
+                sb.Append(Table(["Risk", "Confidence", "PluginId", "Alert", "URL", "Instances", "Sanitized evidence", "Solution"],
+                    (passive.Findings ?? []).Select(f => new[] { Esc(f.Risk), Esc(f.Confidence), Esc(f.PluginId), Esc(SanitizePassive(f.Name)), Esc(SanitizePassive(f.Url)),
+                        f.InstancesCount.ToString(), Esc(SanitizePassive(f.Evidence)), Esc(SanitizePassive(f.Solution)) })));
+            }
+            else sb.Append($"<p><strong>Engine error:</strong> {Esc(SanitizePassive(passive.EngineError))}. Alert counts were not assessed.</p>\n");
+            sb.Append("<p>Passive automated scanning cannot prove that an application is secure and does not replace authenticated or active penetration testing.</p>\n");
+            sb.Append("<p>Active scanning, spidering and authenticated penetration testing were not performed.</p>\n</section>\n");
+        }
+
         // Per-category sections
         var categories = Enum.GetValues<FrontendQualityCategory>();
         foreach (var cat in categories)
@@ -1105,6 +1123,16 @@ public sealed class ReportExportService : IReportExportService
     {
         var cls = sev.ToLowerInvariant().Replace(" ", "").Replace("_", "");
         return $"<span class=\"badge badge-{cls}\">{Esc(sev)}</span>";
+    }
+
+    private static string SanitizePassive(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "";
+        var safe = System.Text.RegularExpressions.Regex.Replace(value, @"(?i)SECRET-[A-Z0-9-]+", "[REDACTED]");
+        safe = System.Text.RegularExpressions.Regex.Replace(safe, @"(?i)((?:access_token|id_token|code|api_key|apikey|secret|authorization|cookie)\s*[=:]\s*)([^&\s,;]+)", "$1[REDACTED]");
+        safe = System.Text.RegularExpressions.Regex.Replace(safe, @"(?i)(bearer\s+)[^\s,;]+", "$1[REDACTED]");
+        safe = System.Text.RegularExpressions.Regex.Replace(safe, @"//[^/@\s]+@", "//[REDACTED]@");
+        return safe.Length <= 512 ? safe : safe[..512] + "…";
     }
 
     private static string Esc(string? s)

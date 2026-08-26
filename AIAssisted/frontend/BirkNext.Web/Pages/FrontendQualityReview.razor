@@ -119,6 +119,34 @@
             </section>
         }
 
+        @if (report.PassiveSecurityReport is { } passive)
+        {
+            <section class="fqr-section" aria-label="Passive Security Assessment">
+                <SectionHeader Title="Passive Security Assessment" />
+                @if (passive.ExecutionStatus == PassiveSecurityExecutionStatusDto.Assessed)
+                {
+                    <p><strong>Mode:</strong> Passive only &nbsp; <strong>ZAP version:</strong> @(passive.ZapVersion ?? "Unavailable")</p>
+                    <p><strong>Scope:</strong> @passive.ScopeSummary &nbsp; <strong>Duration:</strong> @(passive.DurationMs.HasValue ? $"{passive.DurationMs.Value / 1000.0:0.##}s" : "Unavailable")</p>
+                    <p><strong>High:</strong> @passive.HighCount &nbsp; <strong>Medium:</strong> @passive.MediumCount &nbsp; <strong>Low:</strong> @passive.LowCount &nbsp; <strong>Informational:</strong> @passive.InformationalCount</p>
+                    @foreach (var finding in passive.Findings ?? [])
+                    {
+                        <article class="fqr-recommendation-card">
+                            <h3>@finding.Name</h3>
+                            <p><strong>Risk:</strong> @finding.Risk &nbsp; <strong>Confidence:</strong> @finding.Confidence &nbsp; <strong>Instances:</strong> @finding.InstancesCount</p>
+                            <p><strong>URL:</strong> @finding.Url</p>
+                            @if (!string.IsNullOrWhiteSpace(finding.Evidence)) { <p><strong>Safe evidence:</strong> @finding.Evidence</p> }
+                            <p><strong>Solution:</strong> @finding.Solution</p>
+                        </article>
+                    }
+                }
+                else
+                {
+                    <p><strong>Engine Error / Not Assessed:</strong> @passive.ExecutionStatus — @passive.EngineError</p>
+                }
+                <p>Passive automated scanning cannot prove that an application is secure and does not replace authenticated or active penetration testing.</p>
+            </section>
+        }
+
         <section class="fqr-summary-grid" aria-label="Frontend quality score summary">
             @if (report.OverallScore.HasValue)
             {
@@ -417,7 +445,7 @@
         "Service Worker Detection",
         "Core Web Vitals (Not Assessed — requires browser runtime)",
         "WCAG-related automated checks (axe-core when enabled; manual testing still required)",
-        "OWASP (Passive scan only — no active vulnerability testing)",
+        "OWASP-related frontend indicators (passive checks only — no compliance claim)",
         "Testability (Not Assessed — not implemented)",
         "Observability (Not Assessed — not implemented)",
         "Lazy Loading (Static detection only)",
@@ -511,6 +539,7 @@
             PreflightMessage = qualityReport.PreflightMessage,
             AccessibilityReport = qualityReport.AccessibilityReport,
             LighthouseReport = qualityReport.LighthouseReport,
+            PassiveSecurityReport = qualityReport.PassiveSecurityReport,
         };
 
         _report  = completedReport;
@@ -568,6 +597,7 @@
             new("Authentication", _context.AuthenticationType.ToString()),
             new("Accessibility", _context.FeatureToggles.EnableAccessibilityEngine ? "Enabled (automated axe-core checks)" : "Disabled"),
             new("Lighthouse", _context.FeatureToggles.EnableLighthouseEngine ? "Enabled (synthetic lab measurement)" : "Disabled"),
+            new("Passive Security", _context.FeatureToggles.EnablePassiveSecurityEngine ? "Enabled (ZAP passive only)" : "Disabled"),
         ];
     }
 
