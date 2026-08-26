@@ -106,6 +106,7 @@ public sealed class FrontendAnalysisProfile
     [JsonPropertyName("security")]       public FrontendSecuritySettings       Security       { get; set; } = new();
     [JsonPropertyName("features")]       public FrontendAnalysisFeatureToggles Features       { get; set; } = new();
     [JsonPropertyName("engineRequirements")] public FrontendQualityEngineRequirementSettings EngineRequirements { get; set; } = new();
+    [JsonPropertyName("releasePolicy")] public FrontendQualityReleasePolicySettings ReleasePolicy { get; set; } = new();
 
     [JsonPropertyName("integrations")]   public List<IntegrationConfig>        Integrations   { get; set; } = [];
 }
@@ -211,6 +212,12 @@ public sealed class FrontendQualityEngineRequirementSettings
         [FrontendQualityEngineId.Lighthouse] = Lighthouse,
         [FrontendQualityEngineId.PassiveSecurity] = PassiveSecurity,
     });
+}
+
+public sealed class FrontendQualityReleasePolicySettings
+{
+    [JsonPropertyName("blockingLogicalIssueIds")] public List<string> BlockingLogicalIssueIds { get; set; } = [];
+    [JsonPropertyName("reviewOptionalEngineFailures")] public bool ReviewOptionalEngineFailures { get; set; } = true;
 }
 
 public sealed class ProfileValidationResult

@@ -69,6 +69,10 @@
         var filtered = FilteredFindings(report.Findings).ToList();
         var recommendations = BuildRecommendationCards(report).ToList();
 
+        <FrontendQualityDecisionSupport Report="report" />
+
+        @if (ShowLegacyDecisionSupport)
+        {
         @if (report.Completeness == AssessmentCompleteness.Partial)
         {
             <div class="wsr-banner wsr-banner-warn wsr-banner-standalone" role="status">
@@ -204,6 +208,8 @@
                 </div>
             }
         </section>
+
+        }
 
         <section class="fqr-section" aria-label="Category summary">
             <SectionHeader Title="Category Summary" />
@@ -386,13 +392,11 @@
                     }
                     <div class="fqr-technical-list">
                         <h3>Scope</h3>
-                        <p>This review performs <strong>passive HTTP analysis and static code inspection</strong> of frontend assets. It does not include:</p>
+                        <p>This review combines the configured static, passive, and real-browser engines shown in the engine matrix. It does not establish:</p>
                         <ul>
                             <li>Active vulnerability scanning or penetration testing</li>
-                            <li>Browser runtime analysis (requires Playwright or similar)</li>
-                            <li>Automated accessibility audit (requires axe-core or Lighthouse)</li>
-                            <li>Performance metrics: Core Web Vitals, LCP, CLS, INP, FCP, TBT (requires real browser)</li>
-                            <li>Runtime exceptions or console errors</li>
+                            <li>WCAG conformance or completion of manual accessibility testing</li>
+                            <li>Production field Core Web Vitals or field INP</li>
                             <li>End-to-end user flow validation</li>
                         </ul>
                     </div>
@@ -459,6 +463,7 @@
     private string? _perfError;
 
     private FrontendQualityReviewReport? _report;
+    private bool ShowLegacyDecisionSupport => false;
 
     private string? _findingSearch;
     private FrontendQualitySeverity? _sevFilter;
@@ -493,7 +498,7 @@
         _perfError = orchestration.PerformanceError;
 
         // ── Preflight target validation before scanning ────────────────
-        if (orchestration.PreflightBlocked || orchestration.QualityReport is null)
+        if (orchestration.QualityReport is null)
         {
             _running = false;
             RuntimeReviews.MarkQualityFailed(
@@ -527,6 +532,7 @@
             ReadinessScore = qualityReport.ReadinessScore,
             Findings = qualityReport.Findings,
             LogicalIssues = qualityReport.LogicalIssues,
+            ManualReviewItems = qualityReport.ManualReviewItems,
             CategoryScores = qualityReport.CategoryScores,
             Recommendations = qualityReport.Recommendations,
             Risks = qualityReport.Risks,

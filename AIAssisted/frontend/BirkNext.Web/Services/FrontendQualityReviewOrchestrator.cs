@@ -263,7 +263,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
                 enrichedReport,
                 outcomes,
                 result.PreflightStatus,
-                result.PreflightBlockReason)
+                result.PreflightBlockReason,
+                context.ReleasePolicy)
         };
     }
 
@@ -271,22 +272,31 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         FrontendQualityReviewReport report,
         List<FrontendQualityEngineOutcome> outcomes,
         PreflightStatus preflightStatus,
-        string? preflightMessage) => new()
+        string? preflightMessage,
+        FrontendQualityReleasePolicySettings releasePolicy)
     {
+        var coverage = FrontendQualityCoverage.Evaluate(outcomes);
+        var issues = FrontendQualityLogicalIssueGrouper.Group(report.Findings);
+        var manualItems = FrontendQualityDecisionSupportService.BuildManualReviewItems(issues, outcomes);
+        var disposition = FrontendQualityDecisionSupportService.EvaluateReleaseDisposition(
+            coverage, outcomes, issues, manualItems, releasePolicy);
+        return new FrontendQualityReviewReport
+        {
         TargetUrl = report.TargetUrl, FinalUrl = report.FinalUrl, GeneratedAt = report.GeneratedAt,
         CompletedAt = report.CompletedAt, DurationMs = report.DurationMs, OverallScore = report.OverallScore,
         PerformanceScore = report.PerformanceScore, SecurityScore = report.SecurityScore,
         AccessibilityScore = report.AccessibilityScore, StandardsScore = report.StandardsScore,
         WasmScore = report.WasmScore, ReadinessScore = report.ReadinessScore, Findings = report.Findings,
-        LogicalIssues = FrontendQualityLogicalIssueGrouper.Group(report.Findings),
+        LogicalIssues = issues, ManualReviewItems = manualItems,
         CategoryScores = report.CategoryScores, Recommendations = report.Recommendations, Risks = report.Risks,
         Limitations = report.Limitations, IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage,
-        Coverage = FrontendQualityCoverage.Evaluate(outcomes), ReleaseDisposition = report.ReleaseDisposition, EngineOutcomes = outcomes,
+        Coverage = coverage, ReleaseDisposition = disposition, EngineOutcomes = outcomes,
         PreflightStatus = preflightStatus, PreflightMessage = preflightMessage,
         RedirectOccurred = report.RedirectOccurred,
         AccessibilityReport = report.AccessibilityReport, LighthouseReport = report.LighthouseReport,
         PassiveSecurityReport = report.PassiveSecurityReport, BrowserRuntimeReport = report.BrowserRuntimeReport
-    };
+        };
+    }
 
     private static FrontendQualityReviewReport BuildPreflightReport(
         string targetUrl,
@@ -303,6 +313,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             GeneratedAt = DateTime.UtcNow,
             EngineOutcomes = outcomes,
             Coverage = FrontendQualityCoverage.Evaluate(outcomes),
+            ReleaseDisposition = FrontendQualityReleaseDisposition.Blocked,
             PreflightStatus = status,
             PreflightMessage = result.PreflightBlockReason,
         };

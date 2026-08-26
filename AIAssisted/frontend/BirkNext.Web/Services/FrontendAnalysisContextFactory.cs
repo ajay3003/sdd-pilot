@@ -79,6 +79,7 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             SecuritySettings            = profile.Security,
             FeatureToggles              = profile.Features,
             EngineRequirements          = profile.EngineRequirements,
+            ReleasePolicy               = profile.ReleasePolicy,
             AllowedRestHosts            = allowedRestHosts,
             AllowedGraphQlEndpoints     = allowedGraphQlEndpoints,
             AllowedBackendDomains       = allowedBackendDomains,
@@ -136,6 +137,7 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             Security = profile.Security,
             Features = profile.Features,
             EngineRequirements = profile.EngineRequirements,
+            ReleasePolicy = profile.ReleasePolicy,
             Integrations = [.. profile.Integrations]
         };
 

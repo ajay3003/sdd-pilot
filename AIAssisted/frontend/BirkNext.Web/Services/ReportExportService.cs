@@ -249,6 +249,7 @@ public sealed class ReportExportService : IReportExportService
     public string ExportFrontendQualityReview(FrontendQualityReviewReport report, string? projectName)
     {
         var sb = new StringBuilder();
+        AppendFrontendDecisionSupport(sb, report);
 
         // ── Assessment Metadata ────────────────────────────────────────
         sb.Append("<section class=\"block\">\n<h2>Assessment Summary</h2>\n");
@@ -277,7 +278,7 @@ public sealed class ReportExportService : IReportExportService
         sb.Append("</dl>\n");
 
         // ── Engine Status ──────────────────────────────────────────────
-        if (report.AssessedEngines.Count > 0 || report.FailedEngines.Count > 0 || report.SkippedEngines.Count > 0)
+        if (report.EngineOutcomes.Count == 0 && (report.AssessedEngines.Count > 0 || report.FailedEngines.Count > 0 || report.SkippedEngines.Count > 0))
         {
             sb.Append("<dl style=\"display:grid;grid-template-columns:120px 1fr;gap:0.5rem;font-size:.85rem;margin-left:1rem\">\n");
 
@@ -296,16 +297,6 @@ public sealed class ReportExportService : IReportExportService
         sb.Append("</section>\n");
 
         // ── KPI Scores (with null safety) ──────────────────────────────
-        sb.Append("<div class=\"kpi-row\">");
-        sb.Append(Kpi(report.OverallScore?.ToString() ?? "Not Assessed",       "Overall Score"));
-        sb.Append(Kpi(report.PerformanceScore?.ToString() ?? "Not Assessed",   "Performance"));
-        sb.Append(Kpi(report.SecurityScore?.ToString() ?? "Not Assessed",      "Security"));
-        sb.Append(Kpi(report.AccessibilityScore?.ToString() ?? "Not Assessed", "Accessibility"));
-        sb.Append(Kpi(report.StandardsScore?.ToString() ?? "Not Assessed",     "Standards"));
-        sb.Append(Kpi(report.WasmScore?.ToString() ?? "Not Assessed",          "Blazor WASM"));
-        sb.Append(Kpi(report.ReadinessScore?.ToString() ?? "Not Assessed",     "Readiness"));
-        sb.Append("</div>\n");
-
         if (report.AccessibilityReport is { } accessibility)
         {
             sb.Append("<section class=\"block\">\n<h2>Automated Accessibility Checks</h2>\n");
@@ -543,6 +534,89 @@ public sealed class ReportExportService : IReportExportService
         false => "Unreachable",
         null => "Not checked"
     };
+
+    private static void AppendFrontendDecisionSupport(StringBuilder sb, FrontendQualityReviewReport report)
+    {
+        var disposition = report.ReleaseDisposition ?? FrontendQualityReleaseDisposition.ReviewRequired;
+        var dispositionText = disposition switch
+        {
+            FrontendQualityReleaseDisposition.Blocked => "Automated review is blocked by one or more configured release-blocking conditions.",
+            FrontendQualityReleaseDisposition.NoAutomatedBlockDetected => "No configured automated release block was detected.",
+            _ => "Automated evidence requires review before a release decision can be made.",
+        };
+        var coverage = report.Coverage?.RequiredCoverageState ?? FrontendQualityRequiredCoverageState.NoTrustworthyRequiredAssessment;
+        var coverageText = coverage switch
+        {
+            FrontendQualityRequiredCoverageState.AllRequiredAssessed => "All required engines assessed",
+            FrontendQualityRequiredCoverageState.SomeRequiredNotAssessed => "Some required engines not assessed",
+            _ => "No trustworthy required assessment",
+        };
+        var required = report.EngineOutcomes.Where(o => o.Requirement == FrontendQualityEngineRequirement.Required).ToList();
+        var optional = report.EngineOutcomes.Where(o => o.Requirement == FrontendQualityEngineRequirement.Optional).ToList();
+
+        sb.Append("<section class=\"block\">\n<h2>Release disposition</h2>\n");
+        sb.Append($"<p><strong>{Esc(disposition.ToString())}</strong> — {Esc(dispositionText)}</p>\n");
+        sb.Append($"<p><strong>Critical/high logical issues:</strong> {report.LogicalIssues.Count(i => i.PrimarySeverity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High)} &nbsp; <strong>Logical issues:</strong> {report.LogicalIssues.Count} &nbsp; <strong>Source findings:</strong> {report.Findings.Count}</p>\n</section>\n");
+
+        sb.Append("<section class=\"block\">\n<h2>Automated coverage</h2>\n");
+        sb.Append($"<p><strong>{Esc(coverageText)}</strong></p><p><strong>Required assessed:</strong> {required.Count(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed)} / {required.Count} &nbsp; <strong>Optional assessed:</strong> {optional.Count(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed)} / {optional.Count}</p>\n");
+        sb.Append(Table(
+            ["Engine", "Policy", "Enabled", "Outcome", "Evidence / findings", "Duration", "Tool / browser", "Reason / manual obligation"],
+            report.EngineOutcomes.OrderBy(o => o.EngineId).Select(o => new[]
+            {
+                Esc(o.DisplayName), Esc(o.Requirement.ToString()), o.Enabled ? "Enabled" : "Disabled", Esc(FrontendQualityDecisionSupportService.ExecutionStateLabel(o.ExecutionState)),
+                $"{o.EvidenceCount?.ToString() ?? "—"} / {o.FindingCount?.ToString() ?? "—"}",
+                o.DurationMs.HasValue ? $"{o.DurationMs.Value} ms" : "—",
+                Esc(string.Join(" · ", new[] { o.ToolName, o.ToolVersion, o.BrowserName, o.BrowserVersion }.Where(v => !string.IsNullOrWhiteSpace(v)))),
+                Esc(SanitizePassive(string.Join(" ", new[] { o.SanitizedFailureReason }.Concat(o.ManualTestingObligations).Where(v => !string.IsNullOrWhiteSpace(v)))))
+            })));
+        sb.Append("</section>\n");
+
+        sb.Append("<section class=\"block\">\n<h2>Logical issues</h2>\n");
+        if (report.LogicalIssues.Count == 0)
+            sb.Append("<p>No automated findings were produced. This does not remove manual review obligations or assessment limitations.</p>\n");
+        foreach (var issue in report.LogicalIssues)
+        {
+            sb.Append($"<article><h3>{Esc(issue.CanonicalTitle)}</h3><p><strong>Logical ID:</strong> {Esc(issue.LogicalId)}</p><p><strong>Severity:</strong> {Esc(issue.PrimarySeverity.ToString())} &nbsp; <strong>Category:</strong> {Esc(issue.Category.ToString())}</p>\n");
+            sb.Append($"<p><strong>Sources:</strong> {Esc(string.Join(", ", issue.Sources.Select(FrontendQualityDecisionSupportService.SourceLabel)))}</p>\n");
+            sb.Append($"<p><strong>Evidence strength:</strong> {Esc(issue.EvidenceStrength.ToString())} &nbsp; <strong>Confidence:</strong> {Esc(issue.Confidence?.ToString() ?? "Not assigned")}</p>\n");
+            sb.Append($"<p><strong>Review disposition:</strong> {Esc(issue.ReviewDisposition.ToString())}</p><p><strong>Next step:</strong> {Esc(SanitizePassive(issue.Recommendation))}</p>\n");
+            sb.Append(Table(["Source", "Original severity", "Source finding / rule", "Sanitized evidence", "Source recommendation"], issue.FindingInstances.Select(instance => new[]
+            {
+                Esc(FrontendQualityDecisionSupportService.SourceLabel(instance.EngineId)), Esc(instance.Severity.ToString()),
+                Esc($"{instance.SourceFindingId} / {instance.SourceRuleId ?? "—"}"),
+                Esc(SanitizePassive(string.Join(" | ", instance.SanitizedEvidence))), Esc(SanitizePassive(instance.Recommendation))
+            })));
+            sb.Append("</article>\n");
+        }
+        sb.Append("</section>\n");
+
+        sb.Append("<section class=\"block\">\n<h2>Manual verification required</h2>\n");
+        if (report.ManualReviewItems.Count == 0)
+            sb.Append("<p>No explicit manual-verification item was generated. Existing assessment limitations still apply.</p>\n");
+        else
+            sb.Append(Table(["What needs verification", "Why automation cannot determine it", "Source", "Related issue"], report.ManualReviewItems.Select(item => new[]
+            {
+                Esc(SanitizePassive(item.Title)), Esc(SanitizePassive(item.Reason)), Esc(SanitizePassive(item.Source)), Esc(item.RelatedLogicalId ?? "—")
+            })));
+        sb.Append("</section>\n");
+
+        sb.Append("<section class=\"block\">\n<h2>Source-specific scores</h2><div class=\"kpi-row\">");
+        sb.Append(Kpi(report.OverallScore?.ToString() ?? "Not Assessed", "Legacy static review score"));
+        sb.Append(Kpi(report.SecurityScore?.ToString() ?? "Not Assessed", "Static security score"));
+        sb.Append(Kpi(report.PerformanceScore?.ToString() ?? "Not Assessed", "Passive performance score"));
+        sb.Append(Kpi(report.LighthouseReport?.PerformanceScore?.ToString() ?? "Not Assessed", "Lighthouse lab performance score"));
+        sb.Append("</div><p>The legacy static review score does not represent all enabled engines.</p></section>\n");
+
+        if (report.BrowserRuntimeReport is { } runtime)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Browser Runtime</h2>\n");
+            sb.Append($"<p><strong>Assessment state:</strong> {Esc(runtime.Status.ToString())} &nbsp; <strong>Browser:</strong> {Esc(runtime.BrowserName ?? "Unavailable")} {Esc(runtime.BrowserVersion)} &nbsp; <strong>Duration:</strong> {Esc(runtime.DurationMs.HasValue ? $"{runtime.DurationMs.Value} ms" : "Unavailable")}</p>\n");
+            sb.Append($"<p><strong>Console errors:</strong> {runtime.ConsoleErrorCount} &nbsp; <strong>Page errors:</strong> {runtime.PageErrorCount} &nbsp; <strong>Critical resource failures:</strong> {runtime.CriticalResourceFailureCount}</p>\n");
+            sb.Append(Table(["Category", "Finding", "Sanitized evidence"], (runtime.Findings ?? []).Select(f => new[] { Esc(f.Category), Esc(SanitizePassive(f.Title)), Esc(SanitizePassive(string.Join(" | ", f.Evidence ?? []))) })));
+            sb.Append($"<p><strong>Limitations:</strong> {Esc(SanitizePassive(string.Join(" ", runtime.Limitations ?? [])))}</p></section>\n");
+        }
+    }
 
     private static string CategoryLabel(FrontendQualityCategory c) => c switch
     {

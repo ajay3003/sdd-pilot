@@ -1,0 +1,141 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+<section class="fqr-section fqr-decision" aria-label="Release disposition">
+    <SectionHeader Title="Release disposition" />
+    <div class="wsr-banner @DispositionClass" role="status">
+        <strong>@DispositionLabel</strong> — @DispositionText
+    </div>
+    <p><strong>Critical/high logical issues:</strong> @CriticalHighCount &nbsp; <strong>Logical issues:</strong> @Report.LogicalIssues.Count &nbsp; <strong>Source findings:</strong> @Report.Findings.Count</p>
+</section>
+
+<section class="fqr-section" aria-label="Automated coverage and engine outcomes">
+    <SectionHeader Title="Automated coverage" />
+    <p><strong>@CoverageLabel</strong></p>
+    <p><strong>Required assessed:</strong> @RequiredAssessed / @RequiredTotal &nbsp; <strong>Optional assessed:</strong> @OptionalAssessed / @OptionalTotal</p>
+    <div class="fqr-table-wrap">
+        <table class="fqr-findings-table fqr-engine-matrix">
+            <thead><tr><th>Engine</th><th>Policy</th><th>Enabled</th><th>Outcome</th><th>Evidence / findings</th><th>Duration</th><th>Tool / browser</th><th>Reason or manual obligation</th></tr></thead>
+            <tbody>
+                @foreach (var outcome in Report.EngineOutcomes.OrderBy(item => item.EngineId))
+                {
+                    <tr data-engine-id="@outcome.EngineId">
+                        <td><strong>@outcome.DisplayName</strong></td>
+                        <td>@outcome.Requirement</td>
+                        <td>@(outcome.Enabled ? "Enabled" : "Disabled")</td>
+                        <td><span class="fqr-state">@FrontendQualityDecisionSupportService.ExecutionStateLabel(outcome.ExecutionState)</span></td>
+                        <td>@(outcome.EvidenceCount?.ToString() ?? "—") / @(outcome.FindingCount?.ToString() ?? "—")</td>
+                        <td>@(outcome.DurationMs.HasValue ? $"{outcome.DurationMs.Value} ms" : "—")</td>
+                        <td>@ToolLabel(outcome)</td>
+                        <td>
+                            @if (!string.IsNullOrWhiteSpace(outcome.SanitizedFailureReason)) { <span>@outcome.SanitizedFailureReason</span> }
+                            @if (outcome.ManualTestingObligations.Count > 0) { <span>@string.Join(" ", outcome.ManualTestingObligations)</span> }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="fqr-section" aria-label="Logical issues">
+    <SectionHeader Title="Logical issues" />
+    @if (Report.LogicalIssues.Count == 0)
+    {
+        <div class="fqr-empty-panel">No automated findings were produced. This does not remove manual review obligations or assessment limitations.</div>
+    }
+    else
+    {
+        <div class="fqr-risk-grid">
+            @foreach (var issue in Report.LogicalIssues)
+            {
+                <article class="fqr-risk-card fqr-risk-@issue.PrimarySeverity.ToString().ToLowerInvariant()" data-logical-id="@issue.LogicalId">
+                    <div class="fqr-risk-meta"><span class="fqr-severity fqr-severity-@issue.PrimarySeverity.ToString().ToLowerInvariant()">@issue.PrimarySeverity</span><span>@issue.Category</span></div>
+                    <h3>@issue.CanonicalTitle</h3>
+                    <p><strong>Observed by:</strong> @string.Join(", ", issue.Sources.Select(FrontendQualityDecisionSupportService.SourceLabel))</p>
+                    <p><strong>Evidence:</strong> @EvidenceLabel(issue.EvidenceStrength) @if (issue.Confidence.HasValue) { <span> · <strong>Confidence:</strong> @issue.Confidence</span> }</p>
+                    <p><strong>Disposition:</strong> @DispositionLabelFor(issue.ReviewDisposition)</p>
+                    <p><strong>Next step:</strong> @issue.Recommendation</p>
+                    @if (issue.ManualVerificationRequired) { <p><strong>Manual verification required.</strong></p> }
+                    <details>
+                        <summary>Source evidence (@issue.FindingInstances.Count)</summary>
+                        @foreach (var instance in issue.FindingInstances)
+                        {
+                            <div class="fqr-evidence-group" data-source-finding-id="@instance.SourceFindingId">
+                                <p><strong>@FrontendQualityDecisionSupportService.SourceLabel(instance.EngineId):</strong> @instance.Title (@instance.Severity)</p>
+                                <p><strong>Source ID:</strong> @instance.SourceFindingId @if (!string.IsNullOrWhiteSpace(instance.SourceRuleId)) { <span> · <strong>Rule:</strong> @instance.SourceRuleId</span> }</p>
+                                @if (instance.SanitizedEvidence.Count > 0) { <ul>@foreach (var evidence in instance.SanitizedEvidence) { <li><code>@evidence</code></li> }</ul> }
+                                <p><strong>Source recommendation:</strong> @instance.Recommendation</p>
+                            </div>
+                        }
+                    </details>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+<section class="fqr-section" aria-label="Manual verification required">
+    <SectionHeader Title="Manual verification required" />
+    @if (Report.ManualReviewItems.Count == 0)
+    {
+        <div class="fqr-empty-panel">No explicit manual-verification item was generated by the configured automated review. Existing assessment limitations still apply.</div>
+    }
+    else
+    {
+        @foreach (var item in Report.ManualReviewItems)
+        {
+            <article class="fqr-recommendation-card">
+                <h3>@item.Title</h3><p>@item.Reason</p><p><strong>Source:</strong> @item.Source</p>
+                @if (!string.IsNullOrWhiteSpace(item.RelatedLogicalId)) { <p><strong>Related issue:</strong> @item.RelatedLogicalId</p> }
+            </article>
+        }
+    }
+</section>
+
+<section class="fqr-summary-grid" aria-label="Source-specific scores">
+    <MetricCard Value="@(Report.OverallScore?.ToString() ?? "—")" Label="Legacy static review score" Sublabel="Static/passive legacy scope; not all enabled engines" Variant="neutral" />
+    <MetricCard Value="@(Report.SecurityScore?.ToString() ?? "—")" Label="Static security score" Sublabel="Static Security source" Variant="neutral" />
+    <MetricCard Value="@(Report.PerformanceScore?.ToString() ?? "—")" Label="Passive performance score" Sublabel="Passive Performance source" Variant="neutral" />
+    <MetricCard Value="@(Report.LighthouseReport?.PerformanceScore?.ToString() ?? "—")" Label="Lighthouse performance score" Sublabel="Synthetic lab measurement" Variant="neutral" />
+</section>
+
+@if (Report.BrowserRuntimeReport is { } runtime)
+{
+    <section class="fqr-section" aria-label="Browser Runtime details">
+        <SectionHeader Title="Browser Runtime" />
+        <p><strong>Assessment state:</strong> @runtime.Status &nbsp; <strong>Browser:</strong> @(runtime.BrowserName ?? "Unavailable") @(runtime.BrowserVersion ?? "") &nbsp; <strong>Duration:</strong> @(runtime.DurationMs.HasValue ? $"{runtime.DurationMs.Value} ms" : "Unavailable")</p>
+        <p><strong>Console errors:</strong> @runtime.ConsoleErrorCount &nbsp; <strong>Page errors:</strong> @runtime.PageErrorCount &nbsp; <strong>Critical resource failures:</strong> @runtime.CriticalResourceFailureCount</p>
+        @foreach (var finding in runtime.Findings ?? []) { <p><strong>@finding.Category:</strong> @finding.Title — @finding.Description</p> }
+        @if ((runtime.Limitations ?? []).Count > 0) { <p><strong>Limitations:</strong> @string.Join(" ", runtime.Limitations!)</p> }
+    </section>
+}
+
+<section class="fqr-section" aria-label="Engine scope statements">
+    <SectionHeader Title="Engine scope statements" />
+    <p><strong>Accessibility:</strong> Automated accessibility checks can identify selected rendered-DOM issues. Manual accessibility testing remains required; automated results do not establish WCAG conformance.</p>
+    <p><strong>Passive Security / ZAP:</strong> Passive checks only. No active scan, spider, fuzzing, or penetration-test claim.</p>
+    <p><strong>Lighthouse:</strong> Synthetic lab performance only. It is not production field data and does not provide field INP.</p>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FrontendQualityReviewReport Report { get; set; } = default!;
+    private int RequiredTotal => Report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Required);
+    private int RequiredAssessed => Report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Required && o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
+    private int OptionalTotal => Report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Optional);
+    private int OptionalAssessed => Report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Optional && o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
+    private int CriticalHighCount => Report.LogicalIssues.Count(i => i.PrimarySeverity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High);
+    private string DispositionLabel => Report.ReleaseDisposition?.ToString() ?? "ReviewRequired";
+    private string DispositionText => Report.ReleaseDisposition switch {
+        FrontendQualityReleaseDisposition.Blocked => "Automated review is blocked by one or more configured release-blocking conditions.",
+        FrontendQualityReleaseDisposition.NoAutomatedBlockDetected => "No configured automated release block was detected.",
+        _ => "Automated evidence requires review before a release decision can be made." };
+    private string DispositionClass => Report.ReleaseDisposition == FrontendQualityReleaseDisposition.Blocked ? "wsr-banner-error" : Report.ReleaseDisposition == FrontendQualityReleaseDisposition.ReviewRequired ? "wsr-banner-warn" : "wsr-banner-info";
+    private string CoverageLabel => Report.Coverage?.RequiredCoverageState switch {
+        FrontendQualityRequiredCoverageState.AllRequiredAssessed => "All required engines assessed",
+        FrontendQualityRequiredCoverageState.SomeRequiredNotAssessed => "Some required engines not assessed",
+        _ => "No trustworthy required assessment" };
+    private static string ToolLabel(FrontendQualityEngineOutcome outcome) => string.Join(" · ", new[] { outcome.ToolName, outcome.ToolVersion, outcome.BrowserName, outcome.BrowserVersion }.Where(v => !string.IsNullOrWhiteSpace(v)));
+    private static string EvidenceLabel(FrontendQualityEvidenceStrength strength) => strength switch { FrontendQualityEvidenceStrength.DirectObservation => "Direct observation", FrontendQualityEvidenceStrength.ToolDiagnostic => "Tool diagnostic", FrontendQualityEvidenceStrength.StaticIndicator => "Static indicator", _ => "Derived summary" };
+    private static string DispositionLabelFor(FrontendQualityReviewDisposition disposition) => disposition switch { FrontendQualityReviewDisposition.ManualVerificationRequired => "Manual verification required", FrontendQualityReviewDisposition.Informational => "Informational", _ => "Automated finding" };
+}

@@ -89,6 +89,7 @@ public sealed class FrontendQualityReviewReport
     [JsonPropertyName("readinessScore")]     public int?                             ReadinessScore     { get; init; }
     [JsonPropertyName("findings")]           public List<FrontendQualityFinding>     Findings           { get; init; } = [];
     [JsonPropertyName("logicalIssues")]      public List<FrontendQualityLogicalIssue> LogicalIssues      { get; init; } = [];
+    [JsonPropertyName("manualReviewItems")]  public List<FrontendQualityManualReviewItem> ManualReviewItems { get; init; } = [];
     [JsonPropertyName("categoryScores")]     public List<FrontendQualityCategoryScore> CategoryScores   { get; init; } = [];
     [JsonPropertyName("recommendations")]    public List<string>                     Recommendations    { get; init; } = [];
     [JsonPropertyName("risks")]              public List<string>                     Risks              { get; init; } = [];
