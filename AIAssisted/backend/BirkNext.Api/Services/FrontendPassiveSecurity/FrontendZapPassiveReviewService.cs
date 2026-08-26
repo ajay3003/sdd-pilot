@@ -65,6 +65,7 @@ public sealed class FrontendZapPassiveReviewService(
                     var absolute = location.IsAbsoluteUri ? location : new Uri(new Uri(request.TargetUrl), location);
                     var redirect = authorizer.AuthorizeRedirect(request, absolute.AbsoluteUri);
                     if (!redirect.IsValid) return Fail(PassiveSecurityExecutionStatus.Skipped, request.TargetUrl, started, redirect.BlockReason ?? "Redirect scope blocked.");
+                    using var redirectedResponse = await proxied.GetAsync(absolute.AbsoluteUri, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
                 }
             }
             await DrainPassiveQueueAsync(api, timeout.Token);

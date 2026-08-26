@@ -46,6 +46,16 @@ public sealed class FrontendZapPassiveIntegrationTests
         topology.RequestCount("/should-not-be-crawled-2").Should().Be(0);
     }
 
+    [Fact, Trait("Category", "FrontendZapPassiveIntegration")]
+    public async Task RealZap_SameOriginRedirect_IsAssessed()
+    {
+        await using var topology = await TestTopology.StartAsync();
+        var result = await topology.Service.ReviewAsync(topology.Request("/redirect-same"));
+        result.ExecutionStatus.Should().Be(PassiveSecurityExecutionStatus.Assessed, result.EngineError);
+        topology.RequestCount("/redirect-same").Should().BeGreaterThan(0);
+        topology.RequestCount("/redirect-final").Should().BeGreaterThan(0);
+    }
+
     private sealed class TestTopology : IAsyncDisposable
     {
         private const string Image = FrontendZapPassiveReviewService.Image;
@@ -73,7 +83,8 @@ class H(BaseHTTPRequestHandler):
   b=b'<html><title>fixture</title><body>healthy</body></html>'
   h={'Content-Type':'text/html','Content-Length':str(len(b))}
   if p=='/missing-nosniff': pass
- elif p=='/crawl-root': b=b""<html><a href='/should-not-be-crawled-1'>one</a><a href='/should-not-be-crawled-2'>two</a></html>""; h['Content-Length']=str(len(b))
+  elif p=='/redirect-same': self.send_response(302); self.send_header('Location','/redirect-final'); self.end_headers(); return
+  elif p=='/crawl-root': b=b""<html><a href='/should-not-be-crawled-1'>one</a><a href='/should-not-be-crawled-2'>two</a></html>""; h['Content-Length']=str(len(b))
   elif p=='/healthy': h['X-Content-Type-Options']='nosniff'
   else: b=b'fixture'; h['Content-Length']=str(len(b))
   self.send_response(200); [self.send_header(k,v) for k,v in h.items()]; self.end_headers(); self.wfile.write(b)
