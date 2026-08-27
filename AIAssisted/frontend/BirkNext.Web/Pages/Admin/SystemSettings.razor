@@ -1386,6 +1386,7 @@ else if (_settings is not null)
     private string _activeSection = "general";
     private string _navSearch     = "";
     private IDisposable? _locationChangedSubscription;
+    private string _lastParsedUrl = "";
 
     private bool IsDeveloperDiagnosticsVisible =>
         string.Equals(HostEnvironment.Environment, "Development", StringComparison.OrdinalIgnoreCase);
@@ -1905,7 +1906,9 @@ else if (_settings is not null)
             if (_settings is null)
                 _loadError = "Could not load system settings. Make sure the backend is running.";
 
+            // Parse query parameters from initial/current URL
             ParseQueryParameters();
+
             _locationChangedSubscription = Navigation.RegisterLocationChangingHandler(OnLocationChanging);
             InitEditState();
         }
@@ -1919,9 +1922,10 @@ else if (_settings is not null)
         }
     }
 
-    private void ParseQueryParameters()
+    private void ParseQueryParameters(string? targetUri = null)
     {
-        var uri = new Uri(Navigation.Uri);
+        var uriString = targetUri ?? Navigation.Uri;
+        var uri = new Uri(uriString);
         if (uri.Query.Contains("section="))
         {
             var sectionParam = uri.Query.Split("section=").LastOrDefault()?.Split("&").FirstOrDefault();
@@ -1932,7 +1936,8 @@ else if (_settings is not null)
 
     private ValueTask OnLocationChanging(LocationChangingContext context)
     {
-        ParseQueryParameters();
+        ParseQueryParameters(context.TargetLocation);
+        StateHasChanged();
         return ValueTask.CompletedTask;
     }
 
@@ -1943,6 +1948,13 @@ else if (_settings is not null)
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Re-parse query parameters if URL has changed (for client-side navigation)
+        if (Navigation.Uri != _lastParsedUrl)
+        {
+            _lastParsedUrl = Navigation.Uri;
+            ParseQueryParameters();
+        }
+
         if (_activeSection == "config-health" && !_configHealthLoaded)
         {
             _configHealthLoaded = true;

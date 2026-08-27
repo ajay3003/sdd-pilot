@@ -27,6 +27,7 @@ namespace BirkNext.Web.PlaywrightTests.Tests;
 /// This test is designed for CI/CD environments where services are orchestrated
 /// separately and for faster local iteration after services are pre-started.
 /// </summary>
+[Collection("Playwright Tests - PreStarted")]
 public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
 {
     private BirkNextWebApplicationFixture_PreStarted _fixture = null!;
