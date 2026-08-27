@@ -20,8 +20,9 @@
 @inject WasmSecurityApiService SecurityApi
 @inject IBlazorWasmPerformanceReviewService PerformanceApi
 @inject Microsoft.AspNetCore.Components.WebAssembly.Hosting.IWebAssemblyHostEnvironment HostEnvironment
+@inject NavigationManager Navigation
 
-<PageTitle>System Settings â€” QA Review Studio</PageTitle>
+<PageTitle>System Settings — QA Review Studio</PageTitle>
 
 <PageHeader Title="System Settings"
             Description="Manage feature visibility and platform configuration. Secrets are never shown.">
@@ -31,7 +32,7 @@
         {
             <SecondaryButton OnClick="CancelEdit" Disabled="@_isSaving">Cancel</SecondaryButton>
             <PrimaryButton OnClick="SaveAsync" Disabled="@_isSaving" Class="btn-save">
-                @(_isSaving ? "Savingâ€¦" : "Save Settings")
+                @(_isSaving ? "Saving…" : "Save Settings")
             </PrimaryButton>
         }
         else
@@ -123,7 +124,7 @@ else if (_settings is not null)
                     </svg>
                     <input type="search"
                            class="ss-nav-search-input"
-                           placeholder="Find a sectionâ€¦"
+                           placeholder="Find a section…"
                            aria-label="Search settings sections"
                            value="@_navSearch"
                            @oninput="e => _navSearch = e.Value?.ToString() ?? string.Empty" />
@@ -163,7 +164,7 @@ else if (_settings is not null)
             {
                 <div class="ss-edit-banner" role="status">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708l-3-3zm.646 6.061L9.793 2.5 3.293 9H3.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.207l6.5-6.5zm-7.468 7.468A.5.5 0 0 1 6 13.5V13h-.5a.5.5 0 0 1-.5-.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.5-.5V10h-.5a.499.499 0 0 1-.175-.032l-.179.178a.5.5 0 0 0-.11.168l-2 5a.5.5 0 0 0 .65.65l5-2a.5.5 0 0 0 .168-.11l.178-.178z"/></svg>
-                    <span>Editing settings â€” navigate sections freely and save when done.</span>
+                    <span>Editing settings — navigate sections freely and save when done.</span>
                 </div>
             }
 
@@ -292,7 +293,7 @@ else if (_settings is not null)
                     {
                         @if (!_configHealthLoaded)
                         {
-                            <p class="db-section-empty">Loading configuration healthâ€¦</p>
+                            <p class="db-section-empty">Loading configuration health…</p>
                         }
                         else
                         {
@@ -715,7 +716,7 @@ else if (_settings is not null)
 
                             <SecondaryButton OnClick="TestAdoConnectionAsync"
                                              Disabled="@(!_settings.AzureDevOps.Enabled || _adoTestRunning)">
-                                @(_adoTestRunning ? "Testingâ€¦" : "Test Connection")
+                                @(_adoTestRunning ? "Testing…" : "Test Connection")
                             </SecondaryButton>
 
                             @if (_adoTestResult is not null)
@@ -757,7 +758,7 @@ else if (_settings is not null)
             @* â•â• Target Environments â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "target-environments")
             {
-                <div class="settings-card settings-card-full-width">
+                <div class="settings-card settings-card-full-width" role="region" aria-label="Target Environments">
                     <div class="settings-card-title">Target Environments</div>
                     <p class="settings-card-note">
                         Configure one or more target environments. Each environment defines the Frontend URL, REST API, GraphQL endpoint, API authentication, and request settings used by all runtime reviews. The active environment is the single source of truth for Frontend Quality Review and future API and end-to-end reviews.
@@ -799,7 +800,7 @@ else if (_settings is not null)
             {
                 <div class="settings-card settings-card-full-width">
                     <div class="settings-card-title">Developer Diagnostics</div>
-                    <p class="settings-card-note">Backend, frontend, database, and runtime configuration. Sensitive values are never shown â€” use Copy Diagnostics in the top-right to export a safe summary.</p>
+                    <p class=”settings-card-note”>Backend, frontend, database, and runtime configuration. Sensitive values are never shown — use Copy Diagnostics in the top-right to export a safe summary.</p>
 
                     <div class="dev-diag-body">
                         <div class="dev-diag-subgrid">
@@ -1095,7 +1096,7 @@ else if (_settings is not null)
                                 <table class="settings-table">
                                     @if (!_diagDocLoaded)
                                     {
-                                        <tr><td colspan="3" style="color:var(--clr-text-muted)">Loadingâ€¦</td></tr>
+                                        <tr><td colspan="3" style="color:var(--clr-text-muted)">Loading…</td></tr>
                                     }
                                     else
                                     {
@@ -1901,6 +1902,14 @@ else if (_settings is not null)
 
             if (_settings is null)
                 _loadError = "Could not load system settings. Make sure the backend is running.";
+
+            var uri = new Uri(Navigation.Uri);
+            if (uri.Query.Contains("section="))
+            {
+                var sectionParam = uri.Query.Split("section=").LastOrDefault()?.Split("&").FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(sectionParam))
+                    _activeSection = Uri.UnescapeDataString(sectionParam);
+            }
 
             InitEditState();
         }

@@ -26,7 +26,7 @@
             <h2>Audit Target</h2>
             @if (!string.IsNullOrWhiteSpace(EstimatedDuration))
             {
-                <span>Estimated scan: @EstimatedDuration</span>
+                <span>Review duration: @EstimatedDuration</span>
             }
         </div>
 
@@ -100,6 +100,19 @@
             }
         </div>
     </section>
+
+    @if (NotAssessedItems.Count > 0)
+    {
+        <section class="review-landing-section" aria-label="Not currently assessed">
+            <SectionHeader Title="Not Currently Assessed" />
+            <div class="review-landing-checks">
+                @foreach (var item in NotAssessedItems)
+                {
+                    <span>@item</span>
+                }
+            </div>
+        </section>
+    }
 </section>
 
 @code {
@@ -141,6 +154,7 @@
     [Parameter] public ConfigurationState? Configuration { get; set; }
     [Parameter] public IReadOnlyList<AnalysisCard> AnalysisCards { get; set; } = [];
     [Parameter] public IReadOnlyList<string> Checks { get; set; } = [];
+    [Parameter] public IReadOnlyList<string> NotAssessedItems { get; set; } = [];
     [Parameter] public IReadOnlyList<MetadataItem> Metadata { get; set; } = [];
     [Parameter] public string? EstimatedDuration { get; set; }
 

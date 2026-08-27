@@ -30,13 +30,14 @@
                        PrimaryRun="RunReview"
                        PrimaryDisabled="@(_running || _context is null || !_context.HasTargetUrl)"
                        SecondaryActionText="Target Environments"
-                       SecondaryActionHref="/admin/system-settings"
+                       SecondaryActionHref="/admin/system-settings?section=target-environments"
                        TargetFields="BuildFrontendTargetFields()"
                        Configuration="BuildFrontendConfiguration()"
                        AnalysisCards="FrontendAnalysisCards"
                        Checks="FrontendChecks"
+                       NotAssessedItems="FrontendNotAssessedItems"
                        Metadata="BuildFrontendMetadata()"
-                       EstimatedDuration="Scan duration depends on target size and enabled checks." />
+                       EstimatedDuration="Review duration depends on target size and enabled checks." />
 
         @if (_running)
         {
@@ -446,13 +447,17 @@
         "Compression (Assessed)",
         "Cache Headers (Assessed)",
         "Startup Asset Analysis (Assessed)",
-        "Service Worker Detection",
-        "Core Web Vitals (Not Assessed — requires browser runtime)",
+        "Service Worker Detection (Static detection)",
         "WCAG-related automated checks (axe-core when enabled; manual testing still required)",
         "OWASP-related frontend indicators (passive checks only — no compliance claim)",
-        "Testability (Not Assessed — not implemented)",
-        "Observability (Not Assessed — not implemented)",
         "Lazy Loading (Static detection only)",
+    ];
+
+    private static readonly string[] FrontendNotAssessedItems =
+    [
+        "Core Web Vitals (requires production field data / RUM)",
+        "Testability",
+        "Observability",
     ];
 
     private FrontendAnalysisContext? _context;
@@ -591,7 +596,8 @@
 
         return
         [
-            new("Environment", $"{_context.ActiveProfile.EnvironmentType} - {_context.ActiveProfile.Name}", ReviewLanding.FieldStatus.Configured),
+            new("Environment Type", _context.ActiveProfile.EnvironmentType.ToString(), ReviewLanding.FieldStatus.Configured),
+            new("Profile", _context.ActiveProfile.Name, ReviewLanding.FieldStatus.Configured),
             new("Target URL", _context.HasTargetUrl ? _context.TargetUrl : "Not configured", _context.HasTargetUrl ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Missing),
             new("Authentication", _context.AuthenticationType.ToString(), ReviewLanding.FieldStatus.Informational),
             new("Auth Status", _context.IsAuthenticatedSessionAvailable ? "Authenticated" : _context.RequiresAuthentication ? "Session unavailable" : "Not required",
@@ -606,6 +612,7 @@
         [
             new("Environment", _context.ActiveProfile.EnvironmentType.ToString()),
             new("Authentication", _context.AuthenticationType.ToString()),
+            new("Browser Runtime", _context.FeatureToggles.EnableBrowserRuntimeEngine ? "Enabled" : "Disabled"),
             new("Accessibility", _context.FeatureToggles.EnableAccessibilityEngine ? "Enabled (automated axe-core checks)" : "Disabled"),
             new("Lighthouse", _context.FeatureToggles.EnableLighthouseEngine ? "Enabled (synthetic lab measurement)" : "Disabled"),
             new("Passive Security", _context.FeatureToggles.EnablePassiveSecurityEngine ? "Enabled (ZAP passive only)" : "Disabled"),
@@ -653,7 +660,7 @@
 
         return new(
             ReviewLanding.ConfigurationStatus.Success,
-            "Configuration valid — ready to scan",
+            "Configuration valid — ready to review",
             "Frontend target is configured. Target reachability will be verified when you start the review.",
             []);
     }

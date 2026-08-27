@@ -347,6 +347,97 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
             await page.CloseAsync();
         }
     }
+
+    [Fact]
+    [Trait("Category", "UICorrectness")]
+    public async Task TargetEnvironmentsNavigation_OpenCorrectSettingsSection()
+    {
+        var page = await _fixture.Context.NewPageAsync();
+
+        try
+        {
+            await page.GotoAsync($"{_fixture.FrontendUrl}/frontend-quality-review", new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+            var targetEnvLink = page.GetByRole(AriaRole.Link, new() { Name = "Target Environments" });
+            await targetEnvLink.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
+            await targetEnvLink.ClickAsync();
+
+            await page.WaitForURLAsync("**/admin/system-settings?section=target-environments", new PageWaitForURLOptions { Timeout = 10000 });
+
+            var targetEnvSection = page.GetByRole(AriaRole.Region, new() { Name = "Target Environments" });
+            (await targetEnvSection.IsVisibleAsync()).Should().BeTrue("Target Environments section must be visible after navigation");
+
+            var generalSection = page.Locator("text=General").First;
+            (await generalSection.IsVisibleAsync()).Should().BeFalse("General section should not be visible");
+        }
+        finally
+        {
+            await page.CloseAsync();
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "UICorrectness")]
+    public async Task FrontendQualityReview_ResponsiveLayoutNoHorizontalOverflow()
+    {
+        var viewports = new[] { (1920, 1080), (1440, 900), (1280, 720), (1024, 768) };
+        var page = await _fixture.Context.NewPageAsync();
+
+        try
+        {
+            foreach (var (width, height) in viewports)
+            {
+                await page.SetViewportSizeAsync(width, height);
+                await page.GotoAsync($"{_fixture.FrontendUrl}/frontend-quality-review", new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+                var scrollWidth = await page.EvaluateAsync<int>("document.documentElement.scrollWidth");
+                var clientWidth = await page.EvaluateAsync<int>("document.documentElement.clientWidth");
+
+                scrollWidth.Should().BeLessThanOrEqualTo(clientWidth, $"No horizontal overflow at {width}x{height}");
+
+                var cards = await page.Locator("article.review-landing-card").CountAsync();
+                cards.Should().BeGreaterThan(0, "Analysis cards must be visible");
+            }
+        }
+        finally
+        {
+            await page.CloseAsync();
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "UICorrectness")]
+    public async Task FrontendQualityReview_KeyboardNavigationToTargetEnvironments()
+    {
+        var page = await _fixture.Context.NewPageAsync();
+        var consoleErrors = new List<string>();
+
+        page.Console += (_, message) =>
+        {
+            if (message.Type == "error")
+                consoleErrors.Add(message.Text);
+        };
+
+        try
+        {
+            await page.GotoAsync($"{_fixture.FrontendUrl}/frontend-quality-review", new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+            var targetEnvButton = page.GetByRole(AriaRole.Button, new() { Name = "Target Environments" });
+            await targetEnvButton.FocusAsync();
+
+            var isFocused = await page.EvaluateAsync<bool>("() => document.activeElement === document.querySelector('a:has-text(\"Target Environments\")')");
+            isFocused.Should().BeTrue("Target Environments button should be focusable");
+
+            await page.Keyboard.PressAsync("Enter");
+            await page.WaitForURLAsync("**/admin/system-settings?section=target-environments", new PageWaitForURLOptions { Timeout = 10000 });
+
+            consoleErrors.Where(e => e.Contains("Unhandled", StringComparison.OrdinalIgnoreCase)).Should().BeEmpty();
+        }
+        finally
+        {
+            await page.CloseAsync();
+        }
+    }
 }
 
 internal static class PlaywrightAssertions
