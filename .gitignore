@@ -205,3 +205,7 @@ AIAssisted/bisect-wt/
 
 *.pid
 *.lock
+
+# Ephemeral Chromium profiles created by Lighthouse runs. These may contain
+# cookies and browser storage and must never be committed.
+.lighthouse-profile-*/
