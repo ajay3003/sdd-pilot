@@ -8,6 +8,7 @@ public interface IAuthenticatedBrowserSessionService
 {
     Task<AuthenticatedBrowserSession>       GetOrCreateSessionAsync(FrontendAnalysisContext context);
     Task<AuthenticatedBrowserSession?>      GetCurrentSessionAsync();
+    Task<AuthenticatedBrowserSession>       BeginAuthenticationAsync(FrontendAnalysisContext context);
     Task                                    ClearSessionAsync();
     Task<AuthenticatedBrowserSessionStatus> GetStatusAsync();
 }
@@ -58,6 +59,9 @@ public sealed class PlaceholderAuthenticatedBrowserSessionService : IAuthenticat
         Task.FromResult<AuthenticatedBrowserSession?>(null);
 
     public Task ClearSessionAsync() => Task.CompletedTask;
+
+    public Task<AuthenticatedBrowserSession> BeginAuthenticationAsync(FrontendAnalysisContext context) =>
+        GetOrCreateSessionAsync(context);
 }
 
 /// <summary>
@@ -89,6 +93,31 @@ public sealed class AuthenticatedBrowserSessionService(HttpClient http, IFronten
     }
 
     public Task<AuthenticatedBrowserSession?> GetCurrentSessionAsync() => Task.FromResult(_current);
+
+    public async Task<AuthenticatedBrowserSession> BeginAuthenticationAsync(FrontendAnalysisContext context)
+    {
+        var current = await GetOrCreateSessionAsync(context);
+        if (string.IsNullOrWhiteSpace(current.SessionId)) return current;
+        var authority = context.ActiveProfile.Authentication.ExpectedAuthority;
+        if (string.IsNullOrWhiteSpace(authority))
+        {
+            current.StatusMessage = "Expected Entra authority is not configured.";
+            return current;
+        }
+
+        using var response = await http.PostAsJsonAsync(
+            $"api/frontend-quality/auth-session/{Uri.EscapeDataString(current.SessionId)}/authenticate",
+            new { ReviewSessionId = _reviewSessionId, ProfileId = context.ActiveProfile.Id, ExpectedAuthority = authority });
+        if (!response.IsSuccessStatusCode)
+        {
+            current.StatusMessage = "Secure sign-in could not be started.";
+            return current;
+        }
+        var value = await response.Content.ReadFromJsonAsync<SessionResponse>()
+            ?? throw new InvalidOperationException("Authentication returned an empty response.");
+        _current = Map(value, context.AuthenticationType.ToString());
+        return _current;
+    }
 
     public async Task ClearSessionAsync()
     {
@@ -126,8 +155,12 @@ public sealed class AuthenticatedBrowserSessionService(HttpClient http, IFronten
         ExpiresAt = value.ExpiresAt,
         AuthenticationType = authenticationType,
         IsAuthenticated = value.Status == AuthenticatedBrowserSessionStatus.Authenticated,
-        StatusMessage = value.Status.ToString()
+        StatusMessage = value.Status.ToString(),
+        DeliveryContext = value.DeliveryContext.ToString(),
+        ApplicationValidationCurrent = value.ApplicationValidationCurrent
     };
 
-    private sealed record SessionResponse(string SessionId, AuthenticatedBrowserSessionStatus Status, string TargetOrigin, DateTimeOffset StartedAt, DateTimeOffset ExpiresAt, string? FailureCategory);
+    private sealed record SessionResponse(string SessionId, AuthenticatedBrowserSessionStatus Status, string TargetOrigin, DateTimeOffset StartedAt, DateTimeOffset ExpiresAt, string? FailureCategory, AuthenticatedDeliveryContext DeliveryContext, bool ApplicationValidationCurrent);
 }
+
+public enum AuthenticatedDeliveryContext { None, DirectApplication, ConditionalAccessMonitoredSession, ProxiedApplicationDelivery }

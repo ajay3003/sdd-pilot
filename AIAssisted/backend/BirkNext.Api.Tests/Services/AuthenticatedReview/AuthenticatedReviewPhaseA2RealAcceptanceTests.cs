@@ -33,6 +33,22 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
     }
 
     [Fact]
+    public async Task Synthetic_ProxiedApplicationDelivery_IsValidatedAndLabeled()
+    {
+        if (!Enabled()) return;
+        await using var fixture = await SyntheticFixture.StartAsync(); fixture.UseProxiedDelivery = true;
+        await using var manager = CreateManager();
+        var session = await StartAndAuthenticateAsync(manager, fixture);
+        await using var lease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
+        await lease.Page.ClickAsync("#synthetic-sign-in");
+        await WaitForStatusAsync(manager, session.SessionId, AuthenticatedBrowserSessionStatus.AwaitingUserContinuation);
+        await lease.Page.ClickAsync("#synthetic-continue");
+        var status = await WaitForStatusAsync(manager, session.SessionId, AuthenticatedBrowserSessionStatus.Authenticated);
+        status.DeliveryContext.Should().Be(AuthenticatedDeliveryContext.ProxiedApplicationDelivery);
+        status.ApplicationValidationCurrent.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task CancelAtEntra_DisposesSessionAndInvalidatesLease()
     {
         if (!Enabled()) return;
@@ -92,6 +108,18 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
         var session = await ReachAuthenticatedAsync(manager, fixture);
         await using var raw = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
         await raw.Page.GotoAsync(fixture.EntraUrl);
+        await WaitForStatusAsync(manager, session.SessionId, AuthenticatedBrowserSessionStatus.AuthenticationExpired);
+        await AssertEngineLeaseDenied(manager, session.SessionId, fixture.TargetUrl);
+    }
+
+    [Fact]
+    public async Task AuthenticatedReturnToMcasNoticeRevokesEligibility()
+    {
+        if (!Enabled()) return;
+        await using var fixture = await SyntheticFixture.StartAsync(); await using var manager = CreateManager();
+        var session = await ReachAuthenticatedAsync(manager, fixture);
+        await using var raw = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
+        await raw.Page.GotoAsync(fixture.McasOrigin + "/notice");
         await WaitForStatusAsync(manager, session.SessionId, AuthenticatedBrowserSessionStatus.AuthenticationExpired);
         await AssertEngineLeaseDenied(manager, session.SessionId, fixture.TargetUrl);
     }
@@ -167,6 +195,7 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
         public string EntraUrl => $"{_entra.Origin}/login";
         public string McasOrigin => _mcas.Origin;
         public string UnexpectedOrigin => _unexpected.Origin;
+        public bool UseProxiedDelivery { get; set; }
 
         public static Task<SyntheticFixture> StartAsync()
         {
@@ -177,7 +206,9 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
                 ? Response.Ok("<html data-birknext-auth-fixture='app'><title>Protected app</title><body><main>Authenticated application</main></body></html>")
                 : Response.Redirect(fixture.EntraUrl);
             entra.Handler = _ => Response.Ok($"<html data-birknext-auth-fixture='login'><body><a id='synthetic-sign-in' href='{fixture.McasOrigin}/notice'>Sign in fixture</a><a id='synthetic-unexpected' href='{fixture.UnexpectedOrigin}/outside'>Unexpected fixture</a></body></html>");
-            mcas.Handler = _ => Response.Ok($"<html data-birknext-auth-fixture='mcas-notice'><body><form action='{fixture.TargetUrl.Replace("/protected-app", "/authenticated")}'><button id='synthetic-continue' type='submit'>Continue fixture</button></form></body></html>");
+            mcas.Handler = path => path.StartsWith("/proxied-application", StringComparison.Ordinal)
+                ? Response.Ok("<html data-birknext-auth-fixture='app'><body><main>Proxied authenticated application</main></body></html>")
+                : Response.Ok($"<html data-birknext-auth-fixture='mcas-notice'><body><form action='{(fixture.UseProxiedDelivery ? fixture.McasOrigin + "/proxied-application" : fixture.TargetUrl.Replace("/protected-app", "/authenticated"))}'><button id='synthetic-continue' type='submit'>Continue fixture</button></form></body></html>");
             unexpected.Handler = _ => Response.Ok("<html><body>Unexpected</body></html>");
             return Task.FromResult(fixture);
         }

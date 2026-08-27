@@ -24,7 +24,7 @@ internal sealed class AuthenticationOriginPolicy
     {
         if (!IsSafeOrigin(candidate)) return AuthenticationOriginClass.Unexpected;
         if (SameOrigin(candidate, applicationOrigin)) return AuthenticationOriginClass.Application;
-        if (SameOrigin(candidate, expectedAuthority) && IsValidEntraAuthority(expectedAuthority)) return AuthenticationOriginClass.EntraAuthority;
+        if (IsExpectedEntraNavigation(candidate, expectedAuthority)) return AuthenticationOriginClass.EntraAuthority;
         if (!authenticationActive || !entraObserved) return AuthenticationOriginClass.Unexpected;
 
         if (_allowSyntheticHttp && syntheticMcasOrigin is not null && SameOrigin(candidate, syntheticMcasOrigin))
@@ -41,6 +41,15 @@ internal sealed class AuthenticationOriginPolicy
         if (_allowSyntheticHttp && authority.IsLoopback) return true;
         return authority.Scheme == Uri.UriSchemeHttps &&
                string.Equals(authority.IdnHost, "login.microsoftonline.com", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsExpectedEntraNavigation(Uri candidate, Uri expectedAuthority)
+    {
+        if (!IsValidEntraAuthority(expectedAuthority) || !SameOrigin(candidate, expectedAuthority)) return false;
+        var configuredTenant = expectedAuthority.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(configuredTenant)) return true;
+        var observedTenant = candidate.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        return string.Equals(configuredTenant, observedTenant, StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsTargetCorrelatedMcas(Uri candidate, Uri applicationOrigin)

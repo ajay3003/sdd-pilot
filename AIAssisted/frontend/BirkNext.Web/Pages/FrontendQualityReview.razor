@@ -4,6 +4,7 @@
 @using BirkNext.Web.Components
 @inject IFrontendQualityReviewOrchestrator Orchestrator
 @inject IFrontendAnalysisContextFactory ContextFactory
+@inject IAuthenticatedBrowserSessionService AuthenticatedSessions
 @inject RuntimeReviewSessionService RuntimeReviews
 @inject IWorkspaceSessionService Workspace
 @inject IReportExportService ExportService
@@ -39,6 +40,31 @@
                        NotAssessedItems="FrontendNotAssessedItems"
                        Metadata="BuildFrontendMetadata()"
                        EstimatedDuration="Review duration depends on target size and enabled checks." />
+
+        @if (_context?.RequiresAuthentication == true)
+        {
+            <section class="fqr-auth-session" aria-live="polite" aria-label="Authenticated review sign-in">
+                <h2>Authentication required</h2>
+                <p>@AuthenticationStatusText</p>
+                @if (_authSession?.StatusMessage is "AwaitingUserContinuation")
+                {
+                    <p>The organization has presented a monitored-session notice. Review it in the authentication window and choose whether to continue.</p>
+                }
+                @if (_authSession?.IsAuthenticated == true)
+                {
+                    <p><strong>Authenticated</strong> — Delivery context: @DeliveryContextText</p>
+                    <p>Authenticated Browser Runtime and accessibility checks are not enabled in this phase.</p>
+                }
+                else if (!_authPolling)
+                {
+                    <button type="button" class="btn-primary" @onclick="StartAuthentication">Sign in for review</button>
+                }
+                @if (_authSession is not null)
+                {
+                    <button type="button" class="btn-secondary" @onclick="CancelAuthentication">Cancel authentication</button>
+                }
+            </section>
+        }
 
         @if (_running)
         {
@@ -471,6 +497,8 @@
     ];
 
     private FrontendAnalysisContext? _context;
+    private AuthenticatedBrowserSession? _authSession;
+    private bool _authPolling;
 
     private bool    _running;
     private string  _progressMessage = "";
@@ -492,6 +520,49 @@
     {
         _context = await ContextFactory.GetActiveContextAsync();
         _report  = RuntimeReviews.QualityReview.Report;
+    }
+
+    private string AuthenticationStatusText => _authSession?.StatusMessage switch
+    {
+        "Starting" or "BrowserReady" or "AuthenticationRequired" => "Opening secure sign-in window…",
+        "AuthenticationInProgress" or "ConditionalAccessIntermediary" => "Completing Microsoft authentication…",
+        "AwaitingUserContinuation" => "Waiting for security access confirmation",
+        "AuthenticationExpired" => "The authenticated session expired. Sign in again to continue.",
+        "UnexpectedOrigin" => "Authentication stopped because navigation reached an unexpected origin.",
+        "AuthenticationFailed" => "Authentication failed safely.",
+        "AuthenticationCancelled" or "Disposed" => "Authentication cancelled.",
+        _ => "Sign in takes place in a separate local Chromium window. Credentials and MFA remain under your control."
+    };
+
+    private string DeliveryContextText => _authSession?.DeliveryContext switch
+    {
+        "ConditionalAccessMonitoredSession" or "ProxiedApplicationDelivery" => "Conditional Access / monitored session",
+        "DirectApplication" => "Direct application",
+        _ => "Validated application session"
+    };
+
+    private async Task StartAuthentication()
+    {
+        if (_context is null || _authPolling) return;
+        _authSession = await AuthenticatedSessions.BeginAuthenticationAsync(_context);
+        _authPolling = !string.IsNullOrWhiteSpace(_authSession.SessionId);
+        StateHasChanged();
+        while (_authPolling)
+        {
+            await Task.Delay(750);
+            var status = await AuthenticatedSessions.GetStatusAsync();
+            _authSession = await AuthenticatedSessions.GetCurrentSessionAsync();
+            StateHasChanged();
+            if (status is AuthenticatedBrowserSessionStatus.Authenticated or AuthenticatedBrowserSessionStatus.AuthenticationExpired or AuthenticatedBrowserSessionStatus.AuthenticationCancelled or AuthenticatedBrowserSessionStatus.AuthenticationFailed or AuthenticatedBrowserSessionStatus.UnexpectedOrigin or AuthenticatedBrowserSessionStatus.Disposed)
+                _authPolling = false;
+        }
+    }
+
+    private async Task CancelAuthentication()
+    {
+        _authPolling = false;
+        await AuthenticatedSessions.ClearSessionAsync();
+        _authSession = new AuthenticatedBrowserSession { StatusMessage = "AuthenticationCancelled" };
     }
 
     private async Task RunReview()

@@ -10,6 +10,47 @@ Will authenticated-review users be guaranteed to run BirkNext.Api in their own l
 
 This is a deployment decision. Whether Playwright Chromium is headed is a consequence, not the decision itself.
 
+## Implementation status
+
+- **Phase A1 — local ephemeral browser session:** VERIFIED
+- **Phase A2 — interactive authentication state machine and origin validation:** VERIFIED
+- **Authenticated Browser Runtime reuse:** NOT IMPLEMENTED
+- **Authenticated axe reuse:** NOT IMPLEMENTED
+
+### A2 trust classes
+
+| Trust class | Meaning | Final success eligible |
+|---|---|---:|
+| Application origin | Configured target origin | Yes, only after same-context application validation |
+| Entra authority | Exact approved `login.microsoftonline.com` authority | No |
+| MCAS intermediary | HTTPS, target-correlated `*.access.mcas.ms` origin observed after Entra and pinned to one session | Never as an interstitial |
+| Proxied application delivery | Pinned, target-correlated MCAS origin after the notice is no longer present and application validation succeeds | Yes, labeled proxied/monitored |
+| Unexpected external | Any other top-level origin | No; fail closed |
+
+Synthetic HTTP origins are available only under an explicit test-only option and must be loopback origins.
+
+### A2 state machine
+
+```text
+BrowserReady
+  → AuthenticationRequired
+  → AuthenticationInProgress
+      → Entra authority: AuthenticationInProgress
+      → MCAS notice: ConditionalAccessIntermediary → AwaitingUserContinuation
+      → validated direct/proxied application: Authenticated
+      → unexpected origin: UnexpectedOrigin
+
+Authenticated
+  → Entra or MCAS interstitial: AuthenticationExpired
+
+Any active state
+  → user cancel: AuthenticationCancelled → resources disposed
+  → lifetime expiry: AuthenticationExpired → resources disposed
+  → browser/navigation failure: AuthenticationFailed
+```
+
+Production code observes top-level navigation but never fills credentials, automates MFA, or clicks the MCAS continuation control. MCAS and proxied origins are retained only in the in-memory session and are discarded with it. API/status data contains origin-only delivery metadata, never raw authentication URLs or identity data.
+
 ## Current repository evidence
 
 The distributable Tester Package runs BirkNext.Web and BirkNext.Api locally. Browser Runtime and Playwright run on the backend host; Lighthouse runs in the same backend environment. PostgreSQL may be local or shared. The repository does not establish a centrally hosted Web/API deployment, secure remote interactive-browser infrastructure, or a local companion.

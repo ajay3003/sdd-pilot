@@ -16,8 +16,13 @@ public sealed class AuthenticationOriginPolicyTests
 
     [Fact]
     public void ExactEntraAuthority_IsTemporaryIdentityProvider() =>
-        Policy().Classify(new("https://login.microsoftonline.com/common/login"), App, Entra, true, false, null)
+        Policy().Classify(new("https://login.microsoftonline.com/tenant/login"), App, Entra, true, false, null)
             .Should().Be(AuthenticationOriginClass.EntraAuthority);
+
+    [Fact]
+    public void DifferentConfiguredTenant_IsRejected() =>
+        Policy().Classify(new("https://login.microsoftonline.com/other/login"), App, Entra, true, false, null)
+            .Should().Be(AuthenticationOriginClass.Unexpected);
 
     [Theory]
     [InlineData("https://microsoft.com")]
@@ -47,6 +52,16 @@ public sealed class AuthenticationOriginPolicyTests
     {
         var synthetic = new Uri("http://127.0.0.1:5102");
         Policy().Classify(synthetic, App, Entra, true, true, synthetic).Should().Be(AuthenticationOriginClass.Unexpected);
+    }
+
+    [Fact]
+    public void SyntheticMcasTrust_IsExactAndNotSharedAcrossSessionInputs()
+    {
+        var policy = new AuthenticationOriginPolicy(Options.Create(new AuthenticatedReviewOptions { AllowSyntheticHttpOrigins = true }));
+        var sessionA = new Uri("http://127.0.0.1:5102");
+        var sessionB = new Uri("http://127.0.0.1:5103");
+        policy.Classify(sessionA, new("http://127.0.0.1:5100"), new("http://127.0.0.1:5101"), true, true, sessionA).Should().Be(AuthenticationOriginClass.McasIntermediary);
+        policy.Classify(sessionA, new("http://127.0.0.1:5100"), new("http://127.0.0.1:5101"), true, true, sessionB).Should().Be(AuthenticationOriginClass.Unexpected);
     }
 
     private static AuthenticationOriginPolicy Policy() =>

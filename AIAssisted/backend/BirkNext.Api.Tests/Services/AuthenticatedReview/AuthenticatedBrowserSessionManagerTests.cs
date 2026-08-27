@@ -176,7 +176,7 @@ public sealed class AuthenticatedBrowserSessionManagerTests
     public void ApiContracts_ContainNoSecretBearingProperties()
     {
         var forbidden = new[] { "password", "token", "cookie", "authorization", "storage", "localstorage", "sessionstorage", "browserpid" };
-        var properties = new[] { typeof(StartAuthenticatedBrowserSessionRequest), typeof(AuthenticatedBrowserSessionOwnerRequest), typeof(AuthenticatedBrowserSessionResponse) }
+        var properties = new[] { typeof(StartAuthenticatedBrowserSessionRequest), typeof(AuthenticateBrowserSessionRequest), typeof(AuthenticatedBrowserSessionOwnerRequest), typeof(AuthenticatedBrowserSessionResponse) }
             .SelectMany(t => t.GetProperties()).Select(p => p.Name.ToLowerInvariant()).ToArray();
         properties.Should().NotContain(p => forbidden.Any(p.Contains));
 

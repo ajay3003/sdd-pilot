@@ -86,4 +86,6 @@ public sealed class AuthenticatedBrowserSession
     public string                    AuthenticationType { get; set; } = "";
     public string                    StatusMessage     { get; set; } = "";
     public IReadOnlyList<string>     SafeDiagnostics   { get; set; } = Array.Empty<string>();
+    public string                    DeliveryContext   { get; set; } = "None";
+    public bool                      ApplicationValidationCurrent { get; set; }
 }
