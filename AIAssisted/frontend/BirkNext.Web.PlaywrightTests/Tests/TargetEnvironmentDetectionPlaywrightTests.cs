@@ -290,4 +290,44 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
             await page.CloseAsync();
         }
     }
+
+    [Fact]
+    public async Task TargetEnvironment_DetectConfiguration_RealBackendEndToEnd()
+    {
+        var page = await _fixture.Context.NewPageAsync();
+
+        try
+        {
+            // Open Target Environments in edit mode using the helper
+            await OpenTargetEnvironmentEditModeAsync(page);
+
+            // Use the test-fixture endpoint that's available in Development environment
+            // This endpoint returns HTML with a meta-redirect to /login, triggering authentication detection
+            var testFixtureUrl = "http://localhost:5000/test-fixture/auth-required";
+
+            var urlInput = page.Locator("input[type='url']").First;
+            await urlInput.FillAsync(testFixtureUrl);
+
+            // Click Detect configuration button
+            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Detect configuration" });
+            await detectButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
+            await detectButton.ClickAsync();
+
+            // Wait for actual detection to complete (look for detection summary to appear)
+            var detectionSummary = page.Locator(".fa-detection-summary");
+            await detectionSummary.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
+
+            // Verify detection results contain expected metadata
+            var summaryText = await detectionSummary.TextContentAsync();
+            summaryText.Should().Contain("Detected from target");
+
+            // Verify no Save was performed (still in draft/edit mode)
+            var cancelButton = page.GetByRole(AriaRole.Button, new() { Name = "Cancel" });
+            await cancelButton.WaitForAsync();
+        }
+        finally
+        {
+            await page.CloseAsync();
+        }
+    }
 }

@@ -181,7 +181,13 @@ builder.Services.AddHttpClient<IWasmApiAnalysisService, WasmApiAnalysisService>(
 builder.Services.AddSingleton<IWasmPerformanceReadinessService, WasmPerformanceReadinessService>();
 
 // Frontend Browser Runtime Review — Chromium-based runtime analysis
-builder.Services.AddScoped<BrowserTargetValidator>();
+builder.Services.AddScoped<BrowserTargetValidator>(provider =>
+{
+    var environment = provider.GetRequiredService<IWebHostEnvironment>();
+    // Allow loopback for test/development scenarios only where TestFixtureController is available
+    var allowLoopback = environment.IsDevelopment();
+    return new BrowserTargetValidator(allowLoopback);
+});
 builder.Services.AddScoped<BrowserResourceClassifier>();
 builder.Services.AddScoped<BrowserEvidenceSanitizer>();
 builder.Services.AddScoped<BrowserRuntimeFindingClassifier>();
