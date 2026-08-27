@@ -17,6 +17,7 @@
                 Description="Analyse a deployed frontend for performance, security, accessibility, standards compliance, Blazor WASM-specific checks, and QA readiness in a single unified review.">
         @if (_report is not null)
         {
+            <button type="button" class="btn-primary" @onclick="BackToReview">Back to Frontend Quality Review</button>
             <button type="button" class="btn-secondary" @onclick="ExportHtml">Export HTML</button>
             <button type="button" class="btn-secondary" @onclick="ExportPdf">Export PDF</button>
         }
@@ -69,6 +70,15 @@
             .ToList();
         var filtered = FilteredFindings(report.Findings).ToList();
         var recommendations = BuildRecommendationCards(report).ToList();
+
+        @if (report.PreflightStatus == PreflightStatus.AuthenticationRequired)
+        {
+            <div class="wsr-banner wsr-banner-error wsr-banner-standalone" role="status">
+                <span aria-hidden="true">🔐</span>
+                <strong>Authentication required</strong> — The configured target requires authentication, so the protected frontend could not be assessed.
+                <a href="/admin/system-settings?section=target-environments" class="wsr-banner-action">Configure authentication</a>
+            </div>
+        }
 
         <FrontendQualityDecisionSupport Report="report" />
 
@@ -561,6 +571,14 @@
         _report  = completedReport;
         _running = false;
         RuntimeReviews.SaveQualityResult(_report, _context);
+        ClearFilters();
+    }
+
+    private void BackToReview()
+    {
+        _report = null;
+        _running = false;
+        _progressMessage = "";
         ClearFilters();
     }
 
