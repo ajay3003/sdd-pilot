@@ -6,18 +6,18 @@ using Xunit;
 namespace BirkNext.Web.PlaywrightTests.Tests;
 
 /// <summary>
-/// Playwright E2E tests for target environment detection.
-/// Verifies real WASM rendering, detection flow, and draft-only behavior.
+/// Playwright E2E tests for target environment detection (PreStarted).
+/// Assumes backend on http://localhost:5000 and frontend on http://localhost:5173.
 /// </summary>
-public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
+[Collection("Playwright Tests - PreStarted")]
+public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyncLifetime
 {
-    private BirkNextWebApplicationFixture _fixture = null!;
+    private BirkNextWebApplicationFixture_PreStarted _fixture = null!;
     private const string DeterministicAuthUrl = "https://example.test:8443/protected";
-    private const string M2lbDevUrl = "https://m2lbdev.bufetat.no/";
 
     public async Task InitializeAsync()
     {
-        _fixture = new BirkNextWebApplicationFixture();
+        _fixture = new BirkNextWebApplicationFixture_PreStarted();
         await _fixture.InitializeAsync();
     }
 
@@ -26,18 +26,32 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    private async Task OpenTargetEnvironmentEditModeAsync(IPage page)
+    private async Task NavigateToTargetEnvironmentsAsync(IPage page)
     {
-        // Navigate to Target Environments using deep-link
-        await page.GotoAsync($"{_fixture.FrontendUrl}/admin/system-settings?section=target-environments", new PageGotoOptions
+        // Use proven navigation from existing working test
+        // 1. Navigate to frontend-quality-review
+        await page.GotoAsync($"{_fixture.FrontendUrl}/frontend-quality-review", new PageGotoOptions
         {
             WaitUntil = WaitUntilState.NetworkIdle,
             Timeout = 30000,
         });
 
-        // Wait for Target Environments region to be visible
+        // 2. Find and click Target Environments link by role
+        var targetEnvLink = page.GetByRole(AriaRole.Link, new() { Name = "Target Environments" });
+        await targetEnvLink.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
+        await targetEnvLink.ClickAsync();
+
+        // 3. Wait for navigation and region to be visible
+        await page.WaitForURLAsync("**/admin/system-settings?section=target-environments", new PageWaitForURLOptions { Timeout = 10000 });
+
         var targetEnvRegion = page.GetByRole(AriaRole.Region, new() { Name = "Target Environments" });
         await targetEnvRegion.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
+    }
+
+    private async Task OpenTargetEnvironmentEditModeAsync(IPage page)
+    {
+        // Navigate to Target Environments view-mode first
+        await NavigateToTargetEnvironmentsAsync(page);
 
         // FrontendAnalysisSettings auto-selects the active profile and shows profile detail
         var profileDetail = page.Locator(".fa-profile-detail").First;
@@ -49,6 +63,9 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
         // Click "Edit Environment" to enter edit mode
         var editButton = page.Locator("button:has-text('Edit Environment')").First;
         await editButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
+
+        // Ensure button is visible and enabled
+        await editButton.ScrollIntoViewIfNeededAsync();
         await editButton.ClickAsync();
 
         // Wait a moment for component state change
@@ -65,6 +82,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("Category", "PreStarted")]
     public async Task TargetEnvironment_DetectConfiguration_PopulatesDraftSafely()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -99,22 +117,20 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
             pageErrors.Should().BeEmpty();
             consoleMessages.Where(m => m.Contains("Error", StringComparison.OrdinalIgnoreCase)).Should().BeEmpty();
 
-            // Navigate away WITHOUT saving
+            // Navigate away WITHOUT saving to test draft-only behavior
             await page.GotoAsync($"{_fixture.FrontendUrl}/", new PageGotoOptions
             {
                 WaitUntil = WaitUntilState.NetworkIdle,
             });
 
-            // Return to Target Environments and verify we're back in view mode
-            await page.GotoAsync($"{_fixture.FrontendUrl}/admin/system-settings?section=target-environments", new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.NetworkIdle,
-            });
+            // Return to Target Environments and verify draft was NOT persisted
+            await NavigateToTargetEnvironmentsAsync(page);
 
-            // Verify the Edit Environment button is present (view mode, not edit mode)
+            // In view mode, profile detail should be visible
             var profileDetail = page.Locator(".fa-profile-detail").First;
             await profileDetail.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
 
+            // Verify the Edit Environment button is back (view mode, not edit mode)
             var editButton = page.GetByRole(AriaRole.Button, new() { Name = "Edit Environment" }).First;
             await editButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
         }
@@ -125,6 +141,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("Category", "PreStarted")]
     public async Task TargetEnvironment_DetectConfiguration_DoesNotOverwriteConfiguredValues()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -137,16 +154,16 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
             // Open Target Environments in edit mode
             await OpenTargetEnvironmentEditModeAsync(page);
 
-            // Verify form is in edit mode
+            // Verify form is in target tab with proper input fields
             var urlInput = page.Locator("input[type='url']").First;
             await urlInput.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
 
-            // Fill in the target URL
+            // Fill the URL
             await urlInput.FillAsync(DeterministicAuthUrl);
-            var filledValue = await urlInput.InputValueAsync();
-            filledValue.Should().Be(DeterministicAuthUrl);
+            var urlValue = await urlInput.InputValueAsync();
+            urlValue.Should().Be(DeterministicAuthUrl);
 
-            // Verify the Save and Cancel buttons are visible (indicating edit mode)
+            // Verify Save/Cancel buttons exist (edit mode confirmed)
             var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save Environment" });
             await saveButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
 
@@ -160,6 +177,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("Category", "PreStarted")]
     public async Task TargetEnvironment_UrlChange_InvalidatesDetection()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -196,6 +214,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("Category", "PreStarted")]
     public async Task TargetEnvironment_ResponsiveLayout_NoHorizontalOverflow()
     {
         var viewports = new[] { (1440, 900), (1280, 720), (1024, 768) };
@@ -216,14 +235,11 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
                 var documentWidth = await page.EvaluateAsync<int>("() => document.documentElement.clientWidth");
                 var scrollWidth = await page.EvaluateAsync<int>("() => document.documentElement.scrollWidth");
 
-                scrollWidth.Should().Be(documentWidth, $"at viewport {width}x{height}");
+                scrollWidth.Should().Be(documentWidth, $"no horizontal overflow at viewport {width}x{height}");
 
                 // Verify all controls are accessible
-                var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Detect configuration" });
-                await detectButton.WaitForAsync();
-
-                var urlInput = page.Locator("input[type='url']").First;
-                await urlInput.WaitForAsync();
+                await page.GetByRole(AriaRole.Button, new() { Name = "Detect configuration" }).WaitForAsync();
+                await page.Locator("input[type='url']").First.WaitForAsync();
             }
             finally
             {
@@ -233,6 +249,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
     }
 
     [Fact]
+    [Trait("Category", "PreStarted")]
     public async Task TargetEnvironment_KeyboardAccessibility_NavigateDetection()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -240,23 +257,17 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
         try
         {
             // Navigate to Target Environments region
-            await page.GotoAsync($"{_fixture.FrontendUrl}/admin/system-settings?section=target-environments", new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.NetworkIdle,
-                Timeout = 30000,
-            });
+            await NavigateToTargetEnvironmentsAsync(page);
 
-            var targetEnvRegion = page.GetByRole(AriaRole.Region, new() { Name = "Target Environments" });
-            await targetEnvRegion.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
-
-            // Keyboard navigate to Edit Environment button
+            // Keyboard navigate to Edit Environment button and activate it
             var profileDetail = page.Locator(".fa-profile-detail").First;
             await profileDetail.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
 
+            // Focus on Edit Environment button and activate with keyboard
             var editButton = page.GetByRole(AriaRole.Button, new() { Name = "Edit Environment" }).First;
             await editButton.FocusAsync();
 
-            // Activate with Enter
+            // Activate with Enter (keyboard navigation, not mouse click)
             await page.Keyboard.PressAsync("Enter");
 
             // Wait a moment for component state change
@@ -266,11 +277,11 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
             var targetTabButton = page.Locator(".fa-tab:has-text('Target Application')").First;
             await targetTabButton.ClickAsync();
 
-            // Wait for edit mode form to render
+            // Wait for URL input to appear in target tab
             var urlInput = page.Locator("input[type='url']").First;
             await urlInput.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
 
-            // Focus on URL input and enter a test URL via keyboard
+            // Keyboard navigate: focus URL input and enter value
             await urlInput.FocusAsync();
             await urlInput.FillAsync(DeterministicAuthUrl);
 
