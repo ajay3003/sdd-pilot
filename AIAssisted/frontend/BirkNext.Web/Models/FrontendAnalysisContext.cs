@@ -54,10 +54,19 @@ public enum AuthenticatedBrowserSessionStatus
 {
     NotConfigured,
     NotRequired,
-    RequiredButNotAvailable,
-    Available,
+    ReadyToStart,
+    Starting,
+    BrowserReady,
+    AuthenticationRequired,
+    AuthenticationInProgress,
+    Authenticated,
     Expired,
-    Error
+    Cancelled,
+    Failed,
+    Disposed,
+    RequiredButNotAvailable = ReadyToStart,
+    Available = Authenticated,
+    Error = Failed
 }
 
 public sealed class AuthenticatedBrowserSession
@@ -67,6 +76,7 @@ public sealed class AuthenticatedBrowserSession
     public bool                      IsAuthenticated   { get; set; }
     public DateTimeOffset            CreatedAt         { get; set; }
     public DateTimeOffset?           LastUsedAt        { get; set; }
+    public DateTimeOffset?           ExpiresAt         { get; set; }
     public string                    AuthenticationType { get; set; } = "";
     public string                    StatusMessage     { get; set; } = "";
     public IReadOnlyList<string>     SafeDiagnostics   { get; set; } = Array.Empty<string>();

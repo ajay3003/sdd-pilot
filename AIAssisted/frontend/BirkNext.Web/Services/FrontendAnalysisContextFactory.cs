@@ -84,7 +84,7 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             AllowedGraphQlEndpoints     = allowedGraphQlEndpoints,
             AllowedBackendDomains       = allowedBackendDomains,
             AllowedCdnHosts             = allowedCdnHosts,
-            IsAuthenticatedSessionAvailable = sessionStatus == AuthenticatedBrowserSessionStatus.Available,
+            IsAuthenticatedSessionAvailable = sessionStatus == AuthenticatedBrowserSessionStatus.Authenticated,
             ValidationWarnings          = validation.Warnings,
             ValidationErrors            = validation.Errors,
             Integrations                = profile.Integrations.AsReadOnly()

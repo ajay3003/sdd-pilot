@@ -17,6 +17,7 @@ using BirkNext.Api.Services.FrontendAccessibility;
 using BirkNext.Api.Services.FrontendLighthouse;
 using BirkNext.Api.Services.FrontendPassiveSecurity;
 using BirkNext.Api.Services.TargetEnvironmentDetection;
+using BirkNext.Api.Services.AuthenticatedReview;
 using HotChocolate.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -192,6 +193,15 @@ builder.Services.AddScoped<BrowserResourceClassifier>();
 builder.Services.AddScoped<BrowserEvidenceSanitizer>();
 builder.Services.AddScoped<BrowserRuntimeFindingClassifier>();
 builder.Services.AddScoped<IFrontendBrowserRuntimeReviewService, FrontendBrowserRuntimeReviewService>();
+
+// Interactive authenticated review is local-workstation-only and disabled by default.
+builder.Services.Configure<AuthenticatedReviewOptions>(
+    builder.Configuration.GetSection(AuthenticatedReviewOptions.SectionName));
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IAuthenticatedBrowserHost, PlaywrightAuthenticatedBrowserHost>();
+builder.Services.AddSingleton<AuthenticatedBrowserSessionManager>();
+builder.Services.AddSingleton<IAuthenticatedBrowserSessionManager>(sp => sp.GetRequiredService<AuthenticatedBrowserSessionManager>());
+builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<AuthenticatedBrowserSessionManager>());
 
 // Target Environment Detection — for configuration discovery
 builder.Services.AddHttpClient<ITargetEnvironmentDetectionService, TargetEnvironmentDetectionService>(client =>

@@ -116,7 +116,7 @@ builder.Services.AddSingleton<IFrontendAnalysisSettingsService, FrontendAnalysis
 builder.Services.AddSingleton<ITargetEnvironmentService, TargetEnvironmentService>();
 builder.Services.AddSingleton<ITargetEnvironmentHintExtractor, TargetEnvironmentHintExtractor>();
 builder.Services.AddSingleton<IIntegrationTargetRegistryService, IntegrationTargetRegistryService>();
-builder.Services.AddSingleton<IAuthenticatedBrowserSessionService, PlaceholderAuthenticatedBrowserSessionService>();
+builder.Services.AddScoped<IAuthenticatedBrowserSessionService, AuthenticatedBrowserSessionService>();
 builder.Services.AddSingleton<IFrontendAnalysisContextFactory, FrontendAnalysisContextFactory>();
 builder.Services.AddHttpClient<ITargetPreflightService, TargetPreflightService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
