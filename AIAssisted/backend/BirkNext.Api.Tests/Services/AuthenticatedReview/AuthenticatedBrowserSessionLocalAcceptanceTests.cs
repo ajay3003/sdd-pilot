@@ -27,7 +27,7 @@ public sealed class AuthenticatedBrowserSessionLocalAcceptanceTests
         var session = await manager.StartAsync(new AuthenticatedBrowserSessionRequest("real-browser-review", "fixture-profile", fixture.Url));
         session.Status.Should().Be(AuthenticatedBrowserSessionStatus.BrowserReady);
 
-        await using var lease = await manager.AcquirePageLeaseAsync(session.SessionId, "real-browser-review", "fixture-profile", fixture.Url);
+        await using var lease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "real-browser-review", "fixture-profile", fixture.Url);
         (await lease.Page.TitleAsync()).Should().Be("Authenticated review fixture");
         lease.Context.Pages.Should().ContainSingle().Which.Should().BeSameAs(lease.Page);
 

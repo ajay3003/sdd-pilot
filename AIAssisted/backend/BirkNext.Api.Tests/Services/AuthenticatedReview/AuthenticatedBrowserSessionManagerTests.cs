@@ -75,7 +75,7 @@ public sealed class AuthenticatedBrowserSessionManagerTests
         var session = await manager.StartAsync(Request());
         (await manager.GetStatusAsync(session.SessionId, "wrong", "profile-1")).Should().BeNull();
         (await manager.CancelAsync(session.SessionId, "wrong", "profile-1")).Should().BeFalse();
-        var act = () => manager.AcquirePageLeaseAsync(session.SessionId, "wrong", "profile-1", "https://example.com");
+        var act = () => manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "wrong", "profile-1", "https://example.com");
         await act.Should().ThrowAsync<System.Collections.Generic.KeyNotFoundException>();
     }
 
@@ -84,7 +84,7 @@ public sealed class AuthenticatedBrowserSessionManagerTests
     {
         await using var manager = CreateManager(new FakeHost());
         var session = await manager.StartAsync(Request());
-        var act = () => manager.AcquirePageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://other.example");
+        var act = () => manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://other.example");
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
     }
 
@@ -93,7 +93,7 @@ public sealed class AuthenticatedBrowserSessionManagerTests
     {
         var host = new FakeHost(); await using var manager = CreateManager(host);
         var session = await manager.StartAsync(Request());
-        await using (var lease = await manager.AcquirePageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://example.com/path"))
+        await using (var lease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://example.com/path"))
         {
             lease.Page.Should().BeSameAs(host.Resources[0].Page);
             lease.Context.Should().BeSameAs(host.Resources[0].Context);
@@ -107,7 +107,7 @@ public sealed class AuthenticatedBrowserSessionManagerTests
         await using var manager = CreateManager(new FakeHost());
         var session = await manager.StartAsync(Request());
         await manager.CancelAsync(session.SessionId, "review-1", "profile-1");
-        var act = () => manager.AcquirePageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://example.com");
+        var act = () => manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://example.com");
         await act.Should().ThrowAsync<System.Collections.Generic.KeyNotFoundException>();
     }
 
@@ -118,7 +118,7 @@ public sealed class AuthenticatedBrowserSessionManagerTests
         await using var manager = CreateManager(host, time: time);
         var session = await manager.StartAsync(Request());
         time.Advance(TimeSpan.FromMinutes(46));
-        var act = () => manager.AcquirePageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://example.com");
+        var act = () => manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://example.com");
         await act.Should().ThrowAsync<AuthenticatedSessionExpiredException>();
         await EventuallyAsync(() => host.Resources[0].DisposeCount == 1);
     }

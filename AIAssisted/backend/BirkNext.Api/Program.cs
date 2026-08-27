@@ -199,6 +199,7 @@ builder.Services.Configure<AuthenticatedReviewOptions>(
     builder.Configuration.GetSection(AuthenticatedReviewOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IAuthenticatedBrowserHost, PlaywrightAuthenticatedBrowserHost>();
+builder.Services.AddSingleton<AuthenticationOriginPolicy>();
 builder.Services.AddSingleton<AuthenticatedBrowserSessionManager>();
 builder.Services.AddSingleton<IAuthenticatedBrowserSessionManager>(sp => sp.GetRequiredService<AuthenticatedBrowserSessionManager>());
 builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<AuthenticatedBrowserSessionManager>());
