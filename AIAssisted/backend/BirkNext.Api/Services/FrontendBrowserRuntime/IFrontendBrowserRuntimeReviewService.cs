@@ -11,6 +11,10 @@ public interface IFrontendBrowserRuntimeReviewService
         BrowserRuntimeOptions? options = null,
         CancellationToken cancellationToken = default);
 
+    Task<BrowserRuntimeResult> ReviewAsync(
+        BrowserRuntimeExecutionRequest request,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Check whether browser runtime analysis is available.
     /// Validates Playwright package and Chromium executable presence.

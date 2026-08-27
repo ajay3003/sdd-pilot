@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Net.Http.Json;
 using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
@@ -78,6 +79,32 @@ public sealed class FrontendBrowserRuntimeReviewApiService : IFrontendBrowserRun
                 RequestedUrl: targetUrl,
                 EngineError: $"API error: {ex.Message}");
         }
+    }
+
+    public Task<BrowserRuntimeResultDto> ReviewAsync(BrowserRuntimeApiExecutionRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync(request, cancellationToken);
+
+    private async Task<BrowserRuntimeResultDto> SendAsync(BrowserRuntimeApiExecutionRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await _httpClient.PostAsJsonAsync("api/frontend-runtime/review", new
+            {
+                targetUrl = request.TargetUrl,
+                navigationTimeoutMs = request.NavigationTimeoutMs,
+                startupObservationMs = request.StartupObservationMs,
+                headlessMode = true,
+                executionMode = request.ExecutionMode,
+                reviewSessionId = request.ReviewSessionId,
+                profileId = request.ProfileId,
+                authenticatedSessionId = request.AuthenticatedSessionId
+            }, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                return new BrowserRuntimeResultDto(Status: BrowserRuntimeEngineStatusDto.EngineError, RequestedUrl: request.TargetUrl, EngineError: $"HTTP {(int)response.StatusCode}");
+            return await response.Content.ReadFromJsonAsync<BrowserRuntimeResultDto>(cancellationToken: cancellationToken)
+                ?? new BrowserRuntimeResultDto(Status: BrowserRuntimeEngineStatusDto.EngineError, RequestedUrl: request.TargetUrl, EngineError: "Empty Browser Runtime response");
+        }
+        catch (OperationCanceledException) { return new BrowserRuntimeResultDto(Status: BrowserRuntimeEngineStatusDto.Skipped, RequestedUrl: request.TargetUrl, EngineError: "Review cancelled"); }
     }
 
     public async Task<bool> IsReadyAsync(CancellationToken cancellationToken = default)

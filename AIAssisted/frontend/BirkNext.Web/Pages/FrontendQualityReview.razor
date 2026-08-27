@@ -53,7 +53,11 @@
                 @if (_authSession?.IsAuthenticated == true)
                 {
                     <p><strong>Authenticated</strong> — Delivery context: @DeliveryContextText</p>
-                    <p>Authenticated Browser Runtime and accessibility checks are not enabled in this phase.</p>
+                    <ul class="fqr-auth-capabilities">
+                        <li>Browser Runtime: Available for authenticated review</li>
+                        <li>Accessibility: Not yet available for authenticated review</li>
+                        <li>Static Security, Passive Performance, Lighthouse, and Passive ZAP: Not supported for authenticated review</li>
+                    </ul>
                 }
                 else if (!_authPolling)
                 {

@@ -11,7 +11,10 @@ public interface IAuthenticatedBrowserSessionService
     Task<AuthenticatedBrowserSession>       BeginAuthenticationAsync(FrontendAnalysisContext context);
     Task                                    ClearSessionAsync();
     Task<AuthenticatedBrowserSessionStatus> GetStatusAsync();
+    Task<AuthenticatedBrowserExecutionReference?> GetExecutionReferenceAsync(FrontendAnalysisContext context);
 }
+
+public sealed record AuthenticatedBrowserExecutionReference(string SessionId, string ReviewSessionId, string ProfileId, string TargetUrl);
 
 /// <summary>
 /// Safe placeholder — authenticated browser automation is not yet implemented.
@@ -62,6 +65,8 @@ public sealed class PlaceholderAuthenticatedBrowserSessionService : IAuthenticat
 
     public Task<AuthenticatedBrowserSession> BeginAuthenticationAsync(FrontendAnalysisContext context) =>
         GetOrCreateSessionAsync(context);
+
+    public Task<AuthenticatedBrowserExecutionReference?> GetExecutionReferenceAsync(FrontendAnalysisContext context) => Task.FromResult<AuthenticatedBrowserExecutionReference?>(null);
 }
 
 /// <summary>
@@ -145,6 +150,14 @@ public sealed class AuthenticatedBrowserSessionService(HttpClient http, IFronten
         if (value is null) return AuthenticatedBrowserSessionStatus.Failed;
         _current = Map(value, profile.Authentication.AuthenticationType.ToString());
         return value.Status;
+    }
+
+    public Task<AuthenticatedBrowserExecutionReference?> GetExecutionReferenceAsync(FrontendAnalysisContext context)
+    {
+        if (_current is null || !_current.IsAuthenticated || !_current.ApplicationValidationCurrent ||
+            !string.Equals(context.ActiveProfile.Id, settings.ActiveProfile?.Id, StringComparison.Ordinal))
+            return Task.FromResult<AuthenticatedBrowserExecutionReference?>(null);
+        return Task.FromResult<AuthenticatedBrowserExecutionReference?>(new(_current.SessionId, _reviewSessionId, context.ActiveProfile.Id, context.TargetUrl));
     }
 
     private static AuthenticatedBrowserSession Map(SessionResponse value, string authenticationType) => new()

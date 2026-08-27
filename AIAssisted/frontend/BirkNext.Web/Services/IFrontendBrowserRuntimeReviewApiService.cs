@@ -17,8 +17,22 @@ public interface IFrontendBrowserRuntimeReviewApiService
         int startupObservationMs = 5000,
         CancellationToken cancellationToken = default);
 
+    Task<BrowserRuntimeResultDto> ReviewAsync(
+        BrowserRuntimeApiExecutionRequest request,
+        CancellationToken cancellationToken = default) =>
+        ReviewAsync(request.TargetUrl, request.NavigationTimeoutMs, request.StartupObservationMs, cancellationToken);
+
     /// <summary>
     /// Check if the backend browser runtime engine is ready.
     /// </summary>
     Task<bool> IsReadyAsync(CancellationToken cancellationToken = default);
 }
+
+public sealed record BrowserRuntimeApiExecutionRequest(
+    string TargetUrl,
+    BrowserRuntimeExecutionModeDto ExecutionMode,
+    string? ReviewSessionId = null,
+    string? ProfileId = null,
+    string? AuthenticatedSessionId = null,
+    int NavigationTimeoutMs = 30000,
+    int StartupObservationMs = 5000);

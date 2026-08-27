@@ -23,6 +23,9 @@ public sealed class BrowserEvidenceSanitizer
         @"\bsk_(?:live|test)_[A-Za-z0-9_-]+", // Common secret-key formats
         @"[A-Za-z0-9]{32,}", // Generic 32+ char tokens
         @"\beyJ[A-Za-z0-9_-]+", // JWT/JWT fragments
+        @"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", // Account/email identity
+        @"\b(?:person|case)[-_ :#]*[A-Za-z0-9_-]+\b", // Person/case fixture identifiers
+        @"(?i)Authorization\s*[:=]\s*[^\s,;]+(?:\s+[^\s,;]+)?", // Authorization-like values
     };
 
     public string SanitizeUrl(string url)
@@ -145,6 +148,27 @@ public sealed class BrowserEvidenceSanitizer
             f.Evidence?.Select(SanitizeMessage).ToList() ?? new List<string>()
         )).ToList();
     }
+
+    /// <summary>Authenticated evidence is deliberately category-level. Arbitrary application
+    /// text is not returned because reliable redaction of protected business data is impossible.</summary>
+    public List<BrowserRuntimeFinding> SanitizeAuthenticatedFindings(List<BrowserRuntimeFinding> findings)
+    {
+        if (findings is null || findings.Count == 0) return [];
+        return findings.Select(f => new BrowserRuntimeFinding(
+            f.Id,
+            f.Title,
+            f.Severity,
+            f.Category,
+            $"A sanitized {f.Category} observation was detected in the authenticated application session.",
+            "Review the corresponding application runtime category in a controlled diagnostic environment.",
+            [])).ToList();
+    }
+
+    /// <summary>Only origin is safe for authenticated evidence; paths can contain case/person IDs.</summary>
+    public string SanitizeAuthenticatedUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            ? uri.GetLeftPart(UriPartial.Authority)
+            : "[REDACTED]";
 
     private static string SanitizeQueryString(string query)
     {

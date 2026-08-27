@@ -217,6 +217,9 @@ public enum BrowserRuntimeEngineStatusDto
     NotApplicable,
 }
 
+public enum BrowserRuntimeExecutionModeDto { AnonymousOwnedBrowser, AuthenticatedSessionPage }
+public enum BrowserRuntimeOutcomeReasonDto { None, AuthenticationRequired, AuthenticationExpired, AuthenticationCancelled, UnexpectedOrigin, SessionUnavailable }
+
 public enum BrowserStartupStateDto
 {
     Started,
@@ -260,4 +263,7 @@ public sealed record BrowserRuntimeResultDto(
     [property: JsonPropertyName("criticalResourceFailureCount")] int CriticalResourceFailureCount = 0,
     [property: JsonPropertyName("findings")] List<BrowserRuntimeFindingDto>? Findings = null,
     [property: JsonPropertyName("engineError")] string? EngineError = null,
-    [property: JsonPropertyName("limitations")] List<string>? Limitations = null);
+    [property: JsonPropertyName("limitations")] List<string>? Limitations = null,
+    [property: JsonPropertyName("executionMode")] BrowserRuntimeExecutionModeDto ExecutionMode = BrowserRuntimeExecutionModeDto.AnonymousOwnedBrowser,
+    [property: JsonPropertyName("outcomeReason")] BrowserRuntimeOutcomeReasonDto OutcomeReason = BrowserRuntimeOutcomeReasonDto.None,
+    [property: JsonPropertyName("deliveryContext")] string DeliveryContext = "None");

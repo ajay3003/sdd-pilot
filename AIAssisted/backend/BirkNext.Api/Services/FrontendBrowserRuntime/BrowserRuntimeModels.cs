@@ -2,6 +2,22 @@ using System.Text.Json.Serialization;
 
 namespace BirkNext.Api.Services.FrontendBrowserRuntime;
 
+public enum BrowserRuntimeExecutionMode
+{
+    AnonymousOwnedBrowser,
+    AuthenticatedSessionPage
+}
+
+public enum BrowserRuntimeOutcomeReason
+{
+    None,
+    AuthenticationRequired,
+    AuthenticationExpired,
+    AuthenticationCancelled,
+    UnexpectedOrigin,
+    SessionUnavailable
+}
+
 public enum BrowserRuntimeEngineStatus
 {
     NotAssessed,
@@ -27,6 +43,14 @@ public sealed record BrowserRuntimeOptions(
     string ViewportWidth = "1440",
     string ViewportHeight = "900");
 
+public sealed record BrowserRuntimeExecutionRequest(
+    string TargetUrl,
+    BrowserRuntimeExecutionMode ExecutionMode = BrowserRuntimeExecutionMode.AnonymousOwnedBrowser,
+    string? ReviewSessionId = null,
+    string? ProfileId = null,
+    string? AuthenticatedSessionId = null,
+    BrowserRuntimeOptions? Options = null);
+
 public sealed record BrowserRuntimeResult(
     BrowserRuntimeEngineStatus Status = BrowserRuntimeEngineStatus.NotAssessed,
     string EngineName = "Browser Runtime",
@@ -45,7 +69,10 @@ public sealed record BrowserRuntimeResult(
     string? EngineError = null,
     List<string>? Limitations = null,
     bool RedirectOccurred = false,
-    string? FinalRedirectReason = null);
+    string? FinalRedirectReason = null,
+    BrowserRuntimeExecutionMode ExecutionMode = BrowserRuntimeExecutionMode.AnonymousOwnedBrowser,
+    BrowserRuntimeOutcomeReason OutcomeReason = BrowserRuntimeOutcomeReason.None,
+    string DeliveryContext = "None");
 
 public sealed record BrowserRuntimeFinding(
     string Id,

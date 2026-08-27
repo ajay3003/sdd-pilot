@@ -42,7 +42,23 @@ public class FrontendBrowserRuntimeController : ControllerBase
                 StartupObservationMs: request.StartupObservationMs ?? 5000,
                 HeadlessMode: request.HeadlessMode ?? true);
 
-            var result = await _runtime.ReviewAsync(request.TargetUrl, options, ct);
+            var execution = request.ExecutionMode == BrowserRuntimeExecutionMode.AuthenticatedSessionPage
+                ? new BrowserRuntimeExecutionRequest(
+                    request.TargetUrl,
+                    BrowserRuntimeExecutionMode.AuthenticatedSessionPage,
+                    request.ReviewSessionId,
+                    request.ProfileId,
+                    request.AuthenticatedSessionId,
+                    options)
+                : new BrowserRuntimeExecutionRequest(request.TargetUrl, Options: options);
+
+            if (execution.ExecutionMode == BrowserRuntimeExecutionMode.AuthenticatedSessionPage &&
+                (string.IsNullOrWhiteSpace(execution.ReviewSessionId) ||
+                 string.IsNullOrWhiteSpace(execution.ProfileId) ||
+                 string.IsNullOrWhiteSpace(execution.AuthenticatedSessionId)))
+                return BadRequest(new { message = "Authenticated session, review, and profile identifiers are required." });
+
+            var result = await _runtime.ReviewAsync(execution, ct);
             return Ok(result);
         }
         catch (OperationCanceledException)
@@ -77,4 +93,8 @@ public sealed record BrowserRuntimeRequest(
     string TargetUrl,
     int? NavigationTimeoutMs = null,
     int? StartupObservationMs = null,
-    bool? HeadlessMode = null);
+    bool? HeadlessMode = null,
+    BrowserRuntimeExecutionMode ExecutionMode = BrowserRuntimeExecutionMode.AnonymousOwnedBrowser,
+    string? ReviewSessionId = null,
+    string? ProfileId = null,
+    string? AuthenticatedSessionId = null);

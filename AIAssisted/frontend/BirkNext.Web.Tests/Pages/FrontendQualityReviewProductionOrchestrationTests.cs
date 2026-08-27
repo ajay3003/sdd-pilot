@@ -20,6 +20,7 @@ public sealed class FrontendQualityReviewProductionOrchestrationTests : BunitCon
         Services.AddSingleton<RuntimeReviewSessionService>();
         Services.AddSingleton(Mock.Of<IWorkspaceSessionService>());
         Services.AddSingleton(Mock.Of<IReportExportService>());
+        Services.AddSingleton(Mock.Of<IAuthenticatedBrowserSessionService>());
 
         var component = Render<FrontendQualityReview>();
         var runButton = component.FindAll("button")

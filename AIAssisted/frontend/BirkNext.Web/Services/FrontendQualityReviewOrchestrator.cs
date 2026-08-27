@@ -62,6 +62,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     private readonly IFrontendAccessibilityReviewApiService? _accessibility;
     private readonly IFrontendLighthouseReviewApiService? _lighthouse;
     private readonly IFrontendPassiveSecurityApiService? _passiveSecurity;
+    private readonly IAuthenticatedBrowserSessionService? _authenticatedSessions;
 
     public FrontendQualityReviewOrchestrator(
         ISecurityScanner security,
@@ -71,7 +72,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         IFrontendBrowserRuntimeReviewApiService? runtime = null,
         IFrontendAccessibilityReviewApiService? accessibility = null,
         IFrontendLighthouseReviewApiService? lighthouse = null,
-        IFrontendPassiveSecurityApiService? passiveSecurity = null)
+        IFrontendPassiveSecurityApiService? passiveSecurity = null,
+        IAuthenticatedBrowserSessionService? authenticatedSessions = null)
     {
         _security = security;
         _performance = performance;
@@ -81,6 +83,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         _accessibility = accessibility;
         _lighthouse = lighthouse;
         _passiveSecurity = passiveSecurity;
+        _authenticatedSessions = authenticatedSessions;
     }
 
     public async Task<FrontendQualityReviewOrchestrationResult> RunAsync(
@@ -89,6 +92,9 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         CancellationToken cancellationToken = default)
     {
         var result = new FrontendQualityReviewOrchestrationResult();
+        var authenticatedReference = context.RequiresAuthentication && _authenticatedSessions is not null
+            ? await _authenticatedSessions.GetExecutionReferenceAsync(context)
+            : null;
 
         // ── Preflight validation ────────────────────────────────
         try
@@ -103,7 +109,6 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             // Block scanners on error statuses
             if (preflightResult.Status is PreflightStatus.Unreachable
                 or PreflightStatus.InvalidTarget
-                or PreflightStatus.AuthenticationRequired
                 or PreflightStatus.ScannerUnavailable)
             {
                 var blocked = result with
@@ -111,6 +116,11 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
                     PreflightBlocked = true,
                     PreflightBlockReason = preflightResult.Message
                 };
+                return blocked with { QualityReport = BuildPreflightReport(targetUrl, context, blocked) };
+            }
+            if (preflightResult.Status == PreflightStatus.AuthenticationRequired && authenticatedReference is null)
+            {
+                var blocked = result with { PreflightBlocked = true, PreflightBlockReason = preflightResult.Message };
                 return blocked with { QualityReport = BuildPreflightReport(targetUrl, context, blocked) };
             }
         }
@@ -125,7 +135,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         }
 
         // ── Security scanner — respects toggle ──────────────────
-        if (context.FeatureToggles.EnableSecurityEngine)
+        if (context.FeatureToggles.EnableSecurityEngine && !context.RequiresAuthentication)
         {
             try
             {
@@ -148,7 +158,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         }
 
         // ── Performance scanner — respects toggle ───────────────
-        if (context.FeatureToggles.EnablePerformanceEngine)
+        if (context.FeatureToggles.EnablePerformanceEngine && !context.RequiresAuthentication)
         {
             try
             {
@@ -173,7 +183,14 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         {
             try
             {
-                var runtimeReport = await _runtime.ReviewAsync(targetUrl, 30000, 5000, cancellationToken);
+                var runtimeReport = authenticatedReference is null
+                    ? await _runtime.ReviewAsync(targetUrl, 30000, 5000, cancellationToken)
+                    : await _runtime.ReviewAsync(new BrowserRuntimeApiExecutionRequest(
+                        targetUrl,
+                        BrowserRuntimeExecutionModeDto.AuthenticatedSessionPage,
+                        authenticatedReference.ReviewSessionId,
+                        authenticatedReference.ProfileId,
+                        authenticatedReference.SessionId), cancellationToken);
                 result = result with { BrowserRuntimeReport = runtimeReport };
             }
             catch (Exception ex)
@@ -190,7 +207,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "BrowserRuntime"] };
         }
 
-        if (context.FeatureToggles.EnableAccessibilityEngine && _accessibility is not null)
+        if (context.FeatureToggles.EnableAccessibilityEngine && _accessibility is not null && !context.RequiresAuthentication)
         {
             try
             {
@@ -211,7 +228,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Accessibility"] };
         }
 
-        if (context.FeatureToggles.EnableLighthouseEngine && _lighthouse is not null)
+        if (context.FeatureToggles.EnableLighthouseEngine && _lighthouse is not null && !context.RequiresAuthentication)
         {
             try
             {
@@ -227,7 +244,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Lighthouse"] };
         }
 
-        if (context.FeatureToggles.EnablePassiveSecurityEngine && _passiveSecurity is not null)
+        if (context.FeatureToggles.EnablePassiveSecurityEngine && _passiveSecurity is not null && !context.RequiresAuthentication)
         {
             try
             {

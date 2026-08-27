@@ -154,7 +154,7 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
             throw new AuthenticatedSessionNotEligibleException();
         if (entry.Resources is null) throw new InvalidOperationException("Browser is not ready.");
         entry.Touch(_time.GetUtcNow());
-        return Task.FromResult<IAuthenticatedBrowserPageLease>(new PageLease(entry));
+        return Task.FromResult<IAuthenticatedBrowserPageLease>(new PageLease(entry, requireAuthenticated));
     }
 
     private void AttachNavigationObserver(Entry entry)
@@ -179,22 +179,25 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
             switch (classification)
             {
                 case AuthenticationOriginClass.Application:
-                    if (!entry.EntraObserved) { entry.Status = AuthenticatedBrowserSessionStatus.AuthenticationRequired; entry.ApplicationValidationCurrent = false; break; }
+                    if (!entry.EntraObserved) { entry.RevokeEngineEligibility(); entry.Status = AuthenticatedBrowserSessionStatus.AuthenticationRequired; entry.ApplicationValidationCurrent = false; break; }
                     if (await ValidateApplicationPageAsync(entry, candidate, proxied: false))
                     {
                         entry.Status = AuthenticatedBrowserSessionStatus.Authenticated;
                         entry.DeliveryContext = entry.McasObserved ? AuthenticatedDeliveryContext.ConditionalAccessMonitoredSession : AuthenticatedDeliveryContext.DirectApplication;
                         entry.ApplicationValidationCurrent = true;
+                        entry.GrantEngineEligibility();
                     }
                     break;
 
                 case AuthenticationOriginClass.EntraAuthority:
+                    entry.RevokeEngineEligibility();
                     entry.ApplicationValidationCurrent = false;
                     if (entry.Status == AuthenticatedBrowserSessionStatus.Authenticated) entry.Status = AuthenticatedBrowserSessionStatus.AuthenticationExpired;
                     else { entry.EntraObserved = true; entry.Status = AuthenticatedBrowserSessionStatus.AuthenticationInProgress; }
                     break;
 
                 case AuthenticationOriginClass.McasIntermediary:
+                    entry.RevokeEngineEligibility();
                     entry.ApplicationValidationCurrent = false;
                     var origin = candidate.GetLeftPart(UriPartial.Authority);
                     if (entry.PinnedMcasOrigin is not null && !string.Equals(entry.PinnedMcasOrigin, origin, StringComparison.OrdinalIgnoreCase)) { await MarkUnexpectedAsync(entry); break; }
@@ -209,6 +212,7 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
                         entry.DeliveryContext = AuthenticatedDeliveryContext.ProxiedApplicationDelivery;
                         entry.ApplicationValidationCurrent = true;
                         entry.PinnedProxiedApplicationOrigin = origin;
+                        entry.GrantEngineEligibility();
                     }
                     else entry.Status = AuthenticatedBrowserSessionStatus.ConditionalAccessIntermediary;
                     break;
@@ -263,6 +267,7 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
 
     private async Task MarkUnexpectedAsync(Entry entry)
     {
+        entry.RevokeEngineEligibility();
         entry.Status = AuthenticatedBrowserSessionStatus.UnexpectedOrigin;
         entry.ApplicationValidationCurrent = false;
         entry.FailureCategory = "unexpected_origin";
@@ -365,19 +370,39 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
         public SemaphoreSlim NavigationGate { get; } = new(1, 1);
         public IAuthenticatedBrowserResources? Resources { get; set; }
         public CancellationTokenSource Cancellation { get; } = new();
+        public CancellationTokenSource EngineEligibility { get; private set; } = new();
         public AuthenticatedBrowserSessionDescriptor Descriptor => new(SessionId, ReviewSessionId, ProfileId, TargetOrigin, Status, StartedAt, ExpiresAt, FailureCategory, DeliveryContext, ApplicationValidationCurrent);
         public bool Matches(string review, string profile) => string.Equals(ReviewSessionId, review, StringComparison.Ordinal) && string.Equals(ProfileId, profile, StringComparison.Ordinal);
         public void Touch(DateTimeOffset now) => LastActivityAt = now;
+        public void GrantEngineEligibility()
+        {
+            if (!EngineEligibility.IsCancellationRequested) return;
+            EngineEligibility.Dispose();
+            EngineEligibility = new CancellationTokenSource();
+        }
+        public void RevokeEngineEligibility()
+        {
+            if (!EngineEligibility.IsCancellationRequested) EngineEligibility.Cancel();
+        }
     }
 
-    private sealed class PageLease(Entry entry) : IAuthenticatedBrowserPageLease
+    private sealed class PageLease : IAuthenticatedBrowserPageLease
     {
         private int _disposed;
-        public string SessionId => entry.SessionId;
-        public Microsoft.Playwright.IPage Page => Volatile.Read(ref _disposed) == 0 && !entry.Cancellation.IsCancellationRequested ? entry.Resources!.Page : throw new ObjectDisposedException(nameof(PageLease));
-        public Microsoft.Playwright.IBrowserContext Context => Volatile.Read(ref _disposed) == 0 && !entry.Cancellation.IsCancellationRequested ? entry.Resources!.Context : throw new ObjectDisposedException(nameof(PageLease));
-        public CancellationToken SessionCancellation => entry.Cancellation.Token;
-        public ValueTask DisposeAsync() { Interlocked.Exchange(ref _disposed, 1); return ValueTask.CompletedTask; }
+        private readonly Entry _entry;
+        private readonly CancellationTokenSource _leaseCancellation;
+        public PageLease(Entry entry, bool observeEligibility)
+        {
+            _entry = entry;
+            _leaseCancellation = observeEligibility
+                ? CancellationTokenSource.CreateLinkedTokenSource(entry.Cancellation.Token, entry.EngineEligibility.Token)
+                : CancellationTokenSource.CreateLinkedTokenSource(entry.Cancellation.Token);
+        }
+        public string SessionId => _entry.SessionId;
+        public Microsoft.Playwright.IPage Page => Volatile.Read(ref _disposed) == 0 && !_entry.Cancellation.IsCancellationRequested ? _entry.Resources!.Page : throw new ObjectDisposedException(nameof(PageLease));
+        public Microsoft.Playwright.IBrowserContext Context => Volatile.Read(ref _disposed) == 0 && !_entry.Cancellation.IsCancellationRequested ? _entry.Resources!.Context : throw new ObjectDisposedException(nameof(PageLease));
+        public CancellationToken SessionCancellation => _leaseCancellation.Token;
+        public ValueTask DisposeAsync() { if (Interlocked.Exchange(ref _disposed, 1) == 0) _leaseCancellation.Dispose(); return ValueTask.CompletedTask; }
     }
 }
 
