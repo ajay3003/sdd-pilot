@@ -32,12 +32,14 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
 
         // Run browser runtime on authenticated page
         var resourceClassifier = new BrowserResourceClassifier();
+        var options = Options.Create(new FrontendBrowserRuntimeOptions { Enabled = true });
         var runtime = new FrontendBrowserRuntimeReviewService(
             NullLogger<FrontendBrowserRuntimeReviewService>.Instance,
             new BrowserTargetValidator(),
             new BrowserRuntimeFindingClassifier(resourceClassifier),
             resourceClassifier,
             new BrowserEvidenceSanitizer(),
+            options,
             manager);
 
         var runtimeRequest = new BrowserRuntimeExecutionRequest(
@@ -73,12 +75,14 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
         var session = await ReachAuthenticatedAsync(manager, fixture);
 
         var rc_sent = new BrowserResourceClassifier();
+        var options_sent = Options.Create(new FrontendBrowserRuntimeOptions { Enabled = true });
         var runtime = new FrontendBrowserRuntimeReviewService(
             NullLogger<FrontendBrowserRuntimeReviewService>.Instance,
             new BrowserTargetValidator(),
             new BrowserRuntimeFindingClassifier(rc_sent),
             rc_sent,
             new BrowserEvidenceSanitizer(),
+            options_sent,
             manager);
 
         var runtimeRequest = new BrowserRuntimeExecutionRequest(
@@ -107,12 +111,14 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
         var session = await ReachAuthenticatedAsync(manager, fixture);
 
         var rc3 = new BrowserResourceClassifier();
+        var options3 = Options.Create(new FrontendBrowserRuntimeOptions { Enabled = true });
         var runtime = new FrontendBrowserRuntimeReviewService(
             NullLogger<FrontendBrowserRuntimeReviewService>.Instance,
             new BrowserTargetValidator(),
             new BrowserRuntimeFindingClassifier(rc3),
             rc3,
             new BrowserEvidenceSanitizer(),
+            options3,
             manager);
 
         var runtimeTask = Task.Run(async () =>
@@ -146,12 +152,14 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
         var session = await ReachAuthenticatedAsync(manager, fixture);
 
         var rc4 = new BrowserResourceClassifier();
+        var options4 = Options.Create(new FrontendBrowserRuntimeOptions { Enabled = true });
         var runtime = new FrontendBrowserRuntimeReviewService(
             NullLogger<FrontendBrowserRuntimeReviewService>.Instance,
             new BrowserTargetValidator(),
             new BrowserRuntimeFindingClassifier(rc4),
             rc4,
             new BrowserEvidenceSanitizer(),
+            options4,
             manager);
 
         var runtimeTask = Task.Run(async () =>
@@ -184,12 +192,14 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
         var session = await ReachAuthenticatedAsync(manager, fixture);
 
         var rc5 = new BrowserResourceClassifier();
+        var options5 = Options.Create(new FrontendBrowserRuntimeOptions { Enabled = true });
         var runtime = new FrontendBrowserRuntimeReviewService(
             NullLogger<FrontendBrowserRuntimeReviewService>.Instance,
             new BrowserTargetValidator(),
             new BrowserRuntimeFindingClassifier(rc5),
             rc5,
             new BrowserEvidenceSanitizer(),
+            options5,
             manager);
 
         var runtimeTask = Task.Run(async () =>
@@ -219,12 +229,14 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
         if (!Enabled()) return;
         await using var fixture = await SyntheticFixture.StartAsync();
         var rc6 = new BrowserResourceClassifier();
+        var options6 = Options.Create(new FrontendBrowserRuntimeOptions { Enabled = true });
         var runtime = new FrontendBrowserRuntimeReviewService(
             NullLogger<FrontendBrowserRuntimeReviewService>.Instance,
             new BrowserTargetValidator(),
             new BrowserRuntimeFindingClassifier(rc6),
             rc6,
             new BrowserEvidenceSanitizer(),
+            options6,
             CreateManager());
 
         var request = new BrowserRuntimeExecutionRequest(
@@ -251,12 +263,14 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
         await manager.CancelAsync(session.SessionId, Review, Profile);
 
         var rc7 = new BrowserResourceClassifier();
+        var options7 = Options.Create(new FrontendBrowserRuntimeOptions { Enabled = true });
         var runtime = new FrontendBrowserRuntimeReviewService(
             NullLogger<FrontendBrowserRuntimeReviewService>.Instance,
             new BrowserTargetValidator(),
             new BrowserRuntimeFindingClassifier(rc7),
             rc7,
             new BrowserEvidenceSanitizer(),
+            options7,
             manager);
 
         var request = new BrowserRuntimeExecutionRequest(
@@ -276,12 +290,14 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
     {
         if (!Enabled()) return;
         var rc8 = new BrowserResourceClassifier();
+        var options8 = Options.Create(new FrontendBrowserRuntimeOptions { Enabled = true });
         var runtime = new FrontendBrowserRuntimeReviewService(
             NullLogger<FrontendBrowserRuntimeReviewService>.Instance,
             new BrowserTargetValidator(),
             new BrowserRuntimeFindingClassifier(rc8),
             rc8,
             new BrowserEvidenceSanitizer(),
+            options8,
             null);
 
         // Use a simple test URL — we're just verifying mode doesn't break anonymous path

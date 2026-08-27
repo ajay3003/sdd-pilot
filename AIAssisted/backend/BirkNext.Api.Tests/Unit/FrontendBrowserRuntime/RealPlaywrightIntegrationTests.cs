@@ -133,13 +133,15 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
         var resourceClassifier = new BrowserResourceClassifier();
         var evidenceSanitizer = new BrowserEvidenceSanitizer();
         var findingClassifier = new BrowserRuntimeFindingClassifier(resourceClassifier);
+        var options = Microsoft.Extensions.Options.Options.Create(new FrontendBrowserRuntimeOptions { Enabled = true });
 
         return new FrontendBrowserRuntimeReviewService(
             _logger,
             targetValidator,
             findingClassifier,
             resourceClassifier,
-            evidenceSanitizer);
+            evidenceSanitizer,
+            options);
     }
 
     // ── Simple Test HTTP Server ────────────────────────────────────

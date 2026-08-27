@@ -2,6 +2,7 @@ using System.Text.Json;
 using BirkNext.Api.Services.FrontendBrowserRuntime;
 using Deque.AxeCore.Commons;
 using Microsoft.Playwright;
+using Microsoft.Extensions.Options;
 
 namespace BirkNext.Api.Services.FrontendAccessibility;
 
@@ -14,23 +15,27 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
     private readonly BrowserTargetValidator _targetValidator;
     private readonly AccessibilityNormalizer _normalizer;
     private readonly IAxeScriptProvider _axeScriptProvider;
+    private readonly bool _enabled;
 
     public FrontendAccessibilityReviewService(
         ILogger<FrontendAccessibilityReviewService> logger,
         BrowserTargetValidator targetValidator,
-        AccessibilityNormalizer normalizer)
-        : this(logger, targetValidator, normalizer, new BundledAxeScriptProvider()) { }
+        AccessibilityNormalizer normalizer,
+        IOptions<FrontendAccessibilityOptions> options)
+        : this(logger, targetValidator, normalizer, new BundledAxeScriptProvider(), options.Value.Enabled) { }
 
     internal FrontendAccessibilityReviewService(
         ILogger<FrontendAccessibilityReviewService> logger,
         BrowserTargetValidator targetValidator,
         AccessibilityNormalizer normalizer,
-        IAxeScriptProvider axeScriptProvider)
+        IAxeScriptProvider axeScriptProvider,
+        bool enabled = true)
     {
         _logger = logger;
         _targetValidator = targetValidator;
         _normalizer = normalizer;
         _axeScriptProvider = axeScriptProvider;
+        _enabled = enabled;
     }
 
     public async Task<AccessibilityReviewResult> ReviewAsync(
@@ -48,6 +53,9 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         var validation = _targetValidator.ValidateTarget(targetUrl, options.EnvironmentType);
         if (!validation.IsValid)
             return Failure(AccessibilityExecutionStatus.Skipped, targetUrl, startedAt, validation.BlockReason ?? "Target blocked by safety policy.");
+
+        if (!_enabled)
+            return Failure(AccessibilityExecutionStatus.Skipped, targetUrl, startedAt, "Accessibility review engine is disabled.");
 
         IPlaywright? playwright = null;
         IBrowser? browser = null;
@@ -127,6 +135,8 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
 
     public async Task<AccessibilityReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
     {
+        if (!_enabled)
+            return new(AccessibilityReadinessState.Disabled, false, BrowserName: "Chromium", Error: "Accessibility review engine is disabled.");
         try
         {
             if (string.IsNullOrWhiteSpace(_axeScriptProvider.GetScript()))

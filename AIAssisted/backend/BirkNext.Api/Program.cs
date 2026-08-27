@@ -181,7 +181,9 @@ builder.Services.AddHttpClient<IWasmApiAnalysisService, WasmApiAnalysisService>(
 });
 builder.Services.AddSingleton<IWasmPerformanceReadinessService, WasmPerformanceReadinessService>();
 
-// Frontend Browser Runtime Review — Chromium-based runtime analysis
+// Frontend Browser Runtime Review — Chromium-based runtime analysis (disabled by default)
+builder.Services.Configure<FrontendBrowserRuntimeOptions>(
+    builder.Configuration.GetSection(FrontendBrowserRuntimeOptions.SectionName));
 builder.Services.AddScoped<BrowserTargetValidator>(provider =>
 {
     var environment = provider.GetRequiredService<IWebHostEnvironment>();
@@ -210,9 +212,13 @@ builder.Services.AddHttpClient<ITargetEnvironmentDetectionService, TargetEnviron
     client.Timeout = TimeSpan.FromSeconds(10);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-TargetDetection/1.0");
 });
+builder.Services.Configure<FrontendAccessibilityOptions>(
+    builder.Configuration.GetSection(FrontendAccessibilityOptions.SectionName));
 builder.Services.AddScoped<AccessibilityEvidenceSanitizer>();
 builder.Services.AddScoped<AccessibilityNormalizer>();
 builder.Services.AddScoped<IFrontendAccessibilityReviewService, FrontendAccessibilityReviewService>();
+builder.Services.Configure<FrontendLighthouseOptions>(
+    builder.Configuration.GetSection(FrontendLighthouseOptions.SectionName));
 builder.Services.AddScoped<LighthouseEvidenceSanitizer>();
 builder.Services.AddScoped<IFrontendLighthouseReviewService, FrontendLighthouseReviewService>();
 builder.Services.AddScoped<PassiveSecurityEvidenceSanitizer>();

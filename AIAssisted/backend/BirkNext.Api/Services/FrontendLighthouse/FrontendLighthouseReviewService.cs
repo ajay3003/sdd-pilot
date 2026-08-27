@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using BirkNext.Api.Services.FrontendBrowserRuntime;
+using Microsoft.Extensions.Options;
 
 namespace BirkNext.Api.Services.FrontendLighthouse;
 
@@ -13,27 +14,31 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
     private readonly LighthouseEvidenceSanitizer _sanitizer;
     private readonly string _runnerPath;
     private readonly string _nodeExecutable;
+    private readonly bool _enabled;
 
     public FrontendLighthouseReviewService(
         ILogger<FrontendLighthouseReviewService> logger,
         BrowserTargetValidator validator,
         LighthouseEvidenceSanitizer sanitizer,
-        IWebHostEnvironment environment)
+        IWebHostEnvironment environment,
+        IOptions<FrontendLighthouseOptions> options)
         : this(logger, validator, sanitizer,
-            System.IO.Path.Combine(environment.ContentRootPath, "Tools", "LighthouseRunner", "run-lighthouse.mjs"), "node") { }
+            System.IO.Path.Combine(environment.ContentRootPath, "Tools", "LighthouseRunner", "run-lighthouse.mjs"), "node", options.Value.Enabled) { }
 
     internal FrontendLighthouseReviewService(
         ILogger<FrontendLighthouseReviewService> logger,
         BrowserTargetValidator validator,
         LighthouseEvidenceSanitizer sanitizer,
         string runnerPath,
-        string nodeExecutable)
+        string nodeExecutable,
+        bool enabled = true)
     {
         _logger = logger;
         _validator = validator;
         _sanitizer = sanitizer;
         _runnerPath = runnerPath;
         _nodeExecutable = nodeExecutable;
+        _enabled = enabled;
     }
 
     public async Task<LighthouseReviewResult> ReviewAsync(string targetUrl, LighthouseReviewOptions? options = null,
@@ -47,6 +52,8 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
         var validation = _validator.ValidateTarget(targetUrl, options.EnvironmentType);
         if (!validation.IsValid)
             return Failure(LighthouseExecutionStatus.Skipped, targetUrl, started, validation.BlockReason ?? "Target blocked by safety policy.");
+        if (!_enabled)
+            return Failure(LighthouseExecutionStatus.Skipped, targetUrl, started, "Lighthouse review engine is disabled.");
         if (!File.Exists(_runnerPath))
             return Failure(LighthouseExecutionStatus.EngineError, targetUrl, started, "Pinned Lighthouse runner is unavailable.");
 
@@ -91,6 +98,8 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
 
     public async Task<LighthouseReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
     {
+        if (!_enabled)
+            return new(LighthouseReadinessState.Disabled, false, Error: "Lighthouse review engine is disabled.");
         if (!File.Exists(_runnerPath))
             return new(LighthouseReadinessState.LighthouseUnavailable, false, Error: "Pinned Lighthouse runner is unavailable.");
         var execution = await ExecuteAsync([_runnerPath, "--readiness"], 30000, cancellationToken);

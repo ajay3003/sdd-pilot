@@ -14,7 +14,7 @@ This is a deployment decision. Whether Playwright Chromium is headed is a conseq
 
 - **Phase A1 — local ephemeral browser session:** VERIFIED
 - **Phase A2 — interactive authentication state machine and origin validation:** VERIFIED
-- **Authenticated Browser Runtime reuse:** NOT IMPLEMENTED
+- **Phase A3 — Authenticated Browser Runtime reuse:** VERIFIED — Browser Runtime executes as a consumer of the authenticated session's exact page/context; no second browser/context/page created; session survives successful runtime; mid-run Entra/MCAS/unexpected-origin navigation stops evidence immediately
 - **Authenticated axe reuse:** NOT IMPLEMENTED
 
 ### A2 trust classes

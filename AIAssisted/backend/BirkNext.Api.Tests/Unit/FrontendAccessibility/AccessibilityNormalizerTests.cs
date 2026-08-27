@@ -53,10 +53,12 @@ public sealed class AccessibilityNormalizerTests
     [Fact]
     public async Task AccessibilityNavigation_UsesBrowserTargetSafetyPolicy()
     {
+        var options = Microsoft.Extensions.Options.Options.Create(new FrontendAccessibilityOptions { Enabled = true });
         var service = new FrontendAccessibilityReviewService(
             NullLogger<FrontendAccessibilityReviewService>.Instance,
             new BrowserTargetValidator(),
-            new AccessibilityNormalizer(new AccessibilityEvidenceSanitizer()));
+            new AccessibilityNormalizer(new AccessibilityEvidenceSanitizer()),
+            options);
         var result = await service.ReviewAsync("file:///etc/passwd");
         Assert.Equal(AccessibilityExecutionStatus.Skipped, result.ExecutionStatus);
         Assert.Contains("not allowed", result.EngineError, StringComparison.OrdinalIgnoreCase);
@@ -65,10 +67,12 @@ public sealed class AccessibilityNormalizerTests
     [Fact]
     public async Task AuthenticatedTarget_IsNotMisreportedAsAssessed()
     {
+        var options = Microsoft.Extensions.Options.Options.Create(new FrontendAccessibilityOptions { Enabled = true });
         var service = new FrontendAccessibilityReviewService(
             NullLogger<FrontendAccessibilityReviewService>.Instance,
             new BrowserTargetValidator(),
-            new AccessibilityNormalizer(new AccessibilityEvidenceSanitizer()));
+            new AccessibilityNormalizer(new AccessibilityEvidenceSanitizer()),
+            options);
         var result = await service.ReviewAsync("https://example.com", requiresAuthentication: true);
         Assert.Equal(AccessibilityExecutionStatus.AuthenticationRequired, result.ExecutionStatus);
         Assert.Null(result.AxeVersion);

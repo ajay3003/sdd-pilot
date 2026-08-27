@@ -1,5 +1,6 @@
 using BirkNext.Api.Services.AuthenticatedReview;
 using Microsoft.Playwright;
+using Microsoft.Extensions.Options;
 
 namespace BirkNext.Api.Services.FrontendBrowserRuntime;
 
@@ -12,14 +13,17 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
     private readonly BrowserRuntimeFindingClassifier _findingClassifier;
     private readonly BrowserEvidenceSanitizer _sanitizer;
     private readonly IAuthenticatedBrowserSessionManager? _authenticatedSessions;
+    private readonly bool _enabled;
 
     public FrontendBrowserRuntimeReviewService(ILogger<FrontendBrowserRuntimeReviewService> logger,
         BrowserTargetValidator targetValidator, BrowserRuntimeFindingClassifier findingClassifier,
         BrowserResourceClassifier resourceClassifier, BrowserEvidenceSanitizer sanitizer,
+        IOptions<FrontendBrowserRuntimeOptions> options,
         IAuthenticatedBrowserSessionManager? authenticatedSessions = null)
     {
         _logger = logger; _targetValidator = targetValidator; _findingClassifier = findingClassifier;
         _sanitizer = sanitizer; _authenticatedSessions = authenticatedSessions;
+        _enabled = options.Value.Enabled;
     }
 
     public Task<BrowserRuntimeResult> ReviewAsync(string targetUrl, BrowserRuntimeOptions? options = null, CancellationToken cancellationToken = default) =>
@@ -36,6 +40,7 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
 
     private async Task<BrowserRuntimeResult> ReviewAnonymousAsync(BrowserRuntimeExecutionRequest request, CancellationToken cancellationToken)
     {
+        if (!_enabled) return Rejected(request, BrowserRuntimeOutcomeReason.SessionUnavailable, "Browser Runtime engine is disabled.");
         IPlaywright? playwright = null; IBrowser? browser = null; IBrowserContext? context = null; IPage? page = null;
         try
         {
@@ -140,6 +145,7 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
 
     public async Task<BrowserRuntimeReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
     {
+        if (!_enabled) return new(false, "Browser Runtime engine is disabled.", "Chromium", null);
         try { using var playwright = await Playwright.CreateAsync(); await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true, Args = ["--no-sandbox", "--disable-dev-shm-usage"] }); return new(true, BrowserName: "Chromium", BrowserVersion: browser.Version); }
         catch { return new(false, "Chromium executable not available", "Chromium", null); }
     }

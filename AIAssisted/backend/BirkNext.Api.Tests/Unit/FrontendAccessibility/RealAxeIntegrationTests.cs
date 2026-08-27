@@ -20,10 +20,12 @@ public sealed class RealAxeIntegrationTests : IAsyncLifetime
     {
         _server = new LocalHtmlServer();
         await _server.StartAsync();
+        var options = Microsoft.Extensions.Options.Options.Create(new FrontendAccessibilityOptions { Enabled = true });
         _service = new FrontendAccessibilityReviewService(
             NullLogger<FrontendAccessibilityReviewService>.Instance,
             new BrowserTargetValidator(allowLoopback: true),
-            new AccessibilityNormalizer(new AccessibilityEvidenceSanitizer()));
+            new AccessibilityNormalizer(new AccessibilityEvidenceSanitizer()),
+            options);
     }
 
     public async Task DisposeAsync()
