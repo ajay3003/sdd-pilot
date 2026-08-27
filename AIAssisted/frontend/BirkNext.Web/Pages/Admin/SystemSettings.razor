@@ -1,4 +1,5 @@
 ﻿@page "/admin/system-settings"
+@implements IAsyncDisposable
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models
@@ -1384,6 +1385,7 @@ else if (_settings is not null)
 
     private string _activeSection = "general";
     private string _navSearch     = "";
+    private IDisposable? _locationChangedSubscription;
 
     private bool IsDeveloperDiagnosticsVisible =>
         string.Equals(HostEnvironment.Environment, "Development", StringComparison.OrdinalIgnoreCase);
@@ -1903,14 +1905,8 @@ else if (_settings is not null)
             if (_settings is null)
                 _loadError = "Could not load system settings. Make sure the backend is running.";
 
-            var uri = new Uri(Navigation.Uri);
-            if (uri.Query.Contains("section="))
-            {
-                var sectionParam = uri.Query.Split("section=").LastOrDefault()?.Split("&").FirstOrDefault();
-                if (!string.IsNullOrWhiteSpace(sectionParam))
-                    _activeSection = Uri.UnescapeDataString(sectionParam);
-            }
-
+            ParseQueryParameters();
+            _locationChangedSubscription = Navigation.RegisterLocationChangingHandler(OnLocationChanging);
             InitEditState();
         }
         catch
@@ -1921,6 +1917,28 @@ else if (_settings is not null)
         {
             _isLoading = false;
         }
+    }
+
+    private void ParseQueryParameters()
+    {
+        var uri = new Uri(Navigation.Uri);
+        if (uri.Query.Contains("section="))
+        {
+            var sectionParam = uri.Query.Split("section=").LastOrDefault()?.Split("&").FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(sectionParam))
+                _activeSection = Uri.UnescapeDataString(sectionParam);
+        }
+    }
+
+    private ValueTask OnLocationChanging(LocationChangingContext context)
+    {
+        ParseQueryParameters();
+        return ValueTask.CompletedTask;
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        _locationChangedSubscription?.Dispose();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
