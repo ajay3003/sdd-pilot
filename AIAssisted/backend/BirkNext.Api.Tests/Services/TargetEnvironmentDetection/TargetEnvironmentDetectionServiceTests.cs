@@ -310,4 +310,32 @@ public sealed class TargetEnvironmentDetectionServiceTests
         Assert.NotNull(result);
         Assert.NotEqual(FrontendAuthenticationType.MicrosoftEntraId, result.DetectedAuthenticationType);
     }
+
+    [Fact]
+    public async Task DetectFromUrlAsync_SensitiveQueryParams_NotLeakingInSerialization()
+    {
+        var handler = DetectionFixtures.EntraAuthUrlDirect();
+        var httpClient = new HttpClient(handler);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+
+        var entraUrl = $"https://login.microsoftonline.com/{DetectionFixtures.FakeTenantGuid}/oauth2/v2.0/authorize?client_id={DetectionFixtures.FakeClientId}&code={DetectionFixtures.FakeCodeSentinel}&state={DetectionFixtures.FakeStateSentinel}&nonce={DetectionFixtures.FakeNonceSentinel}&session_state=FAKE-SESSION-SENTINEL-123&access_token={DetectionFixtures.FakeAccessTokenSentinel}&id_token=FAKE-ID-TOKEN-SENTINEL-123";
+        var result = await service.DetectFromUrlAsync(entraUrl);
+
+        Assert.NotNull(result);
+
+        // Serialize complete response
+        var json = System.Text.Json.JsonSerializer.Serialize(result);
+
+        // Check for sensitive sentinels anywhere in serialization
+        Assert.DoesNotContain(DetectionFixtures.FakeCodeSentinel, json);
+        Assert.DoesNotContain(DetectionFixtures.FakeStateSentinel, json);
+        Assert.DoesNotContain(DetectionFixtures.FakeNonceSentinel, json);
+        Assert.DoesNotContain(DetectionFixtures.FakeAccessTokenSentinel, json);
+        Assert.DoesNotContain("FAKE-SESSION-SENTINEL-123", json);
+        Assert.DoesNotContain("FAKE-ID-TOKEN-SENTINEL-123", json);
+
+        // Verify typed fields are safe
+        Assert.Equal(DetectionFixtures.FakeTenantGuid, result.DetectedTenantId);
+        Assert.Equal(DetectionFixtures.FakeClientId, result.DetectedClientId);
+    }
 }

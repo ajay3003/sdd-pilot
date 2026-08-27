@@ -63,10 +63,14 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             // Perform preflight check with redirect following
             var preflightResult = await CheckTargetWithRedirectAsync(uri, cancellationToken);
 
+            // NormalizedTargetUrl represents the normalized application target (user's input),
+            // not the authentication redirect. Extract only scheme + host + path from original URI.
+            var normalizedUrl = GetNormalizedApplicationTarget(uri);
+
             var result = new TargetEnvironmentDetectionResponse
             {
-                OriginalUrl = targetUrl,
-                NormalizedTargetUrl = preflightResult.FinalUrl,
+                OriginalUrl = GetNormalizedApplicationTarget(uri),
+                NormalizedTargetUrl = normalizedUrl,
                 Success = true,
                 Message = "Detection completed successfully"
             };
@@ -346,14 +350,34 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
     {
         _logger.LogWarning("Detection failed for {Url}: {Message} ({ErrorCode})", originalUrl, message, errorCode);
 
+        var sanitizedUrl = GetSanitizedUrlForResponse(originalUrl);
         return new TargetEnvironmentDetectionResponse
         {
-            OriginalUrl = originalUrl,
+            OriginalUrl = sanitizedUrl,
             Success = false,
             Message = message,
             ErrorCode = errorCode,
             Confidence = DetectionConfidence.Low
         };
+    }
+
+    private string GetNormalizedApplicationTarget(Uri applicationUri)
+    {
+        // Return the normalized application target (user-provided URI).
+        // Never return authentication redirect URLs with query parameters.
+        // Format: scheme://host/path (excludes query and fragment)
+        var pathWithoutQuery = applicationUri.AbsolutePath == "/" ? "" : applicationUri.AbsolutePath;
+        return $"{applicationUri.Scheme}://{applicationUri.Host}{pathWithoutQuery}";
+    }
+
+    private string GetSanitizedUrlForResponse(string urlString)
+    {
+        // Sanitize URL by removing query parameters and fragments.
+        // Prevents accidental leakage of sensitive data (auth codes, tokens, state, etc.)
+        if (!Uri.TryCreate(urlString, UriKind.Absolute, out var uri))
+            return urlString;
+
+        return GetNormalizedApplicationTarget(uri);
     }
 
     private sealed class PreflightCheckResult
