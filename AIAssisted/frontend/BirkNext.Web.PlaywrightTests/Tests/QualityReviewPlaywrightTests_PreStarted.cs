@@ -367,8 +367,12 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
             var targetEnvSection = page.GetByRole(AriaRole.Region, new() { Name = "Target Environments" });
             (await targetEnvSection.IsVisibleAsync()).Should().BeTrue("Target Environments section must be visible after navigation");
 
-            var generalSection = page.Locator("text=General").First;
+            var generalSection = page.GetByRole(AriaRole.Region, new() { Name = "General" });
             (await generalSection.IsVisibleAsync()).Should().BeFalse("General section should not be visible");
+
+            var generalNavItem = page.GetByRole(AriaRole.Button, new() { Name = "General" });
+            var isGeneralActive = await generalNavItem.GetAttributeAsync("aria-current");
+            isGeneralActive.Should().NotBe("page", "General nav item should not be marked as active");
         }
         finally
         {

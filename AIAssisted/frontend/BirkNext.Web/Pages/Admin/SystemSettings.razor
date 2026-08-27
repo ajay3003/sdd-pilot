@@ -172,7 +172,7 @@ else if (_settings is not null)
             @* â•â• General â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "general")
             {
-                <div class="settings-card settings-card-full-width">
+                <div class="settings-card settings-card-full-width" role="region" aria-label="General">
                     <div class="settings-card-title">General</div>
                     <p class="settings-card-note">Runtime environment and application information. All values are read-only.</p>
 
@@ -1924,14 +1924,33 @@ else if (_settings is not null)
 
     private void ParseQueryParameters(string? targetUri = null)
     {
-        var uriString = targetUri ?? Navigation.Uri;
-        var uri = new Uri(uriString);
-        if (uri.Query.Contains("section="))
+        try
         {
-            var sectionParam = uri.Query.Split("section=").LastOrDefault()?.Split("&").FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(sectionParam))
-                _activeSection = Uri.UnescapeDataString(sectionParam);
+            var uriString = targetUri ?? Navigation.Uri;
+            if (string.IsNullOrWhiteSpace(uriString))
+                return;
+
+            var uri = new Uri(uriString, UriKind.Absolute);
+            var query = uri.Query;
+
+            if (!string.IsNullOrWhiteSpace(query) && query.Contains("section="))
+            {
+                var parts = query.TrimStart('?').Split('&');
+                foreach (var part in parts)
+                {
+                    if (part.StartsWith("section="))
+                    {
+                        var value = part.Substring("section=".Length);
+                        if (!string.IsNullOrWhiteSpace(value))
+                        {
+                            _activeSection = Uri.UnescapeDataString(value);
+                            return;
+                        }
+                    }
+                }
+            }
         }
+        catch { }
     }
 
     private ValueTask OnLocationChanging(LocationChangingContext context)
