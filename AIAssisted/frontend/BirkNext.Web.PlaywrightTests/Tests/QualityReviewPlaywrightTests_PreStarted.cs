@@ -389,10 +389,15 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
 
         try
         {
+            // First load without viewport change to ensure component initializes
+            await page.GotoAsync($"{_fixture.FrontendUrl}/frontend-quality-review", new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+            // Wait for cards to render
+            await page.Locator("article.review-landing-card").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
+
             foreach (var (width, height) in viewports)
             {
                 await page.SetViewportSizeAsync(width, height);
-                await page.GotoAsync($"{_fixture.FrontendUrl}/frontend-quality-review", new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
                 var scrollWidth = await page.EvaluateAsync<int>("document.documentElement.scrollWidth");
                 var clientWidth = await page.EvaluateAsync<int>("document.documentElement.clientWidth");
@@ -426,11 +431,11 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
         {
             await page.GotoAsync($"{_fixture.FrontendUrl}/frontend-quality-review", new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-            var targetEnvButton = page.GetByRole(AriaRole.Button, new() { Name = "Target Environments" });
-            await targetEnvButton.FocusAsync();
+            var targetEnvLink = page.GetByRole(AriaRole.Link, new() { Name = "Target Environments" });
+            await targetEnvLink.FocusAsync();
 
-            var isFocused = await page.EvaluateAsync<bool>("() => document.activeElement === document.querySelector('a:has-text(\"Target Environments\")')");
-            isFocused.Should().BeTrue("Target Environments button should be focusable");
+            var isFocused = await page.EvaluateAsync<bool>("() => document.activeElement?.textContent?.includes('Target Environments')");
+            isFocused.Should().BeTrue("Target Environments link should be focusable");
 
             await page.Keyboard.PressAsync("Enter");
             await page.WaitForURLAsync("**/admin/system-settings?section=target-environments", new PageWaitForURLOptions { Timeout = 10000 });
