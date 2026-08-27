@@ -326,8 +326,11 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
             (await page.GetByRole(AriaRole.Region, new() { Name = "Release disposition" }).InnerTextAsync())
                 .Should().MatchRegex("Blocked|ReviewRequired|NoAutomatedBlockDetected");
 
-            await page.GotoAsync($"{_fixture.FrontendUrl}/dashboard", new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-            await page.GotoAsync($"{_fixture.FrontendUrl}/frontend-quality-review", new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+            await page.GetByRole(AriaRole.Navigation).GetByRole(AriaRole.Link, new() { Name = "Dashboard" }).ClickAsync();
+            await page.WaitForURLAsync("**/dashboard", new PageWaitForURLOptions { Timeout = 10000 });
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.GetByRole(AriaRole.Navigation).GetByRole(AriaRole.Link, new() { Name = "Frontend Quality Review" }).ClickAsync();
+            await page.WaitForURLAsync("**/frontend-quality-review", new PageWaitForURLOptions { Timeout = 10000 });
             await matrix.WaitForAsync(new LocatorWaitForOptions { Timeout = 15000 });
             (await matrix.Locator("tbody tr").CountAsync()).Should().Be(6, "session reload must preserve aggregate outcomes");
             foreach (var endpoint in endpoints)
