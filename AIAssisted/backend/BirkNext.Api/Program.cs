@@ -16,6 +16,7 @@ using BirkNext.Api.Services.FrontendBrowserRuntime;
 using BirkNext.Api.Services.FrontendAccessibility;
 using BirkNext.Api.Services.FrontendLighthouse;
 using BirkNext.Api.Services.FrontendPassiveSecurity;
+using BirkNext.Api.Services.TargetEnvironmentDetection;
 using HotChocolate.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -185,6 +186,13 @@ builder.Services.AddScoped<BrowserResourceClassifier>();
 builder.Services.AddScoped<BrowserEvidenceSanitizer>();
 builder.Services.AddScoped<BrowserRuntimeFindingClassifier>();
 builder.Services.AddScoped<IFrontendBrowserRuntimeReviewService, FrontendBrowserRuntimeReviewService>();
+
+// Target Environment Detection — for configuration discovery
+builder.Services.AddHttpClient<ITargetEnvironmentDetectionService, TargetEnvironmentDetectionService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-TargetDetection/1.0");
+});
 builder.Services.AddScoped<AccessibilityEvidenceSanitizer>();
 builder.Services.AddScoped<AccessibilityNormalizer>();
 builder.Services.AddScoped<IFrontendAccessibilityReviewService, FrontendAccessibilityReviewService>();

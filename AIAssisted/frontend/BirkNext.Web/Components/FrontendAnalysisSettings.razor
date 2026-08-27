@@ -1,6 +1,7 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @inject IFrontendAnalysisSettingsService FaSettings
+@inject ITargetEnvironmentDetectionApiService DetectionApi
 @inject IJSRuntime JS
 
 @* ── Load state ───────────────────────────────────────────────────────────── *@
@@ -194,8 +195,126 @@
                         <div class="fa-threshold-group-title fa-field-full">Frontend</div>
                         <div class="form-field fa-field-full">
                             <label class="fa-label">Frontend Base URL</label>
-                            <input type="url" class="form-control" placeholder="https://myapp.example.com" @bind="_editProfile.TargetUrl" />
+                            <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+                                <input type="url" class="form-control" style="flex: 1;" placeholder="https://myapp.example.com"
+                                       @bind="_editProfile.TargetUrl"
+                                       @bind:after="() => ClearDetectionState()" />
+                                <SecondaryButton OnClick="DetectConfigurationAsync"
+                                                 Disabled="@(string.IsNullOrWhiteSpace(_editProfile?.TargetUrl) || _isDetecting)"
+                                                 Class="fa-btn-detect">
+                                    @if (_isDetecting)
+                                    {
+                                        <span>Detecting…</span>
+                                    }
+                                    else if (_detectionResult?.Success == true)
+                                    {
+                                        <span>✓ Detected</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Detect configuration</span>
+                                    }
+                                </SecondaryButton>
+                            </div>
+                            @if (_detectionError is not null)
+                            {
+                                <div style="color: var(--color-error); font-size: 0.875rem; margin-top: 0.25rem;">@_detectionError</div>
+                            }
                         </div>
+
+                        @* Detection results summary with provenance *@
+                        @if (_detectionResult?.Success == true)
+                        {
+                            <div class="fa-detection-summary fa-field-full" style="margin-top: 1.5rem; padding: 1rem; background: var(--color-surface-subtle); border-radius: 0.5rem; border-left: 3px solid var(--color-primary);">
+                                <div style="font-weight: 600; margin-bottom: 0.75rem;">Detected from target</div>
+
+                                @* Detection result rows with provenance *@
+                                <div style="display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 1rem; font-size: 0.875rem; row-gap: 0.75rem;">
+                                    @* Reachability *@
+                                    <div style="color: var(--color-text-subtle);">Reachability</div>
+                                    <div style="font-weight: 500;">@_detectionResult.Reachability</div>
+                                    <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+
+                                    @* Authentication Required *@
+                                    @if (_detectionResult.AuthenticationRequired)
+                                    {
+                                        <div style="color: var(--color-text-subtle);">Authentication required</div>
+                                        <div style="font-weight: 500;">Yes</div>
+                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                    }
+
+                                    @* Identity Provider *@
+                                    @if (_detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None && !string.IsNullOrWhiteSpace(_detectionResult.DetectedAuthority))
+                                    {
+                                        <div style="color: var(--color-text-subtle);">Identity provider</div>
+                                        <div style="font-weight: 500;">@_detectionResult.DetectedAuthenticationType</div>
+                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                    }
+
+                                    @* Authority *@
+                                    @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedAuthority))
+                                    {
+                                        <div style="color: var(--color-text-subtle);">Authority</div>
+                                        <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedAuthority</div>
+                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                    }
+
+                                    @* Tenant / Tenant Mode *@
+                                    @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedTenantId))
+                                    {
+                                        <div style="color: var(--color-text-subtle);">Tenant</div>
+                                        <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedTenantId</div>
+                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(_detectionResult.TenantMode))
+                                    {
+                                        <div style="color: var(--color-text-subtle);">Tenant mode</div>
+                                        <div style="font-weight: 500;">@_detectionResult.TenantMode</div>
+                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                    }
+
+                                    @* Client ID *@
+                                    @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedClientId))
+                                    {
+                                        <div style="color: var(--color-text-subtle);">Client/Application ID</div>
+                                        <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedClientId</div>
+                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                    }
+
+                                    @* Environment Type (Suggested) *@
+                                    @if (_detectionResult.SuggestedEnvironmentType.HasValue)
+                                    {
+                                        <div style="color: var(--color-text-subtle);">Environment type</div>
+                                        <div style="font-weight: 500;">@_detectionResult.SuggestedEnvironmentType</div>
+                                        <div style="color: var(--color-text-subtle); text-align: right;">Suggested</div>
+                                    }
+
+                                    @* Profile Name (Suggested) *@
+                                    @if (!string.IsNullOrWhiteSpace(_detectionResult.SuggestedProfileName))
+                                    {
+                                        <div style="color: var(--color-text-subtle);">Profile name</div>
+                                        <div style="font-weight: 500;">@_detectionResult.SuggestedProfileName</div>
+                                        <div style="color: var(--color-text-subtle); text-align: right;">Suggested</div>
+                                    }
+                                </div>
+
+                                @* Authentication Support Status *@
+                                @if (_detectionResult.AuthenticationRequired && _detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None)
+                                {
+                                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.875rem;">
+                                        <div style="font-weight: 600; margin-bottom: 0.5rem;">Authentication Support</div>
+                                        <div style="color: var(--color-warning); font-size: 0.8125rem;">
+                                            <strong>Note:</strong> Authenticated review is <strong>not currently supported</strong> in Frontend Quality Review.
+                                            Detection only identifies the authentication configuration of your target.
+                                        </div>
+                                    </div>
+                                }
+
+                                <div style="font-size: 0.75rem; color: var(--color-text-subtle); margin-top: 0.75rem;">
+                                    Detection confidence: @_detectionResult.Confidence
+                                </div>
+                            </div>
+                        }
 
                         <div class="fa-threshold-group-title fa-field-full">REST API</div>
                         <div class="form-field fa-field-full">
@@ -1062,6 +1181,11 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private bool _showResetConfirm;
     private bool _isResetting;
 
+    // Detection state
+    private bool _isDetecting;
+    private string? _detectionError;
+    private TargetEnvironmentDetectionResult? _detectionResult;
+
     private static readonly (string Key, string Label)[] Tabs =
     [
         ("general",     "General"),
@@ -1202,6 +1326,84 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         _newProfileName = "";
         _newProfileEnv  = FrontendEnvironmentType.Local;
         _showCreateDialog = true;
+    }
+
+    // ── Target detection ─────────────────────────────────────────────────────
+
+    private void ClearDetectionState()
+    {
+        _detectionResult = null;
+        _detectionError = null;
+    }
+
+    private async Task DetectConfigurationAsync()
+    {
+        if (_editProfile is null || string.IsNullOrWhiteSpace(_editProfile.TargetUrl))
+            return;
+
+        _isDetecting = true;
+        _detectionError = null;
+        _detectionResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await DetectionApi.DetectFromUrlAsync(_editProfile.TargetUrl);
+
+            if (result is not null)
+            {
+                _detectionResult = result;
+
+                // IMPORTANT: Detection updates draft only, does NOT save
+                // User must explicitly click Save Environment
+
+                // PART 12: Conflict handling rules:
+                // empty + detected → populate
+                // existing == detected → unchanged
+                // existing != detected → preserve existing and show conflict
+
+                // Environment Type: Apply suggested if different from default
+                if (result.SuggestedEnvironmentType.HasValue)
+                {
+                    var isSameEnvType = _editProfile.EnvironmentType == result.SuggestedEnvironmentType.Value;
+                    if (!isSameEnvType && _editProfile.EnvironmentType == FrontendEnvironmentType.Local)
+                    {
+                        // Empty/default + suggested → populate
+                        _editProfile.EnvironmentType = result.SuggestedEnvironmentType.Value;
+                    }
+                    // If explicitly configured to something else, keep it
+                }
+
+                // Profile Name: Apply suggested if empty or generic default
+                if (!string.IsNullOrWhiteSpace(result.SuggestedProfileName))
+                {
+                    var isEmptyOrDefault = string.IsNullOrWhiteSpace(_editProfile.Name) ||
+                                          _editProfile.Name == "Local" ||
+                                          _editProfile.Name == "Development";
+
+                    if (isEmptyOrDefault)
+                    {
+                        _editProfile.Name = result.SuggestedProfileName;
+                    }
+                    // Else: user configured name is preserved, no silent overwrite
+                }
+
+                if (!result.Success)
+                    _detectionError = result.Message;
+            }
+            else
+            {
+                _detectionError = "Detection failed. Please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _detectionError = "Detection error: " + ex.Message;
+        }
+        finally
+        {
+            _isDetecting = false;
+        }
     }
 
     // ── Reset / restore ──────────────────────────────────────────────────────

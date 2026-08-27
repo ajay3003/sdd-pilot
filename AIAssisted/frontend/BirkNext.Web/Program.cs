@@ -121,6 +121,10 @@ builder.Services.AddSingleton<IFrontendAnalysisContextFactory, FrontendAnalysisC
 builder.Services.AddHttpClient<ITargetPreflightService, TargetPreflightService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
+// Target environment detection — uses backend API
+builder.Services.AddHttpClient<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
+
 builder.Services.AddHttpClient<IBlazorWasmPerformanceReviewService, BlazorWasmPerformanceReviewService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
