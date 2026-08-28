@@ -59,9 +59,9 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
         {
             using var launchCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, entry.Cancellation.Token);
             entry.Resources = await _browserHost.LaunchAsync(target, launchCancellation.Token);
-            entry.Resources.BrowserDisconnected += (_, _) => _ = FailAndDisposeAsync(entry, "browser_disconnected");
-            entry.Resources.Page.Close += (_, _) => _ = FailAndDisposeAsync(entry, "page_closed");
-            entry.Resources.Page.Crash += (_, _) => _ = FailAndDisposeAsync(entry, "page_crashed");
+            entry.Resources.BrowserDisconnected += (_, _) => _ = MarkResourceFailedAsync(entry, "browser_disconnected");
+            entry.Resources.Page.Close += (_, _) => _ = MarkResourceFailedAsync(entry, "page_closed");
+            entry.Resources.Page.Crash += (_, _) => _ = MarkResourceFailedAsync(entry, "page_crashed");
             entry.Status = AuthenticatedBrowserSessionStatus.BrowserReady;
             entry.Touch(_time.GetUtcNow());
             _logger.LogInformation("Authenticated browser session {SessionId} browser ready", id);
@@ -189,6 +189,16 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
     {
         if (entry.Resources is not null) await entry.Resources.DisposeAsync();
         _logger.LogInformation("Authenticated browser session {SessionId} resource failure cleaned up: {Reason}", entry.SessionId, reason);
+    }
+
+    private async Task MarkResourceFailedAsync(Entry entry, string reason)
+    {
+        entry.RevokeEngineEligibility();
+        entry.Status = AuthenticatedBrowserSessionStatus.Failed;
+        entry.FailureCategory = reason;
+        entry.ApplicationValidationCurrent = false;
+        if (entry.Resources is not null) await entry.Resources.DisposeAsync();
+        _logger.LogInformation("Authenticated browser session {SessionId} resource failure: {Reason}", entry.SessionId, reason);
     }
 
     private void AttachNavigationObserver(Entry entry)
