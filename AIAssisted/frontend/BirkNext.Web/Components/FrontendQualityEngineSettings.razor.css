@@ -1,0 +1,205 @@
+.fqe-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.fqe-loading,
+.fqe-error {
+    padding: 1rem;
+    text-align: center;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+}
+
+.fqe-loading {
+    background-color: #f0f9ff;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+}
+
+.fqe-error {
+    background-color: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+.fqe-card {
+    padding: 1.5rem;
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.fqe-header {
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid #f3f4f6;
+    padding-bottom: 1rem;
+}
+
+.fqe-engine-name {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.fqe-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.fqe-row:last-of-type {
+    border-bottom: none;
+}
+
+.fqe-row-actions {
+    padding-top: 1.5rem;
+    margin-top: 1rem;
+    border-top: 2px solid #f3f4f6;
+}
+
+.fqe-label {
+    min-width: 140px;
+    font-weight: 500;
+    color: #4b5563;
+    font-size: 0.875rem;
+}
+
+.fqe-value {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.fqe-effective {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1;
+}
+
+.fqe-badge {
+    display: inline-block;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.fqe-badge-allowed {
+    background-color: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.fqe-badge-not-allowed {
+    background-color: #fee2e2;
+    color: #7f1d1d;
+    border: 1px solid #fecaca;
+}
+
+.fqe-badge-ready {
+    background-color: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.fqe-badge-unavailable {
+    background-color: #fecaca;
+    color: #7f1d1d;
+    border: 1px solid #fca5a5;
+}
+
+.fqe-badge-checking {
+    background-color: #dbeafe;
+    color: #0c4a6e;
+    border: 1px solid #93c5fd;
+}
+
+.fqe-badge-supported {
+    background-color: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.fqe-badge-not-supported {
+    background-color: #fee2e2;
+    color: #7f1d1d;
+    border: 1px solid #fecaca;
+}
+
+.fqe-badge-available {
+    background-color: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.fqe-reason-text {
+    font-size: 0.75rem;
+    color: #6b7280;
+    font-style: italic;
+    margin-top: 0.25rem;
+}
+
+.fqe-reasons {
+    margin: 0;
+    padding-left: 1.5rem;
+    list-style-type: disc;
+    font-size: 0.875rem;
+    color: #6b7280;
+}
+
+.fqe-reasons li {
+    margin: 0.25rem 0;
+}
+
+.fqe-refresh-btn {
+    padding: 0.5rem 1rem;
+    background-color: #3b82f6;
+    color: #ffffff;
+    border: none;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.fqe-refresh-btn:hover:not(:disabled) {
+    background-color: #2563eb;
+}
+
+.fqe-refresh-btn:disabled {
+    background-color: #d1d5db;
+    cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+    .fqe-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+
+    .fqe-label {
+        min-width: auto;
+        width: 100%;
+    }
+
+    .fqe-value {
+        width: 100%;
+    }
+
+    .fqe-effective {
+        width: 100%;
+    }
+}

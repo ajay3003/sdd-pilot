@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
+using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
 
@@ -137,6 +138,25 @@ public class AdminApiService
             return null;
         }
     }
+
+    public async Task<FrontendQualityEngineStatusReportDto?> GetFrontendQualityEngineStatusAsync(ReviewAuthenticationModeDto authMode)
+    {
+        try
+        {
+            var response = await _client.PostAsJsonAsync("api/frontend-quality-engines/status", new { authMode });
+            return await response.Content.ReadFromJsonAsync<FrontendQualityEngineStatusReportDto>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}
+
+public enum ReviewAuthenticationModeDto
+{
+    Anonymous = 0,
+    Authenticated = 1,
 }
 
 public class SystemSettingsDto
@@ -264,6 +284,7 @@ public class EditableSettingsDto
     [JsonPropertyName("featureVisibility")] public EditableFeatureVisibilityDto FeatureVisibility { get; set; } = new();
     [JsonPropertyName("logging")]           public EditableLoggingDto           Logging           { get; set; } = new();
     [JsonPropertyName("admin")]             public EditableAdminDto             Admin             { get; set; } = new();
+    [JsonPropertyName("frontendQualityEngines")] public EditableFrontendQualityEnginesDto? FrontendQualityEngines { get; set; }
 }
 
 public class EditableFeatureVisibilityDto
@@ -292,11 +313,20 @@ public class EditableAdminDto
     [JsonPropertyName("showDiagnostics")] public bool ShowDiagnostics { get; set; } = true;
 }
 
+public class EditableFrontendQualityEnginesDto
+{
+    [JsonPropertyName("browserRuntimeEnabled")] public bool BrowserRuntimeEnabled { get; set; }
+    [JsonPropertyName("accessibilityEnabled")] public bool AccessibilityEnabled { get; set; }
+    [JsonPropertyName("lighthouseEnabled")] public bool LighthouseEnabled { get; set; }
+    [JsonPropertyName("passiveSecurityEnabled")] public bool PassiveSecurityEnabled { get; set; }
+}
+
 public class SaveSettingsRequest
 {
     [JsonPropertyName("featureVisibility")] public Dictionary<string, bool>? FeatureVisibility { get; set; }
     [JsonPropertyName("logging")]           public SaveLoggingRequest?        Logging           { get; set; }
     [JsonPropertyName("admin")]             public SaveAdminRequest?          Admin             { get; set; }
+    [JsonPropertyName("frontendQualityEngines")] public SaveFrontendQualityEngineRequest? FrontendQualityEngines { get; set; }
 }
 
 public class SaveLoggingRequest
@@ -308,6 +338,14 @@ public class SaveLoggingRequest
 public class SaveAdminRequest
 {
     [JsonPropertyName("showDiagnostics")] public bool? ShowDiagnostics { get; set; }
+}
+
+public class SaveFrontendQualityEngineRequest
+{
+    [JsonPropertyName("browserRuntimeEnabled")] public bool? BrowserRuntimeEnabled { get; set; }
+    [JsonPropertyName("accessibilityEnabled")] public bool? AccessibilityEnabled { get; set; }
+    [JsonPropertyName("lighthouseEnabled")] public bool? LighthouseEnabled { get; set; }
+    [JsonPropertyName("passiveSecurityEnabled")] public bool? PassiveSecurityEnabled { get; set; }
 }
 
 public class SaveSettingsResponse

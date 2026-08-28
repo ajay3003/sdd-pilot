@@ -142,6 +142,7 @@ else if (_settings is not null)
             <div class="ss-nav-group">
                 <div class="ss-nav-group-label">Analysis</div>
                 @NavItem("target-environments", "Target Environments")
+                @NavItem("frontend-quality-engines", "Frontend Quality Engines")
                 @NavItem("ai",                 "AI")
             </div>
             <div class="ss-nav-group">
@@ -643,6 +644,33 @@ else if (_settings is not null)
             }
 
             @* â•â• Platform â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
+            @if (_activeSection == "frontend-quality-engines")
+            {
+                <div class="settings-card settings-card-full-width">
+                    <div class="settings-card-title">Frontend Quality Engines</div>
+                    <p class="settings-card-note">
+                        Manage which frontend quality engines are available for reviews. Layer 1 (Installation) shows deployment policy. Layer 2 (Enabled) is editable. Layer 3 (Runtime) shows runtime readiness. Effective availability combines all layers.
+                    </p>
+
+                    @if (_editableSettings?.FrontendQualityEngines is not null)
+                    {
+                        <FrontendQualityEngineSettings
+                            IsEditMode="@_isEditMode"
+                            EditedPreferences="@_editFqe"
+                            AnonymousStatus="@_fqeStatusReport"
+                            AuthenticatedStatus="@_fqeAuthStatusReport"
+                            IsLoadingStatus="@_fqeStatusLoading"
+                            StatusLoadError="@_fqeStatusError"
+                            OnToggle="@HandleFqeToggle"
+                            OnRefreshRequested="@HandleFqeRefresh" />
+                    }
+                    else
+                    {
+                        <p class="settings-card-note">Frontend Quality Engines configuration not available.</p>
+                    }
+                </div>
+            }
+
             @if (_activeSection == "platform")
             {
                 <div class="settings-card settings-card-full-width">
@@ -1337,6 +1365,7 @@ else if (_settings is not null)
     private string                  _editLogLevel = "Information";
     private string                  _editSeqUrl = "";
     private bool                    _editShowDiagnostics = true;
+    private Dictionary<string, bool> _editFqe = new();
 
     // Reset modal
     private bool    _showResetModal;
@@ -1368,6 +1397,13 @@ else if (_settings is not null)
     // Configuration Health
     private ConfigurationHealthReport? _configHealthReport;
     private bool _configHealthLoaded;
+
+    // Frontend Quality Engines
+    private FrontendQualityEngineStatusReportDto? _fqeStatusReport;
+    private FrontendQualityEngineStatusReportDto? _fqeAuthStatusReport;
+    private bool _fqeStatusLoading;
+    private bool _fqeStatusLoaded;
+    private string? _fqeStatusError;
 
     // Environment Diagnostics
     private EnvironmentDiagnosticsReportDto? _envDiagReport;
@@ -1988,6 +2024,12 @@ else if (_settings is not null)
             StateHasChanged();
         }
 
+        if (_activeSection == "frontend-quality-engines" && !_fqeStatusLoaded)
+        {
+            _fqeStatusLoaded = true;
+            await LoadFrontendQualityEngineStatusAsync();
+        }
+
         if (_activeSection == "diagnostics" && !_diagDocLoaded)
         {
             _diagDocLoaded = true;
@@ -2019,6 +2061,15 @@ else if (_settings is not null)
         _editLogLevel       = _editableSettings.Logging.MinimumLevel;
         _editSeqUrl         = _editableSettings.Logging.SeqUrl ?? "";
         _editShowDiagnostics = _editableSettings.Admin.ShowDiagnostics;
+
+        _editFqe = new Dictionary<string, bool>();
+        if (_editableSettings.FrontendQualityEngines is not null)
+        {
+            _editFqe["BrowserRuntime"] = _editableSettings.FrontendQualityEngines.BrowserRuntimeEnabled;
+            _editFqe["Accessibility"] = _editableSettings.FrontendQualityEngines.AccessibilityEnabled;
+            _editFqe["Lighthouse"] = _editableSettings.FrontendQualityEngines.LighthouseEnabled;
+            _editFqe["PassiveSecurity"] = _editableSettings.FrontendQualityEngines.PassiveSecurityEnabled;
+        }
     }
 
     private void EnterEditMode()
@@ -2063,7 +2114,21 @@ else if (_settings is not null)
         var seqUrlChanged       = _editSeqUrl  != (_editableSettings.Logging.SeqUrl ?? "");
         var diagChanged         = _editShowDiagnostics != _editableSettings.Admin.ShowDiagnostics;
 
-        if (fvChanges.Count == 0 && !logLevelChanged && !seqUrlChanged && !diagChanged)
+        var fqeChanges = new Dictionary<string, bool?>();
+        if (_editableSettings.FrontendQualityEngines is not null)
+        {
+            var browserRtChanged = _editFqe.GetValueOrDefault("BrowserRuntime", _editableSettings.FrontendQualityEngines.BrowserRuntimeEnabled) != _editableSettings.FrontendQualityEngines.BrowserRuntimeEnabled;
+            var a11yChanged      = _editFqe.GetValueOrDefault("Accessibility", _editableSettings.FrontendQualityEngines.AccessibilityEnabled) != _editableSettings.FrontendQualityEngines.AccessibilityEnabled;
+            var lhChanged        = _editFqe.GetValueOrDefault("Lighthouse", _editableSettings.FrontendQualityEngines.LighthouseEnabled) != _editableSettings.FrontendQualityEngines.LighthouseEnabled;
+            var psChanged        = _editFqe.GetValueOrDefault("PassiveSecurity", _editableSettings.FrontendQualityEngines.PassiveSecurityEnabled) != _editableSettings.FrontendQualityEngines.PassiveSecurityEnabled;
+
+            if (browserRtChanged) fqeChanges["BrowserRuntime"] = _editFqe["BrowserRuntime"];
+            if (a11yChanged) fqeChanges["Accessibility"] = _editFqe["Accessibility"];
+            if (lhChanged) fqeChanges["Lighthouse"] = _editFqe["Lighthouse"];
+            if (psChanged) fqeChanges["PassiveSecurity"] = _editFqe["PassiveSecurity"];
+        }
+
+        if (fvChanges.Count == 0 && !logLevelChanged && !seqUrlChanged && !diagChanged && fqeChanges.Count == 0)
         {
             _isEditMode = false;
             _isSaving   = false;
@@ -2078,7 +2143,14 @@ else if (_settings is not null)
                 MinimumLevel = logLevelChanged ? _editLogLevel : null,
                 SeqUrl       = seqUrlChanged   ? _editSeqUrl  : null
             } : null,
-            Admin = diagChanged ? new SaveAdminRequest { ShowDiagnostics = _editShowDiagnostics } : null
+            Admin = diagChanged ? new SaveAdminRequest { ShowDiagnostics = _editShowDiagnostics } : null,
+            FrontendQualityEngines = fqeChanges.Count > 0 ? new SaveFrontendQualityEngineRequest
+            {
+                BrowserRuntimeEnabled = fqeChanges.ContainsKey("BrowserRuntime") ? fqeChanges["BrowserRuntime"] : null,
+                AccessibilityEnabled = fqeChanges.ContainsKey("Accessibility") ? fqeChanges["Accessibility"] : null,
+                LighthouseEnabled = fqeChanges.ContainsKey("Lighthouse") ? fqeChanges["Lighthouse"] : null,
+                PassiveSecurityEnabled = fqeChanges.ContainsKey("PassiveSecurity") ? fqeChanges["PassiveSecurity"] : null,
+            } : null
         };
 
         try
@@ -2952,5 +3024,41 @@ else if (_settings is not null)
         // (No-op for now: pages without menu entries are internal/redirect pages â€” not an error.)
 
         return findings;
+    }
+
+    private async Task LoadFrontendQualityEngineStatusAsync()
+    {
+        _fqeStatusLoading = true;
+        _fqeStatusError = null;
+        StateHasChanged();
+
+        try
+        {
+            var anonStatus = await AdminApi.GetFrontendQualityEngineStatusAsync(ReviewAuthenticationModeDto.Anonymous);
+            var authStatus = await AdminApi.GetFrontendQualityEngineStatusAsync(ReviewAuthenticationModeDto.Authenticated);
+
+            _fqeStatusReport = anonStatus;
+            _fqeAuthStatusReport = authStatus;
+        }
+        catch (Exception ex)
+        {
+            _fqeStatusError = ex.Message;
+        }
+        finally
+        {
+            _fqeStatusLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private Task HandleFqeToggle((string EngineKey, bool Value) args)
+    {
+        _editFqe[args.EngineKey] = args.Value;
+        return Task.CompletedTask;
+    }
+
+    private Task HandleFqeRefresh()
+    {
+        return LoadFrontendQualityEngineStatusAsync();
     }
 }
