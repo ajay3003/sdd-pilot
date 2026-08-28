@@ -18,6 +18,7 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
     private readonly IAxeScriptProvider _axeScriptProvider;
     private readonly AccessibilityEvidenceSanitizer _sanitizer;
     private readonly IAuthenticatedBrowserSessionManager? _authenticatedSessions;
+    private readonly IAccessibilityAnalysisObserver _analysisObserver;
     private readonly bool _enabled;
 
     public FrontendAccessibilityReviewService(
@@ -34,7 +35,8 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         IAxeScriptProvider axeScriptProvider,
         AccessibilityEvidenceSanitizer sanitizer,
         IAuthenticatedBrowserSessionManager? authenticatedSessions = null,
-        bool enabled = true)
+        bool enabled = true,
+        IAccessibilityAnalysisObserver? analysisObserver = null)
     {
         _logger = logger;
         _targetValidator = targetValidator;
@@ -42,6 +44,7 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         _axeScriptProvider = axeScriptProvider;
         _sanitizer = sanitizer;
         _authenticatedSessions = authenticatedSessions;
+        _analysisObserver = analysisObserver ?? NoOpAccessibilityAnalysisObserver.Instance;
         _enabled = enabled;
     }
 
@@ -160,6 +163,18 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
             using var execution = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lease.SessionCancellation);
             var options = request.Options ?? new AccessibilityReviewOptions();
             var result = await AnalyzePageAsync(lease.Page, lease.Context.Browser?.Version, request, options, true, execution.Token);
+
+            if (result.ExecutionStatus == AccessibilityExecutionStatus.Assessed)
+            {
+                await _analysisObserver.BeforeAuthenticatedResultPublishedAsync(cancellationToken);
+                execution.Token.ThrowIfCancellationRequested();
+
+                await using var validationLease = await _authenticatedSessions.AcquirePageLeaseAsync(
+                    request.AuthenticatedSessionId, request.ReviewSessionId, request.ProfileId, request.TargetUrl, cancellationToken);
+
+                execution.Token.ThrowIfCancellationRequested();
+            }
+
             return result with { ExecutionMode = AccessibilityExecutionMode.AuthenticatedSessionPage };
         }
         catch (AuthenticatedSessionExpiredException)
@@ -258,6 +273,8 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
             await Task.Delay(options.StabilizationMs, cancellationToken);
             await page.AddScriptTagAsync(new PageAddScriptTagOptions { Content = axeScript });
             var axeVersion = await page.EvaluateAsync<string>("() => window.axe && window.axe.version");
+            await _analysisObserver.BeforeAxeRunAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             var raw = await page.EvaluateAsync<JsonElement>(
                 "tags => axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations','incomplete','passes','inapplicable'] })",
                 ExecutedRuleTags);
@@ -302,6 +319,10 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         {
             // Navigation during axe.run (redirect, unexpected origin) throws PlaywrightException
             // Let it bubble up to ReviewAuthenticatedAsync for proper session-state mapping
+            throw;
+        }
+        catch (OperationCanceledException) when (isAuthenticated)
+        {
             throw;
         }
         catch (Exception ex)
@@ -376,4 +397,20 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         new(status, RequestedUrl: url, StartedAt: startedAt, CompletedAt: DateTime.UtcNow,
             RuleTags: [.. ExecutedRuleTags], Limitations: [ManualTestingLimitation], EngineError: error,
             ExecutionMode: executionMode, OutcomeReason: outcomeReason);
+}
+
+internal interface IAccessibilityAnalysisObserver
+{
+    Task BeforeAxeRunAsync(CancellationToken cancellationToken);
+    Task BeforeAuthenticatedResultPublishedAsync(CancellationToken cancellationToken);
+}
+
+internal sealed class NoOpAccessibilityAnalysisObserver : IAccessibilityAnalysisObserver
+{
+    public static NoOpAccessibilityAnalysisObserver Instance { get; } = new();
+
+    private NoOpAccessibilityAnalysisObserver() { }
+
+    public Task BeforeAxeRunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task BeforeAuthenticatedResultPublishedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

@@ -139,6 +139,13 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
 
         var result = await accessibilityService.ReviewAsync(request);
 
+        result.ExecutionStatus.Should().Be(AccessibilityExecutionStatus.Assessed);
+        result.OutcomeReason.Should().Be(AccessibilityOutcomeReason.None);
+        result.Findings.Should().NotBeEmpty();
+        result.Findings.Should().Contain(f => f.RuleId == "button-name");
+        result.Findings.Should().OnlyContain(f =>
+            f.Selectors.Count == 0 && f.HtmlSnippets.Count == 0 && f.FailureSummaries.Count == 0);
+
         // Serialize and check for sentinel values
         var serialized = System.Text.Json.JsonSerializer.Serialize(result);
         serialized.Should().NotContain("user@example.test");
@@ -154,8 +161,12 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
         await using var fixture = await SyntheticFixture.StartAsync();
         await using var manager = CreateManager();
         var session = await ReachAuthenticatedAsync(manager, fixture);
-
-        var accessibilityService = CreateAuthenticatedAccessibilityService(manager);
+        using var observer = new BarrierAccessibilityAnalysisObserver(pauseBeforeAxeRun: true);
+        var accessibilityService = CreateAuthenticatedAccessibilityService(manager, observer);
+        await using var originalLease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
+        var originalPage = originalLease.Page;
+        var originalContext = originalLease.Context;
+        var targetRequestsBeforeAccessibility = fixture.TargetRequestCount;
 
         var accessibilityTask = Task.Run(async () =>
         {
@@ -168,16 +179,17 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
             return await accessibilityService.ReviewAsync(request);
         });
 
-        // Let accessibility start, then redirect
-        // Increase delay to allow axe.run() to start execution
-        await Task.Delay(500);
-        await using var lease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
-        await lease.Page.GotoAsync(fixture.EntraUrl);
+        await observer.ReadyBeforeAxeRun;
+        fixture.TargetRequestCount.Should().Be(targetRequestsBeforeAccessibility, "Accessibility must not navigate the target page");
+        await originalPage.GotoAsync(fixture.EntraUrl);
+        await WaitForStatusAsync(manager, session.SessionId, AuthenticatedBrowserSessionStatus.AuthenticationExpired);
+        observer.ReleaseBeforeAxeRun();
 
         var result = await accessibilityTask;
-        result.ExecutionStatus.Should().BeOneOf(AccessibilityExecutionStatus.AuthenticationRequired, AccessibilityExecutionStatus.Skipped);
-        result.OutcomeReason.Should().Be(AccessibilityOutcomeReason.AuthenticationExpired, because: "Unexpected navigation invalidates session");
-        (result.Findings?.Count ?? 0).Should().Be(0);
+        result.ExecutionStatus.Should().Be(AccessibilityExecutionStatus.Skipped);
+        result.OutcomeReason.Should().Be(AccessibilityOutcomeReason.AuthenticationExpired);
+        result.Findings.Should().BeEmpty();
+        await AssertSameSessionResourcesAsync(manager, session.SessionId, fixture.TargetUrl, originalPage, originalContext);
     }
 
     [Fact]
@@ -187,8 +199,12 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
         await using var fixture = await SyntheticFixture.StartAsync();
         await using var manager = CreateManager();
         var session = await ReachAuthenticatedAsync(manager, fixture);
-
-        var accessibilityService = CreateAuthenticatedAccessibilityService(manager);
+        using var observer = new BarrierAccessibilityAnalysisObserver(pauseBeforeAxeRun: true);
+        var accessibilityService = CreateAuthenticatedAccessibilityService(manager, observer);
+        await using var originalLease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
+        var originalPage = originalLease.Page;
+        var originalContext = originalLease.Context;
+        var targetRequestsBeforeAccessibility = fixture.TargetRequestCount;
 
         var accessibilityTask = Task.Run(async () =>
         {
@@ -201,14 +217,17 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
             return await accessibilityService.ReviewAsync(request);
         });
 
-        await Task.Delay(500);
-        await using var lease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
-        await lease.Page.GotoAsync(fixture.McasOrigin + "/notice");
+        await observer.ReadyBeforeAxeRun;
+        fixture.TargetRequestCount.Should().Be(targetRequestsBeforeAccessibility, "Accessibility must not navigate the target page");
+        await originalPage.GotoAsync(fixture.McasOrigin + "/notice");
+        await WaitForStatusAsync(manager, session.SessionId, AuthenticatedBrowserSessionStatus.AuthenticationExpired);
+        observer.ReleaseBeforeAxeRun();
 
         var result = await accessibilityTask;
-        result.ExecutionStatus.Should().Be(AccessibilityExecutionStatus.AuthenticationRequired);
+        result.ExecutionStatus.Should().Be(AccessibilityExecutionStatus.Skipped);
         result.OutcomeReason.Should().Be(AccessibilityOutcomeReason.AuthenticationExpired);
-        (result.Findings?.Count ?? 0).Should().Be(0);
+        result.Findings.Should().BeEmpty();
+        await AssertSameSessionResourcesAsync(manager, session.SessionId, fixture.TargetUrl, originalPage, originalContext);
     }
 
     [Fact]
@@ -218,8 +237,12 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
         await using var fixture = await SyntheticFixture.StartAsync();
         await using var manager = CreateManager();
         var session = await ReachAuthenticatedAsync(manager, fixture);
-
-        var accessibilityService = CreateAuthenticatedAccessibilityService(manager);
+        using var observer = new BarrierAccessibilityAnalysisObserver(pauseBeforeAxeRun: true);
+        var accessibilityService = CreateAuthenticatedAccessibilityService(manager, observer);
+        await using var originalLease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
+        var originalPage = originalLease.Page;
+        var originalContext = originalLease.Context;
+        var targetRequestsBeforeAccessibility = fixture.TargetRequestCount;
 
         var accessibilityTask = Task.Run(async () =>
         {
@@ -232,14 +255,17 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
             return await accessibilityService.ReviewAsync(request);
         });
 
-        await Task.Delay(500);
-        await using var lease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
-        await lease.Page.GotoAsync(fixture.UnexpectedOrigin);
+        await observer.ReadyBeforeAxeRun;
+        fixture.TargetRequestCount.Should().Be(targetRequestsBeforeAccessibility, "Accessibility must not navigate the target page");
+        await originalPage.GotoAsync(fixture.UnexpectedOrigin);
+        await WaitForStatusAsync(manager, session.SessionId, AuthenticatedBrowserSessionStatus.UnexpectedOrigin);
+        observer.ReleaseBeforeAxeRun();
 
         var result = await accessibilityTask;
-        result.ExecutionStatus.Should().Be(AccessibilityExecutionStatus.AuthenticationRequired, because: "Navigation outside allowed scope");
+        result.ExecutionStatus.Should().Be(AccessibilityExecutionStatus.Skipped);
         result.OutcomeReason.Should().Be(AccessibilityOutcomeReason.UnexpectedOrigin);
-        (result.Findings?.Count ?? 0).Should().Be(0);
+        result.Findings.Should().BeEmpty();
+        await AssertSameSessionResourcesAsync(manager, session.SessionId, fixture.TargetUrl, originalPage, originalContext);
     }
 
     [Fact]
@@ -267,13 +293,16 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
     {
         if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync();
-        await using var manager = CreateManager();
-        var session = await StartAndAuthenticateAsync(manager, fixture);
+        var time = new MutableTimeProvider();
+        await using var manager = CreateManager(time);
+        var session = await ReachAuthenticatedAsync(manager, fixture);
+        using var observer = new BarrierAccessibilityAnalysisObserver();
+        var accessibilityService = CreateAuthenticatedAccessibilityService(manager, observer);
 
-        // Immediately expire by cancelling
-        await manager.CancelAsync(session.SessionId, Review, Profile);
-
-        var accessibilityService = CreateAuthenticatedAccessibilityService(manager);
+        var authenticated = await manager.GetStatusAsync(session.SessionId, Review, Profile);
+        authenticated!.Status.Should().Be(AuthenticatedBrowserSessionStatus.Authenticated);
+        observer.BeforeAxeRunCount.Should().Be(0);
+        time.Advance(TimeSpan.FromMinutes(11));
 
         var request = new AccessibilityExecutionRequest(
             fixture.TargetUrl,
@@ -283,8 +312,40 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
             session.SessionId);
 
         var result = await accessibilityService.ReviewAsync(request);
-        result.ExecutionStatus.Should().Be(AccessibilityExecutionStatus.AuthenticationRequired);
+        result.ExecutionStatus.Should().Be(AccessibilityExecutionStatus.Skipped);
         result.OutcomeReason.Should().Be(AccessibilityOutcomeReason.AuthenticationExpired);
+        result.Findings.Should().BeEmpty();
+        observer.BeforeAxeRunCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AuthenticatedAccessibility_InvalidatedAfterAxeBeforePublish_DoesNotPublishFindings()
+    {
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
+        await using var fixture = await SyntheticFixture.StartAsync();
+        await using var manager = CreateManager();
+        var session = await ReachAuthenticatedAsync(manager, fixture);
+        using var observer = new BarrierAccessibilityAnalysisObserver(pauseBeforePublish: true);
+        var accessibilityService = CreateAuthenticatedAccessibilityService(manager, observer);
+        await using var originalLease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
+
+        var accessibilityTask = accessibilityService.ReviewAsync(new AccessibilityExecutionRequest(
+            fixture.TargetUrl,
+            AccessibilityExecutionMode.AuthenticatedSessionPage,
+            Review,
+            Profile,
+            session.SessionId));
+
+        await observer.ReadyBeforePublish;
+        observer.BeforeAxeRunCount.Should().Be(1, "real axe execution must reach the run boundary");
+        await originalLease.Page.GotoAsync(fixture.UnexpectedOrigin);
+        await WaitForStatusAsync(manager, session.SessionId, AuthenticatedBrowserSessionStatus.UnexpectedOrigin);
+        observer.ReleaseBeforePublish();
+
+        var result = await accessibilityTask;
+        result.ExecutionStatus.Should().Be(AccessibilityExecutionStatus.Skipped);
+        result.OutcomeReason.Should().Be(AccessibilityOutcomeReason.UnexpectedOrigin);
+        result.Findings.Should().BeEmpty();
     }
 
     [Fact]
@@ -309,16 +370,25 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
     private const string Review = "phase-a4-review";
     private const string Profile = "phase-a4-profile";
 
-    private static AuthenticatedBrowserSessionManager CreateManager() => new(
+    private static AuthenticatedBrowserSessionManager CreateManager(TimeProvider? timeProvider = null) => new(
         new PlaywrightAuthenticatedBrowserHost(),
-        Options.Create(new AuthenticatedReviewOptions { Enabled = true, Runtime = "LocalWorkstation", AllowSyntheticHttpOrigins = true }),
-        TimeProvider.System,
+        Options.Create(new AuthenticatedReviewOptions
+        {
+            Enabled = true,
+            Runtime = "LocalWorkstation",
+            AllowSyntheticHttpOrigins = true,
+            AbsoluteLifetimeMinutes = 10,
+            InactivityTimeoutMinutes = 15
+        }),
+        timeProvider ?? TimeProvider.System,
         NullLogger<AuthenticatedBrowserSessionManager>.Instance);
 
     private static BrowserTargetValidator CreateA4TargetValidator()
         => new BrowserTargetValidator(allowLoopback: true);
 
-    private static FrontendAccessibilityReviewService CreateAuthenticatedAccessibilityService(IAuthenticatedBrowserSessionManager? manager = null)
+    private static FrontendAccessibilityReviewService CreateAuthenticatedAccessibilityService(
+        IAuthenticatedBrowserSessionManager? manager = null,
+        IAccessibilityAnalysisObserver? observer = null)
     {
         var sanitizer = new AccessibilityEvidenceSanitizer();
         // Use the internal constructor to bypass BundledAxeScriptProvider dependency
@@ -330,7 +400,23 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
             new RealAxeScriptProvider(),
             sanitizer,
             manager,
-            true);
+            true,
+            observer);
+    }
+
+    private static async Task AssertSameSessionResourcesAsync(
+        AuthenticatedBrowserSessionManager manager,
+        string sessionId,
+        string targetUrl,
+        IPage expectedPage,
+        IBrowserContext expectedContext)
+    {
+        await using var lease = await manager.AcquireAuthenticationPageLeaseAsync(sessionId, Review, Profile, targetUrl);
+        lease.Page.Should().BeSameAs(expectedPage);
+        lease.Context.Should().BeSameAs(expectedContext);
+        lease.Context.Pages.Should().ContainSingle().Which.Should().BeSameAs(expectedPage);
+        lease.Context.Browser.Should().NotBeNull();
+        lease.Context.Browser!.IsConnected.Should().BeTrue();
     }
 
     private static async Task<AuthenticatedBrowserSessionDescriptor> StartAndAuthenticateAsync(AuthenticatedBrowserSessionManager manager, SyntheticFixture fixture)
@@ -369,6 +455,7 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
         private readonly Server _entra;
         private readonly Server _mcas;
         private readonly Server _unexpected;
+        private int _targetRequestCount;
 
         private SyntheticFixture(Server target, Server entra, Server mcas, Server unexpected)
         { _target = target; _entra = entra; _mcas = mcas; _unexpected = unexpected; }
@@ -378,6 +465,7 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
         public string EntraUrl => $"{_entra.Origin}/login";
         public string McasOrigin => _mcas.Origin;
         public string UnexpectedOrigin => _unexpected.Origin;
+        public int TargetRequestCount => Volatile.Read(ref _targetRequestCount);
 
         public static Task<SyntheticFixture> StartAsync()
         {
@@ -385,7 +473,13 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
             target.Start(); entra.Start(); mcas.Start(); unexpected.Start();
             var fixture = new SyntheticFixture(target, entra, mcas, unexpected);
             // Protected app with deterministic axe violation: empty button (button-name rule)
-            target.Handler = path => path.StartsWith("/authenticated", StringComparison.Ordinal)
+            target.Handler = path =>
+            {
+                if (path.StartsWith("/protected-app", StringComparison.Ordinal) ||
+                    path.StartsWith("/authenticated", StringComparison.Ordinal))
+                    Interlocked.Increment(ref fixture._targetRequestCount);
+
+                return path.StartsWith("/authenticated", StringComparison.Ordinal)
                 ? Response.Ok("""
                     <html data-birknext-auth-fixture='app'>
                     <title>Protected app</title>
@@ -401,6 +495,7 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
                     </html>
                     """)
                 : Response.Redirect(fixture.EntraUrl);
+            };
             entra.Handler = _ => Response.Ok($"<html data-birknext-auth-fixture='login'><body><a id='synthetic-sign-in' href='{fixture.McasOrigin}/notice'>Sign in fixture</a><a id='synthetic-unexpected' href='{fixture.UnexpectedOrigin}/outside'>Unexpected fixture</a></body></html>");
             mcas.Handler = path => path.StartsWith("/proxied-application", StringComparison.Ordinal)
                 ? Response.Ok("<html data-birknext-auth-fixture='app'><body><main>Proxied authenticated application</main></body></html>")
@@ -451,6 +546,54 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
     {
         public static Response Ok(string body) => new(200, body, null);
         public static Response Redirect(string location) => new(302, "", location);
+    }
+
+    private sealed class BarrierAccessibilityAnalysisObserver : IAccessibilityAnalysisObserver, IDisposable
+    {
+        private readonly bool _pauseBeforeAxeRun;
+        private readonly bool _pauseBeforePublish;
+        private readonly CancellationTokenSource _timeout = new(TimeSpan.FromSeconds(30));
+        private readonly TaskCompletionSource _readyBeforeAxeRun = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseBeforeAxeRun = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _readyBeforePublish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseBeforePublish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _beforeAxeRunCount;
+
+        public BarrierAccessibilityAnalysisObserver(bool pauseBeforeAxeRun = false, bool pauseBeforePublish = false)
+        {
+            _pauseBeforeAxeRun = pauseBeforeAxeRun;
+            _pauseBeforePublish = pauseBeforePublish;
+        }
+
+        public Task ReadyBeforeAxeRun => _readyBeforeAxeRun.Task.WaitAsync(_timeout.Token);
+        public Task ReadyBeforePublish => _readyBeforePublish.Task.WaitAsync(_timeout.Token);
+        public int BeforeAxeRunCount => Volatile.Read(ref _beforeAxeRunCount);
+
+        public async Task BeforeAxeRunAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _beforeAxeRunCount);
+            _readyBeforeAxeRun.TrySetResult();
+            if (_pauseBeforeAxeRun)
+                await _releaseBeforeAxeRun.Task.WaitAsync(_timeout.Token);
+        }
+
+        public async Task BeforeAuthenticatedResultPublishedAsync(CancellationToken cancellationToken)
+        {
+            _readyBeforePublish.TrySetResult();
+            if (_pauseBeforePublish)
+                await _releaseBeforePublish.Task.WaitAsync(_timeout.Token);
+        }
+
+        public void ReleaseBeforeAxeRun() => _releaseBeforeAxeRun.TrySetResult();
+        public void ReleaseBeforePublish() => _releaseBeforePublish.TrySetResult();
+        public void Dispose() => _timeout.Dispose();
+    }
+
+    private sealed class MutableTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _now = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan value) => _now += value;
     }
 
     private sealed class RealAxeScriptProvider : IAxeScriptProvider
