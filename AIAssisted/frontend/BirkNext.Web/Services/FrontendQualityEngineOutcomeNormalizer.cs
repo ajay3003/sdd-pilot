@@ -132,6 +132,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
                 AccessibilityExecutionStatusDto.AuthenticationRequired => FrontendQualityEngineExecutionState.AuthenticationRequired,
                 AccessibilityExecutionStatusDto.Skipped when report.OutcomeReason == AccessibilityOutcomeReasonDto.AuthenticationCancelled => FrontendQualityEngineExecutionState.Cancelled,
                 AccessibilityExecutionStatusDto.Skipped when report.OutcomeReason == AccessibilityOutcomeReasonDto.AuthenticationRequired => FrontendQualityEngineExecutionState.AuthenticationRequired,
+                AccessibilityExecutionStatusDto.Skipped => FrontendQualityEngineExecutionState.SafetyBlocked,
                 _ when cancelled => FrontendQualityEngineExecutionState.Cancelled,
                 _ => FrontendQualityEngineExecutionState.Unavailable,
             };
@@ -351,9 +352,10 @@ public static class FrontendQualityEngineOutcomeNormalizer
             var layer2 = snapshot.Layer2Enabled.TryGetValue(pair.Item2, out var layer2Value) && layer2Value;
             var auth = snapshot.AuthModeSupported.TryGetValue(pair.Item2, out var authValue) && authValue;
 
-            var reason = !selected ? FrontendQualityEngineOutcomeReason.NotSelected
+            var reason = !outcomes[index].Enabled ? FrontendQualityEngineOutcomeReason.DisabledInSystemSettings
                 : !layer1 ? FrontendQualityEngineOutcomeReason.BlockedByDeploymentPolicy
                 : !layer2 ? FrontendQualityEngineOutcomeReason.DisabledInSystemSettings
+                : !selected ? FrontendQualityEngineOutcomeReason.NotSelected
                 : !auth ? FrontendQualityEngineOutcomeReason.AuthenticationModeUnsupported
                 : FrontendQualityEngineOutcomeReason.None;
             if (reason == FrontendQualityEngineOutcomeReason.None) continue;
