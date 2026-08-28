@@ -192,8 +192,99 @@ public sealed class AuthenticatedBrowserSessionManagerTests
         dependencies.Should().NotContain(name => name.Contains("DbContext", StringComparison.OrdinalIgnoreCase) || name.Contains("Repository", StringComparison.OrdinalIgnoreCase) || name.Contains("DistributedCache", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task ResourceLiveness_PageClosedDetected_LeaseRejected()
+    {
+        var host = new FakeHostWithLiveness(); await using var manager = CreateManagerWithLiveness(host);
+        var session = await manager.StartAsync(Request());
+        host.Resources[0].PageIsClosed = true;
+
+        var act = () => manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://example.com");
+        await act.Should().ThrowAsync<AuthenticatedResourceUnavailableException>();
+
+        var status = await manager.GetStatusAsync(session.SessionId, "review-1", "profile-1");
+        status.Should().NotBeNull();
+        status!.Status.Should().Be(AuthenticatedBrowserSessionStatus.Failed);
+        status.FailureCategory.Should().Be("page_closed");
+    }
+
+    [Fact]
+    public async Task ResourceLiveness_BrowserDisconnectedDetected_LeaseRejected()
+    {
+        var host = new FakeHostWithLiveness(); await using var manager = CreateManagerWithLiveness(host);
+        var session = await manager.StartAsync(Request());
+        host.Resources[0].BrowserIsConnected = false;
+
+        var act = () => manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://example.com");
+        await act.Should().ThrowAsync<AuthenticatedResourceUnavailableException>();
+
+        var status = await manager.GetStatusAsync(session.SessionId, "review-1", "profile-1");
+        status.Should().NotBeNull();
+        status!.Status.Should().Be(AuthenticatedBrowserSessionStatus.Failed);
+        status.FailureCategory.Should().Be("browser_disconnected");
+    }
+
+    [Fact]
+    public async Task ResourceLiveness_ValidResourcesAllowLease()
+    {
+        var host = new FakeHostWithLiveness(); await using var manager = CreateManagerWithLiveness(host);
+        var session = await manager.StartAsync(Request());
+        host.Resources[0].PageIsClosed = false;
+        host.Resources[0].BrowserIsConnected = true;
+
+        await using var lease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://example.com");
+        lease.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ResourceFailure_NoLeaseReturned()
+    {
+        var host = new FakeHostWithLiveness(); await using var manager = CreateManagerWithLiveness(host);
+        var session = await manager.StartAsync(Request());
+        host.Resources[0].PageIsClosed = true;
+
+        try { await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://example.com"); }
+        catch (AuthenticatedResourceUnavailableException) { }
+
+        await EventuallyAsync(() => host.Resources[0].DisposeCount == 1);
+    }
+
+    [Fact]
+    public async Task ResourceFailure_EngineEligibilityRevoked()
+    {
+        var host = new FakeHostWithLiveness(); await using var manager = CreateManagerWithLiveness(host);
+        var session = await manager.StartAsync(Request());
+        host.Resources[0].PageIsClosed = true;
+
+        try { await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://example.com"); }
+        catch (AuthenticatedResourceUnavailableException) { }
+
+        var status = await manager.GetStatusAsync(session.SessionId, "review-1", "profile-1");
+        status!.ApplicationValidationCurrent.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task DisposalIdempotency_MultipleResourceFailureEventsRaceWithoutCrash()
+    {
+        var host = new FakeHostWithLiveness(); await using var manager = CreateManagerWithLiveness(host);
+        var session = await manager.StartAsync(Request());
+        host.Resources[0].PageIsClosed = true;
+
+        try { await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://example.com"); }
+        catch (AuthenticatedResourceUnavailableException) { }
+
+        await EventuallyAsync(() => host.Resources[0].DisposeCount == 1);
+
+        try { await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "review-1", "profile-1", "https://example.com"); }
+        catch { }
+
+        host.Resources[0].DisposeCount.Should().Be(1);
+    }
+
     private static AuthenticatedBrowserSessionRequest Request(string review = "review-1", string profile = "profile-1", string target = "https://example.com/path") => new(review, profile, target);
     private static AuthenticatedBrowserSessionManager CreateManager(FakeHost host, bool enabled = true, string runtime = "LocalWorkstation", TimeProvider? time = null) =>
+        new(host, Options.Create(new AuthenticatedReviewOptions { Enabled = enabled, Runtime = runtime, AbsoluteLifetimeMinutes = 45, InactivityTimeoutMinutes = 15 }), time ?? TimeProvider.System, NullLogger<AuthenticatedBrowserSessionManager>.Instance);
+    private static AuthenticatedBrowserSessionManager CreateManagerWithLiveness(FakeHostWithLiveness host, bool enabled = true, string runtime = "LocalWorkstation", TimeProvider? time = null) =>
         new(host, Options.Create(new AuthenticatedReviewOptions { Enabled = enabled, Runtime = runtime, AbsoluteLifetimeMinutes = 45, InactivityTimeoutMinutes = 15 }), time ?? TimeProvider.System, NullLogger<AuthenticatedBrowserSessionManager>.Instance);
 
     private static async Task EventuallyAsync(Func<bool> condition)
@@ -215,13 +306,64 @@ public sealed class AuthenticatedBrowserSessionManagerTests
 
     private sealed class FakeResources : IAuthenticatedBrowserResources
     {
-        public IBrowser Browser { get; } = new Mock<IBrowser>().Object;
-        public IBrowserContext Context { get; } = new Mock<IBrowserContext>().Object;
-        public IPage Page { get; } = new Mock<IPage>().Object;
+        private readonly Mock<IPage> _pageMock = new(MockBehavior.Default);
+        private readonly Mock<IBrowser> _browserMock = new(MockBehavior.Default);
+        private readonly Mock<IBrowserContext> _contextMock = new(MockBehavior.Default);
+
+        public FakeResources()
+        {
+            _pageMock.Setup(p => p.IsClosed).Returns(false);
+            _browserMock.Setup(b => b.IsConnected).Returns(true);
+            _contextMock.Setup(c => c.CloseAsync(It.IsAny<BrowserContextCloseOptions>())).Returns(Task.CompletedTask);
+        }
+
+        public IBrowser Browser => _browserMock.Object;
+        public IBrowserContext Context => _contextMock.Object;
+        public IPage Page => _pageMock.Object;
         public int DisposeCount { get; private set; }
         public event EventHandler? BrowserDisconnected;
         public void Crash() => BrowserDisconnected?.Invoke(this, EventArgs.Empty);
         public ValueTask DisposeAsync() { DisposeCount++; return ValueTask.CompletedTask; }
+    }
+
+    private sealed class FakeResourcesWithLiveness : IAuthenticatedBrowserResources
+    {
+        public bool PageIsClosed { get; set; }
+        public bool BrowserIsConnected { get; set; } = true;
+        public bool ContextIsUsable { get; set; } = true;
+        public int DisposeCount { get; private set; }
+
+        private readonly Mock<IPage> _pageMock = new(MockBehavior.Default);
+        private readonly Mock<IBrowser> _browserMock = new(MockBehavior.Default);
+        private readonly Mock<IBrowserContext> _contextMock = new(MockBehavior.Default);
+
+        public FakeResourcesWithLiveness()
+        {
+            _pageMock.Setup(p => p.IsClosed).Returns(() => PageIsClosed);
+            _browserMock.Setup(b => b.IsConnected).Returns(() => BrowserIsConnected);
+            _contextMock.Setup(c => c.CloseAsync(It.IsAny<BrowserContextCloseOptions>())).Returns(Task.CompletedTask);
+        }
+
+        public IBrowser Browser => _browserMock.Object;
+        public IBrowserContext Context => _contextMock.Object;
+        public IPage Page => _pageMock.Object;
+        public event EventHandler? BrowserDisconnected;
+        public void Crash() => BrowserDisconnected?.Invoke(this, EventArgs.Empty);
+        public ValueTask DisposeAsync() { DisposeCount++; return ValueTask.CompletedTask; }
+    }
+
+    private sealed class FakeHostWithLiveness : IAuthenticatedBrowserHost
+    {
+        public int LaunchCount { get; private set; }
+        public List<FakeResourcesWithLiveness> Resources { get; } = [];
+
+        public Task<IAuthenticatedBrowserResources> LaunchAsync(Uri target, CancellationToken cancellationToken)
+        {
+            LaunchCount++;
+            var resources = new FakeResourcesWithLiveness();
+            Resources.Add(resources);
+            return Task.FromResult<IAuthenticatedBrowserResources>(resources);
+        }
     }
 
     private sealed class MutableTimeProvider : TimeProvider

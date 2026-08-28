@@ -60,6 +60,8 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
             using var launchCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, entry.Cancellation.Token);
             entry.Resources = await _browserHost.LaunchAsync(target, launchCancellation.Token);
             entry.Resources.BrowserDisconnected += (_, _) => _ = FailAndDisposeAsync(entry, "browser_disconnected");
+            entry.Resources.Page.Close += (_, _) => _ = FailAndDisposeAsync(entry, "page_closed");
+            entry.Resources.Page.Crash += (_, _) => _ = FailAndDisposeAsync(entry, "page_crashed");
             entry.Status = AuthenticatedBrowserSessionStatus.BrowserReady;
             entry.Touch(_time.GetUtcNow());
             _logger.LogInformation("Authenticated browser session {SessionId} browser ready", id);
@@ -141,7 +143,7 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
     public Task<IAuthenticatedBrowserPageLease> AcquirePageLeaseAsync(string sessionId, string reviewSessionId, string profileId, string targetUrl, CancellationToken cancellationToken = default)
         => AcquireLeaseCoreAsync(sessionId, reviewSessionId, profileId, targetUrl, requireAuthenticated: true, cancellationToken);
 
-    private Task<IAuthenticatedBrowserPageLease> AcquireLeaseCoreAsync(string sessionId, string reviewSessionId, string profileId, string targetUrl, bool requireAuthenticated, CancellationToken cancellationToken)
+    private async Task<IAuthenticatedBrowserPageLease> AcquireLeaseCoreAsync(string sessionId, string reviewSessionId, string profileId, string targetUrl, bool requireAuthenticated, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!_sessions.TryGetValue(sessionId, out var entry) || !entry.Matches(reviewSessionId, profileId)) throw new System.Collections.Generic.KeyNotFoundException("Authenticated browser session not found.");
@@ -153,8 +155,40 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
         if (requireAuthenticated && (entry.Status != AuthenticatedBrowserSessionStatus.Authenticated || !entry.ApplicationValidationCurrent))
             throw new AuthenticatedSessionNotEligibleException();
         if (entry.Resources is null) throw new InvalidOperationException("Browser is not ready.");
+
+        await ValidateResourceLivenessAsync(entry);
+
         entry.Touch(_time.GetUtcNow());
-        return Task.FromResult<IAuthenticatedBrowserPageLease>(new PageLease(entry, requireAuthenticated));
+        return new PageLease(entry, requireAuthenticated);
+    }
+
+    private Task ValidateResourceLivenessAsync(Entry entry)
+    {
+        var failure = entry.Resources switch
+        {
+            null => ("resources_null", "Browser resources are null"),
+            _ when entry.Resources.Page.IsClosed => ("page_closed", "Manager-owned page is closed"),
+            _ when !entry.Resources.Browser.IsConnected => ("browser_disconnected", "Browser is disconnected"),
+            _ => (null, null)
+        };
+
+        if (failure.Item1 is not null)
+        {
+            entry.RevokeEngineEligibility();
+            entry.Status = AuthenticatedBrowserSessionStatus.Failed;
+            entry.FailureCategory = failure.Item1;
+            entry.ApplicationValidationCurrent = false;
+            _ = CleanupFailedResourcesAsync(entry, failure.Item1);
+            throw new AuthenticatedResourceUnavailableException($"Resource liveness check failed: {failure.Item2}");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task CleanupFailedResourcesAsync(Entry entry, string reason)
+    {
+        if (entry.Resources is not null) await entry.Resources.DisposeAsync();
+        _logger.LogInformation("Authenticated browser session {SessionId} resource failure cleaned up: {Reason}", entry.SessionId, reason);
     }
 
     private void AttachNavigationObserver(Entry entry)
@@ -411,3 +445,4 @@ public sealed class AuthenticatedSessionConflictException(string message) : Inva
 public sealed class AuthenticatedSessionExpiredException() : InvalidOperationException("Authenticated browser session expired.");
 public sealed class AuthenticatedSessionNotEligibleException() : InvalidOperationException("Authenticated browser session is not eligible for review-engine use.");
 public sealed class AuthenticatedNavigationException(string message, Exception inner) : InvalidOperationException(message, inner);
+public sealed class AuthenticatedResourceUnavailableException(string message) : InvalidOperationException(message);
