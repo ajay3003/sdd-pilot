@@ -30,4 +30,32 @@ public sealed class FrontendAccessibilityReviewApiService(HttpClient httpClient)
             return new(AccessibilityExecutionStatusDto.EngineError, RequestedUrl: targetUrl, EngineError: ex.Message);
         }
     }
+
+    public async Task<AccessibilityResultDto> ReviewAsync(
+        AccessibilityApiExecutionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await httpClient.PostAsJsonAsync("api/frontend-accessibility/review", new
+            {
+                request.TargetUrl,
+                request.ExecutionMode,
+                request.ReviewSessionId,
+                request.ProfileId,
+                request.SessionId,
+                navigationTimeoutMs = request.NavigationTimeoutMs,
+                stabilizationMs = request.StabilizationMs
+            }, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                return new(AccessibilityExecutionStatusDto.EngineError, RequestedUrl: request.TargetUrl,
+                    EngineError: $"Accessibility API returned HTTP {(int)response.StatusCode}.");
+            return await response.Content.ReadFromJsonAsync<AccessibilityResultDto>(cancellationToken: cancellationToken)
+                ?? new(AccessibilityExecutionStatusDto.EngineError, RequestedUrl: request.TargetUrl, EngineError: "Accessibility API returned no result.");
+        }
+        catch (Exception ex)
+        {
+            return new(AccessibilityExecutionStatusDto.EngineError, RequestedUrl: request.TargetUrl, EngineError: ex.Message);
+        }
+    }
 }

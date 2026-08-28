@@ -175,12 +175,12 @@ public sealed class FrontendQualityEnginePhase2ValidationTests
             ReviewAuthenticationMode.Authenticated).Should().BeTrue(because: "after A3");
     }
 
-    [Fact(DisplayName = "Accessibility pre-A4: authenticated NOT supported")]
-    public void AccessibilityAuthSupport_PreA4_NoAuthenticated()
+    [Fact(DisplayName = "Accessibility post-A4: authenticated supported")]
+    public void AccessibilityAuthSupport_PostA4_Authenticated()
     {
         FrontendQualityEngineAuthenticationSupport.Supports(
             FrontendQualityEngineId.Accessibility,
-            ReviewAuthenticationMode.Authenticated).Should().BeFalse(because: "until A4");
+            ReviewAuthenticationMode.Authenticated).Should().BeTrue(because: "after A4");
     }
 
     [Fact(DisplayName = "Reason codes: typed identifiers, no free text")]

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BirkNext.Api.Services.AuthenticatedReview;
 using BirkNext.Api.Services.FrontendBrowserRuntime;
 using Deque.AxeCore.Commons;
 using Microsoft.Playwright;
@@ -15,6 +16,8 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
     private readonly BrowserTargetValidator _targetValidator;
     private readonly AccessibilityNormalizer _normalizer;
     private readonly IAxeScriptProvider _axeScriptProvider;
+    private readonly AccessibilityEvidenceSanitizer _sanitizer;
+    private readonly IAuthenticatedBrowserSessionManager? _authenticatedSessions;
     private readonly bool _enabled;
 
     public FrontendAccessibilityReviewService(
@@ -22,19 +25,23 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         BrowserTargetValidator targetValidator,
         AccessibilityNormalizer normalizer,
         IOptions<FrontendAccessibilityOptions> options)
-        : this(logger, targetValidator, normalizer, new BundledAxeScriptProvider(), options.Value.Enabled) { }
+        : this(logger, targetValidator, normalizer, new BundledAxeScriptProvider(), new AccessibilityEvidenceSanitizer(), null, options.Value.Enabled) { }
 
     internal FrontendAccessibilityReviewService(
         ILogger<FrontendAccessibilityReviewService> logger,
         BrowserTargetValidator targetValidator,
         AccessibilityNormalizer normalizer,
         IAxeScriptProvider axeScriptProvider,
+        AccessibilityEvidenceSanitizer sanitizer,
+        IAuthenticatedBrowserSessionManager? authenticatedSessions = null,
         bool enabled = true)
     {
         _logger = logger;
         _targetValidator = targetValidator;
         _normalizer = normalizer;
         _axeScriptProvider = axeScriptProvider;
+        _sanitizer = sanitizer;
+        _authenticatedSessions = authenticatedSessions;
         _enabled = enabled;
     }
 
@@ -44,18 +51,46 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         bool requiresAuthentication = false,
         CancellationToken cancellationToken = default)
     {
-        options ??= new AccessibilityReviewOptions();
-        var startedAt = DateTime.UtcNow;
         if (requiresAuthentication)
-            return Failure(AccessibilityExecutionStatus.AuthenticationRequired, targetUrl, startedAt,
-                "Anonymous Phase 2B accessibility assessment cannot review an authenticated target.");
+            return new AccessibilityReviewResult(
+                AccessibilityExecutionStatus.AuthenticationRequired,
+                RequestedUrl: targetUrl,
+                ExecutionMode: AccessibilityExecutionMode.AnonymousOwnedBrowser,
+                OutcomeReason: AccessibilityOutcomeReason.AuthenticationRequired);
 
-        var validation = _targetValidator.ValidateTarget(targetUrl, options.EnvironmentType);
-        if (!validation.IsValid)
-            return Failure(AccessibilityExecutionStatus.Skipped, targetUrl, startedAt, validation.BlockReason ?? "Target blocked by safety policy.");
+        options ??= new AccessibilityReviewOptions();
+        return await ReviewAsync(new AccessibilityExecutionRequest(
+            targetUrl,
+            AccessibilityExecutionMode.AnonymousOwnedBrowser,
+            null, null, null, options), cancellationToken);
+    }
+
+    public async Task<AccessibilityReviewResult> ReviewAsync(
+        AccessibilityExecutionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var startedAt = DateTime.UtcNow;
+        var options = request.Options ?? new AccessibilityReviewOptions();
 
         if (!_enabled)
-            return Failure(AccessibilityExecutionStatus.Skipped, targetUrl, startedAt, "Accessibility review engine is disabled.");
+            return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
+                "Accessibility review engine is disabled.", AccessibilityExecutionMode.AnonymousOwnedBrowser);
+
+        return request.ExecutionMode == AccessibilityExecutionMode.AuthenticatedSessionPage
+            ? await ReviewAuthenticatedAsync(request, startedAt, cancellationToken)
+            : await ReviewAnonymousAsync(request, startedAt, options, cancellationToken);
+    }
+
+    private async Task<AccessibilityReviewResult> ReviewAnonymousAsync(
+        AccessibilityExecutionRequest request,
+        DateTime startedAt,
+        AccessibilityReviewOptions options,
+        CancellationToken cancellationToken)
+    {
+        var validation = _targetValidator.ValidateTarget(request.TargetUrl, options.EnvironmentType);
+        if (!validation.IsValid)
+            return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
+                validation.BlockReason ?? "Target blocked by safety policy.", AccessibilityExecutionMode.AnonymousOwnedBrowser);
 
         IPlaywright? playwright = null;
         IBrowser? browser = null;
@@ -65,7 +100,8 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         {
             var axeScript = _axeScriptProvider.GetScript();
             if (string.IsNullOrWhiteSpace(axeScript))
-                return Failure(AccessibilityExecutionStatus.EngineError, targetUrl, startedAt, "axe-core bundled asset is unavailable.");
+                return Failure(AccessibilityExecutionStatus.EngineError, request.TargetUrl, startedAt,
+                    "axe-core bundled asset is unavailable.", AccessibilityExecutionMode.AnonymousOwnedBrowser);
 
             playwright = await Playwright.CreateAsync();
             browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
@@ -75,16 +111,149 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
             });
             context = await browser.NewContextAsync();
             page = await context.NewPageAsync();
-            var response = await page.GotoAsync(targetUrl, new PageGotoOptions
+            var response = await page.GotoAsync(request.TargetUrl, new PageGotoOptions
             {
                 WaitUntil = WaitUntilState.DOMContentLoaded,
                 Timeout = options.NavigationTimeoutMs
             });
-            var finalValidation = _targetValidator.ValidateRedirectTarget(page.Url, new Uri(targetUrl).Host, options.EnvironmentType);
+            var finalValidation = _targetValidator.ValidateRedirectTarget(page.Url, new Uri(request.TargetUrl).Host, options.EnvironmentType);
             if (!finalValidation.IsValid)
-                return Failure(AccessibilityExecutionStatus.Skipped, targetUrl, startedAt, finalValidation.BlockReason ?? "Redirect blocked by safety policy.");
+                return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
+                    finalValidation.BlockReason ?? "Redirect blocked by safety policy.", AccessibilityExecutionMode.AnonymousOwnedBrowser);
             if (response is null || !response.Ok)
-                return Failure(AccessibilityExecutionStatus.EngineError, targetUrl, startedAt, $"Target navigation failed before axe execution (HTTP {response?.Status}).");
+                return Failure(AccessibilityExecutionStatus.EngineError, request.TargetUrl, startedAt,
+                    $"Target navigation failed before axe execution (HTTP {response?.Status}).", AccessibilityExecutionMode.AnonymousOwnedBrowser);
+
+            var result = await AnalyzePageAsync(page, browser.Version, request, options, false, cancellationToken);
+            return result with { ExecutionMode = AccessibilityExecutionMode.AnonymousOwnedBrowser };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Accessibility review engine failed for {TargetUrl}", request.TargetUrl);
+            return Failure(AccessibilityExecutionStatus.EngineError, request.TargetUrl, startedAt, ex.Message,
+                AccessibilityExecutionMode.AnonymousOwnedBrowser);
+        }
+        finally
+        {
+            if (page is not null) await page.CloseAsync();
+            if (context is not null) await context.CloseAsync();
+            if (browser is not null) await browser.CloseAsync();
+            playwright?.Dispose();
+        }
+    }
+
+    private async Task<AccessibilityReviewResult> ReviewAuthenticatedAsync(
+        AccessibilityExecutionRequest request,
+        DateTime startedAt,
+        CancellationToken cancellationToken)
+    {
+        if (_authenticatedSessions is null || string.IsNullOrWhiteSpace(request.AuthenticatedSessionId) ||
+            string.IsNullOrWhiteSpace(request.ReviewSessionId) || string.IsNullOrWhiteSpace(request.ProfileId))
+            return Failure(AccessibilityExecutionStatus.AuthenticationRequired, request.TargetUrl, startedAt,
+                "Authenticated session identifiers are required.", AccessibilityExecutionMode.AuthenticatedSessionPage,
+                AccessibilityOutcomeReason.AuthenticationRequired);
+
+        try
+        {
+            await using var lease = await _authenticatedSessions.AcquirePageLeaseAsync(
+                request.AuthenticatedSessionId, request.ReviewSessionId, request.ProfileId, request.TargetUrl, cancellationToken);
+            using var execution = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lease.SessionCancellation);
+            var options = request.Options ?? new AccessibilityReviewOptions();
+            var result = await AnalyzePageAsync(lease.Page, lease.Context.Browser?.Version, request, options, true, execution.Token);
+            return result with { ExecutionMode = AccessibilityExecutionMode.AuthenticatedSessionPage };
+        }
+        catch (AuthenticatedSessionExpiredException)
+        {
+            return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
+                "The authenticated session expired.", AccessibilityExecutionMode.AuthenticatedSessionPage,
+                AccessibilityOutcomeReason.AuthenticationExpired);
+        }
+        catch (AuthenticatedSessionNotEligibleException)
+        {
+            return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
+                "The authenticated application page is not currently eligible for review.", AccessibilityExecutionMode.AuthenticatedSessionPage,
+                AccessibilityOutcomeReason.AuthenticationRequired);
+        }
+        catch (System.Collections.Generic.KeyNotFoundException)
+        {
+            return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
+                "The authenticated session is unavailable.", AccessibilityExecutionMode.AuthenticatedSessionPage,
+                AccessibilityOutcomeReason.AuthenticationRequired);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
+                "Authenticated session ownership validation failed.", AccessibilityExecutionMode.AuthenticatedSessionPage,
+                AccessibilityOutcomeReason.AuthenticationRequired);
+        }
+        catch (ObjectDisposedException)
+        {
+            return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
+                "The authenticated session is closed.", AccessibilityExecutionMode.AuthenticatedSessionPage,
+                AccessibilityOutcomeReason.AuthenticationCancelled);
+        }
+        catch (OperationCanceledException) when (request.ExecutionMode == AccessibilityExecutionMode.AuthenticatedSessionPage)
+        {
+            return await MapCancelledSessionOutcome(request, startedAt, cancellationToken);
+        }
+        catch (Microsoft.Playwright.PlaywrightException) when (request.ExecutionMode == AccessibilityExecutionMode.AuthenticatedSessionPage)
+        {
+            // Navigation mid-execution (redirect, unexpected origin) throws PlaywrightException
+            // Check session status to determine the auth-specific outcome
+            return await MapCancelledSessionOutcome(request, startedAt, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Authenticated accessibility review failed for {TargetUrl}", request.TargetUrl);
+
+            // Before returning generic EngineError, check if session eligibility changed
+            // (e.g., redirect during axe execution caused auth/origin loss)
+            try
+            {
+                var status = await _authenticatedSessions.GetStatusAsync(
+                    request.AuthenticatedSessionId, request.ReviewSessionId, request.ProfileId,
+                    CancellationToken.None);
+
+                if (status?.Status is AuthenticatedBrowserSessionStatus.AuthenticationExpired or
+                    AuthenticatedBrowserSessionStatus.UnexpectedOrigin or
+                    AuthenticatedBrowserSessionStatus.AuthenticationCancelled)
+                {
+                    var reason = status.Status switch
+                    {
+                        AuthenticatedBrowserSessionStatus.AuthenticationExpired => AccessibilityOutcomeReason.AuthenticationExpired,
+                        AuthenticatedBrowserSessionStatus.UnexpectedOrigin => AccessibilityOutcomeReason.UnexpectedOrigin,
+                        AuthenticatedBrowserSessionStatus.AuthenticationCancelled => AccessibilityOutcomeReason.AuthenticationCancelled,
+                        _ => AccessibilityOutcomeReason.AuthenticationRequired
+                    };
+
+                    return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
+                        "Authenticated session became ineligible during analysis.",
+                        AccessibilityExecutionMode.AuthenticatedSessionPage, reason);
+                }
+            }
+            catch { }
+
+            // Session still valid, so this is a genuine execution error
+            return Failure(AccessibilityExecutionStatus.EngineError, request.TargetUrl, startedAt, ex.Message,
+                AccessibilityExecutionMode.AuthenticatedSessionPage);
+        }
+    }
+
+    private async Task<AccessibilityReviewResult> AnalyzePageAsync(
+        IPage page,
+        string? browserVersion,
+        AccessibilityExecutionRequest request,
+        AccessibilityReviewOptions options,
+        bool isAuthenticated,
+        CancellationToken cancellationToken)
+    {
+        var startedAt = DateTime.UtcNow;
+        try
+        {
+            var axeScript = _axeScriptProvider.GetScript();
+            if (string.IsNullOrWhiteSpace(axeScript))
+                return Failure(AccessibilityExecutionStatus.EngineError, request.TargetUrl, startedAt,
+                    "axe-core bundled asset is unavailable.", request.ExecutionMode);
 
             await Task.Delay(options.StabilizationMs, cancellationToken);
             await page.AddScriptTagAsync(new PageAddScriptTagOptions { Content = axeScript });
@@ -94,19 +263,26 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
                 ExecutedRuleTags);
 
             if (!raw.TryGetProperty("violations", out var violations))
-                return Failure(AccessibilityExecutionStatus.EngineError, targetUrl, startedAt, "axe-core returned no assessment result.");
+                return Failure(AccessibilityExecutionStatus.EngineError, request.TargetUrl, startedAt,
+                    "axe-core returned no assessment result.", request.ExecutionMode);
 
             var incomplete = raw.GetProperty("incomplete");
             var findings = _normalizer.Normalize(violations, AccessibilityFindingKind.Violation)
                 .Concat(_normalizer.Normalize(incomplete, AccessibilityFindingKind.NeedsManualReview))
                 .ToList();
+
+            if (isAuthenticated)
+            {
+                findings = _sanitizer.SanitizeAuthenticatedFindings(findings);
+            }
+
             var completedAt = DateTime.UtcNow;
             return new AccessibilityReviewResult(
                 ExecutionStatus: AccessibilityExecutionStatus.Assessed,
                 AxeVersion: axeVersion,
                 BrowserName: "Chromium",
-                BrowserVersion: browser.Version,
-                RequestedUrl: targetUrl,
+                BrowserVersion: browserVersion,
+                RequestedUrl: request.TargetUrl,
                 FinalUrl: page.Url,
                 StartedAt: startedAt,
                 CompletedAt: completedAt,
@@ -117,19 +293,21 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
                 PassCount: raw.GetProperty("passes").GetArrayLength(),
                 InapplicableCount: raw.GetProperty("inapplicable").GetArrayLength(),
                 Findings: findings,
-                Limitations: [ManualTestingLimitation]);
+                Limitations: isAuthenticated
+                    ? ["Authenticated single-page accessibility analysis", "No DOM, response body, or sensitive element evidence collected"]
+                    : [ManualTestingLimitation],
+                ExecutionMode: request.ExecutionMode);
+        }
+        catch (Microsoft.Playwright.PlaywrightException) when (isAuthenticated)
+        {
+            // Navigation during axe.run (redirect, unexpected origin) throws PlaywrightException
+            // Let it bubble up to ReviewAuthenticatedAsync for proper session-state mapping
+            throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Accessibility review engine failed for {TargetUrl}", targetUrl);
-            return Failure(AccessibilityExecutionStatus.EngineError, targetUrl, startedAt, ex.Message);
-        }
-        finally
-        {
-            if (page is not null) await page.CloseAsync();
-            if (context is not null) await context.CloseAsync();
-            if (browser is not null) await browser.CloseAsync();
-            playwright?.Dispose();
+            _logger.LogError(ex, "axe-core analysis failed for {TargetUrl}", request.TargetUrl);
+            return Failure(AccessibilityExecutionStatus.EngineError, request.TargetUrl, startedAt, ex.Message, request.ExecutionMode);
         }
     }
 
@@ -161,7 +339,41 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         }
     }
 
-    private static AccessibilityReviewResult Failure(AccessibilityExecutionStatus status, string url, DateTime startedAt, string error) =>
+    private async Task<AccessibilityReviewResult> MapCancelledSessionOutcome(
+        AccessibilityExecutionRequest request,
+        DateTime startedAt,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var status = await _authenticatedSessions!.GetStatusAsync(
+                request.AuthenticatedSessionId, request.ReviewSessionId, request.ProfileId, cancellationToken);
+            var reason = status?.Status switch
+            {
+                AuthenticatedBrowserSessionStatus.AuthenticationExpired => AccessibilityOutcomeReason.AuthenticationExpired,
+                AuthenticatedBrowserSessionStatus.UnexpectedOrigin => AccessibilityOutcomeReason.UnexpectedOrigin,
+                AuthenticatedBrowserSessionStatus.AuthenticationCancelled => AccessibilityOutcomeReason.AuthenticationCancelled,
+                _ => AccessibilityOutcomeReason.AuthenticationRequired
+            };
+            return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
+                "Authenticated application eligibility ended during Accessibility analysis.", AccessibilityExecutionMode.AuthenticatedSessionPage, reason);
+        }
+        catch
+        {
+            return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
+                "Authenticated session state unknown during Accessibility analysis.", AccessibilityExecutionMode.AuthenticatedSessionPage,
+                AccessibilityOutcomeReason.AuthenticationRequired);
+        }
+    }
+
+    private static AccessibilityReviewResult Failure(
+        AccessibilityExecutionStatus status,
+        string url,
+        DateTime startedAt,
+        string error,
+        AccessibilityExecutionMode executionMode = AccessibilityExecutionMode.AnonymousOwnedBrowser,
+        AccessibilityOutcomeReason outcomeReason = AccessibilityOutcomeReason.None) =>
         new(status, RequestedUrl: url, StartedAt: startedAt, CompletedAt: DateTime.UtcNow,
-            RuleTags: [.. ExecutedRuleTags], Limitations: [ManualTestingLimitation], EngineError: error);
+            RuleTags: [.. ExecutedRuleTags], Limitations: [ManualTestingLimitation], EngineError: error,
+            ExecutionMode: executionMode, OutcomeReason: outcomeReason);
 }

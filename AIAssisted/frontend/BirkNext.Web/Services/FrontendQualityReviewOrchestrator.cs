@@ -238,11 +238,19 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             {
                 try
                 {
-                    var accessibilityReport = await _accessibility.ReviewAsync(
-                        targetUrl,
-                        context.ActiveProfile.EnvironmentType.ToString(),
-                        context.RequiresAuthentication,
-                        cancellationToken);
+                    var accessibilityReport = authenticatedReference is null
+                        ? await _accessibility.ReviewAsync(
+                            targetUrl,
+                            context.ActiveProfile.EnvironmentType.ToString(),
+                            false,
+                            cancellationToken)
+                        : await _accessibility.ReviewAsync(new AccessibilityApiExecutionRequest(
+                            targetUrl,
+                            AccessibilityExecutionModeDto.AuthenticatedSessionPage,
+                            authenticatedReference.ReviewSessionId,
+                            authenticatedReference.ProfileId,
+                            authenticatedReference.SessionId,
+                            context.ActiveProfile.EnvironmentType.ToString()), cancellationToken);
                     result = result with { AccessibilityReport = accessibilityReport };
                 }
                 catch (Exception ex)
@@ -566,7 +574,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         // Set auth support based on authentication mode
         var isAuthenticated = context.RequiresAuthentication && context.IsAuthenticatedSessionAvailable;
         snapshot.AuthModeSupported[FrontendQualityEngineIdDto.BrowserRuntime] = true;
-        snapshot.AuthModeSupported[FrontendQualityEngineIdDto.Accessibility] = !isAuthenticated;
+        snapshot.AuthModeSupported[FrontendQualityEngineIdDto.Accessibility] = true;
         snapshot.AuthModeSupported[FrontendQualityEngineIdDto.Lighthouse] = !isAuthenticated;
         snapshot.AuthModeSupported[FrontendQualityEngineIdDto.PassiveSecurity] = !isAuthenticated;
 

@@ -8,5 +8,9 @@ public interface IFrontendAccessibilityReviewService
         bool requiresAuthentication = false,
         CancellationToken cancellationToken = default);
 
+    Task<AccessibilityReviewResult> ReviewAsync(
+        AccessibilityExecutionRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<AccessibilityReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default);
 }

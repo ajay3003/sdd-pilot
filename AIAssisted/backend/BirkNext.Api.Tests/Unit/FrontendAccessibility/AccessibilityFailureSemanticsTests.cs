@@ -10,11 +10,15 @@ public sealed class AccessibilityFailureSemanticsTests
     [Fact]
     public async Task AxeUnavailable_IsEngineError_NotSuccessfulZeroViolations()
     {
+        var sanitizer = new AccessibilityEvidenceSanitizer();
         var service = new FrontendAccessibilityReviewService(
             NullLogger<FrontendAccessibilityReviewService>.Instance,
             new BrowserTargetValidator(allowLoopback: true),
-            new AccessibilityNormalizer(new AccessibilityEvidenceSanitizer()),
-            new UnavailableAxeProvider());
+            new AccessibilityNormalizer(sanitizer),
+            new UnavailableAxeProvider(),
+            sanitizer,
+            null,
+            true);
 
         var result = await service.ReviewAsync("http://127.0.0.1:12345/", new AccessibilityReviewOptions());
 

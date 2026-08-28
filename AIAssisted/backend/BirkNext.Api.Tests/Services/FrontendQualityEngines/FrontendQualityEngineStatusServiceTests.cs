@@ -78,7 +78,7 @@ public sealed class FrontendQualityEngineStatusServiceTests
         var passiveSecurity = report.Engines.Single(e => e.EngineId == FrontendQualityEngineId.PassiveSecurity);
 
         browserRuntime.AuthModeSupported.Should().BeTrue(because: "BrowserRuntime supports authenticated mode");
-        accessibility.AuthModeSupported.Should().BeFalse(because: "Accessibility does not support authenticated mode until A4");
+        accessibility.AuthModeSupported.Should().BeTrue(because: "Accessibility supports authenticated mode after A4");
         lighthouse.AuthModeSupported.Should().BeFalse(because: "Lighthouse does not support authenticated mode");
         passiveSecurity.AuthModeSupported.Should().BeFalse(because: "PassiveSecurity does not support authenticated mode");
     }

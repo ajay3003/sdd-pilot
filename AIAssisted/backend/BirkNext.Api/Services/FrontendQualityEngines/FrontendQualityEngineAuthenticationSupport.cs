@@ -6,7 +6,7 @@ public static class FrontendQualityEngineAuthenticationSupport
     {
         (_, ReviewAuthenticationMode.Anonymous) => true,
         (FrontendQualityEngineId.BrowserRuntime, ReviewAuthenticationMode.Authenticated) => true,
-        (FrontendQualityEngineId.Accessibility, ReviewAuthenticationMode.Authenticated) => false,
+        (FrontendQualityEngineId.Accessibility, ReviewAuthenticationMode.Authenticated) => true,
         (FrontendQualityEngineId.Lighthouse, ReviewAuthenticationMode.Authenticated) => false,
         (FrontendQualityEngineId.PassiveSecurity, ReviewAuthenticationMode.Authenticated) => false,
         _ => false,

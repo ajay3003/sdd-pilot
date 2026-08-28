@@ -1,6 +1,8 @@
 namespace BirkNext.Api.Services.FrontendAccessibility;
 
+public enum AccessibilityExecutionMode { AnonymousOwnedBrowser, AuthenticatedSessionPage }
 public enum AccessibilityExecutionStatus { NotAssessed, Assessed, EngineError, Skipped, AuthenticationRequired }
+public enum AccessibilityOutcomeReason { None, AuthenticationRequired, AuthenticationExpired, AuthenticationCancelled, UnexpectedOrigin }
 public enum AccessibilityFindingKind { Violation, NeedsManualReview }
 public enum AccessibilityFindingSeverity { Critical, High, Medium, Low, Info }
 public enum AccessibilityReadinessState { Disabled, Ready, ChromiumUnavailable, AxeUnavailable, LaunchFailed }
@@ -38,12 +40,22 @@ public sealed record AccessibilityReviewResult(
     int InapplicableCount = 0,
     List<AccessibilityFinding>? Findings = null,
     List<string>? Limitations = null,
-    string? EngineError = null)
+    string? EngineError = null,
+    AccessibilityExecutionMode ExecutionMode = AccessibilityExecutionMode.AnonymousOwnedBrowser,
+    AccessibilityOutcomeReason OutcomeReason = AccessibilityOutcomeReason.None)
 {
     public List<string> RuleTags { get; init; } = RuleTags ?? [];
     public List<AccessibilityFinding> Findings { get; init; } = Findings ?? [];
     public List<string> Limitations { get; init; } = Limitations ?? [];
 }
+
+public sealed record AccessibilityExecutionRequest(
+    string TargetUrl,
+    AccessibilityExecutionMode ExecutionMode = AccessibilityExecutionMode.AnonymousOwnedBrowser,
+    string? ReviewSessionId = null,
+    string? ProfileId = null,
+    string? AuthenticatedSessionId = null,
+    AccessibilityReviewOptions? Options = null);
 
 public sealed record AccessibilityReadinessResult(
     AccessibilityReadinessState State,

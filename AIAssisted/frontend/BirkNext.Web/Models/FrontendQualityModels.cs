@@ -169,7 +169,9 @@ public sealed record LighthouseResultDto(
     [property: JsonPropertyName("limitations")] List<string>? Limitations = null,
     [property: JsonPropertyName("engineError")] string? EngineError = null);
 
+public enum AccessibilityExecutionModeDto { AnonymousOwnedBrowser, AuthenticatedSessionPage }
 public enum AccessibilityExecutionStatusDto { NotAssessed, Assessed, EngineError, Skipped, AuthenticationRequired }
+public enum AccessibilityOutcomeReasonDto { None, AuthenticationRequired, AuthenticationExpired, AuthenticationCancelled, UnexpectedOrigin }
 public enum AccessibilityFindingKindDto { Violation, NeedsManualReview }
 
 public sealed record AccessibilityFindingDto(
@@ -205,7 +207,9 @@ public sealed record AccessibilityResultDto(
     [property: JsonPropertyName("inapplicableCount")] int InapplicableCount = 0,
     [property: JsonPropertyName("findings")] List<AccessibilityFindingDto>? Findings = null,
     [property: JsonPropertyName("limitations")] List<string>? Limitations = null,
-    [property: JsonPropertyName("engineError")] string? EngineError = null);
+    [property: JsonPropertyName("engineError")] string? EngineError = null,
+    [property: JsonPropertyName("executionMode")] AccessibilityExecutionModeDto ExecutionMode = AccessibilityExecutionModeDto.AnonymousOwnedBrowser,
+    [property: JsonPropertyName("outcomeReason")] AccessibilityOutcomeReasonDto OutcomeReason = AccessibilityOutcomeReasonDto.None);
 
 // ── Browser Runtime DTOs ────────────────────────────────────────────
 public enum BrowserRuntimeEngineStatusDto
