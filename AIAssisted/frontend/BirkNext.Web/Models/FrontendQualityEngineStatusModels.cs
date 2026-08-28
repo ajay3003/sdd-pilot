@@ -8,6 +8,20 @@ namespace BirkNext.Web.Models;
 /// Enums use integer-backed serialization matching backend FrontendQualityEngineId order.
 /// </summary>
 
+/// <summary>Authentication mode for review execution.</summary>
+public enum ReviewAuthenticationModeDto
+{
+    Anonymous = 0,
+    Authenticated = 1,
+}
+
+/// <summary>Engine selection context for status queries.</summary>
+public sealed class ReviewEngineSelectionDto
+{
+    [JsonPropertyName("selected")]
+    public Dictionary<FrontendQualityEngineIdDto, bool> Selected { get; set; } = new();
+}
+
 /// <summary>Four supported frontend quality engines (capability model, not execution outcomes).</summary>
 public enum FrontendQualityEngineIdDto
 {
@@ -81,4 +95,42 @@ public class FrontendQualityEngineStatusReportDto
 
     [JsonPropertyName("checkedAtUtc")]
     public DateTime CheckedAtUtc { get; set; }
+}
+
+/// <summary>Readiness status for a single engine (revalidation result).</summary>
+public class FrontendQualityEngineReadinessReportDto
+{
+    [JsonPropertyName("engineId")]
+    public FrontendQualityEngineIdDto EngineId { get; set; }
+
+    [JsonPropertyName("isAvailable")]
+    public bool IsAvailable { get; set; }
+
+    [JsonPropertyName("statusReason")]
+    public string? StatusReason { get; set; }
+
+    [JsonPropertyName("checkedAtUtc")]
+    public DateTime CheckedAtUtc { get; set; }
+}
+
+/// <summary>Execution snapshot captured at Quality Review run start.</summary>
+public sealed class FrontendQualityEngineExecutionSnapshot
+{
+    [JsonPropertyName("layer1Allowed")]
+    public Dictionary<FrontendQualityEngineIdDto, bool> Layer1Allowed { get; set; } = new();
+
+    [JsonPropertyName("layer2Enabled")]
+    public Dictionary<FrontendQualityEngineIdDto, bool> Layer2Enabled { get; set; } = new();
+
+    [JsonPropertyName("selectedEngines")]
+    public Dictionary<FrontendQualityEngineIdDto, bool> SelectedEngines { get; set; } = new();
+
+    [JsonPropertyName("authModeSupported")]
+    public Dictionary<FrontendQualityEngineIdDto, bool> AuthModeSupported { get; set; } = new();
+
+    [JsonPropertyName("authMode")]
+    public ReviewAuthenticationModeDto AuthMode { get; set; } = ReviewAuthenticationModeDto.Anonymous;
+
+    [JsonPropertyName("capturedAtUtc")]
+    public DateTime CapturedAtUtc { get; set; } = DateTime.UtcNow;
 }

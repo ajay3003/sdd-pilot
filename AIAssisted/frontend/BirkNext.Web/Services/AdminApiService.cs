@@ -153,12 +153,6 @@ public class AdminApiService
     }
 }
 
-public enum ReviewAuthenticationModeDto
-{
-    Anonymous = 0,
-    Authenticated = 1,
-}
-
 public class SystemSettingsDto
 {
     [JsonPropertyName("application")]      public ApplicationDto      Application      { get; set; } = new();

@@ -1,5 +1,6 @@
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
+using Moq;
 using Xunit;
 
 namespace BirkNext.Web.Tests.Services;
@@ -19,7 +20,7 @@ public sealed class BrowserRuntimeOrchestrationCallCountTests
         var mockQuality = new MockQualityReviewService();
         var mockRuntime = new MockBrowserRuntimeService();
 
-        var orchestrator = new FrontendQualityReviewOrchestrator(
+        var orchestrator = OrchestrationTestHelpers.CreateOrchestrator(
             mockSecurity,
             mockPerformance,
             mockPreflight,
@@ -58,7 +59,12 @@ public sealed class BrowserRuntimeOrchestrationCallCountTests
             mockPerformance,
             mockPreflight,
             mockQuality,
-            mockRuntime);
+            mockRuntime,
+            null,
+            null,
+            null,
+            null,
+            OrchestrationTestHelpers.CreateAlwaysReadyMockService());
 
         var context = new FrontendAnalysisContext
         {
@@ -86,7 +92,7 @@ public sealed class BrowserRuntimeOrchestrationCallCountTests
         var mockQuality = new MockQualityReviewService();
         var mockRuntime = new MockBrowserRuntimeService();
 
-        var orchestrator = new FrontendQualityReviewOrchestrator(
+        var orchestrator = OrchestrationTestHelpers.CreateOrchestrator(
             mockSecurity,
             mockPerformance,
             mockPreflight,
@@ -119,7 +125,7 @@ public sealed class BrowserRuntimeOrchestrationCallCountTests
         var mockQuality = new MockQualityReviewService();
         var mockRuntime = new MockBrowserRuntimeService();
 
-        var orchestrator = new FrontendQualityReviewOrchestrator(
+        var orchestrator = OrchestrationTestHelpers.CreateOrchestrator(
             mockSecurity,
             mockPerformance,
             mockPreflight,
@@ -155,7 +161,7 @@ public sealed class BrowserRuntimeOrchestrationCallCountTests
         var security = new MockSecurityScanner();
         var performance = new MockPerformanceScanner();
         var runtime = new MockBrowserRuntimeService(BrowserRuntimeEngineStatusDto.EngineError);
-        var orchestrator = new FrontendQualityReviewOrchestrator(
+        var orchestrator = OrchestrationTestHelpers.CreateOrchestrator(
             security,
             performance,
             new MockPreflightService(PreflightStatus.Ready),

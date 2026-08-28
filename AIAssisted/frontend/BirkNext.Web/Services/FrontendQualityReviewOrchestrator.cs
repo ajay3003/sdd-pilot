@@ -27,6 +27,7 @@ public interface IFrontendQualityReviewOrchestrator
     Task<FrontendQualityReviewOrchestrationResult> RunAsync(
         string targetUrl,
         FrontendAnalysisContext context,
+        FrontendQualityEngineExecutionSnapshot? snapshot = null,
         CancellationToken cancellationToken = default);
 }
 
@@ -63,6 +64,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     private readonly IFrontendLighthouseReviewApiService? _lighthouse;
     private readonly IFrontendPassiveSecurityApiService? _passiveSecurity;
     private readonly IAuthenticatedBrowserSessionService? _authenticatedSessions;
+    private readonly IFrontendQualityEngineStatusApiService? _engineStatusService;
 
     public FrontendQualityReviewOrchestrator(
         ISecurityScanner security,
@@ -73,7 +75,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         IFrontendAccessibilityReviewApiService? accessibility = null,
         IFrontendLighthouseReviewApiService? lighthouse = null,
         IFrontendPassiveSecurityApiService? passiveSecurity = null,
-        IAuthenticatedBrowserSessionService? authenticatedSessions = null)
+        IAuthenticatedBrowserSessionService? authenticatedSessions = null,
+        IFrontendQualityEngineStatusApiService? engineStatusService = null)
     {
         _security = security;
         _performance = performance;
@@ -84,17 +87,21 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         _lighthouse = lighthouse;
         _passiveSecurity = passiveSecurity;
         _authenticatedSessions = authenticatedSessions;
+        _engineStatusService = engineStatusService;
     }
 
     public async Task<FrontendQualityReviewOrchestrationResult> RunAsync(
         string targetUrl,
         FrontendAnalysisContext context,
+        FrontendQualityEngineExecutionSnapshot? snapshot = null,
         CancellationToken cancellationToken = default)
     {
         var result = new FrontendQualityReviewOrchestrationResult();
         var authenticatedReference = context.RequiresAuthentication && _authenticatedSessions is not null
             ? await _authenticatedSessions.GetExecutionReferenceAsync(context)
             : null;
+
+        snapshot ??= CaptureDefaultSnapshot(context);
 
         // ── Preflight validation ────────────────────────────────
         try
@@ -134,7 +141,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             return blocked with { QualityReport = BuildPreflightReport(targetUrl, context, blocked, PreflightStatus.InvalidTarget) };
         }
 
-        // ── Security scanner — respects toggle ──────────────────
+        // ── Security scanner — uses snapshot eligibility ──────────────────
+        // Note: Security is not in the 4 required engines; kept for compatibility
         if (context.FeatureToggles.EnableSecurityEngine && !context.RequiresAuthentication)
         {
             try
@@ -178,27 +186,37 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Performance"] };
         }
 
-        // ── Browser Runtime scanner — respects toggle ───────────────
-        if (context.FeatureToggles.EnableBrowserRuntimeEngine && _runtime != null)
+        // ── Browser Runtime scanner — uses snapshot eligibility + Layer 3 readiness ─────────────
+        var browserRuntimeEligible = IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.BrowserRuntime) && _runtime != null;
+        if (browserRuntimeEligible)
         {
-            try
+            // Pre-execution Layer 3 readiness revalidation (5-second timeout)
+            var runtimeReady = await RevalidateEngineReadinessAsync(FrontendQualityEngineIdDto.BrowserRuntime, cancellationToken);
+            if (!runtimeReady)
             {
-                var runtimeReport = authenticatedReference is null
-                    ? await _runtime.ReviewAsync(targetUrl, 30000, 5000, cancellationToken)
-                    : await _runtime.ReviewAsync(new BrowserRuntimeApiExecutionRequest(
-                        targetUrl,
-                        BrowserRuntimeExecutionModeDto.AuthenticatedSessionPage,
-                        authenticatedReference.ReviewSessionId,
-                        authenticatedReference.ProfileId,
-                        authenticatedReference.SessionId), cancellationToken);
-                result = result with { BrowserRuntimeReport = runtimeReport };
+                result = result with { SkippedEngines = [.. result.SkippedEngines, "BrowserRuntime"] };
             }
-            catch (Exception ex)
+            else
             {
-                result = result with { BrowserRuntimeError = ex.Message };
+                try
+                {
+                    var runtimeReport = authenticatedReference is null
+                        ? await _runtime.ReviewAsync(targetUrl, 30000, 5000, cancellationToken)
+                        : await _runtime.ReviewAsync(new BrowserRuntimeApiExecutionRequest(
+                            targetUrl,
+                            BrowserRuntimeExecutionModeDto.AuthenticatedSessionPage,
+                            authenticatedReference.ReviewSessionId,
+                            authenticatedReference.ProfileId,
+                            authenticatedReference.SessionId), cancellationToken);
+                    result = result with { BrowserRuntimeReport = runtimeReport };
+                }
+                catch (Exception ex)
+                {
+                    result = result with { BrowserRuntimeError = ex.Message };
+                }
             }
         }
-        else if (context.FeatureToggles.EnableBrowserRuntimeEngine)
+        else if (!browserRuntimeEligible && _runtime != null)
         {
             result = result with { SkippedEngines = [.. result.SkippedEngines, "BrowserRuntime"] };
         }
@@ -207,20 +225,30 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "BrowserRuntime"] };
         }
 
-        if (context.FeatureToggles.EnableAccessibilityEngine && _accessibility is not null && !context.RequiresAuthentication)
+        var accessibilityEligible = IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.Accessibility) && _accessibility is not null;
+        if (accessibilityEligible)
         {
-            try
+            // Pre-execution Layer 3 readiness revalidation (5-second timeout)
+            var accessibilityReady = await RevalidateEngineReadinessAsync(FrontendQualityEngineIdDto.Accessibility, cancellationToken);
+            if (!accessibilityReady)
             {
-                var accessibilityReport = await _accessibility.ReviewAsync(
-                    targetUrl,
-                    context.ActiveProfile.EnvironmentType.ToString(),
-                    context.RequiresAuthentication,
-                    cancellationToken);
-                result = result with { AccessibilityReport = accessibilityReport };
+                result = result with { SkippedEngines = [.. result.SkippedEngines, "Accessibility"] };
             }
-            catch (Exception ex)
+            else
             {
-                result = result with { AccessibilityError = ex.Message };
+                try
+                {
+                    var accessibilityReport = await _accessibility.ReviewAsync(
+                        targetUrl,
+                        context.ActiveProfile.EnvironmentType.ToString(),
+                        context.RequiresAuthentication,
+                        cancellationToken);
+                    result = result with { AccessibilityReport = accessibilityReport };
+                }
+                catch (Exception ex)
+                {
+                    result = result with { AccessibilityError = ex.Message };
+                }
             }
         }
         else
@@ -228,15 +256,25 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Accessibility"] };
         }
 
-        if (context.FeatureToggles.EnableLighthouseEngine && _lighthouse is not null && !context.RequiresAuthentication)
+        var lighthouseEligible = IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.Lighthouse) && _lighthouse is not null;
+        if (lighthouseEligible)
         {
-            try
+            // Pre-execution Layer 3 readiness revalidation (5-second timeout)
+            var lighthouseReady = await RevalidateEngineReadinessAsync(FrontendQualityEngineIdDto.Lighthouse, cancellationToken);
+            if (!lighthouseReady)
             {
-                result = result with { LighthouseReport = await _lighthouse.ReviewAsync(targetUrl, context.RequiresAuthentication, cancellationToken) };
+                result = result with { SkippedEngines = [.. result.SkippedEngines, "Lighthouse"] };
             }
-            catch (Exception ex)
+            else
             {
-                result = result with { LighthouseError = ex.Message };
+                try
+                {
+                    result = result with { LighthouseReport = await _lighthouse.ReviewAsync(targetUrl, context.RequiresAuthentication, cancellationToken) };
+                }
+                catch (Exception ex)
+                {
+                    result = result with { LighthouseError = ex.Message };
+                }
             }
         }
         else
@@ -244,16 +282,29 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Lighthouse"] };
         }
 
-        if (context.FeatureToggles.EnablePassiveSecurityEngine && _passiveSecurity is not null && !context.RequiresAuthentication)
+        var passiveSecurityEligible = IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.PassiveSecurity) && _passiveSecurity is not null;
+        if (passiveSecurityEligible)
         {
-            try
+            // Pre-execution Layer 3 readiness revalidation (5-second timeout)
+            var passiveSecurityReady = await RevalidateEngineReadinessAsync(FrontendQualityEngineIdDto.PassiveSecurity, cancellationToken);
+            if (!passiveSecurityReady)
             {
-                result = result with { PassiveSecurityReport = await _passiveSecurity.ReviewAsync(targetUrl,
-                    context.ActiveProfile.Id, context.ActiveProfile.TargetUrl ?? "", context.ActiveProfile.EnvironmentType.ToString(), context.RequiresAuthentication, cancellationToken) };
+                result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Security"] };
             }
-            catch (Exception ex) { result = result with { PassiveSecurityError = ex.Message }; }
+            else
+            {
+                try
+                {
+                    result = result with { PassiveSecurityReport = await _passiveSecurity.ReviewAsync(targetUrl,
+                        context.ActiveProfile.Id, context.ActiveProfile.TargetUrl ?? "", context.ActiveProfile.EnvironmentType.ToString(), context.RequiresAuthentication, cancellationToken) };
+                }
+                catch (Exception ex) { result = result with { PassiveSecurityError = ex.Message }; }
+            }
         }
-        else result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Security"] };
+        else
+        {
+            result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Security"] };
+        }
 
         var qualityReport = _quality.BuildReport(targetUrl, result.SecurityReport, result.PerformanceReport);
         var accessibilitySkipped = result.AccessibilityReport?.ExecutionStatus is
@@ -470,6 +521,88 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             LighthouseReport=report.LighthouseReport, PassiveSecurityReport=passive
             , BrowserRuntimeReport=report.BrowserRuntimeReport
         };
+    }
+
+    private static bool IsEngineEligibleToExecute(
+        FrontendQualityEngineExecutionSnapshot snapshot,
+        FrontendQualityEngineIdDto engineId)
+    {
+        var layer1 = snapshot.Layer1Allowed.TryGetValue(engineId, out var l1) && l1;
+        var layer2 = snapshot.Layer2Enabled.TryGetValue(engineId, out var l2) && l2;
+        var selected = snapshot.SelectedEngines.TryGetValue(engineId, out var s) && s;
+        var authSupported = snapshot.AuthModeSupported.TryGetValue(engineId, out var auth) && auth;
+
+        return layer1 && layer2 && selected && authSupported;
+    }
+
+    private static FrontendQualityEngineExecutionSnapshot CaptureDefaultSnapshot(FrontendAnalysisContext context)
+    {
+        var snapshot = new FrontendQualityEngineExecutionSnapshot
+        {
+            AuthMode = context.RequiresAuthentication && context.IsAuthenticatedSessionAvailable
+                ? ReviewAuthenticationModeDto.Authenticated
+                : ReviewAuthenticationModeDto.Anonymous,
+            CapturedAtUtc = DateTime.UtcNow,
+        };
+
+        // For default snapshot (no explicit UI selection), use feature toggles
+        // ReviewEngineSelection is only used when explicitly captured from the UI
+        snapshot.SelectedEngines[FrontendQualityEngineIdDto.BrowserRuntime] = context.FeatureToggles.EnableBrowserRuntimeEngine;
+        snapshot.SelectedEngines[FrontendQualityEngineIdDto.Accessibility] = context.FeatureToggles.EnableAccessibilityEngine;
+        snapshot.SelectedEngines[FrontendQualityEngineIdDto.Lighthouse] = context.FeatureToggles.EnableLighthouseEngine;
+        snapshot.SelectedEngines[FrontendQualityEngineIdDto.PassiveSecurity] = context.FeatureToggles.EnablePassiveSecurityEngine;
+
+        // Set defaults for layer 1 & 2 based on feature toggles
+        snapshot.Layer1Allowed[FrontendQualityEngineIdDto.BrowserRuntime] = true;
+        snapshot.Layer1Allowed[FrontendQualityEngineIdDto.Accessibility] = true;
+        snapshot.Layer1Allowed[FrontendQualityEngineIdDto.Lighthouse] = true;
+        snapshot.Layer1Allowed[FrontendQualityEngineIdDto.PassiveSecurity] = true;
+
+        snapshot.Layer2Enabled[FrontendQualityEngineIdDto.BrowserRuntime] = context.FeatureToggles.EnableBrowserRuntimeEngine;
+        snapshot.Layer2Enabled[FrontendQualityEngineIdDto.Accessibility] = context.FeatureToggles.EnableAccessibilityEngine;
+        snapshot.Layer2Enabled[FrontendQualityEngineIdDto.Lighthouse] = context.FeatureToggles.EnableLighthouseEngine;
+        snapshot.Layer2Enabled[FrontendQualityEngineIdDto.PassiveSecurity] = context.FeatureToggles.EnablePassiveSecurityEngine;
+
+        // Set auth support based on authentication mode
+        var isAuthenticated = context.RequiresAuthentication && context.IsAuthenticatedSessionAvailable;
+        snapshot.AuthModeSupported[FrontendQualityEngineIdDto.BrowserRuntime] = true;
+        snapshot.AuthModeSupported[FrontendQualityEngineIdDto.Accessibility] = !isAuthenticated;
+        snapshot.AuthModeSupported[FrontendQualityEngineIdDto.Lighthouse] = !isAuthenticated;
+        snapshot.AuthModeSupported[FrontendQualityEngineIdDto.PassiveSecurity] = !isAuthenticated;
+
+        return snapshot;
+    }
+
+    private async Task<bool> RevalidateEngineReadinessAsync(
+        FrontendQualityEngineIdDto engineId,
+        CancellationToken cancellationToken)
+    {
+        // FAIL-CLOSED: If readiness infrastructure is unavailable, engine must NOT execute.
+        // Layer 3 enforcement cannot be bypassed by missing infrastructure.
+        if (_engineStatusService is null)
+            return false;
+
+        try
+        {
+            // 5-second timeout for readiness check
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(5));
+
+            var readiness = await _engineStatusService.RevalidateEngineReadinessAsync(engineId, cts.Token);
+
+            // Null response = unavailable
+            return readiness?.IsAvailable ?? false;
+        }
+        catch (OperationCanceledException)
+        {
+            // Timeout: Layer 3 check failed → engine unavailable
+            return false;
+        }
+        catch (Exception)
+        {
+            // Service/provider error: Layer 3 check failed → engine unavailable
+            return false;
+        }
     }
 
     private static WasmScanRequest BuildScanRequest(FrontendAnalysisContext ctx)

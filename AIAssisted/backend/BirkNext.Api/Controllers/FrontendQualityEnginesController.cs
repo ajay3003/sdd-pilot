@@ -8,13 +8,16 @@ namespace BirkNext.Api.Controllers;
 public sealed class FrontendQualityEnginesController : ControllerBase
 {
     private readonly IFrontendQualityEngineStatusService _statusService;
+    private readonly IFrontendQualityEngineReadinessAggregator _readinessAggregator;
     private readonly ILogger<FrontendQualityEnginesController> _logger;
 
     public FrontendQualityEnginesController(
         IFrontendQualityEngineStatusService statusService,
+        IFrontendQualityEngineReadinessAggregator readinessAggregator,
         ILogger<FrontendQualityEnginesController> logger)
     {
         _statusService = statusService;
+        _readinessAggregator = readinessAggregator;
         _logger = logger;
     }
 
@@ -36,5 +39,25 @@ public sealed class FrontendQualityEnginesController : ControllerBase
         _logger.LogInformation("Retrieving frontend quality engines status with query");
         var report = await _statusService.GetStatusAsync(query, ct);
         return Ok(report);
+    }
+
+    [HttpGet("readiness/{engineId}")]
+    [ProducesResponseType(typeof(FrontendQualityEngineReadiness), StatusCodes.Status200OK)]
+    public async Task<ActionResult<FrontendQualityEngineReadiness>> GetReadiness(
+        int engineId,
+        CancellationToken ct)
+    {
+        _logger.LogInformation("Checking readiness for engine {EngineId}", engineId);
+
+        if (!Enum.IsDefined(typeof(FrontendQualityEngineId), engineId))
+        {
+            _logger.LogWarning("Invalid engine ID: {EngineId}", engineId);
+            return BadRequest($"Invalid engine ID: {engineId}");
+        }
+
+        var engine = (FrontendQualityEngineId)engineId;
+        var readiness = await _readinessAggregator.RevalidateAsync(engine, ct);
+
+        return Ok(readiness);
     }
 }

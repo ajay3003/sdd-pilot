@@ -62,7 +62,12 @@ public sealed class LighthouseOrchestrationTests
     }
 
     private static FrontendQualityReviewOrchestrator Create(LighthouseSpy spy, PreflightStatus status = PreflightStatus.Ready) =>
-        new(new Security(), new Performance(), new Preflight(status), new FrontendQualityReviewService(), null, null, spy);
+        OrchestrationTestHelpers.CreateOrchestrator(
+            new Security(),
+            new Performance(),
+            new Preflight(status),
+            new FrontendQualityReviewService(),
+            lighthouse: spy);
     private static FrontendAnalysisContext Context(bool enabled) => new()
     {
         TargetUrl = "https://example.com",

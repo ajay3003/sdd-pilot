@@ -41,14 +41,14 @@ public sealed class FrontendQualityReviewOrchestratorExecutionTest
     [Fact]
     public async Task Orchestrate_PassiveSecurityDisabled_CallCountZero()
     {
-        var passive=new SpyPassiveSecurity(); var result=await new FrontendQualityReviewOrchestrator(new SpySecurityScanner(),new SpyPerformanceService(),new FakePreflightService(),new MockQualityService(),passiveSecurity:passive).RunAsync("https://example.com",PassiveContext(false));
+        var passive=new SpyPassiveSecurity(); var result=await OrchestrationTestHelpers.CreateOrchestrator(new SpySecurityScanner(),new SpyPerformanceService(),new FakePreflightService(),new MockQualityService(),passiveSecurity:passive).RunAsync("https://example.com",PassiveContext(false));
         passive.CallCount.Should().Be(0); result.SkippedEngines.Should().Contain("Passive Security");
     }
 
     [Fact]
     public async Task Orchestrate_PassiveSecurityEnabledReady_CallCountOne()
     {
-        var passive=new SpyPassiveSecurity(); await new FrontendQualityReviewOrchestrator(new SpySecurityScanner(),new SpyPerformanceService(),new FakePreflightService(),new MockQualityService(),passiveSecurity:passive).RunAsync("https://example.com",PassiveContext(true));
+        var passive=new SpyPassiveSecurity(); await OrchestrationTestHelpers.CreateOrchestrator(new SpySecurityScanner(),new SpyPerformanceService(),new FakePreflightService(),new MockQualityService(),passiveSecurity:passive).RunAsync("https://example.com",PassiveContext(true));
         passive.CallCount.Should().Be(1);
     }
 
@@ -56,7 +56,7 @@ public sealed class FrontendQualityReviewOrchestratorExecutionTest
     public async Task Orchestrate_PreflightBlocked_PassiveSecurityCallCountZero()
     {
         var passive=new SpyPassiveSecurity(); var preflight=new FakePreflightService { Status=PreflightStatus.InvalidTarget };
-        await new FrontendQualityReviewOrchestrator(new SpySecurityScanner(),new SpyPerformanceService(),preflight,new MockQualityService(),passiveSecurity:passive).RunAsync("https://example.com",PassiveContext(true));
+        await OrchestrationTestHelpers.CreateOrchestrator(new SpySecurityScanner(),new SpyPerformanceService(),preflight,new MockQualityService(),passiveSecurity:passive).RunAsync("https://example.com",PassiveContext(true));
         passive.CallCount.Should().Be(0);
     }
 
@@ -64,7 +64,7 @@ public sealed class FrontendQualityReviewOrchestratorExecutionTest
     public async Task Orchestrate_PassiveEngineError_RetainsOtherResultsAndMarksPartialWithoutZapScore()
     {
         var passive=new SpyPassiveSecurity { Result=Passive(PassiveSecurityExecutionStatusDto.EngineError,"Docker unavailable") };
-        var result=await new FrontendQualityReviewOrchestrator(new SpySecurityScanner(),new SpyPerformanceService(),new FakePreflightService(),new MockQualityService(),new FixedRuntime(),new FixedAccessibility(),new FixedLighthouse(),passive)
+        var result=await OrchestrationTestHelpers.CreateOrchestrator(new SpySecurityScanner(),new SpyPerformanceService(),new FakePreflightService(),new MockQualityService(),new FixedRuntime(),new FixedAccessibility(),new FixedLighthouse(),passive)
             .RunAsync("https://example.com",PassiveContext(true));
         result.SecurityReport.Should().NotBeNull(); result.PerformanceReport.Should().NotBeNull(); result.BrowserRuntimeReport.Should().NotBeNull();
         result.AccessibilityReport.Should().NotBeNull(); result.LighthouseReport.Should().NotBeNull(); result.PassiveSecurityReport!.ExecutionStatus.Should().Be(PassiveSecurityExecutionStatusDto.EngineError);

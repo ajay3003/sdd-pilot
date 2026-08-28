@@ -258,7 +258,7 @@ public sealed class FrontendQualityEngineNormalizationTests
         public PassiveSecuritySpy PassiveSecurity { get; set; } = new(Passive(PassiveSecurityExecutionStatusDto.Assessed, version: "2.16.1"));
 
         public Task<FrontendQualityReviewOrchestrationResult> RunAsync(FrontendAnalysisContext context) =>
-            new FrontendQualityReviewOrchestrator(new SecuritySpy(), new PerformanceSpy(), new Preflight(),
+            OrchestrationTestHelpers.CreateOrchestrator(new SecuritySpy(), new PerformanceSpy(), new Preflight(),
                 new FrontendQualityReviewService(), Runtime, Accessibility, Lighthouse, PassiveSecurity)
                 .RunAsync(context.TargetUrl, context);
     }

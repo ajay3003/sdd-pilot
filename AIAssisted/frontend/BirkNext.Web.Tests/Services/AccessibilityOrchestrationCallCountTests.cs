@@ -1,5 +1,6 @@
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
+using Moq;
 
 namespace BirkNext.Web.Tests.Services;
 
@@ -46,8 +47,14 @@ public sealed class AccessibilityOrchestrationCallCountTests
         Assert.NotNull(result.QualityReport.PerformanceScore);
     }
 
-    private static FrontendQualityReviewOrchestrator Create(AccessibilitySpy accessibility, PreflightStatus preflight = PreflightStatus.Ready) =>
-        new(new Security(), new Performance(), new Preflight(preflight), new FrontendQualityReviewService(), null, accessibility);
+    private static FrontendQualityReviewOrchestrator Create(AccessibilitySpy accessibility, PreflightStatus preflight = PreflightStatus.Ready)
+    {
+        var readinessService = new Mock<IFrontendQualityEngineStatusApiService>();
+        readinessService.Setup(s => s.RevalidateEngineReadinessAsync(It.IsAny<FrontendQualityEngineIdDto>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FrontendQualityEngineReadinessReportDto { IsAvailable = true });
+
+        return new(new Security(), new Performance(), new Preflight(preflight), new FrontendQualityReviewService(), null, accessibility, null, null, null, readinessService.Object);
+    }
 
     private static FrontendAnalysisContext Context(bool accessibilityEnabled = true) => new()
     {

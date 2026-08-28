@@ -30,6 +30,7 @@ public sealed class FrontendAnalysisContext
     public FrontendAnalysisFeatureToggles    FeatureToggles             { get; set; } = new();
     public FrontendQualityEngineRequirementSettings EngineRequirements   { get; set; } = new();
     public FrontendQualityReleasePolicySettings ReleasePolicy            { get; set; } = new();
+    public ReviewEngineSelection              ReviewEngineSelection      { get; set; } = new();
     public IReadOnlyList<string>             AllowedRestHosts           { get; set; } = Array.Empty<string>();
     public IReadOnlyList<string>             AllowedGraphQlEndpoints    { get; set; } = Array.Empty<string>();
     public IReadOnlyList<string>             AllowedBackendDomains      { get; set; } = Array.Empty<string>();

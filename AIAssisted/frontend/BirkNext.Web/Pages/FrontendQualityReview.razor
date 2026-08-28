@@ -8,6 +8,7 @@
 @inject RuntimeReviewSessionService RuntimeReviews
 @inject IWorkspaceSessionService Workspace
 @inject IReportExportService ExportService
+@inject IFrontendQualityEngineStatusApiService EngineStatusService
 @inject IJSRuntime JS
 
 <PageTitle>Frontend Quality Review</PageTitle>
@@ -67,6 +68,69 @@
                 {
                     <button type="button" class="btn-secondary" @onclick="CancelAuthentication">Cancel authentication</button>
                 }
+            </section>
+        }
+
+        @if (_engineStatus != null && _report is null)
+        {
+            <section class="fqr-engine-selection" aria-label="Quality engines">
+                <h2>Review Engines</h2>
+                <div class="fqr-engine-grid">
+                    @foreach (var engine in _engineStatus.Engines.OrderBy(e => e.EngineId))
+                    {
+                        <div class="fqr-engine-card" data-engine-id="@engine.EngineId">
+                            <div class="fqr-engine-header">
+                                <h3>@engine.DisplayName</h3>
+                                @if (!engine.Available)
+                                {
+                                    <span class="fqr-badge fqr-badge-unavailable">Unavailable</span>
+                                }
+                                else
+                                {
+                                    <span class="fqr-badge fqr-badge-available">Available</span>
+                                }
+                            </div>
+
+                            <div class="fqr-engine-status">
+                                @if (engine.Layer3Readiness != null)
+                                {
+                                    <p><strong>Runtime:</strong> @(engine.Layer3Readiness.IsAvailable ? "Ready" : "Unavailable")</p>
+                                    @if (!engine.Layer3Readiness.IsAvailable && !string.IsNullOrWhiteSpace(engine.Layer3Readiness.StatusReason))
+                                    {
+                                        <p class="fqr-reason">@engine.Layer3Readiness.StatusReason</p>
+                                    }
+                                }
+
+                                @if (!engine.Layer1Allowed)
+                                {
+                                    <p class="fqr-reason">⊘ Blocked by deployment policy</p>
+                                }
+                                @if (!engine.Layer2Enabled)
+                                {
+                                    <p class="fqr-reason">⊘ Disabled in System Settings</p>
+                                }
+                                @if (!engine.AuthModeSupported && _context?.RequiresAuthentication == true)
+                                {
+                                    <p class="fqr-reason">⊘ Not supported for authenticated review</p>
+                                }
+                            </div>
+
+                            @if (engine.Available)
+                            {
+                                var engineId = (FrontendQualityEngineIdDto)engine.EngineId;
+                                var isSelected = GetEngineSelected(engineId);
+                                <label class="fqr-engine-select">
+                                    <input type="checkbox"
+                                           checked="@isSelected"
+                                           disabled="@(!engine.Available)"
+                                           @onchange="@((ChangeEventArgs e) => HandleEngineSelectionChange(engineId, (bool)e.Value!))"
+                                           aria-label="@($"Select {engine.DisplayName} for review")" />
+                                    <span>Include in review</span>
+                                </label>
+                            }
+                        </div>
+                    }
+                </div>
             </section>
         }
 
@@ -468,6 +532,8 @@
 @code {
     private sealed record CategorySummary(int Total, int Critical, int High, int Medium, int Low);
     private sealed record RecommendationView(string Priority, string Title, string Description, string ExpectedBenefit);
+
+    private FrontendQualityEngineStatusReportDto? _engineStatus;
     private static readonly ReviewLanding.AnalysisCard[] FrontendAnalysisCards =
     [
         new("PF", "Performance", "Passive asset analysis: measures bundle size, HTTP timing, compression, and caching heuristics."),
@@ -524,6 +590,27 @@
     {
         _context = await ContextFactory.GetActiveContextAsync();
         _report  = RuntimeReviews.QualityReview.Report;
+
+        await FetchEngineStatus();
+    }
+
+    private async Task FetchEngineStatus()
+    {
+        if (_context is null) return;
+
+        var authMode = _context.RequiresAuthentication && _context.IsAuthenticatedSessionAvailable
+            ? ReviewAuthenticationModeDto.Authenticated
+            : ReviewAuthenticationModeDto.Anonymous;
+
+        var selection = new ReviewEngineSelectionDto
+        {
+            Selected = _context.ReviewEngineSelection.ToSelectionMap()
+                .ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value)
+        };
+
+        _engineStatus = await EngineStatusService.GetStatusAsync(authMode, selection);
     }
 
     private string AuthenticationStatusText => _authSession?.StatusMessage switch
@@ -583,7 +670,9 @@
         var startTime = DateTime.UtcNow;
         _progressMessage = "Running enabled review engines...";
         StateHasChanged();
-        var orchestration = await Orchestrator.RunAsync(_context.TargetUrl, _context);
+
+        var snapshot = CaptureExecutionSnapshot();
+        var orchestration = await Orchestrator.RunAsync(_context.TargetUrl, _context, snapshot);
         _secError = orchestration.SecurityError;
         _perfError = orchestration.PerformanceError;
 
@@ -913,4 +1002,47 @@
         score >= 80 ? "Good" :
         score >= 65 ? "Needs Attention" :
         score >= 50 ? "At Risk" : "Critical";
+
+    private bool GetEngineSelected(FrontendQualityEngineIdDto engineId)
+    {
+        return _context?.ReviewEngineSelection.ToSelectionMap().TryGetValue(engineId, out var selected) == true && selected;
+    }
+
+    private void HandleEngineSelectionChange(FrontendQualityEngineIdDto engineId, bool selected)
+    {
+        if (_context is null) return;
+
+        var selection = _context.ReviewEngineSelection.ToSelectionMap();
+        selection[engineId] = selected;
+        _context.ReviewEngineSelection = ReviewEngineSelection.FromSelectionMap(selection);
+    }
+
+    private FrontendQualityEngineExecutionSnapshot CaptureExecutionSnapshot()
+    {
+        var snapshot = new FrontendQualityEngineExecutionSnapshot
+        {
+            AuthMode = _context?.RequiresAuthentication == true && _context?.IsAuthenticatedSessionAvailable == true
+                ? ReviewAuthenticationModeDto.Authenticated
+                : ReviewAuthenticationModeDto.Anonymous,
+            CapturedAtUtc = DateTime.UtcNow,
+        };
+
+        if (_engineStatus != null)
+        {
+            foreach (var engine in _engineStatus.Engines)
+            {
+                snapshot.Layer1Allowed[engine.EngineId] = engine.Layer1Allowed;
+                snapshot.Layer2Enabled[engine.EngineId] = engine.Layer2Enabled;
+                snapshot.AuthModeSupported[engine.EngineId] = engine.AuthModeSupported;
+            }
+        }
+
+        var selections = _context?.ReviewEngineSelection.ToSelectionMap() ?? new();
+        foreach (var kvp in selections)
+        {
+            snapshot.SelectedEngines[kvp.Key] = kvp.Value;
+        }
+
+        return snapshot;
+    }
 }

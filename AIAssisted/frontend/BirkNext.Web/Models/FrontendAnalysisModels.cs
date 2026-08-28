@@ -107,6 +107,7 @@ public sealed class FrontendAnalysisProfile
     [JsonPropertyName("features")]       public FrontendAnalysisFeatureToggles Features       { get; set; } = new();
     [JsonPropertyName("engineRequirements")] public FrontendQualityEngineRequirementSettings EngineRequirements { get; set; } = new();
     [JsonPropertyName("releasePolicy")] public FrontendQualityReleasePolicySettings ReleasePolicy { get; set; } = new();
+    [JsonPropertyName("reviewEngineSelection")] public ReviewEngineSelection ReviewEngineSelection { get; set; } = new();
 
     [JsonPropertyName("integrations")]   public List<IntegrationConfig>        Integrations   { get; set; } = [];
 }
@@ -237,4 +238,35 @@ public sealed class FrontendAnalysisDiagnostics
     public List<string>            EnabledFeatures    { get; init; } = [];
     public List<string>            DisabledFeatures   { get; init; } = [];
     public ProfileValidationResult ValidationStatus   { get; init; } = new();
+}
+
+/// <summary>
+/// Runtime review engine selection state.
+/// Distinct from FrontendAnalysisFeatureToggles (Layer 2 enabled state).
+/// Selected tracks user choice for this review; enabled tracks System Settings.
+/// Selected=false + Available=true is valid (engine can run, user didn't select it).
+/// </summary>
+public sealed class ReviewEngineSelection
+{
+    [JsonPropertyName("browserRuntimeSelected")]  public bool BrowserRuntimeSelected  { get; set; } = true;
+    [JsonPropertyName("accessibilitySelected")]   public bool AccessibilitySelected   { get; set; } = false;
+    [JsonPropertyName("lighthouseSelected")]      public bool LighthouseSelected      { get; set; } = false;
+    [JsonPropertyName("passiveSecuritySelected")] public bool PassiveSecuritySelected { get; set; } = true;
+
+    public Dictionary<FrontendQualityEngineIdDto, bool> ToSelectionMap() => new()
+    {
+        [FrontendQualityEngineIdDto.BrowserRuntime] = BrowserRuntimeSelected,
+        [FrontendQualityEngineIdDto.Accessibility] = AccessibilitySelected,
+        [FrontendQualityEngineIdDto.Lighthouse] = LighthouseSelected,
+        [FrontendQualityEngineIdDto.PassiveSecurity] = PassiveSecuritySelected,
+    };
+
+    public static ReviewEngineSelection FromSelectionMap(Dictionary<FrontendQualityEngineIdDto, bool> map) =>
+        new()
+        {
+            BrowserRuntimeSelected = map.TryGetValue(FrontendQualityEngineIdDto.BrowserRuntime, out var br) && br,
+            AccessibilitySelected = map.TryGetValue(FrontendQualityEngineIdDto.Accessibility, out var acc) && acc,
+            LighthouseSelected = map.TryGetValue(FrontendQualityEngineIdDto.Lighthouse, out var lh) && lh,
+            PassiveSecuritySelected = map.TryGetValue(FrontendQualityEngineIdDto.PassiveSecurity, out var ps) && ps,
+        };
 }
