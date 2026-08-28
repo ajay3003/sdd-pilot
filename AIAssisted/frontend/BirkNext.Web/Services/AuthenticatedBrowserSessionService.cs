@@ -11,6 +11,9 @@ public interface IAuthenticatedBrowserSessionService
     Task<AuthenticatedBrowserSession>       BeginAuthenticationAsync(FrontendAnalysisContext context);
     Task                                    ClearSessionAsync();
     Task<AuthenticatedBrowserSessionStatus> GetStatusAsync();
+    Task<AuthenticatedBrowserSessionStatus> GetStatusAsync(
+        AuthenticatedBrowserExecutionReference reference,
+        CancellationToken cancellationToken = default) => GetStatusAsync();
     Task<AuthenticatedBrowserExecutionReference?> GetExecutionReferenceAsync(FrontendAnalysisContext context);
 }
 
@@ -149,6 +152,21 @@ public sealed class AuthenticatedBrowserSessionService(HttpClient http, IFronten
         var value = await response.Content.ReadFromJsonAsync<SessionResponse>();
         if (value is null) return AuthenticatedBrowserSessionStatus.Failed;
         _current = Map(value, profile.Authentication.AuthenticationType.ToString());
+        return value.Status;
+    }
+
+    public async Task<AuthenticatedBrowserSessionStatus> GetStatusAsync(
+        AuthenticatedBrowserExecutionReference reference,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await http.GetAsync(
+            $"api/frontend-quality/auth-session/{Uri.EscapeDataString(reference.SessionId)}?reviewSessionId={Uri.EscapeDataString(reference.ReviewSessionId)}&profileId={Uri.EscapeDataString(reference.ProfileId)}",
+            cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound) return AuthenticatedBrowserSessionStatus.Disposed;
+        if (!response.IsSuccessStatusCode) return AuthenticatedBrowserSessionStatus.Failed;
+        var value = await response.Content.ReadFromJsonAsync<SessionResponse>(cancellationToken: cancellationToken);
+        if (value is null) return AuthenticatedBrowserSessionStatus.Failed;
+        _current = Map(value, settings.ActiveProfile?.Authentication.AuthenticationType.ToString() ?? string.Empty);
         return value.Status;
     }
 

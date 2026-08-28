@@ -30,6 +30,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BirkNext.Api\BirkNext.Api.csproj" />
+    <ProjectReference Include="..\..\frontend\BirkNext.Web\BirkNext.Web.csproj" />
   </ItemGroup>
 
 </Project>

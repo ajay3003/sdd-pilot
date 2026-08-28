@@ -500,7 +500,7 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
         throw new Xunit.Sdk.XunitException($"Expected {expected}; observed {final?.Status.ToString() ?? "missing"}.");
     }
 
-    private sealed class SyntheticFixture : IAsyncDisposable
+    internal sealed class SyntheticFixture : IAsyncDisposable
     {
         private readonly Server _target;
         private readonly Server _entra;

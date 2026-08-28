@@ -31,6 +31,28 @@ public enum FrontendQualityEngineExecutionState
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
+public enum FrontendQualityEngineOutcomeReason
+{
+    None,
+    NotSelected,
+    BlockedByDeploymentPolicy,
+    DisabledInSystemSettings,
+    RuntimeNotReady,
+    AuthenticationRequired,
+    AuthenticationExpired,
+    AuthenticationCancelled,
+    UnexpectedOrigin,
+    AuthenticationModeUnsupported,
+    TargetPolicyRejected,
+    SessionUnavailable,
+    ResourceUnavailable,
+    EngineUnavailable,
+    EngineError,
+    Cancelled,
+    AuthoritativeSnapshotRequired,
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum FrontendQualityEngineReadinessState
 {
     NotEvaluated,
@@ -113,6 +135,7 @@ public sealed record FrontendQualityEngineOutcome
     [JsonPropertyName("readinessState")] public FrontendQualityEngineReadinessState ReadinessState { get; init; }
     [JsonPropertyName("readinessReason")] public string? ReadinessReason { get; init; }
     [JsonPropertyName("executionState")] public FrontendQualityEngineExecutionState ExecutionState { get; init; }
+    [JsonPropertyName("outcomeReason")] public FrontendQualityEngineOutcomeReason OutcomeReason { get; init; }
     [JsonPropertyName("requestedTarget")] public string? RequestedTarget { get; init; }
     [JsonPropertyName("finalTarget")] public string? FinalTarget { get; init; }
     [JsonPropertyName("startedAt")] public DateTime? StartedAt { get; init; }

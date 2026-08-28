@@ -13,7 +13,9 @@ public static class FrontendQualityEngineOutcomeNormalizer
         bool accessibilityAdapterAvailable,
         bool lighthouseAdapterAvailable,
         bool passiveSecurityAdapterAvailable,
-        bool cancellationRequested = false)
+        bool cancellationRequested = false,
+        FrontendQualityEngineExecutionSnapshot? snapshot = null,
+        IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineOutcomeReason>? reasonOverrides = null)
     {
         var policy = context.EngineRequirements.ToPolicy();
         var outcomes = new List<FrontendQualityEngineOutcome>
@@ -25,6 +27,16 @@ public static class FrontendQualityEngineOutcomeNormalizer
             Lighthouse(targetUrl, context.FeatureToggles.EnableLighthouseEngine, policy, result.LighthouseReport, result.LighthouseError, lighthouseAdapterAvailable, cancellationRequested),
             PassiveSecurity(targetUrl, context.FeatureToggles.EnablePassiveSecurityEngine, policy, result.PassiveSecurityReport, result.PassiveSecurityError, passiveSecurityAdapterAvailable, cancellationRequested),
         };
+
+        ApplySnapshotSemantics(outcomes, snapshot);
+        if (reasonOverrides is not null)
+            for (var index = 0; index < outcomes.Count; index++)
+                if (reasonOverrides.TryGetValue(outcomes[index].EngineId, out var reason))
+                    outcomes[index] = outcomes[index] with
+                    {
+                        OutcomeReason = reason,
+                        ExecutionState = StateForReason(reason, outcomes[index].ExecutionState)
+                    };
 
         if (outcomes.Select(o => o.EngineId).Distinct().Count() != Enum.GetValues<FrontendQualityEngineId>().Length)
             throw new InvalidOperationException("Frontend quality normalization must produce exactly one outcome for every known engine.");
@@ -90,7 +102,8 @@ public static class FrontendQualityEngineOutcomeNormalizer
                 BrowserRuntimeEngineStatusDto.Assessed => FrontendQualityEngineExecutionState.Assessed,
                 BrowserRuntimeEngineStatusDto.EngineError => FrontendQualityEngineExecutionState.EngineError,
                 BrowserRuntimeEngineStatusDto.NotApplicable => FrontendQualityEngineExecutionState.NotApplicable,
-                BrowserRuntimeEngineStatusDto.Skipped when Contains(report.EngineError, "cancel") => FrontendQualityEngineExecutionState.Cancelled,
+                BrowserRuntimeEngineStatusDto.Skipped when report.OutcomeReason == BrowserRuntimeOutcomeReasonDto.AuthenticationCancelled => FrontendQualityEngineExecutionState.Cancelled,
+                BrowserRuntimeEngineStatusDto.Skipped when report.OutcomeReason == BrowserRuntimeOutcomeReasonDto.AuthenticationRequired => FrontendQualityEngineExecutionState.AuthenticationRequired,
                 BrowserRuntimeEngineStatusDto.Skipped => FrontendQualityEngineExecutionState.SafetyBlocked,
                 _ when cancelled => FrontendQualityEngineExecutionState.Cancelled,
                 _ => FrontendQualityEngineExecutionState.Unavailable,
@@ -101,7 +114,8 @@ public static class FrontendQualityEngineOutcomeNormalizer
             findings: report?.Findings?.Count, evidence: report?.Findings?.Sum(f => f.Evidence?.Count ?? 0),
             failure: error ?? report?.EngineError, started: NullIfDefault(report?.StartedAt), completed: report?.CompletedAt,
             duration: report?.DurationMs, limitations: report?.Limitations,
-            toolName: "Playwright Chromium", strength: FrontendQualityEvidenceStrength.DirectObservation);
+            toolName: "Playwright Chromium", strength: FrontendQualityEvidenceStrength.DirectObservation,
+            reason: BrowserRuntimeReason(report, state));
     }
 
     public static FrontendQualityEngineOutcome Accessibility(
@@ -116,7 +130,8 @@ public static class FrontendQualityEngineOutcomeNormalizer
                 AccessibilityExecutionStatusDto.Assessed => FrontendQualityEngineExecutionState.Assessed,
                 AccessibilityExecutionStatusDto.EngineError => FrontendQualityEngineExecutionState.EngineError,
                 AccessibilityExecutionStatusDto.AuthenticationRequired => FrontendQualityEngineExecutionState.AuthenticationRequired,
-                AccessibilityExecutionStatusDto.Skipped => FrontendQualityEngineExecutionState.SafetyBlocked,
+                AccessibilityExecutionStatusDto.Skipped when report.OutcomeReason == AccessibilityOutcomeReasonDto.AuthenticationCancelled => FrontendQualityEngineExecutionState.Cancelled,
+                AccessibilityExecutionStatusDto.Skipped when report.OutcomeReason == AccessibilityOutcomeReasonDto.AuthenticationRequired => FrontendQualityEngineExecutionState.AuthenticationRequired,
                 _ when cancelled => FrontendQualityEngineExecutionState.Cancelled,
                 _ => FrontendQualityEngineExecutionState.Unavailable,
             };
@@ -127,7 +142,8 @@ public static class FrontendQualityEngineOutcomeNormalizer
             failure: error ?? report?.EngineError, started: NullIfDefault(report?.StartedAt), completed: report?.CompletedAt,
             duration: report?.DurationMs, limitations: report?.Limitations, toolName: "axe-core",
             toolVersion: report?.AxeVersion, strength: FrontendQualityEvidenceStrength.ToolDiagnostic,
-            manual: report is null ? null : ["Manual accessibility testing remains required; automated results do not establish WCAG conformance."]);
+            manual: report is null ? null : ["Manual accessibility testing remains required; automated results do not establish WCAG conformance."],
+            reason: AccessibilityReason(report, state));
     }
 
     public static FrontendQualityEngineOutcome Lighthouse(
@@ -242,7 +258,8 @@ public static class FrontendQualityEngineOutcomeNormalizer
         int? findings = null, int? evidence = null, string? failure = null, DateTime? started = null,
         DateTime? completed = null, long? duration = null, List<string>? limitations = null,
         string? toolName = null, string? toolVersion = null, FrontendQualityEvidenceStrength? strength = null,
-        List<string>? manual = null) => new()
+        List<string>? manual = null,
+        FrontendQualityEngineOutcomeReason reason = FrontendQualityEngineOutcomeReason.None) => new()
         {
             EngineId = id,
             DisplayName = displayName,
@@ -255,6 +272,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
                     : FrontendQualityEngineReadinessState.NotEvaluated,
             ReadinessReason = state == FrontendQualityEngineExecutionState.Unavailable ? SafeNullable(failure) : null,
             ExecutionState = state,
+            OutcomeReason = reason,
             RequestedTarget = SafeNullable(requested),
             FinalTarget = SafeNullable(final),
             StartedAt = started,
@@ -278,6 +296,92 @@ public static class FrontendQualityEngineOutcomeNormalizer
                     Confidence = FrontendQualityEvidenceConfidence.High,
                 }]
                 : [],
+        };
+
+    private static FrontendQualityEngineOutcomeReason BrowserRuntimeReason(
+        BrowserRuntimeResultDto? report,
+        FrontendQualityEngineExecutionState state) => report?.OutcomeReason switch
+        {
+            BrowserRuntimeOutcomeReasonDto.AuthenticationRequired => FrontendQualityEngineOutcomeReason.AuthenticationRequired,
+            BrowserRuntimeOutcomeReasonDto.AuthenticationExpired => FrontendQualityEngineOutcomeReason.AuthenticationExpired,
+            BrowserRuntimeOutcomeReasonDto.AuthenticationCancelled => FrontendQualityEngineOutcomeReason.AuthenticationCancelled,
+            BrowserRuntimeOutcomeReasonDto.UnexpectedOrigin => FrontendQualityEngineOutcomeReason.UnexpectedOrigin,
+            BrowserRuntimeOutcomeReasonDto.SessionUnavailable => FrontendQualityEngineOutcomeReason.SessionUnavailable,
+            _ => ReasonForState(state),
+        };
+
+    private static FrontendQualityEngineOutcomeReason AccessibilityReason(
+        AccessibilityResultDto? report,
+        FrontendQualityEngineExecutionState state) => report?.OutcomeReason switch
+        {
+            AccessibilityOutcomeReasonDto.AuthenticationRequired => FrontendQualityEngineOutcomeReason.AuthenticationRequired,
+            AccessibilityOutcomeReasonDto.AuthenticationExpired => FrontendQualityEngineOutcomeReason.AuthenticationExpired,
+            AccessibilityOutcomeReasonDto.AuthenticationCancelled => FrontendQualityEngineOutcomeReason.AuthenticationCancelled,
+            AccessibilityOutcomeReasonDto.UnexpectedOrigin => FrontendQualityEngineOutcomeReason.UnexpectedOrigin,
+            _ => ReasonForState(state),
+        };
+
+    private static FrontendQualityEngineOutcomeReason ReasonForState(FrontendQualityEngineExecutionState state) => state switch
+    {
+        FrontendQualityEngineExecutionState.EngineError => FrontendQualityEngineOutcomeReason.EngineError,
+        FrontendQualityEngineExecutionState.Cancelled => FrontendQualityEngineOutcomeReason.Cancelled,
+        FrontendQualityEngineExecutionState.Unavailable => FrontendQualityEngineOutcomeReason.EngineUnavailable,
+        FrontendQualityEngineExecutionState.SafetyBlocked => FrontendQualityEngineOutcomeReason.TargetPolicyRejected,
+        FrontendQualityEngineExecutionState.AuthenticationRequired => FrontendQualityEngineOutcomeReason.AuthenticationRequired,
+        _ => FrontendQualityEngineOutcomeReason.None,
+    };
+
+    private static void ApplySnapshotSemantics(
+        List<FrontendQualityEngineOutcome> outcomes,
+        FrontendQualityEngineExecutionSnapshot? snapshot)
+    {
+        if (snapshot is null) return;
+        foreach (var pair in new[]
+        {
+            (FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineIdDto.BrowserRuntime),
+            (FrontendQualityEngineId.Accessibility, FrontendQualityEngineIdDto.Accessibility),
+            (FrontendQualityEngineId.Lighthouse, FrontendQualityEngineIdDto.Lighthouse),
+            (FrontendQualityEngineId.PassiveSecurity, FrontendQualityEngineIdDto.PassiveSecurity),
+        })
+        {
+            var index = outcomes.FindIndex(outcome => outcome.EngineId == pair.Item1);
+            if (index < 0) continue;
+            var selected = snapshot.SelectedEngines.TryGetValue(pair.Item2, out var selectedValue) && selectedValue;
+            var layer1 = snapshot.Layer1Allowed.TryGetValue(pair.Item2, out var layer1Value) && layer1Value;
+            var layer2 = snapshot.Layer2Enabled.TryGetValue(pair.Item2, out var layer2Value) && layer2Value;
+            var auth = snapshot.AuthModeSupported.TryGetValue(pair.Item2, out var authValue) && authValue;
+
+            var reason = !selected ? FrontendQualityEngineOutcomeReason.NotSelected
+                : !layer1 ? FrontendQualityEngineOutcomeReason.BlockedByDeploymentPolicy
+                : !layer2 ? FrontendQualityEngineOutcomeReason.DisabledInSystemSettings
+                : !auth ? FrontendQualityEngineOutcomeReason.AuthenticationModeUnsupported
+                : FrontendQualityEngineOutcomeReason.None;
+            if (reason == FrontendQualityEngineOutcomeReason.None) continue;
+            outcomes[index] = outcomes[index] with
+            {
+                OutcomeReason = reason,
+                ExecutionState = StateForReason(reason, outcomes[index].ExecutionState)
+            };
+        }
+    }
+
+    private static FrontendQualityEngineExecutionState StateForReason(
+        FrontendQualityEngineOutcomeReason reason,
+        FrontendQualityEngineExecutionState fallback) => reason switch
+        {
+            FrontendQualityEngineOutcomeReason.None => fallback,
+            FrontendQualityEngineOutcomeReason.NotSelected => FrontendQualityEngineExecutionState.NotApplicable,
+            FrontendQualityEngineOutcomeReason.DisabledInSystemSettings => FrontendQualityEngineExecutionState.Disabled,
+            FrontendQualityEngineOutcomeReason.AuthenticationRequired or
+            FrontendQualityEngineOutcomeReason.AuthenticationModeUnsupported => FrontendQualityEngineExecutionState.AuthenticationRequired,
+            FrontendQualityEngineOutcomeReason.AuthenticationCancelled or
+            FrontendQualityEngineOutcomeReason.Cancelled => FrontendQualityEngineExecutionState.Cancelled,
+            FrontendQualityEngineOutcomeReason.EngineError => FrontendQualityEngineExecutionState.EngineError,
+            FrontendQualityEngineOutcomeReason.EngineUnavailable or
+            FrontendQualityEngineOutcomeReason.ResourceUnavailable or
+            FrontendQualityEngineOutcomeReason.SessionUnavailable or
+            FrontendQualityEngineOutcomeReason.RuntimeNotReady => FrontendQualityEngineExecutionState.Unavailable,
+            _ => FrontendQualityEngineExecutionState.SafetyBlocked,
         };
 
     private static bool Enabled(FrontendQualityEngineId id, FrontendAnalysisFeatureToggles toggles) => id switch

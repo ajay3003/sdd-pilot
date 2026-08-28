@@ -51,6 +51,19 @@ public sealed record FrontendQualityReviewOrchestrationResult(
     PreflightStatus PreflightStatus = PreflightStatus.Ready)
 {
     public List<string> SkippedEngines { get; init; } = SkippedEngines ?? [];
+    public Dictionary<FrontendQualityEngineId, FrontendQualityEngineOutcomeReason> OutcomeReasons { get; init; } = [];
+}
+
+internal interface IAuthenticatedReviewOrchestrationObserver
+{
+    Task BetweenEnginesAsync(FrontendQualityEngineId completed, FrontendQualityEngineId next);
+}
+
+internal sealed class NoOpAuthenticatedReviewOrchestrationObserver : IAuthenticatedReviewOrchestrationObserver
+{
+    public static NoOpAuthenticatedReviewOrchestrationObserver Instance { get; } = new();
+    private NoOpAuthenticatedReviewOrchestrationObserver() { }
+    public Task BetweenEnginesAsync(FrontendQualityEngineId completed, FrontendQualityEngineId next) => Task.CompletedTask;
 }
 
 public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOrchestrator
@@ -65,6 +78,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     private readonly IFrontendPassiveSecurityApiService? _passiveSecurity;
     private readonly IAuthenticatedBrowserSessionService? _authenticatedSessions;
     private readonly IFrontendQualityEngineStatusApiService? _engineStatusService;
+    internal IAuthenticatedReviewOrchestrationObserver AuthenticatedObserver { get; set; } = NoOpAuthenticatedReviewOrchestrationObserver.Instance;
 
     public FrontendQualityReviewOrchestrator(
         ISecurityScanner security,
@@ -97,11 +111,19 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         CancellationToken cancellationToken = default)
     {
         var result = new FrontendQualityReviewOrchestrationResult();
+        if (context.RequiresAuthentication && (snapshot is null || snapshot.AuthMode != ReviewAuthenticationModeDto.Authenticated))
+            return BuildAuthenticatedPreconditionFailure(targetUrl, context,
+                FrontendQualityEngineOutcomeReason.AuthoritativeSnapshotRequired,
+                "An authoritative authenticated engine snapshot is required.");
+
+        snapshot ??= CaptureDefaultSnapshot(context);
         var authenticatedReference = context.RequiresAuthentication && _authenticatedSessions is not null
             ? await _authenticatedSessions.GetExecutionReferenceAsync(context)
             : null;
-
-        snapshot ??= CaptureDefaultSnapshot(context);
+        if (context.RequiresAuthentication && authenticatedReference is null)
+            return BuildAuthenticatedPreconditionFailure(targetUrl, context,
+                FrontendQualityEngineOutcomeReason.AuthenticationRequired,
+                "An eligible authenticated browser session is required.", snapshot);
 
         // ── Preflight validation ────────────────────────────────
         try
@@ -195,6 +217,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             if (!runtimeReady)
             {
                 result = result with { SkippedEngines = [.. result.SkippedEngines, "BrowserRuntime"] };
+                result.OutcomeReasons[FrontendQualityEngineId.BrowserRuntime] = FrontendQualityEngineOutcomeReason.RuntimeNotReady;
             }
             else
             {
@@ -225,14 +248,36 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "BrowserRuntime"] };
         }
 
+
+        if (authenticatedReference is not null && browserRuntimeEligible)
+        {
+            await AuthenticatedObserver.BetweenEnginesAsync(
+                FrontendQualityEngineId.BrowserRuntime,
+                FrontendQualityEngineId.Accessibility);
+            var interEngineReason = cancellationToken.IsCancellationRequested
+                ? FrontendQualityEngineOutcomeReason.Cancelled
+                : await GetAuthenticatedInterEngineReasonAsync(authenticatedReference);
+            if (interEngineReason != FrontendQualityEngineOutcomeReason.None)
+            {
+                result.OutcomeReasons[FrontendQualityEngineId.Accessibility] = interEngineReason;
+                result = result with
+                {
+                    SkippedEngines = [.. result.SkippedEngines, "Accessibility"],
+                    AccessibilityReport = AccessibilityShortCircuit(targetUrl, interEngineReason)
+                };
+            }
+        }
+
         var accessibilityEligible = IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.Accessibility) && _accessibility is not null;
-        if (accessibilityEligible)
+        var accessibilityShortCircuited = result.OutcomeReasons.ContainsKey(FrontendQualityEngineId.Accessibility);
+        if (accessibilityEligible && !accessibilityShortCircuited)
         {
             // Pre-execution Layer 3 readiness revalidation (5-second timeout)
             var accessibilityReady = await RevalidateEngineReadinessAsync(FrontendQualityEngineIdDto.Accessibility, cancellationToken);
             if (!accessibilityReady)
             {
                 result = result with { SkippedEngines = [.. result.SkippedEngines, "Accessibility"] };
+                result.OutcomeReasons[FrontendQualityEngineId.Accessibility] = FrontendQualityEngineOutcomeReason.RuntimeNotReady;
             }
             else
             {
@@ -259,7 +304,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
                 }
             }
         }
-        else
+        else if (!accessibilityShortCircuited)
         {
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Accessibility"] };
         }
@@ -272,6 +317,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             if (!lighthouseReady)
             {
                 result = result with { SkippedEngines = [.. result.SkippedEngines, "Lighthouse"] };
+                result.OutcomeReasons[FrontendQualityEngineId.Lighthouse] = FrontendQualityEngineOutcomeReason.RuntimeNotReady;
             }
             else
             {
@@ -298,6 +344,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             if (!passiveSecurityReady)
             {
                 result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Security"] };
+                result.OutcomeReasons[FrontendQualityEngineId.PassiveSecurity] = FrontendQualityEngineOutcomeReason.RuntimeNotReady;
             }
             else
             {
@@ -331,7 +378,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         enrichedReport = ApplyPassiveSecurity(enrichedReport, result.PassiveSecurityReport);
         var outcomes = FrontendQualityEngineOutcomeNormalizer.NormalizeAll(
             targetUrl, context, result, _runtime is not null, _accessibility is not null,
-            _lighthouse is not null, _passiveSecurity is not null, cancellationToken.IsCancellationRequested);
+            _lighthouse is not null, _passiveSecurity is not null, cancellationToken.IsCancellationRequested,
+            snapshot, result.OutcomeReasons);
 
         return result with
         {
@@ -341,6 +389,81 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
                 result.PreflightStatus,
                 result.PreflightBlockReason,
                 context.ReleasePolicy)
+        };
+    }
+
+    private async Task<FrontendQualityEngineOutcomeReason> GetAuthenticatedInterEngineReasonAsync(
+        AuthenticatedBrowserExecutionReference reference)
+    {
+        if (_authenticatedSessions is null) return FrontendQualityEngineOutcomeReason.SessionUnavailable;
+        try
+        {
+            return (await _authenticatedSessions.GetStatusAsync(reference, CancellationToken.None)) switch
+            {
+                AuthenticatedBrowserSessionStatus.Authenticated => FrontendQualityEngineOutcomeReason.None,
+                AuthenticatedBrowserSessionStatus.AuthenticationExpired => FrontendQualityEngineOutcomeReason.AuthenticationExpired,
+                AuthenticatedBrowserSessionStatus.UnexpectedOrigin => FrontendQualityEngineOutcomeReason.UnexpectedOrigin,
+                AuthenticatedBrowserSessionStatus.AuthenticationCancelled => FrontendQualityEngineOutcomeReason.AuthenticationCancelled,
+                AuthenticatedBrowserSessionStatus.Disposed => FrontendQualityEngineOutcomeReason.SessionUnavailable,
+                AuthenticatedBrowserSessionStatus.AuthenticationFailed => FrontendQualityEngineOutcomeReason.ResourceUnavailable,
+                _ => FrontendQualityEngineOutcomeReason.AuthenticationRequired,
+            };
+        }
+        catch
+        {
+            return FrontendQualityEngineOutcomeReason.SessionUnavailable;
+        }
+    }
+
+    private static AccessibilityResultDto AccessibilityShortCircuit(
+        string targetUrl,
+        FrontendQualityEngineOutcomeReason reason) => new(
+            ExecutionStatus: AccessibilityExecutionStatusDto.Skipped,
+            RequestedUrl: targetUrl,
+            Findings: [],
+            EngineError: "Authenticated eligibility ended before Accessibility execution.",
+            ExecutionMode: AccessibilityExecutionModeDto.AuthenticatedSessionPage,
+            OutcomeReason: reason switch
+            {
+                FrontendQualityEngineOutcomeReason.AuthenticationExpired => AccessibilityOutcomeReasonDto.AuthenticationExpired,
+                FrontendQualityEngineOutcomeReason.UnexpectedOrigin => AccessibilityOutcomeReasonDto.UnexpectedOrigin,
+                FrontendQualityEngineOutcomeReason.AuthenticationCancelled or FrontendQualityEngineOutcomeReason.Cancelled => AccessibilityOutcomeReasonDto.AuthenticationCancelled,
+                _ => AccessibilityOutcomeReasonDto.AuthenticationRequired,
+            });
+
+    private static FrontendQualityReviewOrchestrationResult BuildAuthenticatedPreconditionFailure(
+        string targetUrl,
+        FrontendAnalysisContext context,
+        FrontendQualityEngineOutcomeReason reason,
+        string message,
+        FrontendQualityEngineExecutionSnapshot? snapshot = null)
+    {
+        var result = new FrontendQualityReviewOrchestrationResult(
+            PreflightBlocked: true,
+            PreflightBlockReason: message,
+            PreflightStatus: PreflightStatus.AuthenticationRequired);
+        foreach (var engine in new[]
+        {
+            FrontendQualityEngineId.BrowserRuntime,
+            FrontendQualityEngineId.Accessibility,
+            FrontendQualityEngineId.Lighthouse,
+            FrontendQualityEngineId.PassiveSecurity,
+        })
+            result.OutcomeReasons[engine] = reason;
+        var outcomes = FrontendQualityEngineOutcomeNormalizer.NormalizeAll(
+            targetUrl, context, result, true, true, true, true, false, snapshot, result.OutcomeReasons);
+        return result with
+        {
+            QualityReport = new FrontendQualityReviewReport
+            {
+                TargetUrl = targetUrl,
+                GeneratedAt = DateTime.UtcNow,
+                EngineOutcomes = outcomes,
+                Coverage = FrontendQualityCoverage.Evaluate(outcomes),
+                ReleaseDisposition = FrontendQualityReleaseDisposition.Blocked,
+                PreflightStatus = PreflightStatus.AuthenticationRequired,
+                PreflightMessage = message,
+            }
         };
     }
 
