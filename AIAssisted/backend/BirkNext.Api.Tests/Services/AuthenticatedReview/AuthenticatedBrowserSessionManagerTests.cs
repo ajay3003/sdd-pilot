@@ -136,13 +136,16 @@ public sealed class AuthenticatedBrowserSessionManagerTests
     }
 
     [Fact]
-    public async Task BrowserCrash_RemovesAndDisposesSession()
+    public async Task BrowserCrash_MarksFailed_AndDisposesSession()
     {
         var host = new FakeHost(); await using var manager = CreateManager(host);
         var session = await manager.StartAsync(Request());
         host.Resources[0].Crash();
         await EventuallyAsync(() => host.Resources[0].DisposeCount == 1);
-        (await manager.GetStatusAsync(session.SessionId, "review-1", "profile-1")).Should().BeNull();
+        var status = await manager.GetStatusAsync(session.SessionId, "review-1", "profile-1");
+        status.Should().NotBeNull();
+        status!.Status.Should().Be(AuthenticatedBrowserSessionStatus.Failed);
+        status.FailureCategory.Should().Be("browser_disconnected");
     }
 
     [Fact]

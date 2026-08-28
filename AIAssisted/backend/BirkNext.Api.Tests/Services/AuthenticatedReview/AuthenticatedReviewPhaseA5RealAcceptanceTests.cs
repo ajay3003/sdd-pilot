@@ -140,11 +140,11 @@ public sealed class AuthenticatedReviewPhaseA5RealAcceptanceTests
 
         var result = await harness.Orchestrator.RunAsync(fixture.TargetUrl, harness.Context, harness.Snapshot);
 
-        harness.Accessibility.Calls.Should().Be(1, "page closure is not yet synchronously reflected in manager status");
-        result.AccessibilityReport!.ExecutionStatus.Should().Be(Web.AccessibilityExecutionStatusDto.EngineError);
+        harness.Accessibility.Calls.Should().Be(0, "A6 resource liveness hardening prevents Accessibility invocation when page closes");
+        result.AccessibilityReport!.ExecutionStatus.Should().Be(Web.AccessibilityExecutionStatusDto.Skipped);
         result.AccessibilityReport.Findings.Should().BeEmpty();
         result.QualityReport!.EngineOutcomes.Single(x => x.EngineId == Web.FrontendQualityEngineId.Accessibility)
-            .OutcomeReason.Should().Be(Web.FrontendQualityEngineOutcomeReason.EngineError);
+            .OutcomeReason.Should().Be(Web.FrontendQualityEngineOutcomeReason.ResourceUnavailable);
         lease.Context.Browser!.IsConnected.Should().BeTrue();
         lease.Context.Pages.Should().BeEmpty();
     }
