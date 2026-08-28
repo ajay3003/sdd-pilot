@@ -13,7 +13,7 @@ public sealed class FrontendQualityEnginePhase2ValidationTests
     [Fact(DisplayName = "STRICT: Layer 1 cannot be modified through System Settings API")]
     public async Task Layer1_IsReadOnlyFromSettingsAPI()
     {
-        using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled();
+        using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled(removeLocalJson: false);
         using var client = factory.CreateClient();
 
         var scope = factory.Services.CreateScope();
@@ -48,7 +48,7 @@ public sealed class FrontendQualityEnginePhase2ValidationTests
     [Fact(DisplayName = "STRICT: Layer 2 preference preserved when Layer 1 later denies")]
     public async Task Layer2_PreservedWhenLayer1Blocks()
     {
-        using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled();
+        using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled(removeLocalJson: false);
         using var scope = factory.Services.CreateScope();
 
         var adminService = scope.ServiceProvider.GetRequiredService<AdminService>();
@@ -215,7 +215,18 @@ public sealed class FrontendQualityEnginePhase2ValidationTests
     [Fact(DisplayName = "Migration: legacy true → both Layer1 and Layer2 true")]
     public void Migration_LegacyTrueFlowsToLayersPreservingIntent()
     {
-        var factory = TestHostConfiguration.CreateHostWithEngineEnabled("FrontendBrowserRuntime:Enabled");
+        // Minimal legacy-only configuration (old installation state)
+        // Contains only the legacy key, NO new Layer1/Layer2 keys
+        var legacyConfig = new Dictionary<string, string?>
+        {
+            { "FrontendBrowserRuntime:Enabled", "true" },
+            { "FrontendAccessibility:Enabled", "false" },
+            { "FrontendLighthouse:Enabled", "false" },
+            { "FrontendPassiveSecurity:Enabled", "false" },
+            { "AuthenticatedReview:Enabled", "false" }
+        };
+
+        var factory = TestHostConfiguration.CreateHostWithLegacyConfigOnly(legacyConfig);
         using var scope = factory.Services.CreateScope();
 
         var interpreter = scope.ServiceProvider.GetRequiredService<FrontendQualityEngineLegacyConfigInterpreter>();
@@ -229,7 +240,18 @@ public sealed class FrontendQualityEnginePhase2ValidationTests
     [Fact(DisplayName = "Migration: idempotence - second call unchanged")]
     public void Migration_Idempotent_SecondCallUnchanged()
     {
-        using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled();
+        // Minimal legacy-only configuration (old installation state)
+        // Legacy is false, so both layers should resolve to false consistently
+        var legacyConfig = new Dictionary<string, string?>
+        {
+            { "FrontendBrowserRuntime:Enabled", "false" },
+            { "FrontendAccessibility:Enabled", "false" },
+            { "FrontendLighthouse:Enabled", "false" },
+            { "FrontendPassiveSecurity:Enabled", "false" },
+            { "AuthenticatedReview:Enabled", "false" }
+        };
+
+        var factory = TestHostConfiguration.CreateHostWithLegacyConfigOnly(legacyConfig);
         using var scope = factory.Services.CreateScope();
 
         var interpreter = scope.ServiceProvider.GetRequiredService<FrontendQualityEngineLegacyConfigInterpreter>();
@@ -239,7 +261,7 @@ public sealed class FrontendQualityEnginePhase2ValidationTests
 
         allowed1.Should().Be(allowed2, because: "migration is idempotent");
         enabled1.Should().Be(enabled2, because: "migration is idempotent");
-        allowed1.Should().BeFalse(because: "defaults from test host");
-        enabled1.Should().BeFalse(because: "defaults from test host");
+        allowed1.Should().BeFalse(because: "legacy false → Layer 1 false");
+        enabled1.Should().BeFalse(because: "legacy false → Layer 2 false");
     }
 }

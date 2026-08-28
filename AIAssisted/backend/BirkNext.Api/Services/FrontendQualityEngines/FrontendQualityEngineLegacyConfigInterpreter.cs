@@ -34,49 +34,71 @@ public sealed class FrontendQualityEngineLegacyConfigInterpreter
         var layer1Key = $"FrontendQualityCapabilities:{layer1Suffix}";
         var layer2Key = $"FrontendQualityEnginePreferences:{GetLayer2Suffix(engineId)}";
 
-        var layer1ValueStr = _config.GetValue<string>(layer1Key);
-        var layer2ValueStr = _config.GetValue<string>(layer2Key);
-        var hasNewLayer1 = layer1ValueStr != null;
-        var hasNewLayer2 = layer2ValueStr != null;
+        // TRI-STATE: Distinguish MISSING from EXPLICIT FALSE
+        var layer1Present = _config.GetSection(layer1Key).Exists();
+        var layer2Present = _config.GetSection(layer2Key).Exists();
         var hasLegacy = _config.GetSection(legacySection).Exists();
+
+        // DIAGNOSTIC: log configuration provider details
+        _logger.LogInformation("=== CONFIGURATION STATE FOR {EngineId} ===", engineId);
+        _logger.LogInformation("Layer1Key: {Layer1Key}, Exists: {Layer1Present}", layer1Key, layer1Present);
+        if (layer1Present)
+        {
+            var layer1Value = _config.GetValue(layer1Key, false);
+            _logger.LogInformation("  Layer1 raw value: {Layer1Value}", layer1Value);
+        }
+        _logger.LogInformation("Layer2Key: {Layer2Key}, Exists: {Layer2Present}", layer2Key, layer2Present);
+        if (layer2Present)
+        {
+            var layer2Value = _config.GetValue(layer2Key, false);
+            _logger.LogInformation("  Layer2 raw value: {Layer2Value}", layer2Value);
+        }
+        _logger.LogInformation("LegacySection: {LegacySection}, Exists: {HasLegacy}", legacySection, hasLegacy);
+        if (hasLegacy)
+        {
+            var legacyValue = GetLegacyEnabledValue(engineId);
+            _logger.LogInformation("  Legacy raw value: {LegacyValue}", legacyValue);
+        }
+
+        // Log all configuration providers
+        if (_config is IConfigurationRoot root)
+        {
+            _logger.LogInformation("Configuration providers (in precedence order):");
+            var providerCount = 0;
+            foreach (var provider in root.Providers)
+            {
+                providerCount++;
+                _logger.LogInformation("  [{Count}] {ProviderType}", providerCount, provider.GetType().Name);
+            }
+        }
 
         var allowed = false;
         var enabled = false;
 
-        if (hasNewLayer1)
+        if (layer1Present || layer2Present)
         {
-            allowed = _config.GetValue(layer1Key, false);
-        }
+            // At least one new layer key explicitly set
+            if (layer1Present)
+                allowed = _config.GetValue(layer1Key, false);
 
-        if (hasNewLayer2)
-        {
-            enabled = _config.GetValue(layer2Key, false);
+            if (layer2Present)
+                enabled = _config.GetValue(layer2Key, false);
+            else if (hasLegacy)
+                enabled = GetLegacyEnabledValue(engineId);
         }
-        else if (hasLegacy && !hasNewLayer2)
+        else if (hasLegacy)
         {
-            enabled = GetLegacyEnabledValue(engineId);
-        }
-
-        if (hasNewLayer1 || hasNewLayer2)
-        {
-            _logger.LogInformation(
-                "Engine {EngineId} Layer1/2: explicit config found. Allowed={Allowed}, Enabled={Enabled}",
-                engineId, allowed, enabled);
-            return (allowed, enabled);
-        }
-
-        if (hasLegacy)
-        {
-            _logger.LogInformation(
-                "Engine {EngineId} Layer1/2: using legacy fallback. Allowed={Allowed}, Enabled={Enabled}",
-                engineId, allowed, enabled);
-            return (allowed, enabled);
+            // BOTH layers missing: legacy flows to both (migration case)
+            var legacyValue = GetLegacyEnabledValue(engineId);
+            allowed = legacyValue;
+            enabled = legacyValue;
         }
 
         _logger.LogInformation(
-            "Engine {EngineId} Layer1/2: no config, using defaults",
-            engineId);
-        return (false, false);
+            "Engine {EngineId}: Allowed={Allowed} Enabled={Enabled} (layer1Present={Layer1Present} layer2Present={Layer2Present} hasLegacy={HasLegacy})",
+            engineId, allowed, enabled, layer1Present, layer2Present, hasLegacy);
+
+        return (allowed, enabled);
     }
 
     private static string GetLayer2Suffix(FrontendQualityEngineId engineId) => engineId switch

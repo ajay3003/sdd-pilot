@@ -92,7 +92,7 @@ public sealed class FrontendQualityEnginePhase2BlockerFixTests
     [Fact(DisplayName = "Layer 2 true + Layer 1 later false = Layer 2 preserved, Available false")]
     public async Task Layer2Preserved_WhenLayer1Blocks()
     {
-        using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled();
+        using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled(removeLocalJson: false);
         using var scope = factory.Services.CreateScope();
 
         var adminService = scope.ServiceProvider.GetRequiredService<AdminService>();
