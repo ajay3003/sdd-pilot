@@ -211,11 +211,11 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         {
             return await MapCancelledSessionOutcome(request, startedAt, cancellationToken);
         }
-        catch (Microsoft.Playwright.PlaywrightException) when (request.ExecutionMode == AccessibilityExecutionMode.AuthenticatedSessionPage)
+        catch (Microsoft.Playwright.PlaywrightException ex) when (request.ExecutionMode == AccessibilityExecutionMode.AuthenticatedSessionPage)
         {
             // Navigation mid-execution (redirect, unexpected origin) throws PlaywrightException
             // Check session status to determine the auth-specific outcome
-            return await MapCancelledSessionOutcome(request, startedAt, cancellationToken);
+            return await MapCancelledSessionOutcome(request, startedAt, cancellationToken, ex);
         }
         catch (Exception ex)
         {
@@ -363,7 +363,8 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
     private async Task<AccessibilityReviewResult> MapCancelledSessionOutcome(
         AccessibilityExecutionRequest request,
         DateTime startedAt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        PlaywrightException? playwrightFailure = null)
     {
         try
         {
@@ -376,6 +377,13 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
                 AuthenticatedBrowserSessionStatus.AuthenticationCancelled => AccessibilityOutcomeReason.AuthenticationCancelled,
                 _ => AccessibilityOutcomeReason.AuthenticationRequired
             };
+
+            if (playwrightFailure is not null && status?.Status == AuthenticatedBrowserSessionStatus.Authenticated)
+            {
+                return Failure(AccessibilityExecutionStatus.EngineError, request.TargetUrl, startedAt,
+                    playwrightFailure.Message, AccessibilityExecutionMode.AuthenticatedSessionPage);
+            }
+
             return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
                 "Authenticated application eligibility ended during Accessibility analysis.", AccessibilityExecutionMode.AuthenticatedSessionPage, reason);
         }

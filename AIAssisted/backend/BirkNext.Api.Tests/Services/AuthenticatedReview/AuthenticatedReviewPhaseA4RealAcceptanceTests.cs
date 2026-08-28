@@ -349,6 +349,57 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
     }
 
     [Fact]
+    public async Task AuthenticatedAccessibility_PlaywrightFailureAfterRevocation_UsesAuthoritativeOutcome()
+    {
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
+        await using var fixture = await SyntheticFixture.StartAsync();
+        await using var manager = CreateManager();
+        var session = await ReachAuthenticatedAsync(manager, fixture);
+        using var observer = new BarrierAccessibilityAnalysisObserver(
+            pauseBeforeAxeRun: true,
+            beforeAxeFailure: new PlaywrightException("synthetic in-flight Playwright failure"));
+        var accessibilityService = CreateAuthenticatedAccessibilityService(manager, observer);
+        await using var lease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
+
+        var reviewTask = accessibilityService.ReviewAsync(new AccessibilityExecutionRequest(
+            fixture.TargetUrl, AccessibilityExecutionMode.AuthenticatedSessionPage, Review, Profile, session.SessionId));
+        await observer.ReadyBeforeAxeRun;
+        await lease.Page.GotoAsync(fixture.UnexpectedOrigin);
+        await WaitForStatusAsync(manager, session.SessionId, AuthenticatedBrowserSessionStatus.UnexpectedOrigin);
+        observer.ReleaseBeforeAxeRun();
+
+        var result = await reviewTask;
+        result.ExecutionStatus.Should().Be(AccessibilityExecutionStatus.Skipped);
+        result.OutcomeReason.Should().Be(AccessibilityOutcomeReason.UnexpectedOrigin);
+        result.Findings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AuthenticatedAccessibility_PlaywrightFailureWhileEligible_RemainsEngineError()
+    {
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
+        await using var fixture = await SyntheticFixture.StartAsync();
+        await using var manager = CreateManager();
+        var session = await ReachAuthenticatedAsync(manager, fixture);
+        using var observer = new BarrierAccessibilityAnalysisObserver(
+            pauseBeforeAxeRun: true,
+            beforeAxeFailure: new PlaywrightException("synthetic axe execution failure"));
+        var accessibilityService = CreateAuthenticatedAccessibilityService(manager, observer);
+
+        var reviewTask = accessibilityService.ReviewAsync(new AccessibilityExecutionRequest(
+            fixture.TargetUrl, AccessibilityExecutionMode.AuthenticatedSessionPage, Review, Profile, session.SessionId));
+        await observer.ReadyBeforeAxeRun;
+        observer.ReleaseBeforeAxeRun();
+
+        var result = await reviewTask;
+        result.ExecutionStatus.Should().Be(AccessibilityExecutionStatus.EngineError);
+        result.OutcomeReason.Should().Be(AccessibilityOutcomeReason.None);
+        result.Findings.Should().BeEmpty();
+        (await manager.GetStatusAsync(session.SessionId, Review, Profile))!.Status.Should()
+            .Be(AuthenticatedBrowserSessionStatus.Authenticated);
+    }
+
+    [Fact]
     public async Task AnonymousAccessibility_StillOwnsItsOwnBrowser_Unaffected()
     {
         if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
@@ -552,6 +603,7 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
     {
         private readonly bool _pauseBeforeAxeRun;
         private readonly bool _pauseBeforePublish;
+        private readonly Exception? _beforeAxeFailure;
         private readonly CancellationTokenSource _timeout = new(TimeSpan.FromSeconds(30));
         private readonly TaskCompletionSource _readyBeforeAxeRun = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _releaseBeforeAxeRun = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -559,10 +611,14 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
         private readonly TaskCompletionSource _releaseBeforePublish = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _beforeAxeRunCount;
 
-        public BarrierAccessibilityAnalysisObserver(bool pauseBeforeAxeRun = false, bool pauseBeforePublish = false)
+        public BarrierAccessibilityAnalysisObserver(
+            bool pauseBeforeAxeRun = false,
+            bool pauseBeforePublish = false,
+            Exception? beforeAxeFailure = null)
         {
             _pauseBeforeAxeRun = pauseBeforeAxeRun;
             _pauseBeforePublish = pauseBeforePublish;
+            _beforeAxeFailure = beforeAxeFailure;
         }
 
         public Task ReadyBeforeAxeRun => _readyBeforeAxeRun.Task.WaitAsync(_timeout.Token);
@@ -575,6 +631,8 @@ public sealed class AuthenticatedReviewPhaseA4RealAcceptanceTests
             _readyBeforeAxeRun.TrySetResult();
             if (_pauseBeforeAxeRun)
                 await _releaseBeforeAxeRun.Task.WaitAsync(_timeout.Token);
+            if (_beforeAxeFailure is not null)
+                throw _beforeAxeFailure;
         }
 
         public async Task BeforeAuthenticatedResultPublishedAsync(CancellationToken cancellationToken)
