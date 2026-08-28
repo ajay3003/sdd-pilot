@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using BirkNext.Api.Services.FrontendBrowserRuntime;
 using BirkNext.Api.Services.FrontendLighthouse;
+using BirkNext.Api.Tests.TestInfrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit.Abstractions;
 
@@ -33,6 +34,7 @@ public sealed class RealLighthouseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task Lighthouse_HealthyPage_ProducesRealLabMetrics()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var result = await _service!.ReviewAsync(_server!.Url("/healthy"));
         Assert.Equal(LighthouseExecutionStatus.Assessed, result.ExecutionStatus);
         Assert.Equal("12.2.1", result.LighthouseVersion);
@@ -56,6 +58,7 @@ public sealed class RealLighthouseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task Lighthouse_LargeUnusedScript_ProducesActionableDiagnostic()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var result = await _service!.ReviewAsync(_server!.Url("/diagnostic"));
         Assert.Equal(LighthouseExecutionStatus.Assessed, result.ExecutionStatus);
         Assert.Contains(result.Audits, a => a.AuditId is "unused-javascript" or "total-byte-weight");
@@ -65,6 +68,7 @@ public sealed class RealLighthouseIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task Lighthouse_Readiness_ReportsRealToolVersions()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var readiness = await _service!.CheckReadinessAsync();
         Assert.True(readiness.Available, readiness.Error);
         Assert.Equal("12.2.1", readiness.LighthouseVersion);

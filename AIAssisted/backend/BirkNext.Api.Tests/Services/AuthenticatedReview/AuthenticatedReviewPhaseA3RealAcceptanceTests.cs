@@ -1,5 +1,6 @@
 using BirkNext.Api.Services.AuthenticatedReview;
 using BirkNext.Api.Services.FrontendBrowserRuntime;
+using BirkNext.Api.Tests.TestInfrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -15,7 +16,7 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
     [Fact]
     public async Task AuthenticatedRuntime_ReusesExactSamePageAndContext_NoSecondBrowser()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync();
         await using var manager = CreateManager();
         var session = await StartAndAuthenticateAsync(manager, fixture);
@@ -69,7 +70,7 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
     [Fact]
     public async Task AuthenticatedRuntime_SensitiveSentinels_NeverAppearInResult()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync();
         await using var manager = CreateManager();
         var session = await ReachAuthenticatedAsync(manager, fixture);
@@ -105,7 +106,7 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
     [Fact]
     public async Task AuthenticatedRuntime_EntraRedirectMidRun_StopsWithNoEvidence()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync();
         await using var manager = CreateManager();
         var session = await ReachAuthenticatedAsync(manager, fixture);
@@ -146,7 +147,7 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
     [Fact]
     public async Task AuthenticatedRuntime_McasRedirectMidRun_StopsWithNoEvidence()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync();
         await using var manager = CreateManager();
         var session = await ReachAuthenticatedAsync(manager, fixture);
@@ -186,7 +187,7 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
     [Fact]
     public async Task AuthenticatedRuntime_UnexpectedOriginMidRun_StopsWithNoEvidence()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync();
         await using var manager = CreateManager();
         var session = await ReachAuthenticatedAsync(manager, fixture);
@@ -226,7 +227,7 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
     [Fact]
     public async Task AuthenticatedRuntime_MissingSessionId_Rejected()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync();
         var rc6 = new BrowserResourceClassifier();
         var options6 = Options.Create(new FrontendBrowserRuntimeOptions { Enabled = true });
@@ -254,7 +255,7 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
     [Fact]
     public async Task AuthenticatedRuntime_ExpiredSession_Rejected()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync();
         await using var manager = CreateManager();
         var session = await StartAndAuthenticateAsync(manager, fixture);
@@ -288,7 +289,7 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
     [Fact]
     public async Task AnonymousRuntime_StillOwnsItsOwnBrowser_Unaffected()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         var rc8 = new BrowserResourceClassifier();
         var options8 = Options.Create(new FrontendBrowserRuntimeOptions { Enabled = true });
         var runtime = new FrontendBrowserRuntimeReviewService(
@@ -313,7 +314,6 @@ public sealed class AuthenticatedReviewPhaseA3RealAcceptanceTests
 
     private const string Review = "phase-a3-review";
     private const string Profile = "phase-a3-profile";
-    private static bool Enabled() => string.Equals(Environment.GetEnvironmentVariable("RUN_LOCAL_AUTHENTICATED_BROWSER_TESTS"), "true", StringComparison.OrdinalIgnoreCase);
 
     private static AuthenticatedBrowserSessionManager CreateManager() => new(
         new PlaywrightAuthenticatedBrowserHost(),

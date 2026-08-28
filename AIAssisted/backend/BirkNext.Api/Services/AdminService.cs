@@ -1,5 +1,6 @@
 using BirkNext.Api.Data;
 using BirkNext.Api.Models.Admin;
+using BirkNext.Api.Services.FrontendQualityEngines;
 using Microsoft.EntityFrameworkCore;
 using System.Reflection;
 using System.Text.Json;
@@ -13,6 +14,7 @@ public class AdminService
     private readonly IWebHostEnvironment _env;
     private readonly AppDbContext _db;
     private readonly ILogger<AdminService> _logger;
+    private readonly FrontendQualityEngineLegacyConfigInterpreter? _legacyInterpreter;
 
     private static readonly HashSet<string> PlatformFeatureKeys =
         new(StringComparer.OrdinalIgnoreCase)
@@ -56,12 +58,18 @@ public class AdminService
     private static readonly string[] ValidLogLevels =
         ["Verbose", "Debug", "Information", "Warning", "Error", "Fatal"];
 
-    public AdminService(IConfiguration config, IWebHostEnvironment env, AppDbContext db, ILogger<AdminService> logger)
+    public AdminService(
+        IConfiguration config,
+        IWebHostEnvironment env,
+        AppDbContext db,
+        ILogger<AdminService> logger,
+        FrontendQualityEngineLegacyConfigInterpreter? legacyInterpreter = null)
     {
         _config = config;
         _env = env;
         _db = db;
         _logger = logger;
+        _legacyInterpreter = legacyInterpreter;
     }
 
     public bool IsEnabled => _config.GetValue<bool>("AdminSettings:Enabled", true);
@@ -290,7 +298,24 @@ public class AdminService
             Admin = new EditableAdminSection
             {
                 ShowDiagnostics = _config.GetValue("AdminSettings:ShowDiagnostics", true)
-            }
+            },
+            FrontendQualityEngines = BuildEditableFrontendQualityEngines()
+        };
+    }
+
+    private EditableFrontendQualityEnginesSection BuildEditableFrontendQualityEngines()
+    {
+        if (_legacyInterpreter == null)
+        {
+            return new EditableFrontendQualityEnginesSection();
+        }
+
+        return new EditableFrontendQualityEnginesSection
+        {
+            BrowserRuntimeEnabled = _legacyInterpreter.ResolveLayer1And2(FrontendQualityEngineId.BrowserRuntime).Enabled,
+            AccessibilityEnabled = _legacyInterpreter.ResolveLayer1And2(FrontendQualityEngineId.Accessibility).Enabled,
+            LighthouseEnabled = _legacyInterpreter.ResolveLayer1And2(FrontendQualityEngineId.Lighthouse).Enabled,
+            PassiveSecurityEnabled = _legacyInterpreter.ResolveLayer1And2(FrontendQualityEngineId.PassiveSecurity).Enabled,
         };
     }
 
@@ -362,6 +387,21 @@ public class AdminService
                 && adminExisting is JsonObject adminObj ? adminObj : new JsonObject();
             adminNode["ShowDiagnostics"] = JsonValue.Create(request.Admin.ShowDiagnostics!.Value);
             root["AdminSettings"] = adminNode;
+        }
+
+        if (request.FrontendQualityEngines != null)
+        {
+            var fqeNode = root.TryGetPropertyValue("FrontendQualityEnginePreferences", out var fqeExisting)
+                && fqeExisting is JsonObject fqeObj ? fqeObj : new JsonObject();
+            if (request.FrontendQualityEngines.BrowserRuntimeEnabled.HasValue)
+                fqeNode["BrowserRuntimeEnabled"] = JsonValue.Create(request.FrontendQualityEngines.BrowserRuntimeEnabled!.Value);
+            if (request.FrontendQualityEngines.AccessibilityEnabled.HasValue)
+                fqeNode["AccessibilityEnabled"] = JsonValue.Create(request.FrontendQualityEngines.AccessibilityEnabled!.Value);
+            if (request.FrontendQualityEngines.LighthouseEnabled.HasValue)
+                fqeNode["LighthouseEnabled"] = JsonValue.Create(request.FrontendQualityEngines.LighthouseEnabled!.Value);
+            if (request.FrontendQualityEngines.PassiveSecurityEnabled.HasValue)
+                fqeNode["PassiveSecurityEnabled"] = JsonValue.Create(request.FrontendQualityEngines.PassiveSecurityEnabled!.Value);
+            root["FrontendQualityEnginePreferences"] = fqeNode;
         }
 
         var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });

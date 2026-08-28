@@ -168,6 +168,7 @@ public class EditableSettingsResponse
     public EditableFeatureVisibilitySection FeatureVisibility { get; set; } = new();
     public EditableLoggingSection Logging { get; set; } = new();
     public EditableAdminSection Admin { get; set; } = new();
+    public EditableFrontendQualityEnginesSection FrontendQualityEngines { get; set; } = new();
 }
 
 public class EditableFeatureVisibilitySection
@@ -196,6 +197,14 @@ public class EditableAdminSection
     public bool ShowDiagnostics { get; set; } = true;
 }
 
+public class EditableFrontendQualityEnginesSection
+{
+    public bool BrowserRuntimeEnabled { get; set; }
+    public bool AccessibilityEnabled { get; set; }
+    public bool LighthouseEnabled { get; set; }
+    public bool PassiveSecurityEnabled { get; set; }
+}
+
 // ── Save Settings ──────────────────────────────────────────────────────────
 
 public class SaveSettingsRequest
@@ -203,6 +212,7 @@ public class SaveSettingsRequest
     public Dictionary<string, bool>? FeatureVisibility { get; set; }
     public SaveLoggingSettings? Logging { get; set; }
     public SaveAdminSettings? Admin { get; set; }
+    public SaveFrontendQualityEngineSettings? FrontendQualityEngines { get; set; }
 }
 
 public class SaveLoggingSettings
@@ -214,6 +224,14 @@ public class SaveLoggingSettings
 public class SaveAdminSettings
 {
     public bool? ShowDiagnostics { get; set; }
+}
+
+public class SaveFrontendQualityEngineSettings
+{
+    public bool? BrowserRuntimeEnabled { get; set; }
+    public bool? AccessibilityEnabled { get; set; }
+    public bool? LighthouseEnabled { get; set; }
+    public bool? PassiveSecurityEnabled { get; set; }
 }
 
 public class SaveSettingsResponse

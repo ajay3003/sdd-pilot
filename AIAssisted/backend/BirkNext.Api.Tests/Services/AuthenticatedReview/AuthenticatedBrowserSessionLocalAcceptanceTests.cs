@@ -1,4 +1,5 @@
 using BirkNext.Api.Services.AuthenticatedReview;
+using BirkNext.Api.Tests.TestInfrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -14,8 +15,7 @@ public sealed class AuthenticatedBrowserSessionLocalAcceptanceTests
     [Trait("Category", "LocalHeadedPlaywright")]
     public async Task AuthenticatedBrowserSession_StartsVisibleEphemeralBrowser()
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("RUN_LOCAL_AUTHENTICATED_BROWSER_TESTS"), "true", StringComparison.OrdinalIgnoreCase))
-            return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
 
         await using var fixture = await LocalFixture.StartAsync();
         await using var manager = new AuthenticatedBrowserSessionManager(

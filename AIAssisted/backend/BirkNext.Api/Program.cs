@@ -16,6 +16,8 @@ using BirkNext.Api.Services.FrontendBrowserRuntime;
 using BirkNext.Api.Services.FrontendAccessibility;
 using BirkNext.Api.Services.FrontendLighthouse;
 using BirkNext.Api.Services.FrontendPassiveSecurity;
+using BirkNext.Api.Services.FrontendQualityEngines;
+using BirkNext.Api.Services.FrontendQualityEngines.Readiness;
 using BirkNext.Api.Services.TargetEnvironmentDetection;
 using BirkNext.Api.Services.AuthenticatedReview;
 using HotChocolate.AspNetCore;
@@ -225,6 +227,23 @@ builder.Services.AddScoped<PassiveSecurityEvidenceSanitizer>();
 builder.Services.AddScoped<PassiveSecurityTargetAuthorizer>();
 builder.Services.AddSingleton<IZapProcessRunner, ZapProcessRunner>();
 builder.Services.AddScoped<IFrontendZapPassiveReviewService, FrontendZapPassiveReviewService>();
+
+// Frontend Quality Engine Capability Model (Phase 1 backend foundation)
+builder.Services.Configure<FrontendQualityCapabilitiesPolicy>(
+    builder.Configuration.GetSection(FrontendQualityCapabilitiesPolicy.SectionName));
+builder.Services.Configure<FrontendQualityEnginePreferences>(
+    builder.Configuration.GetSection(FrontendQualityEnginePreferences.SectionName));
+builder.Services.AddScoped<FrontendQualityEngineLegacyConfigInterpreter>();
+builder.Services.AddScoped<BrowserRuntimeReadinessProvider>();
+builder.Services.AddScoped<AccessibilityReadinessProvider>();
+builder.Services.AddScoped<LighthouseReadinessProvider>();
+builder.Services.AddScoped<PassiveSecurityReadinessProvider>();
+builder.Services.AddScoped<IFrontendQualityEngineReadinessProvider>(sp => sp.GetRequiredService<BrowserRuntimeReadinessProvider>());
+builder.Services.AddScoped<IFrontendQualityEngineReadinessProvider>(sp => sp.GetRequiredService<AccessibilityReadinessProvider>());
+builder.Services.AddScoped<IFrontendQualityEngineReadinessProvider>(sp => sp.GetRequiredService<LighthouseReadinessProvider>());
+builder.Services.AddScoped<IFrontendQualityEngineReadinessProvider>(sp => sp.GetRequiredService<PassiveSecurityReadinessProvider>());
+builder.Services.AddScoped<IFrontendQualityEngineReadinessAggregator, FrontendQualityEngineReadinessAggregator>();
+builder.Services.AddScoped<IFrontendQualityEngineStatusService, FrontendQualityEngineStatusService>();
 
 // API Quality Review
 builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService>(client =>

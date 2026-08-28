@@ -1,4 +1,5 @@
 using BirkNext.Api.Services.FrontendBrowserRuntime;
+using BirkNext.Api.Tests.TestInfrastructure;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Net;
@@ -41,6 +42,7 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task BrowserRuntime_HealthyPage_StartsSuccessfully()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var url = _server!.GetUrl("/healthy.html");
         var result = await _service!.ReviewAsync(url);
         WriteResult("healthy", result);
@@ -59,6 +61,7 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task BrowserRuntime_PageWithConsoleError_IsCaptured()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var url = _server!.GetUrl("/console-error.html");
         var result = await _service!.ReviewAsync(url);
         WriteResult("console-error", result);
@@ -75,6 +78,7 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task BrowserRuntime_PageWithUncaughtError_IsCaptured()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var url = _server!.GetUrl("/uncaught-error.html");
         var result = await _service!.ReviewAsync(url);
         WriteResult("page-error", result);
@@ -88,6 +92,7 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task BrowserRuntime_FailedResource_IsCaptured()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var url = _server!.GetUrl("/missing-resource.html");
         var result = await _service!.ReviewAsync(url);
         WriteResult("failed-resource", result);
@@ -102,6 +107,7 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task BrowserRuntime_InvalidUrl_SkipsExecution()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var result = await _service!.ReviewAsync("file:///etc/passwd");
 
         Assert.Equal(BrowserRuntimeEngineStatus.Skipped, result.Status);
@@ -112,6 +118,7 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task BrowserRuntime_Readiness_ReturnsAvailable()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var readiness = await _service!.CheckReadinessAsync();
         _output.WriteLine("readiness: {0}", JsonSerializer.Serialize(readiness));
 

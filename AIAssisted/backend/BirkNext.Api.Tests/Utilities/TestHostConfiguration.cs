@@ -21,7 +21,11 @@ public static class TestHostConfiguration
                         { "FrontendAccessibility:Enabled", "false" },
                         { "FrontendLighthouse:Enabled", "false" },
                         { "FrontendPassiveSecurity:Enabled", "false" },
-                        { "AuthenticatedReview:Enabled", "false" }
+                        { "AuthenticatedReview:Enabled", "false" },
+                        { "FrontendQualityCapabilities:BrowserRuntimeAllowed", "false" },
+                        { "FrontendQualityCapabilities:AccessibilityAllowed", "false" },
+                        { "FrontendQualityCapabilities:LighthouseAllowed", "false" },
+                        { "FrontendQualityCapabilities:PassiveSecurityAllowed", "false" }
                     });
                 });
             });
@@ -35,15 +39,26 @@ public static class TestHostConfiguration
             {
                 builder.ConfigureAppConfiguration((ctx, config) =>
                 {
-                    config.AddInMemoryCollection(new Dictionary<string, string?>
+                    var overrides = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                     {
                         { "FrontendBrowserRuntime:Enabled", "false" },
                         { "FrontendAccessibility:Enabled", "false" },
                         { "FrontendLighthouse:Enabled", "false" },
                         { "FrontendPassiveSecurity:Enabled", "false" },
                         { "AuthenticatedReview:Enabled", "false" },
-                        { engineConfigKey, "true" }
-                    });
+                        { "FrontendQualityCapabilities:BrowserRuntimeAllowed", "false" },
+                        { "FrontendQualityCapabilities:AccessibilityAllowed", "false" },
+                        { "FrontendQualityCapabilities:LighthouseAllowed", "false" },
+                        { "FrontendQualityCapabilities:PassiveSecurityAllowed", "false" },
+                        { "FrontendQualityEnginePreferences:BrowserRuntimeEnabled", "false" },
+                        { "FrontendQualityEnginePreferences:AccessibilityEnabled", "false" },
+                        { "FrontendQualityEnginePreferences:LighthouseEnabled", "false" },
+                        { "FrontendQualityEnginePreferences:PassiveSecurityEnabled", "false" }
+                    };
+
+                    overrides[engineConfigKey] = "true";
+
+                    config.AddInMemoryCollection(overrides);
                 });
             });
     }

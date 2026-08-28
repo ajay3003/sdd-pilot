@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using BirkNext.Api.Services.FrontendAccessibility;
 using BirkNext.Api.Services.FrontendBrowserRuntime;
+using BirkNext.Api.Tests.TestInfrastructure;
 using Deque.AxeCore.Commons;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -36,6 +37,7 @@ public sealed class RealAxeIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task Accessibility_HealthyPage_ExecutesRealAxe()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var healthy = await Review("/healthy");
         Assert.Equal(AccessibilityExecutionStatus.Assessed, healthy.ExecutionStatus);
         Assert.StartsWith("4.13", healthy.AxeVersion);
@@ -49,6 +51,7 @@ public sealed class RealAxeIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task Accessibility_MissingButtonName_ReportsViolation()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var button = await Review("/button");
         var buttonFinding = Assert.Single(button.Findings.Where(f => f.RuleId == "button-name" && f.Kind == AccessibilityFindingKind.Violation));
         Assert.True(button.ViolationCount >= 1);
@@ -61,6 +64,7 @@ public sealed class RealAxeIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task Accessibility_MissingImageAlt_ReportsViolation()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var image = await Review("/image");
         Assert.Contains(image.Findings, f => f.RuleId == "image-alt" && f.Kind == AccessibilityFindingKind.Violation);
         Assert.Contains(image.Findings.SelectMany(f => f.Selectors), selector => selector.Contains("#hero", StringComparison.Ordinal));
@@ -69,6 +73,7 @@ public sealed class RealAxeIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task Accessibility_SecretEvidence_IsSanitized()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var secret = await Review("/secret");
         var evidence = JsonSerializer.Serialize(secret.Findings);
         Assert.DoesNotContain("SECRET-AXE-DOM-12345", evidence);
@@ -78,6 +83,7 @@ public sealed class RealAxeIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task Accessibility_Readiness_ReportsAxeAndChromiumVersions()
     {
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         var readiness = await _service!.CheckReadinessAsync();
         Assert.True(readiness.Available, readiness.Error);
         Assert.Equal(AccessibilityReadinessState.Ready, readiness.State);

@@ -1,4 +1,5 @@
 using BirkNext.Api.Services.AuthenticatedReview;
+using BirkNext.Api.Tests.TestInfrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -14,7 +15,7 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
     [Fact]
     public async Task Synthetic_Entra_Mcas_App_Flow_AuthenticatesSameContext()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync();
         await using var manager = CreateManager();
         var session = await StartAndAuthenticateAsync(manager, fixture);
@@ -35,7 +36,7 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
     [Fact]
     public async Task Synthetic_ProxiedApplicationDelivery_IsValidatedAndLabeled()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync(); fixture.UseProxiedDelivery = true;
         await using var manager = CreateManager();
         var session = await StartAndAuthenticateAsync(manager, fixture);
@@ -51,7 +52,7 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
     [Fact]
     public async Task CancelAtEntra_DisposesSessionAndInvalidatesLease()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync(); await using var manager = CreateManager();
         var session = await StartAndAuthenticateAsync(manager, fixture);
         await using var lease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
@@ -63,7 +64,7 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
     [Fact]
     public async Task CancelAtMcas_AndMcasNeverReturns_NeverBecomeAuthenticated()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync(); await using var manager = CreateManager();
         var session = await StartAndAuthenticateAsync(manager, fixture);
         await using var lease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
@@ -78,7 +79,7 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
     [Fact]
     public async Task UnexpectedOrigin_FailsClosedAndDeniesEngineLease()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync(); await using var manager = CreateManager();
         var session = await StartAndAuthenticateAsync(manager, fixture);
         await using var lease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
@@ -90,7 +91,7 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
     [Fact]
     public async Task EntraAndMcasCanNeverBeFinalSuccess()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync(); await using var manager = CreateManager();
         var session = await StartAndAuthenticateAsync(manager, fixture);
         await AssertEngineLeaseDenied(manager, session.SessionId, fixture.TargetUrl);
@@ -103,7 +104,7 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
     [Fact]
     public async Task AuthenticatedReturnToEntraOrMcasRevokesEligibility()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync(); await using var manager = CreateManager();
         var session = await ReachAuthenticatedAsync(manager, fixture);
         await using var raw = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
@@ -115,7 +116,7 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
     [Fact]
     public async Task AuthenticatedReturnToMcasNoticeRevokesEligibility()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync(); await using var manager = CreateManager();
         var session = await ReachAuthenticatedAsync(manager, fixture);
         await using var raw = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, Review, Profile, fixture.TargetUrl);
@@ -127,7 +128,7 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
     [Fact]
     public async Task AuthenticatedSession_CannotValidateDifferentTarget()
     {
-        if (!Enabled()) return;
+        if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
         await using var fixture = await SyntheticFixture.StartAsync(); await using var manager = CreateManager();
         var session = await ReachAuthenticatedAsync(manager, fixture);
         var act = () => manager.AcquirePageLeaseAsync(session.SessionId, Review, Profile, fixture.UnexpectedOrigin);
@@ -136,7 +137,6 @@ public sealed class AuthenticatedReviewPhaseA2RealAcceptanceTests
 
     private const string Review = "phase-a2-review";
     private const string Profile = "phase-a2-profile";
-    private static bool Enabled() => string.Equals(Environment.GetEnvironmentVariable("RUN_LOCAL_AUTHENTICATED_BROWSER_TESTS"), "true", StringComparison.OrdinalIgnoreCase);
 
     private static AuthenticatedBrowserSessionManager CreateManager() => new(
         new PlaywrightAuthenticatedBrowserHost(),
