@@ -23,7 +23,6 @@ public sealed class FrontendQualityDecisionSupportTests
     [InlineData(FrontendQualityEngineExecutionState.TimedOut)]
     [InlineData(FrontendQualityEngineExecutionState.SafetyBlocked)]
     [InlineData(FrontendQualityEngineExecutionState.Unavailable)]
-    [InlineData(FrontendQualityEngineExecutionState.AuthenticationRequired)]
     [InlineData(FrontendQualityEngineExecutionState.Cancelled)]
     [InlineData(FrontendQualityEngineExecutionState.Disabled)]
     public void RequiredUnassessedEngine_RequiresReviewWhenOtherRequiredEvidenceExists(FrontendQualityEngineExecutionState state)
@@ -99,7 +98,6 @@ public sealed class FrontendQualityDecisionSupportTests
     [InlineData(FrontendQualityEngineExecutionState.Disabled, "Disabled")]
     [InlineData(FrontendQualityEngineExecutionState.Unavailable, "Unavailable")]
     [InlineData(FrontendQualityEngineExecutionState.SafetyBlocked, "Safety blocked")]
-    [InlineData(FrontendQualityEngineExecutionState.AuthenticationRequired, "Authentication required")]
     [InlineData(FrontendQualityEngineExecutionState.TimedOut, "Timed out")]
     [InlineData(FrontendQualityEngineExecutionState.Cancelled, "Cancelled")]
     [InlineData(FrontendQualityEngineExecutionState.EngineError, "Engine error")]

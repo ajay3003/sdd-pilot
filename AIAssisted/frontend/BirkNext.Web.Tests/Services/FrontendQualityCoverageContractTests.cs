@@ -105,7 +105,7 @@ public sealed class FrontendQualityCoverageContractTests
             [
                 Outcome(FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineExecutionState.Assessed),
                 Outcome(FrontendQualityEngineId.Lighthouse, FrontendQualityEngineExecutionState.TimedOut),
-                Outcome(FrontendQualityEngineId.Accessibility, FrontendQualityEngineExecutionState.AuthenticationRequired,
+                Outcome(FrontendQualityEngineId.Accessibility, FrontendQualityEngineExecutionState.Unavailable,
                     FrontendQualityEngineRequirement.Optional),
                 Outcome(FrontendQualityEngineId.PassiveSecurity, FrontendQualityEngineExecutionState.Disabled,
                     FrontendQualityEngineRequirement.Optional),
@@ -117,7 +117,7 @@ public sealed class FrontendQualityCoverageContractTests
         report.SkippedEngines.Should().Equal("Accessibility", "Passive Security");
         report.Completeness.Should().Be(AssessmentCompleteness.Partial);
         report.EngineOutcomes.Single(o => o.EngineId == FrontendQualityEngineId.Accessibility)
-            .ExecutionState.Should().Be(FrontendQualityEngineExecutionState.AuthenticationRequired);
+            .ExecutionState.Should().Be(FrontendQualityEngineExecutionState.Unavailable);
     }
 
     [Fact]

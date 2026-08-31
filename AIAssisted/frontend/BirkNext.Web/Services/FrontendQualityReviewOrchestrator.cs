@@ -113,8 +113,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         var result = new FrontendQualityReviewOrchestrationResult();
         if (context.RequiresAuthentication && (snapshot is null || snapshot.AuthMode != ReviewAuthenticationModeDto.Authenticated))
             return BuildAuthenticatedPreconditionFailure(targetUrl, context,
-                FrontendQualityEngineOutcomeReason.AuthoritativeSnapshotRequired,
-                "An authoritative authenticated engine snapshot is required.");
+                FrontendQualityEngineOutcomeReason.AuthenticationRequired,
+                "An authenticated engine snapshot is required.");
 
         snapshot ??= CaptureDefaultSnapshot(context);
         var authenticatedReference = context.RequiresAuthentication && _authenticatedSessions is not null
@@ -217,7 +217,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             if (!runtimeReady)
             {
                 result = result with { SkippedEngines = [.. result.SkippedEngines, "BrowserRuntime"] };
-                result.OutcomeReasons[FrontendQualityEngineId.BrowserRuntime] = FrontendQualityEngineOutcomeReason.RuntimeNotReady;
+                result.OutcomeReasons[FrontendQualityEngineId.BrowserRuntime] = FrontendQualityEngineOutcomeReason.ReadinessUnavailable;
             }
             else
             {
@@ -277,7 +277,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             if (!accessibilityReady)
             {
                 result = result with { SkippedEngines = [.. result.SkippedEngines, "Accessibility"] };
-                result.OutcomeReasons[FrontendQualityEngineId.Accessibility] = FrontendQualityEngineOutcomeReason.RuntimeNotReady;
+                result.OutcomeReasons[FrontendQualityEngineId.Accessibility] = FrontendQualityEngineOutcomeReason.ReadinessUnavailable;
             }
             else
             {
@@ -317,7 +317,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             if (!lighthouseReady)
             {
                 result = result with { SkippedEngines = [.. result.SkippedEngines, "Lighthouse"] };
-                result.OutcomeReasons[FrontendQualityEngineId.Lighthouse] = FrontendQualityEngineOutcomeReason.RuntimeNotReady;
+                result.OutcomeReasons[FrontendQualityEngineId.Lighthouse] = FrontendQualityEngineOutcomeReason.ReadinessUnavailable;
             }
             else
             {
@@ -344,7 +344,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             if (!passiveSecurityReady)
             {
                 result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Security"] };
-                result.OutcomeReasons[FrontendQualityEngineId.PassiveSecurity] = FrontendQualityEngineOutcomeReason.RuntimeNotReady;
+                result.OutcomeReasons[FrontendQualityEngineId.PassiveSecurity] = FrontendQualityEngineOutcomeReason.ReadinessUnavailable;
             }
             else
             {
@@ -710,6 +710,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     {
         // FAIL-CLOSED: If readiness infrastructure is unavailable, engine must NOT execute.
         // Layer 3 enforcement cannot be bypassed by missing infrastructure.
+        // NOTE: Test infrastructure should provide a working service; if null, fail closed.
         if (_engineStatusService is null)
             return false;
 

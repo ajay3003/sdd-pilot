@@ -92,7 +92,7 @@ public sealed class FrontendQualityDecisionSupportTests : BunitContext
     {
         var source = DecisionFixtures.Report();
         var outcomes = DecisionFixtures.AllAssessed();
-        outcomes[0] = outcomes[0] with { ExecutionState = FrontendQualityEngineExecutionState.EngineError, SanitizedFailureReason = "Tool unavailable" };
+        outcomes[0] = outcomes[0] with { ExecutionState = FrontendQualityEngineExecutionState.EngineError, OutcomeReason = FrontendQualityEngineOutcomeReason.EngineError, SanitizedFailureReason = "Tool unavailable" };
         var report = new FrontendQualityReviewReport
         {
             Coverage = new() { RequiredCoverageState = state }, ReleaseDisposition = state == FrontendQualityRequiredCoverageState.NoTrustworthyRequiredAssessment ? FrontendQualityReleaseDisposition.Blocked : FrontendQualityReleaseDisposition.ReviewRequired,

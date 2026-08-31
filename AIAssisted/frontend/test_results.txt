@@ -1,0 +1,334 @@
+﻿Test run for C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.PlaywrightTests\bin\Debug\net8.0\BirkNext.Web.PlaywrightTests.dll (.NETCoreApp,Version=v8.0)
+Test run for C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\bin\Debug\net8.0\BirkNext.Web.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.14.1 (x64)
+VSTest version 17.14.1 (x64)
+
+
+dotnet : The test source file "C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.PlaywrightTests\bin\Debug\net8.0\BirkNext.Web.PlaywrightT
+ests.dll" provided was not found.
+At line:1 char:369
++ ... ted\frontend"; dotnet test --no-build 2>&1 > test_results.txt; Write- ...
++                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (The test source... was not found.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:05.31]     BirkNext.Web.Tests.Services.AccessibilityOrchestrationCallCountTests.AccessibilityEnabled_PreflightReady_InvokesOnce [FAIL]
+  Failed BirkNext.Web.Tests.Services.AccessibilityOrchestrationCallCountTests.AccessibilityEnabled_PreflightReady_InvokesOnce [3 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   0
+  Stack Trace:
+     at BirkNext.Web.Tests.Services.AccessibilityOrchestrationCallCountTests.AccessibilityEnabled_PreflightReady_InvokesOnce() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\AccessibilityOrchestrationCallCountTests.cs:line 21
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:05.31]     BirkNext.Web.Tests.Services.AccessibilityOrchestrationCallCountTests.AccessibilityEngineError_PreservesOtherEngines_AndProducesPartial
+Assessment [FAIL]
+  Failed BirkNext.Web.Tests.Services.AccessibilityOrchestrationCallCountTests.AccessibilityEngineError_PreservesOtherEngines_AndProducesPartialAssessment [1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   0
+  Stack Trace:
+     at BirkNext.Web.Tests.Services.AccessibilityOrchestrationCallCountTests.AccessibilityEngineError_PreservesOtherEngines_AndProducesPartialAssessment() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\AccessibilityOrchestrationCallCountTests.cs:line 38
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:06.84]     BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.AllSixEnabledAndAssessed_ProduceExactlyOneOutcomeEach [FAIL]
+[xUnit.net 00:00:06.84]     BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.OptionalToolFailure_DoesNotEraseOtherOutcomesOrExecuteTwice(failed
+: PassiveSecurity) [FAIL]
+[xUnit.net 00:00:06.84]     BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.OptionalToolFailure_DoesNotEraseOtherOutcomesOrExecuteTwice(failed
+: Lighthouse) [FAIL]
+[xUnit.net 00:00:06.84]     BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.OptionalToolFailure_DoesNotEraseOtherOutcomesOrExecuteTwice(failed
+: BrowserRuntime) [FAIL]
+[xUnit.net 00:00:06.84]     BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.OptionalToolFailure_DoesNotEraseOtherOutcomesOrExecuteTwice(failed
+: Accessibility) [FAIL]
+  Failed BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.AllSixEnabledAndAssessed_ProduceExactlyOneOutcomeEach [1 s]
+  Error Message:
+   Expected result.QualityReport.EngineOutcomes to contain only items matching (Convert(o.ExecutionState, Int32) == 0), but {
+    BirkNext.Web.Models.FrontendQualityEngineOutcome
+    {
+        BrowserName = <null>,
+        BrowserVersion = <null>,
+        CompletedAt = <null>,
+        DisplayName = "Accessibility",
+        DurationMs = <null>,
+        Enabled = True,
+        EngineId = FrontendQualityEngineId.Accessibility {value: 3},
+        Evidence = {empty},
+        EvidenceCount = <null>,
+        ExecutionState = FrontendQualityEngineExecutionState.Unavailable {value: 2},
+        FinalTarget = <null>,
+        FindingCount = <null>,
+        Limitations = {empty},
+        ManualTestingObligations = {empty},
+        ReadinessReason = <null>,
+        ReadinessState = FrontendQualityEngineReadinessState.Unavailable {value: 2},
+        RequestedTarget = "https://example.com",
+        Requirement = FrontendQualityEngineRequirement.Optional {value: 1},
+        SanitizedFailureReason = <null>,
+        StartedAt = <null>,
+        ToolName = "axe-core",
+        ToolVersion = <null>
+    },
+    BirkNext.Web.Models.FrontendQualityEngineOutcome
+    {
+        BrowserName = <null>,
+        BrowserVersion = <null>,
+        CompletedAt = <null>,
+        DisplayName = "Lighthouse",
+        DurationMs = <null>,
+        Enabled = True,
+        EngineId = FrontendQualityEngineId.Lighthouse {value: 4},
+        Evidence = {empty},
+        EvidenceCount = <null>,
+        ExecutionState = FrontendQualityEngineExecutionState.Unavailable {value: 2},
+        FinalTarget = <null>,
+        FindingCount = <null>,
+        Limitations = {empty},
+        ManualTestingObligations = {empty},
+        ReadinessReason = <null>,
+        ReadinessState = FrontendQualityEngineReadinessState.Unavailable {value: 2},
+        RequestedTarget = "https://example.com",
+        Requirement = FrontendQualityEngineRequirement.Optional {value: 1},
+        SanitizedFailureReason = <null>,
+        StartedAt = <null>,
+        ToolName = "Lighthouse",
+        ToolVersion = <null>
+    }
+} do(es) not match.
+  Stack Trace:
+     at FluentAssertions.Collections.GenericCollectionAssertions`3.<>c__DisplayClass90_0.<OnlyContain>b__0(AssertionChain chain)
+   at FluentAssertions.Collections.GenericCollectionAssertions`3.OnlyContain(Expression`1 predicate, String because, Object[] becauseArgs)
+   at BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.AllSixEnabledAndAssessed_ProduceExactlyOneOutcomeEach() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\FrontendQualityEngineNormalizationTests.cs:line 29
+--- End of stack trace from previous location ---
+  Failed BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.OptionalToolFailure_DoesNotEraseOtherOutcomesOrExecuteTwice(failed: PassiveSecurity) [3 ms]
+  Error Message:
+   Expected report.EngineOutcomes.Where(o => o.EngineId != failed) to contain only items matching (Convert(o.ExecutionState, Int32) == 0), but {
+    BirkNext.Web.Models.FrontendQualityEngineOutcome
+    {
+        BrowserName = <null>,
+        BrowserVersion = <null>,
+        CompletedAt = <null>,
+        DisplayName = "Accessibility",
+        DurationMs = <null>,
+        Enabled = True,
+        EngineId = FrontendQualityEngineId.Accessibility {value: 3},
+        Evidence = {empty},
+        EvidenceCount = <null>,
+        ExecutionState = FrontendQualityEngineExecutionState.Unavailable {value: 2},
+        FinalTarget = <null>,
+        FindingCount = <null>,
+        Limitations = {empty},
+        ManualTestingObligations = {empty},
+        ReadinessReason = <null>,
+        ReadinessState = FrontendQualityEngineReadinessState.Unavailable {value: 2},
+        RequestedTarget = "https://example.com",
+        Requirement = FrontendQualityEngineRequirement.Optional {value: 1},
+        SanitizedFailureReason = <null>,
+        StartedAt = <null>,
+        ToolName = "axe-core",
+        ToolVersion = <null>
+    },
+    BirkNext.Web.Models.FrontendQualityEngineOutcome
+    {
+        BrowserName = <null>,
+        BrowserVersion = <null>,
+        CompletedAt = <null>,
+        DisplayName = "Lighthouse",
+        DurationMs = <null>,
+        Enabled = True,
+        EngineId = FrontendQualityEngineId.Lighthouse {value: 4},
+        Evidence = {empty},
+        EvidenceCount = <null>,
+        ExecutionState = FrontendQualityEngineExecutionState.Unavailable {value: 2},
+        FinalTarget = <null>,
+        FindingCount = <null>,
+        Limitations = {empty},
+        ManualTestingObligations = {empty},
+        ReadinessReason = <null>,
+        ReadinessState = FrontendQualityEngineReadinessState.Unavailable {value: 2},
+        RequestedTarget = "https://example.com",
+        Requirement = FrontendQualityEngineRequirement.Optional {value: 1},
+        SanitizedFailureReason = <null>,
+        StartedAt = <null>,
+        ToolName = "Lighthouse",
+        ToolVersion = <null>
+    }
+} do(es) not match.
+  Stack Trace:
+     at FluentAssertions.Collections.GenericCollectionAssertions`3.<>c__DisplayClass90_0.<OnlyContain>b__0(AssertionChain chain)
+   at FluentAssertions.Collections.GenericCollectionAssertions`3.OnlyContain(Expression`1 predicate, String because, Object[] becauseArgs)
+   at BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.OptionalToolFailure_DoesNotEraseOtherOutcomesOrExecuteTwice(FrontendQualityEngineId failed) in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\FrontendQualityEngineNormalizationTests.cs:line 203
+--- End of stack trace from previous location ---
+  Failed BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.OptionalToolFailure_DoesNotEraseOtherOutcomesOrExecuteTwice(failed: Lighthouse) [1 ms]
+  Error Message:
+   Expected report.EngineOutcomes.Single(o => o.EngineId == failed).ExecutionState to be FrontendQualityEngineExecutionState.EngineError {value: 7}, but found FrontendQualityEngineExecutionState.Unavailable {value: 2}.
+  Stack Trace:
+     at FluentAssertions.Primitives.EnumAssertions`2.Be(TEnum expected, String because, Object[] becauseArgs)
+   at BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.OptionalToolFailure_DoesNotEraseOtherOutcomesOrExecuteTwice(FrontendQualityEngineId failed) in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\FrontendQualityEngineNormalizationTests.cs:line 202
+--- End of stack trace from previous location ---
+  Failed BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.OptionalToolFailure_DoesNotEraseOtherOutcomesOrExecuteTwice(failed: BrowserRuntime) [2 ms]
+  Error Message:
+   Expected report.EngineOutcomes.Where(o => o.EngineId != failed) to contain only items matching (Convert(o.ExecutionState, Int32) == 0), but {
+    BirkNext.Web.Models.FrontendQualityEngineOutcome
+    {
+        BrowserName = <null>,
+        BrowserVersion = <null>,
+        CompletedAt = <null>,
+        DisplayName = "Accessibility",
+        DurationMs = <null>,
+        Enabled = True,
+        EngineId = FrontendQualityEngineId.Accessibility {value: 3},
+        Evidence = {empty},
+        EvidenceCount = <null>,
+        ExecutionState = FrontendQualityEngineExecutionState.Unavailable {value: 2},
+        FinalTarget = <null>,
+        FindingCount = <null>,
+        Limitations = {empty},
+        ManualTestingObligations = {empty},
+        ReadinessReason = <null>,
+        ReadinessState = FrontendQualityEngineReadinessState.Unavailable {value: 2},
+        RequestedTarget = "https://example.com",
+        Requirement = FrontendQualityEngineRequirement.Optional {value: 1},
+        SanitizedFailureReason = <null>,
+        StartedAt = <null>,
+        ToolName = "axe-core",
+        ToolVersion = <null>
+    },
+    BirkNext.Web.Models.FrontendQualityEngineOutcome
+    {
+        BrowserName = <null>,
+        BrowserVersion = <null>,
+        CompletedAt = <null>,
+        DisplayName = "Lighthouse",
+        DurationMs = <null>,
+        Enabled = True,
+        EngineId = FrontendQualityEngineId.Lighthouse {value: 4},
+        Evidence = {empty},
+        EvidenceCount = <null>,
+        ExecutionState = FrontendQualityEngineExecutionState.Unavailable {value: 2},
+        FinalTarget = <null>,
+        FindingCount = <null>,
+        Limitations = {empty},
+        ManualTestingObligations = {empty},
+        ReadinessReason = <null>,
+        ReadinessState = FrontendQualityEngineReadinessState.Unavailable {value: 2},
+        RequestedTarget = "https://example.com",
+        Requirement = FrontendQualityEngineRequirement.Optional {value: 1},
+        SanitizedFailureReason = <null>,
+        StartedAt = <null>,
+        ToolName = "Lighthouse",
+        ToolVersion = <null>
+    }
+} do(es) not match.
+  Stack Trace:
+     at FluentAssertions.Collections.GenericCollectionAssertions`3.<>c__DisplayClass90_0.<OnlyContain>b__0(AssertionChain chain)
+   at FluentAssertions.Collections.GenericCollectionAssertions`3.OnlyContain(Expression`1 predicate, String because, Object[] becauseArgs)
+[xUnit.net 00:00:06.85]     BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.BrowserRuntimeEngineError_IsolatedAndHasNoScore [FAIL]
+   at BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.OptionalToolFailure_DoesNotEraseOtherOutcomesOrExecuteTwice(FrontendQualityEngineId failed) in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\FrontendQualityEngineNormalizationTests.cs:line 203
+--- End of stack trace from previous location ---
+  Failed BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.OptionalToolFailure_DoesNotEraseOtherOutcomesOrExecuteTwice(failed: Accessibility) [< 1 ms]
+  Error Message:
+   Expected report.EngineOutcomes.Single(o => o.EngineId == failed).ExecutionState to be FrontendQualityEngineExecutionState.EngineError {value: 7}, but found FrontendQualityEngineExecutionState.Unavailable {value: 2}.
+  Stack Trace:
+     at FluentAssertions.Primitives.EnumAssertions`2.Be(TEnum expected, String because, Object[] becauseArgs)
+   at BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.OptionalToolFailure_DoesNotEraseOtherOutcomesOrExecuteTwice(FrontendQualityEngineId failed) in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\FrontendQualityEngineNormalizationTests.cs:line 202
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:06.86]     BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.SessionAndSerialization_PreserveSixOutcomesCoverageRuntimeAndLegac
+yProjection [FAIL]
+  Failed BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.BrowserRuntimeEngineError_IsolatedAndHasNoScore [2 ms]
+  Error Message:
+   Expected report.EngineOutcomes.Where(o => o.EngineId != FrontendQualityEngineId.BrowserRuntime) to contain only items matching (Convert(o.ExecutionState, Int32) == 0), but {
+    BirkNext.Web.Models.FrontendQualityEngineOutcome
+    {
+        BrowserName = <null>,
+        BrowserVersion = <null>,
+        CompletedAt = <null>,
+        DisplayName = "Accessibility",
+        DurationMs = <null>,
+        Enabled = True,
+        EngineId = FrontendQualityEngineId.Accessibility {value: 3},
+        Evidence = {empty},
+        EvidenceCount = <null>,
+        ExecutionState = FrontendQualityEngineExecutionState.Unavailable {value: 2},
+        FinalTarget = <null>,
+        FindingCount = <null>,
+        Limitations = {empty},
+        ManualTestingObligations = {empty},
+        ReadinessReason = <null>,
+        ReadinessState = FrontendQualityEngineReadinessState.Unavailable {value: 2},
+        RequestedTarget = "https://example.com",
+        Requirement = FrontendQualityEngineRequirement.Optional {value: 1},
+        SanitizedFailureReason = <null>,
+        StartedAt = <null>,
+        ToolName = "axe-core",
+        ToolVersion = <null>
+    },
+    BirkNext.Web.Models.FrontendQualityEngineOutcome
+    {
+        BrowserName = <null>,
+        BrowserVersion = <null>,
+        CompletedAt = <null>,
+        DisplayName = "Lighthouse",
+        DurationMs = <null>,
+        Enabled = True,
+        EngineId = FrontendQualityEngineId.Lighthouse {value: 4},
+        Evidence = {empty},
+        EvidenceCount = <null>,
+        ExecutionState = FrontendQualityEngineExecutionState.Unavailable {value: 2},
+        FinalTarget = <null>,
+        FindingCount = <null>,
+        Limitations = {empty},
+        ManualTestingObligations = {empty},
+        ReadinessReason = <null>,
+        ReadinessState = FrontendQualityEngineReadinessState.Unavailable {value: 2},
+        RequestedTarget = "https://example.com",
+        Requirement = FrontendQualityEngineRequirement.Optional {value: 1},
+        SanitizedFailureReason = <null>,
+        StartedAt = <null>,
+        ToolName = "Lighthouse",
+        ToolVersion = <null>
+    }
+} do(es) not match.
+  Stack Trace:
+     at FluentAssertions.Collections.GenericCollectionAssertions`3.<>c__DisplayClass90_0.<OnlyContain>b__0(AssertionChain chain)
+   at FluentAssertions.Collections.GenericCollectionAssertions`3.OnlyContain(Expression`1 predicate, String because, Object[] becauseArgs)
+   at BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.BrowserRuntimeEngineError_IsolatedAndHasNoScore() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\FrontendQualityEngineNormalizationTests.cs:line 104
+--- End of stack trace from previous location ---
+  Failed BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.SessionAndSerialization_PreserveSixOutcomesCoverageRuntimeAndLegacyProjection [8 ms]
+  Error Message:
+   Expected restored.AssessedEngines to contain 6 item(s), but found 4: {"Static Security", "Passive Performance", "Browser Runtime", "Passive Security"}.
+  Stack Trace:
+     at FluentAssertions.Collections.GenericCollectionAssertions`3.HaveCount(Int32 expected, String because, Object[] becauseArgs)
+   at BirkNext.Web.Tests.Services.FrontendQualityEngineNormalizationTests.SessionAndSerialization_PreserveSixOutcomesCoverageRuntimeAndLegacyProjection() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\FrontendQualityEngineNormalizationTests.cs:line 224
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:07.04]     BirkNext.Web.Tests.Services.LighthouseOrchestrationTests.LighthouseEngineError_PreservesSuccessfulEngines_AndProducesPartialAssessment
+ [FAIL]
+[xUnit.net 00:00:07.04]     BirkNext.Web.Tests.Services.LighthouseOrchestrationTests.LighthouseEnabled_PreflightReady_InvokesOnce_AndPreservesLabSemantics [FAIL]
+  Failed BirkNext.Web.Tests.Services.LighthouseOrchestrationTests.LighthouseEngineError_PreservesSuccessfulEngines_AndProducesPartialAssessment [1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   0
+  Stack Trace:
+     at BirkNext.Web.Tests.Services.LighthouseOrchestrationTests.LighthouseEngineError_PreservesSuccessfulEngines_AndProducesPartialAssessment() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\LighthouseOrchestrationTests.cs:line 41
+--- End of stack trace from previous location ---
+  Failed BirkNext.Web.Tests.Services.LighthouseOrchestrationTests.LighthouseEnabled_PreflightReady_InvokesOnce_AndPreservesLabSemantics [1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   0
+  Stack Trace:
+     at BirkNext.Web.Tests.Services.LighthouseOrchestrationTests.LighthouseEnabled_PreflightReady_InvokesOnce_AndPreservesLabSemantics() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\LighthouseOrchestrationTests.cs:line 21
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:07.59]     BirkNext.Web.Tests.Services.FrontendQualityReviewOrchestratorExecutionTest.Orchestrate_PassiveEngineError_RetainsOtherResultsAndMarksP
+artialWithoutZapScore [FAIL]
+  Failed BirkNext.Web.Tests.Services.FrontendQualityReviewOrchestratorExecutionTest.Orchestrate_PassiveEngineError_RetainsOtherResultsAndMarksPartialWithoutZapScore [60 ms]
+  Error Message:
+   Expected result.AccessibilityReport not to be <null>.
+  Stack Trace:
+     at FluentAssertions.Primitives.ReferenceTypeAssertions`2.NotBeNull(String because, Object[] becauseArgs)
+   at BirkNext.Web.Tests.Services.FrontendQualityReviewOrchestratorExecutionTest.Orchestrate_PassiveEngineError_RetainsOtherResultsAndMarksPartialWithoutZapScore() in C:\Users\ajaan\source\sdd-repos\BirkNext\AIAssisted\frontend\BirkNext.Web.Tests\Services\FrontendQualityReviewOrchestratorExecutionTest.cs:line 70
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:    12, Passed:  2183, Skipped:     0, Total:  2195, Duration: 6 s - BirkNext.Web.Tests.dll (net8.0)

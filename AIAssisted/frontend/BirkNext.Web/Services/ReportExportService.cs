@@ -564,7 +564,7 @@ public sealed class ReportExportService : IReportExportService
             ["Engine", "Policy", "Enabled", "Outcome", "Evidence / findings", "Duration", "Tool / browser", "Reason / manual obligation"],
             report.EngineOutcomes.OrderBy(o => o.EngineId).Select(o => new[]
             {
-                Esc(o.DisplayName), Esc(o.Requirement.ToString()), o.Enabled ? "Enabled" : "Disabled", Esc(FrontendQualityDecisionSupportService.ExecutionStateLabel(o.ExecutionState)),
+                Esc(o.DisplayName), Esc(o.Requirement.ToString()), o.Enabled ? "Enabled" : "Disabled", Esc(FrontendQualityEngineOutcomePresentation.GetLabel(o.OutcomeReason)),
                 $"{o.EvidenceCount?.ToString() ?? "—"} / {o.FindingCount?.ToString() ?? "—"}",
                 o.DurationMs.HasValue ? $"{o.DurationMs.Value} ms" : "—",
                 Esc(string.Join(" · ", new[] { o.ToolName, o.ToolVersion, o.BrowserName, o.BrowserVersion }.Where(v => !string.IsNullOrWhiteSpace(v)))),

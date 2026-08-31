@@ -222,7 +222,7 @@ public enum BrowserRuntimeEngineStatusDto
 }
 
 public enum BrowserRuntimeExecutionModeDto { AnonymousOwnedBrowser, AuthenticatedSessionPage }
-public enum BrowserRuntimeOutcomeReasonDto { None, AuthenticationRequired, AuthenticationExpired, AuthenticationCancelled, UnexpectedOrigin, SessionUnavailable }
+public enum BrowserRuntimeOutcomeReasonDto { None, AuthenticationRequired, AuthenticationExpired, AuthenticationCancelled, UnexpectedOrigin, SessionUnavailable, TargetPolicyRejected, DisabledInSystemSettings, EngineUnavailable, EngineError, ResourceUnavailable }
 
 public enum BrowserStartupStateDto
 {

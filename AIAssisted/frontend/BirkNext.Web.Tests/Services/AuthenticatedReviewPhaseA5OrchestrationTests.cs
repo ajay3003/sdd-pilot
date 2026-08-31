@@ -21,7 +21,7 @@ public sealed class AuthenticatedReviewPhaseA5OrchestrationTests
         fixture.PassiveSecurity.Calls.Should().Be(0);
         result.PreflightBlocked.Should().BeTrue();
         result.QualityReport!.EngineOutcomes.Single(x => x.EngineId == FrontendQualityEngineId.BrowserRuntime)
-            .OutcomeReason.Should().Be(FrontendQualityEngineOutcomeReason.AuthoritativeSnapshotRequired);
+            .OutcomeReason.Should().Be(FrontendQualityEngineOutcomeReason.AuthenticationRequired);
     }
 
     [Fact]
@@ -157,7 +157,7 @@ public sealed class AuthenticatedReviewPhaseA5OrchestrationTests
         var result = await fixture.RunAsync();
         var runtime = result.QualityReport!.EngineOutcomes.Single(x => x.EngineId == FrontendQualityEngineId.BrowserRuntime);
         fixture.Runtime.Calls.Should().Be(0);
-        runtime.OutcomeReason.Should().Be(FrontendQualityEngineOutcomeReason.RuntimeNotReady);
+        runtime.OutcomeReason.Should().Be(FrontendQualityEngineOutcomeReason.ReadinessUnavailable);
         runtime.ExecutionState.Should().NotBe(FrontendQualityEngineExecutionState.Assessed);
     }
 

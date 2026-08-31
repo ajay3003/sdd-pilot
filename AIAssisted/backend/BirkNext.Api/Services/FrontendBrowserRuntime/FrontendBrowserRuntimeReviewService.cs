@@ -32,7 +32,7 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
     public async Task<BrowserRuntimeResult> ReviewAsync(BrowserRuntimeExecutionRequest request, CancellationToken cancellationToken = default)
     {
         var validation = _targetValidator.ValidateTarget(request.TargetUrl);
-        if (!validation.IsValid) return Rejected(request, BrowserRuntimeOutcomeReason.SessionUnavailable, validation.BlockReason ?? "Target validation failed.");
+        if (!validation.IsValid) return Rejected(request, BrowserRuntimeOutcomeReason.TargetPolicyRejected, validation.BlockReason ?? "Target validation failed.");
         return request.ExecutionMode == BrowserRuntimeExecutionMode.AuthenticatedSessionPage
             ? await ReviewAuthenticatedAsync(request, cancellationToken)
             : await ReviewAnonymousAsync(request, cancellationToken);
@@ -40,7 +40,7 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
 
     private async Task<BrowserRuntimeResult> ReviewAnonymousAsync(BrowserRuntimeExecutionRequest request, CancellationToken cancellationToken)
     {
-        if (!_enabled) return Rejected(request, BrowserRuntimeOutcomeReason.SessionUnavailable, "Browser Runtime engine is disabled.");
+        if (!_enabled) return Rejected(request, BrowserRuntimeOutcomeReason.DisabledInSystemSettings, "Browser Runtime engine is disabled.");
         IPlaywright? playwright = null; IBrowser? browser = null; IBrowserContext? context = null; IPage? page = null;
         try
         {
@@ -53,11 +53,11 @@ public sealed class FrontendBrowserRuntimeReviewService : IFrontendBrowserRuntim
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (PlaywrightException ex) when (ex.Message.Contains("Chromium") || ex.Message.Contains("executable"))
-        { return Rejected(request, BrowserRuntimeOutcomeReason.SessionUnavailable, "Chromium browser not available", BrowserRuntimeEngineStatus.EngineError); }
+        { return Rejected(request, BrowserRuntimeOutcomeReason.EngineUnavailable, "Chromium browser not available", BrowserRuntimeEngineStatus.EngineError); }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Anonymous browser runtime failed for {TargetOrigin}", SafeOrigin(request.TargetUrl));
-            return Rejected(request, BrowserRuntimeOutcomeReason.SessionUnavailable, "Browser Runtime failed.", BrowserRuntimeEngineStatus.EngineError);
+            return Rejected(request, BrowserRuntimeOutcomeReason.EngineError, "Browser Runtime failed.", BrowserRuntimeEngineStatus.EngineError);
         }
         finally
         {

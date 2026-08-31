@@ -22,7 +22,7 @@ public sealed class ExternalEngineHardeningTests
         var result = await service.ReviewAsync("http://example.com");
 
         result.Status.Should().Be(BrowserRuntimeEngineStatus.Skipped);
-        result.OutcomeReason.Should().Be(BrowserRuntimeOutcomeReason.SessionUnavailable);
+        result.OutcomeReason.Should().Be(BrowserRuntimeOutcomeReason.DisabledInSystemSettings);
         result.EngineError.Should().Contain("disabled");
     }
 

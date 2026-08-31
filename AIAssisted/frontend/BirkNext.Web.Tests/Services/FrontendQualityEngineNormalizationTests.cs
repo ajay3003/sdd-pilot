@@ -110,7 +110,7 @@ public sealed class FrontendQualityEngineNormalizationTests
 
     [Theory]
     [InlineData(AccessibilityExecutionStatusDto.Assessed, FrontendQualityEngineExecutionState.Assessed)]
-    [InlineData(AccessibilityExecutionStatusDto.AuthenticationRequired, FrontendQualityEngineExecutionState.AuthenticationRequired)]
+    [InlineData(AccessibilityExecutionStatusDto.AuthenticationRequired, FrontendQualityEngineExecutionState.Unavailable)]
     [InlineData(AccessibilityExecutionStatusDto.EngineError, FrontendQualityEngineExecutionState.EngineError)]
     [InlineData(AccessibilityExecutionStatusDto.Skipped, FrontendQualityEngineExecutionState.SafetyBlocked)]
     public void AccessibilityStatesAndMetadata_MapPrecisely(
@@ -130,7 +130,7 @@ public sealed class FrontendQualityEngineNormalizationTests
     [Theory]
     [InlineData(LighthouseExecutionStatusDto.Assessed, FrontendQualityEngineExecutionState.Assessed)]
     [InlineData(LighthouseExecutionStatusDto.TimedOut, FrontendQualityEngineExecutionState.TimedOut)]
-    [InlineData(LighthouseExecutionStatusDto.AuthenticationRequired, FrontendQualityEngineExecutionState.AuthenticationRequired)]
+    [InlineData(LighthouseExecutionStatusDto.AuthenticationRequired, FrontendQualityEngineExecutionState.NotApplicable)]
     [InlineData(LighthouseExecutionStatusDto.EngineError, FrontendQualityEngineExecutionState.EngineError)]
     [InlineData(LighthouseExecutionStatusDto.Skipped, FrontendQualityEngineExecutionState.SafetyBlocked)]
     public void LighthouseStatesAndMetadata_MapPrecisely(
@@ -148,7 +148,7 @@ public sealed class FrontendQualityEngineNormalizationTests
     [Theory]
     [InlineData(PassiveSecurityExecutionStatusDto.Assessed, null, FrontendQualityEngineExecutionState.Assessed)]
     [InlineData(PassiveSecurityExecutionStatusDto.TimedOut, null, FrontendQualityEngineExecutionState.TimedOut)]
-    [InlineData(PassiveSecurityExecutionStatusDto.AuthenticationRequired, null, FrontendQualityEngineExecutionState.AuthenticationRequired)]
+    [InlineData(PassiveSecurityExecutionStatusDto.AuthenticationRequired, null, FrontendQualityEngineExecutionState.NotApplicable)]
     [InlineData(PassiveSecurityExecutionStatusDto.EngineError, null, FrontendQualityEngineExecutionState.EngineError)]
     [InlineData(PassiveSecurityExecutionStatusDto.Skipped, "engine is disabled", FrontendQualityEngineExecutionState.Unavailable)]
     [InlineData(PassiveSecurityExecutionStatusDto.Skipped, "target blocked", FrontendQualityEngineExecutionState.SafetyBlocked)]
@@ -176,7 +176,7 @@ public sealed class FrontendQualityEngineNormalizationTests
         FrontendQualityEngineOutcomeNormalizer.PreflightBlocked("x", context, PreflightStatus.InvalidTarget, "blocked")
             .Should().OnlyContain(o => o.ExecutionState == FrontendQualityEngineExecutionState.SafetyBlocked);
         FrontendQualityEngineOutcomeNormalizer.PreflightBlocked("x", context, PreflightStatus.AuthenticationRequired, "auth")
-            .Should().OnlyContain(o => o.ExecutionState == FrontendQualityEngineExecutionState.AuthenticationRequired);
+            .Should().OnlyContain(o => o.ExecutionState == FrontendQualityEngineExecutionState.Unavailable);
     }
 
     [Theory]

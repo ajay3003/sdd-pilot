@@ -15,7 +15,12 @@ public enum BrowserRuntimeOutcomeReason
     AuthenticationExpired,
     AuthenticationCancelled,
     UnexpectedOrigin,
-    SessionUnavailable
+    SessionUnavailable,
+    TargetPolicyRejected,
+    DisabledInSystemSettings,
+    EngineUnavailable,
+    EngineError,
+    ResourceUnavailable,
 }
 
 public enum BrowserRuntimeEngineStatus

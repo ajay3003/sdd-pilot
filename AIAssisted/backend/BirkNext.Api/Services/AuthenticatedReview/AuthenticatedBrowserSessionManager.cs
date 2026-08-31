@@ -150,8 +150,9 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
         var origin = NormalizeTarget(targetUrl).GetLeftPart(UriPartial.Authority);
         if (!string.Equals(entry.TargetOrigin, origin, StringComparison.OrdinalIgnoreCase)) throw new UnauthorizedAccessException("Session target origin mismatch.");
         if (IsExpired(entry)) { _ = ExpireAsync(entry); throw new AuthenticatedSessionExpiredException(); }
-        if (entry.Status is AuthenticatedBrowserSessionStatus.Cancelled or AuthenticatedBrowserSessionStatus.Failed or AuthenticatedBrowserSessionStatus.Disposed)
-            throw new ObjectDisposedException(nameof(AuthenticatedBrowserSessionManager));
+        if (entry.Status is AuthenticatedBrowserSessionStatus.Disposed) throw new ObjectDisposedException(nameof(AuthenticatedBrowserSessionManager));
+        if (entry.Status is AuthenticatedBrowserSessionStatus.Failed) throw new AuthenticatedResourceUnavailableException("Session resource has become unavailable.");
+        if (entry.Status is AuthenticatedBrowserSessionStatus.Cancelled) throw new AuthenticatedResourceUnavailableException("Session has been cancelled.");
         if (requireAuthenticated && (entry.Status != AuthenticatedBrowserSessionStatus.Authenticated || !entry.ApplicationValidationCurrent))
             throw new AuthenticatedSessionNotEligibleException();
         if (entry.Resources is null) throw new InvalidOperationException("Browser is not ready.");
@@ -167,8 +168,8 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
         var failure = entry.Resources switch
         {
             null => ("resources_null", "Browser resources are null"),
-            _ when entry.Resources.Page.IsClosed => ("page_closed", "Manager-owned page is closed"),
             _ when !entry.Resources.Browser.IsConnected => ("browser_disconnected", "Browser is disconnected"),
+            _ when entry.Resources.Page.IsClosed => ("page_closed", "Manager-owned page is closed"),
             _ => (null, null)
         };
 
@@ -193,12 +194,19 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
 
     private async Task MarkResourceFailedAsync(Entry entry, string reason)
     {
+        if (entry.Status is AuthenticatedBrowserSessionStatus.Cancelled or AuthenticatedBrowserSessionStatus.Failed or AuthenticatedBrowserSessionStatus.Disposed)
+            return;
         entry.RevokeEngineEligibility();
         entry.Status = AuthenticatedBrowserSessionStatus.Failed;
         entry.FailureCategory = reason;
         entry.ApplicationValidationCurrent = false;
         if (entry.Resources is not null) await entry.Resources.DisposeAsync();
         _logger.LogInformation("Authenticated browser session {SessionId} resource failure: {Reason}", entry.SessionId, reason);
+    }
+
+    private async Task DisposeResourcesSilentlyAsync(IAuthenticatedBrowserResources resources)
+    {
+        try { await resources.DisposeAsync(); } catch { }
     }
 
     private void AttachNavigationObserver(Entry entry)
@@ -342,13 +350,12 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
     private async Task ExpireAsync(Entry entry) { entry.Status = AuthenticatedBrowserSessionStatus.Expired; await RemoveAndDisposeAsync(entry, "expired"); }
     private async Task FailAndDisposeAsync(Entry entry, string category) { entry.Status = AuthenticatedBrowserSessionStatus.Failed; entry.FailureCategory = category; await RemoveAndDisposeAsync(entry, category); }
 
-    private async Task RemoveAndDisposeAsync(Entry entry, string reason)
+    private async Task RemoveAndDisposeAsync(Entry entry, string reason, bool remove = true)
     {
-        if (!_sessions.TryRemove(entry.SessionId, out _)) return;
-        _reviewSessions.TryRemove(BindingKey(entry.ReviewSessionId, entry.ProfileId), out _);
+        if (remove && !_sessions.TryRemove(entry.SessionId, out _)) return;
+        if (remove) _reviewSessions.TryRemove(BindingKey(entry.ReviewSessionId, entry.ProfileId), out _);
         entry.Cancellation.Cancel();
         if (entry.Resources is not null) await entry.Resources.DisposeAsync();
-        entry.Status = entry.Status == AuthenticatedBrowserSessionStatus.Cancelled ? AuthenticatedBrowserSessionStatus.Cancelled : entry.Status;
         _logger.LogInformation("Authenticated browser session {SessionId} cleaned up: {CleanupReason}", entry.SessionId, reason);
     }
 
@@ -453,6 +460,7 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
 public sealed class AuthenticatedReviewUnavailableException(string message) : InvalidOperationException(message);
 public sealed class AuthenticatedSessionConflictException(string message) : InvalidOperationException(message);
 public sealed class AuthenticatedSessionExpiredException() : InvalidOperationException("Authenticated browser session expired.");
+public sealed class AuthenticatedSessionCancelledException() : InvalidOperationException("Authenticated browser session has been cancelled.");
 public sealed class AuthenticatedSessionNotEligibleException() : InvalidOperationException("Authenticated browser session is not eligible for review-engine use.");
 public sealed class AuthenticatedNavigationException(string message, Exception inner) : InvalidOperationException(message, inner);
 public sealed class AuthenticatedResourceUnavailableException(string message) : InvalidOperationException(message);

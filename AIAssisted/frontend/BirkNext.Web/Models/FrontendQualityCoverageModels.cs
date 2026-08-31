@@ -23,7 +23,6 @@ public enum FrontendQualityEngineExecutionState
     Disabled,
     Unavailable,
     SafetyBlocked,
-    AuthenticationRequired,
     TimedOut,
     Cancelled,
     EngineError,
@@ -37,7 +36,7 @@ public enum FrontendQualityEngineOutcomeReason
     NotSelected,
     BlockedByDeploymentPolicy,
     DisabledInSystemSettings,
-    RuntimeNotReady,
+    ReadinessUnavailable,
     AuthenticationRequired,
     AuthenticationExpired,
     AuthenticationCancelled,
@@ -49,7 +48,6 @@ public enum FrontendQualityEngineOutcomeReason
     EngineUnavailable,
     EngineError,
     Cancelled,
-    AuthoritativeSnapshotRequired,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -211,7 +209,6 @@ public static class FrontendQualityEngineCompatibility
         Names(outcomes, o => o.ExecutionState is FrontendQualityEngineExecutionState.Disabled
             or FrontendQualityEngineExecutionState.Unavailable
             or FrontendQualityEngineExecutionState.SafetyBlocked
-            or FrontendQualityEngineExecutionState.AuthenticationRequired
             or FrontendQualityEngineExecutionState.NotApplicable);
 
     private static List<string> Names(

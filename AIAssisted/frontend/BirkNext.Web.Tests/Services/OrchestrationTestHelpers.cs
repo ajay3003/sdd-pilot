@@ -13,10 +13,21 @@ internal static class OrchestrationTestHelpers
     /// </summary>
     public static IFrontendQualityEngineStatusApiService CreateAlwaysReadyMockService()
     {
-        var mock = new Mock<IFrontendQualityEngineStatusApiService>();
-        mock.Setup(s => s.RevalidateEngineReadinessAsync(It.IsAny<FrontendQualityEngineIdDto>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FrontendQualityEngineReadinessReportDto { IsAvailable = true, CheckedAtUtc = DateTime.UtcNow });
-        return mock.Object;
+        return new AlwaysReadyService();
+    }
+
+    private sealed class AlwaysReadyService : IFrontendQualityEngineStatusApiService
+    {
+        public Task<FrontendQualityEngineStatusReportDto?> GetStatusAsync(
+            ReviewAuthenticationModeDto authMode = ReviewAuthenticationModeDto.Anonymous,
+            ReviewEngineSelectionDto? selection = null,
+            CancellationToken ct = default) => Task.FromResult<FrontendQualityEngineStatusReportDto?>(null);
+
+        public Task<FrontendQualityEngineReadinessReportDto?> RevalidateEngineReadinessAsync(
+            FrontendQualityEngineIdDto engineId,
+            CancellationToken ct = default) =>
+            Task.FromResult<FrontendQualityEngineReadinessReportDto?>(
+                new FrontendQualityEngineReadinessReportDto { IsAvailable = true, CheckedAtUtc = DateTime.UtcNow });
     }
 
     /// <summary>

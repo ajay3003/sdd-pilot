@@ -50,16 +50,16 @@ public static class FrontendQualityEngineOutcomeNormalizer
         string? reason)
     {
         var policy = context.EngineRequirements.ToPolicy();
-        var state = status switch
+        var (state, outcomeReason) = status switch
         {
-            PreflightStatus.AuthenticationRequired => FrontendQualityEngineExecutionState.AuthenticationRequired,
-            PreflightStatus.Unreachable or PreflightStatus.ScannerUnavailable => FrontendQualityEngineExecutionState.Unavailable,
-            _ => FrontendQualityEngineExecutionState.SafetyBlocked,
+            PreflightStatus.AuthenticationRequired => (FrontendQualityEngineExecutionState.Unavailable, FrontendQualityEngineOutcomeReason.AuthenticationRequired),
+            PreflightStatus.Unreachable or PreflightStatus.ScannerUnavailable => (FrontendQualityEngineExecutionState.Unavailable, FrontendQualityEngineOutcomeReason.ReadinessUnavailable),
+            _ => (FrontendQualityEngineExecutionState.SafetyBlocked, FrontendQualityEngineOutcomeReason.TargetPolicyRejected),
         };
         return Enum.GetValues<FrontendQualityEngineId>().Select(id => Base(
             id, DisplayName(id), Enabled(id, context.FeatureToggles), policy.GetRequirement(id),
             Enabled(id, context.FeatureToggles) ? state : FrontendQualityEngineExecutionState.Disabled,
-            targetUrl, failure: reason)).ToList();
+            targetUrl, failure: reason, reason: outcomeReason)).ToList();
     }
 
     public static FrontendQualityEngineOutcome StaticSecurity(
@@ -103,7 +103,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
                 BrowserRuntimeEngineStatusDto.EngineError => FrontendQualityEngineExecutionState.EngineError,
                 BrowserRuntimeEngineStatusDto.NotApplicable => FrontendQualityEngineExecutionState.NotApplicable,
                 BrowserRuntimeEngineStatusDto.Skipped when report.OutcomeReason == BrowserRuntimeOutcomeReasonDto.AuthenticationCancelled => FrontendQualityEngineExecutionState.Cancelled,
-                BrowserRuntimeEngineStatusDto.Skipped when report.OutcomeReason == BrowserRuntimeOutcomeReasonDto.AuthenticationRequired => FrontendQualityEngineExecutionState.AuthenticationRequired,
+                BrowserRuntimeEngineStatusDto.Skipped when report.OutcomeReason == BrowserRuntimeOutcomeReasonDto.AuthenticationRequired => FrontendQualityEngineExecutionState.Unavailable,
                 BrowserRuntimeEngineStatusDto.Skipped => FrontendQualityEngineExecutionState.SafetyBlocked,
                 _ when cancelled => FrontendQualityEngineExecutionState.Cancelled,
                 _ => FrontendQualityEngineExecutionState.Unavailable,
@@ -129,9 +129,9 @@ public static class FrontendQualityEngineOutcomeNormalizer
             {
                 AccessibilityExecutionStatusDto.Assessed => FrontendQualityEngineExecutionState.Assessed,
                 AccessibilityExecutionStatusDto.EngineError => FrontendQualityEngineExecutionState.EngineError,
-                AccessibilityExecutionStatusDto.AuthenticationRequired => FrontendQualityEngineExecutionState.AuthenticationRequired,
+                AccessibilityExecutionStatusDto.AuthenticationRequired => FrontendQualityEngineExecutionState.Unavailable,
                 AccessibilityExecutionStatusDto.Skipped when report.OutcomeReason == AccessibilityOutcomeReasonDto.AuthenticationCancelled => FrontendQualityEngineExecutionState.Cancelled,
-                AccessibilityExecutionStatusDto.Skipped when report.OutcomeReason == AccessibilityOutcomeReasonDto.AuthenticationRequired => FrontendQualityEngineExecutionState.AuthenticationRequired,
+                AccessibilityExecutionStatusDto.Skipped when report.OutcomeReason == AccessibilityOutcomeReasonDto.AuthenticationRequired => FrontendQualityEngineExecutionState.Unavailable,
                 AccessibilityExecutionStatusDto.Skipped => FrontendQualityEngineExecutionState.SafetyBlocked,
                 _ when cancelled => FrontendQualityEngineExecutionState.Cancelled,
                 _ => FrontendQualityEngineExecutionState.Unavailable,
@@ -159,18 +159,22 @@ public static class FrontendQualityEngineOutcomeNormalizer
                 LighthouseExecutionStatusDto.Assessed => FrontendQualityEngineExecutionState.Assessed,
                 LighthouseExecutionStatusDto.TimedOut => FrontendQualityEngineExecutionState.TimedOut,
                 LighthouseExecutionStatusDto.EngineError => FrontendQualityEngineExecutionState.EngineError,
-                LighthouseExecutionStatusDto.AuthenticationRequired => FrontendQualityEngineExecutionState.AuthenticationRequired,
+                LighthouseExecutionStatusDto.AuthenticationRequired => FrontendQualityEngineExecutionState.NotApplicable,
                 LighthouseExecutionStatusDto.Skipped => FrontendQualityEngineExecutionState.SafetyBlocked,
                 _ when cancelled => FrontendQualityEngineExecutionState.Cancelled,
                 _ => FrontendQualityEngineExecutionState.Unavailable,
             };
+        var reason = report?.ExecutionStatus == LighthouseExecutionStatusDto.AuthenticationRequired
+            ? FrontendQualityEngineOutcomeReason.AuthenticationModeUnsupported
+            : FrontendQualityEngineOutcomeReason.None;
         return Base(FrontendQualityEngineId.Lighthouse, "Lighthouse", enabled,
             policy.GetRequirement(FrontendQualityEngineId.Lighthouse), state,
             report?.RequestedUrl ?? targetUrl, report?.FinalUrl, report?.BrowserName, report?.BrowserVersion,
             findings: report?.Audits?.Count, evidence: report?.Metrics?.Count,
             failure: error ?? report?.EngineError, duration: report?.DurationMs, limitations: report?.Limitations,
             toolName: string.IsNullOrWhiteSpace(report?.NodeVersion) ? "Lighthouse" : $"Lighthouse (Node {Safe(report.NodeVersion)})",
-            toolVersion: report?.LighthouseVersion, strength: FrontendQualityEvidenceStrength.ToolDiagnostic);
+            toolVersion: report?.LighthouseVersion, strength: FrontendQualityEvidenceStrength.ToolDiagnostic,
+            reason: reason);
     }
 
     public static FrontendQualityEngineOutcome PassiveSecurity(
@@ -185,19 +189,25 @@ public static class FrontendQualityEngineOutcomeNormalizer
                 PassiveSecurityExecutionStatusDto.Assessed => FrontendQualityEngineExecutionState.Assessed,
                 PassiveSecurityExecutionStatusDto.TimedOut => FrontendQualityEngineExecutionState.TimedOut,
                 PassiveSecurityExecutionStatusDto.EngineError => FrontendQualityEngineExecutionState.EngineError,
-                PassiveSecurityExecutionStatusDto.AuthenticationRequired => FrontendQualityEngineExecutionState.AuthenticationRequired,
+                PassiveSecurityExecutionStatusDto.AuthenticationRequired => FrontendQualityEngineExecutionState.NotApplicable,
                 PassiveSecurityExecutionStatusDto.Skipped when Contains(report.EngineError, "disabled") => FrontendQualityEngineExecutionState.Unavailable,
                 PassiveSecurityExecutionStatusDto.Skipped => FrontendQualityEngineExecutionState.SafetyBlocked,
                 _ when cancelled => FrontendQualityEngineExecutionState.Cancelled,
                 _ => FrontendQualityEngineExecutionState.Unavailable,
             };
+        var reason = report?.ExecutionStatus == PassiveSecurityExecutionStatusDto.AuthenticationRequired
+            ? FrontendQualityEngineOutcomeReason.AuthenticationModeUnsupported
+            : Contains(report?.EngineError, "disabled")
+                ? FrontendQualityEngineOutcomeReason.DisabledInSystemSettings
+                : FrontendQualityEngineOutcomeReason.None;
         return Base(FrontendQualityEngineId.PassiveSecurity, "Passive Security", enabled,
             policy.GetRequirement(FrontendQualityEngineId.PassiveSecurity), state,
             report?.RequestedUrl ?? targetUrl, report?.FinalUrl,
             findings: report?.Findings?.Count, evidence: report?.Findings?.Count(f => !string.IsNullOrWhiteSpace(f.Evidence)),
             failure: error ?? report?.EngineError, started: report?.StartedAt, completed: report?.CompletedAt,
             duration: report?.DurationMs, limitations: report?.Limitations, toolName: "OWASP ZAP Passive",
-            toolVersion: report?.ZapVersion, strength: FrontendQualityEvidenceStrength.ToolDiagnostic);
+            toolVersion: report?.ZapVersion, strength: FrontendQualityEvidenceStrength.ToolDiagnostic,
+            reason: reason);
     }
 
     public static List<FrontendQualityFinding> NormalizeBrowserRuntimeFindings(BrowserRuntimeResultDto? report) =>
@@ -308,6 +318,11 @@ public static class FrontendQualityEngineOutcomeNormalizer
             BrowserRuntimeOutcomeReasonDto.AuthenticationCancelled => FrontendQualityEngineOutcomeReason.AuthenticationCancelled,
             BrowserRuntimeOutcomeReasonDto.UnexpectedOrigin => FrontendQualityEngineOutcomeReason.UnexpectedOrigin,
             BrowserRuntimeOutcomeReasonDto.SessionUnavailable => FrontendQualityEngineOutcomeReason.SessionUnavailable,
+            BrowserRuntimeOutcomeReasonDto.TargetPolicyRejected => FrontendQualityEngineOutcomeReason.TargetPolicyRejected,
+            BrowserRuntimeOutcomeReasonDto.DisabledInSystemSettings => FrontendQualityEngineOutcomeReason.DisabledInSystemSettings,
+            BrowserRuntimeOutcomeReasonDto.EngineUnavailable => FrontendQualityEngineOutcomeReason.EngineUnavailable,
+            BrowserRuntimeOutcomeReasonDto.EngineError => FrontendQualityEngineOutcomeReason.EngineError,
+            BrowserRuntimeOutcomeReasonDto.ResourceUnavailable => FrontendQualityEngineOutcomeReason.ResourceUnavailable,
             _ => ReasonForState(state),
         };
 
@@ -326,9 +341,8 @@ public static class FrontendQualityEngineOutcomeNormalizer
     {
         FrontendQualityEngineExecutionState.EngineError => FrontendQualityEngineOutcomeReason.EngineError,
         FrontendQualityEngineExecutionState.Cancelled => FrontendQualityEngineOutcomeReason.Cancelled,
-        FrontendQualityEngineExecutionState.Unavailable => FrontendQualityEngineOutcomeReason.EngineUnavailable,
+        FrontendQualityEngineExecutionState.Unavailable => FrontendQualityEngineOutcomeReason.ReadinessUnavailable,
         FrontendQualityEngineExecutionState.SafetyBlocked => FrontendQualityEngineOutcomeReason.TargetPolicyRejected,
-        FrontendQualityEngineExecutionState.AuthenticationRequired => FrontendQualityEngineOutcomeReason.AuthenticationRequired,
         _ => FrontendQualityEngineOutcomeReason.None,
     };
 
@@ -375,14 +389,16 @@ public static class FrontendQualityEngineOutcomeNormalizer
             FrontendQualityEngineOutcomeReason.NotSelected => FrontendQualityEngineExecutionState.NotApplicable,
             FrontendQualityEngineOutcomeReason.DisabledInSystemSettings => FrontendQualityEngineExecutionState.Disabled,
             FrontendQualityEngineOutcomeReason.AuthenticationRequired or
-            FrontendQualityEngineOutcomeReason.AuthenticationModeUnsupported => FrontendQualityEngineExecutionState.AuthenticationRequired,
+            FrontendQualityEngineOutcomeReason.AuthenticationModeUnsupported => FrontendQualityEngineExecutionState.Unavailable,
             FrontendQualityEngineOutcomeReason.AuthenticationCancelled or
             FrontendQualityEngineOutcomeReason.Cancelled => FrontendQualityEngineExecutionState.Cancelled,
             FrontendQualityEngineOutcomeReason.EngineError => FrontendQualityEngineExecutionState.EngineError,
             FrontendQualityEngineOutcomeReason.EngineUnavailable or
             FrontendQualityEngineOutcomeReason.ResourceUnavailable or
             FrontendQualityEngineOutcomeReason.SessionUnavailable or
-            FrontendQualityEngineOutcomeReason.RuntimeNotReady => FrontendQualityEngineExecutionState.Unavailable,
+            FrontendQualityEngineOutcomeReason.ReadinessUnavailable => FrontendQualityEngineExecutionState.Unavailable,
+            FrontendQualityEngineOutcomeReason.BlockedByDeploymentPolicy or
+            FrontendQualityEngineOutcomeReason.TargetPolicyRejected => FrontendQualityEngineExecutionState.SafetyBlocked,
             _ => FrontendQualityEngineExecutionState.SafetyBlocked,
         };
 

@@ -9,7 +9,6 @@ public static class FrontendQualityDecisionSupportService
         FrontendQualityEngineExecutionState.Disabled,
         FrontendQualityEngineExecutionState.Unavailable,
         FrontendQualityEngineExecutionState.SafetyBlocked,
-        FrontendQualityEngineExecutionState.AuthenticationRequired,
         FrontendQualityEngineExecutionState.TimedOut,
         FrontendQualityEngineExecutionState.Cancelled,
         FrontendQualityEngineExecutionState.EngineError,
@@ -89,7 +88,6 @@ public static class FrontendQualityDecisionSupportService
     public static string ExecutionStateLabel(FrontendQualityEngineExecutionState state) => state switch
     {
         FrontendQualityEngineExecutionState.SafetyBlocked => "Safety blocked",
-        FrontendQualityEngineExecutionState.AuthenticationRequired => "Authentication required",
         FrontendQualityEngineExecutionState.TimedOut => "Timed out",
         FrontendQualityEngineExecutionState.EngineError => "Engine error",
         FrontendQualityEngineExecutionState.NotApplicable => "Not applicable",

@@ -23,7 +23,7 @@
                         <td><strong>@outcome.DisplayName</strong></td>
                         <td>@outcome.Requirement</td>
                         <td>@(outcome.Enabled ? "Enabled" : "Disabled")</td>
-                        <td><span class="fqr-state">@FrontendQualityDecisionSupportService.ExecutionStateLabel(outcome.ExecutionState)</span></td>
+                        <td><span class="fqr-state fqr-reason-@(FrontendQualityEngineOutcomePresentation.GetCategory(outcome.OutcomeReason).ToString().ToLowerInvariant())">@FrontendQualityEngineOutcomePresentation.GetLabel(outcome.OutcomeReason)</span></td>
                         <td>@(outcome.EvidenceCount?.ToString() ?? "—") / @(outcome.FindingCount?.ToString() ?? "—")</td>
                         <td>@(outcome.DurationMs.HasValue ? $"{outcome.DurationMs.Value} ms" : "—")</td>
                         <td>@ToolLabel(outcome)</td>
