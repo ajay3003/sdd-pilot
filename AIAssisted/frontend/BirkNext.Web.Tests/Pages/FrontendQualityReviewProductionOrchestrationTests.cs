@@ -2,6 +2,7 @@ using BirkNext.Web.Models;
 using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using Bunit;
+using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 
@@ -9,6 +10,26 @@ namespace BirkNext.Web.Tests.Pages;
 
 public sealed class FrontendQualityReviewProductionOrchestrationTests : BunitContext
 {
+    [Fact]
+    public void FrontendQualityReview_ProductionEngineStatusRegistration_ResolvesAndRenders()
+    {
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        Services.AddFrontendQualityEngineStatusApi(new Uri("http://127.0.0.1:1/"));
+        Services.AddSingleton<IFrontendAnalysisContextFactory>(new FixedContextFactory(new()));
+        Services.AddSingleton<IFrontendQualityReviewOrchestrator>(new SpyOrchestrator());
+        Services.AddSingleton<RuntimeReviewSessionService>();
+        Services.AddSingleton(Mock.Of<IWorkspaceSessionService>());
+        Services.AddSingleton(Mock.Of<IReportExportService>());
+        Services.AddSingleton(Mock.Of<IAuthenticatedBrowserSessionService>());
+
+        Services.GetRequiredService<IFrontendQualityEngineStatusApiService>()
+            .Should().BeOfType<FrontendQualityEngineStatusApiService>();
+
+        var component = Render<FrontendQualityReview>();
+
+        component.Markup.Should().Contain("Frontend Quality Review");
+    }
+
     [Fact]
     public async Task FrontendQualityReview_RunReview_InvokesProductionOrchestrator()
     {

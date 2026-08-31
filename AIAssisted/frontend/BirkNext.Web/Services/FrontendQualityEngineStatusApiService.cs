@@ -1,7 +1,20 @@
 using BirkNext.Web.Models;
+using Microsoft.Extensions.DependencyInjection;
 using System.Net.Http.Json;
 
 namespace BirkNext.Web.Services;
+
+public static class FrontendQualityEngineStatusServiceCollectionExtensions
+{
+    public static IServiceCollection AddFrontendQualityEngineStatusApi(
+        this IServiceCollection services,
+        Uri baseAddress)
+    {
+        services.AddHttpClient<IFrontendQualityEngineStatusApiService, FrontendQualityEngineStatusApiService>(client =>
+            client.BaseAddress = baseAddress);
+        return services;
+    }
+}
 
 public interface IFrontendQualityEngineStatusApiService
 {

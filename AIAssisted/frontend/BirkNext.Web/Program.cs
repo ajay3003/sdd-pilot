@@ -117,7 +117,7 @@ builder.Services.AddSingleton<ITargetEnvironmentService, TargetEnvironmentServic
 builder.Services.AddSingleton<ITargetEnvironmentHintExtractor, TargetEnvironmentHintExtractor>();
 builder.Services.AddSingleton<IIntegrationTargetRegistryService, IntegrationTargetRegistryService>();
 builder.Services.AddScoped<IAuthenticatedBrowserSessionService, AuthenticatedBrowserSessionService>();
-builder.Services.AddSingleton<IFrontendAnalysisContextFactory, FrontendAnalysisContextFactory>();
+builder.Services.AddScoped<IFrontendAnalysisContextFactory, FrontendAnalysisContextFactory>();
 builder.Services.AddHttpClient<ITargetPreflightService, TargetPreflightService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
@@ -153,5 +153,6 @@ builder.Services.AddHttpClient<IFrontendLighthouseReviewApiService, FrontendLigh
     client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddHttpClient<IFrontendPassiveSecurityApiService, FrontendPassiveSecurityApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
+builder.Services.AddFrontendQualityEngineStatusApi(new Uri("http://localhost:5000/"));
 
 await builder.Build().RunAsync();
