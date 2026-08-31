@@ -181,25 +181,24 @@ public static class FrontendQualityEngineOutcomeNormalizer
         string targetUrl, bool enabled, FrontendQualityEngineRequirementPolicy policy,
         PassiveSecurityResultDto? report, string? error, bool adapterAvailable, bool cancelled = false)
     {
+        var sourceReason = report?.OutcomeReason;
         var state = !enabled ? FrontendQualityEngineExecutionState.Disabled
             : !adapterAvailable ? FrontendQualityEngineExecutionState.Unavailable
             : error is not null && report is null ? FrontendQualityEngineExecutionState.EngineError
+            : sourceReason == PassiveSecurityOutcomeReasonDto.Cancelled ? FrontendQualityEngineExecutionState.Cancelled
             : report?.ExecutionStatus switch
             {
                 PassiveSecurityExecutionStatusDto.Assessed => FrontendQualityEngineExecutionState.Assessed,
                 PassiveSecurityExecutionStatusDto.TimedOut => FrontendQualityEngineExecutionState.TimedOut,
                 PassiveSecurityExecutionStatusDto.EngineError => FrontendQualityEngineExecutionState.EngineError,
                 PassiveSecurityExecutionStatusDto.AuthenticationRequired => FrontendQualityEngineExecutionState.NotApplicable,
-                PassiveSecurityExecutionStatusDto.Skipped when Contains(report.EngineError, "disabled") => FrontendQualityEngineExecutionState.Unavailable,
-                PassiveSecurityExecutionStatusDto.Skipped => FrontendQualityEngineExecutionState.SafetyBlocked,
+                PassiveSecurityExecutionStatusDto.Skipped when sourceReason == PassiveSecurityOutcomeReasonDto.TargetPolicyRejected => FrontendQualityEngineExecutionState.SafetyBlocked,
+                PassiveSecurityExecutionStatusDto.Skipped when sourceReason == PassiveSecurityOutcomeReasonDto.ReadinessUnavailable => FrontendQualityEngineExecutionState.Unavailable,
+                PassiveSecurityExecutionStatusDto.Skipped => FrontendQualityEngineExecutionState.Unavailable,
                 _ when cancelled => FrontendQualityEngineExecutionState.Cancelled,
                 _ => FrontendQualityEngineExecutionState.Unavailable,
             };
-        var reason = report?.ExecutionStatus == PassiveSecurityExecutionStatusDto.AuthenticationRequired
-            ? FrontendQualityEngineOutcomeReason.AuthenticationModeUnsupported
-            : Contains(report?.EngineError, "disabled")
-                ? FrontendQualityEngineOutcomeReason.DisabledInSystemSettings
-                : FrontendQualityEngineOutcomeReason.None;
+        var reason = PassiveSecurityReasonFromSource(sourceReason, report?.ExecutionStatus);
         return Base(FrontendQualityEngineId.PassiveSecurity, "Passive Security", enabled,
             policy.GetRequirement(FrontendQualityEngineId.PassiveSecurity), state,
             report?.RequestedUrl ?? targetUrl, report?.FinalUrl,
@@ -343,6 +342,21 @@ public static class FrontendQualityEngineOutcomeNormalizer
         FrontendQualityEngineExecutionState.Cancelled => FrontendQualityEngineOutcomeReason.Cancelled,
         FrontendQualityEngineExecutionState.Unavailable => FrontendQualityEngineOutcomeReason.ReadinessUnavailable,
         FrontendQualityEngineExecutionState.SafetyBlocked => FrontendQualityEngineOutcomeReason.TargetPolicyRejected,
+        _ => FrontendQualityEngineOutcomeReason.None,
+    };
+
+    private static FrontendQualityEngineOutcomeReason PassiveSecurityReasonFromSource(PassiveSecurityOutcomeReasonDto? sourceReason, PassiveSecurityExecutionStatusDto? executionStatus = null) => sourceReason switch
+    {
+        PassiveSecurityOutcomeReasonDto.None when executionStatus == PassiveSecurityExecutionStatusDto.EngineError => FrontendQualityEngineOutcomeReason.EngineError,
+        PassiveSecurityOutcomeReasonDto.None when executionStatus == PassiveSecurityExecutionStatusDto.TimedOut => FrontendQualityEngineOutcomeReason.EngineError,
+        PassiveSecurityOutcomeReasonDto.None => FrontendQualityEngineOutcomeReason.None,
+        PassiveSecurityOutcomeReasonDto.DisabledInSystemSettings => FrontendQualityEngineOutcomeReason.DisabledInSystemSettings,
+        PassiveSecurityOutcomeReasonDto.ReadinessUnavailable => FrontendQualityEngineOutcomeReason.ReadinessUnavailable,
+        PassiveSecurityOutcomeReasonDto.AuthenticationModeUnsupported => FrontendQualityEngineOutcomeReason.AuthenticationModeUnsupported,
+        PassiveSecurityOutcomeReasonDto.TargetPolicyRejected => FrontendQualityEngineOutcomeReason.TargetPolicyRejected,
+        PassiveSecurityOutcomeReasonDto.EngineUnavailable => FrontendQualityEngineOutcomeReason.EngineUnavailable,
+        PassiveSecurityOutcomeReasonDto.EngineError => FrontendQualityEngineOutcomeReason.EngineError,
+        PassiveSecurityOutcomeReasonDto.Cancelled => FrontendQualityEngineOutcomeReason.Cancelled,
         _ => FrontendQualityEngineOutcomeReason.None,
     };
 

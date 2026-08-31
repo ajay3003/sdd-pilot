@@ -33,12 +33,12 @@ public sealed class FrontendZapPassiveReviewService(
     public async Task<PassiveSecurityResult> ReviewAsync(PassiveSecurityReviewRequest request, CancellationToken ct = default)
     {
         var started = DateTime.UtcNow;
-        if (!_enabled) return Fail(PassiveSecurityExecutionStatus.Skipped, request.TargetUrl, started, "Passive security engine is disabled.");
-        if (request.RequiresAuthentication) return Fail(PassiveSecurityExecutionStatus.AuthenticationRequired, request.TargetUrl, started, "Authentication is required; Phase 2D does not replay credentials or sessions.");
+        if (!_enabled) return Fail(PassiveSecurityExecutionStatus.Skipped, request.TargetUrl, started, "Passive security engine is disabled.", PassiveSecurityOutcomeReason.DisabledInSystemSettings);
+        if (request.RequiresAuthentication) return Fail(PassiveSecurityExecutionStatus.AuthenticationRequired, request.TargetUrl, started, "Authentication is required; Phase 2D does not replay credentials or sessions.", PassiveSecurityOutcomeReason.AuthenticationModeUnsupported);
         var authorized = authorizer.Authorize(request);
-        if (!authorized.IsValid) return Fail(PassiveSecurityExecutionStatus.Skipped, request.TargetUrl, started, authorized.BlockReason ?? "Target is not authorized.");
+        if (!authorized.IsValid) return Fail(PassiveSecurityExecutionStatus.Skipped, request.TargetUrl, started, authorized.BlockReason ?? "Target is not authorized.", PassiveSecurityOutcomeReason.TargetPolicyRejected);
         var ready = await CheckReadinessAsync(ct);
-        if (!ready.Available) return Fail(PassiveSecurityExecutionStatus.EngineError, request.TargetUrl, started, ready.Error ?? ready.State.ToString());
+        if (!ready.Available) return Fail(PassiveSecurityExecutionStatus.Skipped, request.TargetUrl, started, ready.Error ?? ready.State.ToString(), PassiveSecurityOutcomeReason.ReadinessUnavailable);
 
         var port = FreePort();
         var container = $"birknext-zap-passive-{Guid.NewGuid():N}";
@@ -49,7 +49,7 @@ public sealed class FrontendZapPassiveReviewService(
             var args = BuildContainerArguments(container, port, _containerNetwork);
             var launch = await runner.RunAsync(_containerRuntime, args, 30000, timeout.Token);
             if (launch.TimedOut || launch.Cancelled) throw new OperationCanceledException(timeout.Token);
-            if (launch.ExitCode != 0) return Fail(PassiveSecurityExecutionStatus.EngineError, request.TargetUrl, started, CleanError(launch));
+            if (launch.ExitCode != 0) return Fail(PassiveSecurityExecutionStatus.EngineError, request.TargetUrl, started, CleanError(launch), PassiveSecurityOutcomeReason.EngineError);
             using var api = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}"), Timeout = TimeSpan.FromSeconds(5) };
             // ZAP identifies API requests by its container-side listener authority. With a
             // dynamic published host port, the default Host header is otherwise treated as
@@ -64,7 +64,7 @@ public sealed class FrontendZapPassiveReviewService(
                 {
                     var absolute = location.IsAbsoluteUri ? location : new Uri(new Uri(request.TargetUrl), location);
                     var redirect = authorizer.AuthorizeRedirect(request, absolute.AbsoluteUri);
-                    if (!redirect.IsValid) return Fail(PassiveSecurityExecutionStatus.Skipped, request.TargetUrl, started, redirect.BlockReason ?? "Redirect scope blocked.");
+                    if (!redirect.IsValid) return Fail(PassiveSecurityExecutionStatus.Skipped, request.TargetUrl, started, redirect.BlockReason ?? "Redirect scope blocked.", PassiveSecurityOutcomeReason.TargetPolicyRejected);
                     using var redirectedResponse = await proxied.GetAsync(absolute.AbsoluteUri, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
                 }
             }
@@ -76,14 +76,15 @@ public sealed class FrontendZapPassiveReviewService(
                 FinalUrl: request.TargetUrl, StartedAt: started, CompletedAt: final, DurationMs: (long)(final - started).TotalMilliseconds,
                 HighCount: findings.Count(f => f.Risk == "High"), MediumCount: findings.Count(f => f.Risk == "Medium"),
                 LowCount: findings.Count(f => f.Risk == "Low"), InformationalCount: findings.Count(f => f.Risk == "Informational"),
-                Findings: findings, ConfigurationSummary: new(MaxDurationSeconds: request.TimeoutSeconds));
+                Findings: findings, ConfigurationSummary: new(MaxDurationSeconds: request.TimeoutSeconds), OutcomeReason: PassiveSecurityOutcomeReason.None);
         }
         catch (OperationCanceledException)
         {
             return Fail(ct.IsCancellationRequested ? PassiveSecurityExecutionStatus.EngineError : PassiveSecurityExecutionStatus.TimedOut,
-                request.TargetUrl, started, ct.IsCancellationRequested ? "Passive ZAP execution was cancelled." : "Passive ZAP execution timed out.");
+                request.TargetUrl, started, ct.IsCancellationRequested ? "Passive ZAP execution was cancelled." : "Passive ZAP execution timed out.",
+                ct.IsCancellationRequested ? PassiveSecurityOutcomeReason.Cancelled : PassiveSecurityOutcomeReason.EngineError);
         }
-        catch (Exception ex) { logger.LogWarning(ex, "ZAP passive assessment failed"); return Fail(PassiveSecurityExecutionStatus.EngineError, request.TargetUrl, started, sanitizer.Sanitize(ex.Message)); }
+        catch (Exception ex) { logger.LogWarning(ex, "ZAP passive assessment failed"); return Fail(PassiveSecurityExecutionStatus.EngineError, request.TargetUrl, started, sanitizer.Sanitize(ex.Message), PassiveSecurityOutcomeReason.EngineError); }
         finally { await runner.RunAsync(_containerRuntime, ["rm", "--force", container], 15000, CancellationToken.None); }
     }
 
@@ -122,5 +123,5 @@ public sealed class FrontendZapPassiveReviewService(
         return matches.Count == 0 ? "" : matches[^1].Value;
     }
     private static string CleanError(ZapProcessResult r) => string.IsNullOrWhiteSpace(r.Error) ? r.Output.Trim() : r.Error.Trim();
-    private static PassiveSecurityResult Fail(PassiveSecurityExecutionStatus status, string url, DateTime started, string error) => new(status, RequestedUrl: url, StartedAt: started, CompletedAt: DateTime.UtcNow, EngineError: error, ConfigurationSummary: new());
+    private static PassiveSecurityResult Fail(PassiveSecurityExecutionStatus status, string url, DateTime started, string error, PassiveSecurityOutcomeReason reason = PassiveSecurityOutcomeReason.None) => new(status, RequestedUrl: url, StartedAt: started, CompletedAt: DateTime.UtcNow, EngineError: error, ConfigurationSummary: new(), OutcomeReason: reason);
 }

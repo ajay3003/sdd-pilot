@@ -1,6 +1,7 @@
 namespace BirkNext.Api.Services.FrontendPassiveSecurity;
 
 public enum PassiveSecurityExecutionStatus { NotAssessed, Assessed, EngineError, TimedOut, Skipped, AuthenticationRequired }
+public enum PassiveSecurityOutcomeReason { None, DisabledInSystemSettings, ReadinessUnavailable, AuthenticationModeUnsupported, TargetPolicyRejected, EngineUnavailable, EngineError, Cancelled }
 public enum PassiveSecurityReadinessState { Disabled, Ready, DockerUnavailable, ZapImageUnavailable, ZapLaunchFailed, ConfigurationInvalid }
 
 public sealed record PassiveSecurityFinding(string PluginId, string? AlertRef, string Name, string Risk,
@@ -16,7 +17,8 @@ public sealed record PassiveSecurityResult(PassiveSecurityExecutionStatus Execut
     string? RequestedUrl = null, string? FinalUrl = null, DateTime? StartedAt = null, DateTime? CompletedAt = null,
     long? DurationMs = null, int HighCount = 0, int MediumCount = 0, int LowCount = 0, int InformationalCount = 0,
     List<PassiveSecurityFinding>? Findings = null, List<string>? Limitations = null, string? EngineError = null,
-    string ScopeSummary = "Configured target only; no spidering", PassiveSecurityConfiguration? ConfigurationSummary = null)
+    string ScopeSummary = "Configured target only; no spidering", PassiveSecurityConfiguration? ConfigurationSummary = null,
+    PassiveSecurityOutcomeReason OutcomeReason = PassiveSecurityOutcomeReason.None)
 {
     public List<PassiveSecurityFinding> Findings { get; init; } = Findings ?? [];
     public List<string> Limitations { get; init; } = Limitations ?? [FrontendZapPassiveReviewService.PassiveLimitation];

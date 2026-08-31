@@ -146,17 +146,17 @@ public sealed class FrontendQualityEngineNormalizationTests
     }
 
     [Theory]
-    [InlineData(PassiveSecurityExecutionStatusDto.Assessed, null, FrontendQualityEngineExecutionState.Assessed)]
-    [InlineData(PassiveSecurityExecutionStatusDto.TimedOut, null, FrontendQualityEngineExecutionState.TimedOut)]
-    [InlineData(PassiveSecurityExecutionStatusDto.AuthenticationRequired, null, FrontendQualityEngineExecutionState.NotApplicable)]
-    [InlineData(PassiveSecurityExecutionStatusDto.EngineError, null, FrontendQualityEngineExecutionState.EngineError)]
-    [InlineData(PassiveSecurityExecutionStatusDto.Skipped, "engine is disabled", FrontendQualityEngineExecutionState.Unavailable)]
-    [InlineData(PassiveSecurityExecutionStatusDto.Skipped, "target blocked", FrontendQualityEngineExecutionState.SafetyBlocked)]
+    [InlineData(PassiveSecurityExecutionStatusDto.Assessed, null, PassiveSecurityOutcomeReasonDto.None, FrontendQualityEngineExecutionState.Assessed)]
+    [InlineData(PassiveSecurityExecutionStatusDto.TimedOut, null, PassiveSecurityOutcomeReasonDto.None, FrontendQualityEngineExecutionState.TimedOut)]
+    [InlineData(PassiveSecurityExecutionStatusDto.AuthenticationRequired, null, PassiveSecurityOutcomeReasonDto.AuthenticationModeUnsupported, FrontendQualityEngineExecutionState.NotApplicable)]
+    [InlineData(PassiveSecurityExecutionStatusDto.EngineError, null, PassiveSecurityOutcomeReasonDto.EngineError, FrontendQualityEngineExecutionState.EngineError)]
+    [InlineData(PassiveSecurityExecutionStatusDto.Skipped, "engine is disabled", PassiveSecurityOutcomeReasonDto.DisabledInSystemSettings, FrontendQualityEngineExecutionState.Unavailable)]
+    [InlineData(PassiveSecurityExecutionStatusDto.Skipped, "target blocked", PassiveSecurityOutcomeReasonDto.TargetPolicyRejected, FrontendQualityEngineExecutionState.SafetyBlocked)]
     public void PassiveSecurityStatesAndMetadata_MapPrecisely(
-        PassiveSecurityExecutionStatusDto source, string? error, FrontendQualityEngineExecutionState expected)
+        PassiveSecurityExecutionStatusDto source, string? error, PassiveSecurityOutcomeReasonDto reason, FrontendQualityEngineExecutionState expected)
     {
         var outcome = FrontendQualityEngineOutcomeNormalizer.PassiveSecurity("https://example.com", true, Policy(),
-            Passive(source, error, "2.16.1"), null, true);
+            Passive(source, error, "2.16.1", reason), null, true);
         outcome.ExecutionState.Should().Be(expected);
         outcome.ToolVersion.Should().Be("2.16.1");
         outcome.Limitations.Should().Contain("Passive only");
@@ -228,9 +228,9 @@ public sealed class FrontendQualityEngineNormalizationTests
         BrowserRuntimeFindingSeverityDto severity, string evidence) =>
         new(id, id, severity, category, $"description {evidence}", "recommendation", [evidence]);
 
-    private static PassiveSecurityResultDto Passive(PassiveSecurityExecutionStatusDto state, string? error = null, string? version = null) =>
+    private static PassiveSecurityResultDto Passive(PassiveSecurityExecutionStatusDto state, string? error = null, string? version = null, PassiveSecurityOutcomeReasonDto reason = PassiveSecurityOutcomeReasonDto.None) =>
         new(state, "ZAP Passive", "Passive", version, "https://example.com", "https://example.com", DateTime.UtcNow,
-            DateTime.UtcNow, 10, 0, 0, 0, 0, [], ["Passive only"], error, "Configured target", null);
+            DateTime.UtcNow, 10, 0, 0, 0, 0, [], ["Passive only"], error, "Configured target", null, reason);
 
     private static FrontendQualityEngineRequirementPolicy Policy() => new FrontendQualityEngineRequirementSettings().ToPolicy();
 
