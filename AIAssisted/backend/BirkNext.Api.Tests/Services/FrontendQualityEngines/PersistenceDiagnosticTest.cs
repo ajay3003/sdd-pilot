@@ -17,6 +17,7 @@ public sealed class PersistenceDiagnosticTest
     {
         using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled(removeLocalJson: false);
         using var scope = factory.Services.CreateScope();
+        using var localSettings = TestHostConfiguration.PreserveLocalSettings(scope.ServiceProvider);
 
         var adminService = scope.ServiceProvider.GetRequiredService<AdminService>();
         var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();

@@ -16,6 +16,7 @@ public sealed class FrontendQualityEnginePhase2BlockerFixTests
     {
         using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled();
         using var scope = factory.Services.CreateScope();
+        using var localSettings = TestHostConfiguration.PreserveLocalSettings(scope.ServiceProvider);
 
         var adminService = scope.ServiceProvider.GetRequiredService<AdminService>();
 
@@ -95,6 +96,7 @@ public sealed class FrontendQualityEnginePhase2BlockerFixTests
     {
         using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled(removeLocalJson: false);
         using var scope = factory.Services.CreateScope();
+        using var localSettings = TestHostConfiguration.PreserveLocalSettings(scope.ServiceProvider);
 
         var adminService = scope.ServiceProvider.GetRequiredService<AdminService>();
 

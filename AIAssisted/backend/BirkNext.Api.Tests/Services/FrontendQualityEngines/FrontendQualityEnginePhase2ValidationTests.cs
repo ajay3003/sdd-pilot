@@ -18,6 +18,7 @@ public sealed class FrontendQualityEnginePhase2ValidationTests
         using var client = factory.CreateClient();
 
         var scope = factory.Services.CreateScope();
+        using var localSettings = TestHostConfiguration.PreserveLocalSettings(scope.ServiceProvider);
         var adminService = scope.ServiceProvider.GetRequiredService<AdminService>();
 
         var request = new SaveSettingsRequest
@@ -51,6 +52,7 @@ public sealed class FrontendQualityEnginePhase2ValidationTests
     {
         using var factory = TestHostConfiguration.CreateDefaultHostWithEnginesDisabled(removeLocalJson: false);
         using var scope = factory.Services.CreateScope();
+        using var localSettings = TestHostConfiguration.PreserveLocalSettings(scope.ServiceProvider);
 
         var adminService = scope.ServiceProvider.GetRequiredService<AdminService>();
         var statusService = scope.ServiceProvider.GetRequiredService<IFrontendQualityEngineStatusService>();

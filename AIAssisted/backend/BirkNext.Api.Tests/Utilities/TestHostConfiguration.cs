@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace BirkNext.Api.Tests.Utilities;
@@ -8,6 +9,12 @@ namespace BirkNext.Api.Tests.Utilities;
 /// <summary>Helpers for creating test hosts with explicit external-engine configuration.</summary>
 public static class TestHostConfiguration
 {
+    public static IDisposable PreserveLocalSettings(IServiceProvider services)
+    {
+        var environment = services.GetRequiredService<IWebHostEnvironment>();
+        return new LocalSettingsSnapshot(Path.Combine(environment.ContentRootPath, "appsettings.Local.json"));
+    }
+
     /// <summary>Create a WebApplicationFactory with Layer 1 deployment policy safely disabled (deterministic test execution).</summary>
     /// <param name="removeLocalJson">When true, removes appsettings.Local.json which has hardcoded Layer2 values for development.
     /// Set to true for status/snapshot tests, false for persistence tests that need to save/load.</param>
@@ -128,5 +135,28 @@ public static class TestHostConfiguration
                     config.AddInMemoryCollection(legacyConfig);
                 });
             });
+    }
+
+    private sealed class LocalSettingsSnapshot : IDisposable
+    {
+        private readonly string _path;
+        private readonly byte[]? _content;
+
+        public LocalSettingsSnapshot(string path)
+        {
+            _path = path;
+            _content = File.Exists(path) ? File.ReadAllBytes(path) : null;
+        }
+
+        public void Dispose()
+        {
+            if (_content is null)
+            {
+                if (File.Exists(_path)) File.Delete(_path);
+                return;
+            }
+
+            File.WriteAllBytes(_path, _content);
+        }
     }
 }
