@@ -186,6 +186,9 @@ builder.Services.AddSingleton<IWasmPerformanceReadinessService, WasmPerformanceR
 // Frontend Browser Runtime Review — Chromium-based runtime analysis (disabled by default)
 builder.Services.Configure<FrontendBrowserRuntimeOptions>(
     builder.Configuration.GetSection(FrontendBrowserRuntimeOptions.SectionName));
+builder.Services.PostConfigure<FrontendBrowserRuntimeOptions>(options =>
+    options.Enabled = FrontendQualityEngineEnablement.Resolve(
+        builder.Configuration, FrontendQualityEngineId.BrowserRuntime, options.Enabled));
 builder.Services.AddScoped<BrowserTargetValidator>(provider =>
 {
     var environment = provider.GetRequiredService<IWebHostEnvironment>();
@@ -216,11 +219,17 @@ builder.Services.AddHttpClient<ITargetEnvironmentDetectionService, TargetEnviron
 });
 builder.Services.Configure<FrontendAccessibilityOptions>(
     builder.Configuration.GetSection(FrontendAccessibilityOptions.SectionName));
+builder.Services.PostConfigure<FrontendAccessibilityOptions>(options =>
+    options.Enabled = FrontendQualityEngineEnablement.Resolve(
+        builder.Configuration, FrontendQualityEngineId.Accessibility, options.Enabled));
 builder.Services.AddScoped<AccessibilityEvidenceSanitizer>();
 builder.Services.AddScoped<AccessibilityNormalizer>();
 builder.Services.AddScoped<IFrontendAccessibilityReviewService, FrontendAccessibilityReviewService>();
 builder.Services.Configure<FrontendLighthouseOptions>(
     builder.Configuration.GetSection(FrontendLighthouseOptions.SectionName));
+builder.Services.PostConfigure<FrontendLighthouseOptions>(options =>
+    options.Enabled = FrontendQualityEngineEnablement.Resolve(
+        builder.Configuration, FrontendQualityEngineId.Lighthouse, options.Enabled));
 builder.Services.AddScoped<LighthouseEvidenceSanitizer>();
 builder.Services.AddScoped<IFrontendLighthouseReviewService, FrontendLighthouseReviewService>();
 builder.Services.AddScoped<PassiveSecurityEvidenceSanitizer>();

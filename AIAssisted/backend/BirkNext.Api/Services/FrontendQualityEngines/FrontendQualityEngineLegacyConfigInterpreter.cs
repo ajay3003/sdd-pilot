@@ -72,27 +72,20 @@ public sealed class FrontendQualityEngineLegacyConfigInterpreter
             }
         }
 
-        var allowed = false;
-        var enabled = false;
+        var legacyEnabled = hasLegacy && GetLegacyEnabledValue(engineId);
 
-        if (layer1Present || layer2Present)
-        {
-            // At least one new layer key explicitly set
-            if (layer1Present)
-                allowed = _config.GetValue(layer1Key, false);
+        // Layer 1 remains fail-closed once either new layer is configured. A
+        // legacy-only installation migrates its old value into both layers.
+        var allowed = layer1Present
+            ? _config.GetValue(layer1Key, false)
+            : !layer2Present && legacyEnabled;
 
-            if (layer2Present)
-                enabled = _config.GetValue(layer2Key, false);
-            else if (hasLegacy)
-                enabled = GetLegacyEnabledValue(engineId);
-        }
-        else if (hasLegacy)
-        {
-            // BOTH layers missing: legacy flows to both (migration case)
-            var legacyValue = GetLegacyEnabledValue(engineId);
-            allowed = legacyValue;
-            enabled = legacyValue;
-        }
+        // Layer 2 has one authority: the System Settings preference when it is
+        // present, with the old per-engine flag retained only for migration.
+        var enabled = FrontendQualityEngineEnablement.Resolve(
+            _config,
+            engineId,
+            legacyEnabled);
 
         _logger.LogInformation(
             "Engine {EngineId}: Allowed={Allowed} Enabled={Enabled} (layer1Present={Layer1Present} layer2Present={Layer2Present} hasLegacy={HasLegacy})",

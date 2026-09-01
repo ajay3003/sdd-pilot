@@ -1,119 +1,84 @@
 @using BirkNext.Web.Models
 
-<div class="fqe-container">
+<div class="frontend-quality-engine-settings">
+    <div class="fqe-toolbar">
+        <SecondaryButton OnClick="OnRefreshRequested" Disabled="@IsLoadingStatus">Refresh status</SecondaryButton>
+    </div>
+
     @if (IsLoadingStatus)
     {
-        <div class="fqe-loading">Checking engine status…</div>
+        <div class="fqe-message" role="status">Checking engine status…</div>
     }
     else if (AnonymousStatus == null)
     {
-        <div class="fqe-error">Unable to load engine status. @StatusLoadError</div>
+        <div class="fqe-message fqe-message-error" role="alert">Unable to load engine status. @StatusLoadError</div>
     }
     else
     {
-        @foreach (var engine in GetEngineDisplayOrder())
-        {
-            var status = AnonymousStatus.Engines.FirstOrDefault(e => e.EngineId == engine.EngineId);
-            var authStatus = AuthenticatedStatus?.Engines.FirstOrDefault(e => e.EngineId == engine.EngineId);
-
-            if (status != null)
+        <div class="dev-diag-subgrid" role="list">
+            @foreach (var engine in GetEngineDisplayOrder())
             {
-                <div class="fqe-card">
-                    <div class="fqe-header">
-                        <h4 class="fqe-engine-name">@engine.DisplayLabel</h4>
-                    </div>
+                var status = AnonymousStatus.Engines.FirstOrDefault(e => e.EngineId == engine.EngineId);
+                var authStatus = AuthenticatedStatus?.Engines.FirstOrDefault(e => e.EngineId == engine.EngineId);
 
-                    <div class="fqe-row">
-                        <span class="fqe-label">Installation</span>
-                        <span class="fqe-value">
-                            @if (status.Layer1Allowed)
-                            {
-                                <span class="fqe-badge fqe-badge-allowed">Allowed</span>
-                            }
-                            else
-                            {
-                                <span class="fqe-badge fqe-badge-not-allowed">Not allowed on this installation</span>
-                            }
-                        </span>
-                    </div>
+                if (status != null)
+                {
+                    <section class="dev-diag-section" role="listitem" aria-label="@engine.DisplayLabel">
+                        <div class="dev-diag-section-title">@engine.DisplayLabel</div>
+                        <table class="settings-table">
+                            <tbody>
+                                <tr>
+                                    <td>Installation policy</td>
+                                    <td><span class="settings-badge @(status.Layer1Allowed ? "settings-badge-local" : "settings-badge-shared")">@(status.Layer1Allowed ? "Allowed" : "Not allowed")</span></td>
+                                </tr>
+                                <tr>
+                                    <td>System setting</td>
+                                    <td>
+                                        <FeatureRow Label=""
+                                                    Enabled="@(IsEditMode ? (EditedPreferences?.TryGetValue(engine.PreferenceKey, out var pref) == true ? pref : status.Layer2Enabled) : status.Layer2Enabled)"
+                                                    IsEditMode="@IsEditMode"
+                                                    IsLocked="false"
+                                                    OnToggle="@((bool value) => HandleToggle(engine.PreferenceKey, value))" />
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Runtime readiness</td>
+                                    <td>
+                                        <span class="settings-badge @(status.Layer3Readiness?.IsAvailable == true ? "settings-badge-local" : "settings-badge-shared")">@(status.Layer3Readiness?.IsAvailable == true ? "Ready" : "Unavailable")</span>
+                                        @if (!string.IsNullOrWhiteSpace(status.Layer3Readiness?.StatusReason))
+                                        {
+                                            <span class="fqe-inline-reason">@status.Layer3Readiness.StatusReason</span>
+                                        }
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Authenticated review</td>
+                                    <td><span class="settings-badge @(authStatus?.AuthModeSupported == true ? "settings-badge-local" : "settings-badge-shared")">@(authStatus?.AuthModeSupported == true ? "Supported" : "Not supported")</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Effective availability</td>
+                                    <td><span class="settings-badge @(status.Available ? "settings-badge-local" : "settings-badge-shared")">@(status.Available ? "Available" : "Unavailable")</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
 
-                    <div class="fqe-row">
-                        <span class="fqe-label">Enabled</span>
-                        <FeatureRow
-                            Label=""
-                            Enabled="@(IsEditMode ? (EditedPreferences?.TryGetValue(engine.PreferenceKey, out var pref) == true ? pref : status.Layer2Enabled) : status.Layer2Enabled)"
-                            IsEditMode="@IsEditMode"
-                            IsLocked="false"
-                            OnToggle="@((bool value) => HandleToggle(engine.PreferenceKey, value))" />
-                    </div>
-
-                    <div class="fqe-row">
-                        <span class="fqe-label">Runtime</span>
-                        <span class="fqe-value">
-                            @if (IsLoadingStatus)
-                            {
-                                <span class="fqe-badge fqe-badge-checking">Checking…</span>
-                            }
-                            else if (status.Layer3Readiness?.IsAvailable == true)
-                            {
-                                <span class="fqe-badge fqe-badge-ready">Ready</span>
-                            }
-                            else
-                            {
-                                <span class="fqe-badge fqe-badge-unavailable">Unavailable</span>
-                                @if (!string.IsNullOrWhiteSpace(status.Layer3Readiness?.StatusReason))
-                                {
-                                    <span class="fqe-reason-text">@status.Layer3Readiness.StatusReason</span>
-                                }
-                            }
-                        </span>
-                    </div>
-
-                    <div class="fqe-row">
-                        <span class="fqe-label">Authenticated review</span>
-                        <span class="fqe-value">
-                            @if (authStatus?.AuthModeSupported == true)
-                            {
-                                <span class="fqe-badge fqe-badge-supported">Supported</span>
-                            }
-                            else
-                            {
-                                <span class="fqe-badge fqe-badge-not-supported">Not supported</span>
-                            }
-                        </span>
-                    </div>
-
-                    <div class="fqe-row">
-                        <span class="fqe-label">Effective</span>
-                        <div class="fqe-effective">
-                            @if (status.Available)
-                            {
-                                <span class="fqe-badge fqe-badge-available">Available</span>
-                            }
-                            else
-                            {
-                                <span class="fqe-badge fqe-badge-unavailable">Unavailable</span>
-                            }
-                            @if (status.Reasons.Any())
-                            {
-                                <ul class="fqe-reasons">
-                                    @foreach (var reason in status.Reasons.Where(r => r != FrontendQualityEngineUnavailableReasonDto.None))
+                        @{ var reasons = status.Reasons.Where(r => r != FrontendQualityEngineUnavailableReasonDto.None).ToList(); }
+                        @if (reasons.Count > 0)
+                        {
+                            <div class="fqe-reasons" aria-label="Availability reasons">
+                                <div class="fqe-reasons-title">Reasons</div>
+                                <ul>
+                                    @foreach (var reason in reasons)
                                     {
                                         <li>@GetReasonText(reason)</li>
                                     }
                                 </ul>
-                            }
-                        </div>
-                    </div>
-
-                    <div class="fqe-row fqe-row-actions">
-                        <button class="fqe-refresh-btn" @onclick="@(() => OnRefreshRequested.InvokeAsync())" disabled="@IsLoadingStatus">
-                            Refresh status
-                        </button>
-                    </div>
-                </div>
+                            </div>
+                        }
+                    </section>
+                }
             }
-        }
+        </div>
     }
 </div>
 
@@ -127,22 +92,22 @@
     [Parameter] public string? StatusLoadError { get; set; }
     [Parameter] public EventCallback OnRefreshRequested { get; set; }
 
-    private record EngineDisplay(FrontendQualityEngineIdDto EngineId, string DisplayLabel, string PreferenceKey);
+    private sealed record EngineDisplay(FrontendQualityEngineIdDto EngineId, string DisplayLabel, string PreferenceKey);
 
-    private List<EngineDisplay> GetEngineDisplayOrder() => new()
-    {
+    private static IReadOnlyList<EngineDisplay> GetEngineDisplayOrder() =>
+    [
         new(FrontendQualityEngineIdDto.BrowserRuntime, "Browser Runtime", "BrowserRuntime"),
         new(FrontendQualityEngineIdDto.Accessibility, "Accessibility", "Accessibility"),
         new(FrontendQualityEngineIdDto.Lighthouse, "Lighthouse", "Lighthouse"),
         new(FrontendQualityEngineIdDto.PassiveSecurity, "Passive Security (ZAP)", "PassiveSecurity"),
-    };
+    ];
 
-    private string GetReasonText(FrontendQualityEngineUnavailableReasonDto reason) => reason switch
+    private static string GetReasonText(FrontendQualityEngineUnavailableReasonDto reason) => reason switch
     {
         FrontendQualityEngineUnavailableReasonDto.BlockedByDeploymentPolicy => "Not allowed on this installation",
         FrontendQualityEngineUnavailableReasonDto.DisabledInSystemSettings => "Disabled in System Settings",
         FrontendQualityEngineUnavailableReasonDto.RuntimeUnavailable => "Runtime prerequisite unavailable",
-        FrontendQualityEngineUnavailableReasonDto.RuntimeStatusUnknown => "Status check timed out / unknown",
+        FrontendQualityEngineUnavailableReasonDto.RuntimeStatusUnknown => "Status check timed out or is unknown",
         FrontendQualityEngineUnavailableReasonDto.NotApplicableToReview => "Not applicable to this review",
         FrontendQualityEngineUnavailableReasonDto.AuthenticationModeUnsupported => "Not supported for authenticated reviews",
         _ => reason.ToString(),

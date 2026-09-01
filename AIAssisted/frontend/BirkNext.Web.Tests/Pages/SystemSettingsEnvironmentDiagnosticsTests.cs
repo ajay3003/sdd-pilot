@@ -21,6 +21,7 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         };
 
         Services.AddSingleton(new AdminApiService(httpClient));
+        Services.AddSingleton(httpClient);
         Services.AddSingleton<FeatureVisibilityService>();
         Services.AddSingleton(new ImplementationTraceabilityApiService(httpClient));
         Services.AddSingleton(new ProjectDocumentApiService(httpClient));
@@ -41,6 +42,8 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         Services.AddScoped<QualityReviewSessionService>();
         Services.AddScoped<ApplicationRuntimeResetService>();
         Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
+        Services.AddSingleton<IFrontendAnalysisSettingsService, FrontendAnalysisSettingsService>();
+        Services.AddSingleton<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>();
     }
 
     [Fact]
@@ -157,6 +160,102 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         cut.Markup.Should().Contain("Project Documents");
     }
 
+    [Theory]
+    [InlineData("General", false)]
+    [InlineData("Configuration Health", false)]
+    [InlineData("Feature Visibility", true)]
+    [InlineData("Platform", false)]
+    [InlineData("Target Environments", false)]
+    [InlineData("Frontend Quality Engines", true)]
+    [InlineData("AI", false)]
+    [InlineData("Environment Diagnostics", false)]
+    [InlineData("System Diagnostics", false)]
+    [InlineData("Documentation Health", false)]
+    [InlineData("ReviewContext Validation", false)]
+    [InlineData("Runtime Diagnostics", false)]
+    [InlineData("Maintenance", false)]
+    public void ParentEditButton_FollowsSelectedPaneCapability(string pane, bool expected)
+    {
+        var cut = Render<SystemSettings>();
+        cut.WaitForAssertion(() => FindButton(cut, pane).Should().NotBeNull());
+        FindButton(cut, pane)!.Click();
+
+        cut.FindAll("button").Any(button => button.TextContent.Contains("Edit Settings"))
+            .Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("Feature Visibility", 0)]
+    [InlineData("Frontend Quality Engines", 4)]
+    public void ParentEdit_StaysOnPaneAndActivatesExpectedControls(string pane, int fqeToggleCount)
+    {
+        var cut = Render<SystemSettings>();
+        cut.WaitForAssertion(() => FindButton(cut, pane).Should().NotBeNull());
+        FindButton(cut, pane)!.Click();
+        FindButton(cut, "Edit Settings")!.Click();
+
+        cut.Find(".ss-nav-item.is-active").TextContent.Should().Contain(pane);
+        FindButton(cut, "Save Settings").Should().NotBeNull();
+        FindButton(cut, "Cancel").Should().NotBeNull();
+        cut.FindAll(".fqe-card input[type=checkbox], .dev-diag-section input[type=checkbox]")
+            .Should().HaveCount(fqeToggleCount);
+    }
+
+    [Fact]
+    public void TargetEnvironments_UsesChildOwnedEditorOnly()
+    {
+        var cut = Render<SystemSettings>();
+        cut.WaitForAssertion(() => FindButton(cut, "Target Environments").Should().NotBeNull());
+        FindButton(cut, "Target Environments")!.Click();
+
+        FindButton(cut, "Edit Settings").Should().BeNull();
+        FindButton(cut, "Edit Environment").Should().NotBeNull();
+        FindButton(cut, "Edit Environment")!.Click();
+        FindButton(cut, "Save Environment").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void FqeSave_SendsOnlyChangedLayer2Preference()
+    {
+        var cut = EnterFqeEditMode();
+        cut.FindAll(".frontend-quality-engine-settings input[type=checkbox]")[1].Change(true);
+        FindButton(cut, "Save Settings")!.Click();
+
+        cut.WaitForAssertion(() => _handler.LastSaveBody.Should().NotBeNull());
+        _handler.LastSaveBody.Should().Contain("\"frontendQualityEngines\"");
+        _handler.LastSaveBody.Should().Contain("\"accessibilityEnabled\":true");
+        _handler.LastSaveBody.Should().NotContain("Allowed");
+        _handler.LastSaveBody.Should().NotContain("Readiness");
+        _handler.LastSaveBody.Should().NotContain("AuthMode");
+        _handler.LastSaveBody.Should().NotContain("Available");
+    }
+
+    [Fact]
+    public void FqeCancel_DiscardsDraftAndReentryUsesPersistedValue()
+    {
+        var cut = EnterFqeEditMode();
+        cut.FindAll(".frontend-quality-engine-settings input[type=checkbox]")[1].Change(true);
+        FindButton(cut, "Cancel")!.Click();
+        FindButton(cut, "Edit Settings")!.Click();
+
+        cut.FindAll(".frontend-quality-engine-settings input[type=checkbox]")[1]
+            .HasAttribute("checked").Should().BeFalse();
+        _handler.LastSaveBody.Should().BeNull();
+    }
+
+    private IRenderedComponent<SystemSettings> EnterFqeEditMode()
+    {
+        var cut = Render<SystemSettings>();
+        cut.WaitForAssertion(() => FindButton(cut, "Frontend Quality Engines").Should().NotBeNull());
+        FindButton(cut, "Frontend Quality Engines")!.Click();
+        FindButton(cut, "Edit Settings")!.Click();
+        cut.FindAll(".frontend-quality-engine-settings input[type=checkbox]").Should().HaveCount(4);
+        return cut;
+    }
+
+    private static AngleSharp.Dom.IElement? FindButton(IRenderedComponent<SystemSettings> cut, string text) =>
+        cut.FindAll("button").FirstOrDefault(button => button.TextContent.Contains(text));
+
     private IRenderedComponent<SystemSettings> RenderEnvironmentDiagnostics()
     {
         var cut = Render<SystemSettings>();
@@ -187,24 +286,35 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
     private sealed class AdminApiHandler : HttpMessageHandler
     {
         public string EnvironmentDiagnosticsJson { get; set; } = SuccessfulDiagnosticsJson;
+        public string? LastSaveBody { get; private set; }
 
-        protected override Task<HttpResponseMessage> SendAsync(
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             var path = request.RequestUri?.AbsolutePath ?? "";
+            if (path == "/api/admin/system-settings" && request.Method == HttpMethod.Post)
+            {
+                LastSaveBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"success\":true,\"message\":\"Saved.\"}", Encoding.UTF8, "application/json")
+                };
+            }
+
             var json = path switch
             {
                 "/api/admin/system-settings" => SystemSettingsJson,
                 "/api/admin/editable-settings" => EditableSettingsJson,
+                "/api/frontend-quality-engines/status" => FrontendQualityStatusJson,
                 "/api/admin/environment-diagnostics" => EnvironmentDiagnosticsJson,
                 _ => "[]"
             };
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
-            });
+            };
         }
     }
 
@@ -230,7 +340,25 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
             "advanced": []
           },
           "logging": { "minimumLevel": "Information", "seqUrl": "" },
-          "admin": { "showDiagnostics": true }
+          "admin": { "showDiagnostics": true },
+          "frontendQualityEngines": {
+            "browserRuntimeEnabled": true,
+            "accessibilityEnabled": false,
+            "lighthouseEnabled": true,
+            "passiveSecurityEnabled": false
+          }
+        }
+        """;
+
+    private const string FrontendQualityStatusJson = """
+        {
+          "checkedAtUtc": "2026-07-03T12:34:56Z",
+          "engines": [
+            { "engineId": 0, "displayName": "Browser Runtime", "layer1Allowed": true, "layer2Enabled": true, "layer3Readiness": { "engineId": 0, "isAvailable": true, "checkedAtUtc": "2026-07-03T12:34:56Z" }, "authModeSupported": true, "available": true, "reasons": [0] },
+            { "engineId": 1, "displayName": "Accessibility", "layer1Allowed": true, "layer2Enabled": false, "layer3Readiness": { "engineId": 1, "isAvailable": false, "statusReason": "disabled", "checkedAtUtc": "2026-07-03T12:34:56Z" }, "authModeSupported": true, "available": false, "reasons": [2] },
+            { "engineId": 2, "displayName": "Lighthouse", "layer1Allowed": true, "layer2Enabled": true, "layer3Readiness": { "engineId": 2, "isAvailable": true, "checkedAtUtc": "2026-07-03T12:34:56Z" }, "authModeSupported": false, "available": true, "reasons": [0] },
+            { "engineId": 3, "displayName": "Passive Security", "layer1Allowed": false, "layer2Enabled": false, "layer3Readiness": { "engineId": 3, "isAvailable": false, "statusReason": "disabled", "checkedAtUtc": "2026-07-03T12:34:56Z" }, "authModeSupported": false, "available": false, "reasons": [1,2] }
+          ]
         }
         """;
 

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
+using BirkNext.Api.Services.FrontendQualityEngines;
 
 namespace BirkNext.Api.Services.FrontendPassiveSecurity;
 
@@ -14,7 +15,10 @@ public sealed class FrontendZapPassiveReviewService(
     public const string Image = "ghcr.io/zaproxy/zaproxy:2.16.1";
     public const string PassiveLimitation = "Passive automated scanning cannot prove that an application is secure and does not replace authenticated or active penetration testing.";
     internal static readonly string[] DaemonArguments = ["zap.sh", "-daemon", "-host", "0.0.0.0", "-port", "8080", "-config", "api.disablekey=true", "-config", "api.addrs.addr.name=.*", "-config", "api.addrs.addr.regex=true"];
-    private readonly bool _enabled = configuration.GetValue<bool>("FrontendPassiveSecurity:Enabled");
+    private readonly bool _enabled = FrontendQualityEngineEnablement.Resolve(
+        configuration,
+        FrontendQualityEngineId.PassiveSecurity,
+        configuration.GetValue<bool>("FrontendPassiveSecurity:Enabled"));
     private readonly string _containerRuntime = configuration.GetValue<string>("FrontendPassiveSecurity:ContainerRuntime") ?? "docker";
     private readonly string? _containerNetwork = configuration.GetValue<string>("FrontendPassiveSecurity:ContainerNetwork");
 
