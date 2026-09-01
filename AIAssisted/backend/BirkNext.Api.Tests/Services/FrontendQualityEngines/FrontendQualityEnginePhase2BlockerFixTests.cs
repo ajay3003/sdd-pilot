@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BirkNext.Api.Tests.Services.FrontendQualityEngines;
 
 /// <summary>Phase 2 blocker fixes: Layer 2 persistence, Layer 1 immutability, test configuration.</summary>
+[Collection("Frontend quality engine local settings")]
 public sealed class FrontendQualityEnginePhase2BlockerFixTests
 {
     [Fact(DisplayName = "Layer 2 saves to appsettings.Local.json")]

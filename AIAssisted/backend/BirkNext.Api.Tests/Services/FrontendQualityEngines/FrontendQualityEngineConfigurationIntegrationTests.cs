@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace BirkNext.Api.Tests.Services.FrontendQualityEngines;
 
+[Collection("Frontend quality engine local settings")]
 public sealed class FrontendQualityEngineConfigurationIntegrationTests
 {
     [Fact]

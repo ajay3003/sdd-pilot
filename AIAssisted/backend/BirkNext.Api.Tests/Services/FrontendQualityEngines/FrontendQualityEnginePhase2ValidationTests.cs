@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BirkNext.Api.Tests.Services.FrontendQualityEngines;
 
 /// <summary>Phase 2 validation: backend capability model, persistence, migration, API contracts.</summary>
+[Collection("Frontend quality engine local settings")]
 public sealed class FrontendQualityEnginePhase2ValidationTests
 {
     [Fact(DisplayName = "STRICT: Layer 1 cannot be modified through System Settings API")]

@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BirkNext.Api.Tests.Services.FrontendQualityEngines;
 
 /// <summary>Diagnostic test for Layer 2 persistence across save/reload cycle.</summary>
+[Collection("Frontend quality engine local settings")]
 public sealed class PersistenceDiagnosticTest
 {
     [Fact(DisplayName = "Persistence Level 2: Configuration reads saved value after Reload()")]
