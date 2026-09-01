@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using BirkNext.Api.Services.FrontendBrowserRuntime;
-using Microsoft.Extensions.Options;
+using BirkNext.Api.Services.FrontendQualityEngines;
 
 namespace BirkNext.Api.Services.FrontendLighthouse;
 
@@ -14,16 +14,20 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
     private readonly LighthouseEvidenceSanitizer _sanitizer;
     private readonly string _runnerPath;
     private readonly string _nodeExecutable;
-    private readonly bool _enabled;
+    private readonly Func<bool> _isEnabled;
 
     public FrontendLighthouseReviewService(
         ILogger<FrontendLighthouseReviewService> logger,
         BrowserTargetValidator validator,
         LighthouseEvidenceSanitizer sanitizer,
         IWebHostEnvironment environment,
-        IOptions<FrontendLighthouseOptions> options)
+        IConfiguration configuration)
         : this(logger, validator, sanitizer,
-            System.IO.Path.Combine(environment.ContentRootPath, "Tools", "LighthouseRunner", "run-lighthouse.mjs"), "node", options.Value.Enabled) { }
+            System.IO.Path.Combine(environment.ContentRootPath, "Tools", "LighthouseRunner", "run-lighthouse.mjs"), "node",
+            () => FrontendQualityEngineEnablement.Resolve(
+                configuration,
+                FrontendQualityEngineId.Lighthouse,
+                configuration.GetValue<bool>($"{FrontendLighthouseOptions.SectionName}:Enabled"))) { }
 
     internal FrontendLighthouseReviewService(
         ILogger<FrontendLighthouseReviewService> logger,
@@ -32,13 +36,22 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
         string runnerPath,
         string nodeExecutable,
         bool enabled = true)
+        : this(logger, validator, sanitizer, runnerPath, nodeExecutable, () => enabled) { }
+
+    private FrontendLighthouseReviewService(
+        ILogger<FrontendLighthouseReviewService> logger,
+        BrowserTargetValidator validator,
+        LighthouseEvidenceSanitizer sanitizer,
+        string runnerPath,
+        string nodeExecutable,
+        Func<bool> isEnabled)
     {
         _logger = logger;
         _validator = validator;
         _sanitizer = sanitizer;
         _runnerPath = runnerPath;
         _nodeExecutable = nodeExecutable;
-        _enabled = enabled;
+        _isEnabled = isEnabled;
     }
 
     public async Task<LighthouseReviewResult> ReviewAsync(string targetUrl, LighthouseReviewOptions? options = null,
@@ -52,7 +65,7 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
         var validation = _validator.ValidateTarget(targetUrl, options.EnvironmentType);
         if (!validation.IsValid)
             return Failure(LighthouseExecutionStatus.Skipped, targetUrl, started, validation.BlockReason ?? "Target blocked by safety policy.");
-        if (!_enabled)
+        if (!_isEnabled())
             return Failure(LighthouseExecutionStatus.Skipped, targetUrl, started, "Lighthouse review engine is disabled.");
         if (!File.Exists(_runnerPath))
             return Failure(LighthouseExecutionStatus.EngineError, targetUrl, started, "Pinned Lighthouse runner is unavailable.");
@@ -98,7 +111,7 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
 
     public async Task<LighthouseReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
     {
-        if (!_enabled)
+        if (!_isEnabled())
             return new(LighthouseReadinessState.Disabled, false, Error: "Lighthouse review engine is disabled.");
         if (!File.Exists(_runnerPath))
             return new(LighthouseReadinessState.LighthouseUnavailable, false, Error: "Pinned Lighthouse runner is unavailable.");
@@ -107,9 +120,13 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
             return new(LighthouseReadinessState.LaunchFailed, false, Error: "Lighthouse readiness timed out.");
         if (execution.ExitCode != 0)
         {
-            var state = execution.Error.Contains("node", StringComparison.OrdinalIgnoreCase)
+            var state = execution.StartFailed
                 ? LighthouseReadinessState.NodeUnavailable : LighthouseReadinessState.LaunchFailed;
-            return new(state, false, BrowserName: "Chromium", Error: _sanitizer.SanitizeText(execution.Error));
+            _logger.LogWarning("Lighthouse readiness process failed ({State}): {Diagnostic}", state, execution.Error);
+            var safeError = state == LighthouseReadinessState.NodeUnavailable
+                ? "Node.js runtime is unavailable."
+                : "Lighthouse runtime could not be started.";
+            return new(state, false, BrowserName: "Chromium", Error: safeError);
         }
         try
         {
@@ -119,7 +136,9 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
         }
         catch (Exception ex)
         {
-            return new(LighthouseReadinessState.ConfigurationInvalid, false, Error: ex.Message);
+            _logger.LogWarning(ex, "Lighthouse readiness response could not be parsed");
+            return new(LighthouseReadinessState.ConfigurationInvalid, false,
+                Error: "Lighthouse readiness response was invalid.");
         }
     }
 
@@ -149,14 +168,16 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
             {
                 if (!process.HasExited) process.Kill(entireProcessTree: true);
                 await process.WaitForExitAsync(CancellationToken.None);
-                return new(-1, await Safe(stdout), await Safe(stderr), timeout.IsCancellationRequested);
+                if (cancellationToken.IsCancellationRequested)
+                    throw;
+                return new(-1, await Safe(stdout), await Safe(stderr), timeout.IsCancellationRequested, false);
             }
-            return new(process.ExitCode, await stdout, await stderr, false);
+            return new(process.ExitCode, await stdout, await stderr, false, false);
         }
         catch (Exception ex)
         {
             if (started && !process.HasExited) process.Kill(entireProcessTree: true);
-            return new(-1, "", ex.Message, false);
+            return new(-1, "", ex.Message, false, true);
         }
     }
 
@@ -189,7 +210,7 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
             EffectiveConfiguration: new(Categories: ["Performance"]));
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
-    private sealed record ProcessResult(int ExitCode, string Output, string Error, bool TimedOut);
+    private sealed record ProcessResult(int ExitCode, string Output, string Error, bool TimedOut, bool StartFailed);
     private sealed record RunnerResult(string? LighthouseVersion, string? NodeVersion, string? BrowserName, string? BrowserVersion,
         string? RequestedUrl, string? FinalUrl, int? PerformanceScore, List<RunnerMetric> Metrics, List<RunnerAudit> Audits);
     private sealed record RunnerMetric(string Name, double? ObservedValue, string? Unit, string Status, string? AuditId);

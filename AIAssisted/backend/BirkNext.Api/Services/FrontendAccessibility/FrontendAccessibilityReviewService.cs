@@ -3,6 +3,7 @@ using BirkNext.Api.Services.AuthenticatedReview;
 using BirkNext.Api.Services.FrontendBrowserRuntime;
 using Deque.AxeCore.Commons;
 using Microsoft.Playwright;
+using BirkNext.Api.Services.FrontendQualityEngines;
 using Microsoft.Extensions.Options;
 
 namespace BirkNext.Api.Services.FrontendAccessibility;
@@ -19,14 +20,27 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
     private readonly AccessibilityEvidenceSanitizer _sanitizer;
     private readonly IAuthenticatedBrowserSessionManager? _authenticatedSessions;
     private readonly IAccessibilityAnalysisObserver _analysisObserver;
-    private readonly bool _enabled;
+    private readonly Func<bool> _isEnabled;
 
     public FrontendAccessibilityReviewService(
         ILogger<FrontendAccessibilityReviewService> logger,
         BrowserTargetValidator targetValidator,
         AccessibilityNormalizer normalizer,
         IOptions<FrontendAccessibilityOptions> options)
-        : this(logger, targetValidator, normalizer, new BundledAxeScriptProvider(), new AccessibilityEvidenceSanitizer(), null, options.Value.Enabled) { }
+        : this(logger, targetValidator, normalizer, new BundledAxeScriptProvider(), new AccessibilityEvidenceSanitizer(), null,
+            options.Value.Enabled) { }
+
+    public FrontendAccessibilityReviewService(
+        ILogger<FrontendAccessibilityReviewService> logger,
+        BrowserTargetValidator targetValidator,
+        AccessibilityNormalizer normalizer,
+        IOptions<FrontendAccessibilityOptions> options,
+        IConfiguration configuration)
+        : this(logger, targetValidator, normalizer, new BundledAxeScriptProvider(), new AccessibilityEvidenceSanitizer(), null,
+            () => FrontendQualityEngineEnablement.Resolve(
+                configuration,
+                FrontendQualityEngineId.Accessibility,
+                configuration.GetValue<bool>($"{FrontendAccessibilityOptions.SectionName}:Enabled"))) { }
 
     internal FrontendAccessibilityReviewService(
         ILogger<FrontendAccessibilityReviewService> logger,
@@ -37,6 +51,17 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         IAuthenticatedBrowserSessionManager? authenticatedSessions = null,
         bool enabled = true,
         IAccessibilityAnalysisObserver? analysisObserver = null)
+        : this(logger, targetValidator, normalizer, axeScriptProvider, sanitizer, authenticatedSessions, () => enabled, analysisObserver) { }
+
+    private FrontendAccessibilityReviewService(
+        ILogger<FrontendAccessibilityReviewService> logger,
+        BrowserTargetValidator targetValidator,
+        AccessibilityNormalizer normalizer,
+        IAxeScriptProvider axeScriptProvider,
+        AccessibilityEvidenceSanitizer sanitizer,
+        IAuthenticatedBrowserSessionManager? authenticatedSessions,
+        Func<bool> isEnabled,
+        IAccessibilityAnalysisObserver? analysisObserver = null)
     {
         _logger = logger;
         _targetValidator = targetValidator;
@@ -45,7 +70,7 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         _sanitizer = sanitizer;
         _authenticatedSessions = authenticatedSessions;
         _analysisObserver = analysisObserver ?? NoOpAccessibilityAnalysisObserver.Instance;
-        _enabled = enabled;
+        _isEnabled = isEnabled;
     }
 
     public async Task<AccessibilityReviewResult> ReviewAsync(
@@ -75,7 +100,7 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
         var startedAt = DateTime.UtcNow;
         var options = request.Options ?? new AccessibilityReviewOptions();
 
-        if (!_enabled)
+        if (!_isEnabled())
             return Failure(AccessibilityExecutionStatus.Skipped, request.TargetUrl, startedAt,
                 "Accessibility review engine is disabled.", AccessibilityExecutionMode.AnonymousOwnedBrowser);
 
@@ -334,7 +359,7 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
 
     public async Task<AccessibilityReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
     {
-        if (!_enabled)
+        if (!_isEnabled())
             return new(AccessibilityReadinessState.Disabled, false, BrowserName: "Chromium", Error: "Accessibility review engine is disabled.");
         try
         {
@@ -350,13 +375,11 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
             await browser.CloseAsync();
             return new(AccessibilityReadinessState.Ready, true, axeVersion, "Chromium", browserVersion);
         }
-        catch (PlaywrightException ex) when (ex.Message.Contains("executable", StringComparison.OrdinalIgnoreCase))
-        {
-            return new(AccessibilityReadinessState.ChromiumUnavailable, false, BrowserName: "Chromium", Error: ex.Message);
-        }
         catch (Exception ex)
         {
-            return new(AccessibilityReadinessState.LaunchFailed, false, BrowserName: "Chromium", Error: ex.Message);
+            _logger.LogWarning(ex, "Accessibility readiness probe failed while starting Chromium or axe-core");
+            return new(AccessibilityReadinessState.LaunchFailed, false, BrowserName: "Chromium",
+                Error: "Accessibility runtime could not be started.");
         }
     }
 

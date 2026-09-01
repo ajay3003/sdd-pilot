@@ -37,7 +37,7 @@ public sealed class FrontendQualityEngineReadinessAggregator : IFrontendQualityE
         return await CheckSafeAsync(provider, ct);
     }
 
-    private static async Task<FrontendQualityEngineReadiness> CheckSafeAsync(
+    private async Task<FrontendQualityEngineReadiness> CheckSafeAsync(
         IFrontendQualityEngineReadinessProvider provider,
         CancellationToken ct)
     {
@@ -47,7 +47,9 @@ public sealed class FrontendQualityEngineReadinessAggregator : IFrontendQualityE
         }
         catch (Exception ex)
         {
-            return new(provider.EngineId, false, $"Provider error: {ex.Message}", DateTime.UtcNow);
+            _logger.LogWarning(ex, "Frontend quality readiness provider failed for {EngineId}", provider.EngineId);
+            return new(provider.EngineId, false, "Engine readiness check failed.", DateTime.UtcNow,
+                FrontendQualityEngineReadinessReason.ProviderError);
         }
     }
 }

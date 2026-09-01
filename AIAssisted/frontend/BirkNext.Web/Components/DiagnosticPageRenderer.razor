@@ -12,19 +12,19 @@
         <div class="notification notification-success" role="status">@Message</div>
     }
 
-    @if (ShowRunArea)
+    @if (ShowRunArea && OnRun.HasDelegate)
     {
-        <div class="settings-card" style="margin-bottom:1.5rem;background:var(--surface-subtle,#f8f9fa)">
-            <div class="settings-card-title" style="font-size:0.95rem">@RunAreaTitle</div>
-            <div style="display:flex;flex-wrap:wrap;gap:.5rem">
-                @if (OnRun.HasDelegate)
-                {
-                    <PrimaryButton OnClick="OnRun" Disabled="@IsRunning">
-                        @(IsRunning ? RunningLabel : RunLabel)
-                    </PrimaryButton>
-                }
-                @Actions
-            </div>
+        <div class="diag-actions" style="margin-bottom:1.5rem;display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center">
+            <PrimaryButton OnClick="OnRun" Disabled="@IsRunning">
+                @(IsRunning ? RunningLabel : RunLabel)
+            </PrimaryButton>
+            @Actions
+        </div>
+    }
+    else if (ShowRunArea && Actions is not null)
+    {
+        <div class="diag-actions" style="margin-bottom:1.5rem;display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center">
+            @Actions
         </div>
     }
 
@@ -32,96 +32,106 @@
 
     @if (!HasRun)
     {
-        <div class="ss-status-bar" style="margin-bottom:1.5rem">
-            <span class="ss-status-pill">
-                <span class="ss-status-label">Overall Status</span>
-                <span class="ss-status-value">Not Run</span>
-            </span>
+        <div class="diag-status-section" style="margin-top:1.5rem">
+            <div class="ss-status-bar" style="margin-bottom:0.75rem">
+                <span class="ss-status-pill">
+                    <span class="ss-status-label">Overall Status</span>
+                    <span class="ss-status-value">Not Run</span>
+                </span>
+            </div>
+            <p class="settings-card-note" style="border:none;padding:0;margin:0;font-size:0.83rem">@NotRunText</p>
         </div>
-        <div class="db-section-empty">@NotRunText</div>
     }
     else
     {
-        <div class="ss-status-bar" style="margin-bottom:1.5rem">
-            <span class="ss-status-pill @StatusPillClass(OverallStatus)">
-                <span class="ss-status-label">Overall Status</span>
-                <span class="ss-status-value">@StatusLabel(OverallStatus)</span>
-            </span>
-            @if (GeneratedAt is not null)
-            {
-                <span class="ss-status-pill">
-                    <span class="ss-status-label">Generated</span>
-                    <span class="ss-status-value">@GeneratedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
+        <div class="diag-status-section" style="margin-top:1.5rem">
+            <div class="ss-status-bar" style="margin-bottom:1rem">
+                <span class="ss-status-pill @StatusPillClass(OverallStatus)">
+                    <span class="ss-status-label">Overall Status</span>
+                    <span class="ss-status-value">@StatusLabel(OverallStatus)</span>
                 </span>
-            }
-            @if (!string.IsNullOrWhiteSpace(EnvironmentName))
-            {
-                <span class="ss-status-pill">
-                    <span class="ss-status-label">Environment</span>
-                    <span class="ss-status-value">@EnvironmentName</span>
-                </span>
-            }
-        </div>
-
-        @if (Summary is not null)
-        {
-            <div class="ss-status-bar" style="margin-bottom:1.5rem">
-                <span class="ss-status-pill">
-                    <span class="ss-status-label">Checks Executed</span>
-                    <span class="ss-status-value">@Summary.TotalCount</span>
-                </span>
-                <span class="ss-status-pill ss-status-pill-ok">
-                    <span class="ss-status-label">Passed</span>
-                    <span class="ss-status-value">@Summary.PassCount</span>
-                </span>
-                <span class="ss-status-pill ss-status-pill-warn">
-                    <span class="ss-status-label">Warnings</span>
-                    <span class="ss-status-value">@Summary.WarningCount</span>
-                </span>
-                <span class="ss-status-pill ss-status-pill-error">
-                    <span class="ss-status-label">Failed</span>
-                    <span class="ss-status-value">@Summary.FailCount</span>
-                </span>
-                <span class="ss-status-pill">
-                    <span class="ss-status-label">Unavailable</span>
-                    <span class="ss-status-value">@Summary.UnavailableCount</span>
-                </span>
+                @if (GeneratedAt is not null)
+                {
+                    <span class="ss-status-pill">
+                        <span class="ss-status-label">Generated</span>
+                        <span class="ss-status-value">@GeneratedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
+                    </span>
+                }
+                @if (!string.IsNullOrWhiteSpace(EnvironmentName))
+                {
+                    <span class="ss-status-pill">
+                        <span class="ss-status-label">Environment</span>
+                        <span class="ss-status-value">@EnvironmentName</span>
+                    </span>
+                }
             </div>
-        }
 
-        <div class="dev-diag-subgrid">
-            @foreach (var diagSection in Sections)
+            @if (Summary is not null)
             {
-                <div class="dev-diag-section">
-                    <div class="dev-diag-section-title">@diagSection.Title</div>
-                    @if (!string.IsNullOrWhiteSpace(diagSection.Description))
-                    {
-                        <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0 0 0.75rem">@diagSection.Description</p>
-                    }
-                    @if (diagSection.Items.Count == 0)
-                    {
-                        <div class="db-section-empty">No diagnostics returned for this section.</div>
-                    }
-                    @foreach (var item in diagSection.Items)
-                    {
-                        <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--surface-subtle);border-radius:var(--radius-default)">
-                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem">
-                                <span style="font-weight:600;flex:1">@item.Name</span>
-                                <span class="ss-health-sev @StatusClass(item.Status)">@item.Status</span>
-                            </div>
-                            @if (!string.IsNullOrWhiteSpace(item.Value))
-                            {
-                                <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0">@item.Value</p>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(item.Recommendation))
-                            {
-                                <p style="font-size:0.85rem;color:var(--clr-text-placeholder);margin:0.25rem 0 0">-> @item.Recommendation</p>
-                            }
-                        </div>
-                    }
+                <div class="ss-status-bar" style="margin-bottom:1rem">
+                    <span class="ss-status-pill">
+                        <span class="ss-status-label">Checks Executed</span>
+                        <span class="ss-status-value">@Summary.TotalCount</span>
+                    </span>
+                    <span class="ss-status-pill ss-status-pill-ok">
+                        <span class="ss-status-label">Passed</span>
+                        <span class="ss-status-value">@Summary.PassCount</span>
+                    </span>
+                    <span class="ss-status-pill ss-status-pill-warn">
+                        <span class="ss-status-label">Warnings</span>
+                        <span class="ss-status-value">@Summary.WarningCount</span>
+                    </span>
+                    <span class="ss-status-pill ss-status-pill-error">
+                        <span class="ss-status-label">Failed</span>
+                        <span class="ss-status-value">@Summary.FailCount</span>
+                    </span>
+                    <span class="ss-status-pill">
+                        <span class="ss-status-label">Unavailable</span>
+                        <span class="ss-status-value">@Summary.UnavailableCount</span>
+                    </span>
                 </div>
             }
         </div>
+
+        @if (Sections.Count > 0)
+        {
+            <div class="dev-diag-subgrid" style="margin-top:1rem">
+                @foreach (var diagSection in Sections)
+                {
+                    <div class="dev-diag-section">
+                        <div class="dev-diag-section-title">@diagSection.Title</div>
+                        @if (!string.IsNullOrWhiteSpace(diagSection.Description))
+                        {
+                            <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0 0 0.75rem">@diagSection.Description</p>
+                        }
+                        @if (diagSection.Items.Count == 0)
+                        {
+                            <p style="font-size:0.82rem;color:var(--clr-text-placeholder);margin:0;font-style:italic">No diagnostics returned for this section.</p>
+                        }
+                        <table class="settings-table">
+                            @foreach (var item in diagSection.Items)
+                            {
+                                <tr>
+                                    <td style="width:25%;font-weight:600">@item.Name</td>
+                                    <td style="width:60%">
+                                        <div style="display:flex;align-items:center;gap:0.5rem">
+                                            <span style="font-size:0.85rem;color:var(--clr-text-muted)">@item.Value</span>
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(item.Recommendation))
+                                        {
+                                            <p style="font-size:0.82rem;color:var(--clr-text-placeholder);margin:0.25rem 0 0">-> @item.Recommendation</p>
+                                        }
+                                    </td>
+                                    <td style="width:15%;text-align:right">
+                                        <span class="ss-health-sev @StatusClass(item.Status)">@item.Status</span>
+                                    </td>
+                                </tr>
+                            }
+                        </table>
+                    </div>
+                }
+            </div>
+        }
     }
 </div>
 

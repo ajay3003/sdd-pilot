@@ -84,8 +84,8 @@ public sealed class FrontendQualityEngineStatusService : IFrontendQualityEngineS
 
         if (!layer3Available)
         {
-            if (readiness.StatusReason?.Contains("check timed out") == true ||
-                readiness.StatusReason?.Contains("Runtime status unknown") == true)
+            if (readiness.Reason is FrontendQualityEngineReadinessReason.CheckTimedOut or
+                FrontendQualityEngineReadinessReason.ProviderError)
                 reasons.Add(FrontendQualityEngineUnavailableReason.RuntimeStatusUnknown);
             else
                 reasons.Add(FrontendQualityEngineUnavailableReason.RuntimeUnavailable);

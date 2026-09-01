@@ -76,6 +76,41 @@ public sealed class FrontendQualityEngineSettingsTests : TestContext
         cut.FindAll("tr").Should().HaveCount(20);
     }
 
+    [Fact]
+    public void UnavailableEngines_RenderSafeConsistentReadinessDetails()
+    {
+        var report = BuildReport();
+        var accessibility = report.Engines.Single(engine => engine.EngineId == FrontendQualityEngineIdDto.Accessibility);
+        accessibility.Layer2Enabled = true;
+        accessibility.Layer3Readiness!.IsAvailable = false;
+        accessibility.Layer3Readiness.StatusReason = "Accessibility runtime could not be started.";
+        var lighthouse = report.Engines.Single(engine => engine.EngineId == FrontendQualityEngineIdDto.Lighthouse);
+        lighthouse.Layer3Readiness!.IsAvailable = false;
+        lighthouse.Layer3Readiness.StatusReason = "Lighthouse runtime could not be started.";
+        var passive = report.Engines.Single(engine => engine.EngineId == FrontendQualityEngineIdDto.PassiveSecurity);
+        passive.Layer2Enabled = true;
+        passive.Layer3Readiness!.IsAvailable = false;
+        passive.Layer3Readiness.StatusReason = "Container runtime is unavailable.";
+        passive.Reasons =
+        [
+            FrontendQualityEngineUnavailableReasonDto.BlockedByDeploymentPolicy,
+            FrontendQualityEngineUnavailableReasonDto.RuntimeUnavailable
+        ];
+
+        var cut = Render<FrontendQualityEngineSettings>(parameters => parameters
+            .Add(p => p.AnonymousStatus, report)
+            .Add(p => p.AuthenticatedStatus, report));
+
+        cut.Markup.Should().Contain("Accessibility runtime could not be started.");
+        cut.Markup.Should().NotContain("Accessibility review engine is disabled.");
+        cut.Markup.Should().Contain("Lighthouse runtime could not be started.");
+        cut.Markup.Should().Contain("Container runtime is unavailable.");
+        cut.Markup.Should().Contain("Not allowed on this installation");
+        cut.Markup.Should().NotContain(@"C:\Users\");
+        cut.Markup.Should().NotContain("working directory");
+        cut.Markup.Should().NotContain("ProcessStart");
+    }
+
     private static FrontendQualityEngineStatusReportDto BuildReport()
     {
         var engines = Enum.GetValues<FrontendQualityEngineIdDto>()

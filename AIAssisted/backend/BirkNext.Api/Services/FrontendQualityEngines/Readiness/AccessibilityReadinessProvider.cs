@@ -26,21 +26,45 @@ public sealed class AccessibilityReadinessProvider : IFrontendQualityEngineReadi
 
             var result = await _service.CheckReadinessAsync(linked.Token);
 
+            if (!result.Available)
+                _logger.LogWarning("Accessibility readiness unavailable ({State}): {Diagnostic}", result.State, result.Error);
+
             return new(
                 EngineId,
                 result.Available,
-                result.Error,
-                DateTime.UtcNow);
+                SafeReason(result.State),
+                DateTime.UtcNow,
+                MapReason(result.State));
         }
         catch (OperationCanceledException)
         {
             _logger.LogWarning("Accessibility readiness check timed out");
-            return new(EngineId, false, "Runtime status unknown: check timed out", DateTime.UtcNow);
+            return new(EngineId, false, "Accessibility readiness check timed out.", DateTime.UtcNow,
+                FrontendQualityEngineReadinessReason.CheckTimedOut);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Accessibility readiness check failed");
-            return new(EngineId, false, $"Runtime status unknown: {ex.Message}", DateTime.UtcNow);
+            return new(EngineId, false, "Accessibility readiness check failed.", DateTime.UtcNow,
+                FrontendQualityEngineReadinessReason.ProviderError);
         }
     }
+
+    private static FrontendQualityEngineReadinessReason MapReason(AccessibilityReadinessState state) => state switch
+    {
+        AccessibilityReadinessState.Ready => FrontendQualityEngineReadinessReason.None,
+        AccessibilityReadinessState.Disabled => FrontendQualityEngineReadinessReason.DisabledInSystemSettings,
+        AccessibilityReadinessState.ChromiumUnavailable => FrontendQualityEngineReadinessReason.ExecutableUnavailable,
+        AccessibilityReadinessState.AxeUnavailable => FrontendQualityEngineReadinessReason.RuntimePrerequisiteUnavailable,
+        _ => FrontendQualityEngineReadinessReason.EngineUnavailable
+    };
+
+    private static string? SafeReason(AccessibilityReadinessState state) => state switch
+    {
+        AccessibilityReadinessState.Ready => null,
+        AccessibilityReadinessState.Disabled => "Accessibility is disabled in System Settings.",
+        AccessibilityReadinessState.ChromiumUnavailable => "Chromium runtime is unavailable.",
+        AccessibilityReadinessState.AxeUnavailable => "axe-core runtime is unavailable.",
+        _ => "Accessibility runtime could not be started."
+    };
 }

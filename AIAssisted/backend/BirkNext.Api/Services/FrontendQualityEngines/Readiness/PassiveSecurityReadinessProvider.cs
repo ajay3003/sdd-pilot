@@ -26,21 +26,46 @@ public sealed class PassiveSecurityReadinessProvider : IFrontendQualityEngineRea
 
             var result = await _service.CheckReadinessAsync(linked.Token);
 
+            if (!result.Available)
+                _logger.LogWarning("Passive Security readiness unavailable ({State}): {Diagnostic}", result.State, result.Error);
+
             return new(
                 EngineId,
                 result.Available,
-                result.Error,
-                DateTime.UtcNow);
+                SafeReason(result.State),
+                DateTime.UtcNow,
+                MapReason(result.State));
         }
         catch (OperationCanceledException)
         {
             _logger.LogWarning("Passive Security readiness check timed out");
-            return new(EngineId, false, "Runtime status unknown: check timed out", DateTime.UtcNow);
+            return new(EngineId, false, "Passive Security readiness check timed out.", DateTime.UtcNow,
+                FrontendQualityEngineReadinessReason.CheckTimedOut);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Passive Security readiness check failed");
-            return new(EngineId, false, $"Runtime status unknown: {ex.Message}", DateTime.UtcNow);
+            return new(EngineId, false, "Passive Security readiness check failed.", DateTime.UtcNow,
+                FrontendQualityEngineReadinessReason.ProviderError);
         }
     }
+
+    private static FrontendQualityEngineReadinessReason MapReason(PassiveSecurityReadinessState state) => state switch
+    {
+        PassiveSecurityReadinessState.Ready => FrontendQualityEngineReadinessReason.None,
+        PassiveSecurityReadinessState.Disabled => FrontendQualityEngineReadinessReason.DisabledInSystemSettings,
+        PassiveSecurityReadinessState.DockerUnavailable => FrontendQualityEngineReadinessReason.ContainerRuntimeUnavailable,
+        PassiveSecurityReadinessState.ZapImageUnavailable => FrontendQualityEngineReadinessReason.RuntimePrerequisiteUnavailable,
+        _ => FrontendQualityEngineReadinessReason.EngineUnavailable
+    };
+
+    private static string? SafeReason(PassiveSecurityReadinessState state) => state switch
+    {
+        PassiveSecurityReadinessState.Ready => null,
+        PassiveSecurityReadinessState.Disabled => "Passive Security is disabled in System Settings.",
+        PassiveSecurityReadinessState.DockerUnavailable => "Container runtime is unavailable.",
+        PassiveSecurityReadinessState.ZapImageUnavailable => "Passive Security runtime image is unavailable.",
+        PassiveSecurityReadinessState.ZapLaunchFailed => "Passive Security runtime could not be started.",
+        _ => "Passive Security runtime is unavailable."
+    };
 }

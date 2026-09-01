@@ -802,13 +802,10 @@ else if (_settings is not null)
             {
                 <div class="settings-card settings-card-full-width">
                     <div class="settings-card-title">AI</div>
-                    <p class="settings-card-note">
-                        AI provider configuration â€” model selection, temperature, token limits, prompt configuration â€” is managed through backend settings and is not currently exposed in System Settings.
-                    </p>
                     <div class="ss-placeholder">
-                        <div class="ss-placeholder-icon" aria-hidden="true">ðŸ¤–</div>
-                        <div class="ss-placeholder-text">AI settings not yet available here</div>
-                        <div class="ss-placeholder-sub">AI features can be individually enabled or disabled in Feature Visibility.</div>
+                        <div class="ss-placeholder-text">AI settings are not available yet</div>
+                        <p class="ss-placeholder-sub">AI provider, model, temperature, token limits and prompt settings are currently managed through backend configuration.</p>
+                        <p class="ss-placeholder-sub">AI features can still be enabled or disabled under Feature Visibility.</p>
                         <SecondaryButton OnClick='() => SetSection("feature-visibility")'>Open Feature Visibility</SecondaryButton>
                     </div>
                 </div>
@@ -1184,8 +1181,8 @@ else if (_settings is not null)
                     Summary="@RuntimeDiagnosticSummary"
                     Sections="@RuntimeDiagnosticSections">
                     <ChildContent>
-                    <div class="settings-card" style="margin-top:1.5rem;background:var(--surface-subtle,#f8f9fa)">
-                        <div class="settings-card-title" style="font-size:0.95rem">Developer Actions</div>
+                    <div class="dev-diag-section" style="margin-top:1.5rem">
+                        <div class="dev-diag-section-title">Developer Actions</div>
                         <div class="runtime-action-grid">
                             <div class="runtime-action-card">
                                 <strong>Reset Workspace</strong>
@@ -1210,7 +1207,7 @@ else if (_settings is not null)
                             <div class="runtime-action-card runtime-action-card-export">
                                 <strong>Export Diagnostics</strong>
                                 <span>Copies current runtime state, status summary, warnings, failures, timestamp, and workspace details.</span>
-                                <PrimaryButton OnClick="ExportRuntimeDiagnosticsAsync">Export Diagnostics</PrimaryButton>
+                                <SecondaryButton OnClick="ExportRuntimeDiagnosticsAsync">Export Diagnostics</SecondaryButton>
                             </div>
                         </div>
                     </div>

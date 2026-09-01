@@ -84,6 +84,49 @@ public sealed class SystemSettingsPlaywrightTests_PreStarted : IAsyncLifetime
         await page.CloseAsync();
     }
 
+    [Theory]
+    [InlineData(1440)]
+    [InlineData(1280)]
+    public async Task Maintenance_diagnostic_result_uses_table_structure_with_associated_values_and_badges(int width)
+    {
+        var page = await _fixture.Context.NewPageAsync();
+        var consoleErrors = new List<string>();
+        page.Console += (_, message) => { if (message.Type == "error") consoleErrors.Add(message.Text); };
+        await page.SetViewportSizeAsync(width, 1000);
+        await page.GotoAsync($"{_fixture.FrontendUrl}/admin/system-settings?section=maintenance",
+            new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60000 });
+
+        var root = page.Locator("text=Maintenance").Locator("../..").First;
+        await root.Locator(".dev-diag-section").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60000 });
+
+        // Verify diagnostic section contains table
+        (await root.Locator(".settings-table").CountAsync()).Should().BeGreaterThan(0);
+
+        // Verify rows contain Database Reset and Database Mode with their values
+        var resetRow = root.Locator("tr:has-text('Database Reset')");
+        (await resetRow.CountAsync()).Should().Be(1);
+        (await resetRow.Locator("td:has-text('Allowed')").CountAsync()).Should().Be(1);
+        (await resetRow.Locator(".ss-health-sev").CountAsync()).Should().Be(1);
+
+        var modeRow = root.Locator("tr:has-text('Database Mode')");
+        (await modeRow.CountAsync()).Should().Be(1);
+        (await modeRow.Locator("td:has-text('Local')").CountAsync()).Should().Be(1);
+        (await modeRow.Locator(".ss-health-sev").CountAsync()).Should().Be(1);
+
+        // Verify status badges are compact (not full page width)
+        var badges = root.Locator(".ss-health-sev");
+        var badgeWidth = await badges.First.EvaluateAsync<float>("el => el.getBoundingClientRect().width");
+        badgeWidth.Should().BeLessThan(120);
+
+        // Verify no horizontal overflow
+        var overflow = await page.EvaluateAsync<int>("document.documentElement.scrollWidth - innerWidth");
+        overflow.Should().BeLessThanOrEqualTo(0);
+
+        // Verify no console errors
+        consoleErrors.Where(IsSystemSettingsConsoleError).Should().BeEmpty();
+        await page.CloseAsync();
+    }
+
     private async Task GoAsync(IPage page, string section) =>
         await page.GotoAsync($"{_fixture.FrontendUrl}/admin/system-settings?section={section}",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60000 });

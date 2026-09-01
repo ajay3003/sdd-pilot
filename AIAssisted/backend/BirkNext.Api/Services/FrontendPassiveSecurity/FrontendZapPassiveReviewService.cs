@@ -26,11 +26,21 @@ public sealed class FrontendZapPassiveReviewService(
     {
         if (!_enabled) return new(PassiveSecurityReadinessState.Disabled, false, Image: Image, Error: "Passive security engine is disabled.");
         var docker = await runner.RunAsync(_containerRuntime, ["version", "--format", "{{.Server.Version}}"], 15000, ct);
-        if (docker.ExitCode != 0) return new(PassiveSecurityReadinessState.DockerUnavailable, false, Image: Image, Error: CleanError(docker));
+        if (docker.ExitCode != 0)
+        {
+            logger.LogWarning("Container runtime readiness failed for {Runtime}: {Diagnostic}", _containerRuntime, CleanError(docker));
+            return new(PassiveSecurityReadinessState.DockerUnavailable, false, Image: Image,
+                Error: "Container runtime is unavailable.");
+        }
         var inspect = await runner.RunAsync(_containerRuntime, ["image", "inspect", Image, "--format", "{{index .RepoDigests 0}}"], 15000, ct);
         if (inspect.ExitCode != 0) return new(PassiveSecurityReadinessState.ZapImageUnavailable, false, Image: Image, Error: "Pinned ZAP image is not locally available; no scan-time download is performed.");
         var version = await runner.RunAsync(_containerRuntime, ["run", "--rm", "--network", "none", Image, "zap.sh", "-version"], 30000, ct);
-        if (version.ExitCode != 0) return new(PassiveSecurityReadinessState.ZapLaunchFailed, false, Image: Image, ImageDigest: inspect.Output.Trim(), Error: CleanError(version));
+        if (version.ExitCode != 0)
+        {
+            logger.LogWarning("Passive Security runtime launch failed: {Diagnostic}", CleanError(version));
+            return new(PassiveSecurityReadinessState.ZapLaunchFailed, false, Image: Image, ImageDigest: inspect.Output.Trim(),
+                Error: "Passive Security runtime could not be started.");
+        }
         return new(PassiveSecurityReadinessState.Ready, true, ParseVersion(version.Output + version.Error), Image: Image, ImageDigest: inspect.Output.Trim());
     }
 

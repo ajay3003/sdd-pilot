@@ -243,6 +243,29 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         _handler.LastSaveBody.Should().BeNull();
     }
 
+    [Fact]
+    public void AiPlaceholder_IsCompactReadOnlyAndNavigatesToFeatureVisibility()
+    {
+        var cut = Render<SystemSettings>();
+        cut.WaitForAssertion(() => FindButton(cut, "AI").Should().NotBeNull());
+        FindButton(cut, "AI")!.Click();
+
+        cut.Markup.Should().Contain("AI settings are not available yet");
+        cut.Markup.Should().Contain("currently managed through backend configuration");
+        FindButton(cut, "Open Feature Visibility").Should().NotBeNull();
+        FindButton(cut, "Edit Settings").Should().BeNull();
+        FindButton(cut, "Save Settings").Should().BeNull();
+        FindButton(cut, "Cancel").Should().BeNull();
+        cut.FindAll(".ss-placeholder input, .ss-placeholder select, .ss-placeholder textarea").Should().BeEmpty();
+        cut.Markup.Should().NotContain("â€");
+        cut.Markup.Should().NotContain("ðŸ");
+
+        FindButton(cut, "Open Feature Visibility")!.Click();
+
+        cut.Find(".ss-nav-item.is-active").TextContent.Should().Contain("Feature Visibility");
+        cut.Markup.Should().Contain("Feature &amp; Menu Visibility");
+    }
+
     private IRenderedComponent<SystemSettings> EnterFqeEditMode()
     {
         var cut = Render<SystemSettings>();
