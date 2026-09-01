@@ -59,8 +59,20 @@ public static class TestHostConfiguration
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
+                builder.UseEnvironment("Test");
+
                 builder.ConfigureAppConfiguration((ctx, config) =>
                 {
+                    var localSources = config.Sources
+                        .OfType<Microsoft.Extensions.Configuration.Json.JsonConfigurationSource>()
+                        .Where(source => source.Path?.Contains("Local") ?? false)
+                        .ToList();
+
+                    foreach (var source in localSources)
+                    {
+                        config.Sources.Remove(source);
+                    }
+
                     var overrides = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                     {
                         { "FrontendBrowserRuntime:Enabled", "false" },
