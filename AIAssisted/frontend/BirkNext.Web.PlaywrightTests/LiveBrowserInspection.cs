@@ -16,7 +16,7 @@ public sealed class LiveBrowserInspection
 
         var playwright = await Playwright.CreateAsync();
         var browser = await playwright.Chromium.LaunchAsync(new() { Headless = false });
-        var context = await browser.CreateBrowserContextAsync(new()
+        var context = await browser.NewContextAsync(new()
         {
             IgnoreHTTPSErrors = true,
             // Fresh context - no cache
@@ -44,15 +44,6 @@ public sealed class LiveBrowserInspection
             Console.WriteLine("=== OVERALL STATUS ===");
             var overallPills = await page.Locator(".ss-status-pill").CountAsync();
             Console.WriteLine($"Total .ss-status-pill elements: {overallPills}");
-
-            var firstPill = await page.Locator(".ss-status-pill").First.EvaluateAsync<dynamic>(el => new
-            {
-                HTML = ((IElementHandle)el).GetAttributeAsync("outerHTML"),
-                Classes = ((IElementHandle)el).GetAttributeAsync("class"),
-                Display = ((IElementHandle)el).EvaluateAsync<string>("el => window.getComputedStyle(el).display"),
-                Width = ((IElementHandle)el).EvaluateAsync<string>("el => window.getComputedStyle(el).width"),
-                Gap = ((IElementHandle)el).EvaluateAsync<string>("el => window.getComputedStyle(el).gap"),
-            });
 
             if (overallPills > 0)
             {
@@ -148,7 +139,7 @@ public sealed class LiveBrowserInspection
         finally
         {
             await browser.CloseAsync();
-            await playwright.DisposeAsync();
+            playwright.Dispose();
         }
     }
 }

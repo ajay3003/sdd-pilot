@@ -31,7 +31,7 @@ public sealed class LiveMaintenanceInspectionTest : IAsyncLifetime
         // Use direct Playwright for frontend-only testing
         var playwright = await Playwright.CreateAsync();
         var browser = await playwright.Chromium.LaunchAsync();
-        var page = await browser.CreatePageAsync();
+        var page = await browser.NewPageAsync();
 
         try
         {
@@ -95,7 +95,7 @@ public sealed class LiveMaintenanceInspectionTest : IAsyncLifetime
         finally
         {
             await browser.CloseAsync();
-            await playwright.DisposeAsync();
+            playwright.Dispose();
         }
     }
 }
