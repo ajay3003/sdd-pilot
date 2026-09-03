@@ -217,6 +217,7 @@ builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<Authen
 builder.Services.Configure<TargetDetectionOptions>(
     builder.Configuration.GetSection("TargetDetection"));
 builder.Services.AddScoped<RequireTargetDetectionHttpsFilter>();
+builder.Services.AddScoped<DevelopmentOnlyControllerFilter>();
 builder.Services.AddScoped<ITargetHostResolver, DnsTargetHostResolver>();
 // Rate limiter removed (API complexity) - replaced with controller-level input validation
 // and per-minute request monitoring via logging.

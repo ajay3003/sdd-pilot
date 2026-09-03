@@ -1,13 +1,17 @@
+using BirkNext.Api.Filters;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BirkNext.Api.Controllers;
 
 /// <summary>
 /// Test fixture endpoints for deterministic testing of authenticated target scenarios.
-/// Used ONLY in test/development environments. Do NOT expose in production.
+/// Used ONLY in test/development environments.
+/// SECURITY: Restricted to Development environment via DevelopmentOnlyControllerFilter.
+/// Returns 404 in Production-like runtime.
 /// </summary>
 [ApiController]
 [Route("")]
+[ServiceFilter(typeof(DevelopmentOnlyControllerFilter))]
 public sealed class TestFixtureController : ControllerBase
 {
     /// <summary>
