@@ -7,35 +7,24 @@ namespace BirkNext.Api.Controllers;
 /// Used ONLY in test/development environments. Do NOT expose in production.
 /// </summary>
 [ApiController]
-[Route("test-fixture")]
+[Route("")]
 public sealed class TestFixtureController : ControllerBase
 {
     /// <summary>
-    /// Simulates an authenticated target by returning an HTML page with meta-redirect to /login.
-    /// The preflight service will detect the redirect to /login and mark as AuthenticationRequired.
+    /// Simulates an authenticated target by redirecting to /login.
+    /// Returns HTTP 302 redirect so the detector can identify it as AuthenticationRequired.
     /// </summary>
     [HttpGet("auth-required")]
     public IActionResult AuthRequired()
     {
-        var html = @"
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Redirecting to login...</title>
-    <meta http-equiv='refresh' content='0; url=/login'>
-</head>
-<body>
-    <p>This application requires authentication. Redirecting to login...</p>
-</body>
-</html>";
-        return Content(html, "text/html");
+        return Redirect("/login");
     }
 
     /// <summary>
     /// Simulates a successful frontend response (no authentication required).
     /// Returns a minimal HTML page without authentication requirements.
     /// </summary>
-    [HttpGet("no-auth-required")]
+    [HttpGet("test-fixture/no-auth-required")]
     public IActionResult NoAuthRequired()
     {
         var html = @"
@@ -50,5 +39,15 @@ public sealed class TestFixtureController : ControllerBase
 </body>
 </html>";
         return Content(html, "text/html");
+    }
+
+    /// <summary>
+    /// Simulates a login page that requires authentication.
+    /// Returns 401 Unauthorized to signal authentication is required.
+    /// </summary>
+    [HttpGet("login")]
+    public IActionResult Login()
+    {
+        return Unauthorized();
     }
 }

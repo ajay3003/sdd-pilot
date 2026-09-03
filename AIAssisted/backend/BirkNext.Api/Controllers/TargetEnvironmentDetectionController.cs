@@ -16,7 +16,6 @@ namespace BirkNext.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/frontend-target")]
-[RequireHttps]
 public sealed class TargetEnvironmentDetectionController : ControllerBase
 {
     private readonly ITargetEnvironmentDetectionService _detectionService;
