@@ -1,4 +1,5 @@
 using BirkNext.Web;
+using BirkNext.Web.Configuration;
 using BirkNext.Web.GraphQL;
 using BirkNext.Web.Services;
 using Microsoft.AspNetCore.Components.Web;
@@ -124,15 +125,7 @@ builder.Services.AddHttpClient<ITargetPreflightService, TargetPreflightService>(
 // Target environment detection — uses backend API
 // SECURITY: HTTPS required in production. HTTP allowed only for loopback in Development.
 var backendUrl = builder.Configuration["BackendUrl"] ?? "https://localhost:5000";
-var isLoopbackUrl = backendUrl.Contains("localhost") || backendUrl.Contains("127.") || backendUrl.Contains("[::1]") || backendUrl.Contains("::1");
-var isHttps = backendUrl.StartsWith("https://");
-
-if (!isHttps && !(builder.HostEnvironment.IsDevelopment() && isLoopbackUrl))
-{
-    throw new InvalidOperationException(
-        "BackendUrl must use HTTPS scheme for security. HTTP is only allowed for loopback (localhost/127.0.0.1/::1) in Development. " +
-        $"Current value: {backendUrl}, Environment: {builder.HostEnvironment.Environment}");
-}
+BackendUrlValidator.Validate(backendUrl, builder.HostEnvironment.Environment);
 
 builder.Services.AddHttpClient<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>(client =>
 {
