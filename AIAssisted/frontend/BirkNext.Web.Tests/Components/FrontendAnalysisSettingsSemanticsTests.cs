@@ -51,6 +51,17 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
     }
 
     [Fact]
+    public void SectionTabs_RenderExplicitSelectedStateTokens()
+    {
+        var cut = Render<TargetSettingsComponent>();
+        var tabs = cut.FindAll("[role=tab]");
+
+        tabs.Should().ContainSingle(tab => tab.TextContent.Trim() == "General" && tab.GetAttribute("aria-selected") == "true");
+        tabs.Where(tab => tab.TextContent.Trim() != "General")
+            .Should().OnlyContain(tab => tab.GetAttribute("aria-selected") == "false");
+    }
+
+    [Fact]
     public void DetectSettings_InvokesExistingDetectorOnceAndKeepsProposalDraftOnly()
     {
         _detection

@@ -159,7 +159,7 @@
             {
                 <button class="fa-tab @(_activeTab == key ? "fa-tab-active" : "")"
                         role="tab"
-                        aria-selected="@(_activeTab == key)"
+                        aria-selected="@(_activeTab == key ? "true" : "false")"
                         @onclick="() => _activeTab = key">
                     @label
                 </button>

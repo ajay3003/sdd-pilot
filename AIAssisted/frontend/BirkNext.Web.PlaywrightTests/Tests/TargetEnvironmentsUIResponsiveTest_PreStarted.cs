@@ -28,7 +28,9 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
     {
         var page = await _fixture.Context.NewPageAsync();
         var consoleErrors = new List<string>();
+        var pageErrors = new List<string>();
         page.Console += (_, message) => { if (message.Type == "error") consoleErrors.Add(message.Text); };
+        page.PageError += (_, error) => pageErrors.Add(error);
 
         await page.SetViewportSizeAsync(width, 900);
         await page.GotoAsync(
@@ -109,6 +111,7 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         // Check console errors
         var unexpectedErrors = consoleErrors.Where(IsUnexpectedError).ToList();
         unexpectedErrors.Should().BeEmpty($"No unexpected console errors at {width}px viewport");
+        pageErrors.Should().BeEmpty($"No page errors at {width}px viewport");
 
         await page.CloseAsync();
     }
@@ -250,25 +253,89 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
     public async Task KeyboardNavigation_IsAccessible(int width, string context)
     {
         var page = await _fixture.Context.NewPageAsync();
+        var consoleErrors = new List<string>();
+        var pageErrors = new List<string>();
+        page.Console += (_, message) => { if (message.Type == "error") consoleErrors.Add(message.Text); };
+        page.PageError += (_, error) => pageErrors.Add(error);
+
         await page.SetViewportSizeAsync(width, 900);
         await page.GotoAsync(
             $"{_fixture.FrontendUrl}/admin/system-settings?section=target-environments",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60000 });
 
-        // Tab through interactive elements
-        var initialFocus = page.Locator(":focus");
-        var focusedCount = await initialFocus.CountAsync();
+        var sectionButton = page.GetByRole(AriaRole.Button, new() { Name = "Target Environments", Exact = true });
+        await sectionButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
 
-        // Perform several tab presses and verify focus moves
-        await page.Keyboard.PressAsync("Tab");
-        await page.Keyboard.PressAsync("Tab");
-        await page.Keyboard.PressAsync("Tab");
+        var detectSettings = page.GetByRole(AriaRole.Button, new() { Name = "Detect settings", Exact = true });
+        var reviewDetectSettings = page.GetByRole(AriaRole.Button, new() { Name = "Review Detect Settings", Exact = true });
+        var generalTab = page.GetByRole(AriaRole.Tab, new() { Name = "General", Exact = true });
+        var diagnosticsTab = page.GetByRole(AriaRole.Tab, new() { Name = "Diagnostics", Exact = true });
 
-        var currentFocus = page.Locator(":focus");
-        var currentFocusedElement = await currentFocus.GetAttributeAsync("class");
-        currentFocusedElement.Should().NotBeNullOrEmpty($"Focus should be on an element at {width}px ({context})");
+        await SelectProfileWithWarningAsync(page, reviewDetectSettings);
+        var selectedProfile = page.Locator(".fa-profile-chip-selected");
+
+        (await detectSettings.CountAsync()).Should().Be(1, "Detect settings must have its own accessible name");
+        (await reviewDetectSettings.CountAsync()).Should().Be(1, "the warning action must have its distinct accessible name");
+        (await generalTab.GetAttributeAsync("aria-selected")).Should().Be("true", "General is the selected tab on initial render");
+        (await generalTab.InnerTextAsync()).Should().NotBeNullOrWhiteSpace("the selected tab must have an accessible name");
+
+        if (width == 1440)
+        {
+            await AssertCanReceiveFocusAsync(selectedProfile, "the selected target control");
+            await AssertCanReceiveFocusAsync(detectSettings, "Detect settings");
+            await AssertCanReceiveFocusAsync(reviewDetectSettings, "Review Detect Settings");
+            await AssertCanReceiveFocusAsync(generalTab, "the General section tab");
+
+            var editEnvironment = page.GetByRole(AriaRole.Button, new() { Name = "Edit Environment", Exact = true });
+            await AssertCanReceiveFocusAsync(editEnvironment, "the header Edit Environment action");
+        }
+        else
+        {
+            await AssertCanReceiveFocusAsync(reviewDetectSettings, "Review Detect Settings");
+            await page.Keyboard.PressAsync("Tab");
+            (await IsActiveElementAsync(generalTab)).Should().BeTrue("Tab must leave the warning action and reach the wrapped tab set without a focus trap");
+
+            await AssertCanReceiveFocusAsync(diagnosticsTab, "the wrapped Diagnostics tab");
+            (await diagnosticsTab.GetAttributeAsync("aria-selected")).Should().Be("false", "keyboard focus must not be conflated with selected state");
+        }
+
+        var focusedBeforeTab = await page.EvaluateAsync<string>("() => document.activeElement?.outerHTML ?? ''");
+        await page.Keyboard.PressAsync("Tab");
+        var focusedAfterTab = await page.EvaluateAsync<string>("() => document.activeElement?.outerHTML ?? ''");
+        focusedAfterTab.Should().NotBe(focusedBeforeTab, $"Tab focus must advance without a focus trap at {width}px ({context})");
+
+        var pageScrollWidth = await page.EvaluateAsync<int>("document.documentElement.scrollWidth");
+        var pageClientWidth = await page.EvaluateAsync<int>("document.documentElement.clientWidth");
+        Console.WriteLine($"KEYBOARD_METRICS width={width} scrollWidth={pageScrollWidth} clientWidth={pageClientWidth} overflow={pageScrollWidth > pageClientWidth}");
+        (pageScrollWidth > pageClientWidth).Should().BeFalse($"Focusing controls must not introduce page overflow at {width}px");
+
+        consoleErrors.Where(IsUnexpectedError).Should().BeEmpty($"No unexpected console errors during keyboard proof at {width}px");
+        pageErrors.Should().BeEmpty($"No page errors during keyboard proof at {width}px");
 
         await page.CloseAsync();
+    }
+
+    private static async Task AssertCanReceiveFocusAsync(ILocator locator, string description)
+    {
+        await locator.FocusAsync();
+        (await IsActiveElementAsync(locator)).Should().BeTrue($"{description} must be keyboard-focusable");
+    }
+
+    private static Task<bool> IsActiveElementAsync(ILocator locator) =>
+        locator.EvaluateAsync<bool>("element => element === document.activeElement");
+
+    private static async Task SelectProfileWithWarningAsync(IPage page, ILocator warningAction)
+    {
+        if (await warningAction.CountAsync() > 0)
+            return;
+
+        var profiles = page.Locator(".fa-profile-chip");
+        for (var index = 0; index < await profiles.CountAsync(); index++)
+        {
+            await profiles.Nth(index).ClickAsync();
+            if (await warningAction.CountAsync() > 0)
+                return;
+        }
     }
 
     private static bool IsUnexpectedError(string errorMessage)
