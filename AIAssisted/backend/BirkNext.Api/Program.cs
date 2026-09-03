@@ -2,6 +2,7 @@ using BirkNext.Api.Data;
 using BirkNext.Api.Data.Migrations;
 using BirkNext.Api.Configuration;
 using BirkNext.Api.GraphQL;
+using BirkNext.Api.Filters;
 using BirkNext.Api.Middleware;
 using BirkNext.Api.Services;
 using BirkNext.Api.Services.ImplementationTraceability;
@@ -215,6 +216,7 @@ builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<Authen
 // Target Environment Detection — for configuration discovery
 builder.Services.Configure<TargetDetectionOptions>(
     builder.Configuration.GetSection("TargetDetection"));
+builder.Services.AddScoped<RequireTargetDetectionHttpsFilter>();
 builder.Services.AddScoped<ITargetHostResolver, DnsTargetHostResolver>();
 // Rate limiter removed (API complexity) - replaced with controller-level input validation
 // and per-minute request monitoring via logging.

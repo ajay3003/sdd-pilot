@@ -121,13 +121,17 @@ builder.Services.AddScoped<IFrontendAnalysisContextFactory, FrontendAnalysisCont
 builder.Services.AddHttpClient<ITargetPreflightService, TargetPreflightService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
-// Target environment detection — uses backend API (HTTPS enforced)
+// Target environment detection — uses backend API
+// SECURITY: HTTPS required in production. HTTP allowed only for loopback in Development.
 var backendUrl = builder.Configuration["BackendUrl"] ?? "https://localhost:5000";
-if (!backendUrl.StartsWith("https://"))
+var isLoopbackUrl = backendUrl.Contains("localhost") || backendUrl.Contains("127.") || backendUrl.Contains("[::1]") || backendUrl.Contains("::1");
+var isHttps = backendUrl.StartsWith("https://");
+
+if (!isHttps && !(builder.HostEnvironment.IsDevelopment() && isLoopbackUrl))
 {
     throw new InvalidOperationException(
-        "BackendUrl must use HTTPS scheme for security. HTTP is not allowed. " +
-        $"Current value: {backendUrl}");
+        "BackendUrl must use HTTPS scheme for security. HTTP is only allowed for loopback (localhost/127.0.0.1/::1) in Development. " +
+        $"Current value: {backendUrl}, Environment: {builder.HostEnvironment.Environment}");
 }
 
 builder.Services.AddHttpClient<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>(client =>

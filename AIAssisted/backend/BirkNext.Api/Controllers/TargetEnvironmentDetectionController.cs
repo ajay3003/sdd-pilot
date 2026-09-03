@@ -1,3 +1,4 @@
+using BirkNext.Api.Filters;
 using BirkNext.Api.Models;
 using BirkNext.Api.Services.TargetEnvironmentDetection;
 using Microsoft.AspNetCore.Mvc;
@@ -16,6 +17,7 @@ namespace BirkNext.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/frontend-target")]
+[ServiceFilter(typeof(RequireTargetDetectionHttpsFilter))]
 public sealed class TargetEnvironmentDetectionController : ControllerBase
 {
     private readonly ITargetEnvironmentDetectionService _detectionService;
