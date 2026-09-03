@@ -23,15 +23,20 @@
 
 @* ── Active profile summary card ─────────────────────────────────────────── *@
 <div class="fa-active-card">
-    @if (FaSettings.ActiveProfile is { } ap)
+    @if (EffectiveActiveProfile is { } ap)
     {
         <div class="fa-active-card-header">
             <div class="fa-active-card-left">
                 <span class="fa-env-badge fa-env-badge-@ap.EnvironmentType.ToString().ToLowerInvariant()">@ap.EnvironmentType</span>
                 <span class="fa-active-card-name">@ap.Name</span>
-                <span class="fa-active-badge">Active Environment</span>
             </div>
         </div>
+        @if (FaSettings.ActiveProfile is null)
+        {
+            <div class="fa-active-fallback-warning" role="status">
+                No active target is saved. Reviews currently use the first configured target, @ap.Name, as a fallback.
+            </div>
+        }
         <div class="fa-active-card-grid">
             <div class="fa-active-stat">
                 <span class="fa-active-stat-label">Frontend URL</span>
@@ -62,15 +67,15 @@
             @{ var _apv = FaSettings.ValidateProfile(ap); }
             <div class="fa-active-stat">
                 <span class="fa-active-stat-label">Validation</span>
-                <span class="fa-active-stat-value @(_apv.IsValid ? "fa-stat-ok" : "fa-stat-err")">
-                    @(_apv.IsValid ? "Valid" : $"{_apv.Errors.Count} error(s)")
+                <span class="fa-active-stat-value @(!_apv.IsValid ? "fa-stat-err" : _apv.Warnings.Count > 0 ? "fa-stat-warn" : "fa-stat-ok")">
+                    @(!_apv.IsValid ? $"{_apv.Errors.Count} error(s)" : _apv.Warnings.Count > 0 ? $"{_apv.Warnings.Count} warning(s)" : "Valid")
                 </span>
             </div>
         </div>
     }
     else
     {
-        <p class="fa-active-bar-none">No active environment selected. Select an environment below and click Set as Active Environment.</p>
+        <p class="fa-active-bar-none">No target environments are configured.</p>
     }
 </div>
 
@@ -83,7 +88,7 @@
                     @onclick="() => SelectProfile(p.Id)">
                 <span class="fa-env-dot fa-env-dot-@p.EnvironmentType.ToString().ToLowerInvariant()"></span>
                 @p.Name
-                @if (p.Id == FaSettings.Settings.ActiveProfileId)
+                @if (p.Id == EffectiveActiveProfile?.Id)
                 {
                     <span class="fa-active-badge">Active</span>
                 }
@@ -101,11 +106,10 @@
         @* ── Header ── *@
         <div class="fa-detail-header">
             <div class="fa-detail-header-left">
-                <span class="fa-env-badge fa-env-badge-@profile.EnvironmentType.ToString().ToLowerInvariant()">@profile.EnvironmentType</span>
                 <span class="fa-detail-name">@profile.Name</span>
-                @if (profile.Id == FaSettings.Settings.ActiveProfileId)
+                @if (profile.Id == EffectiveActiveProfile?.Id)
                 {
-                    <span class="fa-active-badge fa-active-badge-lg">Active Environment</span>
+                    <span class="fa-active-badge">Active</span>
                 }
             </div>
             <div class="fa-detail-header-actions">
@@ -118,10 +122,11 @@
                 }
                 else
                 {
-                    @if (profile.Id != FaSettings.Settings.ActiveProfileId)
+                    @if (profile.Id != EffectiveActiveProfile?.Id)
                     {
-                        <SecondaryButton OnClick="SetActiveProfileAsync">Set as Active Environment</SecondaryButton>
+                        <SecondaryButton OnClick="SetActiveProfileAsync">Set as Active Target</SecondaryButton>
                     }
+                    <SecondaryButton OnClick="DetectSelectedTargetAsync" Disabled="@(_isDetecting || string.IsNullOrWhiteSpace(profile.TargetUrl))">Detect settings</SecondaryButton>
                     <SecondaryButton OnClick="DuplicateProfileAsync">Duplicate</SecondaryButton>
                     <SecondaryButton OnClick="EnterEditMode">Edit Environment</SecondaryButton>
                     <DangerButton OnClick="@(() => _showDeleteConfirm = true)"
@@ -129,6 +134,24 @@
                 }
             </div>
         </div>
+
+        @{ var typeConflict = GetTypeConflict(profile); }
+        @if (typeConflict is not null)
+        {
+            <div class="fa-type-conflict" role="status">
+                <div class="fa-type-conflict-text">
+                    <strong>Target type may be incorrect.</strong>
+                    Stored type: <strong>@profile.EnvironmentType</strong> · Detected type: <strong>@typeConflict</strong>.
+                    Review detected settings before applying changes.
+                </div>
+                @if (!_isEditMode)
+                {
+                    <SecondaryButton OnClick="DetectSelectedTargetAsync" Disabled="@(_isDetecting || string.IsNullOrWhiteSpace(profile.TargetUrl))" Class="fa-type-conflict-action">
+                        @(_isDetecting ? "Detecting…" : "Review Detect Settings")
+                    </SecondaryButton>
+                }
+            </div>
+        }
 
         @* ── Section tabs ── *@
         <div class="fa-section-tabs" role="tablist">
@@ -212,7 +235,7 @@
                                     }
                                     else
                                     {
-                                        <span>Detect configuration</span>
+                                        <span>Detect settings</span>
                                     }
                                 </SecondaryButton>
                             </div>
@@ -285,7 +308,13 @@
                                     @if (_detectionResult.SuggestedEnvironmentType.HasValue)
                                     {
                                         <div style="color: var(--color-text-subtle);">Environment type</div>
-                                        <div style="font-weight: 500;">@_detectionResult.SuggestedEnvironmentType</div>
+                                        <div style="font-weight: 500;">
+                                            @_detectionResult.SuggestedEnvironmentType
+                                            @if (_editProfile is not null && _editProfile.EnvironmentType != _detectionResult.SuggestedEnvironmentType.Value)
+                                            {
+                                                <button type="button" class="fa-apply-suggestion" @onclick="ApplyDetectedEnvironmentType">Apply detected type</button>
+                                            }
+                                        </div>
                                         <div style="color: var(--color-text-subtle); text-align: right;">Suggested</div>
                                     }
 
@@ -1207,6 +1236,9 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             ? null
             : FaSettings.Settings.Profiles.FirstOrDefault(p => p.Id == _selectedProfileId);
 
+    private FrontendAnalysisProfile? EffectiveActiveProfile =>
+        FaSettings.ActiveProfile ?? FaSettings.Settings.Profiles.FirstOrDefault();
+
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
     protected override async Task OnInitializedAsync()
@@ -1264,7 +1296,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             _selectedProfileId = _editProfile.Id;
             _isEditMode        = false;
             _editProfile       = null;
-            _saveSuccess       = "Environment saved.";
+            _saveSuccess       = "Target environment saved.";
             StateHasChanged();
             await Task.Delay(4000);
             _saveSuccess = null;
@@ -1336,6 +1368,29 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         _detectionError = null;
     }
 
+    private async Task DetectSelectedTargetAsync()
+    {
+        EnterEditMode();
+        if (_editProfile is null) return;
+
+        _activeTab = "target";
+        await DetectConfigurationAsync();
+    }
+
+    private void ApplyDetectedEnvironmentType()
+    {
+        if (_editProfile is not null && _detectionResult?.SuggestedEnvironmentType is { } suggested)
+            _editProfile.EnvironmentType = suggested;
+    }
+
+    private static FrontendEnvironmentType? GetTypeConflict(FrontendAnalysisProfile profile)
+    {
+        var inferred = TargetEnvironmentTypeClassifier.InferFromUrl(profile.TargetUrl);
+        return inferred.HasValue && profile.EnvironmentType != FrontendEnvironmentType.Custom && inferred != profile.EnvironmentType
+            ? inferred
+            : null;
+    }
+
     private async Task DetectConfigurationAsync()
     {
         if (_editProfile is null || string.IsNullOrWhiteSpace(_editProfile.TargetUrl))
@@ -1362,17 +1417,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 // existing == detected → unchanged
                 // existing != detected → preserve existing and show conflict
 
-                // Environment Type: Apply suggested if different from default
-                if (result.SuggestedEnvironmentType.HasValue)
-                {
-                    var isSameEnvType = _editProfile.EnvironmentType == result.SuggestedEnvironmentType.Value;
-                    if (!isSameEnvType && _editProfile.EnvironmentType == FrontendEnvironmentType.Local)
-                    {
-                        // Empty/default + suggested → populate
-                        _editProfile.EnvironmentType = result.SuggestedEnvironmentType.Value;
-                    }
-                    // If explicitly configured to something else, keep it
-                }
+                // Keep environment type as an explicit proposal. The user must
+                // apply it to the draft and then save it separately.
 
                 // Profile Name: Apply suggested if empty or generic default
                 if (!string.IsNullOrWhiteSpace(result.SuggestedProfileName))

@@ -231,6 +231,54 @@ public sealed class FrontendAnalysisSettingsServiceTests
         result.Warnings.Should().NotContain(w => w.Contains("localhost"));
     }
 
+    [Fact]
+    public void ValidateProfile_LocalLoopback_HasNoTypeMismatchWarning()
+    {
+        var p = _sut.CreateProfile("Local", FrontendEnvironmentType.Local);
+        p.TargetUrl = "https://localhost:5001";
+
+        var result = _sut.ValidateProfile(p);
+
+        result.Warnings.Should().NotContain(w => w.Contains("hostname looks like", StringComparison.OrdinalIgnoreCase));
+        result.Warnings.Should().NotContain(w => w.Contains("not a recognized local", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ValidateProfile_LocalWithDevelopmentHostname_WarnsWithoutMutation()
+    {
+        var p = _sut.CreateProfile("Local", FrontendEnvironmentType.Local);
+        p.TargetUrl = "https://application-dev.example.test";
+
+        var result = _sut.ValidateProfile(p);
+
+        result.Warnings.Should().ContainSingle(w =>
+            w.Contains("marked Local") && w.Contains("Development"));
+        p.EnvironmentType.Should().Be(FrontendEnvironmentType.Local);
+    }
+
+    [Fact]
+    public void ValidateProfile_DevelopmentHostnameAndType_HasNoConflictWarning()
+    {
+        var p = _sut.CreateProfile("Development", FrontendEnvironmentType.Development);
+        p.TargetUrl = "https://application-dev.example.test";
+
+        var result = _sut.ValidateProfile(p);
+
+        result.Warnings.Should().NotContain(w => w.Contains("hostname looks like", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ValidateProfile_CustomProfile_DoesNotImposeInferredEnvironmentType()
+    {
+        var p = _sut.CreateProfile("Local with auth", FrontendEnvironmentType.Custom);
+        p.TargetUrl = "https://application-dev.example.test";
+
+        var result = _sut.ValidateProfile(p);
+
+        result.Warnings.Should().NotContain(w => w.Contains("hostname looks like", StringComparison.OrdinalIgnoreCase));
+        _sut.Settings.Profiles.Should().ContainSingle(x => x.Name == "Local with auth");
+    }
+
     // ── HTTPS recommendation ──────────────────────────────────────────────────
 
     [Fact]

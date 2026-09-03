@@ -38,9 +38,14 @@
     transition: background-color var(--transition), border-color var(--transition);
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled) {
     background: var(--clr-surface);
     border-color: #9ca3af;
+}
+
+.btn-secondary:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
 }
 
 

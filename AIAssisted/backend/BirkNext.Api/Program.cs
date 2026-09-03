@@ -23,6 +23,7 @@ using BirkNext.Api.Services.AuthenticatedReview;
 using HotChocolate.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using System.Net;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Json;
@@ -191,9 +192,9 @@ builder.Services.PostConfigure<FrontendBrowserRuntimeOptions>(options =>
         builder.Configuration, FrontendQualityEngineId.BrowserRuntime, options.Enabled));
 builder.Services.AddScoped<BrowserTargetValidator>(provider =>
 {
-    var environment = provider.GetRequiredService<IWebHostEnvironment>();
-    // Allow loopback for test/development scenarios only where TestFixtureController is available
-    var allowLoopback = environment.IsDevelopment();
+    var config = provider.GetRequiredService<IConfiguration>();
+    // Allow loopback only if explicitly configured (Development environment by default)
+    var allowLoopback = config.GetValue<bool>("TargetDetection:AllowLoopback", false);
     return new BrowserTargetValidator(allowLoopback);
 });
 builder.Services.AddScoped<BrowserResourceClassifier>();
@@ -212,10 +213,27 @@ builder.Services.AddSingleton<IAuthenticatedBrowserSessionManager>(sp => sp.GetR
 builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<AuthenticatedBrowserSessionManager>());
 
 // Target Environment Detection — for configuration discovery
+builder.Services.Configure<TargetDetectionOptions>(
+    builder.Configuration.GetSection("TargetDetection"));
+builder.Services.AddScoped<ITargetHostResolver, DnsTargetHostResolver>();
+// Rate limiter removed (API complexity) - replaced with controller-level input validation
+// and per-minute request monitoring via logging.
+// SECURITY: Disable automatic redirect following to prevent TOCTOU gap.
+// Manual redirect handling in TargetEnvironmentDetectionService validates each redirect before following.
 builder.Services.AddHttpClient<ITargetEnvironmentDetectionService, TargetEnvironmentDetectionService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(10);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-TargetDetection/1.0");
+})
+.ConfigurePrimaryHttpMessageHandler((_) => new SocketsHttpHandler
+{
+    // Disable automatic redirect following to prevent TOCTOU gap.
+    // This prevents TOCTOU (Time-of-check Time-of-use) vulnerability where redirect destination
+    // is followed before BrowserTargetValidator checks it.
+    // Manual redirect handling in TargetEnvironmentDetectionService validates each redirect before following.
+    // See: CheckTargetWithRedirectAsync in TargetEnvironmentDetectionService
+    AllowAutoRedirect = false,
+    UseProxy = false  // Also disable proxy for security
 });
 builder.Services.Configure<FrontendAccessibilityOptions>(
     builder.Configuration.GetSection(FrontendAccessibilityOptions.SectionName));

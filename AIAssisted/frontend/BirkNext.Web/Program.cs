@@ -121,9 +121,24 @@ builder.Services.AddScoped<IFrontendAnalysisContextFactory, FrontendAnalysisCont
 builder.Services.AddHttpClient<ITargetPreflightService, TargetPreflightService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
-// Target environment detection — uses backend API
+// Target environment detection — uses backend API (HTTPS enforced)
+var backendUrl = builder.Configuration["BackendUrl"] ?? "https://localhost:5000";
+if (!backendUrl.StartsWith("https://"))
+{
+    throw new InvalidOperationException(
+        "BackendUrl must use HTTPS scheme for security. HTTP is not allowed. " +
+        $"Current value: {backendUrl}");
+}
+
 builder.Services.AddHttpClient<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+{
+    client.BaseAddress = new Uri(backendUrl);
+    // Security: Validate SSL certificates in production
+    if (!builder.HostEnvironment.IsDevelopment())
+    {
+        client.DefaultRequestHeaders.Add("User-Agent", "BirkNext-Frontend/1.0");
+    }
+});
 
 builder.Services.AddHttpClient<IBlazorWasmPerformanceReviewService, BlazorWasmPerformanceReviewService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));

@@ -160,6 +160,30 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         cut.Markup.Should().Contain("Project Documents");
     }
 
+    [Fact]
+    public void HostEnvironmentAndActiveReviewTarget_RenderAsDistinctConcepts()
+    {
+        JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult("""
+        {
+          "activeProfileId": "qa",
+          "profiles": [{
+            "id": "qa", "name": "QA", "environmentType": "QA",
+            "targetUrl": "https://application-qa.example.test"
+          }]
+        }
+        """);
+
+        var cut = Render<SystemSettings>();
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Host environment"));
+        cut.Markup.Should().Contain("Development");
+
+        FindButton(cut, "Target Environments")!.Click();
+
+        // New UI: Active card shows active target (QA), distinct from host environment (Development)
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("fa-active-card"));
+        cut.Markup.Should().Contain("QA");
+    }
+
     [Theory]
     [InlineData("General", false)]
     [InlineData("Configuration Health", false)]

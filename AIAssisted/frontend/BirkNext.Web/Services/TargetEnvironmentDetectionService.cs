@@ -197,18 +197,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
 
     private void SuggestEnvironmentType(string hostname, TargetEnvironmentDetectionResult result)
     {
-        var lower = hostname.ToLowerInvariant();
-
-        if (lower.Contains("prod") || lower.Contains("production"))
-            result.SuggestedEnvironmentType = FrontendEnvironmentType.Production;
-        else if (lower.Contains("dev") || lower.Contains("development"))
-            result.SuggestedEnvironmentType = FrontendEnvironmentType.Development;
-        else if (lower.Contains("qa") || lower.Contains("test"))
-            result.SuggestedEnvironmentType = FrontendEnvironmentType.QA;
-        else if (lower.Contains("rc") || lower.Contains("staging"))
-            result.SuggestedEnvironmentType = FrontendEnvironmentType.RC;
-        else if (lower.Contains("local") || lower.Contains("localhost"))
-            result.SuggestedEnvironmentType = FrontendEnvironmentType.Local;
+        result.SuggestedEnvironmentType = TargetEnvironmentTypeClassifier.InferFromHostname(hostname);
 
         if (result.SuggestedEnvironmentType.HasValue)
             result.Warnings.Add($"Environment type suggested from hostname: {result.SuggestedEnvironmentType}");

@@ -90,12 +90,17 @@
     white-space: nowrap;
 }
 
-.btn-secondary:hover,
+.btn-secondary:hover:not(:disabled),
 .ce-reset-btn:hover,
 .pe-reset-btn:hover,
 .te-reset-btn:hover {
     border-color: var(--clr-border-hover);
     color: var(--clr-text-body);
+}
+
+.btn-secondary:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
 }
 
 /* ── VIEW TOGGLE GROUP (Segmented Tabs) ──────────── */

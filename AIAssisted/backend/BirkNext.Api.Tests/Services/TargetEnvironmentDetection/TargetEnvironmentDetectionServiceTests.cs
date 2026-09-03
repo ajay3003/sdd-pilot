@@ -11,10 +11,18 @@ public sealed class TargetEnvironmentDetectionServiceTests
 {
     private readonly BrowserTargetValidator _validator = new();
     private readonly ILogger<TargetEnvironmentDetectionService> _logger;
+    private readonly FakeDnsResolver _resolver = new();
 
     public TargetEnvironmentDetectionServiceTests()
     {
         _logger = new NullLogger<TargetEnvironmentDetectionService>();
+        // Configure default public hosts to resolve to documentation IP
+        _resolver.Add("example.com", "203.0.113.1");
+        _resolver.Add("m2lbdev.example.com", "203.0.113.2");
+        _resolver.Add("myapp-dev.example.com", "203.0.113.3");
+        _resolver.Add("myapp-qa.example.com", "203.0.113.4");
+        _resolver.Add("myapp-prod.example.com", "203.0.113.5");
+        _resolver.Add("login.microsoftonline.com", "203.0.113.10");
     }
 
     [Fact]
@@ -22,7 +30,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.PublicReachableTarget();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var result = await service.DetectFromUrlAsync("https://example.com");
 
@@ -37,7 +45,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.UnauthorizedTarget();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var result = await service.DetectFromUrlAsync("https://example.com");
 
@@ -51,7 +59,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.ForbiddenTarget();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var result = await service.DetectFromUrlAsync("https://example.com");
 
@@ -65,7 +73,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.EntraAuthUrlDirect();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var entraUrl = $"https://login.microsoftonline.com/{DetectionFixtures.FakeTenantGuid}/oauth2/v2.0/authorize?client_id={DetectionFixtures.FakeClientId}";
         var result = await service.DetectFromUrlAsync(entraUrl);
@@ -81,7 +89,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.EntraAuthUrlDirect();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var entraUrl = $"https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id={DetectionFixtures.FakeClientId}";
         var result = await service.DetectFromUrlAsync(entraUrl);
@@ -97,7 +105,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.EntraAuthUrlDirect();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var entraUrl = $"https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?client_id={DetectionFixtures.FakeClientId}";
         var result = await service.DetectFromUrlAsync(entraUrl);
@@ -112,7 +120,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.EntraAuthUrlDirect();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var entraUrl = $"https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?client_id={DetectionFixtures.FakeClientId}";
         var result = await service.DetectFromUrlAsync(entraUrl);
@@ -128,7 +136,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.PublicReachableTarget();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var result = await service.DetectFromUrlAsync("");
 
@@ -142,7 +150,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.PublicReachableTarget();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var result = await service.DetectFromUrlAsync("not a valid url");
 
@@ -156,7 +164,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.PublicReachableTarget();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var result = await service.DetectFromUrlAsync("file:///etc/passwd");
 
@@ -170,7 +178,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.PublicReachableTarget();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var result = await service.DetectFromUrlAsync("https://myapp-dev.example.com");
 
@@ -184,7 +192,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.PublicReachableTarget();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var result = await service.DetectFromUrlAsync("https://myapp-qa.example.com");
 
@@ -198,7 +206,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.PublicReachableTarget();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var result = await service.DetectFromUrlAsync("https://myapp-prod.example.com");
 
@@ -212,7 +220,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.PublicReachableTarget();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var result = await service.DetectFromUrlAsync("https://m2lbdev.example.com");
 
@@ -228,7 +236,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.TimeoutTarget();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var result = await service.DetectFromUrlAsync("https://example.com");
 
@@ -241,7 +249,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.EntraAuthUrlDirect();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var entraUrl = $"https://login.microsoftonline.com/{DetectionFixtures.FakeTenantGuid}/oauth2/v2.0/authorize?client_id={DetectionFixtures.FakeClientId}";
         var result = await service.DetectFromUrlAsync(entraUrl);
@@ -257,7 +265,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.EntraAuthUrlDirect();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var entraUrl = $"https://login.microsoftonline.com/{DetectionFixtures.FakeTenantGuid}/oauth2/v2.0/authorize?client_id={DetectionFixtures.FakeClientId}";
         var result = await service.DetectFromUrlAsync(entraUrl);
@@ -274,7 +282,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.EntraAuthUrlDirect();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var entraUrl = $"https://login.microsoftonline.com/{DetectionFixtures.FakeTenantGuid}/oauth2/v2.0/authorize?client_id={DetectionFixtures.FakeClientId}";
         var result = await service.DetectFromUrlAsync(entraUrl);
@@ -289,7 +297,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.PublicReachableTarget();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var result = await service.DetectFromUrlAsync("https://example.com");
 
@@ -302,7 +310,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.UnknownAuthProvider();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var unknownUrl = "https://unknown-auth.example.com/oauth2/authorize?client_id=UNKNOWN";
         var result = await service.DetectFromUrlAsync(unknownUrl);
@@ -316,7 +324,7 @@ public sealed class TargetEnvironmentDetectionServiceTests
     {
         var handler = DetectionFixtures.EntraAuthUrlDirect();
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
 
         var entraUrl = $"https://login.microsoftonline.com/{DetectionFixtures.FakeTenantGuid}/oauth2/v2.0/authorize?client_id={DetectionFixtures.FakeClientId}&code={DetectionFixtures.FakeCodeSentinel}&state={DetectionFixtures.FakeStateSentinel}&nonce={DetectionFixtures.FakeNonceSentinel}&session_state=FAKE-SESSION-SENTINEL-123&access_token={DetectionFixtures.FakeAccessTokenSentinel}&id_token=FAKE-ID-TOKEN-SENTINEL-123";
         var result = await service.DetectFromUrlAsync(entraUrl);

@@ -20,6 +20,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
 {
     private readonly BrowserTargetValidator _validator;
     private readonly HttpClient _httpClient;
+    private readonly ITargetHostResolver _resolver;
     private readonly ILogger<TargetEnvironmentDetectionService> _logger;
 
     private static readonly HashSet<string> ApprovedEntraHosts = new(StringComparer.OrdinalIgnoreCase)
@@ -35,10 +36,12 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
     public TargetEnvironmentDetectionService(
         BrowserTargetValidator validator,
         HttpClient httpClient,
+        ITargetHostResolver resolver,
         ILogger<TargetEnvironmentDetectionService> logger)
     {
         _validator = validator;
         _httpClient = httpClient;
+        _resolver = resolver;
         _logger = logger;
     }
 
@@ -62,6 +65,21 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
 
             // Perform preflight check with redirect following
             var preflightResult = await CheckTargetWithRedirectAsync(uri, cancellationToken);
+
+            // If preflight check failed (e.g., hostname validation blocked), return error with correct reachability
+            if (!preflightResult.Success)
+            {
+                var sanitizedUrl = GetSanitizedUrlForResponse(targetUrl);
+                return new TargetEnvironmentDetectionResponse
+                {
+                    OriginalUrl = sanitizedUrl,
+                    Success = false,
+                    Reachability = preflightResult.Reachability,
+                    Message = $"Target validation failed: {preflightResult.BlockReason}",
+                    ErrorCode = "TARGET_BLOCKED",
+                    Confidence = DetectionConfidence.Low
+                };
+            }
 
             // NormalizedTargetUrl represents the normalized application target (user's input),
             // not the authentication redirect. Extract only scheme + host + path from original URI.
@@ -126,6 +144,18 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(TimeoutSeconds));
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
 
+            // Validate initial target hostname addresses before any HTTP request
+            var initialValidation = await ValidateHostAddressesAsync(targetUri.Host, "Public", linkedCts.Token);
+            if (!initialValidation.IsValid)
+            {
+                _logger.LogWarning("Initial target {Url} hostname {Host} validation failed: {Reason}",
+                    targetUri.AbsoluteUri, targetUri.Host, initialValidation.BlockReason);
+                result.Success = false;
+                result.BlockReason = initialValidation.BlockReason;
+                result.Reachability = TargetReachability.UntrustedRedirect;
+                return result;
+            }
+
             // Use HEAD request to avoid downloading full content
             var requestUri = targetUri;
             var redirectCount = 0;
@@ -138,48 +168,86 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                 var response = await _httpClient.SendAsync(
                     request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
 
-                result.FinalUrl = response.RequestMessage?.RequestUri?.AbsoluteUri ?? requestUri.AbsoluteUri;
+                var statusCode = (int)response.StatusCode;
 
-                // Validate redirect target
-                if (response.RequestMessage?.RequestUri?.AbsoluteUri != requestUri.AbsoluteUri &&
-                    !string.IsNullOrEmpty(result.FinalUrl))
+                // Check for HTTP redirect (3xx status codes)
+                // AllowAutoRedirect is false, so we handle redirects manually here
+                if (statusCode >= 300 && statusCode < 400)
                 {
                     redirectCount++;
                     result.RedirectCount = redirectCount;
 
+                    // Check if we've exceeded maximum redirects
+                    if (redirectCount >= MaxRedirectCount)
+                    {
+                        _logger.LogWarning("Redirect limit exceeded ({Count} >= {Max})", redirectCount, MaxRedirectCount);
+                        result.Reachability = TargetReachability.TooManyRedirects;
+                        return result;
+                    }
+
+                    if (response.Headers.Location == null)
+                    {
+                        _logger.LogWarning("Redirect response from {Url} missing Location header", requestUri.AbsoluteUri);
+                        result.Reachability = TargetReachability.UntrustedRedirect;
+                        return result;
+                    }
+
+                    var locationStr = response.Headers.Location.IsAbsoluteUri
+                        ? response.Headers.Location.AbsoluteUri
+                        : new Uri(requestUri, response.Headers.Location).AbsoluteUri;
+
+                    // Validate redirect target URL structure BEFORE DNS/address validation
                     var redirectValidation = _validator.ValidateRedirectTarget(
-                        result.FinalUrl, requestUri.Host, "Public");
+                        locationStr, requestUri.Host, "Public");
 
                     if (!redirectValidation.IsValid)
                     {
                         _logger.LogWarning("Redirect to {RedirectUrl} blocked: {Reason}",
-                            result.FinalUrl, redirectValidation.BlockReason);
+                            locationStr, redirectValidation.BlockReason);
                         result.Reachability = TargetReachability.UntrustedRedirect;
                         return result;
                     }
 
-                    if (!Uri.TryCreate(result.FinalUrl, UriKind.Absolute, out var redirectUri))
+                    if (!Uri.TryCreate(locationStr, UriKind.Absolute, out var redirectUri))
                     {
+                        _logger.LogWarning("Invalid redirect URI from {Url}: {Location}", requestUri.AbsoluteUri, locationStr);
                         result.Reachability = TargetReachability.UntrustedRedirect;
                         return result;
                     }
 
+                    // Validate redirect target hostname addresses BEFORE following the redirect
+                    var redirectAddressValidation = await ValidateHostAddressesAsync(redirectUri.Host, "Public", linkedCts.Token);
+                    if (!redirectAddressValidation.IsValid)
+                    {
+                        _logger.LogWarning("Redirect target {Url} hostname {Host} validation failed: {Reason}",
+                            locationStr, redirectUri.Host, redirectAddressValidation.BlockReason);
+                        result.Success = false;
+                        result.BlockReason = redirectAddressValidation.BlockReason;
+                        result.Reachability = TargetReachability.UntrustedRedirect;
+                        return result;
+                    }
+
+                    result.FinalUrl = locationStr;
                     requestUri = redirectUri;
+                    continue; // Follow the validated redirect
                 }
+
+                // Non-redirect response
+                result.FinalUrl = requestUri.AbsoluteUri;
 
                 // Handle response status
                 if (!response.IsSuccessStatusCode)
                 {
-                    if ((int)response.StatusCode == 401 || (int)response.StatusCode == 403)
+                    if (statusCode == 401 || statusCode == 403)
                     {
                         result.AuthenticationRequired = true;
                         result.Reachability = TargetReachability.AuthenticationRequired;
                     }
-                    else if ((int)response.StatusCode >= 400 && (int)response.StatusCode < 500)
+                    else if (statusCode >= 400 && statusCode < 500)
                     {
                         result.Reachability = TargetReachability.Unreachable;
                     }
-                    else if ((int)response.StatusCode >= 500)
+                    else if (statusCode >= 500)
                     {
                         result.Reachability = TargetReachability.Reachable; // Server error but reachable
                     }
@@ -196,7 +264,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                     result.Reachability = TargetReachability.AuthenticationRequired;
                 }
 
-                break; // Exit loop after successful response
+                break; // Exit loop after receiving non-redirect response
             }
 
             if (redirectCount >= MaxRedirectCount)
@@ -380,11 +448,62 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
         return GetNormalizedApplicationTarget(uri);
     }
 
+    /// <summary>
+    /// Validates that a hostname (if it requires resolution) contains no blocked addresses.
+    /// If host is a literal IP, validates directly.
+    /// If host is a hostname, resolves and validates all addresses.
+    /// Fails closed if any resolved address is blocked.
+    /// </summary>
+    private async Task<BrowserTargetValidator.ValidationResult> ValidateHostAddressesAsync(
+        string host,
+        string environmentType,
+        CancellationToken cancellationToken)
+    {
+        // If hostname is empty or the host is already a known valid address format
+        if (string.IsNullOrWhiteSpace(host))
+            return new BrowserTargetValidator.ValidationResult(false, "Hostname is empty");
+
+        // Try to parse as literal IP first
+        if (System.Net.IPAddress.TryParse(host, out var literalAddress))
+        {
+            // Literal IP - validate directly
+            return _validator.ValidateResolvedAddress(literalAddress.ToString(), environmentType);
+        }
+
+        // Hostname requires DNS resolution
+        var addresses = await _resolver.ResolveHostAsync(host, cancellationToken);
+
+        // No addresses resolved
+        if (addresses.Count == 0)
+        {
+            _logger.LogWarning("Hostname {Host} could not be resolved or returned no addresses", host);
+            return new BrowserTargetValidator.ValidationResult(false, "Hostname resolution failed or returned no addresses");
+        }
+
+        // Validate ALL resolved addresses
+        // Fail closed: if ANY address is blocked, reject the whole hostname
+        foreach (var address in addresses)
+        {
+            var addressValidation = _validator.ValidateResolvedAddress(address.ToString(), environmentType);
+            if (!addressValidation.IsValid)
+            {
+                _logger.LogWarning("Hostname {Host} resolved to blocked address {Address}: {Reason}",
+                    host, address, addressValidation.BlockReason);
+                return addressValidation;
+            }
+        }
+
+        // All addresses passed validation
+        return new BrowserTargetValidator.ValidationResult(true);
+    }
+
     private sealed class PreflightCheckResult
     {
         public string FinalUrl { get; set; } = "";
         public bool AuthenticationRequired { get; set; }
         public TargetReachability Reachability { get; set; } = TargetReachability.Unknown;
         public int RedirectCount { get; set; }
+        public bool Success { get; set; } = true;
+        public string? BlockReason { get; set; }
     }
 }

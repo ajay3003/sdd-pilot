@@ -65,6 +65,18 @@ public sealed class BrowserTargetValidator
         return new ValidationResult(true, ClassifiedType: ClassifyTarget(redirectUri.Host));
     }
 
+    /// <summary>
+    /// Validates a resolved IP address against security policy.
+    /// Used by DNS resolver to validate all addresses before allowing HTTP requests.
+    /// </summary>
+    public ValidationResult ValidateResolvedAddress(string ipAddress, string? environmentType = "Public")
+    {
+        if (string.IsNullOrWhiteSpace(ipAddress))
+            return new ValidationResult(false, "IP address is required");
+
+        return ValidateHost(ipAddress, environmentType);
+    }
+
     private ValidationResult ValidateScheme(string scheme)
     {
         return scheme.ToLowerInvariant() switch

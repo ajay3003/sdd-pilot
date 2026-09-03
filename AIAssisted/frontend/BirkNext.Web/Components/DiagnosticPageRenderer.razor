@@ -1,7 +1,7 @@
 @using BirkNext.Web.Services
 
-<div class="settings-card settings-card-full-width">
-    <div class="settings-card-title">@Title</div>
+<section class="settings-card settings-card-full-width" aria-labelledby="@TitleId">
+    <h2 class="settings-card-title" id="@TitleId">@Title</h2>
     @if (!string.IsNullOrWhiteSpace(Description))
     {
         <p class="settings-card-note">@Description</p>
@@ -14,7 +14,7 @@
 
     @if (ShowRunArea && OnRun.HasDelegate)
     {
-        <div class="diag-actions" style="margin-bottom:1.5rem;display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center">
+        <div class="diag-actions">
             <PrimaryButton OnClick="OnRun" Disabled="@IsRunning">
                 @(IsRunning ? RunningLabel : RunLabel)
             </PrimaryButton>
@@ -23,7 +23,7 @@
     }
     else if (ShowRunArea && Actions is not null)
     {
-        <div class="diag-actions" style="margin-bottom:1.5rem;display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center">
+        <div class="diag-actions">
             @Actions
         </div>
     }
@@ -32,20 +32,20 @@
 
     @if (!HasRun)
     {
-        <div class="diag-status-section" style="margin-top:1.5rem">
-            <div class="ss-status-bar" style="margin-bottom:0.75rem">
+        <div class="diag-status-section diag-status-section-empty" role="status">
+            <div class="ss-status-bar">
                 <span class="ss-status-pill">
                     <span class="ss-status-label">Overall Status</span>
                     <span class="ss-status-value">Not Run</span>
                 </span>
             </div>
-            <p class="settings-card-note" style="border:none;padding:0;margin:0;font-size:0.83rem">@NotRunText</p>
+            <p class="diag-status-note">@NotRunText</p>
         </div>
     }
     else
     {
-        <div class="diag-status-section" style="margin-top:1.5rem">
-            <div class="ss-status-bar" style="margin-bottom:1rem">
+        <div class="diag-status-section">
+            <div class="ss-status-bar">
                 <span class="ss-status-pill @StatusPillClass(OverallStatus)">
                     <span class="ss-status-label">Overall Status</span>
                     <span class="ss-status-value">@StatusLabel(OverallStatus)</span>
@@ -68,7 +68,7 @@
 
             @if (Summary is not null)
             {
-                <div class="ss-status-bar" style="margin-bottom:1rem">
+                <div class="ss-status-bar diag-summary-bar">
                     <span class="ss-status-pill">
                         <span class="ss-status-label">Checks Executed</span>
                         <span class="ss-status-value">@Summary.TotalCount</span>
@@ -95,45 +95,49 @@
 
         @if (Sections.Count > 0)
         {
-            <div class="dev-diag-subgrid" style="margin-top:1rem">
+            <div class="dev-diag-subgrid">
                 @foreach (var diagSection in Sections)
                 {
-                    <div class="dev-diag-section">
-                        <div class="dev-diag-section-title">@diagSection.Title</div>
+                    var suppressTitle = ShouldSuppressSectionTitle(diagSection);
+                    <section class="dev-diag-section">
+                        @if (!suppressTitle)
+                        {
+                            <h3 class="dev-diag-section-title">@diagSection.Title</h3>
+                        }
                         @if (!string.IsNullOrWhiteSpace(diagSection.Description))
                         {
-                            <p style="font-size:0.85rem;color:var(--clr-text-muted);margin:0 0 0.75rem">@diagSection.Description</p>
+                            <p class="diag-section-description @(suppressTitle ? "diag-section-description-primary" : "")">@diagSection.Description</p>
                         }
                         @if (diagSection.Items.Count == 0)
                         {
-                            <p style="font-size:0.82rem;color:var(--clr-text-placeholder);margin:0;font-style:italic">No diagnostics returned for this section.</p>
+                            <p class="diag-empty-section">No diagnostics returned for this section.</p>
                         }
-                        <table class="settings-table">
+                        <table class="settings-table" aria-label="@diagSection.Title diagnostic results">
+                            <tbody>
                             @foreach (var item in diagSection.Items)
                             {
-                                <tr>
-                                    <td style="width:25%;font-weight:600">@item.Name</td>
-                                    <td style="width:60%">
-                                        <div style="display:flex;align-items:center;gap:0.5rem">
-                                            <span style="font-size:0.85rem;color:var(--clr-text-muted)">@item.Value</span>
-                                        </div>
+                                <tr class="diag-row">
+                                    <th scope="row" class="diag-row-label">@item.Name</th>
+                                    <td class="diag-row-value">
+                                        <div class="diag-value">@item.Value</div>
                                         @if (!string.IsNullOrWhiteSpace(item.Recommendation))
                                         {
-                                            <p style="font-size:0.82rem;color:var(--clr-text-placeholder);margin:0.25rem 0 0">-> @item.Recommendation</p>
+                                            <p class="diag-recommendation">→ @item.Recommendation</p>
                                         }
                                     </td>
-                                    <td style="width:15%;text-align:right">
+                                    <td class="diag-row-status">
                                         <span class="ss-health-sev @StatusClass(item.Status)">@item.Status</span>
                                     </td>
                                 </tr>
                             }
+                            </tbody>
                         </table>
-                    </div>
+                    </section>
                 }
             </div>
         }
     }
-</div>
+</section>
 
 @code {
     [Parameter] public string Title { get; set; } = "";
@@ -155,12 +159,17 @@
     [Parameter] public RenderFragment? Actions { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
+    private string TitleId => $"diagnostic-page-{Title.ToLowerInvariant().Replace(' ', '-').Replace('/', '-')}";
+
+    private bool ShouldSuppressSectionTitle(SettingsSectionDto section) =>
+        Sections.Count == 1 && string.Equals(section.Title, Title, StringComparison.OrdinalIgnoreCase);
+
     private static string StatusClass(SystemSettingsStatus status) => status switch
     {
         SystemSettingsStatus.Pass => "ss-health-sev-ok",
         SystemSettingsStatus.Warning => "ss-health-sev-warn",
         SystemSettingsStatus.Fail => "ss-health-sev-error",
-        _ => "ss-health-sev-warn"
+        _ => "ss-health-sev-na"
     };
 
     private static string StatusPillClass(SystemSettingsStatus status) => status switch
