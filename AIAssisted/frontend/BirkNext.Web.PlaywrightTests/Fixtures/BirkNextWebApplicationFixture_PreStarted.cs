@@ -65,20 +65,37 @@ public sealed class BirkNextWebApplicationFixture_PreStarted : IAsyncLifetime
     private async Task VerifyServiceReadyAsync(int port, string serviceName, int timeoutMs = 30000, int checkIntervalMs = 500)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        string url = $"http://127.0.0.1:{port}";
+        Exception? lastException = null;
 
         while (DateTime.UtcNow < deadline)
         {
-            if (IsPortReachable(port))
+            try
             {
-                return; // Service is ready
+                // Use HTTP GET to verify actual service readiness, not just TCP connection
+                using var handler = new HttpClientHandler { UseProxy = false };
+                using var client = new HttpClient(handler) { Timeout = TimeSpan.FromMilliseconds(1000) };
+                var response = await client.GetAsync(url);
+
+                // Accept any successful response or redirect (even 404 means service is responding)
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound ||
+                    response.StatusCode == System.Net.HttpStatusCode.MovedPermanently ||
+                    response.StatusCode == System.Net.HttpStatusCode.OK)
+                {
+                    return; // Service is ready
+                }
+            }
+            catch
+            {
+                // Service not ready yet, continue polling
             }
 
             await Task.Delay(checkIntervalMs);
         }
 
         throw new TimeoutException(
-            $"{serviceName} on port {port} did not become ready within {timeoutMs}ms. " +
-            $"Ensure the application is running: Backend (port 5000) and Frontend (port 5173)");
+            $"{serviceName} on port {port} did not become ready within {timeoutMs}ms at {url}. " +
+            $"Last error: {lastException?.Message ?? "No response"}");
     }
 
     private async Task InitializePlaywrightAsync()
