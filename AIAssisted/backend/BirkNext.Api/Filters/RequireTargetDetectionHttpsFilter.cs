@@ -1,6 +1,7 @@
 using BirkNext.Api.Configuration;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.Options;
 
 namespace BirkNext.Api.Filters;
 
@@ -19,16 +20,16 @@ namespace BirkNext.Api.Filters;
 /// </summary>
 public sealed class RequireTargetDetectionHttpsFilter : IActionFilter
 {
-    private readonly TargetDetectionOptions _options;
+    private readonly IOptions<TargetDetectionOptions> _optionsSnapshot;
     private readonly ILogger<RequireTargetDetectionHttpsFilter> _logger;
     private readonly IWebHostEnvironment _environment;
 
     public RequireTargetDetectionHttpsFilter(
-        TargetDetectionOptions options,
+        IOptions<TargetDetectionOptions> optionsSnapshot,
         ILogger<RequireTargetDetectionHttpsFilter> logger,
         IWebHostEnvironment environment)
     {
-        _options = options;
+        _optionsSnapshot = optionsSnapshot;
         _logger = logger;
         _environment = environment;
     }
@@ -36,7 +37,7 @@ public sealed class RequireTargetDetectionHttpsFilter : IActionFilter
     public void OnActionExecuting(ActionExecutingContext context)
     {
         // Skip if HTTPS is not required by configuration
-        if (!_options.RequireHttps)
+        if (!_optionsSnapshot.Value.RequireHttps)
         {
             return;
         }
