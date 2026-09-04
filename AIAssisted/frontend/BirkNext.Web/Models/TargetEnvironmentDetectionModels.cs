@@ -123,6 +123,13 @@ public sealed class TargetEnvironmentDetectionResult
     /// </summary>
     [JsonPropertyName("errorCode")]
     public string? ErrorCode { get; set; }
+
+    /// <summary>
+    /// Detected client-side framework type (Blazor WASM, React, Angular, etc.).
+    /// Only populated if positive framework indicators are found in the response body.
+    /// </summary>
+    [JsonPropertyName("detectedClientFramework")]
+    public string? DetectedClientFramework { get; set; }
 }
 
 public enum TargetReachability
@@ -171,4 +178,61 @@ public enum FieldValueSource
 
     /// <summary>Derived from detection</summary>
     Derived
+}
+
+/// <summary>
+/// Wraps detection results with state information and activation readiness.
+/// Returned by browser-based detection continuation endpoint.
+/// </summary>
+public sealed class TargetDetectionOutcome
+{
+    /// <summary>
+    /// The underlying detection response containing reachability, auth metadata, etc.
+    /// </summary>
+    [JsonPropertyName("detectionResponse")]
+    public TargetEnvironmentDetectionResult? DetectionResponse { get; set; }
+
+    /// <summary>
+    /// Current detection state (NotChecked, Complete, AuthenticationRequired, Partial, Stale, Failed).
+    /// </summary>
+    [JsonPropertyName("state")]
+    public DetectionState State { get; set; } = DetectionState.NotChecked;
+
+    /// <summary>
+    /// Whether the profile is ready for activation.
+    /// </summary>
+    [JsonPropertyName("isActivationReady")]
+    public bool IsActivationReady { get; set; }
+
+    /// <summary>
+    /// Suggested detection strategy based on current state.
+    /// </summary>
+    [JsonPropertyName("strategySuggestion")]
+    public string? StrategySuggestion { get; set; }
+
+    /// <summary>
+    /// Timestamp when detection was performed (UTC).
+    /// </summary>
+    [JsonPropertyName("detectedAt")]
+    public DateTime? DetectedAt { get; set; }
+
+    /// <summary>
+    /// The URL that was detected (for staleness checking).
+    /// </summary>
+    [JsonPropertyName("detectedUrl")]
+    public string? DetectedUrl { get; set; }
+
+    [JsonPropertyName("isUrlCurrent")]
+    public bool IsUrlCurrent { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    /// <summary>
+    /// Whether this Partial state specifically requires browser runtime inspection.
+    /// When true: Continue detection in browser is available.
+    /// When false or null: Partial for other reasons (e.g., temporary error, incomplete detection).
+    /// </summary>
+    [JsonPropertyName("browserRuntimeInspectionRequired")]
+    public bool? BrowserRuntimeInspectionRequired { get; set; }
 }

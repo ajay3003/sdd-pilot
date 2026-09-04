@@ -59,6 +59,13 @@ public sealed class TargetEnvironmentDetectionResponse
 
     [JsonPropertyName("errorCode")]
     public string? ErrorCode { get; set; }
+
+    /// <summary>
+    /// Detected client-side framework type (Blazor WASM, React, Angular, etc.).
+    /// Only populated if positive framework indicators are found in the response body.
+    /// </summary>
+    [JsonPropertyName("detectedClientFramework")]
+    public ClientFrameworkType? DetectedClientFramework { get; set; }
 }
 
 public enum TargetReachability
@@ -96,5 +103,15 @@ public enum FrontendAuthenticationType
     None,
     MicrosoftEntraId,
     OpenIdConnect,
-    OAuth2
+    OAuth2,
+    Unknown
+}
+
+public enum ClientFrameworkType
+{
+    BlazorWebAssembly,
+    React,
+    Angular,
+    Vue,
+    Other
 }

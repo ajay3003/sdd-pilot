@@ -26,7 +26,7 @@ public sealed class TargetEnvironmentDetection_DnsSecurityTests
     private TargetEnvironmentDetectionService CreateService(FakeDnsResolver resolver, HttpMessageHandler handler)
     {
         var httpClient = new HttpClient(handler);
-        return new TargetEnvironmentDetectionService(_validator, httpClient, resolver, _logger);
+        return new TargetEnvironmentDetectionService(_validator, httpClient, resolver, new ClientFrameworkDetector(), _logger);
     }
 
     [Fact]
@@ -360,3 +360,5 @@ internal sealed class RedirectHandler : HttpMessageHandler
             });
     }
 }
+
+

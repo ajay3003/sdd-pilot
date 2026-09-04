@@ -219,6 +219,7 @@ builder.Services.Configure<TargetDetectionOptions>(
 builder.Services.AddScoped<RequireTargetDetectionHttpsFilter>();
 builder.Services.AddScoped<DevelopmentOnlyControllerFilter>();
 builder.Services.AddScoped<ITargetHostResolver, DnsTargetHostResolver>();
+builder.Services.AddScoped<IClientFrameworkDetector, ClientFrameworkDetector>();
 // Rate limiter removed (API complexity) - replaced with controller-level input validation
 // and per-minute request monitoring via logging.
 // SECURITY: Disable automatic redirect following to prevent TOCTOU gap.

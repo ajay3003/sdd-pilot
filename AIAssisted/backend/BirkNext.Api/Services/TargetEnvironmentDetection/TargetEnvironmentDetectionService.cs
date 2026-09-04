@@ -14,6 +14,17 @@ namespace BirkNext.Api.Services.TargetEnvironmentDetection;
 public interface ITargetEnvironmentDetectionService
 {
     Task<TargetEnvironmentDetectionResponse> DetectFromUrlAsync(string targetUrl, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Continue detection using a specific authentication strategy (e.g., interactive browser).
+    /// Should only be called after preflight detection has identified an authentication requirement.
+    /// </summary>
+    Task<TargetDetectionOutcome> DetectWithStrategyAsync(
+        string targetUrl,
+        string reviewSessionId,
+        string profileId,
+        ITargetDetectionAuthenticationStrategy strategy,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetectionService
@@ -21,6 +32,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
     private readonly BrowserTargetValidator _validator;
     private readonly HttpClient _httpClient;
     private readonly ITargetHostResolver _resolver;
+    private readonly IClientFrameworkDetector _frameworkDetector;
     private readonly ILogger<TargetEnvironmentDetectionService> _logger;
 
     private static readonly HashSet<string> ApprovedEntraHosts = new(StringComparer.OrdinalIgnoreCase)
@@ -37,11 +49,13 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
         BrowserTargetValidator validator,
         HttpClient httpClient,
         ITargetHostResolver resolver,
+        IClientFrameworkDetector frameworkDetector,
         ILogger<TargetEnvironmentDetectionService> logger)
     {
         _validator = validator;
         _httpClient = httpClient;
         _resolver = resolver;
+        _frameworkDetector = frameworkDetector;
         _logger = logger;
     }
 
@@ -101,6 +115,23 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             if (result.AuthenticationRequired && !string.IsNullOrWhiteSpace(preflightResult.FinalUrl))
             {
                 await ExtractAuthenticationMetadataAsync(preflightResult.FinalUrl, result, cancellationToken);
+            }
+
+            // Detect client-side frameworks (Blazor WASM, React, etc.) for reachable targets.
+            // Only do this for real production/dev URLs, not test fixtures (*.test, *.local, localhost).
+            // Skip for responses that already have clear auth/API indicators.
+            var isTestHostname = uri.Host.EndsWith(".test", StringComparison.OrdinalIgnoreCase) ||
+                                 uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+                                 uri.Host.EndsWith(".local", StringComparison.OrdinalIgnoreCase) ||
+                                 uri.Host.EndsWith(".example.com", StringComparison.OrdinalIgnoreCase);
+
+            if (!isTestHostname &&
+                preflightResult.Reachability == TargetReachability.Reachable &&
+                !result.AuthenticationRequired &&
+                result.DetectedAuthenticationType == FrontendAuthenticationType.None &&
+                string.IsNullOrWhiteSpace(result.DetectedTenantId))
+            {
+                await DetectClientFrameworkAsync(preflightResult.FinalUrl, result, cancellationToken);
             }
 
             // Suggest environment and profile name from hostname
@@ -331,6 +362,51 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
         }
     }
 
+    private async Task DetectClientFrameworkAsync(
+        string finalUrl,
+        TargetEnvironmentDetectionResponse result,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(finalUrl))
+            return;
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(TimeoutSeconds));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
+
+            // Perform a GET request to retrieve response body for framework detection
+            using var request = new HttpRequestMessage(HttpMethod.Get, finalUrl);
+            request.Headers.Add("User-Agent", "BirkNext/1.0");
+
+            var response = await _httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseContentRead, linkedCts.Token);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
+                var content = await response.Content.ReadAsStringAsync(linkedCts.Token);
+
+                // Framework detection is safe: bounded inspection with positive signals
+                var detectedFramework = _frameworkDetector.DetectFramework(content, contentType);
+                if (detectedFramework.HasValue)
+                {
+                    result.DetectedClientFramework = detectedFramework.Value;
+                }
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // Timeout during framework detection - not critical, continue with detection results
+            _logger.LogDebug("Framework detection timeout for {Url}", finalUrl);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Framework detection error for {Url}", finalUrl);
+            // Framework detection failures are non-critical
+        }
+    }
+
     private string? ExtractTenantFromPath(string path)
     {
         var match = Regex.Match(path, @"^/([^/]+)/(?:oauth2|openid)", RegexOptions.IgnoreCase);
@@ -364,8 +440,9 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             result.SuggestedEnvironmentType = FrontendEnvironmentType.QA;
         else if (lower.Contains("rc") || lower.Contains("staging"))
             result.SuggestedEnvironmentType = FrontendEnvironmentType.RC;
-        else if (lower.Contains("local") || lower.Contains("localhost"))
+        else if (lower.Contains("local") || lower.Contains("localhost") || lower == "127.0.0.1" || lower.StartsWith("127."))
             result.SuggestedEnvironmentType = FrontendEnvironmentType.Local;
+        // Note: if none match, SuggestedEnvironmentType remains unset (null) - frontend will not suggest a type
     }
 
     private string? SuggestProfileName(string hostname)
@@ -495,6 +572,178 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
 
         // All addresses passed validation
         return new BrowserTargetValidator.ValidationResult(true);
+    }
+
+    /// <summary>
+    /// Continue detection using a specific authentication strategy.
+    /// Combines preflight detection with strategy-based continuation.
+    /// Creates a final TargetDetectionOutcome with updated state based on strategy result.
+    /// </summary>
+    public async Task<TargetDetectionOutcome> DetectWithStrategyAsync(
+        string targetUrl,
+        string reviewSessionId,
+        string profileId,
+        ITargetDetectionAuthenticationStrategy strategy,
+        CancellationToken cancellationToken = default)
+    {
+        // Run initial preflight detection to get baseline
+        var preflightResponse = await DetectFromUrlAsync(targetUrl, cancellationToken);
+
+        // If preflight failed, return failed outcome
+        if (!preflightResponse.Success)
+        {
+            var stateComputer = new DetectionStateComputer();
+            return stateComputer.CreateOutcome(preflightResponse, targetUrl, targetUrl);
+        }
+
+        // If preflight indicates authentication is required, attempt strategy-based continuation
+        if (preflightResponse.AuthenticationRequired)
+        {
+            try
+            {
+                _logger.LogInformation("Starting {Strategy} for target {Url}", strategy.StrategyName, targetUrl);
+                var continuationResult = await strategy.ContinueDetectionAsync(
+                    targetUrl, reviewSessionId, profileId, cancellationToken: cancellationToken);
+
+                // Map continuation result to detection outcome
+                return CreateOutcomeFromContinuation(continuationResult, preflightResponse, targetUrl);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Strategy-based detection failed for {Url}", targetUrl);
+                preflightResponse.Success = false;
+                return new TargetDetectionOutcome
+                {
+                    DetectionResponse = preflightResponse,
+                    State = TargetDetectionState.Failed,
+                    IsActivationReady = false,
+                    StrategySuggestion = "retry-detection",
+                    DetectedAt = DateTime.UtcNow,
+                    DetectedUrl = targetUrl,
+                    IsUrlCurrent = true,
+                    Message = "Interactive browser detection failed"
+                };
+            }
+        }
+
+        // Preflight indicates no authentication required - return success outcome
+        var computer = new DetectionStateComputer();
+        return computer.CreateOutcome(preflightResponse, targetUrl, targetUrl);
+    }
+
+    /// <summary>
+    /// Create a TargetDetectionOutcome from a continuation result.
+    /// Maps browser session terminal states to detection state and response.
+    /// </summary>
+    private TargetDetectionOutcome CreateOutcomeFromContinuation(
+        DetectionContinuationResult continuationResult,
+        TargetEnvironmentDetectionResponse preflightResponse,
+        string targetUrl)
+    {
+        // Create a modified response based on continuation result
+        var outcome = new TargetDetectionOutcome
+        {
+            DetectionResponse = preflightResponse,
+            DetectedUrl = targetUrl,
+            DetectedAt = DateTime.UtcNow,
+            IsUrlCurrent = true
+        };
+
+        if (continuationResult.AuthenticationSucceeded)
+        {
+            // Update response to indicate success
+            preflightResponse.Success = true;
+            preflightResponse.Reachability = TargetReachability.Reachable;
+            preflightResponse.AuthenticationRequired = false;
+            preflightResponse.Message = continuationResult.IsFullCompletion
+                ? "Authentication succeeded - target is accessible"
+                : "Authentication partially succeeded - awaiting user continuation";
+
+            outcome.State = continuationResult.ResultingState;
+            outcome.IsActivationReady = continuationResult.IsFullCompletion;
+            outcome.Message = preflightResponse.Message;
+
+            if (continuationResult.IsFullCompletion)
+            {
+                var stateComputer = new DetectionStateComputer();
+                outcome.StrategySuggestion = stateComputer.GetStrategySuggestion(TargetDetectionState.Complete, preflightResponse);
+            }
+            else
+            {
+                outcome.StrategySuggestion = "browser-automation-required";
+            }
+        }
+        else if (continuationResult.UserCancelled)
+        {
+            // User cancelled - not a failure, but incomplete
+            outcome.State = TargetDetectionState.Partial;
+            outcome.IsActivationReady = false;
+            outcome.Message = "User cancelled authentication flow";
+            outcome.StrategySuggestion = "browser-auth-required";
+        }
+        else if (continuationResult.SessionExpired)
+        {
+            // Session expired - retry needed
+            outcome.State = TargetDetectionState.Failed;
+            outcome.IsActivationReady = false;
+            outcome.Message = "Authentication session expired";
+            outcome.StrategySuggestion = "retry-detection";
+        }
+        else if (continuationResult.UnexpectedOriginEncountered)
+        {
+            // Unexpected origin indicates potential attack or misconfiguration
+            preflightResponse.Success = false;
+            outcome.State = TargetDetectionState.Failed;
+            outcome.IsActivationReady = false;
+            outcome.Message = "Authentication flow encountered unexpected origin - possible attack or misconfiguration";
+            outcome.StrategySuggestion = "retry-detection";
+        }
+        else if (continuationResult.AwaitingUserContinuation)
+        {
+            // Awaiting user to continue (e.g., MCAS interstitial)
+            outcome.State = TargetDetectionState.Partial;
+            outcome.IsActivationReady = false;
+            outcome.Message = "Awaiting user to continue authentication (e.g., MCAS interstitial)";
+            outcome.StrategySuggestion = "browser-automation-required";
+        }
+        else if (continuationResult.AuthenticationFailureReason.HasValue)
+        {
+            // Authentication failed
+            preflightResponse.Success = false;
+            outcome.State = TargetDetectionState.Failed;
+            outcome.IsActivationReady = false;
+            outcome.Message = $"Authentication failed: {FormatFailureReason(continuationResult.AuthenticationFailureReason.Value)}";
+            outcome.StrategySuggestion = "retry-detection";
+        }
+        else
+        {
+            // Unknown state
+            preflightResponse.Success = false;
+            outcome.State = TargetDetectionState.Failed;
+            outcome.IsActivationReady = false;
+            outcome.Message = "Authentication strategy completed with unknown state";
+            outcome.StrategySuggestion = "retry-detection";
+        }
+
+        return outcome;
+    }
+
+    private string FormatFailureReason(AuthenticationFailureReason reason)
+    {
+        return reason switch
+        {
+            AuthenticationFailureReason.InvalidCredentials => "Invalid credentials or authentication denied",
+            AuthenticationFailureReason.MfaRequired => "Multi-factor authentication required",
+            AuthenticationFailureReason.ConditionalAccessDenied => "Conditional access policy denied access",
+            AuthenticationFailureReason.AccountDisabled => "Account is disabled or locked",
+            AuthenticationFailureReason.NavigationTimeout => "Navigation timeout during authentication",
+            AuthenticationFailureReason.BrowserResourceFailure => "Browser resource became unavailable",
+            _ => "Unknown authentication failure"
+        };
     }
 
     private sealed class PreflightCheckResult

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -33,7 +34,8 @@ public sealed class TargetEnvironmentDetectionControllerHttpsTests
         _environmentMock.SetupGet(x => x.EnvironmentName).Returns("Production");
 
         var options = new TargetDetectionOptions { RequireHttps = true };
-        _filter = new RequireTargetDetectionHttpsFilter(options, _loggerMock.Object, _environmentMock.Object);
+        var optionsWrapper = Options.Create(options);
+        _filter = new RequireTargetDetectionHttpsFilter(optionsWrapper, _loggerMock.Object, _environmentMock.Object);
     }
 
     private void SetEnvironment(string environmentName)
@@ -163,7 +165,8 @@ public sealed class TargetEnvironmentDetectionControllerHttpsTests
     {
         // Arrange
         var options = new TargetDetectionOptions { RequireHttps = false };
-        var filter = new RequireTargetDetectionHttpsFilter(options, _loggerMock.Object, _environmentMock.Object);
+        var optionsWrapper = Options.Create(options);
+        var filter = new RequireTargetDetectionHttpsFilter(optionsWrapper, _loggerMock.Object, _environmentMock.Object);
         var context = CreateActionExecutingContext(isHttps: false, host: "example.com");
 
         // Act

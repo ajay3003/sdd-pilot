@@ -22,12 +22,12 @@
 }
 
 @* ── Active profile summary card ─────────────────────────────────────────── *@
-<div class="fa-active-card">
+<section class="fa-active-card" aria-labelledby="active-environment-heading">
+    <h2 id="active-environment-heading" class="fa-section-heading">Active environment</h2>
     @if (EffectiveActiveProfile is { } ap)
     {
         <div class="fa-active-card-header">
             <div class="fa-active-card-left">
-                <span class="fa-env-badge fa-env-badge-@ap.EnvironmentType.ToString().ToLowerInvariant()">@ap.EnvironmentType</span>
                 <span class="fa-active-card-name">@ap.Name</span>
             </div>
         </div>
@@ -42,27 +42,9 @@
                 <span class="fa-active-stat-label">Frontend URL</span>
                 <span class="fa-active-stat-value fa-active-stat-mono">@(ap.TargetUrl ?? "—")</span>
             </div>
-            @if (!string.IsNullOrWhiteSpace(ap.RestBaseUrl))
-            {
-                <div class="fa-active-stat">
-                    <span class="fa-active-stat-label">REST API URL</span>
-                    <span class="fa-active-stat-value fa-active-stat-mono">@ap.RestBaseUrl</span>
-                </div>
-            }
-            @if (!string.IsNullOrWhiteSpace(ap.GraphQlEndpoint))
-            {
-                <div class="fa-active-stat">
-                    <span class="fa-active-stat-label">GraphQL Endpoint</span>
-                    <span class="fa-active-stat-value fa-active-stat-mono">@ap.GraphQlEndpoint</span>
-                </div>
-            }
             <div class="fa-active-stat">
                 <span class="fa-active-stat-label">Authentication</span>
                 <span class="fa-active-stat-value">@ap.Authentication.AuthenticationType</span>
-            </div>
-            <div class="fa-active-stat">
-                <span class="fa-active-stat-label">Thresholds</span>
-                <span class="fa-active-stat-value">@ap.Performance.Mode</span>
             </div>
             @{ var _apv = FaSettings.ValidateProfile(ap); }
             <div class="fa-active-stat">
@@ -77,14 +59,17 @@
     {
         <p class="fa-active-bar-none">No target environments are configured.</p>
     }
-</div>
+</section>
 
 @* ── Profile list ─────────────────────────────────────────────────────────── *@
+<section class="fa-environments" aria-labelledby="environments-heading">
+<h2 id="environments-heading" class="fa-section-heading">Environments</h2>
 <div class="fa-profiles-row">
     <div class="fa-profiles-list">
         @foreach (var p in FaSettings.Settings.Profiles)
         {
             <button class="fa-profile-chip @(p.Id == _selectedProfileId ? "fa-profile-chip-selected" : "")"
+                    aria-selected="@(p.Id == _selectedProfileId ? "true" : "false")"
                     @onclick="() => SelectProfile(p.Id)">
                 <span class="fa-env-dot fa-env-dot-@p.EnvironmentType.ToString().ToLowerInvariant()"></span>
                 @p.Name
@@ -92,11 +77,16 @@
                 {
                     <span class="fa-active-badge">Active</span>
                 }
+                @if (p.Id == _selectedProfileId)
+                {
+                    <span class="fa-selected-badge">Selected</span>
+                }
             </button>
         }
     </div>
     <SecondaryButton OnClick="OpenCreateDialog" Class="fa-btn-create">+ Add Environment</SecondaryButton>
 </div>
+</section>
 
 @* ── Profile detail ───────────────────────────────────────────────────────── *@
 @if (SelectedProfile is { } profile)
@@ -106,11 +96,10 @@
         @* ── Header ── *@
         <div class="fa-detail-header">
             <div class="fa-detail-header-left">
-                <span class="fa-detail-name">@profile.Name</span>
-                @if (profile.Id == EffectiveActiveProfile?.Id)
-                {
-                    <span class="fa-active-badge">Active</span>
-                }
+                <div>
+                    <div class="fa-detail-kicker">Selected environment</div>
+                    <h2 class="fa-detail-name">@profile.Name</h2>
+                </div>
             </div>
             <div class="fa-detail-header-actions">
                 @if (_isEditMode)
@@ -122,17 +111,73 @@
                 }
                 else
                 {
-                    @if (profile.Id != EffectiveActiveProfile?.Id)
-                    {
-                        <SecondaryButton OnClick="SetActiveProfileAsync">Set as Active Target</SecondaryButton>
-                    }
-                    <SecondaryButton OnClick="DetectSelectedTargetAsync" Disabled="@(_isDetecting || string.IsNullOrWhiteSpace(profile.TargetUrl))">Detect settings</SecondaryButton>
                     <SecondaryButton OnClick="DuplicateProfileAsync">Duplicate</SecondaryButton>
                     <SecondaryButton OnClick="EnterEditMode">Edit Environment</SecondaryButton>
                     <DangerButton OnClick="@(() => _showDeleteConfirm = true)"
                                   Disabled="@(FaSettings.Settings.Profiles.Count <= 1)">Delete</DangerButton>
                 }
             </div>
+        </div>
+
+        <div class="fa-selected-summary">
+            <div class="fa-selected-url">
+                <span class="fa-summary-label">Frontend URL</span>
+                <span class="fa-summary-url">@(CurrentTargetUrl ?? "—")</span>
+            </div>
+            <div class="fa-detection-state" role="status">
+                <span class="fa-summary-label">Detection</span>
+                <strong class="fa-detection-value fa-detection-@DetectionStateCss">@DetectionStateLabel</strong>
+            </div>
+            <div class="fa-primary-actions">
+                @if (!_browserDetectionInProgress)
+                {
+                    <PrimaryButton OnClick="DetectSelectedTargetAsync" Disabled="@(_isDetecting || string.IsNullOrWhiteSpace(CurrentTargetUrl))">
+                        @(_isDetecting ? "Detecting…" : "Detect settings")
+                    </PrimaryButton>
+                    @if (CanContinueDetectionInBrowser() && !IsDetectionStale)
+                    {
+                        <SecondaryButton OnClick="StartBrowserDetectionAsync" Disabled="@(_isDetecting || string.IsNullOrWhiteSpace(CurrentTargetUrl))">
+                            Continue detection in browser
+                        </SecondaryButton>
+                    }
+                    @if (profile.Id != EffectiveActiveProfile?.Id)
+                    {
+                        <SecondaryButton OnClick="SetActiveProfileAsync" Disabled="@(!CanActivateSelected)" aria-describedby="activation-gate-reason">Set as Active</SecondaryButton>
+                    }
+                }
+            </div>
+
+            @* ── Browser detection waiting state ── *@
+            @if (_browserDetectionInProgress)
+            {
+                <div class="fa-browser-detection-waiting" role="status" aria-live="polite">
+                    <div class="fa-browser-waiting-header">
+                        <div class="fa-browser-spinner"></div>
+                        <strong>Waiting for sign-in...</strong>
+                    </div>
+                    <div class="fa-browser-waiting-messages">
+                        <p class="fa-browser-message">Complete authentication in the browser window.</p>
+                        <p class="fa-browser-message">BirkNext will continue when the target application is reached.</p>
+                        @if (!string.IsNullOrWhiteSpace(_browserDetectionMessage))
+                        {
+                            <p class="fa-browser-message fa-browser-message-custom">@_browserDetectionMessage</p>
+                        }
+                    </div>
+                    <div class="fa-browser-waiting-actions">
+                        <SecondaryButton OnClick="CancelBrowserDetectionAsync">Cancel detection</SecondaryButton>
+                    </div>
+                </div>
+            }
+
+            <p class="fa-detection-help">Detect settings checks this Frontend URL and proposes configuration. Nothing is saved automatically.</p>
+            @if (profile.Id != EffectiveActiveProfile?.Id && !CanActivateSelected)
+            {
+                <p id="activation-gate-reason" class="fa-activation-reason">@ActivationBlockedReason</p>
+            }
+            @if (_detectionError is not null)
+            {
+                <p class="fa-detection-error" role="alert">@_detectionError</p>
+            }
         </div>
 
         @{ var typeConflict = GetTypeConflict(profile); }
@@ -201,7 +246,6 @@
                 else
                 {
                     <dl class="fa-detail-list">
-                        <div class="fa-dl-row"><dt>Environment Name</dt><dd>@profile.Name</dd></div>
                         <div class="fa-dl-row"><dt>Environment Type</dt><dd>@profile.EnvironmentType</dd></div>
                         <div class="fa-dl-row"><dt>Description</dt><dd>@(profile.Description ?? "No description")</dd></div>
                         <div class="fa-dl-row"><dt>Notes</dt><dd>@(profile.Notes ?? "No notes")</dd></div>
@@ -218,31 +262,9 @@
                         <div class="fa-threshold-group-title fa-field-full">Frontend</div>
                         <div class="form-field fa-field-full">
                             <label class="fa-label">Frontend Base URL</label>
-                            <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
-                                <input type="url" class="form-control" style="flex: 1;" placeholder="https://myapp.example.com"
-                                       @bind="_editProfile.TargetUrl"
-                                       @bind:after="() => ClearDetectionState()" />
-                                <SecondaryButton OnClick="DetectConfigurationAsync"
-                                                 Disabled="@(string.IsNullOrWhiteSpace(_editProfile?.TargetUrl) || _isDetecting)"
-                                                 Class="fa-btn-detect">
-                                    @if (_isDetecting)
-                                    {
-                                        <span>Detecting…</span>
-                                    }
-                                    else if (_detectionResult?.Success == true)
-                                    {
-                                        <span>✓ Detected</span>
-                                    }
-                                    else
-                                    {
-                                        <span>Detect settings</span>
-                                    }
-                                </SecondaryButton>
-                            </div>
-                            @if (_detectionError is not null)
-                            {
-                                <div style="color: var(--color-error); font-size: 0.875rem; margin-top: 0.25rem;">@_detectionError</div>
-                            }
+                            <input type="url" class="form-control" placeholder="https://myapp.example.com"
+                                   @bind="_editProfile.TargetUrl"
+                                   @bind:after="() => ClearDetectionState()" />
                         </div>
 
                         @* Detection results summary with provenance *@
@@ -1214,6 +1236,12 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private bool _isDetecting;
     private string? _detectionError;
     private TargetEnvironmentDetectionResult? _detectionResult;
+    private bool? _browserRuntimeInspectionRequired;
+
+    // Browser detection state (Phase 2)
+    private bool _browserDetectionInProgress;
+    private string? _browserDetectionMessage;
+    private string? _currentBrowserDetectionAttemptId;
 
     private static readonly (string Key, string Label)[] Tabs =
     [
@@ -1256,6 +1284,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (_isEditMode) CancelEdit();
         _selectedProfileId = profileId;
         _activeTab         = "general";
+        _detectionResult   = null;
+        _detectionError    = null;
     }
 
     // ── Edit mode ────────────────────────────────────────────────────────────
@@ -1311,7 +1341,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private async Task SetActiveProfileAsync()
     {
-        if (_selectedProfileId is null) return;
+        if (_selectedProfileId is null || !CanActivateSelected) return;
         FaSettings.SelectActiveProfile(_selectedProfileId);
         await FaSettings.SaveAsync(JS);
     }
@@ -1320,6 +1350,9 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     {
         if (_selectedProfileId is null) return;
         var copy = FaSettings.DuplicateProfile(_selectedProfileId);
+        copy.LastDetectedUrl = null;
+        copy.LastDetectionSucceeded = false;
+        copy.LastDetectionFailure = null;
         await FaSettings.SaveAsync(JS);
         _selectedProfileId = copy.Id;
         _activeTab         = "general";
@@ -1364,7 +1397,10 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private void ClearDetectionState()
     {
+        // Only clear transient UI state (detection result and error message)
+        // Keep LastDetectionSucceeded and LastDetectionFailure so URL staleness can be detected
         _detectionResult = null;
+        _browserRuntimeInspectionRequired = null;
         _detectionError = null;
     }
 
@@ -1381,6 +1417,149 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     {
         if (_editProfile is not null && _detectionResult?.SuggestedEnvironmentType is { } suggested)
             _editProfile.EnvironmentType = suggested;
+    }
+
+    // ── Browser detection flow (Phase 2) ─────────────────────────────────────
+
+    /// <summary>
+    /// Initiates browser-based detection flow for authentication scenarios.
+    /// Shows waiting UI and sends request to backend to launch headed browser.
+    /// </summary>
+    private bool CanContinueDetectionInBrowser()
+    {
+        // Show Continue button for states that explicitly support browser continuation
+        return CurrentDetectionState == DetectionState.AuthenticationRequired ||
+               (CurrentDetectionState == DetectionState.Partial &&
+                _browserRuntimeInspectionRequired == true);
+    }
+
+    private async Task StartBrowserDetectionAsync()
+    {
+        if (!CanContinueDetectionInBrowser() || string.IsNullOrWhiteSpace(CurrentTargetUrl))
+            return;
+
+        // Check that URL hasn't changed since last detection
+        if (IsDetectionStale)
+            return;
+
+        var callingProfile = SelectedProfile;
+        var callingUrl = CurrentTargetUrl;
+        if (callingProfile?.Id is null || string.IsNullOrWhiteSpace(callingUrl))
+            return;
+
+        var callingProfileId = callingProfile.Id;
+        var callingNormalizedUrl = NormalizeUrl(callingUrl);
+        var attemptId = Guid.NewGuid().ToString("N");
+        _currentBrowserDetectionAttemptId = attemptId;
+
+        _browserDetectionInProgress = true;
+        _browserDetectionMessage = null;
+        _detectionError = null;
+        StateHasChanged();
+
+        try
+        {
+            // Generate a temporary detection session ID for tracking (not tied to active review session)
+            var detectionSessionId = $"detection-{callingProfileId}-{DateTime.UtcNow.Ticks}";
+
+            // Call backend to start interactive browser-based authentication
+            var result = await DetectionApi.StartBrowserDetectionAsync(
+                callingUrl,
+                detectionSessionId,
+                callingProfileId);
+
+            // Bind completion to the exact attempt, profile, and URL that initiated it.
+            // A selection change, URL edit, cancellation, or newer attempt invalidates this response.
+            if (_currentBrowserDetectionAttemptId != attemptId ||
+                _selectedProfileId != callingProfileId ||
+                !string.Equals(NormalizeUrl(CurrentTargetUrl), callingNormalizedUrl, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (result is not null && result.DetectionResponse is not null)
+            {
+                // Update detection state based on backend result
+                _detectionResult = result.DetectionResponse;
+                _browserRuntimeInspectionRequired = result.BrowserRuntimeInspectionRequired;
+
+                // Store detection state in profile
+                callingProfile.LastDetectedUrl = callingUrl;
+                callingProfile.LastDetectionSucceeded = result.State == DetectionState.Complete;
+                callingProfile.LastDetectionFailure = result.State == DetectionState.Complete ? null : result.State.ToString();
+                await FaSettings.SaveAsync(JS);
+
+                _browserDetectionInProgress = false;
+                StateHasChanged();
+
+                // Show appropriate message based on final state
+                if (result.State == DetectionState.Complete)
+                {
+                    _detectionError = "✓ Target environment detection complete!";
+                    await Task.Delay(2000);
+                    _detectionError = null;
+                }
+                else if (result.State == DetectionState.Partial)
+                {
+                    _detectionError = $"⚠ Partial detection: {result.StrategySuggestion}";
+                    await Task.Delay(3000);
+                    _detectionError = null;
+                }
+                else
+                {
+                    _detectionError = $"✗ Browser detection did not complete: {result.State}";
+                    // Keep error visible longer for failures
+                }
+
+                StateHasChanged();
+            }
+            else
+            {
+                _browserDetectionInProgress = false;
+                _detectionError = "✗ Browser detection request failed. Please try again.";
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (_currentBrowserDetectionAttemptId != attemptId)
+                return;
+            _browserDetectionInProgress = false;
+            _detectionError = $"✗ Error during browser detection: {ex.Message}";
+            StateHasChanged();
+        }
+        finally
+        {
+            if (_currentBrowserDetectionAttemptId == attemptId)
+            {
+                _currentBrowserDetectionAttemptId = null;
+                _browserDetectionInProgress = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Cancels ongoing browser detection.
+    /// Returns to AuthenticationRequired state and allows user to retry.
+    /// </summary>
+    private async Task CancelBrowserDetectionAsync()
+    {
+        _currentBrowserDetectionAttemptId = null;
+        _browserDetectionInProgress = false;
+        _browserDetectionMessage = null;
+
+        // Show message that user can retry
+        _detectionError = "Authentication not completed. Click 'Continue detection in browser' to try again.";
+
+        // Keep detection state as AuthenticationRequired to allow retry
+        StateHasChanged();
+
+        // Auto-clear error after a delay (optional)
+        await Task.Delay(5000);
+        if (_detectionError?.Contains("Authentication not completed") == true)
+        {
+            _detectionError = null;
+            StateHasChanged();
+        }
     }
 
     private static FrontendEnvironmentType? GetTypeConflict(FrontendAnalysisProfile profile)
@@ -1420,36 +1599,157 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 // Keep environment type as an explicit proposal. The user must
                 // apply it to the draft and then save it separately.
 
-                // Profile Name: Apply suggested if empty or generic default
-                if (!string.IsNullOrWhiteSpace(result.SuggestedProfileName))
+                // Always record the URL that was detected (even if detection failed)
+                // This allows us to distinguish between "never run" and "run but failed"
+                _editProfile.LastDetectedUrl = NormalizeUrl(_editProfile.TargetUrl);
+
+                if (result.Success)
                 {
-                    var isEmptyOrDefault = string.IsNullOrWhiteSpace(_editProfile.Name) ||
-                                          _editProfile.Name == "Local" ||
-                                          _editProfile.Name == "Development";
-
-                    if (isEmptyOrDefault)
-                    {
-                        _editProfile.Name = result.SuggestedProfileName;
-                    }
-                    // Else: user configured name is preserved, no silent overwrite
+                    _editProfile.LastDetectionSucceeded = true;
+                    _editProfile.LastDetectionFailure = null;
                 }
-
-                if (!result.Success)
+                else
+                {
                     _detectionError = result.Message;
+                    _editProfile.LastDetectionSucceeded = false;
+                    _editProfile.LastDetectionFailure = result.Message;
+                }
             }
             else
             {
                 _detectionError = "Detection failed. Please try again.";
+                _editProfile.LastDetectedUrl = NormalizeUrl(_editProfile.TargetUrl);
+                _editProfile.LastDetectionSucceeded = false;
+                _editProfile.LastDetectionFailure = _detectionError;
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _detectionError = "Detection error: " + ex.Message;
+            _detectionError = "Detection failed. Please try again.";
+            _editProfile.LastDetectedUrl = NormalizeUrl(_editProfile.TargetUrl);
+            _editProfile.LastDetectionSucceeded = false;
+            _editProfile.LastDetectionFailure = _detectionError;
         }
         finally
         {
             _isDetecting = false;
         }
+    }
+
+    private FrontendAnalysisProfile? CurrentProfile => _isEditMode ? _editProfile : SelectedProfile;
+
+    private string? CurrentTargetUrl => CurrentProfile?.TargetUrl;
+
+    /// <summary>
+    /// Computes the detection state for the currently selected profile.
+    /// Considers URL staleness, detection success/failure, and detection result metadata.
+    /// </summary>
+    private DetectionState ComputeDetectionState()
+    {
+        var profile = CurrentProfile;
+        if (profile is null)
+            return DetectionState.NotChecked;
+
+        // Check for URL staleness
+        if (profile.LastDetectedUrl is not null && !UrlsMatch(profile.LastDetectedUrl, profile.TargetUrl))
+            return DetectionState.Stale;
+
+        // If no detection has been run yet
+        if (profile.LastDetectedUrl is null)
+            return DetectionState.NotChecked;
+
+        // Detection was run. Check result status
+        if (!profile.LastDetectionSucceeded)
+        {
+            // Detection failed
+            if (profile.LastDetectionFailure is not null)
+                return DetectionState.Failed;
+            return DetectionState.NotChecked;
+        }
+
+        // Detection succeeded. Check if authentication is required
+        if (_detectionResult is not null && _detectionResult.Success)
+        {
+            if (_detectionResult.AuthenticationRequired)
+                return DetectionState.AuthenticationRequired;
+
+            // Check for warnings/partial results
+            if (_detectionResult.Warnings.Count > 0 || _detectionResult.Reachability != TargetReachability.Reachable)
+                return DetectionState.Partial;
+
+            return DetectionState.Complete;
+        }
+
+        // Detection succeeded but we don't have result details - assume complete
+        return DetectionState.Complete;
+    }
+
+    private DetectionState CurrentDetectionState => ComputeDetectionState();
+
+    private bool HasCurrentSuccessfulDetection =>
+        CurrentDetectionState == DetectionState.Complete;
+
+    private string DetectionStateLabel =>
+        CurrentDetectionState switch
+        {
+            DetectionState.NotChecked => "Not checked",
+            DetectionState.Complete => "Checked",
+            DetectionState.AuthenticationRequired => "Auth required",
+            DetectionState.Partial => "Partial",
+            DetectionState.Stale => "Stale",
+            DetectionState.Failed => "Failed",
+            _ => "Unknown"
+        };
+
+    private string DetectionStateCss =>
+        CurrentDetectionState switch
+        {
+            DetectionState.NotChecked => "not-checked",
+            DetectionState.Complete => "checked",
+            DetectionState.AuthenticationRequired => "auth-required",
+            DetectionState.Partial => "partial",
+            DetectionState.Stale => "stale",
+            DetectionState.Failed => "failed",
+            _ => "unknown"
+        };
+
+    private bool CanActivateSelected => CurrentDetectionState == DetectionState.Complete;
+
+    /// <summary>
+    /// Indicates if the detection result is stale (URL changed since detection).
+    /// </summary>
+    private bool IsDetectionStale => CurrentDetectionState == DetectionState.Stale;
+
+    private string ActivationBlockedReason =>
+        CurrentDetectionState switch
+        {
+            DetectionState.NotChecked => "Run Detect settings before activating this environment.",
+            DetectionState.AuthenticationRequired => "Authentication required. (Continue in browser feature coming soon.)",
+            DetectionState.Partial => "Partial detection. (Continue in browser feature coming soon.)",
+            DetectionState.Stale => "Frontend URL changed. Run Detect settings again before activating.",
+            DetectionState.Failed => "Detection failed. Run Detect settings successfully before activating.",
+            _ => "Unable to activate. Run Detect settings first."
+        };
+
+    private static bool UrlsMatch(string? left, string? right) =>
+        string.Equals(NormalizeUrl(left), NormalizeUrl(right), StringComparison.OrdinalIgnoreCase);
+
+    private static string? NormalizeUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri))
+            return value?.Trim();
+
+        var builder = new UriBuilder(uri)
+        {
+            Scheme = uri.Scheme.ToLowerInvariant(),
+            Host = uri.Host.ToLowerInvariant(),
+            Fragment = ""
+        };
+        if ((builder.Scheme == Uri.UriSchemeHttps && builder.Port == 443) ||
+            (builder.Scheme == Uri.UriSchemeHttp && builder.Port == 80))
+            builder.Port = -1;
+
+        return builder.Uri.AbsoluteUri.TrimEnd('/');
     }
 
     // ── Reset / restore ──────────────────────────────────────────────────────

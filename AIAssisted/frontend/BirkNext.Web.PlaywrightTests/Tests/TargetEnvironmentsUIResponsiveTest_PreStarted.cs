@@ -51,11 +51,11 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         var activeCardCount = await activeCard.CountAsync();
         activeCardCount.Should().BeGreaterThan(0, "Active target summary card should be present");
 
-        // Check active card content - should have TYPE BADGE + NAME
+        // Active status has one identity and no redundant type badge.
         var activeCardLeft = activeCard.Locator(".fa-active-card-left");
         var typeBadges = activeCardLeft.Locator(".fa-env-badge");
         var typeBadgeCount = await typeBadges.CountAsync();
-        typeBadgeCount.Should().Be(1, "Active card left should have exactly one type badge");
+        typeBadgeCount.Should().Be(0, "Active status should not repeat the environment type as a badge");
 
         var nameSpan = activeCardLeft.Locator(".fa-active-card-name");
         var nameCount = await nameSpan.CountAsync();
@@ -117,7 +117,7 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
     }
 
     [Fact]
-    public async Task ActiveTargetSummary_ShowsOnlyTypeAndName()
+    public async Task ActiveTargetSummary_ShowsOneIdentityAndUrl()
     {
         var page = await _fixture.Context.NewPageAsync();
         await page.SetViewportSizeAsync(1440, 900);
@@ -128,15 +128,16 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         var activeCard = page.Locator(".fa-active-card");
         await activeCard.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
 
-        // Active card should have type badge and name
+        // Active card should have one name and its URL, without identity badges.
         var activeCardLeft = activeCard.Locator(".fa-active-card-left");
         var content = await activeCardLeft.InnerTextAsync();
 
         // Should contain type and name, not redundant labels
         content.Should().NotBeNullOrEmpty();
-        (await activeCardLeft.Locator(".fa-env-badge").CountAsync()).Should().Be(1);
+        (await activeCardLeft.Locator(".fa-env-badge").CountAsync()).Should().Be(0);
         (await activeCardLeft.Locator(".fa-active-card-name").CountAsync()).Should().Be(1);
         (await activeCardLeft.Locator(".fa-active-card-context").CountAsync()).Should().Be(0);
+        (await activeCard.Locator(".fa-active-stat-mono").CountAsync()).Should().Be(1);
 
         await page.CloseAsync();
     }

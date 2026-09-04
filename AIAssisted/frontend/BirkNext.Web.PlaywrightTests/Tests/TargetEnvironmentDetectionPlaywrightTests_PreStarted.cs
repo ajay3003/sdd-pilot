@@ -343,4 +343,37 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
             await page.CloseAsync();
         }
     }
+
+    [Fact]
+    [Trait("Category", "PreStarted")]
+    public async Task TargetEnvironment_LocalTransport_UsesHttpBackendAndReachesRealPreflight()
+    {
+        var page = await _fixture.Context.NewPageAsync();
+        var requestFailures = new List<string>();
+        page.RequestFailed += (_, request) => requestFailures.Add($"{request.Url}: {request.Failure}");
+
+        try
+        {
+            await OpenTargetEnvironmentEditModeAsync(page);
+            await page.Locator("input[type='url']").First.FillAsync("https://m2lbdev.bufetat.no/");
+
+            var responseTask = page.WaitForResponseAsync(response =>
+                response.Url == "http://localhost:5000/api/frontend-target/detect" &&
+                response.Request.Method == "POST",
+                new() { Timeout = 30000 });
+            await page.GetByRole(AriaRole.Button, new() { Name = "Detect settings", Exact = true }).ClickAsync();
+            var response = await responseTask;
+            var responseBody = await response.TextAsync();
+
+            response.Url.Should().Be("http://localhost:5000/api/frontend-target/detect");
+            response.Status.Should().Be(200, $"the BirkNext backend must receive and answer the detection request; body: {responseBody}");
+            requestFailures.Should().NotContain(failure => failure.Contains("ERR_SSL_PROTOCOL_ERROR", StringComparison.OrdinalIgnoreCase));
+            await page.Locator(".fa-detection-value").WaitForAsync(new() { Timeout = 30000 });
+            (await page.Locator(".fa-detection-value").InnerTextAsync()).Should().NotBe("Not checked");
+        }
+        finally
+        {
+            await page.CloseAsync();
+        }
+    }
 }

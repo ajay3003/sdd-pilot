@@ -57,7 +57,7 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
             redirectStatus: 302);
 
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, new ClientFrameworkDetector(), _logger);
 
         var result = await service.DetectFromUrlAsync("https://public.example.test/");
 
@@ -84,7 +84,7 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
             redirectStatus: 302);
 
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, new ClientFrameworkDetector(), _logger);
 
         var result = await service.DetectFromUrlAsync("https://public.example.test/");
 
@@ -106,7 +106,7 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
             redirectStatus: 302);
 
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, new ClientFrameworkDetector(), _logger);
 
         var result = await service.DetectFromUrlAsync("https://public.example.test/");
 
@@ -128,7 +128,7 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
             redirectStatus: 302);
 
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, new ClientFrameworkDetector(), _logger);
 
         var result = await service.DetectFromUrlAsync("https://public.example.test/");
 
@@ -150,7 +150,7 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
             redirectStatus: 302);
 
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, new ClientFrameworkDetector(), _logger);
 
         var result = await service.DetectFromUrlAsync("https://public.example.test/");
 
@@ -172,7 +172,7 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
             redirectStatus: 302);
 
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, new ClientFrameworkDetector(), _logger);
 
         var result = await service.DetectFromUrlAsync("https://public.example.test/");
 
@@ -196,7 +196,7 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
             redirectStatus: 302);
 
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, new ClientFrameworkDetector(), _logger);
 
         var result = await service.DetectFromUrlAsync("https://public.example.test/");
 
@@ -219,7 +219,7 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
             allowRelative: true);
 
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, new ClientFrameworkDetector(), _logger);
 
         var result = await service.DetectFromUrlAsync("https://application.example.test/start");
 
@@ -241,7 +241,7 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
         var handler = new ChainedRedirectHandler(requestedUrls, chainLength: 5);
 
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, new ClientFrameworkDetector(), _logger);
 
         var result = await service.DetectFromUrlAsync("https://step1.example.test/");
 
@@ -263,7 +263,7 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
         var handler = new ChainedRedirectHandler(requestedUrls, chainLength: 10);
 
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, new ClientFrameworkDetector(), _logger);
 
         var result = await service.DetectFromUrlAsync("https://step1.example.test/");
 
@@ -282,7 +282,7 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
         var handler = new LoopingRedirectHandler(requestedUrls);
 
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, new ClientFrameworkDetector(), _logger);
 
         var result = await service.DetectFromUrlAsync("https://loop-a.example.test/");
 
@@ -305,7 +305,7 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
             redirectStatus: 302);
 
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, new ClientFrameworkDetector(), _logger);
 
         var result = await service.DetectFromUrlAsync("https://public.example.test/");
 
@@ -328,7 +328,7 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
             redirectStatus: 302);
 
         var httpClient = new HttpClient(handler);
-        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, _logger);
+        var service = new TargetEnvironmentDetectionService(_validator, httpClient, _resolver, new ClientFrameworkDetector(), _logger);
 
         var result = await service.DetectFromUrlAsync("https://public.example.test/");
 
@@ -500,3 +500,5 @@ internal sealed class LoopingRedirectHandler : HttpMessageHandler
         return await Task.FromResult(response);
     }
 }
+
+

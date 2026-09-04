@@ -2,6 +2,34 @@ using System.Text.Json.Serialization;
 
 namespace BirkNext.Web.Models;
 
+/// <summary>
+/// Detection state of a frontend profile.
+/// Tracks the status of target environment detection for activation gate purposes.
+/// </summary>
+public enum DetectionState
+{
+    /// <summary>No detection has been run yet.</summary>
+    NotChecked = 0,
+
+    /// <summary>Interactive detection is currently running.</summary>
+    Checking = 1,
+
+    /// <summary>Detection succeeded; target is reachable without authentication.</summary>
+    Complete = 2,
+
+    /// <summary>Detection detected authentication is required to access the target.</summary>
+    AuthenticationRequired = 3,
+
+    /// <summary>Detection partially succeeded (warnings or incomplete results).</summary>
+    Partial = 4,
+
+    /// <summary>Detection was run but the target URL has changed since.</summary>
+    Stale = 5,
+
+    /// <summary>Detection failed with an error.</summary>
+    Failed = 6
+}
+
 public enum FrontendEnvironmentType
 {
     Local, Development, QA, Test, RC, Production, Custom
@@ -78,6 +106,9 @@ public sealed class FrontendAnalysisProfile
 
     // Frontend
     [JsonPropertyName("targetUrl")]               public string?       TargetUrl               { get; set; }
+    [JsonPropertyName("lastDetectedUrl")]         public string?       LastDetectedUrl         { get; set; }
+    [JsonPropertyName("lastDetectionSucceeded")]  public bool          LastDetectionSucceeded  { get; set; }
+    [JsonPropertyName("lastDetectionFailure")]    public string?       LastDetectionFailure    { get; set; }
 
     // REST API
     [JsonPropertyName("restBaseUrl")]      public string? RestBaseUrl      { get; set; }
