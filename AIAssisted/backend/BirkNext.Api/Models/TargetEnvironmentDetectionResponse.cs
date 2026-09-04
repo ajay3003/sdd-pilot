@@ -77,6 +77,7 @@ public sealed class TargetEnvironmentDetectionResponse
     public bool IsActivationReady { get; set; }
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TargetReachability
 {
     Reachable,
@@ -90,6 +91,7 @@ public enum TargetReachability
     Unknown
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DetectionConfidence
 {
     Low,
@@ -98,6 +100,7 @@ public enum DetectionConfidence
     VeryHigh
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum FrontendEnvironmentType
 {
     Development,
@@ -107,6 +110,7 @@ public enum FrontendEnvironmentType
     Local
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum FrontendAuthenticationType
 {
     None,
@@ -116,6 +120,7 @@ public enum FrontendAuthenticationType
     Unknown
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ClientFrameworkType
 {
     BlazorWebAssembly,

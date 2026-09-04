@@ -1443,7 +1443,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private async Task DetectSelectedTargetAsync()
     {
-        EnterEditMode();
+        if (!_isEditMode)
+            EnterEditMode();
         if (_editProfile is null) return;
 
         _activeTab = "target";

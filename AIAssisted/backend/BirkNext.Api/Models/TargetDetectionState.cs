@@ -1,9 +1,12 @@
+using System.Text.Json.Serialization;
+
 namespace BirkNext.Api.Models;
 
 /// <summary>
 /// Enum representing the current state of target environment detection.
 /// Used to track detection progress and readiness for profile activation.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TargetDetectionState
 {
     /// <summary>
