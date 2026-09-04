@@ -590,8 +590,9 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             return stateComputer.CreateOutcome(preflightResponse, targetUrl, targetUrl);
         }
 
-        // If preflight indicates authentication is required, attempt strategy-based continuation
-        if (preflightResponse.AuthenticationRequired)
+        // Interactive continuation is required both for an explicit authentication challenge
+        // and for a reachable SPA whose client runtime still needs browser inspection.
+        if (preflightResponse.AuthenticationRequired || preflightResponse.BrowserRuntimeInspectionRequired)
         {
             try
             {

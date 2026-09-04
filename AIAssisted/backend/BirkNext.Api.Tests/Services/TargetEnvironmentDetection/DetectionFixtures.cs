@@ -24,6 +24,19 @@ public static class DetectionFixtures
             });
     }
 
+    public static HttpMessageHandler BlazorWasmTarget()
+    {
+        return new FakeHttpMessageHandler(request =>
+            new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "<html><body><script src=\"_framework/blazor.webassembly.js\"></script></body></html>",
+                    System.Text.Encoding.UTF8,
+                    "text/html"),
+                RequestMessage = request
+            });
+    }
+
     public static HttpMessageHandler UnauthorizedTarget()
     {
         return new FakeHttpMessageHandler(request =>

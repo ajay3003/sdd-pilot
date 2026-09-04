@@ -24,6 +24,7 @@ public sealed class TargetEnvironmentDetectionServiceStrategyTests
     {
         _logger = new NullLogger<TargetEnvironmentDetectionService>();
         _resolver.Add("app.example.com", "203.0.113.1");
+        _resolver.Add("spa.corp.invalid", "203.0.113.2");
         _resolver.Add("login.microsoftonline.com", "203.0.113.10");
     }
 
@@ -73,6 +74,45 @@ public sealed class TargetEnvironmentDetectionServiceStrategyTests
         outcome.IsActivationReady.Should().BeTrue();
         // Strategy should not be called since auth is not required
         mockStrategy.Verify(s => s.ContinueDetectionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DetectWithStrategyAsync_ReachableBlazorSpaNeedingBrowserInspection_InvokesStrategy()
+    {
+        var handler = DetectionFixtures.BlazorWasmTarget();
+        var service = new TargetEnvironmentDetectionService(
+            _validator,
+            new HttpClient(handler),
+            _resolver,
+            new ClientFrameworkDetector(),
+            _logger);
+        var strategy = new Mock<ITargetDetectionAuthenticationStrategy>();
+        strategy.Setup(s => s.ContinueDetectionAsync(
+                "https://spa.corp.invalid",
+                "review-123",
+                "profile-456",
+                It.IsAny<TimeSpan?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DetectionContinuationResult
+            {
+                AuthenticationSucceeded = true,
+                IsFullCompletion = true,
+                ResultingState = TargetDetectionState.Complete
+            });
+
+        var outcome = await service.DetectWithStrategyAsync(
+            "https://spa.corp.invalid",
+            "review-123",
+            "profile-456",
+            strategy.Object);
+
+        outcome.State.Should().Be(TargetDetectionState.Complete);
+        strategy.Verify(s => s.ContinueDetectionAsync(
+            "https://spa.corp.invalid",
+            "review-123",
+            "profile-456",
+            It.IsAny<TimeSpan?>(),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
