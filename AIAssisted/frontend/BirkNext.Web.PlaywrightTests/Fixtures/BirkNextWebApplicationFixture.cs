@@ -89,6 +89,8 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         // Stop processes
         StopProcess(_frontendProcess, "Frontend");
         StopProcess(_backendProcess, "Backend");
+        await WaitForPortReleasedAsync(5173);
+        await WaitForPortReleasedAsync(5000);
     }
 
     private async Task StartBackendAsync()
@@ -298,6 +300,12 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         {
             return true;
         }
+    }
+
+    private static async Task WaitForPortReleasedAsync(int port)
+    {
+        for (var attempt = 0; attempt < 100 && IsPortInUse(port); attempt++)
+            await Task.Delay(50);
     }
 
     private static async Task WaitForPortReadyAsync(int port, string serviceName, int maxRetries = 30, int delayMs = 1000)

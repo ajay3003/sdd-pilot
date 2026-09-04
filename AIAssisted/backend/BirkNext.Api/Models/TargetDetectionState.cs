@@ -27,7 +27,7 @@ public enum TargetDetectionState
     /// <summary>
     /// Detection found an authentication boundary (401/403 or known IdP redirect).
     /// Target requires authentication before it can be fully accessed.
-    /// Profile can be partially activated; browser automation needed for full detection.
+    /// Activation remains blocked; browser automation is needed for full detection.
     /// </summary>
     AuthenticationRequired = 3,
 

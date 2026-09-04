@@ -282,7 +282,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
             isDetectVisible.Should().BeTrue("Detect button should be accessible via keyboard navigation");
 
             // Verify form is in edit mode (save button available)
-            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save Environment" });
+            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save changes" });
             await saveButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
         }
         finally
@@ -319,7 +319,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
             await page.WaitForTimeoutAsync(3000);
 
             // Verify form is still in edit mode
-            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save Environment" });
+            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save changes" });
             await saveButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
 
             // Verify Cancel button is present (still in edit mode, not saved)

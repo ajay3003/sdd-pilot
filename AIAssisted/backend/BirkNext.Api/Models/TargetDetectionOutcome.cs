@@ -22,8 +22,7 @@ public sealed class TargetDetectionOutcome
 
     /// <summary>
     /// Whether the profile is ready for activation.
-    /// True if: state is Complete or AuthenticationRequired, and URL hasn't changed.
-    /// False if: state is Failed, Stale, NotChecked, or Checking.
+    /// True only when state is Complete and the URL has not changed.
     /// </summary>
     [JsonPropertyName("isActivationReady")]
     public bool IsActivationReady { get; set; }
