@@ -129,7 +129,7 @@ public sealed class TargetEnvironmentDetectionResult
     /// Only populated if positive framework indicators are found in the response body.
     /// </summary>
     [JsonPropertyName("detectedClientFramework")]
-    public string? DetectedClientFramework { get; set; }
+    public ClientFrameworkType? DetectedClientFramework { get; set; }
 }
 
 public enum TargetReachability
@@ -151,6 +151,15 @@ public enum DetectionConfidence
     Medium,
     High,
     VeryHigh
+}
+
+public enum ClientFrameworkType
+{
+    BlazorWebAssembly,
+    React,
+    Angular,
+    Vue,
+    Other
 }
 
 /// <summary>

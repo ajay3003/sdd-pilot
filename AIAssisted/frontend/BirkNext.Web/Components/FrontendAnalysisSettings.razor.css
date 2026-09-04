@@ -8,11 +8,11 @@
 .fa-environments { margin-bottom: 1.25rem; }
 .fa-environments > .fa-section-heading { margin-bottom: 0.5rem; }
 .fa-selected-badge { font-size: 0.7rem; font-weight: 600; color: var(--clr-primary); text-transform: uppercase; }
-.fa-detail-kicker, .fa-summary-label { display: block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; color: var(--clr-text-muted); text-transform: uppercase; }
+.fa-detail-kicker, .fa-summary-label { display: block; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em; color: var(--clr-text-muted); text-transform: uppercase; }
 .fa-detail-name { margin: 0.15rem 0 0; }
 .fa-selected-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.75rem 1.25rem; padding: 1rem; border-bottom: 1px solid var(--clr-border-subtle); }
-.fa-summary-url { display: block; margin-top: 0.2rem; overflow-wrap: anywhere; font-family: monospace; color: var(--clr-text-heading); }
-.fa-detection-value { display: block; margin-top: 0.2rem; }
+.fa-summary-url { display: block; margin-top: 0.3rem; overflow-wrap: anywhere; font-family: monospace; color: var(--clr-text-heading); font-size: 0.9rem; }
+.fa-detection-value { display: block; margin-top: 0.3rem; font-size: 0.95rem; }
 
 /* Detection state colors */
 .fa-detection-checked { color: var(--clr-success); font-weight: 600; }
@@ -528,6 +528,61 @@
 }
 
 
+/* ── Form grouping and layout improvements ──────────────────────────────────────── */
+
+.fa-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.fa-form-group-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--clr-text-subtle);
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--clr-border-subtle);
+    margin-bottom: 0.25rem;
+}
+
+.fa-form-row-compact {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.fa-form-optional-note {
+    font-size: 0.75rem;
+    color: var(--clr-text-muted);
+    margin-top: 0.5rem;
+    font-style: italic;
+}
+
+.fa-advanced-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: none;
+    border: none;
+    color: var(--clr-primary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: 1rem;
+}
+
+.fa-advanced-toggle:hover {
+    text-decoration: underline;
+}
+
+.fa-advanced-collapsed {
+    display: none;
+}
+
 /* ── Responsive adjustments ──────────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
@@ -541,6 +596,9 @@
     .fa-active-card-grid { grid-template-columns: 1fr 1fr; }
     .fa-selected-summary { grid-template-columns: 1fr; }
     .fa-detection-state { grid-column: 1; }
+    .fa-detection-help { font-size: 0.75rem; }
+    .fa-primary-actions { flex-direction: column; }
+    .fa-form-row-compact { grid-template-columns: 1fr; }
 }
 
 /* ── Active profile summary card ────────────────────────────────────────────── */

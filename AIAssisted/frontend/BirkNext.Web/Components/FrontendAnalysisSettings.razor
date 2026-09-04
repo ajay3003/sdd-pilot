@@ -367,24 +367,22 @@
                             </div>
                         }
 
-                        <div class="fa-threshold-group-title fa-field-full">REST API</div>
+                        <div class="fa-threshold-group-title fa-field-full">API Endpoints</div>
                         <div class="form-field fa-field-full">
-                            <label class="fa-label">REST Base URL <span class="form-optional">(optional)</span></label>
+                            <label class="fa-label">REST Base URL</label>
                             <input type="url" class="form-control" placeholder="https://api.example.com" @bind="_editProfile.RestBaseUrl" />
                         </div>
                         <div class="form-field fa-field-full">
-                            <label class="fa-label">Health Endpoint <span class="form-optional">(optional)</span></label>
+                            <label class="fa-label">GraphQL Endpoint</label>
+                            <input type="url" class="form-control" placeholder="https://api.example.com/graphql" @bind="_editProfile.GraphQlEndpoint" />
+                        </div>
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label">Health Endpoint</label>
                             <input type="url" class="form-control" placeholder="https://api.example.com/health" @bind="_editProfile.HealthEndpoint" />
                         </div>
                         <div class="form-field fa-field-full">
-                            <label class="fa-label">Swagger / OpenAPI URL <span class="form-optional">(optional)</span></label>
+                            <label class="fa-label">Swagger / OpenAPI URL</label>
                             <input type="url" class="form-control" placeholder="https://api.example.com/swagger/v1/swagger.json" @bind="_editProfile.SwaggerUrl" />
-                        </div>
-
-                        <div class="fa-threshold-group-title fa-field-full">GraphQL</div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">GraphQL Endpoint <span class="form-optional">(optional)</span></label>
-                            <input type="url" class="form-control" placeholder="https://api.example.com/graphql" @bind="_editProfile.GraphQlEndpoint" />
                         </div>
 
                         <div class="fa-threshold-group-title fa-field-full">API Authentication</div>
@@ -412,7 +410,7 @@
                                 <input type="password" class="form-control" autocomplete="off" @bind="_editProfile.ApiAuth.ApiKey" />
                             </div>
                             <div class="form-field">
-                                <label class="fa-label">Header Name <span class="form-optional">(default: X-Api-Key)</span></label>
+                                <label class="fa-label">Header Name</label>
                                 <input type="text" class="form-control" placeholder="X-Api-Key" @bind="_editProfile.ApiAuth.ApiKeyHeaderName" />
                             </div>
                         }
@@ -429,35 +427,37 @@
                         }
 
                         <div class="fa-threshold-group-title fa-field-full">Request Settings</div>
-                        <div class="form-field">
-                            <label class="fa-label">Request Timeout</label>
-                            <div style="display:flex;align-items:center;gap:.5rem">
-                                <input type="number" class="form-control fa-threshold-input" min="1" max="300" @bind="_editProfile.RequestTimeoutSeconds" />
-                                <span class="fa-threshold-unit">seconds</span>
+                        <div class="fa-form-row-compact">
+                            <div class="form-field">
+                                <label class="fa-label">Request Timeout</label>
+                                <div style="display:flex;align-items:center;gap:.5rem">
+                                    <input type="number" class="form-control fa-threshold-input" min="1" max="300" @bind="_editProfile.RequestTimeoutSeconds" />
+                                    <span class="fa-threshold-unit">seconds</span>
+                                </div>
                             </div>
-                        </div>
-                        <div class="form-field">
-                            <label class="fa-label">Retry Count</label>
-                            <input type="number" class="form-control fa-threshold-input" min="0" max="10" @bind="_editProfile.RetryCount" />
+                            <div class="form-field">
+                                <label class="fa-label">Retry Count</label>
+                                <input type="number" class="form-control fa-threshold-input" min="0" max="10" @bind="_editProfile.RetryCount" />
+                            </div>
                         </div>
 
                         <div class="fa-threshold-group-title fa-field-full">Advanced</div>
                         <div class="form-field fa-field-full">
-                            <label class="fa-label">Expected API Gateway <span class="form-optional">(optional)</span></label>
+                            <label class="fa-label">Expected API Gateway</label>
                             <input type="url" class="form-control" placeholder="https://apim.example.com" @bind="_editProfile.ExpectedApiGateway" />
                         </div>
                         <div class="form-field fa-field-full">
-                            <label class="fa-label">Expected CDN <span class="form-optional">(optional)</span></label>
+                            <label class="fa-label">Expected CDN</label>
                             <input type="url" class="form-control" placeholder="https://cdn.example.com" @bind="_editProfile.ExpectedCdn" />
                         </div>
                         <div class="form-field fa-field-full">
-                            <label class="fa-label">Allowed REST Hosts <span class="form-optional">(one per line)</span></label>
+                            <label class="fa-label">Allowed REST Hosts <span style="font-size:0.75rem;color:var(--color-text-muted)">(one per line)</span></label>
                             <textarea class="form-control" rows="3"
                                       value="@ListToText(_editProfile.AllowedRestHosts)"
                                       @onchange="e => _editProfile.AllowedRestHosts = TextToList(e.Value?.ToString())"></textarea>
                         </div>
                         <div class="form-field fa-field-full">
-                            <label class="fa-label">Allowed GraphQL Endpoints <span class="form-optional">(one per line)</span></label>
+                            <label class="fa-label">Allowed GraphQL Endpoints <span style="font-size:0.75rem;color:var(--color-text-muted)">(one per line)</span></label>
                             <textarea class="form-control" rows="3"
                                       value="@ListToText(_editProfile.AllowedGraphQlEndpoints)"
                                       @onchange="e => _editProfile.AllowedGraphQlEndpoints = TextToList(e.Value?.ToString())"></textarea>

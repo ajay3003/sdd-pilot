@@ -235,7 +235,7 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         FindButton(cut, "Edit Settings").Should().BeNull();
         FindButton(cut, "Edit Environment").Should().NotBeNull();
         FindButton(cut, "Edit Environment")!.Click();
-        FindButton(cut, "Save Environment").Should().NotBeNull();
+        cut.WaitForAssertion(() => FindButton(cut, "Save Environment").Should().NotBeNull());
     }
 
     [Fact]
