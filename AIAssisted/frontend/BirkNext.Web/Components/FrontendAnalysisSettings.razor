@@ -280,6 +280,14 @@
                                     <div style="font-weight: 500;">@_detectionResult.Reachability</div>
                                     <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
 
+                                    @* Client Framework *@
+                                    @if (_detectionResult.DetectedClientFramework.HasValue)
+                                    {
+                                        <div style="color: var(--color-text-subtle);">Framework</div>
+                                        <div style="font-weight: 500;">@_detectionResult.DetectedClientFramework</div>
+                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                    }
+
                                     @* Authentication Required *@
                                     @if (_detectionResult.AuthenticationRequired)
                                     {
@@ -1642,7 +1650,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     /// <summary>
     /// Computes the detection state for the currently selected profile.
-    /// Considers URL staleness, detection success/failure, and detection result metadata.
+    /// Considers URL staleness, detection success/failure, SPA detection, and authentication.
     /// </summary>
     private DetectionState ComputeDetectionState()
     {
@@ -1673,7 +1681,11 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             if (_detectionResult.AuthenticationRequired)
                 return DetectionState.AuthenticationRequired;
 
-            // Check for warnings/partial results
+            // Check for SPA requiring browser runtime inspection
+            if (_browserRuntimeInspectionRequired == true)
+                return DetectionState.Partial;
+
+            // Check for other partial results (warnings, unreachable, etc.)
             if (_detectionResult.Warnings.Count > 0 || _detectionResult.Reachability != TargetReachability.Reachable)
                 return DetectionState.Partial;
 
@@ -1693,8 +1705,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         CurrentDetectionState switch
         {
             DetectionState.NotChecked => "Not checked",
-            DetectionState.Complete => "Checked",
-            DetectionState.AuthenticationRequired => "Auth required",
+            DetectionState.Complete => "Detection complete",
+            DetectionState.AuthenticationRequired => "Authentication required",
             DetectionState.Partial => "Partial",
             DetectionState.Stale => "Stale",
             DetectionState.Failed => "Failed",

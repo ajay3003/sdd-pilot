@@ -72,7 +72,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
         cut.WaitForAssertion(() =>
         {
             // Auth required state should be shown
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Auth required");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
 
             // "Continue detection in browser" button should be visible
             var buttons = cut.FindAll("button")
@@ -100,7 +100,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Checked");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete");
 
             // Button should NOT be visible when Complete
             var browserButtons = cut.FindAll("button")
@@ -156,7 +156,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Auth required");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
         });
 
         // Verify button IS visible before URL change
@@ -200,7 +200,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Auth required");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
         });
 
         // Click "Continue detection in browser"
@@ -239,7 +239,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Auth required");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
         });
 
         // Click continue button
@@ -275,7 +275,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Auth required");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
         });
 
         // Click continue button to start
@@ -297,7 +297,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
         cut.WaitForAssertion(() =>
         {
             // Should return to auth required state
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Auth required");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
 
             // Waiting section should be hidden
             var waitingSection = cut.FindAll(".fa-browser-detection-waiting");
@@ -334,7 +334,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Auth required");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
         });
 
         // Start browser detection
@@ -375,7 +375,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Auth required");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
 
             // Browser detection waiting UI should NOT be visible
             var waitingSection = cut.FindAll(".fa-browser-detection-waiting");
@@ -439,7 +439,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Auth required");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
         });
 
         // Start browser detection
@@ -461,7 +461,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
         cut.WaitForAssertion(() =>
         {
             // State should still be auth required
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Auth required");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
 
             // Previously detected metadata should still be visible in display
             var markup = cut.Markup;
@@ -507,7 +507,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         cut.FindAll("button").Single(b => b.TextContent.Contains("Continue detection in browser")).Click();
 
-        cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Checked"));
+        cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete"));
         _detection.Verify(x => x.StartBrowserDetectionAsync(
             "https://application-qa.example.test",
             It.Is<string>(s => !string.IsNullOrWhiteSpace(s) && s.StartsWith("detection-qa-")),
@@ -589,7 +589,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
         cut.FindAll("button").Single(b => b.TextContent.Contains("Continue detection in browser")).Click();
 
         second.SetResult(CompleteOutcome("https://application-qa.example.test"));
-        cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Checked"));
+        cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete"));
         first.SetResult(new TargetDetectionOutcome
         {
             State = DetectionState.Failed,
@@ -612,7 +612,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
-        cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Auth required"));
+        cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required"));
         return cut;
     }
 

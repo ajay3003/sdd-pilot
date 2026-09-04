@@ -63,7 +63,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Checked");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete");
             cut.Find(".fa-detection-value").GetAttribute("class").Should().Contain("fa-detection-checked");
         });
 
@@ -91,7 +91,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Auth required");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
             cut.Find(".fa-detection-value").GetAttribute("class").Should().Contain("fa-detection-auth-required");
         });
 
@@ -122,7 +122,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Partial");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().StartWith("Partial");
             cut.Find(".fa-detection-value").GetAttribute("class").Should().Contain("fa-detection-partial");
         });
 
@@ -213,12 +213,12 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("Detected from target");
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Checked");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete");
         });
 
         // Add default HTTPS port - should NOT be stale (normalized)
         cut.Find("input[type=url]").Change("https://application-qa.example.test:443");
-        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Checked");
+        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete");
 
         // Change to different host - should be stale
         cut.Find("input[type=url]").Change("https://application-qa-v2.example.test");
@@ -327,7 +327,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         // Run detection
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
-        cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Checked"));
+        cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete"));
 
         // Save
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Save Environment").Click();
@@ -338,7 +338,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
 
         // State should be preserved
-        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Checked");
+        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete");
     }
 
     [Fact]

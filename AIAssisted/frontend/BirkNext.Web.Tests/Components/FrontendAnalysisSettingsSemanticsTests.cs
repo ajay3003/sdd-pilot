@@ -152,7 +152,7 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
 
-        cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Checked"));
+        cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete"));
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active").HasAttribute("disabled").Should().BeFalse();
         _settings.Settings.ActiveProfileId.Should().Be("local");
     }
