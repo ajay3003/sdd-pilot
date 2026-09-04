@@ -91,7 +91,9 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                     Reachability = preflightResult.Reachability,
                     Message = $"Target validation failed: {preflightResult.BlockReason}",
                     ErrorCode = "TARGET_BLOCKED",
-                    Confidence = DetectionConfidence.Low
+                    Confidence = DetectionConfidence.Low,
+                    State = TargetDetectionState.Failed,
+                    IsActivationReady = false
                 };
             }
 
@@ -139,6 +141,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             result.SuggestedProfileName = SuggestProfileName(uri.Host);
 
             result.Confidence = CalculateConfidence(result);
+            ApplyTypedOutcome(result);
 
             return result;
         }
@@ -430,35 +433,24 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
 
     private void SuggestEnvironmentType(string hostname, TargetEnvironmentDetectionResponse result)
     {
-        var lower = hostname.ToLowerInvariant();
-
-        if (lower.Contains("prod") || lower.Contains("production"))
-            result.SuggestedEnvironmentType = FrontendEnvironmentType.Production;
-        else if (lower.Contains("dev") || lower.Contains("development"))
-            result.SuggestedEnvironmentType = FrontendEnvironmentType.Development;
-        else if (lower.Contains("qa") || lower.Contains("test"))
-            result.SuggestedEnvironmentType = FrontendEnvironmentType.QA;
-        else if (lower.Contains("rc") || lower.Contains("staging"))
-            result.SuggestedEnvironmentType = FrontendEnvironmentType.RC;
-        else if (lower.Contains("local") || lower.Contains("localhost") || lower == "127.0.0.1" || lower.StartsWith("127."))
-            result.SuggestedEnvironmentType = FrontendEnvironmentType.Local;
-        // Note: if none match, SuggestedEnvironmentType remains unset (null) - frontend will not suggest a type
+        result.SuggestedEnvironmentType = TargetEnvironmentTypeClassifier.Infer(hostname);
     }
 
     private string? SuggestProfileName(string hostname)
+        => HostnameProfileNameFormatter.Format(hostname);
+
+    private static void ApplyTypedOutcome(TargetEnvironmentDetectionResponse result)
     {
-        var parts = hostname.Split('.');
-        if (parts.Length == 0)
-            return null;
-
-        var mainPart = parts[0];
-        if (mainPart.Length < 2)
-            return null;
-
-        var formatted = Regex.Replace(mainPart, @"([a-z])([A-Z])", "$1 $2", RegexOptions.IgnoreCase);
-        formatted = Regex.Replace(formatted, @"([a-zA-Z])(\d)", "$1 $2", RegexOptions.IgnoreCase);
-
-        return formatted.ToUpperInvariant().Trim();
+        result.State = !result.Success ? TargetDetectionState.Failed
+            : result.AuthenticationRequired || result.Reachability == TargetReachability.AuthenticationRequired
+                ? TargetDetectionState.AuthenticationRequired
+                : result.Reachability == TargetReachability.Reachable && result.DetectedClientFramework.HasValue
+                    ? TargetDetectionState.Partial
+                    : result.Reachability == TargetReachability.Reachable
+                        ? TargetDetectionState.Complete
+                        : TargetDetectionState.Failed;
+        result.BrowserRuntimeInspectionRequired = result.State == TargetDetectionState.Partial && result.DetectedClientFramework.HasValue;
+        result.IsActivationReady = result.State == TargetDetectionState.Complete;
     }
 
     private DetectionConfidence CalculateConfidence(TargetEnvironmentDetectionResponse result)
@@ -502,7 +494,9 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             Success = false,
             Message = message,
             ErrorCode = errorCode,
-            Confidence = DetectionConfidence.Low
+            Confidence = DetectionConfidence.Low,
+            State = TargetDetectionState.Failed,
+            IsActivationReady = false
         };
     }
 

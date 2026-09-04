@@ -296,11 +296,11 @@ public sealed class DetectionStateComputerTests
     }
 
     [Fact]
-    public void IsReadyForActivation_AuthenticationRequiredAndUrlCurrent_ReturnsTrue()
+    public void IsReadyForActivation_AuthenticationRequiredAndUrlCurrent_ReturnsFalseUntilCompleted()
     {
         var isReady = _computer.IsReadyForActivation(TargetDetectionState.AuthenticationRequired, isUrlCurrent: true);
 
-        Assert.True(isReady);
+        Assert.False(isReady);
     }
 
     [Fact]
@@ -581,7 +581,7 @@ public sealed class DetectionStateComputerTests
         var outcome = _computer.CreateOutcome(response, "https://example.com/app", "https://example.com/app");
 
         Assert.Equal(TargetDetectionState.AuthenticationRequired, outcome.State);
-        Assert.True(outcome.IsActivationReady);
+        Assert.False(outcome.IsActivationReady);
         Assert.Equal("entra-id-browser-auth", outcome.StrategySuggestion);
     }
 

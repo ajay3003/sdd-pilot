@@ -59,7 +59,7 @@ public sealed class DetectionStateComputerIntegrationTests
 
         Assert.NotNull(outcome);
         Assert.Equal(TargetDetectionState.AuthenticationRequired, outcome.State);
-        Assert.True(outcome.IsActivationReady);
+        Assert.False(outcome.IsActivationReady);
         Assert.Equal("entra-id-browser-auth", outcome.StrategySuggestion);
         Assert.Contains("Entra ID", outcome.Message);
     }
@@ -138,7 +138,7 @@ public sealed class DetectionStateComputerIntegrationTests
         var outcome = _computer.CreateOutcome(response, "https://custom-auth.example.com", "https://custom-auth.example.com");
 
         Assert.Equal(TargetDetectionState.AuthenticationRequired, outcome.State);
-        Assert.True(outcome.IsActivationReady);
+        Assert.False(outcome.IsActivationReady);
         Assert.Equal("browser-auth-required", outcome.StrategySuggestion);
     }
 

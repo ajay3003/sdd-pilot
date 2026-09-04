@@ -109,8 +109,8 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
 
         cut.Find("input[type=url]").Change("https://application-qa-b.example.test");
 
-        cut.Markup.Should().NotContain("Detected from target");
-        cut.Markup.Should().Contain("Stale");
+        cut.Markup.Should().Contain("Detection result");
+        cut.Markup.Should().Contain("Needs re-check");
         cut.Markup.Should().Contain("Frontend URL changed. Run Detect settings again before activating.");
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active").HasAttribute("disabled").Should().BeTrue();
         _settings.Settings.ActiveProfileId.Should().Be("local");
@@ -147,7 +147,7 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
     public void SuccessfulDetectionForCurrentUrl_EnablesButDoesNotPerformActivation()
     {
         _detection.Setup(x => x.DetectFromUrlAsync("https://application-qa.example.test", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TargetEnvironmentDetectionResult { Success = true, Reachability = TargetReachability.Reachable });
+            .ReturnsAsync(new TargetEnvironmentDetectionResult { Success = true, State = DetectionState.Complete, IsActivationReady = true, Reachability = TargetReachability.Reachable });
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
@@ -166,9 +166,9 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
 
-        cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Failed"));
+        cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection failed"));
         cut.Markup.Should().Contain("Target could not be reached safely.");
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Save Environment").Should().NotBeNull();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Save changes").HasAttribute("disabled").Should().BeTrue();
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active").HasAttribute("disabled").Should().BeTrue();
         _settings.Settings.Profiles.Single(p => p.Id == "qa").TargetUrl.Should().Be("https://application-qa.example.test");
         _settings.Settings.ActiveProfileId.Should().Be("local");

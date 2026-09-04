@@ -21,6 +21,7 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
     [Theory]
     [InlineData(1440)]
     [InlineData(1280)]
+    [InlineData(1024)]
     [InlineData(860)]
     [InlineData(800)]
     [InlineData(480)]

@@ -126,7 +126,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Failed");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection failed");
 
             var browserButtons = cut.FindAll("button")
                 .Where(b => b.TextContent.Contains("Continue detection in browser"))
@@ -172,7 +172,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
         cut.WaitForAssertion(() =>
         {
             // Should now show Stale state
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Stale");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Needs re-check");
 
             // Button should NOT be visible when Stale
             var browserButtons = cut.FindAll("button")
@@ -249,10 +249,11 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            // The action is removed while its single in-flight attempt is pending.
+            // The action remains visible but disabled while its single attempt is pending.
             var waitingBtn = cut.FindAll("button")
                 .FirstOrDefault(b => b.TextContent.Contains("Continue detection in browser"));
-            waitingBtn.Should().BeNull();
+            waitingBtn.Should().NotBeNull();
+            waitingBtn!.HasAttribute("disabled").Should().BeTrue();
             cut.FindAll(".fa-browser-detection-waiting").Should().HaveCount(1);
         });
     }
@@ -570,7 +571,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
         pending.SetResult(CompleteOutcome("https://application-qa.example.test"));
 
         cut.WaitForAssertion(() => cut.Find(".fa-summary-url").TextContent.Should().Contain("qa-b"));
-        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Stale");
+        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Needs re-check");
         _settings.Settings.Profiles.Single(p => p.Id == "qa").LastDetectionSucceeded.Should().BeFalse();
     }
 

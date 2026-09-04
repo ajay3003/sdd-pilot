@@ -47,6 +47,6 @@ public static class TargetEnvironmentTypeClassifier
         var normalized = hostname.Trim('[', ']').ToLowerInvariant();
         return normalized == "localhost" || normalized == "::1" ||
                normalized == "127.0.0.1" || normalized.StartsWith("127.") ||
-               normalized.EndsWith(".localhost") || normalized.EndsWith(".local");
+               normalized.EndsWith(".localhost");
     }
 }

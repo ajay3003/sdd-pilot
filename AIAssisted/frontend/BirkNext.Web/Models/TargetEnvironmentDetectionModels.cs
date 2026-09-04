@@ -130,6 +130,15 @@ public sealed class TargetEnvironmentDetectionResult
     /// </summary>
     [JsonPropertyName("detectedClientFramework")]
     public ClientFrameworkType? DetectedClientFramework { get; set; }
+
+    [JsonPropertyName("state")]
+    public DetectionState State { get; set; } = DetectionState.NotChecked;
+
+    [JsonPropertyName("browserRuntimeInspectionRequired")]
+    public bool BrowserRuntimeInspectionRequired { get; set; }
+
+    [JsonPropertyName("isActivationReady")]
+    public bool IsActivationReady { get; set; }
 }
 
 public enum TargetReachability

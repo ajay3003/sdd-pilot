@@ -27,6 +27,28 @@ public sealed class TargetEnvironmentDetectionApiServiceBrowserContinuationTests
     }
 
     [Fact]
+    public async Task DetectFromUrlAsync_DeserializesRealShapedTypedOutcome()
+    {
+        const string json = """
+        {"originalUrl":"https://m2lbdev.bufetat.no","success":true,"state":"Partial","reachability":"Reachable","detectedClientFramework":"BlazorWebAssembly","browserRuntimeInspectionRequired":true,"suggestedEnvironmentType":"Development","suggestedProfileName":"M2LB DEV","detectedAuthenticationType":"None","authenticationRequired":false,"confidence":"High","message":"Browser inspection required","isActivationReady":false}
+        """;
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        { Content = new StringContent(json, Encoding.UTF8, "application/json") });
+
+        var result = await CreateService(handler).DetectFromUrlAsync("https://m2lbdev.bufetat.no");
+
+        Assert.NotNull(result);
+        Assert.Equal(DetectionState.Partial, result.State);
+        Assert.Equal(TargetReachability.Reachable, result.Reachability);
+        Assert.Equal(ClientFrameworkType.BlazorWebAssembly, result.DetectedClientFramework);
+        Assert.True(result.BrowserRuntimeInspectionRequired);
+        Assert.Equal(FrontendEnvironmentType.Development, result.SuggestedEnvironmentType);
+        Assert.Equal("M2LB DEV", result.SuggestedProfileName);
+        Assert.Equal(DetectionConfidence.High, result.Confidence);
+        Assert.False(result.IsActivationReady);
+    }
+
+    [Fact]
     public async Task StartBrowserDetectionAsync_PostsExactContractAndDeserializesOutcome()
     {
         var handler = new RecordingHandler(_ => JsonResponse(new TargetDetectionOutcome

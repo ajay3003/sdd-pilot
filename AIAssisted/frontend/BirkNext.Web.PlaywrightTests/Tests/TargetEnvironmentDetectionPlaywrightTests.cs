@@ -89,7 +89,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
             filledValue.Should().Be(DeterministicAuthUrl, "URL input should accept and retain the filled value");
 
             // Verify the Save and Cancel buttons are visible (indicating edit mode)
-            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save Environment" });
+            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save changes" });
             await saveButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
 
             var cancelButton = page.GetByRole(AriaRole.Button, new() { Name = "Cancel" });
@@ -147,7 +147,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
             filledValue.Should().Be(DeterministicAuthUrl);
 
             // Verify the Save and Cancel buttons are visible (indicating edit mode)
-            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save Environment" });
+            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save changes" });
             await saveButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
 
             // Verify no page errors
@@ -186,7 +186,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
             value2.Should().Be("https://example-b.test/", "Form should accept URL changes");
 
             // Verify form is still in edit mode with save button available
-            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save Environment" });
+            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save changes" });
             await saveButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
         }
         finally
@@ -198,7 +198,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
     [Fact]
     public async Task TargetEnvironment_ResponsiveLayout_NoHorizontalOverflow()
     {
-        var viewports = new[] { (1440, 900), (1280, 720), (1024, 768) };
+        var viewports = new[] { (1440, 900), (1280, 720), (1024, 768), (860, 900), (800, 900), (480, 900) };
 
         foreach (var (width, height) in viewports)
         {

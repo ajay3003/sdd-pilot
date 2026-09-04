@@ -139,9 +139,7 @@ public sealed class DetectionStateComputer : IDetectionStateComputer
         if (!isUrlCurrent)
             return false;
 
-        // Ready if state is Complete or AuthenticationRequired
-        return state == TargetDetectionState.Complete ||
-               state == TargetDetectionState.AuthenticationRequired;
+        return state == TargetDetectionState.Complete;
     }
 
     public string GetStrategySuggestion(TargetDetectionState state, TargetEnvironmentDetectionResponse response)

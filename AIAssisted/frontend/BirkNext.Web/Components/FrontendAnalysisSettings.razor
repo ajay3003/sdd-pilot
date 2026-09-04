@@ -43,12 +43,12 @@
                 <span class="fa-active-stat-value fa-active-stat-mono">@(ap.TargetUrl ?? "—")</span>
             </div>
             <div class="fa-active-stat">
-                <span class="fa-active-stat-label">Authentication</span>
+                <span class="fa-active-stat-label">Configured authentication</span>
                 <span class="fa-active-stat-value">@ap.Authentication.AuthenticationType</span>
             </div>
             @{ var _apv = FaSettings.ValidateProfile(ap); }
             <div class="fa-active-stat">
-                <span class="fa-active-stat-label">Validation</span>
+                <span class="fa-active-stat-label">Configuration validation</span>
                 <span class="fa-active-stat-value @(!_apv.IsValid ? "fa-stat-err" : _apv.Warnings.Count > 0 ? "fa-stat-warn" : "fa-stat-ok")">
                     @(!_apv.IsValid ? $"{_apv.Errors.Count} error(s)" : _apv.Warnings.Count > 0 ? $"{_apv.Warnings.Count} warning(s)" : "Valid")
                 </span>
@@ -104,9 +104,9 @@
             <div class="fa-detail-header-actions">
                 @if (_isEditMode)
                 {
-                    <SecondaryButton OnClick="CancelEdit" Disabled="@_isSaving">Cancel</SecondaryButton>
-                    <PrimaryButton OnClick="SaveProfileAsync" Disabled="@_isSaving">
-                        @(_isSaving ? "Saving…" : "Save Environment")
+                    <SecondaryButton OnClick="CancelEdit" Disabled="@(_isSaving || !IsDirty)">Cancel</SecondaryButton>
+                    <PrimaryButton OnClick="SaveProfileAsync" Disabled="@(_isSaving || !IsDirty)">
+                        @(_isSaving ? "Saving…" : "Save changes")
                     </PrimaryButton>
                 }
                 else
@@ -128,18 +128,12 @@
                 <span class="fa-summary-label">Detection</span>
                 <strong class="fa-detection-value fa-detection-@DetectionStateCss">@DetectionStateLabel</strong>
             </div>
-            <div class="fa-primary-actions">
+            <div class="fa-primary-actions" aria-busy="@_isDetecting.ToString().ToLowerInvariant()">
                 @if (!_browserDetectionInProgress)
                 {
                     <PrimaryButton OnClick="DetectSelectedTargetAsync" Disabled="@(_isDetecting || string.IsNullOrWhiteSpace(CurrentTargetUrl))">
-                        @(_isDetecting ? "Detecting…" : "Detect settings")
+                        @(_isDetecting ? "Detecting..." : CurrentDetectionState == DetectionState.Failed ? "Retry detection" : "Detect settings")
                     </PrimaryButton>
-                    @if (CanContinueDetectionInBrowser() && !IsDetectionStale)
-                    {
-                        <SecondaryButton OnClick="StartBrowserDetectionAsync" Disabled="@(_isDetecting || string.IsNullOrWhiteSpace(CurrentTargetUrl))">
-                            Continue detection in browser
-                        </SecondaryButton>
-                    }
                     @if (profile.Id != EffectiveActiveProfile?.Id)
                     {
                         <SecondaryButton OnClick="SetActiveProfileAsync" Disabled="@(!CanActivateSelected)" aria-describedby="activation-gate-reason">Set as Active</SecondaryButton>
@@ -179,6 +173,35 @@
                 <p class="fa-detection-error" role="alert">@_detectionError</p>
             }
         </div>
+
+        @if (_detectionResult is not null)
+        {
+            <section class="fa-result fa-result-@DetectionStateCss" aria-labelledby="detection-result-heading" aria-live="polite">
+                <div class="fa-result-heading">
+                    <div><span class="fa-result-kicker">Detection result</span><h3 id="detection-result-heading">@DetectionStateLabel</h3></div>
+                    <span class="fa-result-confidence">Confidence: @_detectionResult.Confidence</span>
+                </div>
+                <p class="fa-result-message">@DetectionStateMessage</p>
+                <dl class="fa-result-grid">
+                    <div><dt>Reachability</dt><dd>@_detectionResult.Reachability</dd></div>
+                    <div><dt>Framework</dt><dd>@DetectionPresentation.FrameworkLabel(_detectionResult.DetectedClientFramework)</dd></div>
+                    <div><dt>Environment</dt><dd>@(_detectionResult.SuggestedEnvironmentType?.ToString() ?? "Not detected") <small>Proposed</small></dd></div>
+                    <div><dt>Detected authentication</dt><dd>@DetectedAuthenticationLabel</dd></div>
+                    <div><dt>Profile name</dt><dd>@(_detectionResult.SuggestedProfileName ?? "Not proposed") <small>Proposed</small></dd></div>
+                    <div><dt>Configured authentication</dt><dd>@profile.Authentication.AuthenticationType <small>Configured</small></dd></div>
+                </dl>
+                <div class="fa-result-actions">
+                    @if (CanContinueDetectionInBrowser() && !IsDetectionStale)
+                    {
+                        <PrimaryButton OnClick="StartBrowserDetectionAsync" Disabled="@_browserDetectionInProgress">Continue detection in browser</PrimaryButton>
+                    }
+                    @if (_detectionResult.SuggestedEnvironmentType is { } detectedType && profile.EnvironmentType != detectedType)
+                    {
+                        <SecondaryButton OnClick="ApplyDetectedEnvironmentType">Apply detected type</SecondaryButton>
+                    }
+                </div>
+            </section>
+        }
 
         @{ var typeConflict = GetTypeConflict(profile); }
         @if (typeConflict is not null)
@@ -284,7 +307,7 @@
                                     @if (_detectionResult.DetectedClientFramework.HasValue)
                                     {
                                         <div style="color: var(--color-text-subtle);">Framework</div>
-                                        <div style="font-weight: 500;">@_detectionResult.DetectedClientFramework</div>
+                                        <div style="font-weight: 500;">@DetectionPresentation.FrameworkLabel(_detectionResult.DetectedClientFramework)</div>
                                         <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
                                     }
 
@@ -393,10 +416,10 @@
                             <input type="url" class="form-control" placeholder="https://api.example.com/swagger/v1/swagger.json" @bind="_editProfile.SwaggerUrl" />
                         </div>
 
-                        <div class="fa-threshold-group-title fa-field-full">API Authentication</div>
+                        <div class="fa-threshold-group-title fa-field-full">Configured authentication</div>
                         <p class="fa-section-note fa-field-full" style="margin-top:0">Credentials used by review tools to call REST/GraphQL APIs. Stored in browser local storage only — never sent to the BirkNext backend.</p>
                         <div class="form-field">
-                            <label class="fa-label">Authentication Type</label>
+                            <label class="fa-label">Configured authentication</label>
                             <select class="form-control" @bind="_editProfile.ApiAuth.AuthType">
                                 @foreach (var t in Enum.GetValues<TargetApiAuthType>())
                                 {
@@ -449,7 +472,9 @@
                             </div>
                         </div>
 
-                        <div class="fa-threshold-group-title fa-field-full">Advanced</div>
+                        <details class="fa-advanced fa-field-full">
+                        <summary>Advanced <span>Optional endpoint constraints</span></summary>
+                        <div class="fa-advanced-grid">
                         <div class="form-field fa-field-full">
                             <label class="fa-label">Expected API Gateway</label>
                             <input type="url" class="form-control" placeholder="https://apim.example.com" @bind="_editProfile.ExpectedApiGateway" />
@@ -470,6 +495,8 @@
                                       value="@ListToText(_editProfile.AllowedGraphQlEndpoints)"
                                       @onchange="e => _editProfile.AllowedGraphQlEndpoints = TextToList(e.Value?.ToString())"></textarea>
                         </div>
+                        </div>
+                        </details>
                     </div>
                 }
                 else
@@ -1245,6 +1272,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private string? _detectionError;
     private TargetEnvironmentDetectionResult? _detectionResult;
     private bool? _browserRuntimeInspectionRequired;
+    private string? _originalProfileJson;
+    private string? _lastDetectionTargetUrl;
 
     // Browser detection state (Phase 2)
     private bool _browserDetectionInProgress;
@@ -1293,6 +1322,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         _selectedProfileId = profileId;
         _activeTab         = "general";
         _detectionResult   = null;
+        _lastDetectionTargetUrl = null;
         _detectionError    = null;
     }
 
@@ -1303,6 +1333,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (SelectedProfile is null) return;
         var json     = System.Text.Json.JsonSerializer.Serialize(SelectedProfile);
         _editProfile = System.Text.Json.JsonSerializer.Deserialize<FrontendAnalysisProfile>(json);
+        _originalProfileJson = json;
         _isEditMode  = true;
         _saveError   = null;
     }
@@ -1310,6 +1341,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private void CancelEdit()
     {
         _editProfile = null;
+        _originalProfileJson = null;
         _isEditMode  = false;
         _saveError   = null;
     }
@@ -1405,10 +1437,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private void ClearDetectionState()
     {
-        // Only clear transient UI state (detection result and error message)
-        // Keep LastDetectionSucceeded and LastDetectionFailure so URL staleness can be detected
-        _detectionResult = null;
-        _browserRuntimeInspectionRequired = null;
+        // Preserve the result so the changed URL is explicitly shown as stale.
         _detectionError = null;
     }
 
@@ -1590,11 +1619,13 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
         try
         {
+            _lastDetectionTargetUrl = NormalizeUrl(_editProfile.TargetUrl);
             var result = await DetectionApi.DetectFromUrlAsync(_editProfile.TargetUrl);
 
             if (result is not null)
             {
                 _detectionResult = result;
+                _browserRuntimeInspectionRequired = result.BrowserRuntimeInspectionRequired;
 
                 // IMPORTANT: Detection updates draft only, does NOT save
                 // User must explicitly click Save Environment
@@ -1609,34 +1640,19 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
                 // Always record the URL that was detected (even if detection failed)
                 // This allows us to distinguish between "never run" and "run but failed"
-                _editProfile.LastDetectedUrl = NormalizeUrl(_editProfile.TargetUrl);
-
-                if (result.Success)
-                {
-                    _editProfile.LastDetectionSucceeded = true;
-                    _editProfile.LastDetectionFailure = null;
-                }
-                else
+                if (!result.Success)
                 {
                     _detectionError = result.Message;
-                    _editProfile.LastDetectionSucceeded = false;
-                    _editProfile.LastDetectionFailure = result.Message;
                 }
             }
             else
             {
                 _detectionError = "Detection failed. Please try again.";
-                _editProfile.LastDetectedUrl = NormalizeUrl(_editProfile.TargetUrl);
-                _editProfile.LastDetectionSucceeded = false;
-                _editProfile.LastDetectionFailure = _detectionError;
             }
         }
         catch (Exception)
         {
             _detectionError = "Detection failed. Please try again.";
-            _editProfile.LastDetectedUrl = NormalizeUrl(_editProfile.TargetUrl);
-            _editProfile.LastDetectionSucceeded = false;
-            _editProfile.LastDetectionFailure = _detectionError;
         }
         finally
         {
@@ -1657,6 +1673,20 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         var profile = CurrentProfile;
         if (profile is null)
             return DetectionState.NotChecked;
+
+        if (_isDetecting)
+            return DetectionState.Checking;
+
+        if (_detectionResult is not null)
+            return !UrlsMatch(string.IsNullOrWhiteSpace(_detectionResult.OriginalUrl) ? _lastDetectionTargetUrl : _detectionResult.OriginalUrl, profile.TargetUrl)
+                ? DetectionState.Stale
+                : _detectionResult.State != DetectionState.NotChecked
+                    ? _detectionResult.State
+                    : !_detectionResult.Success ? DetectionState.Failed
+                    : _detectionResult.AuthenticationRequired ? DetectionState.AuthenticationRequired
+                    : _browserRuntimeInspectionRequired == true ? DetectionState.Partial
+                    : _detectionResult.Warnings.Count > 0 ? DetectionState.Partial
+                    : DetectionState.Complete;
 
         // Check for URL staleness
         if (profile.LastDetectedUrl is not null && !UrlsMatch(profile.LastDetectedUrl, profile.TargetUrl))
@@ -1705,11 +1735,13 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         CurrentDetectionState switch
         {
             DetectionState.NotChecked => "Not checked",
+            DetectionState.Checking => "Detecting...",
             DetectionState.Complete => "Detection complete",
             DetectionState.AuthenticationRequired => "Authentication required",
-            DetectionState.Partial => "Partial",
-            DetectionState.Stale => "Stale",
-            DetectionState.Failed => "Failed",
+            DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Needs browser inspection",
+            DetectionState.Partial => "Detection incomplete",
+            DetectionState.Stale => "Needs re-check",
+            DetectionState.Failed => "Detection failed",
             _ => "Unknown"
         };
 
@@ -1725,7 +1757,27 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             _ => "unknown"
         };
 
-    private bool CanActivateSelected => CurrentDetectionState == DetectionState.Complete;
+    private bool CanActivateSelected => _detectionResult?.IsActivationReady == true && CurrentDetectionState == DetectionState.Complete;
+
+    private bool IsDirty => _editProfile is not null && _originalProfileJson is not null &&
+        System.Text.Json.JsonSerializer.Serialize(_editProfile) != _originalProfileJson;
+
+    private string DetectedAuthenticationLabel => _detectionResult is null ||
+        (!_detectionResult.AuthenticationRequired && _detectionResult.DetectedAuthenticationType == FrontendAuthenticationType.None)
+            ? "Not determined"
+            : _detectionResult.DetectedAuthenticationType == FrontendAuthenticationType.None
+                ? "Authentication required (type not determined)"
+                : _detectionResult.DetectedAuthenticationType.ToString();
+
+    private string DetectionStateMessage => CurrentDetectionState switch
+    {
+        DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Server preflight succeeded. Browser inspection is required to finish detection.",
+        DetectionState.AuthenticationRequired => "Authentication is required to finish detection in the browser.",
+        DetectionState.Complete => "Review the detected/proposed settings below.",
+        DetectionState.Failed => _detectionResult?.Message ?? "Detection could not be completed safely.",
+        DetectionState.Stale => "The target URL changed since the last successful detection.",
+        _ => _detectionResult?.Message ?? ""
+    };
 
     /// <summary>
     /// Indicates if the detection result is stale (URL changed since detection).

@@ -203,24 +203,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             result.Warnings.Add($"Environment type suggested from hostname: {result.SuggestedEnvironmentType}");
     }
 
-    private string? SuggestProfileName(string hostname)
-    {
-        // Extract meaningful parts of hostname
-        // Example: m2lbdev.bufetat.no → M2LB DEV
-        var parts = hostname.Split('.');
-        if (parts.Length == 0)
-            return null;
-
-        var mainPart = parts[0];
-        if (mainPart.Length < 2)
-            return null;
-
-        // Insert spaces before capital letters and digits
-        var formatted = Regex.Replace(mainPart, @"([a-z])([A-Z])", "$1 $2", RegexOptions.IgnoreCase);
-        formatted = Regex.Replace(formatted, @"([a-zA-Z])(\d)", "$1 $2", RegexOptions.IgnoreCase);
-
-        return formatted.ToUpperInvariant().Trim();
-    }
+    private string? SuggestProfileName(string hostname) => DetectionPresentation.ProfileName(hostname);
 
     private DetectionConfidence CalculateConfidence(TargetEnvironmentDetectionResult result)
     {

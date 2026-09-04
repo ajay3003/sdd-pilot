@@ -1,5 +1,7 @@
 using BirkNext.Web.Models;
 using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace BirkNext.Web.Services;
 
@@ -20,6 +22,10 @@ public interface ITargetEnvironmentDetectionApiService
 
 public sealed class TargetEnvironmentDetectionApiService : ITargetEnvironmentDetectionApiService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
     private readonly HttpClient _httpClient;
     private readonly ILogger<TargetEnvironmentDetectionApiService> _logger;
 
@@ -51,7 +57,7 @@ public sealed class TargetEnvironmentDetectionApiService : ITargetEnvironmentDet
 
             if (response.IsSuccessStatusCode)
             {
-                var result = await response.Content.ReadFromJsonAsync<TargetEnvironmentDetectionResult>(cancellationToken: cancellationToken);
+                var result = await response.Content.ReadFromJsonAsync<TargetEnvironmentDetectionResult>(JsonOptions, cancellationToken);
                 return result;
             }
 
@@ -97,7 +103,7 @@ public sealed class TargetEnvironmentDetectionApiService : ITargetEnvironmentDet
 
             if (response.IsSuccessStatusCode)
             {
-                var result = await response.Content.ReadFromJsonAsync<TargetDetectionOutcome>(cancellationToken: cancellationToken);
+                var result = await response.Content.ReadFromJsonAsync<TargetDetectionOutcome>(JsonOptions, cancellationToken);
                 return result;
             }
 

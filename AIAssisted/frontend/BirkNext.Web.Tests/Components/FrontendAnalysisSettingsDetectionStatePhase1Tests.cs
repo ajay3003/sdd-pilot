@@ -52,6 +52,8 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
             .ReturnsAsync(new TargetEnvironmentDetectionResult
             {
                 Success = true,
+                State = DetectionState.Complete,
+                IsActivationReady = true,
                 Reachability = TargetReachability.Reachable,
                 AuthenticationRequired = false,
                 Warnings = []
@@ -122,7 +124,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().StartWith("Partial");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection incomplete");
             cut.Find(".fa-detection-value").GetAttribute("class").Should().Contain("fa-detection-partial");
         });
 
@@ -155,7 +157,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
         cut.Find("input[type=url]").Change("https://application-qa-changed.example.test");
 
         // Detection state should be "Stale"
-        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Stale");
+        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Needs re-check");
         cut.Find(".fa-detection-value").GetAttribute("class").Should().Contain("fa-detection-stale");
 
         // Activation should be blocked
@@ -183,7 +185,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Failed");
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection failed");
             cut.Find(".fa-detection-value").GetAttribute("class").Should().Contain("fa-detection-failed");
         });
 
@@ -222,7 +224,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         // Change to different host - should be stale
         cut.Find("input[type=url]").Change("https://application-qa-v2.example.test");
-        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Stale");
+        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Needs re-check");
     }
 
     [Fact]
@@ -313,7 +315,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
     }
 
     [Fact]
-    public void ActivationStateAfterSave_PreservedOnProfileSelection()
+    public void DetectionAlone_DoesNotEnableSaveOrPersistDraftState()
     {
         _detection.Setup(x => x.DetectFromUrlAsync("https://application-qa.example.test", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TargetEnvironmentDetectionResult
@@ -329,16 +331,13 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
         cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete"));
 
-        // Save
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Save Environment").Click();
-        cut.WaitForAssertion(() => cut.Markup.Should().Contain("saved"));
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Save changes").HasAttribute("disabled").Should().BeTrue();
 
         // Select different profile and back
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("Production")).Click();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
 
-        // State should be preserved
-        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete");
+        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Not checked");
     }
 
     [Fact]
