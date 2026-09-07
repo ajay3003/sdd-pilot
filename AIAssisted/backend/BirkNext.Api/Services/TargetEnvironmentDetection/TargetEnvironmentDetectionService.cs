@@ -592,16 +592,16 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
 
         // Interactive continuation is required both for an explicit authentication challenge
         // and for a reachable SPA whose client runtime still needs browser inspection.
-        Console.Error.WriteLine($"[DIAG] DetectWithStrategyAsync preflight: AuthRequired={preflightResponse.AuthenticationRequired} BrowserRuntimeRequired={preflightResponse.BrowserRuntimeInspectionRequired}");
+        _logger.LogInformation($"[DIAG] DetectWithStrategyAsync preflight: AuthRequired={preflightResponse.AuthenticationRequired} BrowserRuntimeRequired={preflightResponse.BrowserRuntimeInspectionRequired}");
         if (preflightResponse.AuthenticationRequired || preflightResponse.BrowserRuntimeInspectionRequired)
         {
             try
             {
-                Console.Error.WriteLine($"[DIAG] DetectWithStrategyAsync calling strategy.ContinueDetectionAsync");
+                _logger.LogInformation($"[DIAG] DetectWithStrategyAsync calling strategy.ContinueDetectionAsync");
                 _logger.LogInformation("Starting {Strategy} for target {Url}", strategy.StrategyName, targetUrl);
                 var continuationResult = await strategy.ContinueDetectionAsync(
                     targetUrl, reviewSessionId, profileId, cancellationToken: cancellationToken);
-                Console.Error.WriteLine($"[DIAG] DetectWithStrategyAsync strategy completed successfully");
+                _logger.LogInformation($"[DIAG] DetectWithStrategyAsync strategy completed successfully");
 
                 // Map continuation result to detection outcome
                 return CreateOutcomeFromContinuation(continuationResult, preflightResponse, targetUrl);
