@@ -204,6 +204,9 @@ public enum FieldValueSource
 /// </summary>
 public sealed class TargetDetectionOutcome
 {
+    [JsonPropertyName("authenticationFailureReason")]
+    public AuthenticationFailureReason? AuthenticationFailureReason { get; set; }
+
     /// <summary>
     /// The underlying detection response containing reachability, auth metadata, etc.
     /// </summary>
@@ -253,4 +256,19 @@ public sealed class TargetDetectionOutcome
     /// </summary>
     [JsonPropertyName("browserRuntimeInspectionRequired")]
     public bool? BrowserRuntimeInspectionRequired { get; set; }
+}
+
+public enum AuthenticationFailureReason
+{
+    None = 0,
+    InvalidCredentials = 1,
+    MfaRequired = 2,
+    ConditionalAccessDenied = 3,
+    AccountDisabled = 4,
+    NavigationTimeout = 5,
+    GenericFailure = 6,
+    BrowserResourceFailure = 7,
+    RuntimeUnavailable = 8,
+    NavigationFailure = 9,
+    UnexpectedOrigin = 10
 }

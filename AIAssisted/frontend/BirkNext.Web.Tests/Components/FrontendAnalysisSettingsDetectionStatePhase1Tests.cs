@@ -102,8 +102,8 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
         activate.HasAttribute("disabled").Should().BeTrue();
 
         // Blocked reason should mention auth
-        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Authentication required");
-        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Continue in browser");
+        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Interactive browser detection is required");
+        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Continue detection in browser");
     }
 
     [Fact]

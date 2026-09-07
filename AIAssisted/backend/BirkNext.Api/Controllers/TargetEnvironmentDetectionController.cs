@@ -110,6 +110,7 @@ public sealed class TargetEnvironmentDetectionController : ControllerBase
                 strategy,
                 cancellationToken);
 
+            _logger.LogInformation("Detection response: state {State}, authentication reason {AuthenticationFailureReason}", outcome.State, outcome.AuthenticationFailureReason);
             return Ok(outcome);
         }
         catch (OperationCanceledException)

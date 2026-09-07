@@ -244,7 +244,20 @@ public sealed class AuthenticatedReviewPhaseA5RealAcceptanceTests
         public async Task<Web.BrowserRuntimeResultDto> ReviewAsync(BrowserRuntimeApiExecutionRequest request, CancellationToken cancellationToken = default)
         {
             await using (var lease = await manager.AcquireAuthenticationPageLeaseAsync(request.AuthenticatedSessionId!, request.ReviewSessionId!, request.ProfileId!, request.TargetUrl, cancellationToken)) { ObservedPage = lease.Page; ObservedContext = lease.Context; }
-            var value = await inner.ReviewAsync(new(request.TargetUrl, ApiRuntime.BrowserRuntimeExecutionMode.AuthenticatedSessionPage, request.ReviewSessionId, request.ProfileId, request.AuthenticatedSessionId), cancellationToken);
+            // Startup events precede attachment in the single-navigation lifecycle.
+            // Exercise live observation with errors emitted throughout the review window.
+            var errorTimer = await ObservedPage!.EvaluateAsync<int>("() => setInterval(() => console.error('deterministic-live-review-error'), 100)");
+            ApiRuntime.BrowserRuntimeResult value;
+            try
+            {
+                value = await inner.ReviewAsync(new(request.TargetUrl, ApiRuntime.BrowserRuntimeExecutionMode.AuthenticatedSessionPage, request.ReviewSessionId, request.ProfileId, request.AuthenticatedSessionId), cancellationToken);
+            }
+            finally
+            {
+                await ObservedPage.EvaluateAsync("timer => clearInterval(timer)", errorTimer);
+            }
+            value.ConsoleErrorCount.Should().BeGreaterThan(0, "live fixture errors must be observed without re-navigation");
+            value.Findings.Should().Contain(x => x.Category == "ConsoleError");
             return new((Web.BrowserRuntimeEngineStatusDto)value.Status, value.EngineName, value.BrowserName, value.BrowserVersion, value.RequestedUrl, value.FinalUrl, value.StartedAt, value.CompletedAt, value.DurationMs,
                 (Web.BrowserStartupStateDto)value.StartupState, value.ConsoleErrorCount, value.PageErrorCount, value.CriticalResourceFailureCount,
                 (value.Findings ?? []).Select(x => new Web.BrowserRuntimeFindingDto(x.Id, x.Title, (Web.BrowserRuntimeFindingSeverityDto)x.Severity, x.Category, x.Description, x.Recommendation, x.Evidence ?? [])).ToList(),

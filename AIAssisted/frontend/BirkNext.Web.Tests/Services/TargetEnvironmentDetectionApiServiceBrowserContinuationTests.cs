@@ -9,6 +9,25 @@ namespace BirkNext.Web.Tests.Services;
 
 public sealed class TargetEnvironmentDetectionApiServiceBrowserContinuationTests
 {
+    [Theory]
+    [InlineData("RuntimeUnavailable", AuthenticationFailureReason.RuntimeUnavailable, "Authenticated browser runtime is disabled or unavailable")]
+    [InlineData("NavigationTimeout", AuthenticationFailureReason.NavigationTimeout, "Navigation timeout during authentication")]
+    [InlineData("5", AuthenticationFailureReason.NavigationTimeout, "Navigation timeout during authentication")]
+    public async Task RealShapedFailureJson_PreservesTypedReason(string wireReason, AuthenticationFailureReason expected, string text)
+    {
+        var token = int.TryParse(wireReason, out _) ? wireReason : JsonSerializer.Serialize(wireReason);
+        var json = $$$"""
+        {"state":"Failed","authenticationFailureReason":{{{token}}},"message":"Authentication failed: {{{text}}}","browserRuntimeInspectionRequired":null,"isActivationReady":false,"detectionResponse":{"reachability":"Reachable","detectedClientFramework":"BlazorWebAssembly","success":false,"message":"Authentication failed: {{{text}}}"}}
+        """;
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        { Content = new StringContent(json, Encoding.UTF8, "application/json") });
+        var result = await CreateService(handler).StartBrowserDetectionAsync("https://m2lbdev.bufetat.no/", "detection-live", "development");
+        Assert.Equal(expected, result!.AuthenticationFailureReason);
+        Assert.Equal(DetectionState.Failed, result.State);
+        Assert.Equal("Authentication failed: " + text, result.Message);
+        Assert.False(result.IsActivationReady);
+    }
+
     [Fact]
     public async Task DetectFromUrlAsync_UsesConfiguredLocalBackendBaseAddress()
     {

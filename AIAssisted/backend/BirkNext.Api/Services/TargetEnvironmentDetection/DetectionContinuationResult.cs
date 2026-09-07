@@ -107,5 +107,14 @@ public enum AuthenticationFailureReason
     /// <summary>
     /// Browser session became unusable (disconnected, page crashed).
     /// </summary>
-    BrowserResourceFailure = 7
+    BrowserResourceFailure = 7,
+
+    /// <summary>The configured authenticated browser runtime is unavailable.</summary>
+    RuntimeUnavailable = 8,
+
+    /// <summary>Navigation failed without evidence that it timed out.</summary>
+    NavigationFailure = 9,
+
+    /// <summary>Authentication reached an origin outside the approved flow.</summary>
+    UnexpectedOrigin = 10
 }

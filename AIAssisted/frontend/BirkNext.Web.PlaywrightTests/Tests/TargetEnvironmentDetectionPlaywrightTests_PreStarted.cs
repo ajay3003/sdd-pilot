@@ -107,7 +107,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
             filledValue.Should().Be(DeterministicAuthUrl, "URL input should accept and retain the filled value");
 
             // Verify the Save and Cancel buttons are visible (indicating edit mode)
-            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save Environment" });
+            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save changes" });
             await saveButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
 
             var cancelButton = page.GetByRole(AriaRole.Button, new() { Name = "Cancel" });
@@ -164,7 +164,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
             urlValue.Should().Be(DeterministicAuthUrl);
 
             // Verify Save/Cancel buttons exist (edit mode confirmed)
-            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save Environment" });
+            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save changes" });
             await saveButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
 
             // Verify no page errors
@@ -204,7 +204,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
             value2.Should().Be("https://example-b.test/", "Form should accept URL changes");
 
             // Verify form is still in edit mode with save button available
-            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save Environment" });
+            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save changes" });
             await saveButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
         }
         finally
@@ -293,7 +293,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
             isDetectVisible.Should().BeTrue("Detect button should be accessible via keyboard navigation");
 
             // Verify form is in edit mode (save button available)
-            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save Environment" });
+            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save changes" });
             await saveButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
         }
         finally
@@ -331,7 +331,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
             await page.WaitForTimeoutAsync(3000);
 
             // Verify form is still in edit mode
-            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save Environment" });
+            var saveButton = page.GetByRole(AriaRole.Button, new() { Name = "Save changes" });
             await saveButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
 
             // Verify Cancel button is present (still in edit mode, not saved)

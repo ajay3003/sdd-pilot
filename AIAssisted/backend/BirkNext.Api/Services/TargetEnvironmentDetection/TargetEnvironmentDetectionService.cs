@@ -642,6 +642,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
         // Create a modified response based on continuation result
         var outcome = new TargetDetectionOutcome
         {
+            AuthenticationFailureReason = continuationResult.AuthenticationFailureReason,
             DetectionResponse = preflightResponse,
             DetectedUrl = targetUrl,
             DetectedAt = DateTime.UtcNow,
@@ -675,17 +676,21 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
         else if (continuationResult.UserCancelled)
         {
             // User cancelled - not a failure, but incomplete
+            preflightResponse.Success = false;
             outcome.State = TargetDetectionState.Partial;
             outcome.IsActivationReady = false;
             outcome.Message = "User cancelled authentication flow";
+            preflightResponse.Message = outcome.Message;
             outcome.StrategySuggestion = "browser-auth-required";
         }
         else if (continuationResult.SessionExpired)
         {
             // Session expired - retry needed
+            preflightResponse.Success = false;
             outcome.State = TargetDetectionState.Failed;
             outcome.IsActivationReady = false;
             outcome.Message = "Authentication session expired";
+            preflightResponse.Message = outcome.Message;
             outcome.StrategySuggestion = "retry-detection";
         }
         else if (continuationResult.UnexpectedOriginEncountered)
@@ -695,6 +700,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             outcome.State = TargetDetectionState.Failed;
             outcome.IsActivationReady = false;
             outcome.Message = "Authentication flow encountered unexpected origin - possible attack or misconfiguration";
+            preflightResponse.Message = outcome.Message;
             outcome.StrategySuggestion = "retry-detection";
         }
         else if (continuationResult.AwaitingUserContinuation)
@@ -703,6 +709,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             outcome.State = TargetDetectionState.Partial;
             outcome.IsActivationReady = false;
             outcome.Message = "Awaiting user to continue authentication (e.g., MCAS interstitial)";
+            preflightResponse.Message = outcome.Message;
             outcome.StrategySuggestion = "browser-automation-required";
         }
         else if (continuationResult.AuthenticationFailureReason.HasValue)
@@ -712,6 +719,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             outcome.State = TargetDetectionState.Failed;
             outcome.IsActivationReady = false;
             outcome.Message = $"Authentication failed: {FormatFailureReason(continuationResult.AuthenticationFailureReason.Value)}";
+            preflightResponse.Message = outcome.Message;
             outcome.StrategySuggestion = "retry-detection";
         }
         else
@@ -721,9 +729,11 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             outcome.State = TargetDetectionState.Failed;
             outcome.IsActivationReady = false;
             outcome.Message = "Authentication strategy completed with unknown state";
+            preflightResponse.Message = outcome.Message;
             outcome.StrategySuggestion = "retry-detection";
         }
 
+        _logger.LogInformation("Detection outcome: state {State}, authentication reason {AuthenticationFailureReason}", outcome.State, outcome.AuthenticationFailureReason);
         return outcome;
     }
 
@@ -737,6 +747,9 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             AuthenticationFailureReason.AccountDisabled => "Account is disabled or locked",
             AuthenticationFailureReason.NavigationTimeout => "Navigation timeout during authentication",
             AuthenticationFailureReason.BrowserResourceFailure => "Browser resource became unavailable",
+            AuthenticationFailureReason.RuntimeUnavailable => "Authenticated browser runtime is disabled or unavailable",
+            AuthenticationFailureReason.NavigationFailure => "Navigation failed during authentication",
+            AuthenticationFailureReason.UnexpectedOrigin => "Authentication reached an unexpected origin",
             _ => "Unknown authentication failure"
         };
     }

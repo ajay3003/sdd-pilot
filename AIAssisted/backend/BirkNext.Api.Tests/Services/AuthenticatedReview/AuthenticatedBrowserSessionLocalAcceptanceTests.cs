@@ -20,7 +20,7 @@ public sealed class AuthenticatedBrowserSessionLocalAcceptanceTests
         await using var fixture = await LocalFixture.StartAsync();
         await using var manager = new AuthenticatedBrowserSessionManager(
             new PlaywrightAuthenticatedBrowserHost(),
-            Options.Create(new AuthenticatedReviewOptions { Enabled = true, Runtime = "LocalWorkstation" }),
+            Options.Create(new AuthenticatedReviewOptions { Enabled = true, Runtime = "LocalWorkstation", AllowSyntheticHttpOrigins = true }),
             TimeProvider.System,
             NullLogger<AuthenticatedBrowserSessionManager>.Instance);
 
@@ -28,7 +28,11 @@ public sealed class AuthenticatedBrowserSessionLocalAcceptanceTests
         session.Status.Should().Be(AuthenticatedBrowserSessionStatus.BrowserReady);
 
         await using var lease = await manager.AcquireAuthenticationPageLeaseAsync(session.SessionId, "real-browser-review", "fixture-profile", fixture.Url);
+        lease.Page.Url.Should().Be("about:blank");
+        fixture.TargetRequestCount.Should().Be(0, "launch must create resources without navigating");
+        await manager.BeginAuthenticationAsync(new(session.SessionId, "real-browser-review", "fixture-profile", fixture.Url));
         (await lease.Page.TitleAsync()).Should().Be("Authenticated review fixture");
+        fixture.TargetRequestCount.Should().Be(1, "authentication initiation owns the single target navigation");
         lease.Context.Pages.Should().ContainSingle().Which.Should().BeSameAs(lease.Page);
 
         (await manager.CancelAsync(session.SessionId, "real-browser-review", "fixture-profile")).Should().BeTrue();
@@ -42,6 +46,8 @@ public sealed class AuthenticatedBrowserSessionLocalAcceptanceTests
         private readonly TcpListener _listener;
         private readonly CancellationTokenSource _stop = new();
         private readonly Task _server;
+        private int _targetRequestCount;
+        public int TargetRequestCount => Volatile.Read(ref _targetRequestCount);
         private LocalFixture(TcpListener listener)
         {
             _listener = listener;
@@ -63,6 +69,8 @@ public sealed class AuthenticatedBrowserSessionLocalAcceptanceTests
                     using var client = await _listener.AcceptTcpClientAsync(_stop.Token);
                     await using var stream = client.GetStream();
                     var buffer = new byte[4096]; await stream.ReadAsync(buffer, _stop.Token);
+                    if (Encoding.UTF8.GetString(buffer).StartsWith("GET /protected-app ", StringComparison.Ordinal))
+                        Interlocked.Increment(ref _targetRequestCount);
                     var body = "<!doctype html><title>Authenticated review fixture</title><main>Local fixture</main>";
                     var bytes = Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {Encoding.UTF8.GetByteCount(body)}\r\nConnection: close\r\n\r\n{body}");
                     await stream.WriteAsync(bytes, _stop.Token);

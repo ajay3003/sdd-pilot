@@ -331,6 +331,10 @@ builder.Services
 
 var app = builder.Build();
 
+var authenticatedReview = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticatedReviewOptions>>().Value;
+app.Logger.LogInformation("Authenticated review configuration: Enabled={Enabled}, Runtime={Runtime}",
+    authenticatedReview.Enabled, authenticatedReview.Runtime);
+
 try
 {
     using var scope = app.Services.CreateScope();

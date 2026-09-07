@@ -128,11 +128,18 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
             await ObserveNavigationAsync(entry, entry.Resources.Page.Url);
             return entry.Descriptor;
         }
-        catch (Microsoft.Playwright.PlaywrightException ex) when (!entry.Cancellation.IsCancellationRequested)
+        catch (Exception ex) when ((ex is Microsoft.Playwright.PlaywrightException or TimeoutException) && !entry.Cancellation.IsCancellationRequested)
         {
+            var isClosed = entry.Resources.Page?.IsClosed ?? false;
+            var browserConnected = entry.Resources.Browser?.IsConnected ?? false;
+
             entry.Status = AuthenticatedBrowserSessionStatus.AuthenticationFailed;
-            entry.FailureCategory = "authentication_navigation_failed";
-            _logger.LogWarning("Authenticated browser session {SessionId} navigation failed: {FailureCategory}", entry.SessionId, entry.FailureCategory);
+            entry.FailureCategory = ex is TimeoutException ? "navigation_timeout" : "authentication_navigation_failed";
+
+            _logger.LogWarning(
+                "Authentication terminal failure: {Status} {FailureCategory} {ExceptionType}; page closed={PageClosed}, browser connected={BrowserConnected}",
+                entry.Status, entry.FailureCategory, ex.GetType().Name, isClosed, browserConnected);
+
             throw new AuthenticatedNavigationException("Authentication navigation failed.", ex);
         }
     }

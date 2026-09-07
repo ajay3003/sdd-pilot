@@ -15,11 +15,8 @@ internal sealed class PlaywrightAuthenticatedBrowserHost : IAuthenticatedBrowser
             browser = await playwright.Chromium.LaunchAsync(CreateLaunchOptions());
             context = await browser.NewContextAsync();
             var page = await context.NewPageAsync();
-            await page.GotoAsync(target.AbsoluteUri, new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.DOMContentLoaded,
-                Timeout = 30_000
-            });
+            // Do NOT navigate here; navigation will happen in BeginAuthenticationAsync.
+            // This avoids double-GotoAsync conflicts when Blazor WASM app is starting up.
             return new Resources(playwright, browser, context, page);
         }
         catch

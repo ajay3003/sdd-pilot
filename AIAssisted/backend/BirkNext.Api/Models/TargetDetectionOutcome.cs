@@ -8,6 +8,10 @@ namespace BirkNext.Api.Models;
 /// </summary>
 public sealed class TargetDetectionOutcome
 {
+    [JsonPropertyName("authenticationFailureReason")]
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public BirkNext.Api.Services.TargetEnvironmentDetection.AuthenticationFailureReason? AuthenticationFailureReason { get; set; }
+
     /// <summary>
     /// The underlying detection response containing reachability, auth metadata, etc.
     /// </summary>

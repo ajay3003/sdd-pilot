@@ -104,6 +104,7 @@ public sealed class TargetEnvironmentDetectionApiService : ITargetEnvironmentDet
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<TargetDetectionOutcome>(JsonOptions, cancellationToken);
+                _logger.LogInformation("Detection DTO: state {State}, authentication reason {AuthenticationFailureReason}", result?.State, result?.AuthenticationFailureReason);
                 return result;
             }
 

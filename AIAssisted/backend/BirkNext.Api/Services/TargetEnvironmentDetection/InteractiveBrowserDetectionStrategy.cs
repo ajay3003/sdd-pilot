@@ -85,6 +85,18 @@ internal sealed class InteractiveBrowserDetectionStrategy : ITargetDetectionAuth
                     Duration = stopwatch.Elapsed
                 };
             }
+            catch (AuthenticatedNavigationException)
+            {
+                var failed = await _sessionManager.GetStatusAsync(sessionId, reviewSessionId, profileId, cancellationToken);
+                var reason = MapFailureCategory(failed?.FailureCategory);
+                _logger.LogInformation("Authentication navigation failure: status {Status}, mapped reason {Reason}", failed?.Status, reason);
+                await _sessionManager.CancelAsync(sessionId, reviewSessionId, profileId, CancellationToken.None);
+                return new DetectionContinuationResult
+                {
+                    AuthenticationFailureReason = reason,
+                    Duration = stopwatch.Elapsed
+                };
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to begin authentication");
@@ -110,6 +122,16 @@ internal sealed class InteractiveBrowserDetectionStrategy : ITargetDetectionAuth
             }
 
             return result;
+        }
+        catch (AuthenticatedReviewUnavailableException)
+        {
+            _logger.LogWarning("Authentication runtime unavailable before session creation; mapped reason {Reason}", AuthenticationFailureReason.RuntimeUnavailable);
+            return new DetectionContinuationResult
+            {
+                AuthenticationSucceeded = false,
+                AuthenticationFailureReason = AuthenticationFailureReason.RuntimeUnavailable,
+                Duration = stopwatch.Elapsed
+            };
         }
         catch (OperationCanceledException)
         {
@@ -270,21 +292,24 @@ internal sealed class InteractiveBrowserDetectionStrategy : ITargetDetectionAuth
         };
     }
 
-    private AuthenticationFailureReason MapFailureCategory(string? failureCategory)
+    internal AuthenticationFailureReason MapFailureCategory(string? failureCategory)
     {
         if (string.IsNullOrEmpty(failureCategory))
             return AuthenticationFailureReason.GenericFailure;
 
-        return failureCategory.ToLowerInvariant() switch
+        var reason = failureCategory.ToLowerInvariant() switch
         {
             "invalid_credentials" => AuthenticationFailureReason.InvalidCredentials,
             "mfa_required" => AuthenticationFailureReason.MfaRequired,
             "conditional_access_denied" => AuthenticationFailureReason.ConditionalAccessDenied,
             "account_disabled" => AuthenticationFailureReason.AccountDisabled,
             "navigation_timeout" => AuthenticationFailureReason.NavigationTimeout,
-            "browser_resource_failure" or "browser_disconnected" or "page_closed" or "page_crashed" =>
+            "browser_resource_failure" or "browser_disconnected" or "page_closed" or "page_crashed" or "browser_launch_failed" or "resources_null" =>
                 AuthenticationFailureReason.BrowserResourceFailure,
+            "authentication_navigation_failed" => AuthenticationFailureReason.NavigationFailure,
+            "unexpected_origin" => AuthenticationFailureReason.UnexpectedOrigin,
             _ => AuthenticationFailureReason.GenericFailure
         };
+        return reason;
     }
 }

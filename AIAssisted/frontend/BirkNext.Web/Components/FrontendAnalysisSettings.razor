@@ -147,11 +147,12 @@
                 <div class="fa-browser-detection-waiting" role="status" aria-live="polite">
                     <div class="fa-browser-waiting-header">
                         <div class="fa-browser-spinner"></div>
-                        <strong>Waiting for sign-in...</strong>
+                        <strong>Waiting for sign-in in BirkNext browser...</strong>
                     </div>
                     <div class="fa-browser-waiting-messages">
-                        <p class="fa-browser-message">Complete authentication in the browser window.</p>
-                        <p class="fa-browser-message">BirkNext will continue when the target application is reached.</p>
+                        <p class="fa-browser-message">Complete authentication (account selection, password, MFA, MCAS) in the browser opened by BirkNext.</p>
+                        <p class="fa-browser-message">BirkNext will observe your authentication flow and continue when the target application is reached.</p>
+                        <p class="fa-browser-message"><small>Do not close the browser window. Use the BirkNext-opened browser, not another browser or window.</small></p>
                         @if (!string.IsNullOrWhiteSpace(_browserDetectionMessage))
                         {
                             <p class="fa-browser-message fa-browser-message-custom">@_browserDetectionMessage</p>
@@ -193,7 +194,10 @@
                 <div class="fa-result-actions">
                     @if (CanContinueDetectionInBrowser() && !IsDetectionStale)
                     {
-                        <PrimaryButton OnClick="StartBrowserDetectionAsync" Disabled="@_browserDetectionInProgress">Continue detection in browser</PrimaryButton>
+                        <div>
+                            <PrimaryButton OnClick="StartBrowserDetectionAsync" Disabled="@_browserDetectionInProgress">Continue detection in browser</PrimaryButton>
+                            <p><small>BirkNext will open a browser for interactive authentication. Complete sign-in in that browser window.</small></p>
+                        </div>
                     }
                     @if (_detectionResult.SuggestedEnvironmentType is { } detectedType && profile.EnvironmentType != detectedType)
                     {
@@ -1274,6 +1278,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private bool? _browserRuntimeInspectionRequired;
     private string? _originalProfileJson;
     private string? _lastDetectionTargetUrl;
+    private AuthenticationFailureReason? _authenticationFailureReason;
 
     // Browser detection state (Phase 2)
     private bool _browserDetectionInProgress;
@@ -1491,6 +1496,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         _currentBrowserDetectionAttemptId = attemptId;
 
         _browserDetectionInProgress = true;
+        _authenticationFailureReason = null;
         _browserDetectionMessage = null;
         _detectionError = null;
         StateHasChanged();
@@ -1517,6 +1523,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             {
                 // Update detection state based on backend result
                 _detectionResult = result.DetectionResponse;
+                _authenticationFailureReason = result.AuthenticationFailureReason;
                 _browserRuntimeInspectionRequired = result.BrowserRuntimeInspectionRequired;
 
                 // Store detection state in profile
@@ -1531,8 +1538,14 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 // Show appropriate message based on final state
                 if (result.State == DetectionState.Complete)
                 {
-                    _detectionError = "✓ Target environment detection complete!";
+                    _detectionError = "✓ Interactive detection complete!";
                     await Task.Delay(2000);
+                    _detectionError = null;
+                }
+                else if (result.State == DetectionState.Partial && result.BrowserRuntimeInspectionRequired == true)
+                {
+                    _detectionError = $"⚠ Additional confirmation required in browser. {result.Message}";
+                    await Task.Delay(3000);
                     _detectionError = null;
                 }
                 else if (result.State == DetectionState.Partial)
@@ -1543,7 +1556,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 }
                 else
                 {
-                    _detectionError = $"✗ Browser detection did not complete: {result.State}";
+                    // Use typed message from backend for all failures
+                    _detectionError = $"✗ {(result.Message ?? "Interactive detection could not be completed. Try again.")}";
                     // Keep error visible longer for failures
                 }
 
@@ -1789,8 +1803,9 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         CurrentDetectionState switch
         {
             DetectionState.NotChecked => "Run Detect settings before activating this environment.",
-            DetectionState.AuthenticationRequired => "Authentication required. (Continue in browser feature coming soon.)",
-            DetectionState.Partial => "Partial detection. (Continue in browser feature coming soon.)",
+            DetectionState.AuthenticationRequired => "Interactive browser detection is required to complete authentication. Click 'Continue detection in browser' above.",
+            DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Complete the authentication confirmation in the browser and try again.",
+            DetectionState.Partial => "Partial detection. Run interactive browser detection again to complete authentication.",
             DetectionState.Stale => "Frontend URL changed. Run Detect settings again before activating.",
             DetectionState.Failed => "Detection failed. Run Detect settings successfully before activating.",
             _ => "Unable to activate. Run Detect settings first."

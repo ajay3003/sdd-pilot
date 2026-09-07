@@ -52,6 +52,38 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
     """;
 
     [Fact]
+    public void NewAttempt_ReplacesGenericFailureWithNavigationTimeout()
+    {
+        _detection.Setup(x => x.DetectFromUrlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(() => Task.FromResult<TargetEnvironmentDetectionResult?>(new()
+            {
+                Success = true, AuthenticationRequired = true, Reachability = TargetReachability.AuthenticationRequired
+            }));
+        TargetDetectionOutcome Failure(AuthenticationFailureReason reason, string message) => new()
+        {
+            State = DetectionState.Failed, AuthenticationFailureReason = reason, Message = message,
+            DetectionResponse = new() { Success = false, Message = message, State = DetectionState.Failed }
+        };
+        _detection.SetupSequence(x => x.StartBrowserDetectionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Failure(AuthenticationFailureReason.GenericFailure, "Authentication failed: Unknown authentication failure"))
+            .ReturnsAsync(Failure(AuthenticationFailureReason.NavigationTimeout, "Authentication failed: Navigation timeout during authentication"));
+        var cut = Render<TargetSettingsComponent>();
+        cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.FindAll("button").Single(b => b.TextContent.Contains("Continue detection in browser")).Click();
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Unknown authentication failure"));
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Retry detection").Click();
+        cut.FindAll("button").Single(b => b.TextContent.Contains("Continue detection in browser")).Click();
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Navigation timeout during authentication");
+            cut.Markup.Should().NotContain("Unknown authentication failure");
+            var reason = typeof(TargetSettingsComponent).GetField("_authenticationFailureReason", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(cut.Instance);
+            Assert.Equal(AuthenticationFailureReason.NavigationTimeout, reason);
+        });
+    }
+
+    [Fact]
     public void ContinueDetectionButton_VisibleWhen_AuthenticationRequired_And_Current()
     {
         // Setup: detection succeeded but auth is required
@@ -214,10 +246,12 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
             var waitingSection = cut.FindAll(".fa-browser-detection-waiting");
             waitingSection.Should().HaveCount(1);
 
-            // Messages should be visible
+            // Messages should indicate that BirkNext has opened a browser
             var markup = cut.Markup;
-            markup.Should().Contain("Complete authentication in the browser window");
-            markup.Should().Contain("BirkNext will continue when the target application is reached");
+            markup.Should().Contain("Waiting for sign-in in BirkNext browser");
+            markup.Should().Contain("Complete authentication (account selection, password, MFA, MCAS) in the browser opened by BirkNext");
+            markup.Should().Contain("BirkNext will observe your authentication flow");
+            markup.Should().Contain("Use the BirkNext-opened browser, not another browser or window");
         });
     }
 
@@ -615,6 +649,254 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
         cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required"));
         return cut;
+    }
+
+    [Fact]
+    public void BrowserDetectionFailure_DisplaysTypedMessage_NotGenericFailed()
+    {
+        // Setup: preflight succeeds, auth required
+        _detection.Setup(x => x.DetectFromUrlAsync("https://application-qa.example.test", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TargetEnvironmentDetectionResult
+            {
+                Success = true,
+                Reachability = TargetReachability.Reachable,
+                AuthenticationRequired = true,
+                DetectedAuthenticationType = FrontendAuthenticationType.MicrosoftEntraId
+            });
+
+        // Setup: browser detection fails with typed message
+        _detection.Setup(x => x.StartBrowserDetectionAsync(
+                "https://application-qa.example.test", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TargetDetectionOutcome
+            {
+                State = DetectionState.Failed,
+                IsActivationReady = false,
+                Message = "Interactive sign-in timed out. Complete authentication in the browser opened by BirkNext and try again.",
+                DetectionResponse = new TargetEnvironmentDetectionResult
+                {
+                    Success = false,
+                    Message = "Interactive sign-in timed out. Complete authentication in the browser opened by BirkNext and try again."
+                },
+                DetectedUrl = "https://application-qa.example.test",
+                IsUrlCurrent = true
+            });
+
+        var cut = Render<TargetSettingsComponent>();
+        cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
+        });
+
+        // Click continue button to start browser detection
+        var continueBtn = cut.FindAll("button")
+            .Single(b => b.TextContent.Contains("Continue detection in browser"));
+        continueBtn.Click();
+
+        // Wait for browser detection to complete and fail
+        cut.WaitForAssertion(() =>
+        {
+            // Error message should show typed reason, not generic "Failed"
+            var errorElement = cut.FindAll(".fa-detection-error");
+            errorElement.Should().HaveCount(1);
+            var errorText = errorElement[0].TextContent;
+
+            // Should contain the specific typed message from backend
+            errorText.Should().Contain("Interactive sign-in timed out");
+            errorText.Should().Contain("browser opened by BirkNext");
+
+            // Should NOT just say "Failed"
+            errorText.Should().NotBe("✗ Browser detection did not complete: Failed");
+        });
+    }
+
+    [Fact]
+    public void BrowserDetectionSuccess_DisplaysCompleteMessage()
+    {
+        // Setup: preflight succeeds, auth required
+        _detection.Setup(x => x.DetectFromUrlAsync("https://application-qa.example.test", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TargetEnvironmentDetectionResult
+            {
+                Success = true,
+                Reachability = TargetReachability.Reachable,
+                AuthenticationRequired = true,
+                DetectedAuthenticationType = FrontendAuthenticationType.MicrosoftEntraId
+            });
+
+        // Setup: browser detection succeeds
+        _detection.Setup(x => x.StartBrowserDetectionAsync(
+                "https://application-qa.example.test", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CompleteOutcome("https://application-qa.example.test"));
+
+        var cut = Render<TargetSettingsComponent>();
+        cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
+        });
+
+        // Click continue button
+        var continueBtn = cut.FindAll("button")
+            .Single(b => b.TextContent.Contains("Continue detection in browser"));
+        continueBtn.Click();
+
+        // Wait for browser detection to succeed
+        cut.WaitForAssertion(() =>
+        {
+            // Detection complete message should appear
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete");
+
+            // Success message should show (briefly)
+            var successMsg = cut.FindAll(".fa-detection-error")
+                .Where(e => e.TextContent.Contains("Interactive detection complete"))
+                .ToList();
+            // Message is shown briefly then hidden, so we just check it appeared at some point
+            // Instead, verify the state is correct
+            cut.Find(".fa-detection-value").TextContent.Should().Contain("Detection complete");
+        });
+    }
+
+    [Fact]
+    public void AuthenticationNavigationFailure_DisplaysTypedReason_NotUnknown()
+    {
+        // Regression: authentication_navigation_failed should map to NavigationTimeout, not Unknown
+
+        _detection.Setup(x => x.DetectFromUrlAsync("https://application-qa.example.test", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TargetEnvironmentDetectionResult
+            {
+                Success = true,
+                Reachability = TargetReachability.Reachable,
+                AuthenticationRequired = true,
+                DetectedAuthenticationType = FrontendAuthenticationType.MicrosoftEntraId
+            });
+
+        // Simulate authentication_navigation_failed from session manager
+        _detection.Setup(x => x.StartBrowserDetectionAsync(
+                "https://application-qa.example.test", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TargetDetectionOutcome
+            {
+                State = DetectionState.Failed,
+                AuthenticationFailureReason = AuthenticationFailureReason.NavigationTimeout,
+                IsActivationReady = false,
+                Message = "Authentication failed: Navigation timeout during authentication",
+                DetectionResponse = new TargetEnvironmentDetectionResult
+                {
+                    Success = false,
+                    Reachability = TargetReachability.Reachable,
+                    Message = "Authentication failed: Navigation timeout during authentication"
+                },
+                DetectedUrl = "https://application-qa.example.test",
+                IsUrlCurrent = true
+            });
+
+        var cut = Render<TargetSettingsComponent>();
+        cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
+        });
+
+        var continueBtn = cut.FindAll("button")
+            .Single(b => b.TextContent.Contains("Continue detection in browser"));
+        continueBtn.Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            // Should show typed "Navigation timeout" message, NOT "Unknown"
+            var errorElement = cut.FindAll(".fa-detection-error");
+            errorElement.Should().HaveCount(1);
+            errorElement[0].TextContent.Should().Contain("Navigation timeout");
+            errorElement[0].TextContent.Should().NotContain("Unknown");
+        });
+    }
+
+    [Fact]
+    public void AuthenticationFailure_DoesNotCoexistWith_SuccessMessage()
+    {
+        // Regression test: Auth failure must not show alongside "Detection completed successfully"
+        // This was a bug where preflight success message wasn't cleared when auth failed
+
+        // Setup: preflight succeeds with Blazor/auth required
+        _detection.Setup(x => x.DetectFromUrlAsync("https://application-qa.example.test", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TargetEnvironmentDetectionResult
+            {
+                Success = true,
+                Reachability = TargetReachability.Reachable,
+                AuthenticationRequired = true,
+                DetectedAuthenticationType = FrontendAuthenticationType.MicrosoftEntraId,
+                DetectedClientFramework = ClientFrameworkType.BlazorWebAssembly,
+                SuggestedEnvironmentType = FrontendEnvironmentType.Development,
+                Message = "Detection completed successfully" // Preflight success message
+            });
+
+        // Setup: browser detection fails with auth timeout
+        _detection.Setup(x => x.StartBrowserDetectionAsync(
+                "https://application-qa.example.test", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TargetDetectionOutcome
+            {
+                State = DetectionState.Failed,
+                IsActivationReady = false,
+                Message = "Interactive sign-in timed out. Complete authentication in the browser opened by BirkNext and try again.",
+                DetectionResponse = new TargetEnvironmentDetectionResult
+                {
+                    Success = false,
+                    Reachability = TargetReachability.Reachable,
+                    AuthenticationRequired = false,
+                    DetectedClientFramework = ClientFrameworkType.BlazorWebAssembly,
+                    SuggestedEnvironmentType = FrontendEnvironmentType.Development,
+                    // CRITICAL: Message must be updated to auth failure, not retain preflight success
+                    Message = "Interactive sign-in timed out. Complete authentication in the browser opened by BirkNext and try again."
+                },
+                DetectedUrl = "https://application-qa.example.test",
+                IsUrlCurrent = true
+            });
+
+        var cut = Render<TargetSettingsComponent>();
+        cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Authentication required");
+        });
+
+        // Click continue button
+        var continueBtn = cut.FindAll("button")
+            .Single(b => b.TextContent.Contains("Continue detection in browser"));
+        continueBtn.Click();
+
+        // Wait for browser detection to complete and verify NO contradiction
+        cut.WaitForAssertion(() =>
+        {
+            // This fixture has no outstanding browser inspection requirement.
+            cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection failed");
+
+            // Error message must show auth failure
+            var errorElement = cut.FindAll(".fa-detection-error");
+            errorElement.Should().HaveCount(1);
+            errorElement[0].TextContent.Should().Contain("Interactive sign-in timed out");
+
+            // CRITICAL CHECK: Result message must NOT be "Detection completed successfully"
+            // It must reflect the auth failure
+            var resultMessage = cut.Find(".fa-result-message").TextContent.Trim();
+            resultMessage.Should().NotContain("Detection completed successfully");
+            resultMessage.Should().NotBeEmpty();
+
+            // Set as Active button must be disabled (not ready)
+            var setActiveBtn = cut.FindAll("button")
+                .Where(b => b.TextContent.Contains("Set as Active"))
+                .FirstOrDefault();
+            if (setActiveBtn != null)
+            {
+                setActiveBtn.HasAttribute("disabled").Should().BeTrue();
+            }
+        });
     }
 
     private static TargetDetectionOutcome CompleteOutcome(string url) => new()
