@@ -32,6 +32,7 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
 
     public async Task<AuthenticatedBrowserSessionDescriptor> StartAsync(AuthenticatedBrowserSessionRequest request, CancellationToken cancellationToken = default)
     {
+        Console.Error.WriteLine($"[DIAG] StartAsync ENTERED for {request.TargetUrl}");
         EnsureSupported();
         ValidateBinding(request);
         var target = NormalizeTarget(request.TargetUrl);
@@ -39,6 +40,7 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
 
         if (_reviewSessions.TryGetValue(reviewKey, out var existingId) && _sessions.TryGetValue(existingId, out var existing))
         {
+            Console.Error.WriteLine($"[DIAG] StartAsync returning existing session");
             if (!string.Equals(existing.TargetOrigin, target.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase))
                 throw new AuthenticatedSessionConflictException("The review already owns a session for another target origin.");
             return existing.Descriptor;
@@ -54,21 +56,26 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
             throw new AuthenticatedSessionConflictException("A session is already starting for this review.");
         }
 
+        Console.Error.WriteLine($"[DIAG] StartAsync launching browser for {id}");
         _logger.LogInformation("Authenticated browser session {SessionId} starting for profile {ProfileId} origin {TargetOrigin}", id, request.ProfileId, entry.TargetOrigin);
         try
         {
             using var launchCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, entry.Cancellation.Token);
+            Console.Error.WriteLine($"[DIAG] StartAsync calling _browserHost.LaunchAsync");
             entry.Resources = await _browserHost.LaunchAsync(target, launchCancellation.Token);
+            Console.Error.WriteLine($"[DIAG] StartAsync _browserHost.LaunchAsync completed");
             entry.Resources.BrowserDisconnected += (_, _) => _ = MarkResourceFailedAsync(entry, "browser_disconnected");
             entry.Resources.Page.Close += (_, _) => _ = MarkResourceFailedAsync(entry, "page_closed");
             entry.Resources.Page.Crash += (_, _) => _ = MarkResourceFailedAsync(entry, "page_crashed");
             entry.Status = AuthenticatedBrowserSessionStatus.BrowserReady;
             entry.Touch(_time.GetUtcNow());
+            Console.Error.WriteLine($"[DIAG] StartAsync returning BrowserReady status");
             _logger.LogInformation("Authenticated browser session {SessionId} browser ready", id);
             return entry.Descriptor;
         }
         catch (Exception ex)
         {
+            Console.Error.WriteLine($"[DIAG] StartAsync EXCEPTION: {ex.GetType().Name}: {ex.Message}");
             entry.Status = AuthenticatedBrowserSessionStatus.Failed;
             entry.FailureCategory = "browser_launch_failed";
             await RemoveAndDisposeAsync(entry, "launch_failed");
@@ -97,6 +104,7 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
 
     public async Task<AuthenticatedBrowserSessionDescriptor> BeginAuthenticationAsync(BeginAuthenticationRequest request, CancellationToken cancellationToken = default)
     {
+        Console.Error.WriteLine($"[DIAG] BeginAuthenticationAsync ENTERED sessionId={request.SessionId}");
         EnsureSupported();
         var entry = GetOwnedEntry(request.SessionId, request.ReviewSessionId, request.ProfileId);
         if (IsExpired(entry)) { await ExpireAsync(entry); throw new AuthenticatedSessionExpiredException(); }
@@ -114,18 +122,23 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
         entry.SyntheticMcasOrigin = syntheticMcas;
         entry.Status = AuthenticatedBrowserSessionStatus.AuthenticationRequired;
         entry.ApplicationValidationCurrent = false;
+        Console.Error.WriteLine("[DIAG] BeginAuthenticationAsync attaching observer");
         AttachNavigationObserver(entry);
         entry.Status = AuthenticatedBrowserSessionStatus.AuthenticationInProgress;
         entry.Touch(_time.GetUtcNow());
 
+        Console.Error.WriteLine($"[DIAG] BeginAuthenticationAsync about to call GotoAsync target={entry.TargetUrl.AbsoluteUri}");
         try
         {
+            Console.Error.WriteLine($"[DIAG] BeginAuthenticationAsync GotoAsync STARTING");
             await entry.Resources!.Page.GotoAsync(entry.TargetUrl.AbsoluteUri, new Microsoft.Playwright.PageGotoOptions
             {
                 WaitUntil = Microsoft.Playwright.WaitUntilState.DOMContentLoaded,
                 Timeout = 30_000
             });
+            Console.Error.WriteLine($"[DIAG] BeginAuthenticationAsync GotoAsync COMPLETED page.Url={entry.Resources.Page.Url}");
             await ObserveNavigationAsync(entry, entry.Resources.Page.Url);
+            Console.Error.WriteLine("[DIAG] BeginAuthenticationAsync returning descriptor");
             return entry.Descriptor;
         }
         catch (Exception ex) when ((ex is Microsoft.Playwright.PlaywrightException or TimeoutException) && !entry.Cancellation.IsCancellationRequested)
@@ -135,6 +148,8 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
 
             entry.Status = AuthenticatedBrowserSessionStatus.AuthenticationFailed;
             entry.FailureCategory = ex is TimeoutException ? "navigation_timeout" : "authentication_navigation_failed";
+
+            Console.Error.WriteLine($"[DIAG] BeginAuthenticationAsync GotoAsync EXCEPTION {ex.GetType().Name} pageClosed={isClosed} browserConnected={browserConnected}");
 
             _logger.LogWarning(
                 "Authentication terminal failure: {Status} {FailureCategory} {ExceptionType}; page closed={PageClosed}, browser connected={BrowserConnected}",

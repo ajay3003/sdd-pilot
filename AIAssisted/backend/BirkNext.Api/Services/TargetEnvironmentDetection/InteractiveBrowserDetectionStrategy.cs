@@ -52,13 +52,17 @@ internal sealed class InteractiveBrowserDetectionStrategy : ITargetDetectionAuth
             }
 
             // Start authenticated browser session
+            Console.Error.WriteLine($"[DIAG] InteractiveBrowserDetectionStrategy.ContinueDetectionAsync START targetUrl={targetUrl}");
             _logger.LogInformation("Starting authenticated browser session for {TargetUrl}", targetUrl);
             var sessionRequest = new AuthenticatedBrowserSessionRequest(reviewSessionId, profileId, targetUrl);
+            Console.Error.WriteLine($"[DIAG] InteractiveBrowserDetectionStrategy about to call StartAsync");
             var sessionDescriptor = await _sessionManager.StartAsync(sessionRequest, cancellationToken);
+            Console.Error.WriteLine($"[DIAG] InteractiveBrowserDetectionStrategy StartAsync returned status={sessionDescriptor.Status} sessionId={sessionDescriptor.SessionId}");
 
             if (sessionDescriptor.Status != AuthenticatedBrowserSessionStatus.BrowserReady)
             {
                 _logger.LogWarning("Browser session failed to start: {Status}", sessionDescriptor.Status);
+                Console.Error.WriteLine($"[DIAG] InteractiveBrowserDetectionStrategy browser not ready: {sessionDescriptor.Status}");
                 return new DetectionContinuationResult
                 {
                     AuthenticationSucceeded = false,
@@ -74,7 +78,9 @@ internal sealed class InteractiveBrowserDetectionStrategy : ITargetDetectionAuth
             {
                 var expectedAuthority = $"{targetUri.Scheme}://{targetUri.Host}";
                 var authRequest = new BeginAuthenticationRequest(sessionId, reviewSessionId, profileId, expectedAuthority);
+                Console.Error.WriteLine($"[DIAG] InteractiveBrowserDetectionStrategy about to call BeginAuthenticationAsync sessionId={sessionId}");
                 await _sessionManager.BeginAuthenticationAsync(authRequest, cancellationToken);
+                Console.Error.WriteLine($"[DIAG] InteractiveBrowserDetectionStrategy BeginAuthenticationAsync returned");
             }
             catch (AuthenticatedSessionExpiredException)
             {
