@@ -136,16 +136,26 @@ public sealed class AuthenticatedBrowserSessionManagerTests
     }
 
     [Fact]
-    public async Task BrowserCrash_MarksFailed_AndDisposesSession()
+    public async Task BrowserResourceFailure_RemovesSessionBinding_AllowsRetry()
     {
         var host = new FakeHost(); await using var manager = CreateManager(host);
-        var session = await manager.StartAsync(Request());
+        var firstSession = await manager.StartAsync(Request());
+
+        // Browser crashes or page closes (both trigger MarkResourceFailedAsync which removes binding)
         host.Resources[0].Crash();
         await EventuallyAsync(() => host.Resources[0].DisposeCount == 1);
-        var status = await manager.GetStatusAsync(session.SessionId, "review-1", "profile-1");
-        status.Should().NotBeNull();
-        status!.Status.Should().Be(AuthenticatedBrowserSessionStatus.Failed);
-        status.FailureCategory.Should().Be("browser_disconnected");
+
+        // Old session binding is removed (GetStatus returns null)
+        // This is the key fix: even though browser failed, the binding is cleaned up
+        var status = await manager.GetStatusAsync(firstSession.SessionId, "review-1", "profile-1");
+        status.Should().BeNull();
+
+        // User can immediately retry - gets a fresh session with new browser
+        // This was broken before: retry would return the old failed session
+        var secondSession = await manager.StartAsync(Request());
+        secondSession.SessionId.Should().NotBe(firstSession.SessionId);
+        secondSession.Status.Should().Be(AuthenticatedBrowserSessionStatus.BrowserReady);
+        host.LaunchCount.Should().Be(2);
     }
 
     [Fact]

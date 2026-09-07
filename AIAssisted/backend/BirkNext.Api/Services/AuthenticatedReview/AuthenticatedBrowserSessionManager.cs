@@ -228,11 +228,26 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
         if (entry.Status is AuthenticatedBrowserSessionStatus.Cancelled or AuthenticatedBrowserSessionStatus.Failed or AuthenticatedBrowserSessionStatus.Disposed)
             return;
         entry.RevokeEngineEligibility();
-        entry.Status = AuthenticatedBrowserSessionStatus.Failed;
-        entry.FailureCategory = reason;
         entry.ApplicationValidationCurrent = false;
-        if (entry.Resources is not null) await entry.Resources.DisposeAsync();
-        _logger.LogInformation("Authenticated browser session {SessionId} resource failure: {Reason}", entry.SessionId, reason);
+
+        // Distinguish user-initiated close from involuntary failures for semantic clarity
+        if (reason == "page_closed")
+        {
+            // User closed browser window → AuthenticationCancelled for retry semantics
+            entry.Status = AuthenticatedBrowserSessionStatus.AuthenticationCancelled;
+            _logger.LogInformation("[LIFECYCLE-USER-CLOSE] Authenticated browser session {SessionId} user closed browser window", entry.SessionId);
+        }
+        else
+        {
+            // Browser/page crash or disconnect → Failed status with specific reason
+            entry.Status = AuthenticatedBrowserSessionStatus.Failed;
+            entry.FailureCategory = reason;
+            _logger.LogInformation("[LIFECYCLE-RESOURCE-FAILURE] Authenticated browser session {SessionId} resource failure: {Reason}", entry.SessionId, reason);
+        }
+
+        // Remove session bindings to prevent retry from returning stale failed/cancelled session
+        // This allows frontend to create a fresh detection attempt on user retry
+        await RemoveAndDisposeAsync(entry, reason, remove: true);
     }
 
     private async Task DisposeResourcesSilentlyAsync(IAuthenticatedBrowserResources resources)
