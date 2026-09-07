@@ -116,5 +116,8 @@ public enum AuthenticationFailureReason
     NavigationFailure = 9,
 
     /// <summary>Authentication reached an origin outside the approved flow.</summary>
-    UnexpectedOrigin = 10
+    UnexpectedOrigin = 10,
+
+    /// <summary>The configured Entra authority is invalid or not approved for use.</summary>
+    InvalidAuthenticationConfiguration = 11
 }

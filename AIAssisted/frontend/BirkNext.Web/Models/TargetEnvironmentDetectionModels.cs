@@ -270,5 +270,6 @@ public enum AuthenticationFailureReason
     BrowserResourceFailure = 7,
     RuntimeUnavailable = 8,
     NavigationFailure = 9,
-    UnexpectedOrigin = 10
+    UnexpectedOrigin = 10,
+    InvalidAuthenticationConfiguration = 11
 }

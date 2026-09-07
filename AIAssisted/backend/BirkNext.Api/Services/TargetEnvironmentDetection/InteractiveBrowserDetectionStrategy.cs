@@ -74,11 +74,14 @@ internal sealed class InteractiveBrowserDetectionStrategy : ITargetDetectionAuth
             var sessionId = sessionDescriptor.SessionId;
 
             // Begin authentication (triggers navigation to target URL)
+            // Use Microsoft Entra as the expected authority for interactive browser detection.
+            // This allows discovery of the actual tenant/authority through browser navigation,
+            // supporting both explicit and tenant-discovered authentication flows.
             try
             {
-                var expectedAuthority = $"{targetUri.Scheme}://{targetUri.Host}";
+                var expectedAuthority = "https://login.microsoftonline.com/";
                 var authRequest = new BeginAuthenticationRequest(sessionId, reviewSessionId, profileId, expectedAuthority);
-                _logger.LogInformation($"[DIAG] InteractiveBrowserDetectionStrategy about to call BeginAuthenticationAsync sessionId={sessionId}");
+                _logger.LogInformation($"[DIAG] InteractiveBrowserDetectionStrategy about to call BeginAuthenticationAsync sessionId={sessionId} expectedAuthority={expectedAuthority}");
                 await _sessionManager.BeginAuthenticationAsync(authRequest, cancellationToken);
                 _logger.LogInformation($"[DIAG] InteractiveBrowserDetectionStrategy BeginAuthenticationAsync returned");
             }
@@ -88,6 +91,17 @@ internal sealed class InteractiveBrowserDetectionStrategy : ITargetDetectionAuth
                 return new DetectionContinuationResult
                 {
                     SessionExpired = true,
+                    Duration = stopwatch.Elapsed
+                };
+            }
+            catch (ArgumentException ex) when (ex.Message.Contains("ExpectedAuthority"))
+            {
+                _logger.LogWarning("Expected authority validation failed: {Message}", ex.Message);
+                await _sessionManager.CancelAsync(sessionId, reviewSessionId, profileId, CancellationToken.None);
+                return new DetectionContinuationResult
+                {
+                    AuthenticationSucceeded = false,
+                    AuthenticationFailureReason = AuthenticationFailureReason.InvalidAuthenticationConfiguration,
                     Duration = stopwatch.Elapsed
                 };
             }
@@ -314,6 +328,7 @@ internal sealed class InteractiveBrowserDetectionStrategy : ITargetDetectionAuth
                 AuthenticationFailureReason.BrowserResourceFailure,
             "authentication_navigation_failed" => AuthenticationFailureReason.NavigationFailure,
             "unexpected_origin" => AuthenticationFailureReason.UnexpectedOrigin,
+            "invalid_authentication_configuration" => AuthenticationFailureReason.InvalidAuthenticationConfiguration,
             _ => AuthenticationFailureReason.GenericFailure
         };
         return reason;

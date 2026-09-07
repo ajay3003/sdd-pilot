@@ -64,6 +64,28 @@ public sealed class AuthenticationOriginPolicyTests
         policy.Classify(sessionA, new("http://127.0.0.1:5100"), new("http://127.0.0.1:5101"), true, true, sessionB).Should().Be(AuthenticationOriginClass.Unexpected);
     }
 
+    // Authority validation tests (used by BeginAuthenticationAsync)
+    [Theory]
+    [InlineData("https://login.microsoftonline.com")]
+    [InlineData("https://login.microsoftonline.com/")]
+    [InlineData("https://login.microsoftonline.com/tenant")]
+    [InlineData("https://login.microsoftonline.com/tenant/")]
+    [InlineData("https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize")]
+    [InlineData("https://LOGIN.MICROSOFTONLINE.COM")]
+    public void ValidEntraAuthority_IsAccepted(string authority) =>
+        Policy().IsValidEntraAuthority(new(authority)).Should().BeTrue();
+
+    [Theory]
+    [InlineData("https://m2lbdev.bufetat.no")]
+    [InlineData("https://m2lbdev.bufetat.no/")]
+    [InlineData("https://microsoft.com")]
+    [InlineData("https://login.microsoft.com")]
+    [InlineData("http://login.microsoftonline.com")]
+    [InlineData("https://evil.com")]
+    [InlineData("https://login.microsoftonline.com:8443")]
+    public void InvalidEntraAuthority_IsRejected(string authority) =>
+        Policy().IsValidEntraAuthority(new(authority)).Should().BeFalse();
+
     private static AuthenticationOriginPolicy Policy() =>
         new(Options.Create(new AuthenticatedReviewOptions()));
 }

@@ -40,6 +40,7 @@ internal sealed class AuthenticationOriginPolicy
         if (!IsSafeOrigin(authority)) return false;
         if (_allowSyntheticHttp && authority.IsLoopback) return true;
         return authority.Scheme == Uri.UriSchemeHttps &&
+               authority.Port == 443 &&
                string.Equals(authority.IdnHost, "login.microsoftonline.com", StringComparison.OrdinalIgnoreCase);
     }
 

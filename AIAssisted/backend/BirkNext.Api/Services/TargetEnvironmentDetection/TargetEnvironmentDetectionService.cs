@@ -753,6 +753,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             AuthenticationFailureReason.RuntimeUnavailable => "Authenticated browser runtime is disabled or unavailable",
             AuthenticationFailureReason.NavigationFailure => "Navigation failed during authentication",
             AuthenticationFailureReason.UnexpectedOrigin => "Authentication reached an unexpected origin",
+            AuthenticationFailureReason.InvalidAuthenticationConfiguration => "Authentication configuration uses an unapproved Entra authority",
             _ => "Unknown authentication failure"
         };
     }

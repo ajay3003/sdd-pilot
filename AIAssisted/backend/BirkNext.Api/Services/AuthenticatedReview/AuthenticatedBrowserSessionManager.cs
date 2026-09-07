@@ -104,8 +104,22 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
 
         var entry = GetOwnedEntry(request.SessionId, request.ReviewSessionId, request.ProfileId);
         if (IsExpired(entry)) { await ExpireAsync(entry); throw new AuthenticatedSessionExpiredException(); }
-        if (!Uri.TryCreate(request.ExpectedAuthority, UriKind.Absolute, out var authority) || !_originPolicy.IsValidEntraAuthority(authority))
+
+        if (!Uri.TryCreate(request.ExpectedAuthority, UriKind.Absolute, out var authority))
+        {
+            _logger.LogWarning("[DIAG-AUTH-INVALID] ExpectedAuthority parse failed sessionId={SessionId} authority={Authority}", request.SessionId, request.ExpectedAuthority);
+            throw new ArgumentException("ExpectedAuthority is not a valid URI.");
+        }
+
+        _logger.LogInformation("[DIAG-AUTH-VALIDATE] Validating authority sessionId={SessionId} scheme={Scheme} host={Host} port={Port} path={Path}",
+            request.SessionId, authority.Scheme, authority.IdnHost, authority.Port, authority.AbsolutePath);
+
+        if (!_originPolicy.IsValidEntraAuthority(authority))
+        {
+            _logger.LogWarning("[DIAG-AUTH-REJECTED] ExpectedAuthority validation failed sessionId={SessionId} scheme={Scheme} host={Host} port={Port}",
+                request.SessionId, authority.Scheme, authority.IdnHost, authority.Port);
             throw new ArgumentException("ExpectedAuthority is not an approved Entra authority.");
+        }
 
         Uri? syntheticMcas = null;
         if (!string.IsNullOrWhiteSpace(request.SyntheticMcasOrigin))
