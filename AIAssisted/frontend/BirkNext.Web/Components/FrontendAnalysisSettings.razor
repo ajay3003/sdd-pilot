@@ -1300,6 +1300,92 @@
                                                 Enabled
                                             </label>
                                         </div>
+
+                                        @* Contract Relationship Section (Phase 2) *@
+                                        <details class="fa-advanced" style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--clr-border)">
+                                            <summary style="cursor:pointer;font-weight:600;font-size:.85rem">
+                                                Contract Relationship
+                                                <span style="font-size:.75rem;margin-left:.5rem;color:var(--clr-text-muted)">
+                                                    @{
+                                                        intg.ComputeReadiness();
+                                                        var readinessLabel = intg.ContractMetadataReadiness switch
+                                                        {
+                                                            ContractMetadataReadiness.Ready => "✓ Ready",
+                                                            ContractMetadataReadiness.Partial => "◐ Partial",
+                                                            _ => "○ Not configured"
+                                                        };
+                                                        <text>@readinessLabel</text>
+                                                    }
+                                                </span>
+                                            </summary>
+                                            <div style="margin-top:.65rem;padding:.65rem 0">
+                                                <div class="form-field">
+                                                    <label class="fa-label">Producer Service <span class="form-optional">(optional)</span></label>
+                                                    <input type="text" class="form-control"
+                                                           placeholder="e.g. Hendelse Adapter"
+                                                           @bind="intg.LogicalProducerService"
+                                                           @bind:after="() => intg.ComputeReadiness()"
+                                                           style="margin-bottom:.1rem" />
+                                                    <div style="font-size:.75rem;color:var(--clr-text-muted)">Logical service name that produces to this integration</div>
+                                                </div>
+
+                                                <div class="form-field">
+                                                    <label class="fa-label">Consumer Service <span class="form-optional">(optional)</span></label>
+                                                    <input type="text" class="form-control"
+                                                           placeholder="e.g. Hendelse"
+                                                           @bind="intg.LogicalConsumerService"
+                                                           @bind:after="() => intg.ComputeReadiness()"
+                                                           style="margin-bottom:.1rem" />
+                                                    <div style="font-size:.75rem;color:var(--clr-text-muted)">Logical service name that consumes from this integration</div>
+                                                </div>
+
+                                                <div class="form-field">
+                                                    <label class="fa-label">Contract Name <span class="form-optional">(optional)</span></label>
+                                                    <input type="text" class="form-control"
+                                                           placeholder="e.g. ChildUpdated"
+                                                           @bind="intg.ContractName"
+                                                           @bind:after="() => intg.ComputeReadiness()"
+                                                           style="margin-bottom:.1rem" />
+                                                    <div style="font-size:.75rem;color:var(--clr-text-muted)">Name of the contract/event/message exchanged</div>
+                                                </div>
+
+                                                <div class="form-field">
+                                                    <label class="fa-label">Contract Source Type <span class="form-optional">(optional)</span></label>
+                                                    <select class="form-control"
+                                                            @bind="intg.ContractSourceType"
+                                                            @bind:after="() => intg.ComputeReadiness()"
+                                                            style="margin-bottom:.1rem">
+                                                        @foreach (var t in Enum.GetValues<ContractSourceType>())
+                                                        { <option value="@t">@t</option> }
+                                                    </select>
+                                                    <div style="font-size:.75rem;color:var(--clr-text-muted)">Where the contract definition comes from</div>
+                                                </div>
+
+                                                <div class="form-field fa-field-full">
+                                                    <label class="fa-label">Source Location <span class="form-optional">(optional)</span></label>
+                                                    <input type="text" class="form-control"
+                                                           placeholder="e.g. URL, file path, or artifact reference"
+                                                           @bind="intg.ContractSourceLocation"
+                                                           @bind:after="() => intg.ComputeReadiness()"
+                                                           style="margin-bottom:.1rem" />
+                                                    <div style="font-size:.75rem;color:var(--clr-text-muted)">
+                                                        @{
+                                                            var hint = intg.ContractSourceType switch
+                                                            {
+                                                                ContractSourceType.OpenApi => "Swagger/OpenAPI URL (e.g., https://api.example.com/swagger/v1/swagger.json)",
+                                                                ContractSourceType.GraphQlSchema => "GraphQL endpoint URL (e.g., https://api.example.com/graphql)",
+                                                                ContractSourceType.Assembly => "Assembly reference (e.g., BirkNext.Contracts.v1.0)",
+                                                                ContractSourceType.SchemaFile => "Schema file path (e.g., schemas/contract.json)",
+                                                                ContractSourceType.Endpoint => "Contract endpoint URL",
+                                                                ContractSourceType.Manual => "Manual entry (free text)",
+                                                                _ => "Reference to contract definition"
+                                                            };
+                                                            <text>@hint</text>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </details>
                                     </div>
                                 }
                             </div>
