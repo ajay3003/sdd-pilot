@@ -143,6 +143,7 @@ public sealed class IntegrationStatus
     [JsonPropertyName("workerReachable")]  public bool?           WorkerReachable  { get; init; }
     [JsonPropertyName("score")]            public int             Score            { get; init; }
     [JsonPropertyName("missingFields")]    public List<string>    MissingFields    { get; init; } = [];
+    [JsonPropertyName("contractCompatibility")] public object? ContractCompatibility { get; set; }
 }
 
 public sealed class IntegrationQualityReport

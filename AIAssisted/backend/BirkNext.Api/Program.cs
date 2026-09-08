@@ -21,6 +21,7 @@ using BirkNext.Api.Services.FrontendQualityEngines;
 using BirkNext.Api.Services.FrontendQualityEngines.Readiness;
 using BirkNext.Api.Services.TargetEnvironmentDetection;
 using BirkNext.Api.Services.AuthenticatedReview;
+using BirkNext.Api.Services.ContractAnalysis;
 using HotChocolate.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -282,6 +283,16 @@ builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService
     client.Timeout = TimeSpan.FromSeconds(60);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ApiQualityScanner/1.0");
 });
+
+// Contract Analysis (Phase 3)
+builder.Services.AddHttpClient<IOpenApiSourceFetcher, OpenApiSourceFetcher>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ContractAnalysis/1.0");
+});
+builder.Services.AddScoped<IOpenApiExtractor, OpenApiExtractor>();
+builder.Services.AddScoped<IContractComparer, ContractComparer>();
+builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();
 
 builder.Services.AddHttpClient("Anthropic", client =>
 {
