@@ -52,6 +52,8 @@ public sealed class TargetEnvironmentDetectionController : ControllerBase
         try
         {
             var result = await _detectionService.DetectFromUrlAsync(request.TargetUrl, cancellationToken);
+            if (request.AuthenticationVerificationMode == AuthenticationVerificationMode.ManualManagedEdge)
+                ManualAuthenticationVerification.Apply(result);
             return Ok(result);
         }
         catch (OperationCanceledException)
@@ -98,6 +100,12 @@ public sealed class TargetEnvironmentDetectionController : ControllerBase
 
         try
         {
+            if (request.AuthenticationVerificationMode == AuthenticationVerificationMode.ManualManagedEdge)
+            {
+                var response = await _detectionService.DetectFromUrlAsync(request.TargetUrl, cancellationToken);
+                ManualAuthenticationVerification.Apply(response);
+                return Ok(new DetectionStateComputer().CreateOutcome(response, request.TargetUrl, request.TargetUrl));
+            }
             // Instantiate interactive browser strategy and delegate to service
             var strategy = new InteractiveBrowserDetectionStrategy(
                 HttpContext.RequestServices.GetRequiredService<IAuthenticatedBrowserSessionManager>(),
@@ -131,6 +139,8 @@ public sealed class TargetEnvironmentDetectionController : ControllerBase
 /// </summary>
 public sealed class TargetEnvironmentDetectionRequest
 {
+    public AuthenticationVerificationMode AuthenticationVerificationMode { get; set; }
+
     /// <summary>
     /// Target URL to inspect for configuration.
     /// Example: https://m2lbdev.bufetat.no/
@@ -148,6 +158,8 @@ public sealed class TargetEnvironmentDetectionRequest
 /// </summary>
 public sealed class BrowserDetectionRequest
 {
+    public AuthenticationVerificationMode AuthenticationVerificationMode { get; set; }
+
     /// <summary>
     /// Target URL to continue detection against.
     /// Example: https://m2lbdev.bufetat.no/

@@ -182,7 +182,7 @@ public sealed class AuthenticatedBrowserSessionManagerTests
     [Fact]
     public void AuthenticatedBrowser_IsExplicitlyHeaded()
     {
-        PlaywrightAuthenticatedBrowserHost.CreateLaunchOptions().Headless.Should().BeFalse();
+        PlaywrightAuthenticatedBrowserHost.CreateLaunchOptionsForEdge().Headless.Should().BeFalse();
     }
 
     [Fact]

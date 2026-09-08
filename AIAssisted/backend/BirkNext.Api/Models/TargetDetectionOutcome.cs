@@ -8,6 +8,11 @@ namespace BirkNext.Api.Models;
 /// </summary>
 public sealed class TargetDetectionOutcome
 {
+    [JsonPropertyName("manualAuthenticationVerificationRequired")]
+    public bool ManualAuthenticationVerificationRequired { get; set; }
+    [JsonPropertyName("manualAuthenticationVerificationStatus")]
+    public ManualAuthenticationVerificationStatus ManualAuthenticationVerificationStatus { get; set; }
+
     [JsonPropertyName("authenticationFailureReason")]
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public BirkNext.Api.Services.TargetEnvironmentDetection.AuthenticationFailureReason? AuthenticationFailureReason { get; set; }

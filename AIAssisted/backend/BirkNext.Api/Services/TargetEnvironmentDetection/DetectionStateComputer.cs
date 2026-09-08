@@ -146,6 +146,7 @@ public sealed class DetectionStateComputer : IDetectionStateComputer
     {
         return state switch
         {
+            TargetDetectionState.ManualAuthenticationVerificationRequired => "manual-managed-edge",
             TargetDetectionState.Complete =>
                 "direct-access",
 
@@ -223,7 +224,8 @@ public sealed class DetectionStateComputer : IDetectionStateComputer
         string? detectedUrl,
         string? currentProfileUrl)
     {
-        var state = ComputeStateFromResponse(response);
+        var state = response.ManualAuthenticationVerificationRequired
+            ? TargetDetectionState.ManualAuthenticationVerificationRequired : ComputeStateFromResponse(response);
         var isUrlStale = IsUrlStale(detectedUrl, currentProfileUrl);
 
         // If URL is stale, mark state as Stale
@@ -244,13 +246,15 @@ public sealed class DetectionStateComputer : IDetectionStateComputer
         return new TargetDetectionOutcome
         {
             DetectionResponse = response,
+            ManualAuthenticationVerificationRequired = response.ManualAuthenticationVerificationRequired,
+            ManualAuthenticationVerificationStatus = isUrlStale && response.ManualAuthenticationVerificationRequired ? ManualAuthenticationVerificationStatus.Stale : response.ManualAuthenticationVerificationStatus,
             State = state,
             IsActivationReady = isActivationReady,
             StrategySuggestion = GetStrategySuggestion(state, response),
             DetectedAt = DateTime.UtcNow,
             DetectedUrl = detectedUrl,
             IsUrlCurrent = isUrlCurrent,
-            Message = GetStateMessage(state, response, isUrlCurrent),
+            Message = response.ManualAuthenticationVerificationRequired && isUrlCurrent ? ManualAuthenticationVerification.Reason : GetStateMessage(state, response, isUrlCurrent),
             BrowserRuntimeInspectionRequired = browserRuntimeRequired ? true : null
         };
     }

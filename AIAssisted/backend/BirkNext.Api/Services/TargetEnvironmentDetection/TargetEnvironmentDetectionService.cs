@@ -29,6 +29,7 @@ public interface ITargetEnvironmentDetectionService
 
 public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetectionService
 {
+    private readonly BirkNext.Api.Configuration.TargetDetectionOptions _detectionOptions;
     private readonly BrowserTargetValidator _validator;
     private readonly HttpClient _httpClient;
     private readonly ITargetHostResolver _resolver;
@@ -50,8 +51,10 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
         HttpClient httpClient,
         ITargetHostResolver resolver,
         IClientFrameworkDetector frameworkDetector,
-        ILogger<TargetEnvironmentDetectionService> logger)
+        ILogger<TargetEnvironmentDetectionService> logger,
+        Microsoft.Extensions.Options.IOptions<BirkNext.Api.Configuration.TargetDetectionOptions>? detectionOptions = null)
     {
+        _detectionOptions = detectionOptions?.Value ?? new();
         _validator = validator;
         _httpClient = httpClient;
         _resolver = resolver;
@@ -348,6 +351,13 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                 if (!string.IsNullOrEmpty(clientId))
                     result.DetectedClientId = clientId;
 
+                // Extract redirect URIs from redirect_uri parameter(s)
+                var redirectUri = query["redirect_uri"];
+                if (!string.IsNullOrEmpty(redirectUri))
+                {
+                    result.DetectedRedirectUrls.Add(redirectUri);
+                }
+
                 result.Confidence = DetectionConfidence.VeryHigh;
             }
             else if (host.Contains("oauth", StringComparison.OrdinalIgnoreCase) ||
@@ -355,6 +365,14 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             {
                 result.DetectedAuthenticationType = FrontendAuthenticationType.OpenIdConnect;
                 result.DetectedAuthority = $"{finalUri.Scheme}://{host}";
+
+                var query = HttpUtility.ParseQueryString(finalUri.Query);
+                var redirectUri = query["redirect_uri"];
+                if (!string.IsNullOrEmpty(redirectUri))
+                {
+                    result.DetectedRedirectUrls.Add(redirectUri);
+                }
+
                 result.Confidence = DetectionConfidence.High;
             }
         }
@@ -439,7 +457,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
     private string? SuggestProfileName(string hostname)
         => HostnameProfileNameFormatter.Format(hostname);
 
-    private static void ApplyTypedOutcome(TargetEnvironmentDetectionResponse result)
+    private void ApplyTypedOutcome(TargetEnvironmentDetectionResponse result)
     {
         result.State = !result.Success ? TargetDetectionState.Failed
             : result.AuthenticationRequired || result.Reachability == TargetReachability.AuthenticationRequired
@@ -451,6 +469,9 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                         : TargetDetectionState.Failed;
         result.BrowserRuntimeInspectionRequired = result.State == TargetDetectionState.Partial && result.DetectedClientFramework.HasValue;
         result.IsActivationReady = result.State == TargetDetectionState.Complete;
+        if (Uri.TryCreate(result.OriginalUrl, UriKind.Absolute, out var target) &&
+            _detectionOptions.ManualManagedEdgeHosts.Contains(target.Host, StringComparer.OrdinalIgnoreCase))
+            ManualAuthenticationVerification.Apply(result);
     }
 
     private DetectionConfidence CalculateConfidence(TargetEnvironmentDetectionResponse result)
@@ -471,12 +492,15 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
         if (!string.IsNullOrEmpty(result.DetectedClientId))
             score += 1;
 
+        if (result.DetectedRedirectUrls.Count > 0)
+            score += 1;
+
         if (result.SuggestedEnvironmentType.HasValue)
             score += 1;
 
         return score switch
         {
-            >= 4 => DetectionConfidence.VeryHigh,
+            >= 5 => DetectionConfidence.VeryHigh,
             >= 3 => DetectionConfidence.High,
             >= 2 => DetectionConfidence.Medium,
             _ => DetectionConfidence.Low
@@ -584,7 +608,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
         var preflightResponse = await DetectFromUrlAsync(targetUrl, cancellationToken);
 
         // If preflight failed, return failed outcome
-        if (!preflightResponse.Success)
+        if (!preflightResponse.Success || preflightResponse.ManualAuthenticationVerificationRequired)
         {
             var stateComputer = new DetectionStateComputer();
             return stateComputer.CreateOutcome(preflightResponse, targetUrl, targetUrl);

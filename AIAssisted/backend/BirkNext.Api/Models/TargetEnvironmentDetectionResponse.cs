@@ -9,6 +9,11 @@ namespace BirkNext.Api.Models;
 /// </summary>
 public sealed class TargetEnvironmentDetectionResponse
 {
+    [JsonPropertyName("manualAuthenticationVerificationRequired")]
+    public bool ManualAuthenticationVerificationRequired { get; set; }
+    [JsonPropertyName("manualAuthenticationVerificationStatus")]
+    public ManualAuthenticationVerificationStatus ManualAuthenticationVerificationStatus { get; set; }
+
     [JsonPropertyName("originalUrl")]
     public string OriginalUrl { get; set; } = "";
 
@@ -35,6 +40,9 @@ public sealed class TargetEnvironmentDetectionResponse
 
     [JsonPropertyName("detectedClientId")]
     public string? DetectedClientId { get; set; }
+
+    [JsonPropertyName("detectedRedirectUrls")]
+    public List<string> DetectedRedirectUrls { get; set; } = [];
 
     [JsonPropertyName("suggestedEnvironmentType")]
     public FrontendEnvironmentType? SuggestedEnvironmentType { get; set; }

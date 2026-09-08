@@ -13,6 +13,8 @@ public interface ITargetEnvironmentDetectionApiService
 {
     Task<TargetEnvironmentDetectionResult?> DetectFromUrlAsync(string targetUrl, CancellationToken cancellationToken = default);
 
+    Task<TargetEnvironmentDetectionResult?> DetectManualManagedEdgeAsync(string targetUrl, CancellationToken cancellationToken = default);
+
     Task<TargetDetectionOutcome?> StartBrowserDetectionAsync(
         string targetUrl,
         string reviewSessionId,
@@ -79,6 +81,14 @@ public sealed class TargetEnvironmentDetectionApiService : ITargetEnvironmentDet
             _logger.LogError(ex, "Unexpected error during detection for {Url}", targetUrl);
             return null;
         }
+    }
+
+    public async Task<TargetEnvironmentDetectionResult?> DetectManualManagedEdgeAsync(string targetUrl, CancellationToken cancellationToken = default)
+    {
+        var response = await _httpClient.PostAsJsonAsync("api/frontend-target/detect",
+            new { targetUrl, authenticationVerificationMode = "ManualManagedEdge" }, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<TargetEnvironmentDetectionResult>(JsonOptions, cancellationToken);
     }
 
     public async Task<TargetDetectionOutcome?> StartBrowserDetectionAsync(

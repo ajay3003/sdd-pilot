@@ -50,5 +50,6 @@ public enum TargetDetectionState
     /// Detection failed - network error, SSRF rejection, timeout, or other fatal error.
     /// No reachability metadata available.
     /// </summary>
-    Failed = 6
+    Failed = 6,
+    ManualAuthenticationVerificationRequired = 7
 }

@@ -622,7 +622,7 @@
         "UnexpectedOrigin" => "Authentication stopped because navigation reached an unexpected origin.",
         "AuthenticationFailed" => "Authentication failed safely.",
         "AuthenticationCancelled" or "Disposed" => "Authentication cancelled.",
-        _ => "Sign in takes place in a separate local Chromium window. Credentials and MFA remain under your control."
+        _ => "Sign in takes place in a BirkNext-controlled Microsoft Edge window. Credentials and MFA remain under your control."
     };
 
     private string DeliveryContextText => _authSession?.DeliveryContext switch

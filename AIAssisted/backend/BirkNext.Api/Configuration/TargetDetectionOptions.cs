@@ -6,6 +6,8 @@ namespace BirkNext.Api.Configuration;
 /// </summary>
 public sealed class TargetDetectionOptions
 {
+    public List<string> ManualManagedEdgeHosts { get; set; } = [];
+
     public const string SectionName = "TargetDetection";
 
     /// <summary>

@@ -207,6 +207,44 @@
             </section>
         }
 
+        @if (ManualVerificationRequired)
+        {
+            <section class="fa-result" aria-label="Manual authentication verification">
+                <div role="status">
+                    <strong>@ManualVerificationLabel</strong>
+                    <p>Your organization requires sign-in using a managed Microsoft Edge work profile. BirkNext cannot verify this sign-in automatically.</p>
+                    <p>Configured authentication None means no authentication settings are preconfigured.</p>
+                </div>
+                @if (!_manualInstructionsOpen)
+                {
+                    <SecondaryButton OnClick="OpenManualVerification">Open verification instructions</SecondaryButton>
+                }
+                else
+                {
+                    <ol>
+                        <li>Open @CurrentTargetUrl in your normal enterprise-managed Microsoft Edge work profile.</li>
+                        <li>Sign in using your work account.</li>
+                        <li>Complete PIN, passkey or MFA manually.</li>
+                        <li>If MCAS / Defender for Cloud Apps appears, continue manually.</li>
+                        <li>Confirm that the authenticated target application is reached.</li>
+                        <li>Return to BirkNext and mark verification as passed or failed.</li>
+                    </ol>
+                    <p>Only your verification result is recorded. No browser authentication state is transferred.</p>
+                    <PrimaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Passed))" Disabled="@(!CanRecordManualVerification)">Mark verification passed</PrimaryButton>
+                    <SecondaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Failed))" Disabled="@(!CanRecordManualVerification)">Mark verification failed</SecondaryButton>
+                }
+                @if (ManualStatus == ManualAuthenticationVerificationStatus.Failed)
+                {
+                    <SecondaryButton OnClick="OpenManualVerification">Retry manual verification</SecondaryButton>
+                }
+                @if (CurrentProfile?.ManualVerification is { } evidence)
+                {
+                    <p><small>Last recorded verification: @evidence.Result ? @evidence.VerifiedAt ? @evidence.Origin</small></p>
+                }
+                <p>If you changed environment settings, save them before recording verification. Activation requires current target detection and manual verification Passed.</p>
+            </section>
+        }
+
         @{ var typeConflict = GetTypeConflict(profile); }
         @if (typeConflict is not null)
         {
@@ -554,7 +592,12 @@
                     var auth = _editProfile.Authentication;
                     <div class="fa-form-grid">
                         <div class="form-field">
-                            <label class="fa-label">Authentication Type</label>
+                            <label class="fa-label" for="auth-verification-mode">Authentication verification</label>
+                            <select id="auth-verification-mode" class="form-control" @bind="_editProfile.Authentication.VerificationMode">
+                                <option value="Automated">Automated browser capability</option>
+                                <option value="ManualManagedEdge">Manual managed Microsoft Edge</option>
+                            </select>
+                            <label class="fa-label">Authentication Type <span class="fa-label-note">(Configured)</span></label>
                             <select class="form-control" @bind="auth.AuthenticationType">
                                 @foreach (var t in Enum.GetValues<FrontendAuthenticationType>())
                                 {
@@ -577,23 +620,81 @@
                             </label>
                         </div>
                         <div class="form-field fa-field-full">
-                            <label class="fa-label">Expected Authority <span class="form-optional">(optional)</span></label>
+                            <label class="fa-label">Expected Authority <span class="form-optional">(optional, configured)</span></label>
                             <input type="url" class="form-control" placeholder="https://login.microsoftonline.com/…" @bind="auth.ExpectedAuthority" />
                         </div>
                         <div class="form-field">
-                            <label class="fa-label">Expected Tenant <span class="form-optional">(optional)</span></label>
+                            <label class="fa-label">Expected Tenant <span class="form-optional">(optional, configured)</span></label>
                             <input type="text" class="form-control" placeholder="00000000-0000-0000-0000-000000000000" @bind="auth.ExpectedTenant" />
                         </div>
                         <div class="form-field">
-                            <label class="fa-label">Expected Client ID <span class="form-optional">(optional)</span></label>
+                            <label class="fa-label">Expected Client ID <span class="form-optional">(optional, configured)</span></label>
                             <input type="text" class="form-control" placeholder="00000000-0000-0000-0000-000000000000" @bind="auth.ExpectedClientId" />
                         </div>
                         <div class="form-field fa-field-full">
-                            <label class="fa-label">Allowed Redirect URLs <span class="form-optional">(one per line)</span></label>
+                            <label class="fa-label">Allowed Redirect URLs <span class="form-optional">(one per line, configured)</span></label>
                             <textarea class="form-control" rows="3"
                                       value="@ListToText(auth.AllowedRedirectUrls)"
                                       @onchange="e => auth.AllowedRedirectUrls = TextToList(e.Value?.ToString())"></textarea>
                         </div>
+
+                        @* Show detected values if detection has been run *@
+                        @if (_detectionResult?.Success == true && HasDetectedAuthSettings(_detectionResult))
+                        {
+                            <div class="fa-field-full" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-border);">
+                                <div style="font-weight: 600; margin-bottom: 1rem; font-size: 0.9rem; text-transform: uppercase; color: var(--color-text-subtle);">Detected Authentication</div>
+
+                                @if (_detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None)
+                                {
+                                    <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 1rem; font-size: 0.875rem; margin-bottom: 1rem;">
+                                        <div style="color: var(--color-text-subtle);">Type</div>
+                                        <div style="font-weight: 500;">@_detectionResult.DetectedAuthenticationType <span style="color: var(--color-text-muted); font-size: 0.8rem;">(from target)</span></div>
+
+                                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedAuthority))
+                                        {
+                                            <div style="color: var(--color-text-subtle);">Authority</div>
+                                            <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedAuthority</div>
+                                        }
+
+                                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedTenantId))
+                                        {
+                                            <div style="color: var(--color-text-subtle);">Tenant</div>
+                                            <div style="font-family: monospace; font-weight: 500;">@_detectionResult.DetectedTenantId</div>
+                                        }
+                                        else if (!string.IsNullOrWhiteSpace(_detectionResult.TenantMode))
+                                        {
+                                            <div style="color: var(--color-text-subtle);">Tenant Mode</div>
+                                            <div style="font-weight: 500;">@_detectionResult.TenantMode</div>
+                                        }
+
+                                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedClientId))
+                                        {
+                                            <div style="color: var(--color-text-subtle);">Client ID</div>
+                                            <div style="font-family: monospace; font-weight: 500;">@_detectionResult.DetectedClientId</div>
+                                        }
+
+                                        @if (_detectionResult.DetectedRedirectUrls.Count > 0)
+                                        {
+                                            <div style="color: var(--color-text-subtle);">Redirect URLs</div>
+                                            <div>
+                                                @foreach (var url in _detectionResult.DetectedRedirectUrls)
+                                                {
+                                                    <div style="font-family: monospace; font-size: 0.8rem; word-break: break-all; margin-bottom: 0.25rem;">@url</div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div style="color: var(--color-text-muted); font-size: 0.875rem;">No authentication detected</div>
+                                }
+
+                                <button type="button" class="btn btn-secondary fa-btn-sm" @onclick="ApplyDetectedAuthenticationSettings" style="margin-top: 0.75rem;">
+                                    Apply detected authentication settings
+                                </button>
+                            </div>
+                        }
                     </div>
                 }
                 else
@@ -1271,7 +1372,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private bool _showResetConfirm;
     private bool _isResetting;
 
-    // Detection state
+    // Detection state - Current lifecycle (NOT persisted, semantically tracked via ComputeDetectionState)
     private bool _isDetecting;
     private string? _detectionError;
     private TargetEnvironmentDetectionResult? _detectionResult;
@@ -1323,12 +1424,17 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private void SelectProfile(string profileId)
     {
+        _manualInstructionsOpen = false;
+        _manualResultRecordedThisSession = false;
         if (_isEditMode) CancelEdit();
         _selectedProfileId = profileId;
         _activeTab         = "general";
+        // Reset current detection state when switching profiles (no cross-profile leakage)
         _detectionResult   = null;
         _lastDetectionTargetUrl = null;
         _detectionError    = null;
+        _authenticationFailureReason = null;
+        _browserRuntimeInspectionRequired = null;
     }
 
     // ── Edit mode ────────────────────────────────────────────────────────────
@@ -1371,6 +1477,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             _selectedProfileId = _editProfile.Id;
             _isEditMode        = false;
             _editProfile       = null;
+            RecomputeManualReadiness();
             _saveSuccess       = "Target environment saved.";
             StateHasChanged();
             await Task.Delay(4000);
@@ -1395,6 +1502,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     {
         if (_selectedProfileId is null) return;
         var copy = FaSettings.DuplicateProfile(_selectedProfileId);
+        copy.ManualVerification = null;
         copy.LastDetectedUrl = null;
         copy.LastDetectionSucceeded = false;
         copy.LastDetectionFailure = null;
@@ -1442,7 +1550,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private void ClearDetectionState()
     {
-        // Preserve the result so the changed URL is explicitly shown as stale.
+        // When URL changes, clear error but preserve result so staleness can be computed
+        // ComputeDetectionState will compare detection URL against current URL
         _detectionError = null;
     }
 
@@ -1471,6 +1580,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private bool CanContinueDetectionInBrowser()
     {
         // Show Continue button for states that explicitly support browser continuation
+        if (ManualVerificationRequired) return false;
         return CurrentDetectionState == DetectionState.AuthenticationRequired ||
                (CurrentDetectionState == DetectionState.Partial &&
                 _browserRuntimeInspectionRequired == true);
@@ -1635,7 +1745,15 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         try
         {
             _lastDetectionTargetUrl = NormalizeUrl(_editProfile.TargetUrl);
-            var result = await DetectionApi.DetectFromUrlAsync(_editProfile.TargetUrl);
+            var detectionProfile = _editProfile;
+            var detectionContext = ManualAuthenticationVerificationEvidence.Fingerprint(detectionProfile);
+            var result = detectionProfile.Authentication.VerificationMode == AuthenticationVerificationMode.ManualManagedEdge
+                ? await DetectionApi.DetectManualManagedEdgeAsync(detectionProfile.TargetUrl)
+                : await DetectionApi.DetectFromUrlAsync(detectionProfile.TargetUrl);
+            if (CurrentProfile is null || ManualAuthenticationVerificationEvidence.Fingerprint(CurrentProfile) != detectionContext) return;
+            _manualDetectionContext = detectionContext;
+            _manualInstructionsOpen = false;
+            _manualResultRecordedThisSession = false;
 
             if (result is not null)
             {
@@ -1672,6 +1790,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         finally
         {
             _isDetecting = false;
+            RecomputeManualReadiness();
         }
     }
 
@@ -1681,7 +1800,17 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     /// <summary>
     /// Computes the detection state for the currently selected profile.
-    /// Considers URL staleness, detection success/failure, SPA detection, and authentication.
+    /// Separates CURRENT detection lifecycle from LAST persisted detection outcome.
+    ///
+    /// CURRENT LIFECYCLE: Reflects what's happening NOW in this UI session
+    ///   - NotChecked: No detection has been started in this session
+    ///   - Checking: Detection is currently running
+    ///   - Complete/AuthenticationRequired/Partial/Failed: Current attempt result
+    ///   - Stale: Current attempt result is stale (URL changed)
+    ///
+    /// HISTORICAL OUTCOME: Persisted from previous session(s)
+    ///   - Used only when current lifecycle is NotChecked and no URL changes detected
+    ///   - Presented differently (as historical context, not active failure)
     /// </summary>
     private DetectionState ComputeDetectionState()
     {
@@ -1689,56 +1818,49 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (profile is null)
             return DetectionState.NotChecked;
 
+        // PART 1: Active current detection lifecycle has highest priority
         if (_isDetecting)
             return DetectionState.Checking;
 
         if (_detectionResult is not null)
-            return !UrlsMatch(string.IsNullOrWhiteSpace(_detectionResult.OriginalUrl) ? _lastDetectionTargetUrl : _detectionResult.OriginalUrl, profile.TargetUrl)
-                ? DetectionState.Stale
-                : _detectionResult.State != DetectionState.NotChecked
-                    ? _detectionResult.State
-                    : !_detectionResult.Success ? DetectionState.Failed
-                    : _detectionResult.AuthenticationRequired ? DetectionState.AuthenticationRequired
-                    : _browserRuntimeInspectionRequired == true ? DetectionState.Partial
-                    : _detectionResult.Warnings.Count > 0 ? DetectionState.Partial
-                    : DetectionState.Complete;
-
-        // Check for URL staleness
-        if (profile.LastDetectedUrl is not null && !UrlsMatch(profile.LastDetectedUrl, profile.TargetUrl))
-            return DetectionState.Stale;
-
-        // If no detection has been run yet
-        if (profile.LastDetectedUrl is null)
-            return DetectionState.NotChecked;
-
-        // Detection was run. Check result status
-        if (!profile.LastDetectionSucceeded)
         {
-            // Detection failed
-            if (profile.LastDetectionFailure is not null)
+            // If current detection result exists, use its state with staleness check
+            var resultUrl = string.IsNullOrWhiteSpace(_detectionResult.OriginalUrl)
+                ? _lastDetectionTargetUrl
+                : _detectionResult.OriginalUrl;
+
+            if (!UrlsMatch(resultUrl, profile.TargetUrl))
+                return DetectionState.Stale;
+
+            if (ManualVerificationRequired && _manualDetectionContext != ManualAuthenticationVerificationEvidence.Fingerprint(profile))
+                return DetectionState.Stale;
+            // Return state from current result
+            if (_detectionResult.State != DetectionState.NotChecked)
+                return _detectionResult.State;
+
+            if (!_detectionResult.Success)
                 return DetectionState.Failed;
-            return DetectionState.NotChecked;
-        }
 
-        // Detection succeeded. Check if authentication is required
-        if (_detectionResult is not null && _detectionResult.Success)
-        {
             if (_detectionResult.AuthenticationRequired)
                 return DetectionState.AuthenticationRequired;
 
-            // Check for SPA requiring browser runtime inspection
             if (_browserRuntimeInspectionRequired == true)
                 return DetectionState.Partial;
 
-            // Check for other partial results (warnings, unreachable, etc.)
-            if (_detectionResult.Warnings.Count > 0 || _detectionResult.Reachability != TargetReachability.Reachable)
+            if (_detectionResult.Warnings.Count > 0)
                 return DetectionState.Partial;
 
             return DetectionState.Complete;
         }
 
-        // Detection succeeded but we don't have result details - assume complete
-        return DetectionState.Complete;
+        // PART 2: No active current detection result. Check URL staleness against persisted state.
+        if (profile.LastDetectedUrl is not null && !UrlsMatch(profile.LastDetectedUrl, profile.TargetUrl))
+            return DetectionState.Stale;
+
+        // PART 3: Current lifecycle is neutral (not in an active attempt).
+        // Return NotChecked regardless of persisted historical outcome.
+        // This is the key fix: Don't surface historical failure as active current failure.
+        return DetectionState.NotChecked;
     }
 
     private DetectionState CurrentDetectionState => ComputeDetectionState();
@@ -1749,35 +1871,97 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private string DetectionStateLabel =>
         CurrentDetectionState switch
         {
-            DetectionState.NotChecked => "Not checked",
             DetectionState.Checking => "Detecting...",
             DetectionState.Complete => "Detection complete",
+            DetectionState.ManualAuthenticationVerificationRequired when CanActivateSelected => "Target detection complete",
+            DetectionState.ManualAuthenticationVerificationRequired => "Manual authentication verification required",
             DetectionState.AuthenticationRequired => "Authentication required",
             DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Needs browser inspection",
             DetectionState.Partial => "Detection incomplete",
             DetectionState.Stale => "Needs re-check",
             DetectionState.Failed => "Detection failed",
+            // NotChecked: show historical outcome if available
+            DetectionState.NotChecked when SelectedProfile?.LastDetectionSucceeded == true => "Last detection complete",
+            DetectionState.NotChecked when SelectedProfile?.LastDetectionFailure is not null => "Last detection failed",
+            DetectionState.NotChecked => "Not checked",
             _ => "Unknown"
         };
 
     private string DetectionStateCss =>
         CurrentDetectionState switch
         {
-            DetectionState.NotChecked => "not-checked",
+            DetectionState.Checking => "checking",
             DetectionState.Complete => "checked",
+            DetectionState.ManualAuthenticationVerificationRequired => "auth-required",
             DetectionState.AuthenticationRequired => "auth-required",
             DetectionState.Partial => "partial",
             DetectionState.Stale => "stale",
             DetectionState.Failed => "failed",
+            // NotChecked: use historical status for styling if available
+            DetectionState.NotChecked when SelectedProfile?.LastDetectionSucceeded == true => "historical-success",
+            DetectionState.NotChecked when SelectedProfile?.LastDetectionFailure is not null => "historical-failure",
+            DetectionState.NotChecked => "not-checked",
             _ => "unknown"
         };
 
-    private bool CanActivateSelected => _detectionResult?.IsActivationReady == true && CurrentDetectionState == DetectionState.Complete;
+    private bool CanActivateSelected => ManualVerificationRequired
+        ? CanRecordManualVerification && _detectionResult?.DetectedClientFramework.HasValue == true &&
+          _detectionResult.Warnings.Count == 0 && ManualStatus == ManualAuthenticationVerificationStatus.Passed
+        : _detectionResult?.IsActivationReady == true && CurrentDetectionState == DetectionState.Complete;
+
+    private string? _manualDetectionContext;
+    private bool _manualInstructionsOpen;
+    private bool _manualResultRecordedThisSession;
+    private bool ManualVerificationRequired => _detectionResult?.ManualAuthenticationVerificationRequired == true ||
+        CurrentProfile?.Authentication.VerificationMode == AuthenticationVerificationMode.ManualManagedEdge ||
+        (_detectionResult is null && CurrentProfile?.ManualVerification is not null);
+    private ManualAuthenticationVerificationStatus ManualStatus => CurrentProfile?.ManualVerification?.StatusFor(CurrentProfile)
+        ?? (_manualInstructionsOpen ? ManualAuthenticationVerificationStatus.Pending : ManualAuthenticationVerificationStatus.Required);
+    private string ManualVerificationLabel => !_manualResultRecordedThisSession && CurrentProfile?.ManualVerification is { } previous && ManualStatus != ManualAuthenticationVerificationStatus.Stale
+        ? $"Previous manual authentication verification: {previous.Result}"
+        : ManualStatus switch
+        {
+            ManualAuthenticationVerificationStatus.Passed => "Manual authentication verification passed",
+            ManualAuthenticationVerificationStatus.Failed => "Manual authentication verification failed",
+            ManualAuthenticationVerificationStatus.Stale => "Manual authentication verification stale. Repeat detection and verification",
+            ManualAuthenticationVerificationStatus.Pending => "Manual authentication verification pending",
+            _ => "Manual authentication verification required"
+        };
+    private bool CanRecordManualVerification => CurrentProfile is { } p && !IsDirty &&
+        FaSettings.ValidateProfile(p).IsValid && _detectionResult?.Success == true &&
+        CurrentDetectionState == DetectionState.ManualAuthenticationVerificationRequired &&
+        _manualDetectionContext == ManualAuthenticationVerificationEvidence.Fingerprint(p);
+    private void OpenManualVerification()
+    {
+        _manualInstructionsOpen = true;
+        RecomputeManualReadiness();
+    }
+    private async Task RecordManualVerificationAsync(ManualAuthenticationVerificationStatus result)
+    {
+        if (!CanRecordManualVerification || CurrentProfile is not { } profile ||
+            result is not (ManualAuthenticationVerificationStatus.Passed or ManualAuthenticationVerificationStatus.Failed)) return;
+        var evidence = ManualAuthenticationVerificationEvidence.Record(profile, result);
+        profile.ManualVerification = evidence;
+        if (SelectedProfile is { } saved) saved.ManualVerification = evidence;
+        if (_editProfile is not null) _originalProfileJson = System.Text.Json.JsonSerializer.Serialize(_editProfile);
+        await FaSettings.SaveAsync(JS);
+        _manualResultRecordedThisSession = true;
+        RecomputeManualReadiness();
+    }
+    private void RecomputeManualReadiness()
+    {
+        if (_detectionResult is { ManualAuthenticationVerificationRequired: true } detection)
+        {
+            detection.ManualAuthenticationVerificationStatus = ManualStatus;
+            detection.IsActivationReady = CanActivateSelected;
+        }
+    }
 
     private bool IsDirty => _editProfile is not null && _originalProfileJson is not null &&
         System.Text.Json.JsonSerializer.Serialize(_editProfile) != _originalProfileJson;
 
-    private string DetectedAuthenticationLabel => _detectionResult is null ||
+    private string DetectedAuthenticationLabel => _detectionResult?.ManualAuthenticationVerificationRequired == true
+        ? $"Manual verification {ManualStatus.ToString().ToLowerInvariant()}" : _detectionResult is null ||
         (!_detectionResult.AuthenticationRequired && _detectionResult.DetectedAuthenticationType == FrontendAuthenticationType.None)
             ? "Not determined"
             : _detectionResult.DetectedAuthenticationType == FrontendAuthenticationType.None
@@ -1786,11 +1970,18 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private string DetectionStateMessage => CurrentDetectionState switch
     {
+        DetectionState.Checking => "Checking target settings…",
         DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Server preflight succeeded. Browser inspection is required to finish detection.",
         DetectionState.AuthenticationRequired => "Authentication is required to finish detection in the browser.",
         DetectionState.Complete => "Review the detected/proposed settings below.",
+        DetectionState.ManualAuthenticationVerificationRequired => "Target preflight complete. Managed Microsoft Edge work profile required for manual authentication verification.",
         DetectionState.Failed => _detectionResult?.Message ?? "Detection could not be completed safely.",
-        DetectionState.Stale => "The target URL changed since the last successful detection.",
+        DetectionState.Stale => "The target URL changed since the last detection. Run detection again to refresh.",
+        // NotChecked: show historical message if available
+        DetectionState.NotChecked when SelectedProfile?.LastDetectionSucceeded == true => "Previously detected. Run detection again to refresh.",
+        DetectionState.NotChecked when SelectedProfile?.LastDetectionFailure is not null =>
+            $"Previous detection failed ({SelectedProfile.LastDetectionFailure}). Run detection again to retry.",
+        DetectionState.NotChecked => "Run Detect settings to check this target.",
         _ => _detectionResult?.Message ?? ""
     };
 
@@ -1803,6 +1994,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         CurrentDetectionState switch
         {
             DetectionState.NotChecked => "Run Detect settings before activating this environment.",
+            DetectionState.ManualAuthenticationVerificationRequired => "Manual authentication verification must pass and environment changes must be saved before activation.",
             DetectionState.AuthenticationRequired => "Interactive browser detection is required to complete authentication. Click 'Continue detection in browser' above.",
             DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Complete the authentication confirmation in the browser and try again.",
             DetectionState.Partial => "Partial detection. Run interactive browser detection again to complete authentication.",
@@ -1992,4 +2184,53 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private static string NewIntegrationId() =>
         Guid.NewGuid().ToString("N")[..8];
+
+    // ── Authentication detection helpers ────────────────────────────────────
+
+    private bool HasDetectedAuthSettings(TargetEnvironmentDetectionResult detection)
+    {
+        return detection.DetectedAuthenticationType != FrontendAuthenticationType.None ||
+               !string.IsNullOrWhiteSpace(detection.DetectedAuthority) ||
+               !string.IsNullOrWhiteSpace(detection.DetectedClientId) ||
+               !string.IsNullOrWhiteSpace(detection.DetectedTenantId) ||
+               !string.IsNullOrWhiteSpace(detection.TenantMode) ||
+               detection.DetectedRedirectUrls.Count > 0;
+    }
+
+    private void ApplyDetectedAuthenticationSettings()
+    {
+        if (_detectionResult is null || _editProfile is null)
+            return;
+
+        var auth = _editProfile.Authentication;
+
+        // Apply detected authentication type
+        if (_detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None)
+            auth.AuthenticationType = _detectionResult.DetectedAuthenticationType;
+
+        // Apply detected authority
+        if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedAuthority))
+            auth.ExpectedAuthority = _detectionResult.DetectedAuthority;
+
+        // Apply detected tenant (prefer GUID tenant over mode)
+        if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedTenantId))
+            auth.ExpectedTenant = _detectionResult.DetectedTenantId;
+        else if (!string.IsNullOrWhiteSpace(_detectionResult.TenantMode))
+            auth.ExpectedTenant = _detectionResult.TenantMode;
+
+        // Apply detected client ID
+        if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedClientId))
+            auth.ExpectedClientId = _detectionResult.DetectedClientId;
+
+        // Apply detected redirect URLs (merge with existing, avoiding duplicates)
+        if (_detectionResult.DetectedRedirectUrls.Count > 0)
+        {
+            var merged = new HashSet<string>(auth.AllowedRedirectUrls, StringComparer.OrdinalIgnoreCase);
+            foreach (var url in _detectionResult.DetectedRedirectUrls)
+                merged.Add(url);
+            auth.AllowedRedirectUrls = merged.ToList();
+        }
+
+        StateHasChanged();
+    }
 }

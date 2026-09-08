@@ -27,7 +27,8 @@ public enum DetectionState
     Stale = 5,
 
     /// <summary>Detection failed with an error.</summary>
-    Failed = 6
+    Failed = 6,
+    ManualAuthenticationVerificationRequired = 7
 }
 
 public enum FrontendEnvironmentType
@@ -98,6 +99,8 @@ public sealed class TargetApiCredentials
 
 public sealed class FrontendAnalysisProfile
 {
+    [JsonPropertyName("manualVerification")] public ManualAuthenticationVerificationEvidence? ManualVerification { get; set; }
+
     [JsonPropertyName("id")]              public string                    Id              { get; set; } = "";
     [JsonPropertyName("name")]            public string                    Name            { get; set; } = "";
     [JsonPropertyName("environmentType")] public FrontendEnvironmentType   EnvironmentType { get; set; }
@@ -145,6 +148,8 @@ public sealed class FrontendAnalysisProfile
 
 public sealed class FrontendAuthenticationSettings
 {
+    [JsonPropertyName("verificationMode")] public AuthenticationVerificationMode VerificationMode { get; set; }
+
     [JsonPropertyName("requiresAuthentication")]     public bool                      RequiresAuthentication     { get; set; }
     [JsonPropertyName("authenticationType")]         public FrontendAuthenticationType AuthenticationType         { get; set; }
     [JsonPropertyName("useExistingBrowserSession")]  public bool                      UseExistingBrowserSession  { get; set; }

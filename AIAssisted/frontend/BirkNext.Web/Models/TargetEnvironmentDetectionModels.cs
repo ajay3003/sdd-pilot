@@ -9,6 +9,11 @@ namespace BirkNext.Web.Models;
 /// </summary>
 public sealed class TargetEnvironmentDetectionResult
 {
+    [JsonPropertyName("manualAuthenticationVerificationRequired")]
+    public bool ManualAuthenticationVerificationRequired { get; set; }
+    [JsonPropertyName("manualAuthenticationVerificationStatus")]
+    public ManualAuthenticationVerificationStatus ManualAuthenticationVerificationStatus { get; set; }
+
     /// <summary>
     /// Original URL provided by user (unchanged).
     /// </summary>
@@ -70,6 +75,13 @@ public sealed class TargetEnvironmentDetectionResult
     /// </summary>
     [JsonPropertyName("detectedClientId")]
     public string? DetectedClientId { get; set; }
+
+    /// <summary>
+    /// Redirect URIs if detected from SPA public configuration.
+    /// Normalized callback URIs for MSAL/OAuth applications.
+    /// </summary>
+    [JsonPropertyName("detectedRedirectUrls")]
+    public List<string> DetectedRedirectUrls { get; set; } = [];
 
     /// <summary>
     /// Suggested environment type based on hostname/URL patterns.
@@ -204,6 +216,11 @@ public enum FieldValueSource
 /// </summary>
 public sealed class TargetDetectionOutcome
 {
+    [JsonPropertyName("manualAuthenticationVerificationRequired")]
+    public bool ManualAuthenticationVerificationRequired { get; set; }
+    [JsonPropertyName("manualAuthenticationVerificationStatus")]
+    public ManualAuthenticationVerificationStatus ManualAuthenticationVerificationStatus { get; set; }
+
     [JsonPropertyName("authenticationFailureReason")]
     public AuthenticationFailureReason? AuthenticationFailureReason { get; set; }
 

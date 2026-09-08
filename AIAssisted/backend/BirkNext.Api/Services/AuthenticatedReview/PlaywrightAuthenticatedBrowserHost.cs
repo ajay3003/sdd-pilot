@@ -2,6 +2,17 @@ using Microsoft.Playwright;
 
 namespace BirkNext.Api.Services.AuthenticatedReview;
 
+/// <summary>
+/// Launches Microsoft Edge (via Playwright) for interactive authentication.
+///
+/// Policy Requirement: Interactive authentication MUST use Microsoft Edge, not bundled Chromium.
+///
+/// Current implementation:
+/// - Launches Edge through Playwright's Chromium.LaunchAsync with Channel = "msedge"
+/// - Uses isolated browser context (no personal Edge profile reuse)
+/// - No fallback to Chromium if Edge is unavailable (fails closed)
+/// - Preserves current navigation/observer lifecycle
+/// </summary>
 internal sealed class PlaywrightAuthenticatedBrowserHost : IAuthenticatedBrowserHost
 {
     public async Task<IAuthenticatedBrowserResources> LaunchAsync(Uri target, CancellationToken cancellationToken)
@@ -12,12 +23,29 @@ internal sealed class PlaywrightAuthenticatedBrowserHost : IAuthenticatedBrowser
         IBrowserContext? context = null;
         try
         {
-            browser = await playwright.Chromium.LaunchAsync(CreateLaunchOptions());
+            // Launch Microsoft Edge through Playwright (not bundled Chromium)
+            // Policy: Only Microsoft Edge is acceptable for interactive authentication
+            browser = await playwright.Chromium.LaunchAsync(CreateLaunchOptionsForEdge());
+
             context = await browser.NewContextAsync();
             var page = await context.NewPageAsync();
+
             // Do NOT navigate here; navigation will happen in BeginAuthenticationAsync.
             // This avoids double-GotoAsync conflicts when Blazor WASM app is starting up.
             return new Resources(playwright, browser, context, page);
+        }
+        catch (PlaywrightException ex) when (ex.Message.Contains("msedge", StringComparison.OrdinalIgnoreCase))
+        {
+            // Edge launch failed - fail closed rather than fall back to Chromium
+            if (context is not null) await context.CloseAsync();
+            if (browser is not null) await browser.CloseAsync();
+            playwright.Dispose();
+
+            throw new InvalidOperationException(
+                "Microsoft Edge is required for interactive authentication but could not be launched. " +
+                "Ensure Microsoft Edge is installed and accessible. " +
+                "Bundled Chromium fallback is not permitted.",
+                ex);
         }
         catch
         {
@@ -28,8 +56,15 @@ internal sealed class PlaywrightAuthenticatedBrowserHost : IAuthenticatedBrowser
         }
     }
 
-    internal static BrowserTypeLaunchOptions CreateLaunchOptions() => new()
+    /// <summary>
+    /// Creates launch options for Microsoft Edge via Playwright.
+    ///
+    /// Channel = "msedge" directs Playwright to launch the installed Microsoft Edge browser
+    /// instead of bundled Chromium.
+    /// </summary>
+    internal static BrowserTypeLaunchOptions CreateLaunchOptionsForEdge() => new()
     {
+        Channel = "msedge",
         Headless = false,
         Args = ["--no-sandbox", "--disable-dev-shm-usage"]
     };
