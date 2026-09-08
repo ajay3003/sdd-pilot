@@ -12,6 +12,25 @@ public enum IntegrationAuthType
     None, ApiKey, BearerToken, BasicAuth, ManagedIdentity, ConnectionString, SasToken
 }
 
+public enum ContractSourceType
+{
+    Auto = 0,              // Auto-detect from integration config
+    OpenApi = 1,           // Swagger/OpenAPI specification
+    GraphQlSchema = 2,     // GraphQL schema/introspection
+    Assembly = 3,          // .NET assembly reference
+    SchemaFile = 4,        // Schema file (JSON/YAML/protobuf)
+    Endpoint = 5,          // Contract endpoint/registry
+    Manual = 6,            // Manually entered
+    Unknown = 7            // Undetermined
+}
+
+public enum ContractMetadataReadiness
+{
+    NotConfigured = 0,     // No relationship metadata provided
+    Partial = 1,           // Incomplete relationship metadata
+    Ready = 2              // Complete relationship metadata
+}
+
 public enum IntegrationFindingSeverity { Critical, High, Medium, Low, Info }
 
 public sealed class IntegrationConfigDto
@@ -28,6 +47,70 @@ public sealed class IntegrationConfigDto
     [JsonPropertyName("monitoringUrl")] public string?             MonitoringUrl { get; set; }
     [JsonPropertyName("owner")]         public string?             Owner       { get; set; }
     [JsonPropertyName("enabled")]       public bool                Enabled     { get; set; } = true;
+
+    // Contract Relationship Metadata (Phase 2)
+    [JsonPropertyName("logicalProducerService")]
+    public string? LogicalProducerService { get; set; }
+
+    [JsonPropertyName("logicalConsumerService")]
+    public string? LogicalConsumerService { get; set; }
+
+    [JsonPropertyName("contractName")]
+    public string? ContractName { get; set; }
+
+    [JsonPropertyName("contractSourceType")]
+    public ContractSourceType ContractSourceType { get; set; } = ContractSourceType.Unknown;
+
+    [JsonPropertyName("contractSourceLocation")]
+    public string? ContractSourceLocation { get; set; }
+
+    [JsonPropertyName("contractMetadataReadiness")]
+    public ContractMetadataReadiness ContractMetadataReadiness { get; set; } = ContractMetadataReadiness.NotConfigured;
+
+    /// <summary>
+    /// Computes the contract metadata readiness based on the current values.
+    /// </summary>
+    public void ComputeReadiness()
+    {
+        ContractMetadataReadiness = ComputeReadinessFor(Type);
+    }
+
+    private ContractMetadataReadiness ComputeReadinessFor(IntegrationType type)
+    {
+        var hasProducer = !string.IsNullOrWhiteSpace(LogicalProducerService);
+        var hasConsumer = !string.IsNullOrWhiteSpace(LogicalConsumerService);
+        var hasContract = !string.IsNullOrWhiteSpace(ContractName);
+        var hasSourceType = ContractSourceType != ContractSourceType.Unknown;
+        var hasSourceLocation = !string.IsNullOrWhiteSpace(ContractSourceLocation);
+
+        if (!hasProducer && !hasConsumer && !hasContract && !hasSourceType && !hasSourceLocation)
+            return ContractMetadataReadiness.NotConfigured;
+
+        return type switch
+        {
+            IntegrationType.REST =>
+                (hasSourceType && (hasSourceLocation || ContractSourceType == ContractSourceType.Auto))
+                    ? ContractMetadataReadiness.Ready
+                    : ContractMetadataReadiness.Partial,
+
+            IntegrationType.GraphQL =>
+                (hasSourceType && ContractSourceType == ContractSourceType.GraphQlSchema && hasConsumer)
+                    ? ContractMetadataReadiness.Ready
+                    : ContractMetadataReadiness.Partial,
+
+            IntegrationType.EventHub or IntegrationType.ServiceBus =>
+                ((hasProducer || hasConsumer) && (hasContract || hasSourceLocation))
+                    ? ContractMetadataReadiness.Ready
+                    : ContractMetadataReadiness.Partial,
+
+            IntegrationType.Kafka or IntegrationType.RabbitMQ =>
+                ((hasProducer || hasConsumer) && (hasContract || hasSourceLocation))
+                    ? ContractMetadataReadiness.Ready
+                    : ContractMetadataReadiness.Partial,
+
+            _ => ContractMetadataReadiness.Partial
+        };
+    }
 }
 
 public sealed class IntegrationQualityRequest
