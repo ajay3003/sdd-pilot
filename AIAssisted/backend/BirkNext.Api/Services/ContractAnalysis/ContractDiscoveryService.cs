@@ -3,8 +3,10 @@ using BirkNext.Api.Services.IntegrationQuality;
 namespace BirkNext.Api.Services.ContractAnalysis;
 
 /// <summary>
-/// Orchestrates REST/OpenAPI contract discovery and compatibility analysis.
+/// Orchestrates REST/GraphQL contract discovery and compatibility analysis.
 /// Coordinates fetching, extraction, normalization, and comparison.
+/// Routes by IntegrationType: REST → OpenAPI path, GraphQL → GraphQL path.
+/// Reuses normalized contract model and comparison infrastructure.
 /// </summary>
 public interface IContractDiscoveryService
 {
@@ -15,19 +17,25 @@ public interface IContractDiscoveryService
 
 public sealed class ContractDiscoveryService : IContractDiscoveryService
 {
-    private readonly IOpenApiSourceFetcher _fetcher;
-    private readonly IOpenApiExtractor _extractor;
+    private readonly IOpenApiSourceFetcher _openApiFetcher;
+    private readonly IOpenApiExtractor _openApiExtractor;
+    private readonly IGraphQlSourceFetcher _graphQlFetcher;
+    private readonly IGraphQlExtractor _graphQlExtractor;
     private readonly IContractComparer _comparer;
     private readonly ILogger<ContractDiscoveryService> _logger;
 
     public ContractDiscoveryService(
-        IOpenApiSourceFetcher fetcher,
-        IOpenApiExtractor extractor,
+        IOpenApiSourceFetcher openApiFetcher,
+        IOpenApiExtractor openApiExtractor,
+        IGraphQlSourceFetcher graphQlFetcher,
+        IGraphQlExtractor graphQlExtractor,
         IContractComparer comparer,
         ILogger<ContractDiscoveryService> logger)
     {
-        _fetcher = fetcher;
-        _extractor = extractor;
+        _openApiFetcher = openApiFetcher;
+        _openApiExtractor = openApiExtractor;
+        _graphQlFetcher = graphQlFetcher;
+        _graphQlExtractor = graphQlExtractor;
         _comparer = comparer;
         _logger = logger;
     }
@@ -36,17 +44,24 @@ public sealed class ContractDiscoveryService : IContractDiscoveryService
         IntegrationConfigDto integration,
         CancellationToken ct = default)
     {
-        // Only REST in Phase 3
-        if (integration.Type != IntegrationType.REST)
+        // Route by integration type
+        return integration.Type switch
         {
-            return new ContractCompatibilityResult
+            IntegrationType.REST => await AnalyzeRestAsync(integration, ct),
+            IntegrationType.GraphQL => await AnalyzeGraphQlAsync(integration, ct),
+            _ => new ContractCompatibilityResult
             {
                 Status = ContractCompatibilityStatus.Unsupported,
                 AnalysisReadiness = ContractAnalysisReadiness.Unsupported,
-                Message = "Contract analysis is only available for REST integrations in Phase 3"
-            };
-        }
+                Message = $"Contract analysis not supported for {integration.Type} integrations"
+            }
+        };
+    }
 
+    private async Task<ContractCompatibilityResult> AnalyzeRestAsync(
+        IntegrationConfigDto integration,
+        CancellationToken ct = default)
+    {
         // Verify metadata readiness
         integration.ComputeReadiness();
         if (integration.ContractMetadataReadiness != ContractMetadataReadiness.Ready)
@@ -80,45 +95,39 @@ public sealed class ContractDiscoveryService : IContractDiscoveryService
             };
         }
 
-        // For Phase 3, we have single source - cannot do cross-service comparison
-        // Return informational result about insufficient sources
+        // Single-service analysis: fetch and validate schema
+        var fetchResult = await _openApiFetcher.FetchAsync(source, ct);
+        if (!fetchResult.Success)
+        {
+            return new ContractCompatibilityResult
+            {
+                Status = ContractCompatibilityStatus.Error,
+                AnalysisReadiness = ContractAnalysisReadiness.Error,
+                Message = $"Failed to fetch OpenAPI: {fetchResult.FailureMessage}",
+                Producer = integration.LogicalProducerService ?? "Unknown",
+                Consumer = integration.LogicalConsumerService ?? "Unknown",
+                Contract = integration.ContractName ?? "Unknown",
+                ProducerSource = fetchResult.SafeUrl
+            };
+        }
+
+        var extractResult = _openApiExtractor.Extract(fetchResult.Content!, integration.ContractName);
+        if (!extractResult.Success)
+        {
+            return new ContractCompatibilityResult
+            {
+                Status = ContractCompatibilityStatus.Error,
+                AnalysisReadiness = ContractAnalysisReadiness.Error,
+                Message = $"Failed to parse OpenAPI: {extractResult.ErrorMessage}",
+                Producer = integration.LogicalProducerService ?? "Unknown",
+                Contract = integration.ContractName ?? "Unknown",
+                ProducerSource = fetchResult.SafeUrl
+            };
+        }
+
+        // Consumer service not configured
         if (string.IsNullOrWhiteSpace(integration.LogicalConsumerService))
         {
-            _logger.LogInformation(
-                "Integration {IntegrationId}: Consumer service not configured for cross-service comparison",
-                integration.Id);
-
-            // Single-service analysis: fetch and validate schema
-            var fetchResult = await _fetcher.FetchAsync(source, ct);
-            if (!fetchResult.Success)
-            {
-                return new ContractCompatibilityResult
-                {
-                    Status = ContractCompatibilityStatus.Error,
-                    AnalysisReadiness = ContractAnalysisReadiness.Error,
-                    Message = $"Failed to fetch OpenAPI: {fetchResult.FailureMessage}",
-                    Producer = integration.LogicalProducerService ?? "Unknown",
-                    Consumer = integration.LogicalConsumerService ?? "Unknown",
-                    Contract = integration.ContractName ?? "Unknown",
-                    ProducerSource = fetchResult.SafeUrl
-                };
-            }
-
-            var extractResult = _extractor.Extract(fetchResult.Content!, integration.ContractName);
-            if (!extractResult.Success)
-            {
-                return new ContractCompatibilityResult
-                {
-                    Status = ContractCompatibilityStatus.Error,
-                    AnalysisReadiness = ContractAnalysisReadiness.Error,
-                    Message = $"Failed to parse OpenAPI: {extractResult.ErrorMessage}",
-                    Producer = integration.LogicalProducerService ?? "Unknown",
-                    Contract = integration.ContractName ?? "Unknown",
-                    ProducerSource = fetchResult.SafeUrl
-                };
-            }
-
-            // Single source - cannot compare
             return new ContractCompatibilityResult
             {
                 Status = ContractCompatibilityStatus.NotReady,
@@ -131,16 +140,148 @@ public sealed class ContractDiscoveryService : IContractDiscoveryService
             };
         }
 
-        // Cross-service comparison not supported yet in Phase 3
-        // Phase 3 only does single-service schema validation
+        // Cross-service comparison not yet implemented
         return new ContractCompatibilityResult
         {
             Status = ContractCompatibilityStatus.Unsupported,
             AnalysisReadiness = ContractAnalysisReadiness.Unsupported,
-            Message = "Cross-service contract compatibility analysis is planned for Phase 4",
+            Message = "Cross-service contract compatibility analysis will be available in a future phase",
             Producer = integration.LogicalProducerService,
             Consumer = integration.LogicalConsumerService,
             Contract = integration.ContractName ?? "Unknown"
         };
+    }
+
+    private async Task<ContractCompatibilityResult> AnalyzeGraphQlAsync(
+        IntegrationConfigDto integration,
+        CancellationToken ct = default)
+    {
+        // Verify metadata readiness
+        integration.ComputeReadiness();
+        if (integration.ContractMetadataReadiness != ContractMetadataReadiness.Ready)
+        {
+            return new ContractCompatibilityResult
+            {
+                Status = ContractCompatibilityStatus.NotReady,
+                AnalysisReadiness = ContractAnalysisReadiness.NotReady,
+                Message = $"Contract metadata not ready: {integration.ContractMetadataReadiness}",
+                Producer = integration.LogicalProducerService ?? "Unknown",
+                Consumer = integration.LogicalConsumerService ?? "Unknown",
+                Contract = integration.ContractName ?? "Unknown"
+            };
+        }
+
+        // Determine source (explicit or Auto mode)
+        var source = integration.ContractSourceType == ContractSourceType.Auto
+            ? integration.Endpoint  // For Auto mode, use GraphQL endpoint
+            : integration.ContractSourceLocation;
+
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return new ContractCompatibilityResult
+            {
+                Status = ContractCompatibilityStatus.NotReady,
+                AnalysisReadiness = ContractAnalysisReadiness.NotReady,
+                Message = "GraphQL endpoint or schema source not configured",
+                Producer = integration.LogicalProducerService ?? "Unknown",
+                Consumer = integration.LogicalConsumerService ?? "Unknown",
+                Contract = integration.ContractName ?? "Unknown"
+            };
+        }
+
+        // Fetch GraphQL schema via introspection
+        var fetchResult = await _graphQlFetcher.FetchAsync(source, ct);
+        if (!fetchResult.Success)
+        {
+            // Handle introspection-disabled case specially
+            if (fetchResult.Reason == GraphQlFetchFailureReason.IntrospectionDisabled)
+            {
+                return new ContractCompatibilityResult
+                {
+                    Status = ContractCompatibilityStatus.NotReady,
+                    AnalysisReadiness = ContractAnalysisReadiness.NotReady,
+                    Message = "GraphQL schema unavailable: introspection disabled on endpoint. Provide an explicit SDL/schema artifact.",
+                    Producer = integration.LogicalProducerService ?? "Unknown",
+                    Consumer = integration.LogicalConsumerService ?? "Unknown",
+                    Contract = integration.ContractName ?? "Unknown",
+                    ProducerSource = RedactUrl(source)
+                };
+            }
+
+            return new ContractCompatibilityResult
+            {
+                Status = ContractCompatibilityStatus.Error,
+                AnalysisReadiness = ContractAnalysisReadiness.Error,
+                Message = $"Failed to fetch GraphQL schema: {fetchResult.FailureMessage}",
+                Producer = integration.LogicalProducerService ?? "Unknown",
+                Consumer = integration.LogicalConsumerService ?? "Unknown",
+                Contract = integration.ContractName ?? "Unknown",
+                ProducerSource = RedactUrl(source)
+            };
+        }
+
+        // Extract and normalize GraphQL schema
+        var extractResult = _graphQlExtractor.Extract(fetchResult.SchemaJson!);
+        if (!extractResult.Success)
+        {
+            return new ContractCompatibilityResult
+            {
+                Status = ContractCompatibilityStatus.Error,
+                AnalysisReadiness = ContractAnalysisReadiness.Error,
+                Message = $"Failed to parse GraphQL schema: {extractResult.FailureMessage}",
+                Producer = integration.LogicalProducerService ?? "Unknown",
+                Consumer = integration.LogicalConsumerService ?? "Unknown",
+                Contract = integration.ContractName ?? "Unknown",
+                ProducerSource = RedactUrl(source)
+            };
+        }
+
+        // Consumer service not configured
+        if (string.IsNullOrWhiteSpace(integration.LogicalConsumerService))
+        {
+            return new ContractCompatibilityResult
+            {
+                Status = ContractCompatibilityStatus.NotReady,
+                AnalysisReadiness = ContractAnalysisReadiness.NotReady,
+                Message = "Consumer service not configured - cross-service comparison requires both producer and consumer sources",
+                Producer = integration.LogicalProducerService ?? "Unknown",
+                Consumer = "Not configured",
+                Contract = integration.ContractName ?? "Unknown",
+                ProducerSource = RedactUrl(source)
+            };
+        }
+
+        // Cross-service comparison not yet implemented
+        return new ContractCompatibilityResult
+        {
+            Status = ContractCompatibilityStatus.Unsupported,
+            AnalysisReadiness = ContractAnalysisReadiness.Unsupported,
+            Message = "Cross-service GraphQL contract compatibility will be available in a future phase",
+            Producer = integration.LogicalProducerService,
+            Consumer = integration.LogicalConsumerService,
+            Contract = integration.ContractName ?? "Unknown",
+            ProducerSource = RedactUrl(source)
+        };
+    }
+
+    private static string RedactUrl(string? url)
+    {
+        if (string.IsNullOrEmpty(url))
+            return "";
+
+        try
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return "[redacted]";
+
+            if (string.IsNullOrEmpty(uri.Query))
+                return uri.GetLeftPart(UriPartial.Path);
+
+            return $"{uri.GetLeftPart(UriPartial.Path)}?[query]";
+        }
+        catch
+        {
+            return "[redacted]";
+        }
     }
 }

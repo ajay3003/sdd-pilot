@@ -222,3 +222,178 @@ public enum ContractDifferenceSeverity
     Warning = 1,
     Breaking = 2
 }
+
+/// <summary>
+/// GraphQL-specific normalized types for Phase 4.
+/// </summary>
+public sealed class GraphQlOperation
+{
+    [JsonPropertyName("kind")]
+    public string Kind { get; set; } = "query"; // query, mutation, subscription
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("root_type")]
+    public string RootType { get; set; } = "Query"; // Query, Mutation, Subscription
+
+    [JsonPropertyName("root_field")]
+    public string RootField { get; set; } = "";
+
+    [JsonPropertyName("arguments")]
+    public List<GraphQlArgument> Arguments { get; set; } = [];
+
+    [JsonPropertyName("return_type")]
+    public GraphQlTypeRef? ReturnType { get; set; }
+}
+
+public sealed class GraphQlType
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("kind")]
+    public string Kind { get; set; } = "OBJECT"; // SCALAR, OBJECT, INTERFACE, UNION, ENUM, INPUT_OBJECT, LIST, NON_NULL
+
+    [JsonPropertyName("fields")]
+    public List<GraphQlField> Fields { get; set; } = [];
+
+    [JsonPropertyName("enum_values")]
+    public List<GraphQlEnumValue>? EnumValues { get; set; }
+
+    [JsonPropertyName("input_fields")]
+    public List<GraphQlField>? InputFields { get; set; }
+
+    [JsonPropertyName("interfaces")]
+    public List<string> Interfaces { get; set; } = [];
+
+    [JsonPropertyName("possible_types")]
+    public List<string>? PossibleTypes { get; set; } // For interfaces/unions
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("deprecated")]
+    public bool IsDeprecated { get; set; }
+
+    [JsonPropertyName("deprecation_reason")]
+    public string? DeprecationReason { get; set; }
+}
+
+public sealed class GraphQlField
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("type")]
+    public GraphQlTypeRef? Type { get; set; }
+
+    [JsonPropertyName("arguments")]
+    public List<GraphQlArgument> Arguments { get; set; } = [];
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("deprecated")]
+    public bool IsDeprecated { get; set; }
+
+    [JsonPropertyName("deprecation_reason")]
+    public string? DeprecationReason { get; set; }
+}
+
+public sealed class GraphQlArgument
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("type")]
+    public GraphQlTypeRef? Type { get; set; }
+
+    [JsonPropertyName("default_value")]
+    public string? DefaultValue { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+}
+
+public sealed class GraphQlTypeRef
+{
+    [JsonPropertyName("kind")]
+    public string Kind { get; set; } = "NAMED"; // NAMED, LIST, NON_NULL
+
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("of_type")]
+    public GraphQlTypeRef? OfType { get; set; }
+
+    // Helper method for unwrapping type references
+    public (string TypeName, bool IsNonNull, int ListDepth) Unwrap()
+    {
+        var isNonNull = false;
+        var listDepth = 0;
+        var current = this;
+
+        while (current != null)
+        {
+            if (current.Kind == "NON_NULL")
+            {
+                isNonNull = true;
+            }
+            else if (current.Kind == "LIST")
+            {
+                listDepth++;
+            }
+            else if (current.Kind == "NAMED")
+            {
+                return (current.Name ?? "", isNonNull, listDepth);
+            }
+
+            current = current.OfType;
+        }
+
+        return ("", isNonNull, listDepth);
+    }
+}
+
+public sealed class GraphQlEnumValue
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("deprecated")]
+    public bool IsDeprecated { get; set; }
+
+    [JsonPropertyName("deprecation_reason")]
+    public string? DeprecationReason { get; set; }
+}
+
+// Extended to support GraphQL in addition to REST
+public sealed class GraphQlNormalizedContract
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("source")]
+    public ContractSource Source { get; set; } = new();
+
+    [JsonPropertyName("graphql_operations")]
+    public List<GraphQlOperation> Operations { get; set; } = [];
+
+    [JsonPropertyName("graphql_types")]
+    public List<GraphQlType> Types { get; set; } = [];
+}
+
+public enum GraphQlExtractionStatus
+{
+    Success = 0,
+    InvalidJson = 1,
+    MissingSchema = 2,
+    InvalidSchema = 3,
+    IntrospectionDisabled = 4,
+    ComplexityLimitExceeded = 5,
+    ParseError = 6
+}

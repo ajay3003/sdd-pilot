@@ -5,6 +5,7 @@ using BirkNext.Api.Services.TargetEnvironmentDetection;
 using BirkNext.Api.Services.FrontendBrowserRuntime;
 using Microsoft.Extensions.Logging;
 using Moq;
+using Moq.Protected;
 
 namespace BirkNext.Api.Tests.Services.TargetEnvironmentDetection;
 
