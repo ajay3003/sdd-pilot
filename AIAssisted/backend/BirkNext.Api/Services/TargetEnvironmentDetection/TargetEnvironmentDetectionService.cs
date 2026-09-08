@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Web;
 using BirkNext.Api.Models;
@@ -36,6 +39,9 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
     private readonly IClientFrameworkDetector _frameworkDetector;
     private readonly ILogger<TargetEnvironmentDetectionService> _logger;
 
+    private readonly EndpointDiscoveryHelper _endpointHelper = new();
+    private readonly ConfigDiscoveryHelper _configHelper = new();
+
     private static readonly HashSet<string> ApprovedEntraHosts = new(StringComparer.OrdinalIgnoreCase)
     {
         "login.microsoftonline.com",
@@ -45,6 +51,9 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
 
     private const int MaxRedirectCount = 5;
     private const int TimeoutSeconds = 10;
+    private const int ProbeTimeoutSeconds = 5;
+    private const int MaxContentSizeBytes = 1_000_000; // 1 MB per file
+    private const int MaxTotalContentBytes = 5_000_000; // 5 MB total
 
     public TargetEnvironmentDetectionService(
         BrowserTargetValidator validator,
@@ -145,6 +154,18 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                 string.IsNullOrWhiteSpace(result.DetectedTenantId))
             {
                 await DetectClientFrameworkAsync(preflightResult.FinalUrl, result, cancellationToken);
+            }
+
+            // Discover endpoints and integrations (REST, GraphQL, Swagger, Health)
+            // Only for reachable targets without auth requirement
+            if (!isTestHostname &&
+                preflightResult.Reachability == TargetReachability.Reachable &&
+                !result.AuthenticationRequired)
+            {
+                await DiscoverEndpointsAsync(normalizedUrl, result, cancellationToken);
+
+                // Compute fingerprint for stale invalidation
+                result.FrontendUrlFingerprint = ComputeUrlFingerprint(normalizedUrl);
             }
 
             // Suggest environment and profile name from hostname
@@ -891,6 +912,434 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             AuthenticationFailureReason.InvalidAuthenticationConfiguration => "Authentication configuration uses an unapproved Entra authority",
             _ => "Unknown authentication failure"
         };
+    }
+
+    private async Task DiscoverEndpointsAsync(
+        string applicationUrl,
+        TargetEnvironmentDetectionResponse result,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!Uri.TryCreate(applicationUrl, UriKind.Absolute, out var appUri))
+                return;
+
+            // Step 1: Try to extract from config file (highest confidence)
+            await ExtractEndpointConfigAsync(appUri, result, cancellationToken);
+
+            // Step 2: Safe probing for endpoints not found via config
+            if (string.IsNullOrWhiteSpace(result.DetectedRestBaseUrl))
+                await ProbeRestEndpointsAsync(appUri, result, cancellationToken);
+
+            if (string.IsNullOrWhiteSpace(result.DetectedGraphQlEndpoint))
+                await ProbeGraphQlEndpointsAsync(appUri, result, cancellationToken);
+
+            if (string.IsNullOrWhiteSpace(result.DetectedSwaggerUrl))
+                await ProbeSwaggerEndpointsAsync(appUri, result, cancellationToken);
+
+            if (string.IsNullOrWhiteSpace(result.DetectedHealthEndpoint))
+                await ProbeHealthEndpointsAsync(appUri, result, cancellationToken);
+
+            // Step 3: Discover integrations from config
+            await DiscoverIntegrationsAsync(appUri, result, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error during endpoint discovery for {Url}", applicationUrl);
+        }
+    }
+
+    private async Task DiscoverIntegrationsAsync(
+        Uri applicationUri,
+        TargetEnvironmentDetectionResponse result,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(ProbeTimeoutSeconds));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
+
+            var configUrl = $"{applicationUri.Scheme}://{applicationUri.Host}/appsettings.json";
+
+            if (!_endpointHelper.IsSafeProbeCandidate(configUrl))
+                return;
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, configUrl);
+            request.Headers.Add("User-Agent", "BirkNext/1.0");
+            request.Headers.Add("Accept", "application/json");
+
+            var response = await _httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseContentRead, linkedCts.Token);
+
+            if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > MaxContentSizeBytes)
+                return;
+
+            var content = await response.Content.ReadAsStringAsync(linkedCts.Token);
+
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+
+            // Discover Event Hub
+            var eventHubConfig = _configHelper.ExtractEventHubConfig(root);
+            if (eventHubConfig.HasValue && (!string.IsNullOrWhiteSpace(eventHubConfig.Value.Namespace) || !string.IsNullOrWhiteSpace(eventHubConfig.Value.Name)))
+            {
+                result.DetectedIntegrations.Add(new DiscoveredIntegration
+                {
+                    Type = "EventHub",
+                    DisplayName = $"Event Hub{(!string.IsNullOrWhiteSpace(eventHubConfig.Value.Name) ? $" ({eventHubConfig.Value.Name})" : "")}",
+                    Endpoint = eventHubConfig.Value.Namespace,
+                    ResourceName = eventHubConfig.Value.Name,
+                    Confidence = DetectionConfidence.High,
+                    EvidenceSource = "/appsettings.json",
+                    Evidence = new() { "EventHub section found", "Namespace and/or Name extracted" }
+                });
+
+                result.DiscoveryEvidence.Add(new DiscoveryEvidence
+                {
+                    Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    LocationCategory = "/appsettings.json - EventHub section",
+                    Value = $"Namespace: {eventHubConfig.Value.Namespace}, Name: {eventHubConfig.Value.Name}",
+                    Confidence = DetectionConfidence.High,
+                    TargetField = "EventHub Integration"
+                });
+            }
+
+            // Discover Service Bus
+            var serviceBusConfig = _configHelper.ExtractServiceBusConfig(root);
+            if (serviceBusConfig.HasValue && (!string.IsNullOrWhiteSpace(serviceBusConfig.Value.Namespace) || !string.IsNullOrWhiteSpace(serviceBusConfig.Value.Name)))
+            {
+                result.DetectedIntegrations.Add(new DiscoveredIntegration
+                {
+                    Type = "ServiceBus",
+                    DisplayName = $"Service Bus{(!string.IsNullOrWhiteSpace(serviceBusConfig.Value.Namespace) ? $" ({serviceBusConfig.Value.Namespace})" : "")}",
+                    Endpoint = serviceBusConfig.Value.Namespace,
+                    ResourceName = serviceBusConfig.Value.Name,
+                    Confidence = DetectionConfidence.High,
+                    EvidenceSource = "/appsettings.json",
+                    Evidence = new() { "ServiceBus section found", "Namespace and/or Name extracted" }
+                });
+
+                result.DiscoveryEvidence.Add(new DiscoveryEvidence
+                {
+                    Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    LocationCategory = "/appsettings.json - ServiceBus section",
+                    Value = $"Namespace: {serviceBusConfig.Value.Namespace}, Name: {serviceBusConfig.Value.Name}",
+                    Confidence = DetectionConfidence.High,
+                    TargetField = "ServiceBus Integration"
+                });
+            }
+
+            // Discover Kafka
+            var kafkaBrokers = _configHelper.ExtractKafkaBrokers(root);
+            if (!string.IsNullOrWhiteSpace(kafkaBrokers))
+            {
+                result.DetectedIntegrations.Add(new DiscoveredIntegration
+                {
+                    Type = "Kafka",
+                    DisplayName = "Kafka",
+                    Endpoint = kafkaBrokers,
+                    Confidence = DetectionConfidence.High,
+                    EvidenceSource = "/appsettings.json",
+                    Evidence = new() { "Kafka section found", "Brokers or BootstrapServers extracted" }
+                });
+
+                result.DiscoveryEvidence.Add(new DiscoveryEvidence
+                {
+                    Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    LocationCategory = "/appsettings.json - Kafka section",
+                    Value = $"Brokers: {kafkaBrokers}",
+                    Confidence = DetectionConfidence.High,
+                    TargetField = "Kafka Integration"
+                });
+            }
+
+            // Discover RabbitMQ
+            var rabbitMqConfig = _configHelper.ExtractRabbitMqConfig(root);
+            if (rabbitMqConfig.HasValue && (!string.IsNullOrWhiteSpace(rabbitMqConfig.Value.Hostname) || rabbitMqConfig.Value.Port.HasValue))
+            {
+                var displayName = !string.IsNullOrWhiteSpace(rabbitMqConfig.Value.Hostname)
+                    ? $"RabbitMQ ({rabbitMqConfig.Value.Hostname})"
+                    : "RabbitMQ";
+
+                var endpoint = !string.IsNullOrWhiteSpace(rabbitMqConfig.Value.Hostname)
+                    ? $"{rabbitMqConfig.Value.Hostname}:{rabbitMqConfig.Value.Port}"
+                    : rabbitMqConfig.Value.Port?.ToString();
+
+                result.DetectedIntegrations.Add(new DiscoveredIntegration
+                {
+                    Type = "RabbitMQ",
+                    DisplayName = displayName,
+                    Endpoint = endpoint,
+                    Confidence = DetectionConfidence.High,
+                    EvidenceSource = "/appsettings.json",
+                    Evidence = new() { "RabbitMQ section found", "Hostname and/or Port extracted" }
+                });
+
+                result.DiscoveryEvidence.Add(new DiscoveryEvidence
+                {
+                    Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    LocationCategory = "/appsettings.json - RabbitMQ section",
+                    Value = $"Hostname: {rabbitMqConfig.Value.Hostname}, Port: {rabbitMqConfig.Value.Port}",
+                    Confidence = DetectionConfidence.High,
+                    TargetField = "RabbitMQ Integration"
+                });
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogDebug("Integration discovery timeout for {Url}", applicationUri);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Integration discovery error for {Url}", applicationUri);
+        }
+    }
+
+    private async Task ExtractEndpointConfigAsync(
+        Uri applicationUri,
+        TargetEnvironmentDetectionResponse result,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(ProbeTimeoutSeconds));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
+
+            var configUrl = $"{applicationUri.Scheme}://{applicationUri.Host}/appsettings.json";
+
+            if (!_endpointHelper.IsSafeProbeCandidate(configUrl))
+                return;
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, configUrl);
+            request.Headers.Add("User-Agent", "BirkNext/1.0");
+            request.Headers.Add("Accept", "application/json");
+
+            var response = await _httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseContentRead, linkedCts.Token);
+
+            if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > MaxContentSizeBytes)
+                return;
+
+            var content = await response.Content.ReadAsStringAsync(linkedCts.Token);
+
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+
+            var restUrl = _configHelper.ExtractRestBaseUrl(root);
+            if (!string.IsNullOrWhiteSpace(restUrl) && Uri.TryCreate(restUrl, UriKind.Absolute, out _))
+            {
+                result.DetectedRestBaseUrl = restUrl;
+                result.RestConfidence = DetectionConfidence.VeryHigh;
+                result.DiscoveryEvidence.Add(new DiscoveryEvidence
+                {
+                    Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    LocationCategory = "/appsettings.json",
+                    Value = "ApiBaseUrl or RestBaseUrl",
+                    Confidence = DetectionConfidence.VeryHigh,
+                    TargetField = "RestBaseUrl"
+                });
+            }
+
+            var graphQlUrl = _configHelper.ExtractGraphQlEndpoint(root);
+            if (!string.IsNullOrWhiteSpace(graphQlUrl) && (graphQlUrl.StartsWith("http") || graphQlUrl.StartsWith("/")))
+            {
+                result.DetectedGraphQlEndpoint = graphQlUrl;
+                result.GraphQlConfidence = DetectionConfidence.VeryHigh;
+                result.DiscoveryEvidence.Add(new DiscoveryEvidence
+                {
+                    Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    LocationCategory = "/appsettings.json",
+                    Value = "GraphQL config",
+                    Confidence = DetectionConfidence.VeryHigh,
+                    TargetField = "GraphQlEndpoint"
+                });
+            }
+
+            var swaggerUrl = _configHelper.ExtractSwaggerUrl(root);
+            if (!string.IsNullOrWhiteSpace(swaggerUrl))
+            {
+                result.DetectedSwaggerUrl = swaggerUrl;
+                result.SwaggerConfidence = DetectionConfidence.VeryHigh;
+                result.DiscoveryEvidence.Add(new DiscoveryEvidence
+                {
+                    Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    LocationCategory = "/appsettings.json",
+                    Value = "Swagger config",
+                    Confidence = DetectionConfidence.VeryHigh,
+                    TargetField = "SwaggerUrl"
+                });
+            }
+
+            var healthUrl = _configHelper.ExtractHealthEndpoint(root);
+            if (!string.IsNullOrWhiteSpace(healthUrl))
+            {
+                result.DetectedHealthEndpoint = healthUrl;
+                result.HealthConfidence = DetectionConfidence.VeryHigh;
+                result.DiscoveryEvidence.Add(new DiscoveryEvidence
+                {
+                    Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    LocationCategory = "/appsettings.json",
+                    Value = "Health endpoint",
+                    Confidence = DetectionConfidence.VeryHigh,
+                    TargetField = "HealthEndpoint"
+                });
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogDebug("Config discovery timeout for {Url}", applicationUri);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Config discovery error for {Url}", applicationUri);
+        }
+    }
+
+    private async Task ProbeRestEndpointsAsync(
+        Uri applicationUri,
+        TargetEnvironmentDetectionResponse result,
+        CancellationToken cancellationToken)
+    {
+        var candidates = _endpointHelper.GetRestEndpointCandidates(applicationUri.GetLeftPart(UriPartial.Authority));
+
+        foreach (var candidate in candidates.Take(3))
+        {
+            if (!_endpointHelper.IsSafeProbeCandidate(candidate))
+                continue;
+
+            if (await ProbeEndpointAsync(candidate, "REST", cancellationToken))
+            {
+                result.DetectedRestBaseUrl = candidate;
+                result.RestConfidence = DetectionConfidence.High;
+                result.DiscoveryEvidence.Add(new DiscoveryEvidence
+                {
+                    Type = DiscoveryEvidence.EvidenceType.SafeProbe,
+                    LocationCategory = candidate,
+                    Value = "Endpoint responds to probe",
+                    Confidence = DetectionConfidence.High,
+                    TargetField = "RestBaseUrl"
+                });
+                return;
+            }
+        }
+    }
+
+    private async Task ProbeGraphQlEndpointsAsync(
+        Uri applicationUri,
+        TargetEnvironmentDetectionResponse result,
+        CancellationToken cancellationToken)
+    {
+        var candidates = _endpointHelper.GetGraphQlEndpointCandidates(applicationUri.GetLeftPart(UriPartial.Authority));
+
+        foreach (var candidate in candidates.Take(3))
+        {
+            if (!_endpointHelper.IsSafeProbeCandidate(candidate))
+                continue;
+
+            if (await ProbeEndpointAsync(candidate, "GraphQL", cancellationToken))
+            {
+                result.DetectedGraphQlEndpoint = candidate;
+                result.GraphQlConfidence = DetectionConfidence.High;
+                result.DiscoveryEvidence.Add(new DiscoveryEvidence
+                {
+                    Type = DiscoveryEvidence.EvidenceType.SafeProbe,
+                    LocationCategory = candidate,
+                    Value = "GraphQL endpoint responds",
+                    Confidence = DetectionConfidence.High,
+                    TargetField = "GraphQlEndpoint"
+                });
+                return;
+            }
+        }
+    }
+
+    private async Task ProbeSwaggerEndpointsAsync(
+        Uri applicationUri,
+        TargetEnvironmentDetectionResponse result,
+        CancellationToken cancellationToken)
+    {
+        var candidates = _endpointHelper.GetSwaggerEndpointCandidates(applicationUri.GetLeftPart(UriPartial.Authority));
+
+        foreach (var candidate in candidates.Take(3))
+        {
+            if (!_endpointHelper.IsSafeProbeCandidate(candidate))
+                continue;
+
+            if (await ProbeEndpointAsync(candidate, "Swagger", cancellationToken))
+            {
+                result.DetectedSwaggerUrl = candidate;
+                result.SwaggerConfidence = DetectionConfidence.High;
+                result.DiscoveryEvidence.Add(new DiscoveryEvidence
+                {
+                    Type = DiscoveryEvidence.EvidenceType.SafeProbe,
+                    LocationCategory = candidate,
+                    Value = "Swagger endpoint exists",
+                    Confidence = DetectionConfidence.High,
+                    TargetField = "SwaggerUrl"
+                });
+                return;
+            }
+        }
+    }
+
+    private async Task ProbeHealthEndpointsAsync(
+        Uri applicationUri,
+        TargetEnvironmentDetectionResponse result,
+        CancellationToken cancellationToken)
+    {
+        var candidates = _endpointHelper.GetHealthEndpointCandidates(applicationUri.GetLeftPart(UriPartial.Authority));
+
+        foreach (var candidate in candidates.Take(5))
+        {
+            if (!_endpointHelper.IsSafeProbeCandidate(candidate))
+                continue;
+
+            if (await ProbeEndpointAsync(candidate, "Health", cancellationToken))
+            {
+                result.DetectedHealthEndpoint = candidate;
+                result.HealthConfidence = DetectionConfidence.High;
+                result.DiscoveryEvidence.Add(new DiscoveryEvidence
+                {
+                    Type = DiscoveryEvidence.EvidenceType.SafeProbe,
+                    LocationCategory = candidate,
+                    Value = "Health endpoint responds",
+                    Confidence = DetectionConfidence.High,
+                    TargetField = "HealthEndpoint"
+                });
+                return;
+            }
+        }
+    }
+
+    private async Task<bool> ProbeEndpointAsync(string url, string endpointType, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(ProbeTimeoutSeconds));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("User-Agent", "BirkNext/1.0");
+
+            var response = await _httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
+
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private string ComputeUrlFingerprint(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return "";
+
+        using var sha = SHA256.Create();
+        var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(url));
+        return Convert.ToBase64String(hash);
     }
 
     private sealed class PreflightCheckResult

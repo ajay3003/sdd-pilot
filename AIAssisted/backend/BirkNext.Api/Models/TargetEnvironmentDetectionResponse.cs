@@ -83,6 +83,85 @@ public sealed class TargetEnvironmentDetectionResponse
 
     [JsonPropertyName("isActivationReady")]
     public bool IsActivationReady { get; set; }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Endpoint Discovery (REST, GraphQL, Swagger, Health)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Detected REST API base URL (e.g., https://api.example.com or https://app.example.com/api).
+    /// Discovered from structured config, explicit references, or safe probing.
+    /// </summary>
+    [JsonPropertyName("detectedRestBaseUrl")]
+    public string? DetectedRestBaseUrl { get; set; }
+
+    [JsonPropertyName("restConfidence")]
+    public DetectionConfidence RestConfidence { get; set; } = DetectionConfidence.Low;
+
+    /// <summary>
+    /// Detected GraphQL endpoint (e.g., https://api.example.com/graphql).
+    /// Discovered when explicit config or endpoint evidence exists.
+    /// </summary>
+    [JsonPropertyName("detectedGraphQlEndpoint")]
+    public string? DetectedGraphQlEndpoint { get; set; }
+
+    [JsonPropertyName("graphQlConfidence")]
+    public DetectionConfidence GraphQlConfidence { get; set; } = DetectionConfidence.Low;
+
+    /// <summary>
+    /// Detected Swagger/OpenAPI specification URL (e.g., https://api.example.com/swagger/v1/swagger.json).
+    /// Discovered when endpoint exists and responds with valid schema.
+    /// </summary>
+    [JsonPropertyName("detectedSwaggerUrl")]
+    public string? DetectedSwaggerUrl { get; set; }
+
+    [JsonPropertyName("swaggerConfidence")]
+    public DetectionConfidence SwaggerConfidence { get; set; } = DetectionConfidence.Low;
+
+    /// <summary>
+    /// Detected health check endpoint (e.g., https://api.example.com/health).
+    /// Discovered from explicit config or successful endpoint verification.
+    /// </summary>
+    [JsonPropertyName("detectedHealthEndpoint")]
+    public string? DetectedHealthEndpoint { get; set; }
+
+    [JsonPropertyName("healthConfidence")]
+    public DetectionConfidence HealthConfidence { get; set; } = DetectionConfidence.Low;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Integration Discovery
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Detected integration targets (Event Hub, Service Bus, Kafka, RabbitMQ, etc.).
+    /// Proposals only - never auto-applied to configured integrations.
+    /// Contains only safe, non-sensitive metadata (namespace, resource name, not credentials).
+    /// </summary>
+    [JsonPropertyName("detectedIntegrations")]
+    public List<DiscoveredIntegration> DetectedIntegrations { get; set; } = [];
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Discovery Evidence & Provenance
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Evidence sources for all discovered endpoints and integrations.
+    /// Provides transparency and traceability for every detection claim.
+    /// </summary>
+    [JsonPropertyName("discoveryEvidence")]
+    public List<DiscoveryEvidence> DiscoveryEvidence { get; set; } = [];
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Stale Invalidation
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Fingerprint of the Frontend URL used for this detection.
+    /// If Frontend URL changes, all endpoint/integration discoveries become stale.
+    /// Prevents reuse of old discoveries against new targets.
+    /// </summary>
+    [JsonPropertyName("frontendUrlFingerprint")]
+    public string? FrontendUrlFingerprint { get; set; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -136,4 +215,65 @@ public enum ClientFrameworkType
     Angular,
     Vue,
     Other
+}
+
+/// <summary>
+/// Discovered integration target (Event Hub, Service Bus, Kafka, RabbitMQ, etc.).
+/// Contains only safe, non-sensitive public metadata.
+/// NEVER contains: passwords, connection strings with secrets, tokens, API keys.
+/// </summary>
+public sealed class DiscoveredIntegration
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = ""; // REST, GraphQL, EventHub, ServiceBus, Kafka, RabbitMQ
+
+    [JsonPropertyName("displayName")]
+    public string? DisplayName { get; set; }
+
+    [JsonPropertyName("endpoint")]
+    public string? Endpoint { get; set; } // URL or namespace (safe only, no secrets)
+
+    [JsonPropertyName("resourceName")]
+    public string? ResourceName { get; set; } // Topic, queue, hub name, etc.
+
+    [JsonPropertyName("confidence")]
+    public DetectionConfidence Confidence { get; set; } = DetectionConfidence.Low;
+
+    [JsonPropertyName("evidenceSource")]
+    public string? EvidenceSource { get; set; } // Where discovered (appsettings.json, config, HTML, etc.)
+
+    [JsonPropertyName("evidence")]
+    public List<string> Evidence { get; set; } = []; // Supporting details
+}
+
+/// <summary>
+/// Evidence/provenance for a discovered endpoint or integration.
+/// Provides transparency on how and where each value was discovered.
+/// </summary>
+public sealed class DiscoveryEvidence
+{
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public enum EvidenceType
+    {
+        StructuredConfig,   // From config file (appsettings.json, .env, etc.)
+        HtmlReference,      // From HTML (script tag, meta tag, config object)
+        WasmAsset,          // From deployed WASM asset/bundle
+        HintExtractor,      // From source project hints
+        SafeProbe           // From safe endpoint verification
+    }
+
+    [JsonPropertyName("type")]
+    public EvidenceType Type { get; set; }
+
+    [JsonPropertyName("locationCategory")]
+    public string LocationCategory { get; set; } = ""; // appsettings.json, HTML, /swagger/v1/swagger.json, etc.
+
+    [JsonPropertyName("value")]
+    public string? Value { get; set; } // Non-sensitive discovered value
+
+    [JsonPropertyName("confidence")]
+    public DetectionConfidence Confidence { get; set; }
+
+    [JsonPropertyName("targetField")]
+    public string? TargetField { get; set; } // Which field this evidence supports (RestBaseUrl, GraphQlEndpoint, etc.)
 }
