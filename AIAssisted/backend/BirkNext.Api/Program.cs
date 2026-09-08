@@ -284,13 +284,22 @@ builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ApiQualityScanner/1.0");
 });
 
-// Contract Analysis (Phase 3)
+// Contract Analysis (Phase 3-4)
 builder.Services.AddHttpClient<IOpenApiSourceFetcher, OpenApiSourceFetcher>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ContractAnalysis/1.0");
 });
 builder.Services.AddScoped<IOpenApiExtractor, OpenApiExtractor>();
+
+// Contract Analysis - GraphQL (Phase 4)
+builder.Services.AddHttpClient<IGraphQlSourceFetcher, GraphQlSourceFetcher>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ContractAnalysis-GraphQL/1.0");
+});
+builder.Services.AddScoped<IGraphQlExtractor, GraphQlExtractor>();
+
 builder.Services.AddScoped<IContractComparer, ContractComparer>();
 builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();
 
