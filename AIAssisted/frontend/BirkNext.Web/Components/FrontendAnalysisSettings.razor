@@ -188,6 +188,10 @@
                     <div><dt>Framework</dt><dd>@DetectionPresentation.FrameworkLabel(_detectionResult.DetectedClientFramework)</dd></div>
                     <div><dt>Environment</dt><dd>@(_detectionResult.SuggestedEnvironmentType?.ToString() ?? "Not detected") <small>Proposed</small></dd></div>
                     <div><dt>Detected authentication</dt><dd>@DetectedAuthenticationLabel</dd></div>
+                    @if (ManualVerificationRequired)
+                    {
+                        <div><dt>Manual authentication verification</dt><dd>@ManualVerificationLabel</dd></div>
+                    }
                     <div><dt>Profile name</dt><dd>@(_detectionResult.SuggestedProfileName ?? "Not proposed") <small>Proposed</small></dd></div>
                     <div><dt>Configured authentication</dt><dd>@profile.Authentication.AuthenticationType <small>Configured</small></dd></div>
                 </dl>
@@ -1960,8 +1964,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private bool IsDirty => _editProfile is not null && _originalProfileJson is not null &&
         System.Text.Json.JsonSerializer.Serialize(_editProfile) != _originalProfileJson;
 
-    private string DetectedAuthenticationLabel => _detectionResult?.ManualAuthenticationVerificationRequired == true
-        ? $"Manual verification {ManualStatus.ToString().ToLowerInvariant()}" : _detectionResult is null ||
+    private string DetectedAuthenticationLabel => _detectionResult is null ||
         (!_detectionResult.AuthenticationRequired && _detectionResult.DetectedAuthenticationType == FrontendAuthenticationType.None)
             ? "Not determined"
             : _detectionResult.DetectedAuthenticationType == FrontendAuthenticationType.None
