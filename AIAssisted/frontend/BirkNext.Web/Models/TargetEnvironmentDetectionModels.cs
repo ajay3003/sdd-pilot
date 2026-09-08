@@ -151,6 +151,117 @@ public sealed class TargetEnvironmentDetectionResult
 
     [JsonPropertyName("isActivationReady")]
     public bool IsActivationReady { get; set; }
+
+    /// <summary>
+    /// Discovered REST Base URL from configuration or probing.
+    /// </summary>
+    [JsonPropertyName("detectedRestBaseUrl")]
+    public string? DetectedRestBaseUrl { get; set; }
+
+    /// <summary>
+    /// Confidence level for detected REST Base URL.
+    /// </summary>
+    [JsonPropertyName("restConfidence")]
+    public DetectionConfidence RestConfidence { get; set; } = DetectionConfidence.Low;
+
+    /// <summary>
+    /// Discovered GraphQL Endpoint from configuration or probing.
+    /// </summary>
+    [JsonPropertyName("detectedGraphQlEndpoint")]
+    public string? DetectedGraphQlEndpoint { get; set; }
+
+    /// <summary>
+    /// Confidence level for detected GraphQL Endpoint.
+    /// </summary>
+    [JsonPropertyName("graphQlConfidence")]
+    public DetectionConfidence GraphQlConfidence { get; set; } = DetectionConfidence.Low;
+
+    /// <summary>
+    /// Discovered Swagger/OpenAPI URL from configuration or probing.
+    /// </summary>
+    [JsonPropertyName("detectedSwaggerUrl")]
+    public string? DetectedSwaggerUrl { get; set; }
+
+    /// <summary>
+    /// Confidence level for detected Swagger URL.
+    /// </summary>
+    [JsonPropertyName("swaggerConfidence")]
+    public DetectionConfidence SwaggerConfidence { get; set; } = DetectionConfidence.Low;
+
+    /// <summary>
+    /// Discovered Health Endpoint from configuration or probing.
+    /// </summary>
+    [JsonPropertyName("detectedHealthEndpoint")]
+    public string? DetectedHealthEndpoint { get; set; }
+
+    /// <summary>
+    /// Confidence level for detected Health Endpoint.
+    /// </summary>
+    [JsonPropertyName("healthConfidence")]
+    public DetectionConfidence HealthConfidence { get; set; } = DetectionConfidence.Low;
+
+    /// <summary>
+    /// Detected integrations (Event Hub, Service Bus, Kafka, RabbitMQ, etc.).
+    /// Proposed for user approval, not auto-applied.
+    /// </summary>
+    [JsonPropertyName("detectedIntegrations")]
+    public List<DiscoveredIntegration> DetectedIntegrations { get; set; } = [];
+
+    /// <summary>
+    /// SHA256 fingerprint of Frontend URL for stale invalidation.
+    /// </summary>
+    [JsonPropertyName("frontendUrlFingerprint")]
+    public string? FrontendUrlFingerprint { get; set; }
+}
+
+/// <summary>
+/// Discovered integration endpoint with metadata.
+/// Represents a single integration (Event Hub, Service Bus, Kafka, RabbitMQ, etc.)
+/// discovered from target configuration or inspection.
+/// </summary>
+public sealed class DiscoveredIntegration
+{
+    /// <summary>
+    /// Integration type (EventHub, ServiceBus, Kafka, RabbitMQ, etc.).
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "";
+
+    /// <summary>
+    /// User-friendly display name for this integration.
+    /// </summary>
+    [JsonPropertyName("displayName")]
+    public string? DisplayName { get; set; }
+
+    /// <summary>
+    /// Endpoint URL or connection string (safe, no credentials).
+    /// </summary>
+    [JsonPropertyName("endpoint")]
+    public string? Endpoint { get; set; }
+
+    /// <summary>
+    /// Resource name (namespace, queue, topic, etc.).
+    /// </summary>
+    [JsonPropertyName("resourceName")]
+    public string? ResourceName { get; set; }
+
+    /// <summary>
+    /// Confidence level of this discovery.
+    /// </summary>
+    [JsonPropertyName("confidence")]
+    public DetectionConfidence Confidence { get; set; } = DetectionConfidence.Medium;
+
+    /// <summary>
+    /// Source of this discovery (config file, probe, etc.).
+    /// </summary>
+    [JsonPropertyName("evidenceSource")]
+    public string? EvidenceSource { get; set; }
+
+    /// <summary>
+    /// Details about how this was discovered.
+    /// </summary>
+    [JsonPropertyName("evidence")]
+    public List<string> Evidence { get; set; } = [];
 }
 
 public enum TargetReachability
