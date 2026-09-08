@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 <#
 .SYNOPSIS
     M2LB Public Configuration Discovery - Map actual public sources
@@ -24,10 +24,8 @@ if (-not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir | Out-Null
 }
 
-Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║  M2LB Public Configuration Discovery                      ║" -ForegroundColor Cyan
-Write-Host "║  Systematically mapping public assets and config sources  ║" -ForegroundColor Cyan
-Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "[M2LB Public Configuration Discovery]" -ForegroundColor Cyan
+Write-Host "Systematically mapping public assets and config sources" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Target: $TargetUrl" -ForegroundColor Yellow
 Write-Host "Output: $OutputDir" -ForegroundColor Yellow
@@ -35,23 +33,23 @@ Write-Host ""
 
 $fileCount = 0
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # PHASE 1: Fetch main shell and analyze
-# ─────────────────────────────────────────────────────────────────────────────
-Write-Host "▶ PHASE 1: Analyzing main shell" -ForegroundColor Green
+# -----------------------------------------------------------------------------
+Write-Host "[PHASE 1] Analyzing main shell" -ForegroundColor Green
 
 try {
     $shell = Invoke-WebRequest -Uri $TargetUrl -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
     $shell.Content | Out-File "$OutputDir/00-shell.html" -Encoding UTF8
     $fileCount++
-    Write-Host "  ✓ Shell fetched ($(($shell.Content.Length/1KB).ToString('F2'))KB)"
+    Write-Host "  [OK] Shell fetched ($(($shell.Content.Length/1KB).ToString('F2'))KB)"
 
     # Extract all script sources
     $scriptRefs = @()
     [regex]::Matches($shell.Content, '<script[^>]*src="([^"]+)"', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase) | ForEach-Object {
         $scriptRefs += $_.Groups[1].Value
     }
-    Write-Host "  ✓ Found $($scriptRefs.Count) script references"
+    Write-Host "  [OK] Found $($scriptRefs.Count) script references"
 
     if ($scriptRefs.Count -gt 0) {
         Write-Host "    Scripts referenced:" -ForegroundColor Gray
@@ -81,21 +79,21 @@ try {
     }
 
     if ($matches.Count -gt 0) {
-        Write-Host "  ✓ Found auth-related patterns:" -ForegroundColor Green
+        Write-Host "  [OK] Found auth-related patterns:" -ForegroundColor Green
         $matches | ForEach-Object {
             Write-Host "      - '$($_.Pattern)': $($_.Count) occurrences" -ForegroundColor Green
         }
     }
 } catch {
-    Write-Host "  ✗ Error fetching shell: $_" -ForegroundColor Red
+    Write-Host "  [ERROR] Error fetching shell: $_" -ForegroundColor Red
 }
 
 Write-Host ""
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # PHASE 2: Probe common public paths
-# ─────────────────────────────────────────────────────────────────────────────
-Write-Host "▶ PHASE 2: Probing common public paths" -ForegroundColor Green
+# -----------------------------------------------------------------------------
+Write-Host "[PHASE] PHASE 2: Probing common public paths" -ForegroundColor Green
 
 $probePaths = @(
     # Config files
@@ -138,7 +136,7 @@ foreach ($path in $probePaths) {
 
         if ($response.StatusCode -eq 200) {
             $size = [math]::Round($response.Content.Length / 1KB, 2)
-            Write-Host "  ✓ $path ($($response.StatusCode) - $($size)KB)" -ForegroundColor Green
+            Write-Host "  [OK] $path ($($response.StatusCode) - $($size)KB)" -ForegroundColor Green
 
             # Save the content
             $filename = ($path -replace '/', '_').TrimStart('_')
@@ -156,35 +154,35 @@ foreach ($path in $probePaths) {
 }
 
 if ($probeResults.Count -eq 0) {
-    Write-Host "  ℹ No common config paths responded with 200" -ForegroundColor Yellow
+    Write-Host "  [INFO] No common config paths responded with 200" -ForegroundColor Yellow
 }
 
 Write-Host ""
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # PHASE 3: Inspect _framework directory contents
-# ─────────────────────────────────────────────────────────────────────────────
-Write-Host "▶ PHASE 3: Inspecting _framework directory" -ForegroundColor Green
+# -----------------------------------------------------------------------------
+Write-Host "[PHASE] PHASE 3: Inspecting _framework directory" -ForegroundColor Green
 
 try {
     $frameworkUrl = "$TargetUrl/_framework/"
     $response = Invoke-WebRequest -Uri $frameworkUrl -UseBasicParsing -TimeoutSec 5
 
     if ($response.StatusCode -eq 200) {
-        Write-Host "  ✓ _framework directory is public (listing may be disabled)" -ForegroundColor Green
+        Write-Host "  [OK] _framework directory is public (listing may be disabled)" -ForegroundColor Green
         $response.Content | Out-File "$OutputDir/02-framework-listing.html" -Encoding UTF8
         $fileCount++
     }
 } catch {
-    Write-Host "  ℹ _framework directory not directly accessible" -ForegroundColor Yellow
+    Write-Host "  [INFO] _framework directory not directly accessible" -ForegroundColor Yellow
 }
 
 Write-Host ""
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # PHASE 4: Analysis of discovered sources
-# ─────────────────────────────────────────────────────────────────────────────
-Write-Host "▶ PHASE 4: Analyzing discovered sources" -ForegroundColor Green
+# -----------------------------------------------------------------------------
+Write-Host "[PHASE] PHASE 4: Analyzing discovered sources" -ForegroundColor Green
 
 $configFiles = Get-ChildItem "$OutputDir" -Filter "*.json" | Where-Object { $_.Name -notmatch '\.lock$' }
 
@@ -204,7 +202,7 @@ foreach ($file in $configFiles) {
         }
 
         if ($authKeys.Count -gt 0) {
-            Write-Host "    ✓ Found auth-related keys: $($authKeys -join ', ')" -ForegroundColor Green
+            Write-Host "    [OK] Found auth-related keys: $($authKeys -join ', ')" -ForegroundColor Green
         }
 
         # Save analysis
@@ -221,10 +219,10 @@ foreach ($file in $configFiles) {
 
 Write-Host ""
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # PHASE 5: Summary
-# ─────────────────────────────────────────────────────────────────────────────
-Write-Host "▶ PHASE 5: Discovery Summary" -ForegroundColor Green
+# -----------------------------------------------------------------------------
+Write-Host "[PHASE] PHASE 5: Discovery Summary" -ForegroundColor Green
 Write-Host "  Files collected: $fileCount" -ForegroundColor Cyan
 
 $files = Get-ChildItem "$OutputDir" -File
@@ -234,9 +232,9 @@ $files | ForEach-Object {
 }
 
 Write-Host ""
-Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║  Next Steps                                               ║" -ForegroundColor Cyan
-Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "[============================================================]" -ForegroundColor Cyan
+Write-Host "|  Next Steps                                               |" -ForegroundColor Cyan
+Write-Host "[============================================================╝" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "1. Review files in: $OutputDir" -ForegroundColor Yellow
 Write-Host "2. Identify where MSAL/auth config is actually stored" -ForegroundColor Yellow

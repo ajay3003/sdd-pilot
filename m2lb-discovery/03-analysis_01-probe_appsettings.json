@@ -1,0 +1,7 @@
+﻿{
+    "AuthKeys":  [
+                     "UseDevAuth"
+                 ],
+    "FullContent":  "{\r\n    \"ApiBaseUrl\":  \"https://m2lbdev.bufetat.no/api/\",\r\n    \"UseDevAuth\":  false,\r\n    \"UseMockData\":  false,\r\n    \"AzureAd\":  {\r\n                    \"Authority\":  \"https://login.microsoftonline.com/25609970-3b75-45b9-9899-036bb1693ff3/v2.0\",\r\n                    \"ClientId\":  \"23be8783-a768-47c0-804e-2740c6216272\",\r\n                    \"ValidateAuthority\":  true\r\n                },\r\n    \"ApiScopes\":  {\r\n                      \"Autorisasjon\":  [\r\n                                           \"api://25609970-3b75-45b9-9899-036bb1693ff3/m2lb-autorisasjon-api-dev/user_impersonation\"\r\n                                       ],\r\n                      \"Person\":  [\r\n                                     \"api://25609970-3b75-45b9-9899-036bb1693ff3/m2lb-person-api-dev/user_impersonation\"\r\n                                 ],\r\n                      \"Tjeneste\":  [\r\n                                       \"api://25609970-3b75-45b9-9899-036bb1693ff3/m2lb-tjeneste-api-dev/user_impersonation\"\r\n                                   ],\r\n                      \"Hendelse\":  [\r\n                                       \"api://25609970-3b75-45b9-9899-036bb1693ff3/m2lb-hendelse-api-dev/user_impersonation\"\r\n                                   ]\r\n                  }\r\n}",
+    "File":  "01-probe_appsettings.json"
+}

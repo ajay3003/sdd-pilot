@@ -1,0 +1,17 @@
+﻿{
+  "ApiBaseUrl": "https://m2lbdev.bufetat.no/api/",
+  "UseDevAuth": false,
+  "UseMockData": false,
+  "AzureAd": {
+    "Authority": "https://login.microsoftonline.com/25609970-3b75-45b9-9899-036bb1693ff3/v2.0",
+    "ClientId": "23be8783-a768-47c0-804e-2740c6216272",
+    "ValidateAuthority": true
+  },
+  "ApiScopes": {
+    "Autorisasjon": [ "api://25609970-3b75-45b9-9899-036bb1693ff3/m2lb-autorisasjon-api-dev/user_impersonation" ],
+    "Person": [ "api://25609970-3b75-45b9-9899-036bb1693ff3/m2lb-person-api-dev/user_impersonation" ],
+    "Tjeneste": [ "api://25609970-3b75-45b9-9899-036bb1693ff3/m2lb-tjeneste-api-dev/user_impersonation" ],
+    "Hendelse": [ "api://25609970-3b75-45b9-9899-036bb1693ff3/m2lb-hendelse-api-dev/user_impersonation" ]
+  }
+}
+

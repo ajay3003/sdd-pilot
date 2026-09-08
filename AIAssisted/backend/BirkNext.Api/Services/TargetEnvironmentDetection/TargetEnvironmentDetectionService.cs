@@ -122,6 +122,14 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                 await ExtractAuthenticationMetadataAsync(preflightResult.FinalUrl, result, cancellationToken);
             }
 
+            // Try to extract configuration-based authentication (e.g., appsettings.json for .NET apps)
+            // This complements redirect-based detection and works well for SPAs like Blazor WASM
+            if (result.Reachability == TargetReachability.Reachable &&
+                result.DetectedAuthenticationType == FrontendAuthenticationType.None)
+            {
+                await ExtractAuthenticationConfigAsync(normalizedUrl, result, cancellationToken);
+            }
+
             // Detect client-side frameworks (Blazor WASM, React, etc.) for reachable targets.
             // Only do this for real production/dev URLs, not test fixtures (*.test, *.local, localhost).
             // Skip for responses that already have clear auth/API indicators.
@@ -380,6 +388,109 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
         {
             _logger.LogWarning(ex, "Error extracting auth metadata from {Url}", finalUrl);
             result.Warnings.Add("Could not extract full authentication metadata");
+        }
+    }
+
+    private async Task ExtractAuthenticationConfigAsync(
+        string applicationUrl,
+        TargetEnvironmentDetectionResponse result,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!Uri.TryCreate(applicationUrl, UriKind.Absolute, out var appUri))
+                return;
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
+
+            var configUrl = $"{appUri.Scheme}://{appUri.Host}/appsettings.json";
+            using var request = new HttpRequestMessage(HttpMethod.Get, configUrl);
+            request.Headers.Add("User-Agent", "BirkNext/1.0");
+            request.Headers.Add("Accept", "application/json");
+
+            var response = await _httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseContentRead, linkedCts.Token);
+
+            if (!response.IsSuccessStatusCode)
+                return;
+
+            var content = await response.Content.ReadAsStringAsync(linkedCts.Token);
+
+            using var doc = System.Text.Json.JsonDocument.Parse(content);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("AzureAd", out var azureAdElement))
+                return;
+
+            if (azureAdElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+                return;
+
+            result.DetectedAuthenticationType = FrontendAuthenticationType.MicrosoftEntraId;
+
+            if (azureAdElement.TryGetProperty("Authority", out var authorityElement) &&
+                authorityElement.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                var authority = authorityElement.GetString();
+                if (!string.IsNullOrWhiteSpace(authority))
+                {
+                    result.DetectedAuthority = authority;
+
+                    var tenantId = ExtractTenantFromAuthority(authority);
+                    if (!string.IsNullOrEmpty(tenantId))
+                    {
+                        result.DetectedTenantId = tenantId;
+                    }
+                }
+            }
+
+            if (azureAdElement.TryGetProperty("ClientId", out var clientIdElement) &&
+                clientIdElement.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                var clientId = clientIdElement.GetString();
+                if (!string.IsNullOrWhiteSpace(clientId))
+                {
+                    result.DetectedClientId = clientId;
+                }
+            }
+
+            result.Confidence = DetectionConfidence.High;
+            _logger.LogDebug("Successfully detected MSAL configuration from appsettings.json for {Url}", applicationUrl);
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogDebug("Config detection timeout for {Url}", applicationUrl);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Config-based authentication detection error for {Url}", applicationUrl);
+        }
+    }
+
+    private string? ExtractTenantFromAuthority(string authority)
+    {
+        try
+        {
+            if (!Uri.TryCreate(authority, UriKind.Absolute, out var uri))
+                return null;
+
+            var path = uri.AbsolutePath.Trim('/');
+            var segments = path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+            if (segments.Length > 0)
+            {
+                var firstSegment = segments[0];
+                if (IsConcreteTenanId(firstSegment))
+                {
+                    return firstSegment;
+                }
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
         }
     }
 
