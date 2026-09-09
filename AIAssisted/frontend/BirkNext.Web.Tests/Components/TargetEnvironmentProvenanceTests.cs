@@ -100,17 +100,19 @@ public sealed class TargetEnvironmentProvenanceTests : BunitContext
     public void Diagnostics_SameProfile_UsesOneContextLine()
     {
         var cut = Render<TargetSettings>();
+        _settings.Settings.ActiveProfileId = "dev";
+        cut.FindAll(".fa-profile-chip").Single(c => c.TextContent.Contains("Dev")).Click();
         cut.FindAll("[role=tab]").Single(b => b.TextContent.Trim() == "Diagnostics").Click();
-        cut.Find(".fa-diagnostics-context").TextContent.Should().Contain("Selected environment / active review environment: QA").And.NotContain("You are inspecting");
+        cut.Find(".fa-diagnostics-context").TextContent.Should().Contain("Selected environment / active review environment: Dev").And.NotContain("You are inspecting");
     }
 
     [Fact]
     public void ProposalEvidence_IsPerField_AndFrameworkEvidenceIsVisible()
     {
         var cut = Detect();
-        cut.Find("[data-field='RestBaseUrl']").TextContent.Should().Contain("Observed · VeryHigh").And.Contain("StructuredConfig").And.Contain("NotPerformed");
+        cut.Find("[data-field='RestBaseUrl']").TextContent.Should().Contain("Observed · VeryHigh").And.Contain("Structured config").And.Contain("Not performed");
         foreach (var field in Fields.Skip(1))
-            cut.Find($"[data-field='{field}']").TextContent.Should().Contain("Candidate · Low").And.Contain("ConventionalCandidate").And.Contain("HTTP 200").And.Contain("text/html").And.NotContain("Confirmed");
+            cut.Find($"[data-field='{field}']").TextContent.Should().Contain("Candidate · Low").And.Contain("Conventional path").And.Contain("HTTP 200").And.Contain("text/html").And.NotContain("Confirmed");
         cut.Find(".fa-framework-evidence").TextContent.Should().Contain("_framework/blazor.webassembly.js").And.Contain("High");
         cut.Markup.Should().Contain("Blazor WebAssembly").And.Contain("endpoint confidence is shown per proposal");
     }

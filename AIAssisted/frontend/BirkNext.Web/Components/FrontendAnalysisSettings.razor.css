@@ -737,7 +737,8 @@
 .fa-stat-warn { color: var(--clr-warning); font-weight: 600; }
 .fa-stat-err { color: var(--clr-danger);  font-weight: 600; }
 
-.fa-apply-suggestion {
+.fa-apply-suggestion,
+::deep .fa-endpoint-proposal .fa-apply-suggestion {
     margin-left: 0.5rem;
     padding: 0.2rem 0.45rem;
     border: 1px solid var(--clr-primary);
@@ -750,7 +751,9 @@
 }
 
 .fa-apply-suggestion:hover,
-.fa-apply-suggestion:focus-visible {
+.fa-apply-suggestion:focus-visible,
+::deep .fa-endpoint-proposal .fa-apply-suggestion:hover,
+::deep .fa-endpoint-proposal .fa-apply-suggestion:focus-visible {
     background: var(--clr-primary-bg, #eff6ff);
 }
 

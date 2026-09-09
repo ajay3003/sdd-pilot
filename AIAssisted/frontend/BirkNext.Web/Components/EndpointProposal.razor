@@ -5,9 +5,9 @@
         <strong>@Label</strong>
         <div style="font-family:monospace;overflow-wrap:anywhere">@Value</div>
         <div>@(Evidence?.Status ?? EndpointEvidenceStatus.Candidate) · @(Evidence?.Confidence ?? DetectionConfidence.Low)</div>
-        <div>Source: @(Evidence is null ? "Evidence unavailable" : $"{Evidence.Type} — {Evidence.LocationCategory}")</div>
+        <div>Source: @SourceLabel@(Evidence is null ? "" : $" — {Evidence.LocationCategory}")</div>
         @if (!string.IsNullOrWhiteSpace(Evidence?.Value)) { <div>@Evidence.Value</div> }
-        <div>Probe: @(Evidence?.ProbeStatus ?? EndpointProbeStatus.NotPerformed)@HttpDetails</div>
+        <div>Probe: @ProbeLabel@HttpDetails</div>
         @if (Evidence?.OpenApiKind is OpenApiResourceKind.SwaggerUi or OpenApiResourceKind.OpenApiDocument)
         {
             <div>@(Evidence.OpenApiKind == OpenApiResourceKind.SwaggerUi ? "Swagger UI URL; not a confirmed contract document" : "OpenAPI document URL")</div>
@@ -27,5 +27,22 @@
     [Parameter] public bool CanApply { get; set; }
     [Parameter] public EventCallback OnApply { get; set; }
     [Parameter] public DiscoveryEvidence? Evidence { get; set; }
+    private string SourceLabel => Evidence?.Type switch
+    {
+        DiscoveryEvidence.EvidenceType.StructuredConfig => "Structured config",
+        DiscoveryEvidence.EvidenceType.ConventionalCandidate => "Conventional path",
+        DiscoveryEvidence.EvidenceType.SafeProbe => "Safe probe",
+        DiscoveryEvidence.EvidenceType.HtmlReference => "HTML reference",
+        DiscoveryEvidence.EvidenceType.WasmAsset => "WASM asset",
+        DiscoveryEvidence.EvidenceType.HintExtractor => "Project hint",
+        _ => "Evidence unavailable"
+    };
+    private string ProbeLabel => (Evidence?.ProbeStatus ?? EndpointProbeStatus.NotPerformed) switch
+    {
+        EndpointProbeStatus.NotPerformed => "Not performed",
+        EndpointProbeStatus.ResponseReceived => "Response received",
+        EndpointProbeStatus.SizeLimitExceeded => "Response size limit exceeded",
+        var status => status.ToString()
+    };
     private string HttpDetails => Evidence?.HttpStatus is int status ? $" · HTTP {status} · {Evidence.ContentType ?? "Content type unavailable"}" : "";
 }
