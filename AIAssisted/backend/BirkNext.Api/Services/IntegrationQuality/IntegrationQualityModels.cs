@@ -108,7 +108,7 @@ public sealed class IntegrationConfigDto
         return type switch
         {
             IntegrationType.REST =>
-                (hasSourceType && (hasSourceLocation || ContractSourceType == ContractSourceType.Auto))
+                (hasSourceType && hasSourceLocation)
                     ? ContractMetadataReadiness.Ready
                     : ContractMetadataReadiness.Partial,
 
@@ -118,12 +118,15 @@ public sealed class IntegrationConfigDto
                     : ContractMetadataReadiness.Partial,
 
             IntegrationType.EventHub or IntegrationType.ServiceBus =>
-                (hasProducer && hasConsumer && hasContract && hasProducerSource && hasConsumerSource)
+                // Support both old-style (single source) and new-style (independent producer/consumer sources)
+                (hasProducer && hasConsumer && hasContract && (hasSourceType && hasSourceLocation || hasProducerSource && hasConsumerSource))
                     ? ContractMetadataReadiness.Ready
                     : ContractMetadataReadiness.Partial,
 
             IntegrationType.Kafka or IntegrationType.RabbitMQ =>
-                (hasProducer && hasConsumer && hasContract && hasProducerSource && hasConsumerSource)
+                // For Kafka/RabbitMQ: (producer or consumer) + contract is enough
+                // Or with independent sources if using Phase 5 model
+                ((hasProducer || hasConsumer) && hasContract || hasProducerSource && hasConsumerSource && hasContract)
                     ? ContractMetadataReadiness.Ready
                     : ContractMetadataReadiness.Partial,
 

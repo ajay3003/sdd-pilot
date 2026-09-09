@@ -96,24 +96,6 @@ public sealed class ContractComparer : IContractComparer
         NormalizedSchema consumer,
         List<ContractDifference> differences)
     {
-        // Check consumer schema integrity: Required fields must exist in Properties
-        var consumerPropertyNames = new HashSet<string>(consumer.Properties.Select(p => p.Name));
-        foreach (var requiredField in consumer.Required)
-        {
-            if (!consumerPropertyNames.Contains(requiredField))
-            {
-                differences.Add(new ContractDifference
-                {
-                    Type = ContractDifferenceType.UnsupportedSchema,
-                    Path = consumer.Name,
-                    Property = requiredField,
-                    Severity = ContractDifferenceSeverity.Breaking,
-                    ProducerValue = "Not defined",
-                    ConsumerValue = "Required but not in schema",
-                    Explanation = $"Consumer schema is malformed: field '{requiredField}' is marked required but not defined in properties"
-                });
-            }
-        }
 
         // Compare type
         if (producer.Type != consumer.Type && !IsCompatibleType(producer.Type, consumer.Type))
@@ -161,6 +143,10 @@ public sealed class ContractComparer : IContractComparer
             }
         }
 
+        // Collect all required fields (both explicit in Properties and implicit in Required list)
+        var consumerRequiredFields = new HashSet<string>(consumer.Required);
+        consumerRequiredFields.UnionWith(consumer.Properties.Where(p => p.Required).Select(p => p.Name));
+
         // Compare properties
         foreach (var producerProp in producer.Properties)
         {
@@ -168,6 +154,14 @@ public sealed class ContractComparer : IContractComparer
 
             if (consumerProp == null)
             {
+                // If producer field matches a required field in consumer (even if not in Properties),
+                // don't report as AdditionalProducerProperty
+                if (consumerRequiredFields.Contains(producerProp.Name))
+                {
+                    // Producer provides the required field, which is good
+                    continue;
+                }
+
                 // Producer sends extra field - only breaking if consumer rejects additional properties
                 if (consumer.AllowsAdditionalProperties == false)
                 {
@@ -202,6 +196,7 @@ public sealed class ContractComparer : IContractComparer
         }
 
         // Check if consumer requires fields producer doesn't provide
+        // First check properties in consumer.Properties that are required
         foreach (var consumerProp in consumer.Properties.Where(p => p.Required))
         {
             var producerProp = producer.Properties.FirstOrDefault(p => p.Name == consumerProp.Name);
@@ -218,6 +213,25 @@ public sealed class ContractComparer : IContractComparer
                     Explanation = $"Consumer requires field '{consumerProp.Name}'; producer does not provide it"
                 });
             }
+        }
+
+        // Also check fields in consumer.Required that aren't explicitly in consumer.Properties
+        // This indicates a malformed consumer schema (required fields not defined in properties)
+        var consumerPropertyNames = new HashSet<string>(consumer.Properties.Select(p => p.Name));
+        foreach (var requiredField in consumer.Required.Where(f => !consumerPropertyNames.Contains(f)))
+        {
+            // Required field exists in consumer.Required but not in consumer.Properties
+            // This is a schema integrity issue - report as unsupported
+            differences.Add(new ContractDifference
+            {
+                Type = ContractDifferenceType.UnsupportedSchema,
+                Path = consumer.Name,
+                Property = requiredField,
+                Severity = ContractDifferenceSeverity.Breaking,
+                ProducerValue = "Not defined",
+                ConsumerValue = "Required but not in schema",
+                Explanation = $"Consumer schema is malformed: field '{requiredField}' is marked required but not defined in properties"
+            });
         }
     }
 
@@ -348,6 +362,11 @@ public sealed class ContractComparer : IContractComparer
                 if (actualConsumerType.Kind == "OBJECT" && producerType.Kind == "OBJECT")
                 {
                     CompareGraphQlTypes(actualConsumerType.Name, producerType, actualConsumerType, producerTypeMap, consumerTypeMap, differences, isInput: false);
+                }
+                // For INPUT_OBJECT types, compare input fields
+                else if (actualConsumerType.Kind == "INPUT_OBJECT" && producerType.Kind == "INPUT_OBJECT")
+                {
+                    CompareGraphQlTypes(actualConsumerType.Name, producerType, actualConsumerType, producerTypeMap, consumerTypeMap, differences, isInput: true);
                 }
             }
         }
