@@ -83,27 +83,43 @@ public sealed class TargetEnvironmentProvenanceTests : BunitContext
         JSInterop.Invocations.Should().NotContain(i => i.Identifier == "birkNextStorage.setItem");
     }
 
+    /// <summary>
+    /// The selected environment (being inspected) and the active review environment are shown
+    /// explicitly and separately: the selected one in the detail header, the active one in the
+    /// Active Environment card. Selecting never activates.
+    /// </summary>
     [Fact]
-    public void Diagnostics_SelectedDevAndActiveQa_AreExplicit()
+    public void SelectedDevAndActiveQa_AreExplicitInHeaderAndActiveCard()
     {
         var cut = Render<TargetSettings>();
         cut.FindAll(".fa-profile-chip").Single(c => c.TextContent.Contains("Dev")).Click();
-        cut.FindAll("[role=tab]").Single(b => b.TextContent.Trim() == "Diagnostics").Click();
-        var context = cut.Find(".fa-diagnostics-context").TextContent;
-        context.Should().Contain("Selected environment: Dev").And.Contain("https://m2lbdev.bufetat.no/")
-            .And.Contain("Active review environment: QA").And.Contain("https://example-qa.local")
-            .And.Contain("Review diagnostics below use the active environment.");
+
+        cut.Find(".fa-detail-kicker").TextContent.Trim().Should().Be("Selected environment");
+        cut.Find(".fa-detail-name").TextContent.Trim().Should().Be("Dev");
+        cut.Find(".fa-summary-url").TextContent.Trim().Should().Be("https://m2lbdev.bufetat.no/");
+
+        cut.Find(".fa-active-card-name").TextContent.Trim().Should().Be("QA");
+        cut.Find(".fa-active-card").TextContent.Should().Contain("https://example-qa.local").And.NotContain("m2lbdev");
+
+        var chips = cut.FindAll(".fa-profile-chip");
+        chips.Single(c => c.TextContent.Contains("QA")).TextContent.Should().Contain("Active").And.NotContain("Selected");
+        chips.Single(c => c.TextContent.Contains("Dev")).TextContent.Should().Contain("Selected").And.NotContain("Active");
         _settings.Settings.ActiveProfileId.Should().Be("qa");
     }
 
+    /// <summary>When the selected environment is also the active one, both roles are shown on the same profile.</summary>
     [Fact]
-    public void Diagnostics_SameProfile_UsesOneContextLine()
+    public void SameProfile_ShowsActiveAndSelectedTogether()
     {
         var cut = Render<TargetSettings>();
         _settings.Settings.ActiveProfileId = "dev";
         cut.FindAll(".fa-profile-chip").Single(c => c.TextContent.Contains("Dev")).Click();
-        cut.FindAll("[role=tab]").Single(b => b.TextContent.Trim() == "Diagnostics").Click();
-        cut.Find(".fa-diagnostics-context").TextContent.Should().Contain("Selected environment / active review environment: Dev").And.NotContain("You are inspecting");
+
+        cut.Find(".fa-detail-name").TextContent.Trim().Should().Be("Dev");
+        cut.Find(".fa-active-card-name").TextContent.Trim().Should().Be("Dev");
+        var chips = cut.FindAll(".fa-profile-chip");
+        chips.Single(c => c.TextContent.Contains("Dev")).TextContent.Should().Contain("Active").And.Contain("Selected");
+        chips.Single(c => c.TextContent.Contains("QA")).TextContent.Should().NotContain("Active").And.NotContain("Selected");
     }
 
     [Fact]

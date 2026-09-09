@@ -4,12 +4,8 @@
     <div style="display:flex;flex-direction:column;gap:0.5rem">
         <div style="display:flex;align-items:baseline;gap:0.75rem">
             <strong style="font-size:0.95rem">@Label</strong>
-            <span style="font-size:0.8rem;color:var(--color-text-subtle)">
-                @(Evidence?.Status ?? EndpointEvidenceStatus.Candidate) ·
-                <span style="@(Evidence?.Confidence == DetectionConfidence.Low ? "color:var(--color-warning)" : "color:var(--color-success)")">
-                    @(Evidence?.Confidence ?? DetectionConfidence.Low)
-                </span>
-            </span>
+            @* Keep status and confidence on one line so the text reads "Status · Confidence" without stray whitespace. *@
+            <span style="font-size:0.8rem;color:var(--color-text-subtle)">@(Evidence?.Status ?? EndpointEvidenceStatus.Candidate) · <span style="@(Evidence?.Confidence == DetectionConfidence.Low ? "color:var(--color-warning)" : "color:var(--color-success)")">@(Evidence?.Confidence ?? DetectionConfidence.Low)</span></span>
         </div>
         <div style="font-family:monospace;font-size:0.9rem;overflow-wrap:break-word;word-break:break-all">@Value</div>
         <div style="font-size:0.8rem;color:var(--color-text-subtle)">Source: @SourceLabel@(Evidence is null ? "" : $" ({Evidence.LocationCategory})")</div>
