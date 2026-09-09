@@ -114,8 +114,8 @@ public class IntegrationQualityContractCompatibilityTests
 
         // Analysis result should not be mutable in a way that persists back to settings
         result.Status.Should().Be(originalStatus);
-        result.Status = "Modified"; // UI should not allow this to save
-        result.Status.Should().Be("Modified"); // Property changed locally
+        result.Status = ContractCompatibilityStatus.Breaking; // Status property is assignable
+        result.Status.Should().Be(ContractCompatibilityStatus.Breaking); // Property changed locally
 
         // But integration analysis should not modify original IntegrationConfigDto
         // This is verified at service level - frontend respects the result as read-only
