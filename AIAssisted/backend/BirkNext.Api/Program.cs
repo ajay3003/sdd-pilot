@@ -303,6 +303,10 @@ builder.Services.AddScoped<IGraphQlExtractor, GraphQlExtractor>();
 builder.Services.AddScoped<IContractComparer, ContractComparer>();
 builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();
 
+// Contract Analysis - Messaging/EventHub (Phase 5)
+builder.Services.AddScoped<IAssemblyMetadataInspector, AssemblyMetadataInspector>();
+builder.Services.AddScoped<IMessagingContractDiscoveryService, MessagingContractDiscoveryService>();
+
 builder.Services.AddHttpClient("Anthropic", client =>
 {
     client.DefaultRequestHeaders.Add("x-api-key", builder.Configuration["Anthropic:ApiKey"] ?? string.Empty);

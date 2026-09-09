@@ -21,6 +21,7 @@ public sealed class ContractDiscoveryService : IContractDiscoveryService
     private readonly IOpenApiExtractor _openApiExtractor;
     private readonly IGraphQlSourceFetcher _graphQlFetcher;
     private readonly IGraphQlExtractor _graphQlExtractor;
+    private readonly IMessagingContractDiscoveryService _messagingDiscovery;
     private readonly IContractComparer _comparer;
     private readonly ILogger<ContractDiscoveryService> _logger;
 
@@ -29,6 +30,7 @@ public sealed class ContractDiscoveryService : IContractDiscoveryService
         IOpenApiExtractor openApiExtractor,
         IGraphQlSourceFetcher graphQlFetcher,
         IGraphQlExtractor graphQlExtractor,
+        IMessagingContractDiscoveryService messagingDiscovery,
         IContractComparer comparer,
         ILogger<ContractDiscoveryService> logger)
     {
@@ -36,6 +38,7 @@ public sealed class ContractDiscoveryService : IContractDiscoveryService
         _openApiExtractor = openApiExtractor;
         _graphQlFetcher = graphQlFetcher;
         _graphQlExtractor = graphQlExtractor;
+        _messagingDiscovery = messagingDiscovery;
         _comparer = comparer;
         _logger = logger;
     }
@@ -49,12 +52,29 @@ public sealed class ContractDiscoveryService : IContractDiscoveryService
         {
             IntegrationType.REST => await AnalyzeRestAsync(integration, ct),
             IntegrationType.GraphQL => await AnalyzeGraphQlAsync(integration, ct),
+            IntegrationType.EventHub => await _messagingDiscovery.AnalyzeEventHubAsync(integration, ct),
+            IntegrationType.ServiceBus => await _messagingDiscovery.AnalyzeEventHubAsync(integration, ct),
+            IntegrationType.Kafka => await UnsupportedMessagingAsync(integration, IntegrationType.Kafka),
+            IntegrationType.RabbitMQ => await UnsupportedMessagingAsync(integration, IntegrationType.RabbitMQ),
             _ => new ContractCompatibilityResult
             {
                 Status = ContractCompatibilityStatus.Unsupported,
                 AnalysisReadiness = ContractAnalysisReadiness.Unsupported,
                 Message = $"Contract analysis not supported for {integration.Type} integrations"
             }
+        };
+    }
+
+    private async Task<ContractCompatibilityResult> UnsupportedMessagingAsync(IntegrationConfigDto integration, IntegrationType type)
+    {
+        return new ContractCompatibilityResult
+        {
+            Status = ContractCompatibilityStatus.Unsupported,
+            AnalysisReadiness = ContractAnalysisReadiness.Unsupported,
+            Message = $"Contract analysis for {type} is not yet implemented. EventHub and ServiceBus support is available.",
+            Producer = integration.LogicalProducerService ?? "Unknown",
+            Consumer = integration.LogicalConsumerService ?? "Unknown",
+            Contract = integration.ContractName ?? "Unknown"
         };
     }
 

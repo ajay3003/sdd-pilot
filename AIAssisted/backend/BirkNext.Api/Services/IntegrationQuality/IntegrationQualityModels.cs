@@ -67,6 +67,19 @@ public sealed class IntegrationConfigDto
     [JsonPropertyName("contractMetadataReadiness")]
     public ContractMetadataReadiness ContractMetadataReadiness { get; set; } = ContractMetadataReadiness.NotConfigured;
 
+    // Phase 5: Independent producer/consumer contract sources for messaging analysis
+    [JsonPropertyName("producerContractSourceType")]
+    public ContractSourceType? ProducerContractSourceType { get; set; }
+
+    [JsonPropertyName("producerContractSourceLocation")]
+    public string? ProducerContractSourceLocation { get; set; }
+
+    [JsonPropertyName("consumerContractSourceType")]
+    public ContractSourceType? ConsumerContractSourceType { get; set; }
+
+    [JsonPropertyName("consumerContractSourceLocation")]
+    public string? ConsumerContractSourceLocation { get; set; }
+
     /// <summary>
     /// Computes the contract metadata readiness based on the current values.
     /// </summary>
@@ -83,7 +96,13 @@ public sealed class IntegrationConfigDto
         var hasSourceType = ContractSourceType != ContractSourceType.Unknown;
         var hasSourceLocation = !string.IsNullOrWhiteSpace(ContractSourceLocation);
 
-        if (!hasProducer && !hasConsumer && !hasContract && !hasSourceType && !hasSourceLocation)
+        // Phase 5: Check for independent producer/consumer sources
+        var hasProducerSource = ProducerContractSourceType.HasValue && ProducerContractSourceType != ContractSourceType.Unknown
+            && !string.IsNullOrWhiteSpace(ProducerContractSourceLocation);
+        var hasConsumerSource = ConsumerContractSourceType.HasValue && ConsumerContractSourceType != ContractSourceType.Unknown
+            && !string.IsNullOrWhiteSpace(ConsumerContractSourceLocation);
+
+        if (!hasProducer && !hasConsumer && !hasContract && !hasSourceType && !hasSourceLocation && !hasProducerSource && !hasConsumerSource)
             return ContractMetadataReadiness.NotConfigured;
 
         return type switch
@@ -99,12 +118,12 @@ public sealed class IntegrationConfigDto
                     : ContractMetadataReadiness.Partial,
 
             IntegrationType.EventHub or IntegrationType.ServiceBus =>
-                ((hasProducer || hasConsumer) && (hasContract || hasSourceLocation))
+                (hasProducer && hasConsumer && hasContract && hasProducerSource && hasConsumerSource)
                     ? ContractMetadataReadiness.Ready
                     : ContractMetadataReadiness.Partial,
 
             IntegrationType.Kafka or IntegrationType.RabbitMQ =>
-                ((hasProducer || hasConsumer) && (hasContract || hasSourceLocation))
+                (hasProducer && hasConsumer && hasContract && hasProducerSource && hasConsumerSource)
                     ? ContractMetadataReadiness.Ready
                     : ContractMetadataReadiness.Partial,
 
