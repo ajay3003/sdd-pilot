@@ -96,6 +96,25 @@ public sealed class ContractComparer : IContractComparer
         NormalizedSchema consumer,
         List<ContractDifference> differences)
     {
+        // Check consumer schema integrity: Required fields must exist in Properties
+        var consumerPropertyNames = new HashSet<string>(consumer.Properties.Select(p => p.Name));
+        foreach (var requiredField in consumer.Required)
+        {
+            if (!consumerPropertyNames.Contains(requiredField))
+            {
+                differences.Add(new ContractDifference
+                {
+                    Type = ContractDifferenceType.UnsupportedSchema,
+                    Path = consumer.Name,
+                    Property = requiredField,
+                    Severity = ContractDifferenceSeverity.Breaking,
+                    ProducerValue = "Not defined",
+                    ConsumerValue = "Required but not in schema",
+                    Explanation = $"Consumer schema is malformed: field '{requiredField}' is marked required but not defined in properties"
+                });
+            }
+        }
+
         // Compare type
         if (producer.Type != consumer.Type && !IsCompatibleType(producer.Type, consumer.Type))
         {
@@ -318,6 +337,20 @@ public sealed class ContractComparer : IContractComparer
         var consumerTypeMap = consumer.Types.ToDictionary(t => t.Name, StringComparer.Ordinal);
         var producerOperationMap = producer.Operations.ToDictionary(o => $"{o.Kind}:{o.Name}", StringComparer.Ordinal);
         var consumerOperationMap = consumer.Operations.ToDictionary(o => $"{o.Kind}:{o.Name}", StringComparer.Ordinal);
+
+        // First, compare types directly (for schema compatibility testing without operations)
+        foreach (var consumerType in consumer.Types)
+        {
+            if (consumerTypeMap.TryGetValue(consumerType.Name, out var actualConsumerType) &&
+                producerTypeMap.TryGetValue(consumerType.Name, out var producerType))
+            {
+                // For OBJECT types, compare fields
+                if (actualConsumerType.Kind == "OBJECT" && producerType.Kind == "OBJECT")
+                {
+                    CompareGraphQlTypes(actualConsumerType.Name, producerType, actualConsumerType, producerTypeMap, consumerTypeMap, differences, isInput: false);
+                }
+            }
+        }
 
         // Compare operations that consumer expects
         foreach (var consumerOp in consumer.Operations)
